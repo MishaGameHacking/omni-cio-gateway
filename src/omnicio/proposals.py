@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Literal, cast
 from uuid import UUID
 
@@ -28,6 +28,7 @@ class ProposalBuildError(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class ProposalDraft:
     source_snapshot_id: UUID
+    account_id: str
     profile_version: int
     policy_version: int
     scenario_kind: ProposalScenarioKind
@@ -60,6 +61,11 @@ def build_proposal_draft(
         snapshot_id = UUID(snapshot_raw)
     except ValueError as exc:
         raise ProposalBuildError("snapshot_id_invalid") from exc
+    account_id = _required_text(
+        balancing.get("account_id"),
+        "account_id_invalid",
+        max_length=128,
+    )
     profile_version = _positive_int(
         balancing.get("profile_version"),
         "profile_version_invalid",
@@ -83,12 +89,14 @@ def build_proposal_draft(
     if not isinstance(trades, list) or not trades:
         raise ProposalBuildError("scenario_has_no_trades")
     for trade in trades:
-        if not isinstance(trade, dict):
-            raise ProposalBuildError("scenario_trade_invalid")
-        if trade.get("action") not in {"buy", "sell"}:
-            raise ProposalBuildError("scenario_trade_invalid")
-        if int(trade.get("lots") or 0) <= 0:
-            raise ProposalBuildError("scenario_trade_invalid")
+        _validate_trade(trade)
+
+    before_after = scenario.get("before_after")
+    _validate_before_after(before_after)
+
+    constraints = balancing.get("constraints")
+    if not isinstance(constraints, dict) or not constraints:
+        raise ProposalBuildError("proposal_constraints_missing")
 
     target_uid = _optional_uid(scenario.get("target_instrument_uid"))
     replaced_uid = _optional_uid(scenario.get("replaced_instrument_uid"))
@@ -107,14 +115,21 @@ def build_proposal_draft(
         "stage": "r5_proposal",
         "source": {
             "snapshot_id": str(snapshot_id),
+            "account_id": account_id,
             "profile_version": profile_version,
             "policy_version": policy_version,
             "captured_at": balancing.get("captured_at"),
             "snapshot_age_seconds": balancing.get("snapshot_age_seconds"),
             "live_status": balancing.get("live_status"),
         },
+        "constraints": constraints,
         "scenario_kind": scenario_kind,
         "scenario": scenario,
+        "alternatives": _alternative_summaries(
+            cast(dict[str, object], scenarios),
+            selected_kind=scenario_kind,
+            selected_replaced_uid=replaced_uid,
+        ),
         "evidence_sources": balancing.get("live_sources") or [],
         "methodology": balancing.get("methodology") or {},
         "created_at": created_at,
@@ -128,6 +143,7 @@ def build_proposal_draft(
     ).digest()
     return ProposalDraft(
         source_snapshot_id=snapshot_id,
+        account_id=account_id,
         profile_version=profile_version,
         policy_version=policy_version,
         scenario_kind=scenario_kind,
@@ -145,6 +161,7 @@ def proposal_payload(record: PortfolioProposalRecord) -> dict[str, object]:
         "version": record.version,
         "hash": record.proposal_hash.hex(),
         "source_snapshot_id": str(record.source_snapshot_id),
+        "account_id": record.account_id,
         "profile_version": record.profile_version,
         "policy_version": record.policy_version,
         "scenario_kind": record.scenario_kind,
@@ -155,6 +172,8 @@ def proposal_payload(record: PortfolioProposalRecord) -> dict[str, object]:
         "expires_at": record.expires_at,
         "status": record.status,
         "decision_reason": record.decision_reason,
+        "decision_user_reason": record.decision_user_reason,
+        "deferred_until": record.deferred_until,
         "decided_at": record.decided_at,
         "execution_enabled": False,
     }
@@ -174,6 +193,8 @@ def proposal_action_payload(
         "decision": {
             "action": action.action,
             "reason": action.reason,
+            "user_reason": action.user_reason,
+            "deferred_until": action.deferred_until,
             "acted_at": action.acted_at,
         },
         "execution_enabled": False,
@@ -222,6 +243,151 @@ def _select_scenario(
     if len(matches) != 1:
         raise ProposalBuildError("scenario_not_found")
     return matches[0]
+
+
+def _validate_trade(value: object) -> None:
+    if not isinstance(value, dict):
+        raise ProposalBuildError("scenario_trade_invalid")
+    trade = cast(dict[str, object], value)
+    action = trade.get("action")
+    if action not in {"buy", "sell"}:
+        raise ProposalBuildError("scenario_trade_invalid")
+    _required_text(
+        trade.get("instrument_uid"),
+        "scenario_trade_invalid",
+        max_length=128,
+    )
+    if _positive_int(trade.get("lots"), "scenario_trade_invalid") <= 0:
+        raise ProposalBuildError("scenario_trade_invalid")
+    _positive_decimal(trade.get("limit_price"), "scenario_limit_price_missing")
+    if trade.get("limit_price_type") not in {"point", "currency"}:
+        raise ProposalBuildError("scenario_limit_price_type_missing")
+    if action == "buy":
+        _positive_decimal(
+            trade.get("max_spend_rub"),
+            "scenario_max_spend_missing",
+        )
+        if trade.get("min_proceeds_rub") is not None:
+            raise ProposalBuildError("scenario_trade_bounds_invalid")
+    else:
+        _positive_decimal(
+            trade.get("min_proceeds_rub"),
+            "scenario_min_proceeds_missing",
+        )
+        if trade.get("max_spend_rub") is not None:
+            raise ProposalBuildError("scenario_trade_bounds_invalid")
+
+
+def _validate_before_after(value: object) -> None:
+    if not isinstance(value, dict):
+        raise ProposalBuildError("scenario_before_after_missing")
+    states = cast(dict[str, object], value)
+    for name in ("before", "after"):
+        raw = states.get(name)
+        if not isinstance(raw, dict):
+            raise ProposalBuildError("scenario_before_after_incomplete")
+        state = cast(dict[str, object], raw)
+        _nonnegative_decimal(
+            state.get("nav_rub"),
+            "scenario_before_after_incomplete",
+        )
+        _nonnegative_decimal(
+            state.get("cash_rub"),
+            "scenario_before_after_incomplete",
+        )
+        if not isinstance(state.get("positions"), list):
+            raise ProposalBuildError("scenario_before_after_incomplete")
+        exposures = state.get("exposures")
+        if not isinstance(exposures, dict):
+            raise ProposalBuildError("scenario_before_after_incomplete")
+        exposure_map = cast(dict[str, object], exposures)
+        for dimension in (
+            "asset_class",
+            "sector",
+            "issuer_id",
+            "group_id",
+        ):
+            if not isinstance(exposure_map.get(dimension), list):
+                raise ProposalBuildError("scenario_before_after_incomplete")
+
+
+def _alternative_summaries(
+    scenarios: dict[str, object],
+    *,
+    selected_kind: ProposalScenarioKind,
+    selected_replaced_uid: str | None,
+) -> list[dict[str, object]]:
+    alternatives: list[dict[str, object]] = []
+    hold = scenarios.get("hold")
+    if isinstance(hold, dict):
+        alternatives.append(_scenario_summary(cast(dict[str, object], hold)))
+
+    deploy = scenarios.get("deploy_cash")
+    if selected_kind != "deploy_cash" and isinstance(deploy, dict):
+        alternatives.append(_scenario_summary(cast(dict[str, object], deploy)))
+
+    replacements = scenarios.get("replacements")
+    if isinstance(replacements, list):
+        for raw in replacements:
+            if not isinstance(raw, dict):
+                continue
+            item = cast(dict[str, object], raw)
+            replaced_uid = _optional_uid(item.get("replaced_instrument_uid"))
+            if selected_kind == "replace" and replaced_uid == selected_replaced_uid:
+                continue
+            alternatives.append(_scenario_summary(item))
+    return alternatives
+
+
+def _scenario_summary(scenario: dict[str, object]) -> dict[str, object]:
+    return {
+        "kind": scenario.get("kind"),
+        "status": scenario.get("status"),
+        "reason": scenario.get("reason"),
+        "target_instrument_uid": scenario.get("target_instrument_uid"),
+        "replaced_instrument_uid": scenario.get("replaced_instrument_uid"),
+        "residual_cash_rub": scenario.get("residual_cash_rub"),
+        "turnover_rub": scenario.get("turnover_rub"),
+        "expected_incremental_gain_rub": scenario.get(
+            "expected_incremental_gain_rub"
+        ),
+    }
+
+
+def _required_text(
+    value: object,
+    code: str,
+    *,
+    max_length: int,
+) -> str:
+    clean = str(value or "").strip()
+    if not clean or len(clean) > max_length:
+        raise ProposalBuildError(code)
+    return clean
+
+
+def _positive_decimal(value: object, code: str) -> Decimal:
+    parsed = _decimal(value, code)
+    if parsed <= 0:
+        raise ProposalBuildError(code)
+    return parsed
+
+
+def _nonnegative_decimal(value: object, code: str) -> Decimal:
+    parsed = _decimal(value, code)
+    if parsed < 0:
+        raise ProposalBuildError(code)
+    return parsed
+
+
+def _decimal(value: object, code: str) -> Decimal:
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise ProposalBuildError(code) from exc
+    if not parsed.is_finite():
+        raise ProposalBuildError(code)
+    return parsed
 
 
 def _positive_int(value: object, code: str) -> int:
