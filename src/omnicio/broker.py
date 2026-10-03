@@ -40,6 +40,7 @@ from .tbank import (
     TBankPositions,
     TBankRating,
     TBankSandboxCancelResult,
+    TBankTradingStatus,
     TBankSandboxMaxLots,
     TBankSandboxOrderState,
     TBankUnavailable,
@@ -264,6 +265,39 @@ class BrokerService:
             to_at=to_at,
         )
 
+    def market_exchange_candles(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        interval: str,
+        limit: int | None = None,
+    ) -> tuple[TBankHistoricCandle, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_exchange_candles(
+            credential,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
+            interval=interval,
+            limit=limit,
+        )
+
+    def market_trading_status(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+    ) -> TBankTradingStatus:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_trading_status(
+            credential,
+            environment,
+            instrument_uid,
+        )
+
     def candidate_bond_coupons(
         self,
         user_id: UUID,
@@ -329,6 +363,14 @@ class BrokerService:
             environment,
             instrument_uids,
         )
+
+    def market_last_price(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+    ) -> TBankLastPrice | None:
+        prices = self.candidate_last_prices(user_id, (instrument_uid,))
+        return prices[0] if prices else None
 
     def candidate_fundamentals(
         self,
