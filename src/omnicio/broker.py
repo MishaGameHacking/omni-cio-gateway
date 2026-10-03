@@ -368,7 +368,7 @@ class BrokerService:
         instrument_uid: str,
     ) -> TBankLastPrice | None:
         prices = self.candidate_last_prices(user_id, (instrument_uid,))
-        return prices[0] if prices else None
+        return next(iter(prices), None)
 
     def candidate_fundamentals(
         self,
