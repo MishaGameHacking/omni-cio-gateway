@@ -27,6 +27,12 @@ CREATE TABLE IF NOT EXISTS portfolio_live_execution_mandates (
     )
 );
 
+ALTER TABLE portfolio_live_execution_mandates
+    DROP CONSTRAINT IF EXISTS portfolio_live_execution_mandates_expiry_window,
+    ADD CONSTRAINT portfolio_live_execution_mandates_expiry_window CHECK (
+        expires_at <= created_at + interval '24 hours'
+    );
+
 CREATE UNIQUE INDEX IF NOT EXISTS portfolio_live_execution_mandates_active_idx
     ON portfolio_live_execution_mandates (user_id)
     WHERE revoked_at IS NULL;
@@ -222,5 +228,48 @@ BEGIN
     RETURN NEW;
 END;
 $omnicio$;
+
+
+CREATE OR REPLACE FUNCTION omnicio_validate_live_submission_authority()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $omnicio$
+BEGIN
+    IF NEW.status = 'submitting'
+       AND OLD.status IS DISTINCT FROM NEW.status
+       AND EXISTS (
+           SELECT 1
+           FROM portfolio_execution_runs AS r
+           WHERE r.id = NEW.run_id
+             AND r.user_id = NEW.user_id
+             AND r.mode = 'live'
+       ) THEN
+        PERFORM 1
+        FROM portfolio_execution_runs AS r
+        JOIN portfolio_live_execution_mandates AS m
+          ON m.id = r.live_mandate_id
+         AND m.user_id = r.user_id
+         AND m.account_id = r.account_id
+        WHERE r.id = NEW.run_id
+          AND r.user_id = NEW.user_id
+          AND r.mode = 'live'
+          AND m.revoked_at IS NULL
+          AND m.expires_at > now()
+        FOR SHARE OF m;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'live execution mandate is inactive before submission';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$omnicio$;
+
+DROP TRIGGER IF EXISTS portfolio_execution_legs_live_submission_guard
+    ON portfolio_execution_legs;
+CREATE TRIGGER portfolio_execution_legs_live_submission_guard
+BEFORE UPDATE OF status ON portfolio_execution_legs
+FOR EACH ROW
+EXECUTE FUNCTION omnicio_validate_live_submission_authority();
 
 COMMIT;
