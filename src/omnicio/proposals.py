@@ -201,6 +201,53 @@ def proposal_action_payload(
     }
 
 
+def proposal_material_hash(payload: dict[str, object]) -> bytes:
+    """Hash decision-relevant content while ignoring retrieval wall-clock noise."""
+    evidence = payload.get("evidence_sources")
+    material_sources: list[dict[str, object]] = []
+    if isinstance(evidence, list):
+        for raw in evidence:
+            if not isinstance(raw, dict):
+                continue
+            source = cast(dict[str, object], raw)
+            material_sources.append(
+                {
+                    key: source[key]
+                    for key in sorted(source)
+                    if key != "retrieved_at"
+                }
+            )
+    material = {
+        "schema": payload.get("schema"),
+        "source": payload.get("source"),
+        "constraints": payload.get("constraints"),
+        "scenario_kind": payload.get("scenario_kind"),
+        "scenario": payload.get("scenario"),
+        "alternatives": payload.get("alternatives"),
+        "evidence_sources": material_sources,
+        "methodology": payload.get("methodology"),
+        "execution_enabled": payload.get("execution_enabled"),
+    }
+    normalized = _normalize_json(material)
+    return hashlib.sha256(
+        _canonical_json(normalized).encode("utf-8"),
+        usedforsecurity=False,
+    ).digest()
+
+
+def proposal_generated_at(record: PortfolioProposalRecord) -> datetime:
+    raw = record.payload.get("generated_at")
+    if not isinstance(raw, str):
+        raise ProposalBuildError("proposal_generated_at_invalid")
+    try:
+        value = datetime.fromisoformat(raw)
+    except ValueError as exc:
+        raise ProposalBuildError("proposal_generated_at_invalid") from exc
+    if value.tzinfo is None:
+        raise ProposalBuildError("proposal_generated_at_invalid")
+    return value.astimezone(UTC)
+
+
 def parse_proposal_hash(value: str) -> bytes:
     clean = value.strip().lower()
     if len(clean) != 64:
