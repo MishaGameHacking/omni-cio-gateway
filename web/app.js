@@ -23,6 +23,24 @@
   const profileMaxDrawdown = document.querySelector("#profile-max-drawdown");
   const profileLiquidityDays = document.querySelector("#profile-liquidity-days");
   const profileAllowBelowGrade = document.querySelector("#profile-allow-below-grade");
+  const balancingPolicyForm = document.querySelector("#balancing-policy-form");
+  const balancingPolicyVersion = document.querySelector("#balancing-policy-version");
+  const balancingPolicyCreated = document.querySelector("#balancing-policy-created");
+  const balancingPolicyMessage = document.querySelector("#balancing-policy-message");
+  const balancingPolicySave = document.querySelector("#balancing-policy-save");
+  const balanceMaxInstrument = document.querySelector("#balance-max-instrument");
+  const balanceMaxSector = document.querySelector("#balance-max-sector");
+  const balanceMaxIssuer = document.querySelector("#balance-max-issuer");
+  const balanceMaxGroup = document.querySelector("#balance-max-group");
+  const balanceMaxShare = document.querySelector("#balance-max-share");
+  const balanceMaxBond = document.querySelector("#balance-max-bond");
+  const balanceMaxEtf = document.querySelector("#balance-max-etf");
+  const balanceMaxBelowGrade = document.querySelector("#balance-max-below-grade");
+  const balanceMaxUnknown = document.querySelector("#balance-max-unknown");
+  const balanceMaxTerm = document.querySelector("#balance-max-term");
+  const balanceTurnoverBudget = document.querySelector("#balance-turnover-budget");
+  const balanceNoTradeBand = document.querySelector("#balance-no-trade-band");
+  const balanceMinReplaceBenefit = document.querySelector("#balance-min-replace-benefit");
 
   const profileId = document.querySelector("#profile-id");
   const drawerProfileId = document.querySelector("#drawer-profile-id");
@@ -1701,6 +1719,48 @@
     }
   };
 
+  const renderBalancingPolicy = (policy) => {
+    showMessage(balancingPolicyMessage, "");
+    if (!policy) {
+      balancingPolicyVersion.textContent = "Не заполнена";
+      balancingPolicyCreated.textContent = "Версия ещё не сохранена";
+      return;
+    }
+
+    balancingPolicyVersion.textContent = `v${policy.version}`;
+    balancingPolicyCreated.textContent = `Сохранено: ${formatDateTime(policy.created_at)}`;
+    balanceMaxInstrument.value = String(policy.max_instrument_percent);
+    balanceMaxSector.value = String(policy.max_sector_percent);
+    balanceMaxIssuer.value = String(policy.max_issuer_percent);
+    balanceMaxGroup.value = String(policy.max_group_percent);
+    balanceMaxShare.value = String(policy.max_share_percent);
+    balanceMaxBond.value = String(policy.max_bond_percent);
+    balanceMaxEtf.value = String(policy.max_etf_percent);
+    balanceMaxBelowGrade.value = String(policy.max_below_grade_percent);
+    balanceMaxUnknown.value = String(policy.max_unknown_percent);
+    balanceMaxTerm.value = String(policy.max_term_months);
+    balanceTurnoverBudget.value = String(policy.turnover_budget_percent);
+    balanceNoTradeBand.value = String(policy.no_trade_band_percent);
+    balanceMinReplaceBenefit.value = String(policy.min_replace_benefit_rub);
+  };
+
+  const loadBalancingPolicy = async () => {
+    try {
+      const result = await api("/api/profile/balancing", {method: "GET"});
+      renderBalancingPolicy(result.policy || null);
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      showMessage(
+        balancingPolicyMessage,
+        "Не удалось загрузить лимиты балансировки.",
+        true,
+      );
+    }
+  };
+
   const showProfile = (profile) => {
     currentProfileId = profile.public_id;
     profileId.textContent = profile.public_id;
@@ -1715,6 +1775,7 @@
     initializeNavigation();
     void loadTbankStatus();
     void loadInvestmentProfile();
+    void loadBalancingPolicy();
   };
 
   const showAuth = () => {
@@ -2074,14 +2135,6 @@
         );
         return;
       }
-      if (error.status === 409) {
-        showMessage(
-          investmentProfileMessage,
-          "Требуется обновить согласие с правилами. Выйдите из аккаунта и снова войдите через VK ID.",
-          true,
-        );
-        return;
-      }
       if (error.status === 422) {
         showMessage(
           investmentProfileMessage,
@@ -2097,6 +2150,70 @@
       );
     } finally {
       investmentProfileSave.disabled = false;
+    }
+  });
+
+  balancingPolicyForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    showMessage(balancingPolicyMessage, "");
+
+    if (!balancingPolicyForm.reportValidity()) {
+      return;
+    }
+
+    balancingPolicySave.disabled = true;
+    try {
+      const result = await api("/api/profile/balancing", {
+        method: "PUT",
+        body: JSON.stringify({
+          max_instrument_percent: balanceMaxInstrument.value,
+          max_sector_percent: balanceMaxSector.value,
+          max_issuer_percent: balanceMaxIssuer.value,
+          max_group_percent: balanceMaxGroup.value,
+          max_share_percent: balanceMaxShare.value,
+          max_bond_percent: balanceMaxBond.value,
+          max_etf_percent: balanceMaxEtf.value,
+          max_below_grade_percent: balanceMaxBelowGrade.value,
+          max_unknown_percent: balanceMaxUnknown.value,
+          max_term_months: Number(balanceMaxTerm.value),
+          turnover_budget_percent: balanceTurnoverBudget.value,
+          no_trade_band_percent: balanceNoTradeBand.value,
+          min_replace_benefit_rub: balanceMinReplaceBenefit.value,
+        }),
+      });
+      renderBalancingPolicy(result.policy);
+      showMessage(
+        balancingPolicyMessage,
+        "Новая версия лимитов сохранена. Предыдущая версия не перезаписывается.",
+      );
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      if (error.status === 409) {
+        showMessage(
+          balancingPolicyMessage,
+          "Для новых финансовых ограничений нужны актуальные согласия. Войдите через VK ID снова и примите текущие версии документов.",
+          true,
+        );
+        return;
+      }
+      if (error.status === 422) {
+        showMessage(
+          balancingPolicyMessage,
+          "Проверьте проценты, срок, бюджет оборота и минимальную выгоду замены.",
+          true,
+        );
+        return;
+      }
+      showMessage(
+        balancingPolicyMessage,
+        "Не удалось сохранить лимиты. Действующая версия не изменена.",
+        true,
+      );
+    } finally {
+      balancingPolicySave.disabled = false;
     }
   });
 
