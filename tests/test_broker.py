@@ -1193,13 +1193,13 @@ def test_tbank_exchange_candles_reject_too_short_window_before_network() -> None
 
     with (
         patch("urllib.request.urlopen") as urlopen,
-        pytest.raises(ValueError, match="must exceed candle interval"),
+        pytest.raises(ValueError, match="at least one candle interval"),
     ):
         client.get_exchange_candles(
             "t.fake-owner-credential-1234567890",
             "prod",
             "uid-1",
-            from_at=now - timedelta(minutes=5),
+            from_at=now - timedelta(minutes=4, seconds=59),
             to_at=now,
             interval="CANDLE_INTERVAL_5_MIN",
         )
