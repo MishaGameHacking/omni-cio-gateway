@@ -1796,7 +1796,7 @@
         instrumentMarketRetryCount = 0;
         renderInstrumentMarketLive(payload);
         instrumentMarketSource.textContent = [
-          "T-Invest live",
+          "T-Invest · серверное обновление",
           payload.observed_at ? `получено ${formatDateTime(payload.observed_at)}` : "",
         ].filter(Boolean).join(" · ");
       } catch {
@@ -1876,7 +1876,11 @@
         return;
       }
       if (error.status === 409) {
-        renderInstrumentMarketStreamStatus("reconnect");
+        renderInstrumentMarketStreamStatus(
+          String(error.message || "").includes("not connected")
+            ? "disconnected"
+            : "reconnect",
+        );
       } else if (error.status === 422) {
         renderInstrumentMarketStreamStatus("invalid");
       } else {
