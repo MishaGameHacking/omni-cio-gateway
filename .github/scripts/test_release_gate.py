@@ -175,6 +175,17 @@ class SelfHostedCiPolicyTests(unittest.TestCase):
             workflow,
         )
 
+    def test_repository_workflows_do_not_depend_on_billed_hosted_runners(self) -> None:
+        workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
+        forbidden = ("runs-on: ubuntu-", "runs-on: windows-", "runs-on: macos-")
+        for workflow_path in workflow_dir.glob("*.yml"):
+            content = workflow_path.read_text(encoding="utf-8")
+            with self.subTest(workflow=workflow_path.name):
+                for marker in forbidden:
+                    self.assertNotIn(marker, content)
+                self.assertNotIn("services:", content)
+
+
 
 class GitHubTransportTests(unittest.TestCase):
     def test_uses_fixed_https_host_get_and_closes_connection(self) -> None:
