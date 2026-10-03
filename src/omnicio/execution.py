@@ -226,7 +226,7 @@ def _optional_positive_decimal(value: object) -> Decimal | None:
         return None
     try:
         parsed = Decimal(str(value))
-    except (InvalidOperation, ValueError):
+    except InvalidOperation:
         return None
     if not parsed.is_finite() or parsed <= 0:
         return None
