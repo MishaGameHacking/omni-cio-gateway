@@ -149,7 +149,6 @@ class MarketService:
             cbr_next_reference=next_reference,
         )
 
-
     def instrument_snapshot(
         self,
         user_id: UUID,
