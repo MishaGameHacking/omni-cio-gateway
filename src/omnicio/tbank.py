@@ -105,6 +105,21 @@ class TBankAccruedInterest:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankOrderLevel:
+    price: str
+    quantity_lots: int
+
+
+@dataclass(frozen=True, slots=True)
+class TBankOrderBook:
+    instrument_uid: str
+    bids: tuple[TBankOrderLevel, ...]
+    asks: tuple[TBankOrderLevel, ...]
+    time: datetime | None
+    is_consistent: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TBankOrderPrice:
     total_order_amount: TBankMoney
     initial_order_amount: TBankMoney
@@ -466,6 +481,40 @@ class TBankInvestClient:
                 )
             )
         return tuple(result)
+
+    def get_order_book(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        depth: int = 10,
+    ) -> TBankOrderBook:
+        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        if not 1 <= depth <= 50:
+            raise ValueError("order book depth must be between 1 and 50")
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetOrderBook",
+            body={"instrumentId": instrument, "depth": depth},
+        )
+        bids = _order_levels(payload, "bids")
+        asks = _order_levels(payload, "asks")
+        consistent = payload.get("isConsistent", False)
+        if not isinstance(consistent, bool):
+            raise TBankUnavailable("T-Invest order book has invalid consistency flag")
+        returned_uid = _text(payload.get("instrumentUid")).strip() or instrument
+        if returned_uid != instrument:
+            raise TBankUnavailable("T-Invest order book returned a different instrument")
+        return TBankOrderBook(
+            instrument_uid=instrument,
+            bids=bids,
+            asks=asks,
+            time=_optional_provider_timestamp(payload.get("time")),
+            is_consistent=consistent,
+        )
 
     def get_order_price(
         self,
@@ -1438,6 +1487,27 @@ def _quotation(value: object) -> str | None:
     if not amount.is_finite():
         raise TBankUnavailable("T-Invest API returned non-finite numeric value")
     return format(amount.normalize(), "f")
+
+
+def _order_levels(
+    payload: dict[str, object],
+    key: str,
+) -> tuple[TBankOrderLevel, ...]:
+    result: list[TBankOrderLevel] = []
+    for raw in _optional_list(payload, key):
+        item = _required_object(raw, f"order book {key} level")
+        price = _quotation(item.get("price"))
+        quantity_raw = item.get("quantity")
+        if price is None or isinstance(quantity_raw, bool):
+            raise TBankUnavailable("T-Invest order book has invalid level")
+        try:
+            quantity = int(str(quantity_raw))
+        except ValueError as exc:
+            raise TBankUnavailable("T-Invest order book has invalid quantity") from exc
+        if Decimal(price) <= 0 or quantity <= 0:
+            raise TBankUnavailable("T-Invest order book has non-positive level")
+        result.append(TBankOrderLevel(price=price, quantity_lots=quantity))
+    return tuple(result)
 
 
 def _quotation_payload(value: Decimal) -> dict[str, object]:
