@@ -297,7 +297,13 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.update(old)
 
     def test_legal_templates_require_operator_placeholders(self) -> None:
-        MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
+        old = dict(os.environ)
+        try:
+            self._base_registration_environment()
+            MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
 
     def test_legacy_reset_is_disabled_without_regulatory_or_live_test_gate(self) -> None:
         old = dict(os.environ)
@@ -512,8 +518,14 @@ class AuthAppDeployTests(unittest.TestCase):
 
         for document in (privacy, consent, terms):
             self.assertIn('content="noindex,nofollow"', document)
-            self.assertIn("2026-10-02-v6", document)
+            self.assertIn("2026-10-03-v7", document)
             self.assertIn("__OMNICIO_OPERATOR_", document)
+
+        workflow = (
+            root / ".github" / "workflows" / "auth-app-deploy.yml"
+        ).read_text(encoding="utf-8")
+        self.assertGreaterEqual(workflow.count('"2026-10-03-v7"'), 3)
+        self.assertNotIn('"2026-10-02-v6"', workflow)
 
         self.assertIn("OmniCIO Personal", privacy)
         self.assertIn("T-Invest API", privacy)
