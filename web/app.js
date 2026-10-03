@@ -2292,6 +2292,15 @@
         cancel.textContent = "Отменить Sandbox";
         cancel.dataset.executionAction = "cancel";
         cancel.dataset.executionId = run.id;
+
+        const sandboxAvailable = tbankIsConnected && tbankEnvironment === "sandbox";
+        advance.disabled = !sandboxAvailable;
+        cancel.disabled = !sandboxAvailable;
+        if (!sandboxAvailable) {
+          const hint = "Для управления run снова подключите тот же Sandbox-счёт.";
+          advance.title = hint;
+          cancel.title = hint;
+        }
         actions.append(advance, cancel);
       }
 
