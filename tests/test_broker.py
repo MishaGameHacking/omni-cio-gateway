@@ -1179,7 +1179,10 @@ def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> 
             source="CANDLE_SOURCE_EXCHANGE",
         ),
     )
-    request = urlopen.call_args.args[0]
+    call = urlopen.call_args
+    assert call is not None
+    request = next(iter(call.args), None)
+    assert request is not None
     assert request.full_url.endswith("MarketDataService/GetCandles")
     assert json.loads(request.data.decode()) == {
         "instrumentId": "uid-1",
@@ -1240,7 +1243,10 @@ def test_tbank_trading_status_is_bound_to_requested_instrument() -> None:
         best_price_order_available=True,
         only_best_price=False,
     )
-    request = urlopen.call_args.args[0]
+    call = urlopen.call_args
+    assert call is not None
+    request = next(iter(call.args), None)
+    assert request is not None
     assert request.full_url.endswith("MarketDataService/GetTradingStatus")
     assert json.loads(request.data.decode()) == {"instrumentId": "uid-1"}
 
