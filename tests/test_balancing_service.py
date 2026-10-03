@@ -399,3 +399,150 @@ def test_live_r4_degrades_to_durable_preview_when_broker_evidence_fails() -> Non
     assert payload["live_status"] == "degraded"
     assert payload["live_reason"] == "tbank_live_evidence_unavailable"
     assert payload["execution_enabled"] is False
+
+
+
+def test_live_r4_replacement_includes_sell_fee_tax_and_hold_baseline() -> None:
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    context = _context(now)
+    context["holdings"] = [
+        {
+            "instrument_uid": "held-bond",
+            "figi": "FIGI-HELD",
+            "asset_uid": "held-asset",
+            "ticker": "HELD",
+            "name": "Held bond",
+            "isin": "RU0000000002",
+            "class_code": "TQCB",
+            "instrument_type": "bond",
+            "quantity": Decimal("2"),
+            "quantity_lots": Decimal("2"),
+            "average_price_fifo_value": Decimal("10000"),
+            "average_price_fifo_currency": "RUB",
+            "blocked": False,
+            "blocked_lots": Decimal("0"),
+            "value_rub": Decimal("20000"),
+            "sector": "finance",
+            "lot": 1,
+            "currency": "RUB",
+            "nominal_value": Decimal("1000"),
+            "nominal_currency": "RUB",
+            "maturity_date": now + timedelta(days=365),
+            "floating_coupon": False,
+            "perpetual": False,
+            "amortization": False,
+            "subordinated": False,
+            "liquidity": True,
+            "provider_retrieved_at": now - timedelta(minutes=10),
+            "issuer_id": "issuer-held",
+            "group_id": "group-held",
+            "issuer_country_code": "RU",
+            "issuer_source_url": "https://example.invalid/issuer",
+            "risk_state": "critical",
+            "rating_status": "data_missing",
+        }
+    ]
+
+    def order_book(user_id: object, uid: str, depth: int = 10) -> TBankOrderBook:
+        return TBankOrderBook(
+            instrument_uid=uid,
+            bids=(TBankOrderLevel("99.9", 100),),
+            asks=(TBankOrderLevel("100.1", 100),),
+            time=now,
+            is_consistent=True,
+        )
+
+    def order_price(user_id: object, uid: str, **kwargs: object) -> TBankOrderPrice:
+        if uid == "held-bond":
+            return TBankOrderPrice(
+                total_order_amount=TBankMoney("RUB", "20050"),
+                initial_order_amount=TBankMoney("RUB", "20000"),
+                executed_commission_rub=TBankMoney("RUB", "50"),
+                service_commission=TBankMoney("RUB", "0"),
+                deal_commission=TBankMoney("RUB", "50"),
+                bond_aci_value=TBankMoney("RUB", "100"),
+            )
+        return TBankOrderPrice(
+            total_order_amount=TBankMoney("RUB", "6040"),
+            initial_order_amount=TBankMoney("RUB", "6000"),
+            executed_commission_rub=TBankMoney("RUB", "20"),
+            service_commission=TBankMoney("RUB", "0"),
+            deal_commission=TBankMoney("RUB", "20"),
+            bond_aci_value=TBankMoney("RUB", "20"),
+        )
+
+    broker = SimpleNamespace(
+        candidate_fundamentals=lambda user_id, asset_uids: (_fundamental(now),),
+        candidate_last_prices=lambda user_id, uids: (
+            TBankLastPrice("candidate-1", "100", now),
+        ),
+        candidate_order_book=order_book,
+        candidate_order_price=order_price,
+    )
+
+    def identity(query: str, expected_isin: str = "") -> MoexSecurityIdentity:
+        held = expected_isin == "RU0000000002"
+        return MoexSecurityIdentity(
+            secid="HELDBOND" if held else "TESTBOND",
+            isin=expected_isin,
+            issuer_id="2222" if held else "1234",
+            issuer_name="Held issuer" if held else "Candidate issuer",
+            issuer_inn="7700000001" if held else "7700000000",
+            primary_board_id="TQCB",
+            is_traded=True,
+            source_url="https://iss.moex.com/iss/securities.json",
+        )
+
+    def bond_snapshot(secid: str, board: str) -> MoexBondSnapshot:
+        held = secid == "HELDBOND"
+        ytw = Decimal("6") if held else Decimal("12")
+        return MoexBondSnapshot(
+            secid=secid,
+            board_id=board,
+            yield_percent=ytw,
+            yield_to_offer_percent=ytw,
+            call_option_yield_percent=None,
+            ytw_percent=ytw,
+            duration_days=Decimal("700"),
+            call_option_duration_days=None,
+            accrued_interest_rub=Decimal("20"),
+            value_today_rub=Decimal("10000000"),
+            volume_today=Decimal("10000"),
+            offer_date="",
+            maturity_date="2027-10-03",
+            source_url="https://iss.moex.com/iss/bond.json",
+        )
+
+    moex = SimpleNamespace(
+        security_identity=identity,
+        bond_snapshot=bond_snapshot,
+        bond_liquidity=lambda secid, board, **kwargs: MoexLiquiditySnapshot(
+            secid=secid,
+            board_id=board,
+            observed_days=20,
+            average_daily_value_rub=Decimal("1000000"),
+            total_value_rub=Decimal("20000000"),
+            source_url="https://iss.moex.com/iss/history.json",
+        ),
+    )
+
+    payload = build_live_balancing_payload(
+        user_id=USER_ID,
+        profile=_profile(),
+        policy_record=_policy(
+            max_unknown_percent=Decimal("20"),
+            turnover_budget_percent=Decimal("100"),
+        ),
+        context=context,
+        broker=broker,  # type: ignore[arg-type]
+        moex=moex,  # type: ignore[arg-type]
+        now=now,
+    )
+
+    replacement = payload["scenarios"]["replacements"][0]
+    assert replacement["status"] == "feasible"
+    assert [item["action"] for item in replacement["trades"]] == ["sell", "buy"]
+    assert Decimal(replacement["trades"][0]["estimated_cost_rub"]) == Decimal("50")
+    assert Decimal(replacement["trades"][0]["tax_rub"]) > Decimal("0")
+    assert replacement["target_instrument_uid"] == "candidate-1"
+    assert payload["execution_enabled"] is False
