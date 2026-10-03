@@ -3220,6 +3220,11 @@ textarea:disabled {
   touch-action: pan-y;
 }
 
+.instrument-market-chart:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
 .market-chart-tooltip {
   position: absolute;
   z-index: 3;
