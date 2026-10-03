@@ -99,12 +99,45 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     assert database_source.count("live_execution_lock_key(user_id)") >= 2
 
 
+def test_r8_reinvestment_migration_is_fail_closed_and_evidence_only() -> None:
+    migration = (
+        ROOT / "migrations" / "0012_portfolio_reinvestment.sql"
+    ).read_text(encoding="utf-8")
+    store = (ROOT / "src" / "omnicio" / "portfolio_store.py").read_text(
+        encoding="utf-8"
+    )
+    observer = (ROOT / "src" / "omnicio" / "observer.py").read_text(
+        encoding="utf-8"
+    )
+
+    for table in (
+        "portfolio_reinvestment_mandates",
+        "portfolio_reinvestment_income_credits",
+    ):
+        assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY" in migration
+        assert f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY" in migration
+    assert "portfolio_reinvestment_mandates_active_idx" in migration
+    assert "source_operation_observation_id" in migration
+    assert "OPERATION_TYPE_DIVIDEND" in migration
+    assert "OPERATION_TYPE_COUPON" in migration
+    assert "OPERATION_STATE_EXECUTED" in migration
+    assert "provider_executed_unverified" in migration
+    assert "reinvestment income credit source is not eligible" in migration
+    assert "o.operation_date >= m.created_at" in migration
+    assert "m.revoked_at IS NULL" in migration
+    assert "portfolio-reinvestment-mandate:" in store
+    assert "sync_reinvestment_income_credits" in store
+    assert "history_result[2] == \"complete\"" in observer
+    assert "PostOrder" not in migration
+    assert "PostOrder" not in store
+
+
 @pytest.mark.skipif(
     not DATABASE_URL,
     reason="ephemeral PostgreSQL is required for migration integration coverage",
 )
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0011_portfolio_live_execution.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0012_portfolio_reinvestment.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
@@ -112,7 +145,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         # accepted on main it becomes immutable migration history.
         admin.execute(
             (
-                ROOT / "migrations" / "0011_portfolio_live_execution.sql"
+                ROOT / "migrations" / "0012_portfolio_reinvestment.sql"
             ).read_text(encoding="utf-8")
         )
 
@@ -147,6 +180,8 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "portfolio_execution_legs",
             "portfolio_execution_events",
             "portfolio_live_execution_mandates",
+            "portfolio_reinvestment_mandates",
+            "portfolio_reinvestment_income_credits",
         } <= table_names
 
         protected = {
@@ -173,13 +208,15 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                           'portfolio_execution_runs',
                           'portfolio_execution_legs',
                           'portfolio_execution_events',
-                          'portfolio_live_execution_mandates'
+                          'portfolio_live_execution_mandates',
+                          'portfolio_reinvestment_mandates',
+                          'portfolio_reinvestment_income_credits'
                       ]
                   )
                 """
             ).fetchall()
         }
-        assert len(protected) == 15
+        assert len(protected) == 17
         assert all(rls and forced for rls, forced in protected.values())
 
         catalog_columns = {
