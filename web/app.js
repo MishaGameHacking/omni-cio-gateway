@@ -242,8 +242,40 @@
   let usdRubFallbackTimer = null;
   let navigationDepth = 0;
 
+  const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  const apiPath = (path) => {
+    if (typeof path !== "string" || !path.startsWith("/api/")) {
+      throw new TypeError("API path must be same-origin and start with /api/");
+    }
+    const url = new URL(path, window.location.origin);
+    if (
+      url.origin !== window.location.origin
+      || !url.pathname.startsWith("/api/")
+      || url.hash
+    ) {
+      throw new TypeError("API path escaped the same-origin API boundary");
+    }
+    return url;
+  };
+
+  const uuidPathSegment = (value) => {
+    const segment = String(value || "");
+    if (!UUID_PATTERN.test(segment)) {
+      throw new TypeError("API path UUID is invalid");
+    }
+    return segment.toLowerCase();
+  };
+
+  const executionActionSegment = (value) => {
+    if (!["advance", "cancel"].includes(value)) {
+      throw new TypeError("Execution action is invalid");
+    }
+    return value;
+  };
+
   const api = async (path, options = {}) => {
-    const response = await fetch(path, {
+    const response = await fetch(apiPath(path), {
       credentials: "same-origin",
       headers: {"Content-Type": "application/json", ...(options.headers || {})},
       ...options,
@@ -2077,7 +2109,7 @@
       || !(liveProfileId instanceof HTMLInputElement)
       || !(liveConfirm instanceof HTMLInputElement)
     ) {
-      throw new Error("R7 live mandate form has invalid controls");
+      throw new TypeError("R7 live mandate form has invalid controls");
     }
 
     liveMaxOrder.max = String(liveOperatorMaxOrder || 1);
@@ -2601,7 +2633,7 @@
         deferred_until: deferredUntil,
       };
       const result = await api(
-        `/api/portfolio/proposals/${proposalId}/decision`,
+        `/api/portfolio/proposals/${uuidPathSegment(proposalId)}/decision`,
         {method: "POST", body: JSON.stringify(body)},
       );
       showMessage(
@@ -2704,7 +2736,7 @@
       return;
     }
     try {
-      const payload = await api(`/api/portfolio/executions/${runId}`, {method: "GET"});
+      const payload = await api(`/api/portfolio/executions/${uuidPathSegment(runId)}`, {method: "GET"});
       renderExecutionDetails(payload);
     } catch (error) {
       if (error.status === 401) {
@@ -2859,7 +2891,7 @@
     const proposalVersion = Number(button.dataset.proposalVersion);
     if (
       !["shadow", "sandbox", "live"].includes(mode)
-      || !proposalId
+      || !UUID_PATTERN.test(proposalId)
       || !/^[0-9a-fA-F]{64}$/.test(proposalHash)
       || !Number.isInteger(proposalVersion)
       || proposalVersion < 1
@@ -2991,7 +3023,7 @@
     showMessage(executionMessage, "");
     button.disabled = true;
     try {
-      await api(`/api/portfolio/executions/${runId}/${action}`, {
+      await api(`/api/portfolio/executions/${uuidPathSegment(runId)}/${executionActionSegment(action)}`, {
         method: "POST",
         body: JSON.stringify({}),
       });
