@@ -631,21 +631,24 @@ class EphemeralSsh:
         if self._key_path is None or self._known_hosts is None:
             raise InfraError("SSH session is not initialized")
 
+        payload = None if input_text is None else input_text.encode("utf-8")
         completed = subprocess.run(
             ssh_base_args(self._key_path, self._known_hosts) + [
                 f"root@{self.server_ip}", "--", command,
             ],
-            input=input_text,
+            input=payload,
             check=False,
             capture_output=True,
-            text=True,
             timeout=90,
         )
         if completed.returncode != 0:
             raise InfraError(
                 f"Remote command failed with exit code {completed.returncode}"
             )
-        return completed.stdout
+        try:
+            return completed.stdout.decode("utf-8")
+        except UnicodeDecodeError:
+            raise InfraError("Remote command returned invalid UTF-8") from None
 
 
 REMOTE_PRIVATE_NETWORK_CONFIG = r"""set -euo pipefail
