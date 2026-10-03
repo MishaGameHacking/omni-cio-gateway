@@ -913,6 +913,16 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("sandbox_submit_ambiguous", script)
         self.assertIn("Повторная заявка запрещена", script)
         self.assertIn("const requiredElement = (selector) =>", script)
+        self.assertIn(
+            'const tbankEnvironmentSelect = requiredElement("#tbank-environment");',
+            script,
+        )
+        self.assertIn("let connectedTbankEnvironment = null;", script)
+        self.assertIn('connectedTbankEnvironment === "sandbox"', script)
+        self.assertIn('connectedTbankEnvironment !== "sandbox"', script)
+        self.assertIn("const environment = tbankEnvironmentSelect.value;", script)
+        self.assertNotIn("const tbankEnvironment =", script)
+        self.assertNotIn("let tbankEnvironment =", script)
         for selector in (
             "#proposal-history",
             "#execution-status",
@@ -945,7 +955,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.13.3"', project)
+        self.assertIn('version = "0.13.4"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
