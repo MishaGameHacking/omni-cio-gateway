@@ -1571,6 +1571,7 @@
     live_asset_class_not_supported: "Live-enrichment этого класса актива ещё не поддерживается",
     live_enrichment_not_selected: "Инструмент не вошёл в ограниченный live-screening этого цикла",
     live_candidate_evidence_unavailable: "Live evidence кандидата временно недоступен",
+    moex_runtime_transport_security_gate: "Прямой MOEX runtime-канал временно отключён security gate · R4 работает fail-closed",
     tbank_shortlist_signal_unavailable: "Broker yield signal для shortlist временно недоступен",
     issuer_group_unverified: "Корпоративная группа не подтверждена",
     asset_class_not_allowed: "Класс актива запрещён policy",
