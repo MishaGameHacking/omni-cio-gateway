@@ -42,13 +42,13 @@ def _apply_all_migrations() -> None:
 
 
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0009_portfolio_proposals.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0010_portfolio_execution.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
-        # The additive R5 migration is safe to retry before release. Once
+        # The additive R6 migration is safe to retry before release. Once
         # accepted on main it becomes immutable migration history.
-        admin.execute((ROOT / "migrations" / "0009_portfolio_proposals.sql").read_text())
+        admin.execute((ROOT / "migrations" / "0010_portfolio_execution.sql").read_text())
 
         table_names = {
             row[0]
@@ -77,6 +77,9 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "balancing_policy_versions",
             "portfolio_proposals",
             "portfolio_proposal_actions",
+            "portfolio_execution_runs",
+            "portfolio_execution_legs",
+            "portfolio_execution_events",
         } <= table_names
 
         protected = {
@@ -99,13 +102,16 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                           'portfolio_risk_assessments',
                           'balancing_policy_versions',
                           'portfolio_proposals',
-                          'portfolio_proposal_actions'
+                          'portfolio_proposal_actions',
+                          'portfolio_execution_runs',
+                          'portfolio_execution_legs',
+                          'portfolio_execution_events'
                       ]
                   )
                 """
             ).fetchall()
         }
-        assert len(protected) == 11
+        assert len(protected) == 14
         assert all(rls and forced for rls, forced in protected.values())
 
         catalog_columns = {
