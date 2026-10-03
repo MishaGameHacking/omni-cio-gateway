@@ -112,6 +112,24 @@ class TBankMarketYield:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankHistoricCandle:
+    instrument_uid: str
+    close: str
+    volume_lots: int
+    time: datetime
+    is_complete: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TBankRating:
+    agency_name: str
+    rating_level: str
+    rating_date: datetime | None
+    forecast: str
+    is_under_watch: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TBankOrderLevel:
     price: str
     quantity_lots: int
@@ -188,6 +206,10 @@ class TBankInstrumentMetadata:
     amortization: bool | None = None
     subordinated: bool | None = None
     liquidity: bool | None = None
+    coupon_quantity_per_year: int = 0
+    call_date: datetime | None = None
+    risk_level: str = ""
+    ratings: tuple[TBankRating, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
