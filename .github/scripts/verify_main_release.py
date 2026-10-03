@@ -49,14 +49,23 @@ class GitHubClient:
                 })
                 response = connection.getresponse()
                 # Do not follow redirects or forward credentials to another host.
+                if response.status in {408, 429} or 500 <= response.status <= 599:
+                    raise PendingChecks("GitHub verification is temporarily unavailable")
                 if response.status != 200:
                     raise ReleaseBlocked("GitHub did not return verification data")
                 body = response.read(MAX_RESPONSE_BYTES + 1)
                 if len(body) > MAX_RESPONSE_BYTES:
                     raise ReleaseBlocked("GitHub verification response is too large")
-                data = json.loads(body)
-        except (OSError, http.client.HTTPException, ValueError):
-            raise ReleaseBlocked("GitHub verification is unavailable or malformed") from None
+                try:
+                    data = json.loads(body)
+                except ValueError:
+                    raise ReleaseBlocked(
+                        "GitHub verification response is malformed"
+                    ) from None
+        except PendingChecks:
+            raise
+        except (OSError, http.client.HTTPException):
+            raise PendingChecks("GitHub verification is temporarily unavailable") from None
         if not isinstance(data, dict):
             raise ReleaseBlocked("GitHub verification response is not an object")
         return data
