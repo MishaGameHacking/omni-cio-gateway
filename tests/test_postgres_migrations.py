@@ -456,6 +456,8 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 max_unknown_percent=Decimal("0"),
                 max_term_months=120,
                 turnover_budget_percent=Decimal("25"),
+                max_daily_turnover_participation_percent=Decimal("5"),
+                securities_tax_rate_percent=Decimal("15"),
                 no_trade_band_percent=Decimal("1"),
                 min_replace_benefit_rub=Decimal("500"),
             )
@@ -472,6 +474,8 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 max_unknown_percent=Decimal("0"),
                 max_term_months=120,
                 turnover_budget_percent=Decimal("25"),
+                max_daily_turnover_participation_percent=Decimal("5"),
+                securities_tax_rate_percent=Decimal("15"),
                 no_trade_band_percent=Decimal("1"),
                 min_replace_benefit_rub=Decimal("500"),
             )
@@ -488,6 +492,8 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 max_unknown_percent=Decimal("0"),
                 max_term_months=120,
                 turnover_budget_percent=Decimal("25"),
+                max_daily_turnover_participation_percent=Decimal("5"),
+                securities_tax_rate_percent=Decimal("15"),
                 no_trade_band_percent=Decimal("1"),
                 min_replace_benefit_rub=Decimal("500"),
             )
@@ -502,6 +508,8 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         assert current_policy is not None
         assert current_policy.version == 2
         assert current_policy.max_instrument_percent == Decimal("15")
+        assert current_policy.max_daily_turnover_participation_percent == Decimal("5")
+        assert current_policy.securities_tax_rate_percent == Decimal("15")
         assert intelligence is not None
         assert intelligence["snapshot_freshness"] == "fresh"
         assert [item["instrument_uid"] for item in intelligence["payouts"]] == [
@@ -541,11 +549,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                     max_unknown_percent,
                     max_term_months,
                     turnover_budget_percent,
+                    max_daily_turnover_participation_percent,
+                    securities_tax_rate_percent,
                     no_trade_band_percent,
                     min_replace_benefit_rub
                 )
                 VALUES (
-                    %s, 3, 10, 20, 10, 15, 60, 80, 60, 0, 0, 120, 20, 1, 500
+                    %s, 3, 10, 20, 10, 15, 60, 80, 60, 0, 0, 120,
+                    20, 5, 15, 1, 500
                 )
                 """,
                 (USER_ONE,),
