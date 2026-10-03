@@ -1034,6 +1034,7 @@ def test_execution_create_accepts_only_proposal_identity_and_safe_mode() -> None
 
     with (
         patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main._require_current_legal_consent"),
         patch("omnicio.main.execution_service") as executor,
     ):
         user.return_value.id = "server-user"
