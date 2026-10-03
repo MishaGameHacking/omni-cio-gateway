@@ -541,23 +541,26 @@ class TBankInvestClient:
     ) -> tuple[TBankHistoricCandle, ...]:
         instrument = _validate_provider_id(instrument_uid, "instrument uid")
         allowed_intervals = {
-            "CANDLE_INTERVAL_5_MIN": timedelta(days=1),
-            "CANDLE_INTERVAL_30_MIN": timedelta(hours=20),
-            "CANDLE_INTERVAL_HOUR": timedelta(days=93),
-            "CANDLE_INTERVAL_4_HOUR": timedelta(days=93),
-            "CANDLE_INTERVAL_DAY": timedelta(days=366 * 6),
+            "CANDLE_INTERVAL_5_MIN": (timedelta(days=7), 2400),
+            "CANDLE_INTERVAL_30_MIN": (timedelta(weeks=3), 1200),
+            "CANDLE_INTERVAL_HOUR": (timedelta(days=93), 2400),
+            "CANDLE_INTERVAL_4_HOUR": (timedelta(days=93), 700),
+            "CANDLE_INTERVAL_DAY": (timedelta(days=366 * 6), 2400),
         }
-        max_window = allowed_intervals.get(interval)
-        if max_window is None:
+        interval_limits = allowed_intervals.get(interval)
+        if interval_limits is None:
             raise ValueError("unsupported candle interval")
+        max_window, max_limit = interval_limits
         if from_at.tzinfo is None or to_at.tzinfo is None:
             raise ValueError("candle boundaries must be timezone-aware")
         if from_at > to_at:
             raise ValueError("candle start must not be after end")
         if to_at - from_at > max_window:
             raise ValueError("candle window exceeds interval limit")
-        if limit is not None and not 1 <= limit <= 2400:
-            raise ValueError("candle limit must be between 1 and 2400")
+        if limit is not None and not 1 <= limit <= max_limit:
+            raise ValueError(
+                f"candle limit must be between 1 and {max_limit} for {interval}"
+            )
 
         body: dict[str, object] = {
             "instrumentId": instrument,
