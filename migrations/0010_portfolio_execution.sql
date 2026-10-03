@@ -65,6 +65,64 @@ CREATE TABLE IF NOT EXISTS portfolio_execution_runs (
         ON DELETE RESTRICT
 );
 
+CREATE OR REPLACE FUNCTION omnicio_validate_execution_run_source()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $
+BEGIN
+    IF TG_OP = 'UPDATE' AND (
+        NEW.user_id,
+        NEW.proposal_id,
+        NEW.confirmed_action_id,
+        NEW.proposal_version,
+        NEW.proposal_hash,
+        NEW.account_id,
+        NEW.mode,
+        NEW.provider_environment,
+        NEW.created_session_digest
+    ) IS DISTINCT FROM (
+        OLD.user_id,
+        OLD.proposal_id,
+        OLD.confirmed_action_id,
+        OLD.proposal_version,
+        OLD.proposal_hash,
+        OLD.account_id,
+        OLD.mode,
+        OLD.provider_environment,
+        OLD.created_session_digest
+    ) THEN
+        RAISE EXCEPTION 'execution source fields are immutable';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM portfolio_proposals AS p
+        JOIN portfolio_proposal_actions AS a
+          ON a.proposal_id = p.id
+         AND a.user_id = p.user_id
+        WHERE p.id = NEW.proposal_id
+          AND p.user_id = NEW.user_id
+          AND p.version = NEW.proposal_version
+          AND p.proposal_hash = NEW.proposal_hash
+          AND p.account_id = NEW.account_id
+          AND a.id = NEW.confirmed_action_id
+          AND a.action = 'confirmed'
+          AND a.proposal_version = NEW.proposal_version
+          AND a.proposal_hash = NEW.proposal_hash
+    ) THEN
+        RAISE EXCEPTION 'execution source is not an exact confirmed proposal';
+    END IF;
+    RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS portfolio_execution_runs_source_guard
+    ON portfolio_execution_runs;
+CREATE TRIGGER portfolio_execution_runs_source_guard
+BEFORE INSERT OR UPDATE ON portfolio_execution_runs
+FOR EACH ROW
+EXECUTE FUNCTION omnicio_validate_execution_run_source();
+
 CREATE INDEX IF NOT EXISTS portfolio_execution_runs_user_created_idx
     ON portfolio_execution_runs (user_id, created_at DESC);
 
