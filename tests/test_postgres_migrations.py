@@ -534,6 +534,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 session_digest=b"d" * 32,
                 user_reason="",
                 deferred_until=None,
+                material_current=True,
                 now=created_at + timedelta(minutes=1),
             )
             with pytest.raises(
@@ -590,6 +591,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 session_digest=b"d" * 32,
                 user_reason="wait",
                 deferred_until=created_at + timedelta(hours=2),
+                material_current=True,
                 now=created_at + timedelta(hours=1),
             )
             intelligence = store.latest_intelligence(USER_ONE)
