@@ -28,6 +28,7 @@ from .tbank import (
     TBankInstrumentMetadata,
     TBankInvestClient,
     TBankLastPrice,
+    TBankMarketYield,
     TBankOperationsPage,
     TBankOrderBook,
     TBankOrderPrice,
@@ -212,6 +213,18 @@ class BrokerService:
             portfolio=portfolio,
             positions=positions,
             refreshed_at=datetime.now(UTC),
+        )
+
+    def candidate_market_yields(
+        self,
+        user_id: UUID,
+        instrument_uids: tuple[str, ...],
+    ) -> tuple[TBankMarketYield, ...]:
+        _record, credential, environment = self._connected_credential(user_id)
+        return self.tbank.get_market_yields(
+            credential,
+            environment,
+            instrument_uids,
         )
 
     def candidate_last_prices(
