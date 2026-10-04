@@ -2445,20 +2445,56 @@
     setStateBadge(homePortfolioState, "Работает", "state-ok");
   };
 
+  const renderDisconnectedPortfolio = () => {
+    portfolioLoaded = false;
+    lastPortfolioSnapshot = null;
+    lastPortfolioRefreshAt = 0;
+    resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
+    portfolioFreeCash.textContent = "—";
+    updateOwlState(null);
+    updateGuard(null);
+    resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
+    setHomeAttentionBucket("portfolio", []);
+    showPortfolioMode("disconnected");
+    setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
+    setStateBadge(homePortfolioState, "Нет подключения", "state-next");
+  };
+
+  const renderPortfolioLoadFailure = (error, hadPortfolio) => {
+    const needsReconnect = error.status === 409;
+    if (hadPortfolio && lastPortfolioSnapshot) {
+      portfolioLoaded = true;
+      showPortfolioMode("content");
+      setStateBadge(portfolioStateBadge, "Данные устарели", "state-next");
+      setStateBadge(homePortfolioState, "Данные устарели", "state-next");
+      setStateBadge(homePortfolioSummaryState, "Данные устарели", "state-next");
+      setHomeAttentionBucket(
+        "portfolio",
+        homePortfolioAttention(lastPortfolioSnapshot, {stale: true}),
+      );
+      setStateBadge(owlState, "Ошибка обновления", "state-next");
+      return;
+    }
+
+    portfolioLoaded = false;
+    portfolioFreeCash.textContent = "—";
+    showPortfolioMode("error");
+    portfolioErrorText.textContent = needsReconnect
+      ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
+      : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
+    setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
+    setStateBadge(homePortfolioState, "Ошибка", "state-error");
+    setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
+    resetHomePortfolioSummary("Портфель не подтверждён.");
+    setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
+    setHomeAttentionBucket("portfolio", homePortfolioAttention(null, {failed: true}));
+    setStateBadge(owlState, "Ошибка", "state-error");
+    updateGuard(null);
+  };
+
   const loadPortfolioData = async ({force = false} = {}) => {
     if (!tbankIsConnected) {
-      portfolioLoaded = false;
-      lastPortfolioSnapshot = null;
-      lastPortfolioRefreshAt = 0;
-      resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
-      portfolioFreeCash.textContent = "—";
-      updateOwlState(null);
-      updateGuard(null);
-      resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
-      setHomeAttentionBucket("portfolio", []);
-      showPortfolioMode("disconnected");
-      setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
-      setStateBadge(homePortfolioState, "Нет подключения", "state-next");
+      renderDisconnectedPortfolio();
       return;
     }
     if (portfolioRequestInFlight || (portfolioLoaded && !force)) {
@@ -2488,34 +2524,7 @@
         return;
       }
 
-      const needsReconnect = error.status === 409;
-      if (hadPortfolio && lastPortfolioSnapshot) {
-        portfolioLoaded = true;
-        showPortfolioMode("content");
-        setStateBadge(portfolioStateBadge, "Данные устарели", "state-next");
-        setStateBadge(homePortfolioState, "Данные устарели", "state-next");
-        setStateBadge(homePortfolioSummaryState, "Данные устарели", "state-next");
-        setHomeAttentionBucket(
-          "portfolio",
-          homePortfolioAttention(lastPortfolioSnapshot, {stale: true}),
-        );
-        setStateBadge(owlState, "Ошибка обновления", "state-next");
-      } else {
-        portfolioLoaded = false;
-        portfolioFreeCash.textContent = "—";
-        showPortfolioMode("error");
-        portfolioErrorText.textContent = needsReconnect
-          ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
-          : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
-        setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
-        setStateBadge(homePortfolioState, "Ошибка", "state-error");
-        setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
-        resetHomePortfolioSummary("Портфель не подтверждён.");
-        setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
-        setHomeAttentionBucket("portfolio", homePortfolioAttention(null, {failed: true}));
-        setStateBadge(owlState, "Ошибка", "state-error");
-        updateGuard(null);
-      }
+      renderPortfolioLoadFailure(error, hadPortfolio);
     } finally {
       portfolioRequestInFlight = false;
       portfolioRefresh.disabled = false;
