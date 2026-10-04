@@ -41,6 +41,7 @@ from .portfolio import PortfolioAnalysisError
 from .portfolio_store import (
     BalancingPolicyRecord,
     InvestmentProfileRecord,
+    PortfolioProposalRecord,
     PortfolioStore,
     ProposalStateError,
 )
@@ -993,6 +994,71 @@ def create_portfolio_proposal(
     }
 
 
+def _proposal_decision_action(
+    action: str,
+) -> Literal["confirmed", "rejected", "deferred"]:
+    if action == "confirm":
+        return "confirmed"
+    if action == "reject":
+        return "rejected"
+    return "deferred"
+
+
+def _proposal_scenario_kind(
+    value: str,
+) -> Literal["deploy_cash", "replace"]:
+    if value == "deploy_cash":
+        return "deploy_cash"
+    if value == "replace":
+        return "replace"
+    raise ProposalBuildError("scenario_kind_invalid")
+
+
+def _proposal_material_is_current(
+    request: Request,
+    user_id: UUID,
+    proposal_id: UUID,
+    body: PortfolioProposalDecisionBody,
+    expected_hash: bytes,
+) -> bool:
+    if body.action != "confirm":
+        return True
+
+    store = portfolio_store(request)
+    current = store.proposal(user_id, proposal_id)
+    if current is None:
+        raise ProposalStateError("proposal_not_found")
+    if not (
+        current.status == "pending"
+        and current.version == body.proposal_version
+        and current.proposal_hash == expected_hash
+    ):
+        return True
+
+    try:
+        refreshed = build_proposal_draft(
+            _live_balancing_for_user(request, user_id),
+            scenario_kind=_proposal_scenario_kind(current.scenario_kind),
+            replaced_instrument_uid=current.replaced_instrument_uid,
+            now=proposal_generated_at(current),
+        )
+    except ProposalBuildError as exc:
+        if exc.code in {
+            "balancing_not_observed",
+            "live_evidence_not_received",
+        }:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="proposal_revalidation_unavailable",
+            ) from exc
+        return False
+
+    return (
+        proposal_material_hash(current.payload)
+        == proposal_material_hash(refreshed.payload)
+    )
+
+
 @app.post("/api/portfolio/proposals/{proposal_id}/decision")
 def decide_portfolio_proposal(
     proposal_id: UUID,
@@ -1011,60 +1077,20 @@ def decide_portfolio_proposal(
         )
     try:
         expected_hash = parse_proposal_hash(body.proposal_hash)
-        decision_action: Literal["confirmed", "rejected", "deferred"]
-        if body.action == "confirm":
-            decision_action = "confirmed"
-        elif body.action == "reject":
-            decision_action = "rejected"
-        else:
-            decision_action = "deferred"
         store = portfolio_store(request)
-        material_current = True
-        if body.action == "confirm":
-            current = store.proposal(user.id, proposal_id)
-            if current is None:
-                raise ProposalStateError("proposal_not_found")
-            if (
-                current.status == "pending"
-                and current.version == body.proposal_version
-                and current.proposal_hash == expected_hash
-            ):
-                try:
-                    scenario_kind: Literal["deploy_cash", "replace"]
-                    if current.scenario_kind == "deploy_cash":
-                        scenario_kind = "deploy_cash"
-                    elif current.scenario_kind == "replace":
-                        scenario_kind = "replace"
-                    else:
-                        raise ProposalBuildError("scenario_kind_invalid")
-                    refreshed = build_proposal_draft(
-                        _live_balancing_for_user(request, user.id),
-                        scenario_kind=scenario_kind,
-                        replaced_instrument_uid=current.replaced_instrument_uid,
-                        now=proposal_generated_at(current),
-                    )
-                except ProposalBuildError as exc:
-                    if exc.code in {
-                        "balancing_not_observed",
-                        "live_evidence_not_received",
-                    }:
-                        raise HTTPException(
-                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail="proposal_revalidation_unavailable",
-                        ) from exc
-                    material_current = False
-                else:
-                    material_current = (
-                        proposal_material_hash(current.payload)
-                        == proposal_material_hash(refreshed.payload)
-                    )
-
+        material_current = _proposal_material_is_current(
+            request,
+            user.id,
+            proposal_id,
+            body,
+            expected_hash,
+        )
         proposal, decision = store.decide_proposal(
             user.id,
             proposal_id=proposal_id,
             expected_version=body.proposal_version,
             expected_hash=expected_hash,
-            action=decision_action,
+            action=_proposal_decision_action(body.action),
             session_digest=authenticated_session_digest(session_token),
             user_reason=body.reason or "",
             deferred_until=body.deferred_until,
