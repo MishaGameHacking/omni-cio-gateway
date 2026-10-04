@@ -22,9 +22,9 @@ from .intelligence import (
 from .portfolio import SecurityExposure
 from .tbank import (
     TBankAccount,
+    TBankInstrumentMetadata,
     TBankMoney,
     TBankOperation,
-    TBankInstrumentMetadata,
     TBankOperationsPage,
     TBankPortfolioPosition,
     TBankUserInfo,
