@@ -252,5 +252,6 @@ def test_sandbox_account_must_match_persisted_execution_account() -> None:
         verified_at=NOW,
     )
 
+    run = _run()
     with pytest.raises(ExecutionServiceError, match="sandbox_account_mismatch"):
-        service._require_sandbox_account(USER_ID, _run())
+        service._require_sandbox_account(USER_ID, run)
