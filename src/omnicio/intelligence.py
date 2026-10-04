@@ -582,6 +582,95 @@ def assess_candidate_fundamental_risk(
     )
 
 
+def _metric_signal(
+    code: str,
+    metric: str,
+    value: Decimal,
+) -> dict[str, object]:
+    return {
+        "code": code,
+        "metric": metric,
+        "value": str(value),
+    }
+
+
+def _bank_watch_signals(
+    item: TBankAssetFundamental,
+) -> tuple[tuple[str, ...], tuple[dict[str, object], ...]]:
+    reasons: list[str] = []
+    signals: list[dict[str, object]] = []
+    for metric in ("net_interest_margin_mrq", "roe", "roa"):
+        raw = getattr(item, metric)
+        if raw is None:
+            continue
+        value = Decimal(raw)
+        if value < 0:
+            code = f"{metric}_negative"
+            reasons.append(code)
+            signals.append(_metric_signal(code, metric, value))
+    return tuple(reasons), tuple(signals)
+
+
+def _corporate_watch_signals(
+    item: TBankAssetFundamental,
+) -> tuple[tuple[str, ...], tuple[dict[str, object], ...], bool]:
+    reasons: list[str] = []
+    signals: list[dict[str, object]] = []
+    elevated = False
+
+    if item.fixed_charge_coverage_ratio_fy is not None:
+        value = Decimal(item.fixed_charge_coverage_ratio_fy)
+        if value < 1:
+            code = "fixed_charge_coverage_ratio_below_one"
+            reasons.append(code)
+            signals.append(
+                _metric_signal(code, "fixed_charge_coverage_ratio_fy", value)
+            )
+            elevated = True
+
+    if item.ebitda_ttm is not None:
+        value = Decimal(item.ebitda_ttm)
+        if value < 0:
+            code = "ebitda_negative"
+            reasons.append(code)
+            signals.append(_metric_signal(code, "ebitda_ttm", value))
+
+    if item.free_cash_flow_ttm is not None and item.total_debt_mrq is not None:
+        free_cash_flow = Decimal(item.free_cash_flow_ttm)
+        debt = Decimal(item.total_debt_mrq)
+        if free_cash_flow < 0 and debt > 0:
+            code = "free_cash_flow_negative_with_debt"
+            reasons.append(code)
+            signals.append(
+                _metric_signal(code, "free_cash_flow_ttm", free_cash_flow)
+            )
+
+    if item.current_ratio_mrq is not None:
+        value = Decimal(item.current_ratio_mrq)
+        if value < 1:
+            code = "current_ratio_below_one"
+            reasons.append(code)
+            signals.append(_metric_signal(code, "current_ratio_mrq", value))
+
+    return tuple(reasons), tuple(signals), elevated
+
+
+def _fundamental_profile(item: TBankAssetFundamental) -> str:
+    if item.net_interest_margin_mrq is not None:
+        return "bank_like"
+    if any(
+        value is not None
+        for value in (
+            item.ebitda_ttm,
+            item.fixed_charge_coverage_ratio_fy,
+            item.net_debt_to_ebitda,
+            item.current_ratio_mrq,
+        )
+    ):
+        return "corporate"
+    return "unknown"
+
+
 def _fundamental_watch_signals(
     item: TBankAssetFundamental | None,
     *,
@@ -595,90 +684,24 @@ def _fundamental_watch_signals(
     if item is None or status != "received":
         return None, (), "unknown", ()
 
-    if item.net_interest_margin_mrq is not None:
-        profile = "bank_like"
-    elif any(
-        value is not None
-        for value in (
-            item.ebitda_ttm,
-            item.fixed_charge_coverage_ratio_fy,
-            item.net_debt_to_ebitda,
-            item.current_ratio_mrq,
-        )
-    ):
-        profile = "corporate"
-    else:
-        return None, (), "unknown", ()
-
-    reasons: list[str] = []
-    signals: list[dict[str, object]] = []
-    elevated = False
-
-    def record(code: str, metric: str, value: Decimal) -> None:
-        reasons.append(code)
-        signals.append(
-            {
-                "code": code,
-                "metric": metric,
-                "value": str(value),
-            }
-        )
+    profile = _fundamental_profile(item)
+    if profile == "unknown":
+        return None, (), profile, ()
 
     if profile == "bank_like":
-        for metric in ("net_interest_margin_mrq", "roe", "roa"):
-            raw = getattr(item, metric)
-            if raw is None:
-                continue
-            value = Decimal(raw)
-            if value < 0:
-                record(f"{metric}_negative", metric, value)
+        reasons, signals = _bank_watch_signals(item)
+        elevated = False
     else:
-        if item.fixed_charge_coverage_ratio_fy is not None:
-            fccr = Decimal(item.fixed_charge_coverage_ratio_fy)
-            if fccr < 1:
-                record(
-                    "fixed_charge_coverage_ratio_below_one",
-                    "fixed_charge_coverage_ratio_fy",
-                    fccr,
-                )
-                elevated = True
-
-        if item.ebitda_ttm is not None:
-            ebitda = Decimal(item.ebitda_ttm)
-            if ebitda < 0:
-                record("ebitda_negative", "ebitda_ttm", ebitda)
-
-        if (
-            item.free_cash_flow_ttm is not None
-            and item.total_debt_mrq is not None
-        ):
-            free_cash_flow = Decimal(item.free_cash_flow_ttm)
-            debt = Decimal(item.total_debt_mrq)
-            if free_cash_flow < 0 and debt > 0:
-                record(
-                    "free_cash_flow_negative_with_debt",
-                    "free_cash_flow_ttm",
-                    free_cash_flow,
-                )
-
-        if item.current_ratio_mrq is not None:
-            current_ratio = Decimal(item.current_ratio_mrq)
-            if current_ratio < 1:
-                record(
-                    "current_ratio_below_one",
-                    "current_ratio_mrq",
-                    current_ratio,
-                )
+        reasons, signals, elevated = _corporate_watch_signals(item)
 
     if not reasons:
         return None, (), profile, ()
     return (
         "elevated" if elevated else "watch",
-        tuple(reasons),
+        reasons,
         profile,
-        tuple(signals),
+        signals,
     )
-
 
 def _fundamental_document(item: TBankAssetFundamental) -> EvidenceDocument:
     payload = asdict(item)
