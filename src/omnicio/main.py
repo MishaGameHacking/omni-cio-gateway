@@ -86,6 +86,7 @@ _TBANK_CREDENTIAL_REJECTED_DETAIL = "stored T-Invest credential was rejected"
 _UPDATED_LEGAL_CONSENT_DETAIL = "updated legal consent required"
 _TBANK_NOT_CONNECTED_DETAIL = "T-Invest is not connected"
 _PRIVATE_NO_STORE = "private, no-store"
+_PUBLIC_ID_PATTERN = r"^[0-9]{9}$"
 logger = logging.getLogger(__name__)
 
 
@@ -113,12 +114,12 @@ class TBankConnectBody(TBankCredentialBody):
 
 
 class DeleteAccountBody(StrictRequestBody):
-    confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    confirm_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
     confirm_irreversible: bool
 
 
 class InvestmentProfileBody(StrictRequestBody):
-    expected_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
     expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
     reserve_rub: Decimal = Field(ge=0, le=1_000_000_000_000, allow_inf_nan=False)
     planned_withdrawal_rub: Decimal = Field(
@@ -133,7 +134,7 @@ class InvestmentProfileBody(StrictRequestBody):
 
 
 class BalancingPolicyBody(StrictRequestBody):
-    expected_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
     expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
     max_instrument_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     max_sector_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
@@ -193,7 +194,7 @@ class PortfolioLiveMandateBody(StrictRequestBody):
         allow_inf_nan=False,
     )
     expires_at: datetime
-    confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    confirm_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
     confirm_live_execution: bool
 
 
@@ -943,7 +944,10 @@ def _settings_editor_user(
     return user
 
 
-@app.put("/api/profile/investment")
+@app.put(
+    "/api/profile/investment",
+    responses={409: {"description": "Settings owner/version conflict or updated consent required"}},
+)
 def save_investment_profile(
     body: InvestmentProfileBody,
     request: Request,
@@ -980,7 +984,10 @@ def balancing_policy(
     }
 
 
-@app.put("/api/profile/balancing")
+@app.put(
+    "/api/profile/balancing",
+    responses={409: {"description": "Settings owner/version conflict or updated consent required"}},
+)
 def save_balancing_policy(
     body: BalancingPolicyBody,
     request: Request,
