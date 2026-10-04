@@ -383,6 +383,74 @@ class TBankAssetFundamental:
     fiscal_period_end_date: datetime | None
 
 
+def _market_value_quotes(
+    item: dict[str, object],
+) -> tuple[str | None, list[tuple[datetime, int, str, str, TBankQuoteSource]]]:
+    previous_close: str | None = None
+    quotes: list[tuple[datetime, int, str, str, TBankQuoteSource]] = []
+    for value_raw in _optional_list(item, "values"):
+        value = _required_object(value_raw, "market value")
+        value_type = _text(value.get("type")).strip()
+        numeric = _quotation(value.get("value"))
+        if numeric is None:
+            continue
+        if value_type == "INSTRUMENT_VALUE_CLOSE_PRICE":
+            previous_close = numeric
+            continue
+        if value_type not in {
+            "INSTRUMENT_VALUE_LAST_PRICE",
+            "INSTRUMENT_VALUE_LAST_PRICE_DEALER",
+        }:
+            continue
+
+        quote_time = _text(value.get("time")).strip()
+        parsed_time = _provider_timestamp(quote_time)
+        if value_type == "INSTRUMENT_VALUE_LAST_PRICE_DEALER":
+            source: TBankQuoteSource = "dealer"
+            source_priority = 0
+        else:
+            source = "exchange"
+            source_priority = 1
+        quotes.append((parsed_time, source_priority, numeric, quote_time, source))
+    return previous_close, quotes
+
+
+def _ranked_usd_rub_quote(
+    raw: object,
+    candidate_by_uid: dict[str, TBankInstrument],
+) -> tuple[datetime, int, TBankFxQuote] | None:
+    item = _required_object(raw, "market value instrument")
+    uid = _text(item.get("instrumentUid")).strip()
+    instrument = candidate_by_uid.get(uid)
+    if instrument is None:
+        return None
+
+    currency = _text(item.get("priceCurrency")).strip().upper()
+    if currency != "RUB":
+        return None
+
+    previous_close, quotes = _market_value_quotes(item)
+    if not quotes:
+        return None
+
+    parsed_time, source_priority, price, quote_time, source = max(
+        quotes,
+        key=lambda quote: (quote[0], quote[1]),
+    )
+    quote = TBankFxQuote(
+        instrument_uid=instrument.uid,
+        ticker=instrument.ticker,
+        name=instrument.name,
+        class_code=instrument.class_code,
+        price=price,
+        currency=currency,
+        quote_time=quote_time,
+        source=source,
+        previous_close=previous_close,
+    )
+    return parsed_time, source_priority, quote
+
+
 @dataclass(frozen=True, slots=True)
 class TBankInvestClient:
     timeout_seconds: int = 10
@@ -1348,65 +1416,9 @@ class TBankInvestClient:
 
         best: tuple[datetime, int, TBankFxQuote] | None = None
         for raw in _optional_list(payload, "instruments"):
-            item = _required_object(raw, "market value instrument")
-            uid = _text(item.get("instrumentUid")).strip()
-            instrument = candidate_by_uid.get(uid)
-            if instrument is None:
+            ranked = _ranked_usd_rub_quote(raw, candidate_by_uid)
+            if ranked is None:
                 continue
-
-            currency = _text(item.get("priceCurrency")).strip().upper()
-            if currency != "RUB":
-                continue
-
-            previous_close: str | None = None
-            quotes: list[tuple[datetime, int, str, str, TBankQuoteSource]] = []
-            for value_raw in _optional_list(item, "values"):
-                value = _required_object(value_raw, "market value")
-                value_type = _text(value.get("type")).strip()
-                numeric = _quotation(value.get("value"))
-                if numeric is None:
-                    continue
-
-                if value_type == "INSTRUMENT_VALUE_CLOSE_PRICE":
-                    previous_close = numeric
-                    continue
-                if value_type not in {
-                    "INSTRUMENT_VALUE_LAST_PRICE",
-                    "INSTRUMENT_VALUE_LAST_PRICE_DEALER",
-                }:
-                    continue
-
-                quote_time = _text(value.get("time")).strip()
-                parsed_time = _provider_timestamp(quote_time)
-                if value_type == "INSTRUMENT_VALUE_LAST_PRICE_DEALER":
-                    source: TBankQuoteSource = "dealer"
-                    source_priority = 0
-                else:
-                    source = "exchange"
-                    source_priority = 1
-                quotes.append(
-                    (parsed_time, source_priority, numeric, quote_time, source)
-                )
-
-            if not quotes:
-                continue
-
-            parsed_time, source_priority, price, quote_time, source = max(
-                quotes,
-                key=lambda quote: (quote[0], quote[1]),
-            )
-            quote = TBankFxQuote(
-                instrument_uid=instrument.uid,
-                ticker=instrument.ticker,
-                name=instrument.name,
-                class_code=instrument.class_code,
-                price=price,
-                currency=currency,
-                quote_time=quote_time,
-                source=source,
-                previous_close=previous_close,
-            )
-            ranked = (parsed_time, source_priority, quote)
             if best is None or ranked[:2] > best[:2]:
                 best = ranked
 
