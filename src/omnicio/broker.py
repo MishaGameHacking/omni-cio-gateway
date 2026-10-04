@@ -976,7 +976,7 @@ class BrokerService:
         query: str,
         limit: int = 20,
     ) -> tuple[TBankInstrument, ...]:
-        record, credential, environment = self._connected_credential(user_id)
+        _record, credential, environment = self._connected_credential(user_id)
         return self.tbank.find_instruments(
             credential,
             environment,
