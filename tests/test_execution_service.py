@@ -139,8 +139,10 @@ def test_preflight_blocks_overspend_before_any_sandbox_mutation() -> None:
     )
     broker.sandbox_order_price.return_value = _price("2600")
 
+    run = _run()
+    leg = _leg()
     with pytest.raises(ExecutionServiceError, match="would_overspend"):
-        service._submit_pending(USER_ID, _run(), _leg(), NOW)
+        service._submit_pending(USER_ID, run, leg, NOW)
 
     broker.post_sandbox_order.assert_not_called()
     store.transition_leg.assert_not_called()
