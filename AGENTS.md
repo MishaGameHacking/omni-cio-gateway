@@ -208,7 +208,7 @@ PostgreSQL является relational authority после принятого p
 - production runtime role не получает superuser, create role, create database, replication или bypass RLS;
 - accepted production migration после выпуска не переписывать;
 - content уже выпущенных migration закреплять regression-digest проверкой; изменение digest accepted migration является RED;
-- PostgreSQL migration проверять PostgreSQL-native integration test на поддерживаемой production major version; Oracle PL/SQL analyzer не является authority для PostgreSQL dialect;
+- PostgreSQL migration проверять каноническим PostgreSQL-native integration test на поддерживаемой production major version там, где CI/runtime предоставляет тестовый PostgreSQL; Oracle PL/SQL analyzer не является authority для PostgreSQL dialect;
 - изменение schema делать новой migration;
 - migration должна быть детерминированной;
 - retry/idempotence проверять там, где workflow допускает повтор;
@@ -521,7 +521,7 @@ SonarQube Cloud является обязательным code-quality gate:
 - на exact latest head unresolved New/Open issues = 0;
 - Accepted issues = 0 и unresolved GitHub/Sonar annotations = 0;
 - нельзя получать green отключением правил, исключением production-кода из корректного для его языка analyzer, снижением quality threshold или переводом реального дефекта в Accepted;
-- language/dialect mapping обязана быть корректной: PostgreSQL `.sql` нельзя анализировать как Oracle PL/SQL только из-за расширения; если Sonar не поддерживает production dialect, exact-head CI обязан иметь отдельный native integration/static gate для этого dialect, и исправление mapping не отменяет этот gate;
+- language/dialect mapping обязана быть корректной: PostgreSQL `.sql` нельзя анализировать как Oracle PL/SQL только из-за расширения; если Sonar не поддерживает production dialect, PostgreSQL correctness доказывается каноническим migration integration test и production reconciler, а исправление mapping не отменяет эти проверки;
 - immutable accepted migration нельзя переписывать только ради удовлетворения правила analyzer, неприменимого к её фактическому dialect;
 - перед feature merge accepted `main` также должен иметь 0 unresolved Sonar issues; обнаруженный debt сначала устраняется отдельной focused cleanup-веткой;
 - baseline проверяется свежим анализом exact current `main` и актуальным unresolved issue inventory; исторический summary старого commit/check не считается текущим состоянием после последующих исправлений.
