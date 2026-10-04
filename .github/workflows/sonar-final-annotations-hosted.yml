@@ -1,0 +1,28 @@
+name: Sonar final annotations hosted
+
+on:
+  push:
+    branches:
+      - diagnostic/sonar-main-remaining-2
+    paths:
+      - ".github/workflows/sonar-final-annotations-hosted.yml"
+
+permissions:
+  contents: read
+  checks: read
+
+jobs:
+  annotations:
+    name: Read final Sonar annotations hosted
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read Sonar annotations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/check-runs/111375836319/annotations?per_page=100"
