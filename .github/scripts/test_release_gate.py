@@ -81,8 +81,9 @@ class ReleaseEvidenceTests(unittest.TestCase):
             },
         )
         for output in dirty_outputs:
+            check = sonar(output=output)
             with self.subTest(output=output), self.assertRaises(gate.ReleaseBlocked):
-                gate.require_sonar([sonar(output=output)], SHA)
+                gate.require_sonar([check], SHA)
 
     def test_sonar_missing_or_malformed_output_blocks_release(self) -> None:
         malformed = (
@@ -94,8 +95,9 @@ class ReleaseEvidenceTests(unittest.TestCase):
             {"annotations_count": 0, "summary": "Quality Gate passed"},
         )
         for output in malformed:
+            check = sonar(output=output)
             with self.subTest(output=output), self.assertRaises(gate.ReleaseBlocked):
-                gate.require_sonar([sonar(output=output)], SHA)
+                gate.require_sonar([check], SHA)
 
     def test_same_sha_pr_success_cannot_hide_failed_main(self) -> None:
         pull_request = sonar(12, details_url=(
