@@ -1618,6 +1618,16 @@
     instrumentMarketRetry.classList.add("hidden");
   };
 
+  const marketApiAvailabilityLabel = (availability) => {
+    if (availability === true) {
+      return "API: доступно";
+    }
+    if (availability === false) {
+      return "API: недоступно";
+    }
+    return "API: не подтверждено";
+  };
+
   const renderInstrumentMarketLive = (payload) => {
     const source = payload !== null && typeof payload === "object" ? payload : {};
     const quoteStatus = String(source.quote_status || "missing");
@@ -1631,11 +1641,7 @@
             : "",
         ].filter(Boolean).join(" · ")
       : "Последняя цена недоступна";
-    const apiAvailability = source.api_trade_available === true
-      ? "API: доступно"
-      : source.api_trade_available === false
-        ? "API: недоступно"
-        : "API: не подтверждено";
+    const apiAvailability = marketApiAvailabilityLabel(source.api_trade_available);
     instrumentMarketTradingStatus.textContent = [
       marketTradingStatusLabel(source.trading_status),
       apiAvailability,
@@ -1948,14 +1954,52 @@
     };
   };
 
-  const loadInstrumentMarket = async (instrumentUid, {force = false} = {}) => {
-    const displayedPeriod = (
-      instrumentMarketPayload
-      && instrumentMarketUid === instrumentUid
-      && typeof instrumentMarketPayload.period === "string"
-    )
+  const displayedInstrumentMarketPeriod = (instrumentUid) => {
+    if (!instrumentMarketPayload || instrumentMarketUid !== instrumentUid) {
+      return null;
+    }
+    return typeof instrumentMarketPayload.period === "string"
       ? instrumentMarketPayload.period
       : null;
+  };
+
+  const instrumentMarketRequestIsCurrent = (generation, instrumentUid) => (
+    generation === instrumentMarketGeneration && instrumentUid === instrumentMarketUid
+  );
+
+  const instrumentMarketPayloadMatches = (payload, instrumentUid) => (
+    payload !== null
+    && typeof payload === "object"
+    && payload.instrument_uid === instrumentUid
+  );
+
+  const renderInstrumentMarketLoadFailure = (error) => {
+    if (error.status === 409) {
+      renderInstrumentMarketStreamStatus(
+        String(error.message || "").includes("not connected")
+          ? "disconnected"
+          : "reconnect",
+      );
+      return;
+    }
+    if (error.status === 422) {
+      renderInstrumentMarketStreamStatus("invalid");
+      return;
+    }
+    renderInstrumentMarketStreamStatus("unavailable");
+    instrumentMarketRetry.classList.remove("hidden");
+  };
+
+  const restoreDisplayedInstrumentMarketPeriod = (displayedPeriod) => {
+    if (!displayedPeriod || displayedPeriod === instrumentMarketPeriod) {
+      return;
+    }
+    instrumentMarketPeriod = displayedPeriod;
+    syncInstrumentMarketControls();
+  };
+
+  const loadInstrumentMarket = async (instrumentUid, {force = false} = {}) => {
+    const displayedPeriod = displayedInstrumentMarketPeriod(instrumentUid);
     let segment;
     try {
       segment = instrumentPathSegment(instrumentUid);
@@ -1983,14 +2027,10 @@
         `/api/market/instruments/${segment}?period=${encodeURIComponent(instrumentMarketPeriod)}`,
         {method: "GET"},
       );
-      if (generation !== instrumentMarketGeneration || instrumentUid !== instrumentMarketUid) {
+      if (!instrumentMarketRequestIsCurrent(generation, instrumentUid)) {
         return;
       }
-      if (
-        payload === null
-        || typeof payload !== "object"
-        || payload.instrument_uid !== instrumentUid
-      ) {
+      if (!instrumentMarketPayloadMatches(payload, instrumentUid)) {
         throw new TypeError("Instrument market response does not match request");
       }
       renderInstrumentMarketChart(payload);
@@ -2001,25 +2041,11 @@
         location.reload();
         return;
       }
-      if (generation !== instrumentMarketGeneration || instrumentUid !== instrumentMarketUid) {
+      if (!instrumentMarketRequestIsCurrent(generation, instrumentUid)) {
         return;
       }
-      if (error.status === 409) {
-        renderInstrumentMarketStreamStatus(
-          String(error.message || "").includes("not connected")
-            ? "disconnected"
-            : "reconnect",
-        );
-      } else if (error.status === 422) {
-        renderInstrumentMarketStreamStatus("invalid");
-      } else {
-        renderInstrumentMarketStreamStatus("unavailable");
-        instrumentMarketRetry.classList.remove("hidden");
-      }
-      if (displayedPeriod && displayedPeriod !== instrumentMarketPeriod) {
-        instrumentMarketPeriod = displayedPeriod;
-        syncInstrumentMarketControls();
-      }
+      renderInstrumentMarketLoadFailure(error);
+      restoreDisplayedInstrumentMarketPeriod(displayedPeriod);
     }
   };
 
