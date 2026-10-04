@@ -483,6 +483,140 @@ def _save_risk_assessment(
     return cur.fetchone() is not None
 
 
+def _save_operation_observation(
+    cur: Any,
+    *,
+    user_id: UUID,
+    account_id: str,
+    operation: TBankOperation,
+    observed_at: datetime,
+) -> bool:
+    normalized = _operation_payload(operation)
+    semantic = _semantic_operation_payload(normalized)
+    cur.execute(
+        """
+        INSERT INTO operation_observations (
+            user_id,
+            account_id,
+            observation_hash,
+            semantic_hash,
+            provider_operation_id,
+            provider_cursor,
+            operation_date,
+            operation_type,
+            operation_state,
+            instrument_uid,
+            figi,
+            instrument_type,
+            payment_value,
+            payment_currency,
+            price_value,
+            price_currency,
+            commission_value,
+            commission_currency,
+            accrued_int_value,
+            accrued_int_currency,
+            quantity,
+            quantity_rest,
+            quantity_done,
+            normalized,
+            observed_at
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+        )
+        ON CONFLICT DO NOTHING
+        RETURNING id
+        """,
+        (
+            user_id,
+            account_id,
+            _hash_json(normalized),
+            _hash_json(semantic),
+            operation.id,
+            operation.cursor,
+            operation.date,
+            operation.operation_type,
+            operation.state,
+            operation.instrument_uid,
+            operation.figi,
+            operation.instrument_type,
+            _money_decimal(operation.payment),
+            operation.payment.currency if operation.payment else None,
+            _money_decimal(operation.price),
+            operation.price.currency if operation.price else None,
+            _money_decimal(operation.commission),
+            operation.commission.currency if operation.commission else None,
+            _money_decimal(operation.accrued_int),
+            operation.accrued_int.currency if operation.accrued_int else None,
+            Decimal(operation.quantity),
+            Decimal(operation.quantity_rest),
+            Decimal(operation.quantity_done),
+            _json(normalized),
+            observed_at,
+        ),
+    )
+    return cur.fetchone() is not None
+
+
+def _save_history_sync_state(
+    cur: Any,
+    *,
+    user_id: UUID,
+    account_id: str,
+    window_from: datetime,
+    window_to: datetime,
+    page: TBankOperationsPage,
+) -> None:
+    if page.has_next:
+        if not page.next_cursor:
+            raise RuntimeError("history page has_next without a cursor")
+        cur.execute(
+            """
+            INSERT INTO broker_sync_state (
+                user_id,
+                account_id,
+                history_window_from,
+                history_window_to,
+                pending_cursor
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, account_id) DO UPDATE SET
+                history_window_from = EXCLUDED.history_window_from,
+                history_window_to = EXCLUDED.history_window_to,
+                pending_cursor = EXCLUDED.pending_cursor,
+                updated_at = now()
+            """,
+            (
+                user_id,
+                account_id,
+                window_from,
+                window_to,
+                page.next_cursor,
+            ),
+        )
+        return
+
+    cur.execute(
+        """
+        INSERT INTO broker_sync_state (
+            user_id,
+            account_id,
+            last_complete_watermark
+        )
+        VALUES (%s, %s, %s)
+        ON CONFLICT (user_id, account_id) DO UPDATE SET
+            history_window_from = NULL,
+            history_window_to = NULL,
+            pending_cursor = NULL,
+            last_complete_watermark = EXCLUDED.last_complete_watermark,
+            updated_at = now()
+        """,
+        (user_id, account_id, window_to),
+    )
+
+
 class PortfolioStore:
     """Store immutable observation facts behind explicit tenant context."""
 
@@ -2641,6 +2775,7 @@ class PortfolioStore:
     ) -> int:
         if window_from.tzinfo is None or window_to.tzinfo is None:
             raise ValueError("history window must be timezone-aware")
+
         inserted = 0
         with (
             self.database.pool.connection() as conn,
@@ -2649,123 +2784,23 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             for operation in page.items:
-                normalized = _operation_payload(operation)
-                semantic = _semantic_operation_payload(normalized)
-                observation_hash = _hash_json(normalized)
-                semantic_hash = _hash_json(semantic)
-                cur.execute(
-                    """
-                    INSERT INTO operation_observations (
-                        user_id,
-                        account_id,
-                        observation_hash,
-                        semantic_hash,
-                        provider_operation_id,
-                        provider_cursor,
-                        operation_date,
-                        operation_type,
-                        operation_state,
-                        instrument_uid,
-                        figi,
-                        instrument_type,
-                        payment_value,
-                        payment_currency,
-                        price_value,
-                        price_currency,
-                        commission_value,
-                        commission_currency,
-                        accrued_int_value,
-                        accrued_int_currency,
-                        quantity,
-                        quantity_rest,
-                        quantity_done,
-                        normalized,
-                        observed_at
+                inserted += int(
+                    _save_operation_observation(
+                        cur,
+                        user_id=user_id,
+                        account_id=account_id,
+                        operation=operation,
+                        observed_at=observed_at,
                     )
-                    VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
-                    )
-                    ON CONFLICT DO NOTHING
-                    RETURNING id
-                    """,
-                    (
-                        user_id,
-                        account_id,
-                        observation_hash,
-                        semantic_hash,
-                        operation.id,
-                        operation.cursor,
-                        operation.date,
-                        operation.operation_type,
-                        operation.state,
-                        operation.instrument_uid,
-                        operation.figi,
-                        operation.instrument_type,
-                        _money_decimal(operation.payment),
-                        operation.payment.currency if operation.payment else None,
-                        _money_decimal(operation.price),
-                        operation.price.currency if operation.price else None,
-                        _money_decimal(operation.commission),
-                        operation.commission.currency if operation.commission else None,
-                        _money_decimal(operation.accrued_int),
-                        operation.accrued_int.currency if operation.accrued_int else None,
-                        Decimal(operation.quantity),
-                        Decimal(operation.quantity_rest),
-                        Decimal(operation.quantity_done),
-                        _json(normalized),
-                        observed_at,
-                    ),
                 )
-                if cur.fetchone() is not None:
-                    inserted += 1
-
-            if page.has_next:
-                if not page.next_cursor:
-                    raise RuntimeError("history page has_next without a cursor")
-                state_values: tuple[object, ...] = (
-                    user_id,
-                    account_id,
-                    window_from,
-                    window_to,
-                    page.next_cursor,
-                )
-                cur.execute(
-                    """
-                    INSERT INTO broker_sync_state (
-                        user_id,
-                        account_id,
-                        history_window_from,
-                        history_window_to,
-                        pending_cursor
-                    )
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (user_id, account_id) DO UPDATE SET
-                        history_window_from = EXCLUDED.history_window_from,
-                        history_window_to = EXCLUDED.history_window_to,
-                        pending_cursor = EXCLUDED.pending_cursor,
-                        updated_at = now()
-                    """,
-                    state_values,
-                )
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO broker_sync_state (
-                        user_id,
-                        account_id,
-                        last_complete_watermark
-                    )
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (user_id, account_id) DO UPDATE SET
-                        history_window_from = NULL,
-                        history_window_to = NULL,
-                        pending_cursor = NULL,
-                        last_complete_watermark = EXCLUDED.last_complete_watermark,
-                        updated_at = now()
-                    """,
-                    (user_id, account_id, window_to),
-                )
+            _save_history_sync_state(
+                cur,
+                user_id=user_id,
+                account_id=account_id,
+                window_from=window_from,
+                window_to=window_to,
+                page=page,
+            )
         return inserted
 
 
