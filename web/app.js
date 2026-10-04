@@ -865,12 +865,29 @@
       `${source} · официальный курс на ${formatCalendarDate(eur.effective_date)}`,
     );
 
-    cbrMarketStrip.classList.remove("is-unavailable");
-    cbrMarketStripStatus.textContent = (
-      `Банк России: ключевая ставка ${keyRateText}, доллар ${usdText}, евро ${eurText}.`
+    const cached = snapshot.freshness === "cached";
+    if (!cached && snapshot.freshness !== "fresh") {
+      throw new TypeError("Bank of Russia indicator freshness is invalid");
+    }
+
+    cbrMarketStrip.classList.toggle("is-unavailable", cached);
+    cbrMarketStripStatus.textContent = cached
+      ? (
+        `Банк России временно недоступен. Последние значения: ставка ${keyRateText}, `
+        + `доллар ${usdText}, евро ${eurText}.`
+      )
+      : (
+        `Банк России: ключевая ставка ${keyRateText}, доллар ${usdText}, `
+        + `евро ${eurText}.`
+      );
+    setStateBadge(
+      homeFxState,
+      cached ? "Последние данные" : "Актуально",
+      cached ? "state-next" : "state-ok",
     );
-    setStateBadge(homeFxState, "Актуально", "state-ok");
-    owlFxStatus.textContent = `ЦБ РФ · ${formatCalendarDate(usd.effective_date)}`;
+    owlFxStatus.textContent = cached
+      ? `последние данные · ${formatCalendarDate(usd.effective_date)}`
+      : `ЦБ РФ · ${formatCalendarDate(usd.effective_date)}`;
     cbrIndicatorsLoaded = true;
     lastCbrIndicatorRefreshAt = Date.now();
   };
