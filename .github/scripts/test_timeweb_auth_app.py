@@ -1040,7 +1040,16 @@ class AuthAppDeployTests(unittest.TestCase):
         )
         self.assertIn("const displayedPeriod = displayedInstrumentMarketPeriod(instrumentUid);", script)
         self.assertIn("instrumentMarketPeriod = displayedPeriod;", script)
-        self.assertNotIn('role="group"', page)
+        for legend in (
+            "Период истории портфеля",
+            "Разрез распределения",
+            "Тип графика",
+            "Период рыночного графика",
+        ):
+            self.assertIn(
+                f'<legend class="visually-hidden">{legend}</legend>',
+                page,
+            )
         self.assertIn("syncInstrumentMarketControls();", script)
         self.assertIn('instrumentMarketScrubber.addEventListener("input"', script)
         self.assertIn("Number.parseInt(instrumentMarketScrubber.value, 10)", script)
