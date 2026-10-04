@@ -137,8 +137,9 @@ def test_execution_plan_rejects_browser_like_trade_bound_mutations() -> None:
             "min_proceeds_rub": None,
         }
     ]
+    proposal = _proposal(trades=bad_buy)
     with pytest.raises(ExecutionStateError, match="proposal_buy_bounds_invalid"):
-        build_execution_plan(_proposal(trades=bad_buy))
+        build_execution_plan(proposal)
 
 
 def test_execution_plan_rejects_duplicate_instrument_legs() -> None:
@@ -164,11 +165,12 @@ def test_execution_plan_rejects_duplicate_instrument_legs() -> None:
             "min_proceeds_rub": None,
         },
     ]
+    proposal = _proposal(trades=duplicate)
     with pytest.raises(
         ExecutionStateError,
         match="proposal_duplicate_instrument_leg",
     ):
-        build_execution_plan(_proposal(trades=duplicate))
+        build_execution_plan(proposal)
 
 
 @pytest.mark.parametrize(
