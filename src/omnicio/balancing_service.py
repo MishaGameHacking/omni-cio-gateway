@@ -1472,28 +1472,38 @@ def _policy(
     )
 
 
-def _holding(row: dict[str, object]) -> Holding:
-    value = _decimal(row.get("value_rub")) or Decimal("0")
-    quantity = _decimal(row.get("quantity")) or Decimal("0")
+def _holding_lot_state(
+    row: dict[str, object],
+    quantity: Decimal,
+) -> tuple[int, bool]:
     quantity_lots = _decimal(row.get("quantity_lots"))
-    lot = _integer(row.get("lot"))
-    lots = 0
-    quantity_misaligned = True
     if quantity_lots is not None and quantity_lots >= 0:
         integral_lots = quantity_lots.to_integral_value()
         if quantity_lots == integral_lots:
-            lots = int(integral_lots)
-            quantity_misaligned = False
-    elif lot > 0 and quantity >= 0:
-        raw_lots = quantity / Decimal(lot)
-        integral = raw_lots.to_integral_value()
-        if raw_lots == integral:
-            lots = int(integral)
-            quantity_misaligned = False
+            return int(integral_lots), False
+        return 0, True
 
+    lot = _integer(row.get("lot"))
+    if lot > 0 and quantity >= 0:
+        raw_lots = quantity / Decimal(lot)
+        integral_lots = raw_lots.to_integral_value()
+        if raw_lots == integral_lots:
+            return int(integral_lots), False
+    return 0, True
+
+
+def _holding_risk_state(row: dict[str, object]) -> RiskState:
     risk = str(row.get("risk_state") or "data_missing")
     if risk not in _RISK_STATES:
-        risk = "data_missing"
+        return "data_missing"
+    return cast(RiskState, risk)
+
+
+def _holding(row: dict[str, object]) -> Holding:
+    value = _decimal(row.get("value_rub")) or Decimal("0")
+    quantity = _decimal(row.get("quantity")) or Decimal("0")
+    lots, quantity_misaligned = _holding_lot_state(row, quantity)
+    risk = _holding_risk_state(row)
     rating_status = str(row.get("rating_status") or "data_missing")
     rating_bucket = "not_applicable" if rating_status == "not_applicable" else "unknown"
     issuer_id = str(row.get("issuer_id") or "") or "unknown_issuer"
@@ -1508,7 +1518,7 @@ def _holding(row: dict[str, object]) -> Holding:
         group_id=group_id,
         rating_bucket=cast(Any, rating_bucket),
         currency=str(row.get("currency") or "").upper(),
-        risk_state=cast(RiskState, risk),
+        risk_state=risk,
         lots=lots,
         value_rub=value,
         expected_horizon_gain_rub=Decimal("0"),
