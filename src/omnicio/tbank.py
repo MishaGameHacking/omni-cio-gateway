@@ -451,7 +451,7 @@ def _ranked_usd_rub_quote(
     return parsed_time, source_priority, quote
 
 
-_INVALID_METADATA_LOT_ERROR = _INVALID_METADATA_LOT_ERROR
+_INVALID_METADATA_LOT_ERROR = "T-Invest metadata has invalid lot size"
 
 
 @dataclass(frozen=True, slots=True)
