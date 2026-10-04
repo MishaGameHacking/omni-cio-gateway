@@ -58,6 +58,27 @@ class InvestmentProfileRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class BalancingPolicyInput:
+    max_instrument_percent: Decimal
+    max_sector_percent: Decimal
+    max_issuer_percent: Decimal
+    max_group_percent: Decimal
+    max_share_percent: Decimal
+    max_bond_percent: Decimal
+    max_etf_percent: Decimal
+    max_below_grade_percent: Decimal
+    max_unknown_percent: Decimal
+    max_term_months: int
+    turnover_budget_percent: Decimal
+    max_daily_turnover_participation_percent: Decimal
+    securities_tax_rate_percent: Decimal
+    uncertainty_haircut_percent: Decimal
+    credit_loss_haircut_percent: Decimal
+    no_trade_band_percent: Decimal
+    min_replace_benefit_rub: Decimal
+
+
+@dataclass(frozen=True, slots=True)
 class BalancingPolicyRecord:
     id: int
     user_id: UUID
@@ -384,43 +405,26 @@ class PortfolioStore:
     def save_balancing_policy(
         self,
         user_id: UUID,
-        *,
-        max_instrument_percent: Decimal,
-        max_sector_percent: Decimal,
-        max_issuer_percent: Decimal,
-        max_group_percent: Decimal,
-        max_share_percent: Decimal,
-        max_bond_percent: Decimal,
-        max_etf_percent: Decimal,
-        max_below_grade_percent: Decimal,
-        max_unknown_percent: Decimal,
-        max_term_months: int,
-        turnover_budget_percent: Decimal,
-        max_daily_turnover_participation_percent: Decimal,
-        securities_tax_rate_percent: Decimal,
-        uncertainty_haircut_percent: Decimal,
-        credit_loss_haircut_percent: Decimal,
-        no_trade_band_percent: Decimal,
-        min_replace_benefit_rub: Decimal,
+        policy: BalancingPolicyInput,
     ) -> BalancingPolicyRecord:
         desired = (
-            max_instrument_percent,
-            max_sector_percent,
-            max_issuer_percent,
-            max_group_percent,
-            max_share_percent,
-            max_bond_percent,
-            max_etf_percent,
-            max_below_grade_percent,
-            max_unknown_percent,
-            max_term_months,
-            turnover_budget_percent,
-            max_daily_turnover_participation_percent,
-            securities_tax_rate_percent,
-            uncertainty_haircut_percent,
-            credit_loss_haircut_percent,
-            no_trade_band_percent,
-            min_replace_benefit_rub,
+            policy.max_instrument_percent,
+            policy.max_sector_percent,
+            policy.max_issuer_percent,
+            policy.max_group_percent,
+            policy.max_share_percent,
+            policy.max_bond_percent,
+            policy.max_etf_percent,
+            policy.max_below_grade_percent,
+            policy.max_unknown_percent,
+            policy.max_term_months,
+            policy.turnover_budget_percent,
+            policy.max_daily_turnover_participation_percent,
+            policy.securities_tax_rate_percent,
+            policy.uncertainty_haircut_percent,
+            policy.credit_loss_haircut_percent,
+            policy.no_trade_band_percent,
+            policy.min_replace_benefit_rub,
         )
         with (
             self.database.pool.connection() as conn,
