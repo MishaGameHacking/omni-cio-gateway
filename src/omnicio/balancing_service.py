@@ -1291,10 +1291,6 @@ def _scenario_before_after(
         uid: dict(position)
         for uid, position in before.items()
     }
-    holding_by_uid = {
-        item.instrument_uid: item
-        for item in holdings
-    }
     candidate_by_uid = {
         item.instrument_uid: item
         for item in candidates
