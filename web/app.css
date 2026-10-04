@@ -1304,6 +1304,8 @@ textarea:disabled {
 }
 
 .segmented-control {
+  margin: 0;
+  min-inline-size: 0;
   padding: 3px;
   display: inline-grid;
   grid-template-columns: repeat(3, 1fr);
