@@ -44,12 +44,14 @@ def main() -> None:
     while time.monotonic() < deadline:
         try:
             check = completed_sonar(client, sha)
+            if check is not None:
+                report_annotations(client, check)
+                return
         except PendingChecks:
+            # Both the check and its annotation pages can fail transiently.
+            # Permanent errors still propagate; the shared deadline is unchanged.
             time.sleep(10)
             continue
-        if check is not None:
-            report_annotations(client, check)
-            return
         time.sleep(10)
     raise ReleaseBlocked("Sonar diagnostics did not become available before the deadline")
 
