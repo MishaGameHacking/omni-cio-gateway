@@ -1063,6 +1063,7 @@ def test_tbank_daily_candles_reject_non_exchange_response() -> None:
             ]
         }
     )
+    from_at = now - timedelta(days=30)
     with (
         patch("urllib.request.urlopen", return_value=response),
         pytest.raises(TBankUnavailable, match="exchange-sourced"),
@@ -1071,7 +1072,7 @@ def test_tbank_daily_candles_reject_non_exchange_response() -> None:
             "t.fake-owner-credential-1234567890",
             "prod",
             "bond-uid",
-            from_at=now - timedelta(days=30),
+            from_at=from_at,
             to_at=now,
         )
 

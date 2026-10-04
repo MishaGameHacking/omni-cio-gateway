@@ -39,6 +39,7 @@ from .intelligence import rating_source_references
 from .market import MarketService
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import (
+    BalancingPolicyInput,
     BalancingPolicyRecord,
     InvestmentProfileRecord,
     PortfolioStore,
@@ -80,6 +81,8 @@ VKID_CALLBACK = f"{CANONICAL_ORIGIN}/api/auth/vkid/callback"
 INVALID_VKID_CALLBACK = "VK ID callback payload is invalid"
 _TBANK_CREDENTIAL_REJECTED_DETAIL = "stored T-Invest credential was rejected"
 _UPDATED_LEGAL_CONSENT_DETAIL = "updated legal consent required"
+_TBANK_NOT_CONNECTED_DETAIL = "T-Invest is not connected"
+_PRIVATE_NO_STORE = "private, no-store"
 
 
 class StrictRequestBody(BaseModel):
@@ -542,7 +545,7 @@ def usd_rub_market_snapshot(
     try:
         snapshot = market_service(request).usd_rub(user.id)
     except BrokerNotConnected as exc:
-        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+        raise HTTPException(status_code=409, detail=_TBANK_NOT_CONNECTED_DETAIL) from exc
     except TBankTokenRejected as exc:
         raise HTTPException(
             status_code=409,
@@ -663,7 +666,7 @@ def investment_profile(
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
     profile = portfolio_store(request).current_profile(user.id)
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {"profile": _profile_payload(profile) if profile is not None else None}
 
 
@@ -691,7 +694,7 @@ def save_investment_profile(
         liquidity_horizon_days=body.liquidity_horizon_days,
         allow_below_investment_grade=body.allow_below_investment_grade,
     )
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {"profile": _profile_payload(profile)}
 
 
@@ -703,7 +706,7 @@ def balancing_policy(
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
     policy = portfolio_store(request).current_balancing_policy(user.id)
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
         "policy": _balancing_policy_payload(policy) if policy is not None else None
     }
@@ -726,27 +729,29 @@ def save_balancing_policy(
         )
     policy = portfolio_store(request).save_balancing_policy(
         user.id,
-        max_instrument_percent=body.max_instrument_percent,
-        max_sector_percent=body.max_sector_percent,
-        max_issuer_percent=body.max_issuer_percent,
-        max_group_percent=body.max_group_percent,
-        max_share_percent=body.max_share_percent,
-        max_bond_percent=body.max_bond_percent,
-        max_etf_percent=body.max_etf_percent,
-        max_below_grade_percent=body.max_below_grade_percent,
-        max_unknown_percent=body.max_unknown_percent,
-        max_term_months=body.max_term_months,
-        turnover_budget_percent=body.turnover_budget_percent,
-        max_daily_turnover_participation_percent=(
-            body.max_daily_turnover_participation_percent
+        BalancingPolicyInput(
+            max_instrument_percent=body.max_instrument_percent,
+            max_sector_percent=body.max_sector_percent,
+            max_issuer_percent=body.max_issuer_percent,
+            max_group_percent=body.max_group_percent,
+            max_share_percent=body.max_share_percent,
+            max_bond_percent=body.max_bond_percent,
+            max_etf_percent=body.max_etf_percent,
+            max_below_grade_percent=body.max_below_grade_percent,
+            max_unknown_percent=body.max_unknown_percent,
+            max_term_months=body.max_term_months,
+            turnover_budget_percent=body.turnover_budget_percent,
+            max_daily_turnover_participation_percent=(
+                body.max_daily_turnover_participation_percent
+            ),
+            securities_tax_rate_percent=body.securities_tax_rate_percent,
+            uncertainty_haircut_percent=body.uncertainty_haircut_percent,
+            credit_loss_haircut_percent=body.credit_loss_haircut_percent,
+            no_trade_band_percent=body.no_trade_band_percent,
+            min_replace_benefit_rub=body.min_replace_benefit_rub,
         ),
-        securities_tax_rate_percent=body.securities_tax_rate_percent,
-        uncertainty_haircut_percent=body.uncertainty_haircut_percent,
-        credit_loss_haircut_percent=body.credit_loss_haircut_percent,
-        no_trade_band_percent=body.no_trade_band_percent,
-        min_replace_benefit_rub=body.min_replace_benefit_rub,
     )
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {"policy": _balancing_policy_payload(policy)}
 
 
@@ -782,7 +787,7 @@ def tbank_portfolio(
     try:
         snapshot = broker_service(request).portfolio(user.id)
     except BrokerNotConnected as exc:
-        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+        raise HTTPException(status_code=409, detail=_TBANK_NOT_CONNECTED_DETAIL) from exc
     except TBankTokenRejected as exc:
         raise HTTPException(
             status_code=409,
@@ -822,7 +827,7 @@ def tbank_analysis(
     try:
         snapshot = broker_service(request).analysis(user.id)
     except BrokerNotConnected as exc:
-        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+        raise HTTPException(status_code=409, detail=_TBANK_NOT_CONNECTED_DETAIL) from exc
     except TBankTokenRejected as exc:
         raise HTTPException(
             status_code=409,
@@ -839,7 +844,7 @@ def tbank_analysis(
             detail="T-Invest analysis unavailable",
         ) from exc
 
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return asdict(snapshot)
 
 
@@ -872,7 +877,7 @@ def portfolio_visualization(
         user.id,
         history_limit=history_limit,
     )
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return payload
 
 
@@ -907,7 +912,7 @@ def portfolio_instrument_visualization(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="instrument visualization unavailable",
         )
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return payload
 
 
@@ -922,7 +927,7 @@ def portfolio_balancing(
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
     payload = _live_balancing_for_user(request, user.id)
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return payload
 
 
@@ -934,7 +939,7 @@ def portfolio_proposals(
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
     proposals = portfolio_store(request).proposals(user.id)
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
         "proposals": [proposal_payload(item) for item in proposals],
         "execution_enabled": False,
@@ -984,11 +989,76 @@ def create_portfolio_proposal(
             detail=exc.code,
         ) from exc
 
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
         "proposal": proposal_payload(proposal),
         "execution_enabled": False,
     }
+
+
+def _proposal_decision_action(
+    action: str,
+) -> Literal["confirmed", "rejected", "deferred"]:
+    if action == "confirm":
+        return "confirmed"
+    if action == "reject":
+        return "rejected"
+    return "deferred"
+
+
+def _proposal_scenario_kind(
+    value: str,
+) -> Literal["deploy_cash", "replace"]:
+    if value == "deploy_cash":
+        return "deploy_cash"
+    if value == "replace":
+        return "replace"
+    raise ProposalBuildError("scenario_kind_invalid")
+
+
+def _proposal_material_is_current(
+    request: Request,
+    user_id: UUID,
+    proposal_id: UUID,
+    body: PortfolioProposalDecisionBody,
+    expected_hash: bytes,
+) -> bool:
+    if body.action != "confirm":
+        return True
+
+    store = portfolio_store(request)
+    current = store.proposal(user_id, proposal_id)
+    if current is None:
+        raise ProposalStateError("proposal_not_found")
+    if not (
+        current.status == "pending"
+        and current.version == body.proposal_version
+        and current.proposal_hash == expected_hash
+    ):
+        return True
+
+    try:
+        refreshed = build_proposal_draft(
+            _live_balancing_for_user(request, user_id),
+            scenario_kind=_proposal_scenario_kind(current.scenario_kind),
+            replaced_instrument_uid=current.replaced_instrument_uid,
+            now=proposal_generated_at(current),
+        )
+    except ProposalBuildError as exc:
+        if exc.code in {
+            "balancing_not_observed",
+            "live_evidence_not_received",
+        }:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="proposal_revalidation_unavailable",
+            ) from exc
+        return False
+
+    return (
+        proposal_material_hash(current.payload)
+        == proposal_material_hash(refreshed.payload)
+    )
 
 
 @app.post("/api/portfolio/proposals/{proposal_id}/decision")
@@ -1009,60 +1079,20 @@ def decide_portfolio_proposal(
         )
     try:
         expected_hash = parse_proposal_hash(body.proposal_hash)
-        decision_action: Literal["confirmed", "rejected", "deferred"]
-        if body.action == "confirm":
-            decision_action = "confirmed"
-        elif body.action == "reject":
-            decision_action = "rejected"
-        else:
-            decision_action = "deferred"
         store = portfolio_store(request)
-        material_current = True
-        if body.action == "confirm":
-            current = store.proposal(user.id, proposal_id)
-            if current is None:
-                raise ProposalStateError("proposal_not_found")
-            if (
-                current.status == "pending"
-                and current.version == body.proposal_version
-                and current.proposal_hash == expected_hash
-            ):
-                try:
-                    scenario_kind: Literal["deploy_cash", "replace"]
-                    if current.scenario_kind == "deploy_cash":
-                        scenario_kind = "deploy_cash"
-                    elif current.scenario_kind == "replace":
-                        scenario_kind = "replace"
-                    else:
-                        raise ProposalBuildError("scenario_kind_invalid")
-                    refreshed = build_proposal_draft(
-                        _live_balancing_for_user(request, user.id),
-                        scenario_kind=scenario_kind,
-                        replaced_instrument_uid=current.replaced_instrument_uid,
-                        now=proposal_generated_at(current),
-                    )
-                except ProposalBuildError as exc:
-                    if exc.code in {
-                        "balancing_not_observed",
-                        "live_evidence_not_received",
-                    }:
-                        raise HTTPException(
-                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail="proposal_revalidation_unavailable",
-                        ) from exc
-                    material_current = False
-                else:
-                    material_current = (
-                        proposal_material_hash(current.payload)
-                        == proposal_material_hash(refreshed.payload)
-                    )
-
+        material_current = _proposal_material_is_current(
+            request,
+            user.id,
+            proposal_id,
+            body,
+            expected_hash,
+        )
         proposal, decision = store.decide_proposal(
             user.id,
             proposal_id=proposal_id,
             expected_version=body.proposal_version,
             expected_hash=expected_hash,
-            action=decision_action,
+            action=_proposal_decision_action(body.action),
             session_digest=authenticated_session_digest(session_token),
             user_reason=body.reason or "",
             deferred_until=body.deferred_until,
@@ -1085,7 +1115,7 @@ def decide_portfolio_proposal(
     result = proposal_action_payload(proposal, decision)
     if decision.action in {"expired", "revoked"}:
         response.status_code = status.HTTP_409_CONFLICT
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return result
 
 
@@ -1216,7 +1246,7 @@ def portfolio_live_execution_mandate(
     cfg = settings(request)
     mandate = execution_store(request).live_mandate(user.id)
     broker_status = broker_service(request).status(user.id)
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
         "operator_enabled": cfg.portfolio_live_execution_enabled,
         "operator_max_order_notional_rub": cfg.portfolio_live_max_order_rub,
@@ -1305,7 +1335,7 @@ def save_portfolio_live_execution_mandate(
             detail=str(exc),
         ) from exc
 
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
         "operator_enabled": True,
         "mandate": _live_mandate_payload(mandate),
@@ -1334,7 +1364,7 @@ def portfolio_executions(
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
     runs = execution_store(request).executions(user.id)
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     cfg = settings(request)
     modes = ["shadow", "sandbox"]
     if cfg.portfolio_live_execution_enabled:
@@ -1364,7 +1394,7 @@ def portfolio_execution(
             detail="execution_not_found",
         )
     run, legs, events = snapshot
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
         "execution": _execution_run_payload(run, legs),
         "events": [
@@ -1402,7 +1432,7 @@ def create_portfolio_execution(
         )
     except (ExecutionLedgerError, ExecutionServiceError, ValueError) as exc:
         raise _execution_error(exc) from exc
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
         "execution": _execution_run_payload(run, legs),
         "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
@@ -1423,7 +1453,7 @@ def advance_portfolio_execution(
         run, legs = execution_service(request).advance(user.id, run_id)
     except (ExecutionLedgerError, ExecutionServiceError, ValueError) as exc:
         raise _execution_error(exc) from exc
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
         "execution": _execution_run_payload(run, legs),
         "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
@@ -1444,7 +1474,7 @@ def cancel_portfolio_execution(
         run, legs = execution_service(request).cancel(user.id, run_id)
     except (ExecutionLedgerError, ExecutionServiceError, ValueError) as exc:
         raise _execution_error(exc) from exc
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
         "execution": _execution_run_payload(run, legs),
         "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
@@ -1462,7 +1492,7 @@ def portfolio_intelligence(
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
     snapshot = portfolio_store(request).latest_intelligence(user.id)
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     if snapshot is None:
         return {
             "status": "pending",
@@ -1508,7 +1538,7 @@ def tbank_instrument_search(
             limit=20,
         )
     except BrokerNotConnected as exc:
-        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+        raise HTTPException(status_code=409, detail=_TBANK_NOT_CONNECTED_DETAIL) from exc
     except TBankTokenRejected as exc:
         raise HTTPException(
             status_code=409,

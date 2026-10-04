@@ -107,6 +107,75 @@ class ExecutionEventRecord:
     created_at: datetime
 
 
+def _validate_leg_transition_request(
+    expected_statuses: tuple[ExecutionLegStatus, ...],
+    event_type: str,
+) -> None:
+    if not expected_statuses:
+        raise ValueError("execution transition requires expected status")
+    if not event_type or len(event_type) > 128:
+        raise ValueError("execution event type is invalid")
+
+
+def _require_live_transition_mandate(
+    cur: Any,
+    *,
+    user_id: UUID,
+    run: ExecutionRunRecord,
+    new_status: ExecutionLegStatus,
+    observed_at: datetime,
+) -> None:
+    if run.mode != "live" or new_status != "submitting":
+        return
+    if run.live_mandate_id is None:
+        raise ExecutionLedgerError("live_mandate_inactive")
+    cur.execute(
+        """
+        SELECT 1
+        FROM portfolio_live_execution_mandates
+        WHERE id = %s
+          AND user_id = %s
+          AND account_id = %s
+          AND revoked_at IS NULL
+          AND expires_at > %s
+        FOR SHARE
+        """,
+        (
+            run.live_mandate_id,
+            user_id,
+            run.account_id,
+            observed_at,
+        ),
+    )
+    if cur.fetchone() is None:
+        raise ExecutionLedgerError("live_mandate_inactive")
+
+
+def _transition_values(
+    leg: ExecutionLegRecord,
+    *,
+    lots_executed: int | None,
+    executed_amount_rub: Decimal | None,
+    executed_commission_rub: Decimal | None,
+) -> tuple[int, Decimal, Decimal]:
+    next_lots = leg.lots_executed if lots_executed is None else lots_executed
+    if next_lots < 0 or next_lots > leg.lots_requested:
+        raise ValueError("executed lots are outside requested bounds")
+    next_amount = (
+        leg.executed_amount_rub
+        if executed_amount_rub is None
+        else executed_amount_rub
+    )
+    next_commission = (
+        leg.executed_commission_rub
+        if executed_commission_rub is None
+        else executed_commission_rub
+    )
+    if next_amount < 0 or next_commission < 0:
+        raise ValueError("execution money values must be non-negative")
+    return next_lots, next_amount, next_commission
+
+
 class ExecutionStore:
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -785,10 +854,7 @@ class ExecutionStore:
         executed_commission_rub: Decimal | None = None,
         now: datetime | None = None,
     ) -> tuple[ExecutionRunRecord, ExecutionLegRecord]:
-        if not expected_statuses:
-            raise ValueError("execution transition requires expected status")
-        if not event_type or len(event_type) > 128:
-            raise ValueError("execution event type is invalid")
+        _validate_leg_transition_request(expected_statuses, event_type)
         observed_at = (now or datetime.now(UTC)).astimezone(UTC)
 
         with (
@@ -829,29 +895,13 @@ class ExecutionStore:
             if run.status in _TERMINAL_RUNS:
                 raise ExecutionLedgerError("execution_already_terminal")
 
-            if run.mode == "live" and new_status == "submitting":
-                if run.live_mandate_id is None:
-                    raise ExecutionLedgerError("live_mandate_inactive")
-                cur.execute(
-                    """
-                    SELECT 1
-                    FROM portfolio_live_execution_mandates
-                    WHERE id = %s
-                      AND user_id = %s
-                      AND account_id = %s
-                      AND revoked_at IS NULL
-                      AND expires_at > %s
-                    FOR SHARE
-                    """,
-                    (
-                        run.live_mandate_id,
-                        user_id,
-                        run.account_id,
-                        observed_at,
-                    ),
-                )
-                if cur.fetchone() is None:
-                    raise ExecutionLedgerError("live_mandate_inactive")
+            _require_live_transition_mandate(
+                cur,
+                user_id=user_id,
+                run=run,
+                new_status=new_status,
+                observed_at=observed_at,
+            )
 
             cur.execute(
                 """
@@ -892,21 +942,12 @@ class ExecutionStore:
             if leg.status not in expected_statuses:
                 raise ExecutionLedgerError("execution_leg_state_changed")
 
-            next_lots = leg.lots_executed if lots_executed is None else lots_executed
-            if next_lots < 0 or next_lots > leg.lots_requested:
-                raise ValueError("executed lots are outside requested bounds")
-            next_amount = (
-                leg.executed_amount_rub
-                if executed_amount_rub is None
-                else executed_amount_rub
+            next_lots, next_amount, next_commission = _transition_values(
+                leg,
+                lots_executed=lots_executed,
+                executed_amount_rub=executed_amount_rub,
+                executed_commission_rub=executed_commission_rub,
             )
-            next_commission = (
-                leg.executed_commission_rub
-                if executed_commission_rub is None
-                else executed_commission_rub
-            )
-            if next_amount < 0 or next_commission < 0:
-                raise ValueError("execution money values must be non-negative")
 
             terminal_at = (
                 observed_at

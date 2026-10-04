@@ -8,7 +8,15 @@ from decimal import Decimal
 from typing import Literal
 
 from .broker import BrokerEvidenceSnapshot, BrokerObservationBundle
-from .tbank import TBankAssetFundamental, TBankInstrumentMetadata
+from .tbank import (
+    TBankAssetFundamental,
+    TBankAssetReport,
+    TBankBondCoupon,
+    TBankBondEvent,
+    TBankDividend,
+    TBankInstrumentMetadata,
+    TBankPortfolioPosition,
+)
 
 RiskState = Literal[
     "data_missing",
@@ -140,6 +148,318 @@ def rating_source_references() -> tuple[dict[str, str], ...]:
     )
 
 
+def _dividend_document(dividend: TBankDividend) -> EvidenceDocument:
+    payload = asdict(dividend)
+    key = "|".join(
+        [
+            dividend.instrument_uid,
+            _time_key(dividend.record_date),
+            _time_key(dividend.payment_date),
+            dividend.dividend_net.currency,
+            dividend.dividend_net.value,
+        ]
+    )
+    return EvidenceDocument(
+        provider="tbank",
+        document_type="dividend",
+        subject_uid=dividend.instrument_uid,
+        provider_key=key,
+        source_url=TBANK_DIVIDENDS_SOURCE,
+        published_at=dividend.created_at or dividend.declared_date,
+        effective_at=dividend.record_date or dividend.payment_date,
+        payload=payload,
+        payout=PayoutEvidence(
+            instrument_uid=dividend.instrument_uid,
+            event_type="dividend",
+            provider_key=key,
+            announced_at=dividend.declared_date or dividend.created_at,
+            record_at=dividend.record_date,
+            expected_at=dividend.payment_date,
+            actual_at=None,
+            amount=Decimal(dividend.dividend_net.value),
+            currency=dividend.dividend_net.currency,
+            status=(
+                "cancelled"
+                if dividend.dividend_type.strip().lower() == "cancelled"
+                else "scheduled"
+            ),
+            payload=payload,
+        ),
+    )
+
+
+def _coupon_document(coupon: TBankBondCoupon) -> EvidenceDocument:
+    payload = asdict(coupon)
+    key = "|".join(
+        [
+            coupon.instrument_uid,
+            str(coupon.coupon_number),
+            _time_key(coupon.coupon_date),
+        ]
+    )
+    return EvidenceDocument(
+        provider="tbank",
+        document_type="bond_coupon",
+        subject_uid=coupon.instrument_uid,
+        provider_key=key,
+        source_url=TBANK_BOND_COUPONS_SOURCE,
+        published_at=None,
+        effective_at=coupon.coupon_date,
+        payload=payload,
+        payout=PayoutEvidence(
+            instrument_uid=coupon.instrument_uid,
+            event_type="coupon",
+            provider_key=key,
+            announced_at=None,
+            record_at=coupon.fix_date,
+            expected_at=coupon.coupon_date,
+            actual_at=None,
+            amount=Decimal(coupon.pay_one_bond.value),
+            currency=coupon.pay_one_bond.currency,
+            status="scheduled",
+            payload=payload,
+        ),
+    )
+
+
+def _bond_event_status(
+    bond_event: TBankBondEvent,
+    assessed_at: datetime,
+) -> tuple[
+    Literal["announced", "scheduled", "cancelled", "paid", "defaulted", "observed"],
+    bool,
+]:
+    confirmed_default = (
+        bond_event.default_date is not None
+        and bond_event.default_date <= assessed_at
+    )
+    if confirmed_default:
+        return "defaulted", False
+    confirmed_payment = (
+        bond_event.real_pay_date is not None
+        and bond_event.real_pay_date <= assessed_at
+    )
+    if confirmed_payment:
+        return "paid", True
+    return "observed", False
+
+
+def _bond_event_document(
+    bond_event: TBankBondEvent,
+    assessed_at: datetime,
+) -> EvidenceDocument:
+    payload = asdict(bond_event)
+    key = "|".join(
+        [
+            bond_event.instrument_uid,
+            str(bond_event.event_number),
+            bond_event.event_type,
+            _time_key(bond_event.event_date),
+        ]
+    )
+    status, confirmed_payment = _bond_event_status(bond_event, assessed_at)
+    facts = (
+        (
+            EvidenceFact(
+                subject_uid=bond_event.instrument_uid,
+                fact_type="bond_event",
+                fact_key="default_date",
+                value_text=_time_key(bond_event.default_date) or None,
+                effective_at=bond_event.default_date,
+                published_at=bond_event.event_date,
+                payload={
+                    "event_type": bond_event.event_type,
+                    "execution": bond_event.execution,
+                },
+            ),
+        )
+        if bond_event.default_date is not None
+        else ()
+    )
+    return EvidenceDocument(
+        provider="tbank",
+        document_type="bond_event",
+        subject_uid=bond_event.instrument_uid,
+        provider_key=key,
+        source_url=TBANK_BOND_EVENTS_SOURCE,
+        published_at=bond_event.event_date,
+        effective_at=(
+            bond_event.default_date
+            or bond_event.real_pay_date
+            or bond_event.pay_date
+            or bond_event.event_date
+        ),
+        payload=payload,
+        facts=facts,
+        payout=PayoutEvidence(
+            instrument_uid=bond_event.instrument_uid,
+            event_type="bond_event",
+            provider_key=key,
+            announced_at=bond_event.event_date,
+            record_at=None,
+            expected_at=bond_event.pay_date,
+            actual_at=(
+                bond_event.real_pay_date
+                if confirmed_payment
+                else None
+            ),
+            amount=(
+                Decimal(bond_event.pay_one_bond.value)
+                if bond_event.pay_one_bond is not None
+                else None
+            ),
+            currency=(
+                bond_event.pay_one_bond.currency
+                if bond_event.pay_one_bond
+                else None
+            ),
+            status=status,
+            payload=payload,
+        ),
+    )
+
+
+def _report_document(report: TBankAssetReport) -> EvidenceDocument:
+    payload = asdict(report)
+    key = (
+        f"{report.instrument_uid}|{report.period_year}|{report.period_num}|"
+        f"{report.period_type}|{_time_key(report.report_date)}"
+    )
+    return EvidenceDocument(
+        provider="tbank",
+        document_type="issuer_report_calendar",
+        subject_uid=report.instrument_uid,
+        provider_key=key,
+        source_url=TBANK_ASSET_REPORTS_SOURCE,
+        published_at=report.report_date,
+        effective_at=report.report_date,
+        payload=payload,
+        facts=(
+            EvidenceFact(
+                subject_uid=report.instrument_uid,
+                fact_type="issuer_report",
+                fact_key="report_date",
+                value_text=_time_key(report.report_date),
+                effective_at=report.report_date,
+                published_at=report.report_date,
+                payload={
+                    "period_year": report.period_year,
+                    "period_num": report.period_num,
+                    "period_type": report.period_type,
+                },
+            ),
+        ),
+    )
+
+
+def _held_risk_state(
+    *,
+    position: TBankPortfolioPosition,
+    default_date: datetime | None,
+    rating_status: DataStatus,
+    fundamental_status: DataStatus,
+    metric_state: Literal["watch", "elevated"] | None,
+    metric_reasons: tuple[str, ...],
+    source_status: EvidenceStatus,
+    evidence_stale: bool,
+) -> tuple[RiskState, list[str]]:
+    if default_date is not None:
+        return "confirmed_default", ["tbank_bond_event_contains_default_date"]
+
+    reasons = list(metric_reasons)
+    if rating_status == "data_missing":
+        reasons.append("credit_rating_feed_not_verified")
+    if fundamental_status == "data_missing":
+        reasons.append("fundamental_data_missing")
+    elif fundamental_status == "stale":
+        reasons.append("fundamental_data_stale")
+    if evidence_stale:
+        reasons.append("provider_evidence_stale")
+    elif source_status != "received":
+        reasons.append("provider_evidence_partial")
+    if position.instrument_type == "etf":
+        reasons.append("fund_look_through_not_verified")
+
+    if evidence_stale:
+        return "data_missing", reasons
+    if metric_state is not None:
+        return metric_state, reasons
+    return ("data_missing" if reasons else "normal"), reasons
+
+
+def _held_position_assessment(
+    position: TBankPortfolioPosition,
+    *,
+    metadata_by_uid: dict[str, TBankInstrumentMetadata],
+    metadata_by_figi: dict[str, TBankInstrumentMetadata],
+    fundamentals: dict[str, TBankAssetFundamental],
+    defaults: dict[str, datetime],
+    source_status: EvidenceStatus,
+    evidence_stale: bool,
+    assessed_at: datetime,
+    evidence_refreshed_at: datetime,
+) -> InstrumentRiskAssessment:
+    uid = position.instrument_uid or position.figi
+    info = metadata_by_uid.get(position.instrument_uid)
+    if info is None and position.figi:
+        info = metadata_by_figi.get(position.figi)
+
+    provider_uid = info.uid if info is not None else uid
+    default_date = defaults.get(provider_uid)
+    fundamental_status = _fundamental_status(info, fundamentals, assessed_at)
+    current_fundamental = (
+        fundamentals.get(info.asset_uid)
+        if info is not None and info.asset_uid
+        else None
+    )
+    metric_state, metric_reasons, metric_profile, metric_signals = (
+        _fundamental_watch_signals(
+            current_fundamental,
+            status=fundamental_status,
+        )
+    )
+    rating_status: DataStatus = (
+        "not_applicable"
+        if position.instrument_type == "etf"
+        else "data_missing"
+    )
+    state, reasons = _held_risk_state(
+        position=position,
+        default_date=default_date,
+        rating_status=rating_status,
+        fundamental_status=fundamental_status,
+        metric_state=metric_state,
+        metric_reasons=metric_reasons,
+        source_status=source_status,
+        evidence_stale=evidence_stale,
+    )
+    return InstrumentRiskAssessment(
+        instrument_uid=uid,
+        state=state,
+        rating_status=rating_status,
+        fundamental_status=fundamental_status,
+        source_status=source_status,
+        reasons=tuple(reasons),
+        evidence={
+            "assessed_at": assessed_at.isoformat(),
+            "sector": info.sector if info else "",
+            "asset_uid": info.asset_uid if info else "",
+            "default_date": (
+                default_date.isoformat() if default_date is not None else None
+            ),
+            "rating_policy": "missing_until_licensed_feed_is_verified",
+            "fundamental_max_age_days": FUNDAMENTAL_MAX_AGE.days,
+            "evidence_retrieval_max_age_hours": int(
+                EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds() // 3600
+            ),
+            "evidence_refreshed_at": evidence_refreshed_at.isoformat(),
+            "ruleset_version": RISK_RULESET_VERSION,
+            "metric_profile": metric_profile,
+            "metric_signals": metric_signals,
+        },
+    )
+
+
 def build_tbank_evidence(
     bundle: BrokerObservationBundle,
     evidence: BrokerEvidenceSnapshot,
@@ -151,204 +471,14 @@ def build_tbank_evidence(
         raise ValueError("assessment time must be timezone-aware")
     assessed_at = assessed_at.astimezone(UTC)
 
-    documents: list[EvidenceDocument] = []
     fundamentals = {item.asset_uid: item for item in evidence.fundamentals}
-
-    for fundamental in evidence.fundamentals:
-        documents.append(_fundamental_document(fundamental))
-
-    for dividend in evidence.dividends:
-        payload = asdict(dividend)
-        effective_at = dividend.record_date or dividend.payment_date
-        key = "|".join(
-            [
-                dividend.instrument_uid,
-                _time_key(dividend.record_date),
-                _time_key(dividend.payment_date),
-                dividend.dividend_net.currency,
-                dividend.dividend_net.value,
-            ]
-        )
-        documents.append(
-            EvidenceDocument(
-                provider="tbank",
-                document_type="dividend",
-                subject_uid=dividend.instrument_uid,
-                provider_key=key,
-                source_url=TBANK_DIVIDENDS_SOURCE,
-                published_at=dividend.created_at or dividend.declared_date,
-                effective_at=effective_at,
-                payload=payload,
-                payout=PayoutEvidence(
-                    instrument_uid=dividend.instrument_uid,
-                    event_type="dividend",
-                    provider_key=key,
-                    announced_at=dividend.declared_date or dividend.created_at,
-                    record_at=dividend.record_date,
-                    expected_at=dividend.payment_date,
-                    actual_at=None,
-                    amount=Decimal(dividend.dividend_net.value),
-                    currency=dividend.dividend_net.currency,
-                    status=(
-                        "cancelled"
-                        if dividend.dividend_type.strip().lower() == "cancelled"
-                        else "scheduled"
-                    ),
-                    payload=payload,
-                ),
-            )
-        )
-
-    for coupon in evidence.coupons:
-        payload = asdict(coupon)
-        key = "|".join(
-            [
-                coupon.instrument_uid,
-                str(coupon.coupon_number),
-                _time_key(coupon.coupon_date),
-            ]
-        )
-        documents.append(
-            EvidenceDocument(
-                provider="tbank",
-                document_type="bond_coupon",
-                subject_uid=coupon.instrument_uid,
-                provider_key=key,
-                source_url=TBANK_BOND_COUPONS_SOURCE,
-                published_at=None,
-                effective_at=coupon.coupon_date,
-                payload=payload,
-                payout=PayoutEvidence(
-                    instrument_uid=coupon.instrument_uid,
-                    event_type="coupon",
-                    provider_key=key,
-                    announced_at=None,
-                    record_at=coupon.fix_date,
-                    expected_at=coupon.coupon_date,
-                    actual_at=None,
-                    amount=Decimal(coupon.pay_one_bond.value),
-                    currency=coupon.pay_one_bond.currency,
-                    status="scheduled",
-                    payload=payload,
-                ),
-            )
-        )
-
-    for bond_event in evidence.bond_events:
-        payload = asdict(bond_event)
-        key = "|".join(
-            [
-                bond_event.instrument_uid,
-                str(bond_event.event_number),
-                bond_event.event_type,
-                _time_key(bond_event.event_date),
-            ]
-        )
-        status: Literal["announced", "scheduled", "cancelled", "paid", "defaulted", "observed"]
-        confirmed_default = (
-            bond_event.default_date is not None
-            and bond_event.default_date <= assessed_at
-        )
-        confirmed_payment = (
-            bond_event.real_pay_date is not None
-            and bond_event.real_pay_date <= assessed_at
-        )
-        if confirmed_default:
-            status = "defaulted"
-        elif confirmed_payment:
-            status = "paid"
-        else:
-            status = "observed"
-        documents.append(
-            EvidenceDocument(
-                provider="tbank",
-                document_type="bond_event",
-                subject_uid=bond_event.instrument_uid,
-                provider_key=key,
-                source_url=TBANK_BOND_EVENTS_SOURCE,
-                published_at=bond_event.event_date,
-                effective_at=(
-                    bond_event.default_date
-                    or bond_event.real_pay_date
-                    or bond_event.pay_date
-                    or bond_event.event_date
-                ),
-                payload=payload,
-                facts=(
-                    EvidenceFact(
-                        subject_uid=bond_event.instrument_uid,
-                        fact_type="bond_event",
-                        fact_key="default_date",
-                        value_text=_time_key(bond_event.default_date) or None,
-                        effective_at=bond_event.default_date,
-                        published_at=bond_event.event_date,
-                        payload={
-                            "event_type": bond_event.event_type,
-                            "execution": bond_event.execution,
-                        },
-                    ),
-                ) if bond_event.default_date is not None else (),
-                payout=PayoutEvidence(
-                    instrument_uid=bond_event.instrument_uid,
-                    event_type="bond_event",
-                    provider_key=key,
-                    announced_at=bond_event.event_date,
-                    record_at=None,
-                    expected_at=bond_event.pay_date,
-                    actual_at=(
-                        bond_event.real_pay_date
-                        if confirmed_payment
-                        else None
-                    ),
-                    amount=(
-                        Decimal(bond_event.pay_one_bond.value)
-                        if bond_event.pay_one_bond is not None
-                        else None
-                    ),
-                    currency=(
-                        bond_event.pay_one_bond.currency
-                        if bond_event.pay_one_bond
-                        else None
-                    ),
-                    status=status,
-                    payload=payload,
-                ),
-            )
-        )
-
-    for report in evidence.reports:
-        payload = asdict(report)
-        key = (
-            f"{report.instrument_uid}|{report.period_year}|{report.period_num}|"
-            f"{report.period_type}|{_time_key(report.report_date)}"
-        )
-        documents.append(
-            EvidenceDocument(
-                provider="tbank",
-                document_type="issuer_report_calendar",
-                subject_uid=report.instrument_uid,
-                provider_key=key,
-                source_url=TBANK_ASSET_REPORTS_SOURCE,
-                published_at=report.report_date,
-                effective_at=report.report_date,
-                payload=payload,
-                facts=(
-                    EvidenceFact(
-                        subject_uid=report.instrument_uid,
-                        fact_type="issuer_report",
-                        fact_key="report_date",
-                        value_text=_time_key(report.report_date),
-                        effective_at=report.report_date,
-                        published_at=report.report_date,
-                        payload={
-                            "period_year": report.period_year,
-                            "period_num": report.period_num,
-                            "period_type": report.period_type,
-                        },
-                    ),
-                ),
-            )
-        )
+    documents = [
+        *(_fundamental_document(item) for item in evidence.fundamentals),
+        *(_dividend_document(item) for item in evidence.dividends),
+        *(_coupon_document(item) for item in evidence.coupons),
+        *(_bond_event_document(item, assessed_at) for item in evidence.bond_events),
+        *(_report_document(item) for item in evidence.reports),
+    ]
 
     source_status, evidence_stale = _source_status(
         evidence,
@@ -370,84 +500,20 @@ def build_tbank_evidence(
         if uid in seen:
             continue
         seen.add(uid)
-        info = metadata_by_uid.get(position.instrument_uid)
-        if info is None and position.figi:
-            info = metadata_by_figi.get(position.figi)
-        provider_uid = info.uid if info is not None else uid
-        default_date = defaults.get(provider_uid)
-        fundamental_status = _fundamental_status(info, fundamentals, assessed_at)
-        current_fundamental = (
-            fundamentals.get(info.asset_uid)
-            if info is not None and info.asset_uid
-            else None
-        )
-        metric_state, metric_reasons, metric_profile, metric_signals = (
-            _fundamental_watch_signals(
-                current_fundamental,
-                status=fundamental_status,
-            )
-        )
-        rating_status: DataStatus = (
-            "not_applicable" if position.instrument_type == "etf" else "data_missing"
-        )
-
-        reasons: list[str] = []
-        state: RiskState
-        if default_date is not None:
-            state = "confirmed_default"
-            reasons.append("tbank_bond_event_contains_default_date")
-        else:
-            reasons.extend(metric_reasons)
-            if rating_status == "data_missing":
-                reasons.append("credit_rating_feed_not_verified")
-            if fundamental_status == "data_missing":
-                reasons.append("fundamental_data_missing")
-            elif fundamental_status == "stale":
-                reasons.append("fundamental_data_stale")
-            if evidence_stale:
-                reasons.append("provider_evidence_stale")
-            elif source_status != "received":
-                reasons.append("provider_evidence_partial")
-            if position.instrument_type == "etf":
-                reasons.append("fund_look_through_not_verified")
-
-            if evidence_stale:
-                state = "data_missing"
-            elif metric_state is not None:
-                state = metric_state
-            else:
-                state = "data_missing" if reasons else "normal"
-
         assessments.append(
-            InstrumentRiskAssessment(
-                instrument_uid=uid,
-                state=state,
-                rating_status=rating_status,
-                fundamental_status=fundamental_status,
+            _held_position_assessment(
+                position,
+                metadata_by_uid=metadata_by_uid,
+                metadata_by_figi=metadata_by_figi,
+                fundamentals=fundamentals,
+                defaults=defaults,
                 source_status=source_status,
-                reasons=tuple(reasons),
-                evidence={
-                    "assessed_at": assessed_at.isoformat(),
-                    "sector": info.sector if info else "",
-                    "asset_uid": info.asset_uid if info else "",
-                    "default_date": (
-                        default_date.isoformat() if default_date is not None else None
-                    ),
-                    "rating_policy": "missing_until_licensed_feed_is_verified",
-                    "fundamental_max_age_days": FUNDAMENTAL_MAX_AGE.days,
-                    "evidence_retrieval_max_age_hours": int(
-                        EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds() // 3600
-                    ),
-                    "evidence_refreshed_at": evidence.refreshed_at.isoformat(),
-                    "ruleset_version": RISK_RULESET_VERSION,
-                    "metric_profile": metric_profile,
-                    "metric_signals": metric_signals,
-                },
+                evidence_stale=evidence_stale,
+                assessed_at=assessed_at,
+                evidence_refreshed_at=evidence.refreshed_at,
             )
         )
-
     return tuple(documents), tuple(assessments)
-
 
 def assess_candidate_fundamental_risk(
     info: TBankInstrumentMetadata,
@@ -516,6 +582,95 @@ def assess_candidate_fundamental_risk(
     )
 
 
+def _metric_signal(
+    code: str,
+    metric: str,
+    value: Decimal,
+) -> dict[str, object]:
+    return {
+        "code": code,
+        "metric": metric,
+        "value": str(value),
+    }
+
+
+def _bank_watch_signals(
+    item: TBankAssetFundamental,
+) -> tuple[tuple[str, ...], tuple[dict[str, object], ...]]:
+    reasons: list[str] = []
+    signals: list[dict[str, object]] = []
+    for metric in ("net_interest_margin_mrq", "roe", "roa"):
+        raw = getattr(item, metric)
+        if raw is None:
+            continue
+        value = Decimal(raw)
+        if value < 0:
+            code = f"{metric}_negative"
+            reasons.append(code)
+            signals.append(_metric_signal(code, metric, value))
+    return tuple(reasons), tuple(signals)
+
+
+def _corporate_watch_signals(
+    item: TBankAssetFundamental,
+) -> tuple[tuple[str, ...], tuple[dict[str, object], ...], bool]:
+    reasons: list[str] = []
+    signals: list[dict[str, object]] = []
+    elevated = False
+
+    if item.fixed_charge_coverage_ratio_fy is not None:
+        value = Decimal(item.fixed_charge_coverage_ratio_fy)
+        if value < 1:
+            code = "fixed_charge_coverage_ratio_below_one"
+            reasons.append(code)
+            signals.append(
+                _metric_signal(code, "fixed_charge_coverage_ratio_fy", value)
+            )
+            elevated = True
+
+    if item.ebitda_ttm is not None:
+        value = Decimal(item.ebitda_ttm)
+        if value < 0:
+            code = "ebitda_negative"
+            reasons.append(code)
+            signals.append(_metric_signal(code, "ebitda_ttm", value))
+
+    if item.free_cash_flow_ttm is not None and item.total_debt_mrq is not None:
+        free_cash_flow = Decimal(item.free_cash_flow_ttm)
+        debt = Decimal(item.total_debt_mrq)
+        if free_cash_flow < 0 and debt > 0:
+            code = "free_cash_flow_negative_with_debt"
+            reasons.append(code)
+            signals.append(
+                _metric_signal(code, "free_cash_flow_ttm", free_cash_flow)
+            )
+
+    if item.current_ratio_mrq is not None:
+        value = Decimal(item.current_ratio_mrq)
+        if value < 1:
+            code = "current_ratio_below_one"
+            reasons.append(code)
+            signals.append(_metric_signal(code, "current_ratio_mrq", value))
+
+    return tuple(reasons), tuple(signals), elevated
+
+
+def _fundamental_profile(item: TBankAssetFundamental) -> str:
+    if item.net_interest_margin_mrq is not None:
+        return "bank_like"
+    if any(
+        value is not None
+        for value in (
+            item.ebitda_ttm,
+            item.fixed_charge_coverage_ratio_fy,
+            item.net_debt_to_ebitda,
+            item.current_ratio_mrq,
+        )
+    ):
+        return "corporate"
+    return "unknown"
+
+
 def _fundamental_watch_signals(
     item: TBankAssetFundamental | None,
     *,
@@ -529,90 +684,24 @@ def _fundamental_watch_signals(
     if item is None or status != "received":
         return None, (), "unknown", ()
 
-    if item.net_interest_margin_mrq is not None:
-        profile = "bank_like"
-    elif any(
-        value is not None
-        for value in (
-            item.ebitda_ttm,
-            item.fixed_charge_coverage_ratio_fy,
-            item.net_debt_to_ebitda,
-            item.current_ratio_mrq,
-        )
-    ):
-        profile = "corporate"
-    else:
-        return None, (), "unknown", ()
-
-    reasons: list[str] = []
-    signals: list[dict[str, object]] = []
-    elevated = False
-
-    def record(code: str, metric: str, value: Decimal) -> None:
-        reasons.append(code)
-        signals.append(
-            {
-                "code": code,
-                "metric": metric,
-                "value": str(value),
-            }
-        )
+    profile = _fundamental_profile(item)
+    if profile == "unknown":
+        return None, (), profile, ()
 
     if profile == "bank_like":
-        for metric in ("net_interest_margin_mrq", "roe", "roa"):
-            raw = getattr(item, metric)
-            if raw is None:
-                continue
-            value = Decimal(raw)
-            if value < 0:
-                record(f"{metric}_negative", metric, value)
+        reasons, signals = _bank_watch_signals(item)
+        elevated = False
     else:
-        if item.fixed_charge_coverage_ratio_fy is not None:
-            fccr = Decimal(item.fixed_charge_coverage_ratio_fy)
-            if fccr < 1:
-                record(
-                    "fixed_charge_coverage_ratio_below_one",
-                    "fixed_charge_coverage_ratio_fy",
-                    fccr,
-                )
-                elevated = True
-
-        if item.ebitda_ttm is not None:
-            ebitda = Decimal(item.ebitda_ttm)
-            if ebitda < 0:
-                record("ebitda_negative", "ebitda_ttm", ebitda)
-
-        if (
-            item.free_cash_flow_ttm is not None
-            and item.total_debt_mrq is not None
-        ):
-            free_cash_flow = Decimal(item.free_cash_flow_ttm)
-            debt = Decimal(item.total_debt_mrq)
-            if free_cash_flow < 0 and debt > 0:
-                record(
-                    "free_cash_flow_negative_with_debt",
-                    "free_cash_flow_ttm",
-                    free_cash_flow,
-                )
-
-        if item.current_ratio_mrq is not None:
-            current_ratio = Decimal(item.current_ratio_mrq)
-            if current_ratio < 1:
-                record(
-                    "current_ratio_below_one",
-                    "current_ratio_mrq",
-                    current_ratio,
-                )
+        reasons, signals, elevated = _corporate_watch_signals(item)
 
     if not reasons:
         return None, (), profile, ()
     return (
         "elevated" if elevated else "watch",
-        tuple(reasons),
+        reasons,
         profile,
-        tuple(signals),
+        signals,
     )
-
 
 def _fundamental_document(item: TBankAssetFundamental) -> EvidenceDocument:
     payload = asdict(item)

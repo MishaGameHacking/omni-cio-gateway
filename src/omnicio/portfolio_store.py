@@ -58,6 +58,27 @@ class InvestmentProfileRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class BalancingPolicyInput:
+    max_instrument_percent: Decimal
+    max_sector_percent: Decimal
+    max_issuer_percent: Decimal
+    max_group_percent: Decimal
+    max_share_percent: Decimal
+    max_bond_percent: Decimal
+    max_etf_percent: Decimal
+    max_below_grade_percent: Decimal
+    max_unknown_percent: Decimal
+    max_term_months: int
+    turnover_budget_percent: Decimal
+    max_daily_turnover_participation_percent: Decimal
+    securities_tax_rate_percent: Decimal
+    uncertainty_haircut_percent: Decimal
+    credit_loss_haircut_percent: Decimal
+    no_trade_band_percent: Decimal
+    min_replace_benefit_rub: Decimal
+
+
+@dataclass(frozen=True, slots=True)
 class BalancingPolicyRecord:
     id: int
     user_id: UUID
@@ -146,6 +167,454 @@ class BrokerSyncState:
     pending_cursor: str
     last_complete_watermark: datetime | None
     updated_at: datetime
+
+
+def _validate_proposal_decision_input(
+    *,
+    expected_hash: bytes,
+    session_digest: bytes,
+    action: Literal["confirmed", "rejected", "deferred"],
+    user_reason: str,
+    deferred_until: datetime | None,
+    now: datetime,
+) -> str:
+    if now.tzinfo is None:
+        raise ValueError("proposal decision time must be timezone-aware")
+    if len(expected_hash) != 32:
+        raise ValueError("proposal hash must be SHA-256")
+    if len(session_digest) != 32:
+        raise ValueError("proposal session digest must be SHA-256")
+
+    clean_reason = user_reason.strip()
+    if len(clean_reason) > 500:
+        raise ValueError("proposal decision reason is too long")
+    if action == "rejected" and not clean_reason:
+        raise ValueError("proposal rejection reason is required")
+
+    if action == "deferred":
+        if deferred_until is None or deferred_until.tzinfo is None:
+            raise ValueError("proposal defer time must be timezone-aware")
+        if deferred_until.astimezone(UTC) <= now.astimezone(UTC):
+            raise ValueError("proposal defer time must be in the future")
+    elif deferred_until is not None:
+        raise ValueError("proposal defer time is only valid for defer")
+    return clean_reason
+
+
+def _proposal_decision_outcome(
+    cur: Any,
+    *,
+    proposal: PortfolioProposalRecord,
+    user_id: UUID,
+    action: Literal["confirmed", "rejected", "deferred"],
+    material_current: bool,
+    now: datetime,
+) -> tuple[ProposalAction, str]:
+    if proposal.expires_at <= now.astimezone(UTC):
+        return "expired", "proposal_expired"
+    if not material_current:
+        return "revoked", "proposal_material_changed"
+    try:
+        _require_current_proposal_sources(
+            cur,
+            user_id=user_id,
+            snapshot_id=proposal.source_snapshot_id,
+            account_id=proposal.account_id,
+            profile_version=proposal.profile_version,
+            policy_version=proposal.policy_version,
+        )
+    except ProposalStateError:
+        return "revoked", "proposal_sources_changed"
+    return action, "user_decision"
+
+
+def _source_document_id(
+    cur: Any,
+    document: EvidenceDocument,
+    retrieved_at: datetime,
+) -> tuple[UUID, bool]:
+    content_hash = _hash_json(document.payload)
+    cur.execute(
+        """
+        INSERT INTO source_documents (
+            provider,
+            document_type,
+            subject_uid,
+            provider_key,
+            source_url,
+            published_at,
+            effective_at,
+            first_retrieved_at,
+            content_hash,
+            payload
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+        ON CONFLICT (
+            provider,
+            document_type,
+            subject_uid,
+            provider_key,
+            content_hash
+        ) DO NOTHING
+        RETURNING id
+        """,
+        (
+            document.provider,
+            document.document_type,
+            document.subject_uid,
+            document.provider_key,
+            document.source_url,
+            document.published_at,
+            document.effective_at,
+            retrieved_at,
+            content_hash,
+            _json(document.payload),
+        ),
+    )
+    inserted = cur.fetchone()
+    created = inserted is not None
+    if inserted is None:
+        cur.execute(
+            """
+            SELECT id
+            FROM source_documents
+            WHERE provider = %s
+              AND document_type = %s
+              AND subject_uid = %s
+              AND provider_key = %s
+              AND content_hash = %s
+            """,
+            (
+                document.provider,
+                document.document_type,
+                document.subject_uid,
+                document.provider_key,
+                content_hash,
+            ),
+        )
+        inserted = cur.fetchone()
+        if inserted is None:
+            raise RuntimeError("evidence document conflict could not be resolved")
+    return cast(UUID, cast(dict[str, Any], inserted)["id"]), created
+
+
+def _save_source_retrieval(
+    cur: Any,
+    document_id: UUID,
+    retrieved_at: datetime,
+) -> None:
+    cur.execute(
+        """
+        INSERT INTO source_retrievals (source_document_id, retrieved_at)
+        VALUES (%s, %s)
+        ON CONFLICT (source_document_id, retrieved_at) DO NOTHING
+        """,
+        (document_id, retrieved_at),
+    )
+
+
+def _save_source_facts(
+    cur: Any,
+    document_id: UUID,
+    document: EvidenceDocument,
+) -> None:
+    for fact in document.facts:
+        fact_payload = {
+            "subject_uid": fact.subject_uid,
+            "fact_type": fact.fact_type,
+            "fact_key": fact.fact_key,
+            "value_numeric": fact.value_numeric,
+            "value_text": fact.value_text,
+            "currency": fact.currency,
+            "unit": fact.unit,
+            "effective_at": fact.effective_at,
+            "published_at": fact.published_at,
+            "payload": fact.payload or {},
+        }
+        cur.execute(
+            """
+            INSERT INTO source_facts (
+                source_document_id,
+                subject_uid,
+                fact_type,
+                fact_key,
+                value_numeric,
+                value_text,
+                currency,
+                unit,
+                effective_at,
+                published_at,
+                payload,
+                semantic_hash
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+            )
+            ON CONFLICT (source_document_id, semantic_hash) DO NOTHING
+            """,
+            (
+                document_id,
+                fact.subject_uid,
+                fact.fact_type,
+                fact.fact_key,
+                fact.value_numeric,
+                fact.value_text,
+                fact.currency,
+                fact.unit,
+                fact.effective_at,
+                fact.published_at,
+                _json(fact.payload or {}),
+                _hash_json(fact_payload),
+            ),
+        )
+
+
+def _save_payout_event(
+    cur: Any,
+    document_id: UUID,
+    document: EvidenceDocument,
+) -> None:
+    payout = document.payout
+    if payout is None:
+        return
+    payout_payload = {
+        "provider": document.provider,
+        "instrument_uid": payout.instrument_uid,
+        "event_type": payout.event_type,
+        "provider_key": payout.provider_key,
+        "announced_at": payout.announced_at,
+        "record_at": payout.record_at,
+        "expected_at": payout.expected_at,
+        "actual_at": payout.actual_at,
+        "amount": payout.amount,
+        "currency": payout.currency,
+        "status": payout.status,
+        "payload": payout.payload,
+    }
+    cur.execute(
+        """
+        INSERT INTO payout_events (
+            source_document_id,
+            provider,
+            instrument_uid,
+            event_type,
+            provider_key,
+            announced_at,
+            record_at,
+            expected_at,
+            actual_at,
+            amount,
+            currency,
+            status,
+            payload,
+            semantic_hash
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+        )
+        ON CONFLICT (
+            provider,
+            instrument_uid,
+            event_type,
+            provider_key,
+            semantic_hash
+        ) DO NOTHING
+        """,
+        (
+            document_id,
+            document.provider,
+            payout.instrument_uid,
+            payout.event_type,
+            payout.provider_key,
+            payout.announced_at,
+            payout.record_at,
+            payout.expected_at,
+            payout.actual_at,
+            payout.amount,
+            payout.currency,
+            payout.status,
+            _json(payout.payload),
+            _hash_json(payout_payload),
+        ),
+    )
+
+
+def _save_risk_assessment(
+    cur: Any,
+    *,
+    user_id: UUID,
+    snapshot_id: UUID,
+    assessment: InstrumentRiskAssessment,
+    retrieved_at: datetime,
+) -> bool:
+    cur.execute(
+        """
+        INSERT INTO portfolio_risk_assessments (
+            user_id,
+            snapshot_id,
+            instrument_uid,
+            state,
+            rating_status,
+            fundamental_status,
+            source_status,
+            reasons,
+            evidence,
+            assessed_at
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s
+        )
+        ON CONFLICT (snapshot_id, instrument_uid) DO NOTHING
+        RETURNING id
+        """,
+        (
+            user_id,
+            snapshot_id,
+            assessment.instrument_uid,
+            assessment.state,
+            assessment.rating_status,
+            assessment.fundamental_status,
+            assessment.source_status,
+            _json(list(assessment.reasons)),
+            _json(assessment.evidence),
+            retrieved_at,
+        ),
+    )
+    return cur.fetchone() is not None
+
+
+def _save_operation_observation(
+    cur: Any,
+    *,
+    user_id: UUID,
+    account_id: str,
+    operation: TBankOperation,
+    observed_at: datetime,
+) -> bool:
+    normalized = _operation_payload(operation)
+    semantic = _semantic_operation_payload(normalized)
+    cur.execute(
+        """
+        INSERT INTO operation_observations (
+            user_id,
+            account_id,
+            observation_hash,
+            semantic_hash,
+            provider_operation_id,
+            provider_cursor,
+            operation_date,
+            operation_type,
+            operation_state,
+            instrument_uid,
+            figi,
+            instrument_type,
+            payment_value,
+            payment_currency,
+            price_value,
+            price_currency,
+            commission_value,
+            commission_currency,
+            accrued_int_value,
+            accrued_int_currency,
+            quantity,
+            quantity_rest,
+            quantity_done,
+            normalized,
+            observed_at
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+        )
+        ON CONFLICT DO NOTHING
+        RETURNING id
+        """,
+        (
+            user_id,
+            account_id,
+            _hash_json(normalized),
+            _hash_json(semantic),
+            operation.id,
+            operation.cursor,
+            operation.date,
+            operation.operation_type,
+            operation.state,
+            operation.instrument_uid,
+            operation.figi,
+            operation.instrument_type,
+            _money_decimal(operation.payment),
+            operation.payment.currency if operation.payment else None,
+            _money_decimal(operation.price),
+            operation.price.currency if operation.price else None,
+            _money_decimal(operation.commission),
+            operation.commission.currency if operation.commission else None,
+            _money_decimal(operation.accrued_int),
+            operation.accrued_int.currency if operation.accrued_int else None,
+            Decimal(operation.quantity),
+            Decimal(operation.quantity_rest),
+            Decimal(operation.quantity_done),
+            _json(normalized),
+            observed_at,
+        ),
+    )
+    return cur.fetchone() is not None
+
+
+def _save_history_sync_state(
+    cur: Any,
+    *,
+    user_id: UUID,
+    account_id: str,
+    window_from: datetime,
+    window_to: datetime,
+    page: TBankOperationsPage,
+) -> None:
+    if page.has_next:
+        if not page.next_cursor:
+            raise RuntimeError("history page has_next without a cursor")
+        cur.execute(
+            """
+            INSERT INTO broker_sync_state (
+                user_id,
+                account_id,
+                history_window_from,
+                history_window_to,
+                pending_cursor
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, account_id) DO UPDATE SET
+                history_window_from = EXCLUDED.history_window_from,
+                history_window_to = EXCLUDED.history_window_to,
+                pending_cursor = EXCLUDED.pending_cursor,
+                updated_at = now()
+            """,
+            (
+                user_id,
+                account_id,
+                window_from,
+                window_to,
+                page.next_cursor,
+            ),
+        )
+        return
+
+    cur.execute(
+        """
+        INSERT INTO broker_sync_state (
+            user_id,
+            account_id,
+            last_complete_watermark
+        )
+        VALUES (%s, %s, %s)
+        ON CONFLICT (user_id, account_id) DO UPDATE SET
+            history_window_from = NULL,
+            history_window_to = NULL,
+            pending_cursor = NULL,
+            last_complete_watermark = EXCLUDED.last_complete_watermark,
+            updated_at = now()
+        """,
+        (user_id, account_id, window_to),
+    )
 
 
 class PortfolioStore:
@@ -384,43 +853,26 @@ class PortfolioStore:
     def save_balancing_policy(
         self,
         user_id: UUID,
-        *,
-        max_instrument_percent: Decimal,
-        max_sector_percent: Decimal,
-        max_issuer_percent: Decimal,
-        max_group_percent: Decimal,
-        max_share_percent: Decimal,
-        max_bond_percent: Decimal,
-        max_etf_percent: Decimal,
-        max_below_grade_percent: Decimal,
-        max_unknown_percent: Decimal,
-        max_term_months: int,
-        turnover_budget_percent: Decimal,
-        max_daily_turnover_participation_percent: Decimal,
-        securities_tax_rate_percent: Decimal,
-        uncertainty_haircut_percent: Decimal,
-        credit_loss_haircut_percent: Decimal,
-        no_trade_band_percent: Decimal,
-        min_replace_benefit_rub: Decimal,
+        policy: BalancingPolicyInput,
     ) -> BalancingPolicyRecord:
         desired = (
-            max_instrument_percent,
-            max_sector_percent,
-            max_issuer_percent,
-            max_group_percent,
-            max_share_percent,
-            max_bond_percent,
-            max_etf_percent,
-            max_below_grade_percent,
-            max_unknown_percent,
-            max_term_months,
-            turnover_budget_percent,
-            max_daily_turnover_participation_percent,
-            securities_tax_rate_percent,
-            uncertainty_haircut_percent,
-            credit_loss_haircut_percent,
-            no_trade_band_percent,
-            min_replace_benefit_rub,
+            policy.max_instrument_percent,
+            policy.max_sector_percent,
+            policy.max_issuer_percent,
+            policy.max_group_percent,
+            policy.max_share_percent,
+            policy.max_bond_percent,
+            policy.max_etf_percent,
+            policy.max_below_grade_percent,
+            policy.max_unknown_percent,
+            policy.max_term_months,
+            policy.turnover_budget_percent,
+            policy.max_daily_turnover_participation_percent,
+            policy.securities_tax_rate_percent,
+            policy.uncertainty_haircut_percent,
+            policy.credit_loss_haircut_percent,
+            policy.no_trade_band_percent,
+            policy.min_replace_benefit_rub,
         )
         with (
             self.database.pool.connection() as conn,
@@ -813,24 +1265,14 @@ class PortfolioStore:
         material_current: bool,
         now: datetime,
     ) -> tuple[PortfolioProposalRecord, PortfolioProposalActionRecord]:
-        if now.tzinfo is None:
-            raise ValueError("proposal decision time must be timezone-aware")
-        if len(expected_hash) != 32:
-            raise ValueError("proposal hash must be SHA-256")
-        if len(session_digest) != 32:
-            raise ValueError("proposal session digest must be SHA-256")
-        clean_reason = user_reason.strip()
-        if len(clean_reason) > 500:
-            raise ValueError("proposal decision reason is too long")
-        if action == "rejected" and not clean_reason:
-            raise ValueError("proposal rejection reason is required")
-        if action == "deferred":
-            if deferred_until is None or deferred_until.tzinfo is None:
-                raise ValueError("proposal defer time must be timezone-aware")
-            if deferred_until.astimezone(UTC) <= now.astimezone(UTC):
-                raise ValueError("proposal defer time must be in the future")
-        elif deferred_until is not None:
-            raise ValueError("proposal defer time is only valid for defer")
+        clean_reason = _validate_proposal_decision_input(
+            expected_hash=expected_hash,
+            session_digest=session_digest,
+            action=action,
+            user_reason=user_reason,
+            deferred_until=deferred_until,
+            now=now,
+        )
         with (
             self.database.pool.connection() as conn,
             conn.transaction(),
@@ -890,30 +1332,14 @@ class PortfolioStore:
             if existing is not None:
                 raise ProposalStateError("proposal_already_decided")
 
-            decided_action: ProposalAction
-            reason: str
-            if proposal.expires_at <= now.astimezone(UTC):
-                decided_action = "expired"
-                reason = "proposal_expired"
-            elif not material_current:
-                decided_action = "revoked"
-                reason = "proposal_material_changed"
-            else:
-                try:
-                    _require_current_proposal_sources(
-                        cur,
-                        user_id=user_id,
-                        snapshot_id=proposal.source_snapshot_id,
-                        account_id=proposal.account_id,
-                        profile_version=proposal.profile_version,
-                        policy_version=proposal.policy_version,
-                    )
-                except ProposalStateError:
-                    decided_action = "revoked"
-                    reason = "proposal_sources_changed"
-                else:
-                    decided_action = action
-                    reason = "user_decision"
+            decided_action, reason = _proposal_decision_outcome(
+                cur,
+                proposal=proposal,
+                user_id=user_id,
+                action=action,
+                material_current=material_current,
+                now=now,
+            )
 
             cur.execute(
                 """
@@ -1498,6 +1924,7 @@ class PortfolioStore:
     ) -> tuple[int, int]:
         if retrieved_at.tzinfo is None:
             raise ValueError("evidence retrieval time must be timezone-aware")
+
         documents_written = 0
         assessments_written = 0
         with (
@@ -1507,229 +1934,26 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             for document in documents:
-                content_hash = _hash_json(document.payload)
-                cur.execute(
-                    """
-                    INSERT INTO source_documents (
-                        provider,
-                        document_type,
-                        subject_uid,
-                        provider_key,
-                        source_url,
-                        published_at,
-                        effective_at,
-                        first_retrieved_at,
-                        content_hash,
-                        payload
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                    ON CONFLICT (
-                        provider,
-                        document_type,
-                        subject_uid,
-                        provider_key,
-                        content_hash
-                    ) DO NOTHING
-                    RETURNING id
-                    """,
-                    (
-                        document.provider,
-                        document.document_type,
-                        document.subject_uid,
-                        document.provider_key,
-                        document.source_url,
-                        document.published_at,
-                        document.effective_at,
-                        retrieved_at,
-                        content_hash,
-                        _json(document.payload),
-                    ),
+                document_id, created = _source_document_id(
+                    cur,
+                    document,
+                    retrieved_at,
                 )
-                inserted = cur.fetchone()
-                if inserted is None:
-                    cur.execute(
-                        """
-                        SELECT id
-                        FROM source_documents
-                        WHERE provider = %s
-                          AND document_type = %s
-                          AND subject_uid = %s
-                          AND provider_key = %s
-                          AND content_hash = %s
-                        """,
-                        (
-                            document.provider,
-                            document.document_type,
-                            document.subject_uid,
-                            document.provider_key,
-                            content_hash,
-                        ),
-                    )
-                    inserted = cur.fetchone()
-                    if inserted is None:
-                        raise RuntimeError("evidence document conflict could not be resolved")
-                else:
-                    documents_written += 1
-                document_id = cast(UUID, cast(dict[str, Any], inserted)["id"])
-
-                cur.execute(
-                    """
-                    INSERT INTO source_retrievals (source_document_id, retrieved_at)
-                    VALUES (%s, %s)
-                    ON CONFLICT (source_document_id, retrieved_at) DO NOTHING
-                    """,
-                    (document_id, retrieved_at),
-                )
-
-                for fact in document.facts:
-                    fact_payload = {
-                        "subject_uid": fact.subject_uid,
-                        "fact_type": fact.fact_type,
-                        "fact_key": fact.fact_key,
-                        "value_numeric": fact.value_numeric,
-                        "value_text": fact.value_text,
-                        "currency": fact.currency,
-                        "unit": fact.unit,
-                        "effective_at": fact.effective_at,
-                        "published_at": fact.published_at,
-                        "payload": fact.payload or {},
-                    }
-                    cur.execute(
-                        """
-                        INSERT INTO source_facts (
-                            source_document_id,
-                            subject_uid,
-                            fact_type,
-                            fact_key,
-                            value_numeric,
-                            value_text,
-                            currency,
-                            unit,
-                            effective_at,
-                            published_at,
-                            payload,
-                            semantic_hash
-                        )
-                        VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
-                        )
-                        ON CONFLICT (source_document_id, semantic_hash) DO NOTHING
-                        """,
-                        (
-                            document_id,
-                            fact.subject_uid,
-                            fact.fact_type,
-                            fact.fact_key,
-                            fact.value_numeric,
-                            fact.value_text,
-                            fact.currency,
-                            fact.unit,
-                            fact.effective_at,
-                            fact.published_at,
-                            _json(fact.payload or {}),
-                            _hash_json(fact_payload),
-                        ),
-                    )
-
-                if document.payout is not None:
-                    payout = document.payout
-                    payout_payload = {
-                        "provider": document.provider,
-                        "instrument_uid": payout.instrument_uid,
-                        "event_type": payout.event_type,
-                        "provider_key": payout.provider_key,
-                        "announced_at": payout.announced_at,
-                        "record_at": payout.record_at,
-                        "expected_at": payout.expected_at,
-                        "actual_at": payout.actual_at,
-                        "amount": payout.amount,
-                        "currency": payout.currency,
-                        "status": payout.status,
-                        "payload": payout.payload,
-                    }
-                    cur.execute(
-                        """
-                        INSERT INTO payout_events (
-                            source_document_id,
-                            provider,
-                            instrument_uid,
-                            event_type,
-                            provider_key,
-                            announced_at,
-                            record_at,
-                            expected_at,
-                            actual_at,
-                            amount,
-                            currency,
-                            status,
-                            payload,
-                            semantic_hash
-                        )
-                        VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
-                        )
-                        ON CONFLICT (
-                            provider,
-                            instrument_uid,
-                            event_type,
-                            provider_key,
-                            semantic_hash
-                        ) DO NOTHING
-                        """,
-                        (
-                            document_id,
-                            document.provider,
-                            payout.instrument_uid,
-                            payout.event_type,
-                            payout.provider_key,
-                            payout.announced_at,
-                            payout.record_at,
-                            payout.expected_at,
-                            payout.actual_at,
-                            payout.amount,
-                            payout.currency,
-                            payout.status,
-                            _json(payout.payload),
-                            _hash_json(payout_payload),
-                        ),
-                    )
+                documents_written += int(created)
+                _save_source_retrieval(cur, document_id, retrieved_at)
+                _save_source_facts(cur, document_id, document)
+                _save_payout_event(cur, document_id, document)
 
             for assessment in assessments:
-                cur.execute(
-                    """
-                    INSERT INTO portfolio_risk_assessments (
-                        user_id,
-                        snapshot_id,
-                        instrument_uid,
-                        state,
-                        rating_status,
-                        fundamental_status,
-                        source_status,
-                        reasons,
-                        evidence,
-                        assessed_at
+                assessments_written += int(
+                    _save_risk_assessment(
+                        cur,
+                        user_id=user_id,
+                        snapshot_id=snapshot_id,
+                        assessment=assessment,
+                        retrieved_at=retrieved_at,
                     )
-                    VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s
-                    )
-                    ON CONFLICT (snapshot_id, instrument_uid) DO NOTHING
-                    RETURNING id
-                    """,
-                    (
-                        user_id,
-                        snapshot_id,
-                        assessment.instrument_uid,
-                        assessment.state,
-                        assessment.rating_status,
-                        assessment.fundamental_status,
-                        assessment.source_status,
-                        _json(list(assessment.reasons)),
-                        _json(assessment.evidence),
-                        retrieved_at,
-                    ),
                 )
-                if cur.fetchone() is not None:
-                    assessments_written += 1
         return documents_written, assessments_written
 
     def portfolio_visualization(
@@ -2551,6 +2775,7 @@ class PortfolioStore:
     ) -> int:
         if window_from.tzinfo is None or window_to.tzinfo is None:
             raise ValueError("history window must be timezone-aware")
+
         inserted = 0
         with (
             self.database.pool.connection() as conn,
@@ -2559,123 +2784,23 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             for operation in page.items:
-                normalized = _operation_payload(operation)
-                semantic = _semantic_operation_payload(normalized)
-                observation_hash = _hash_json(normalized)
-                semantic_hash = _hash_json(semantic)
-                cur.execute(
-                    """
-                    INSERT INTO operation_observations (
-                        user_id,
-                        account_id,
-                        observation_hash,
-                        semantic_hash,
-                        provider_operation_id,
-                        provider_cursor,
-                        operation_date,
-                        operation_type,
-                        operation_state,
-                        instrument_uid,
-                        figi,
-                        instrument_type,
-                        payment_value,
-                        payment_currency,
-                        price_value,
-                        price_currency,
-                        commission_value,
-                        commission_currency,
-                        accrued_int_value,
-                        accrued_int_currency,
-                        quantity,
-                        quantity_rest,
-                        quantity_done,
-                        normalized,
-                        observed_at
+                inserted += int(
+                    _save_operation_observation(
+                        cur,
+                        user_id=user_id,
+                        account_id=account_id,
+                        operation=operation,
+                        observed_at=observed_at,
                     )
-                    VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
-                    )
-                    ON CONFLICT DO NOTHING
-                    RETURNING id
-                    """,
-                    (
-                        user_id,
-                        account_id,
-                        observation_hash,
-                        semantic_hash,
-                        operation.id,
-                        operation.cursor,
-                        operation.date,
-                        operation.operation_type,
-                        operation.state,
-                        operation.instrument_uid,
-                        operation.figi,
-                        operation.instrument_type,
-                        _money_decimal(operation.payment),
-                        operation.payment.currency if operation.payment else None,
-                        _money_decimal(operation.price),
-                        operation.price.currency if operation.price else None,
-                        _money_decimal(operation.commission),
-                        operation.commission.currency if operation.commission else None,
-                        _money_decimal(operation.accrued_int),
-                        operation.accrued_int.currency if operation.accrued_int else None,
-                        Decimal(operation.quantity),
-                        Decimal(operation.quantity_rest),
-                        Decimal(operation.quantity_done),
-                        _json(normalized),
-                        observed_at,
-                    ),
                 )
-                if cur.fetchone() is not None:
-                    inserted += 1
-
-            if page.has_next:
-                if not page.next_cursor:
-                    raise RuntimeError("history page has_next without a cursor")
-                state_values: tuple[object, ...] = (
-                    user_id,
-                    account_id,
-                    window_from,
-                    window_to,
-                    page.next_cursor,
-                )
-                cur.execute(
-                    """
-                    INSERT INTO broker_sync_state (
-                        user_id,
-                        account_id,
-                        history_window_from,
-                        history_window_to,
-                        pending_cursor
-                    )
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (user_id, account_id) DO UPDATE SET
-                        history_window_from = EXCLUDED.history_window_from,
-                        history_window_to = EXCLUDED.history_window_to,
-                        pending_cursor = EXCLUDED.pending_cursor,
-                        updated_at = now()
-                    """,
-                    state_values,
-                )
-            else:
-                cur.execute(
-                    """
-                    INSERT INTO broker_sync_state (
-                        user_id,
-                        account_id,
-                        last_complete_watermark
-                    )
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (user_id, account_id) DO UPDATE SET
-                        history_window_from = NULL,
-                        history_window_to = NULL,
-                        pending_cursor = NULL,
-                        last_complete_watermark = EXCLUDED.last_complete_watermark,
-                        updated_at = now()
-                    """,
-                    (user_id, account_id, window_to),
-                )
+            _save_history_sync_state(
+                cur,
+                user_id=user_id,
+                account_id=account_id,
+                window_from=window_from,
+                window_to=window_to,
+                page=page,
+            )
         return inserted
 
 

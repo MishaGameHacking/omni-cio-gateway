@@ -94,6 +94,76 @@ class PortfolioExecutionService:
             run, legs, _events = snapshot
         return run, legs
 
+    def _execution_snapshot(
+        self,
+        user_id: UUID,
+        run_id: UUID,
+    ) -> tuple[ExecutionRunRecord, tuple[ExecutionLegRecord, ...]]:
+        snapshot = self.store.execution(user_id, run_id)
+        if snapshot is None:
+            raise ExecutionServiceError("execution_not_found")
+        run, legs, _events = snapshot
+        return run, legs
+
+    def _advance_shadow(
+        self,
+        user_id: UUID,
+        run: ExecutionRunRecord,
+        legs: tuple[ExecutionLegRecord, ...],
+        observed_at: datetime,
+    ) -> tuple[ExecutionRunRecord, tuple[ExecutionLegRecord, ...]]:
+        if run.status in {"succeeded", "cancelled", "failed"}:
+            return run, legs
+        self._complete_shadow(user_id, run.id, now=observed_at)
+        return self._execution_snapshot(user_id, run.id)
+
+    def _require_execution_connection(
+        self,
+        user_id: UUID,
+        run: ExecutionRunRecord,
+    ) -> None:
+        if run.mode == "sandbox":
+            self._require_sandbox_account(user_id, run)
+            return
+        if run.mode == "live":
+            self._require_live_connection(user_id, run)
+            return
+        raise ExecutionServiceError("execution_mode_invalid")
+
+    def _advance_current_leg(
+        self,
+        user_id: UUID,
+        run: ExecutionRunRecord,
+        current: ExecutionLegRecord,
+        observed_at: datetime,
+    ) -> tuple[ExecutionRunRecord, tuple[ExecutionLegRecord, ...]] | None:
+        if current.status == "pending":
+            result = self._submit_pending(user_id, run, current, observed_at)
+            if result in {"submitted", "partially_filled", "reconciling"}:
+                return self._execution_snapshot(user_id, run.id)
+            return None
+
+        active_statuses = {
+            "submitting",
+            "submitted",
+            "partially_filled",
+            "cancel_requested",
+            "reconciling",
+        }
+        if current.status not in active_statuses:
+            return self._execution_snapshot(user_id, run.id)
+
+        if _timed_out(current, observed_at):
+            self._request_cancel(user_id, run, current, observed_at)
+        else:
+            self._reconcile_leg(user_id, run, current, observed_at)
+
+        next_run, next_legs = self._execution_snapshot(user_id, run.id)
+        next_current = _current_leg(next_legs)
+        if next_current is None or next_current.id != current.id:
+            return None
+        return next_run, next_legs
+
     def advance(
         self,
         user_id: UUID,
@@ -105,89 +175,28 @@ class PortfolioExecutionService:
         tuple[ExecutionLegRecord, ...],
     ]:
         observed_at = (now or datetime.now(UTC)).astimezone(UTC)
-        snapshot = self.store.execution(user_id, run_id)
-        if snapshot is None:
-            raise ExecutionServiceError("execution_not_found")
-        run, legs, _events = snapshot
+        run, legs = self._execution_snapshot(user_id, run_id)
         if run.mode == "shadow":
-            if run.status not in {"succeeded", "cancelled", "failed"}:
-                self._complete_shadow(user_id, run_id, now=observed_at)
-                refreshed = self.store.execution(user_id, run_id)
-                if refreshed is None:
-                    raise ExecutionServiceError("execution_not_found")
-                run, legs, _events = refreshed
-            return run, legs
+            return self._advance_shadow(user_id, run, legs, observed_at)
 
-        if run.mode == "sandbox":
-            self._require_sandbox_account(user_id, run)
-        elif run.mode == "live":
-            self._require_live_connection(user_id, run)
-        else:
-            raise ExecutionServiceError("execution_mode_invalid")
+        self._require_execution_connection(user_id, run)
         if run.status in {"succeeded", "cancelled", "failed"}:
             return run, legs
 
         for _ in range(len(legs) + 1):
-            snapshot = self.store.execution(user_id, run_id)
-            if snapshot is None:
-                raise ExecutionServiceError("execution_not_found")
-            run, legs, _events = snapshot
+            run, legs = self._execution_snapshot(user_id, run_id)
             current = _current_leg(legs)
-            if current is None or run.status in {
-                "succeeded",
-                "cancelled",
-                "failed",
-            }:
+            if current is None or run.status in {"succeeded", "cancelled", "failed"}:
                 return run, legs
 
-            if current.status == "pending":
-                result = self._submit_pending(
-                    user_id,
-                    run,
-                    current,
-                    observed_at,
-                )
-                if result in {"submitted", "partially_filled", "reconciling"}:
-                    refreshed = self.store.execution(user_id, run_id)
-                    if refreshed is None:
-                        raise ExecutionServiceError("execution_not_found")
-                    return refreshed[0], refreshed[1]
-                continue
-
-            if current.status in {
-                "submitting",
-                "submitted",
-                "partially_filled",
-                "cancel_requested",
-                "reconciling",
-            }:
-                if _timed_out(current, observed_at):
-                    self._request_cancel(
-                        user_id,
-                        run,
-                        current,
-                        observed_at,
-                    )
-                else:
-                    self._reconcile_leg(
-                        user_id,
-                        run,
-                        current,
-                        observed_at,
-                    )
-                refreshed = self.store.execution(user_id, run_id)
-                if refreshed is None:
-                    raise ExecutionServiceError("execution_not_found")
-                next_run, next_legs, _events = refreshed
-                next_current = _current_leg(next_legs)
-                if (
-                    next_current is None
-                    or next_current.id != current.id
-                ):
-                    continue
-                return next_run, next_legs
-
-            return run, legs
+            advanced = self._advance_current_leg(
+                user_id,
+                run,
+                current,
+                observed_at,
+            )
+            if advanced is not None:
+                return advanced
 
         raise ExecutionServiceError("execution_advance_limit_reached")
 

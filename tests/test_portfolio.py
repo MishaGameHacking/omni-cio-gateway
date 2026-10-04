@@ -201,8 +201,10 @@ def test_empty_zero_nav_and_order_blocked_are_not_default_claims() -> None:
 
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "not-a-number"])
 def test_non_finite_provider_numbers_are_rejected(value: str) -> None:
+    invalid_portfolio = portfolio(total=value)
+    available_cash = cash()
     with pytest.raises(PortfolioAnalysisError):
-        analyze_portfolio(portfolio(total=value), cash(), ())
+        analyze_portfolio(invalid_portfolio, available_cash, ())
 
 
 def test_duplicate_identity_is_rejected_instead_of_double_counted() -> None:
