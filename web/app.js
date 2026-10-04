@@ -1968,21 +1968,21 @@
     )) || null
   );
 
-  const renderInstrumentDetail = (payload, requestedIdentity) => {
-    const latest = payload?.latest || {};
-    const livePosition = livePositionForIdentity(requestedIdentity);
-    instrumentDetailTitle.textContent = latest.ticker || latest.name || latest.instrument_uid || "Инструмент";
+  const renderInstrumentDetailOverview = (latest, payload, livePosition) => {
+    instrumentDetailTitle.textContent = (
+      latest.ticker || latest.name || latest.instrument_uid || "Инструмент"
+    );
     instrumentDetailSubtitle.textContent = [
       latest.name && latest.name !== latest.ticker ? latest.name : "",
       INSTRUMENT_LABELS[latest.instrument_type] || latest.instrument_type,
       latest.sector || "Сектор не подтверждён",
       payload.snapshot_freshness === "stale" ? "snapshot устарел" : "",
     ].filter(Boolean).join(" · ");
-
     instrumentDetailValue.textContent = storedMoney(latest.value_rub);
     instrumentDetailWeight.textContent = Number.isFinite(Number(latest.nav_percent))
       ? `Доля NAV: ${formatPercent(latest.nav_percent)}`
       : "Доля NAV не подтверждена";
+
     const livePrice = livePosition?.current_price;
     instrumentDetailPrice.textContent = livePrice
       ? formatMoney(livePrice)
@@ -1999,24 +1999,31 @@
     instrumentDetailBlocked.textContent = latest.blocked || Number(latest.blocked_lots) > 0
       ? `Есть блокировка · лотов: ${formatQuantity(latest.blocked_lots)}`
       : "Блокировок не зафиксировано";
-    if (livePosition) {
-      instrumentDetailPnl.textContent = formatPercent(
-        livePosition.expected_yield_percent,
-        {sign: true},
-      );
-      applySignedClass(instrumentDetailPnl, livePosition.expected_yield_percent);
-      const dailyYield = formatMoney(livePosition.daily_yield, {sign: true});
-      instrumentDetailPnlTime.textContent = [
-        dailyYield !== "—" ? `сегодня ${dailyYield}` : "",
-        lastPortfolioSnapshot?.refreshed_at
-          ? `T-Invest ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
-          : "",
-      ].filter(Boolean).join(" · ") || "Текущий ответ T-Invest";
-    } else {
+  };
+
+  const renderInstrumentDetailPnl = (livePosition) => {
+    if (!livePosition) {
       instrumentDetailPnl.textContent = "—";
       instrumentDetailPnl.classList.remove("value-positive", "value-negative");
       instrumentDetailPnlTime.textContent = "Live P&L не подтверждён";
+      return;
     }
+
+    instrumentDetailPnl.textContent = formatPercent(
+      livePosition.expected_yield_percent,
+      {sign: true},
+    );
+    applySignedClass(instrumentDetailPnl, livePosition.expected_yield_percent);
+    const dailyYield = formatMoney(livePosition.daily_yield, {sign: true});
+    instrumentDetailPnlTime.textContent = [
+      dailyYield !== "—" ? `сегодня ${dailyYield}` : "",
+      lastPortfolioSnapshot?.refreshed_at
+        ? `T-Invest ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
+        : "",
+    ].filter(Boolean).join(" · ") || "Текущий ответ T-Invest";
+  };
+
+  const renderInstrumentDetailRisk = (latest) => {
     instrumentDetailRisk.textContent = riskStateLabel(latest.risk_state);
     instrumentDetailRisk.classList.remove("value-positive", "value-negative");
     if (["critical", "confirmed_default"].includes(latest.risk_state)) {
@@ -2025,7 +2032,9 @@
     instrumentDetailRiskTime.textContent = latest.assessed_at
       ? `оценено ${formatDateTime(latest.assessed_at)} · ${latest.assessment_freshness || "freshness unknown"}`
       : "Risk assessment отсутствует";
+  };
 
+  const renderInstrumentDetailHistory = (payload) => {
     const history = Array.isArray(payload?.history) ? payload.history : [];
     const historyReady = renderSeriesChart(
       instrumentHistoryChart,
@@ -2035,19 +2044,19 @@
     instrumentHistoryNote.textContent = historyReady
       ? `Снимков позиции: ${history.length}. Время точки — captured_at snapshot, не биржевой timestamp.`
       : "Недостаточно сохранённых оценок позиции для линии.";
+  };
 
+  const renderInstrumentDetailEvidence = (latest) => {
     instrumentEvidenceSummary.replaceChildren();
+    const reasons = Array.isArray(latest.risk_reasons) && latest.risk_reasons.length
+      ? latest.risk_reasons.join(" · ")
+      : "Нет подтверждённых причин";
     const evidenceItems = [
       ["Risk state", riskStateLabel(latest.risk_state)],
       ["Рейтинг", riskStateLabel(latest.rating_status)],
       ["Фундаментальные данные", riskStateLabel(latest.fundamental_status)],
       ["Источник risk", String(latest.source_status || "Не подтверждено")],
-      [
-        "Причины",
-        Array.isArray(latest.risk_reasons) && latest.risk_reasons.length
-          ? latest.risk_reasons.join(" · ")
-          : "Нет подтверждённых причин",
-      ],
+      ["Причины", reasons],
     ];
     evidenceItems.forEach(([labelText, valueText]) => {
       const row = document.createElement("div");
@@ -2058,7 +2067,9 @@
       row.append(label, value);
       instrumentEvidenceSummary.append(row);
     });
+  };
 
+  const renderInstrumentDetailPayouts = (payload) => {
     instrumentPayouts.replaceChildren();
     (payload?.payouts || []).forEach((event) => {
       const row = document.createElement("div");
@@ -2069,11 +2080,12 @@
         bond_event: "Событие облигации",
       }[event.event_type] || String(event.event_type || "Событие");
       const details = document.createElement("small");
+      const amount = event.amount === null || event.amount === undefined
+        ? ""
+        : storedMoney(event.amount, event.currency || "RUB");
       details.textContent = [
         event.status || "статус не подтверждён",
-        event.amount === null || event.amount === undefined
-          ? ""
-          : storedMoney(event.amount, event.currency || "RUB"),
+        amount,
         event.expected_at ? `ожидается ${formatDateTime(event.expected_at)}` : "",
         event.actual_at ? `факт ${formatDateTime(event.actual_at)}` : "",
       ].filter(Boolean).join(" · ");
@@ -2083,7 +2095,9 @@
     if (!instrumentPayouts.childElementCount) {
       appendEmptyState(instrumentPayouts, "Подтверждённых выплат или событий нет.");
     }
+  };
 
+  const renderInstrumentDetailSources = (payload) => {
     instrumentSources.replaceChildren();
     (payload?.sources || []).forEach((source) => {
       const row = document.createElement("div");
@@ -2103,6 +2117,18 @@
     if (!instrumentSources.childElementCount) {
       appendEmptyState(instrumentSources, "Evidence sources ещё не сохранены.");
     }
+  };
+
+  const renderInstrumentDetail = (payload, requestedIdentity) => {
+    const latest = payload?.latest || {};
+    const livePosition = livePositionForIdentity(requestedIdentity);
+    renderInstrumentDetailOverview(latest, payload, livePosition);
+    renderInstrumentDetailPnl(livePosition);
+    renderInstrumentDetailRisk(latest);
+    renderInstrumentDetailHistory(payload);
+    renderInstrumentDetailEvidence(latest);
+    renderInstrumentDetailPayouts(payload);
+    renderInstrumentDetailSources(payload);
   };
 
   const openInstrumentDetail = async (instrumentUid) => {
