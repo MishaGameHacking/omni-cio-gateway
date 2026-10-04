@@ -91,8 +91,9 @@ class AuthAppDeployTests(unittest.TestCase):
             def run(self, command: str, *, input_text: str | None = None) -> str:
                 return "two|one\n"
 
+        ssh = OccupancySsh()
         with self.assertRaises(MODULE.InfraError):
-            MODULE.registration_occupancy(OccupancySsh())
+            MODULE.registration_occupancy(ssh)
 
     def test_release_archive_contains_only_runtime_project_files(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
