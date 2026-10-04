@@ -1912,7 +1912,9 @@
           payload.observed_at ? `получено ${formatExactDateTime(payload.observed_at)}` : "",
         ].filter(Boolean).join(" · ");
       } catch {
+        stopInstrumentMarketStream();
         renderInstrumentMarketStreamStatus("unavailable");
+        scheduleInstrumentMarketReconnect();
       }
     });
 
@@ -1930,7 +1932,9 @@
           stopInstrumentMarketStream();
         }
       } catch {
+        stopInstrumentMarketStream();
         renderInstrumentMarketStreamStatus("unavailable");
+        scheduleInstrumentMarketReconnect();
       }
     });
 
@@ -1945,6 +1949,13 @@
   };
 
   const loadInstrumentMarket = async (instrumentUid, {force = false} = {}) => {
+    const displayedPeriod = (
+      instrumentMarketPayload
+      && instrumentMarketUid === instrumentUid
+      && typeof instrumentMarketPayload.period === "string"
+    )
+      ? instrumentMarketPayload.period
+      : null;
     let segment;
     try {
       segment = instrumentPathSegment(instrumentUid);
@@ -2004,6 +2015,10 @@
       } else {
         renderInstrumentMarketStreamStatus("unavailable");
         instrumentMarketRetry.classList.remove("hidden");
+      }
+      if (displayedPeriod && displayedPeriod !== instrumentMarketPeriod) {
+        instrumentMarketPeriod = displayedPeriod;
+        syncInstrumentMarketControls();
       }
     }
   };
