@@ -551,7 +551,7 @@ def usd_rub_market_snapshot(
             status_code=409,
             detail=_TBANK_CREDENTIAL_REJECTED_DETAIL,
         ) from exc
-    except (TBankUnavailable, BrokerConnectionError, SecurityValueError, ValueError) as exc:
+    except (TBankUnavailable, BrokerConnectionError, ValueError) as exc:
         raise HTTPException(
             status_code=503,
             detail="USD/RUB market quote unavailable",
@@ -587,7 +587,7 @@ async def usd_rub_market_stream(
                 event = "status"
                 delay = 30
                 retry_delay = 5
-            except (TBankUnavailable, BrokerConnectionError, SecurityValueError, ValueError):
+            except (TBankUnavailable, BrokerConnectionError, ValueError):
                 payload = {"state": "unavailable"}
                 event = "status"
                 delay = retry_delay

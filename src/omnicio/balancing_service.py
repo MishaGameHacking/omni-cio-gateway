@@ -327,13 +327,11 @@ def _enrich_live_candidate_rows(
     for row in rows:
         uid = str(row.get("instrument_uid") or "")
         if uid not in selected_uids:
-            candidate = _with_candidate_blocker(
-                _candidate(
-                    row,
-                    context=context,
-                    observed_at=observed_at,
-                ),
-                "live_enrichment_not_selected",
+            candidate = _candidate(
+                row,
+                context=context,
+                observed_at=observed_at,
+                blocker_reason="live_enrichment_not_selected",
             )
             sources: tuple[dict[str, object], ...] = ()
         else:
@@ -352,13 +350,11 @@ def _enrich_live_candidate_rows(
                     observed_at=observed_at,
                 )
             except (BrokerConnectionError, TBankUnavailable, ValueError):
-                candidate = _with_candidate_blocker(
-                    _candidate(
-                        row,
-                        context=context,
-                        observed_at=observed_at,
-                    ),
-                    "live_candidate_evidence_unavailable",
+                candidate = _candidate(
+                    row,
+                    context=context,
+                    observed_at=observed_at,
+                    blocker_reason="live_candidate_evidence_unavailable",
                 )
                 sources = ()
         enriched.append(candidate)
@@ -552,15 +548,6 @@ def _eligible_for_live_enrichment(
         and _candidate_account_live_eligible(row, context)
         and _candidate_live_evidence_fresh(row, observed_at)
     )
-
-def _with_candidate_blocker(candidate: Candidate, reason: str) -> Candidate:
-    return replace(
-        candidate,
-        access_reasons=tuple(
-            dict.fromkeys((*candidate.access_reasons, reason))
-        ),
-    )
-
 
 @dataclass(frozen=True, slots=True)
 class _BondTermsEvidence:
@@ -848,7 +835,12 @@ def _enrich_bond_candidate(
     )
     terms = _bond_terms_evidence(base, row, observed_at)
     if isinstance(terms, str):
-        return _with_candidate_blocker(base, terms), ()
+        return _candidate(
+            row,
+            context=context,
+            observed_at=observed_at,
+            blocker_reason=terms,
+        ), ()
 
     assessment = assess_candidate_fundamental_risk(
         terms.info,
@@ -873,7 +865,12 @@ def _enrich_bond_candidate(
         observed_at=observed_at,
     )
     if isinstance(price, str):
-        return _with_candidate_blocker(base, price), ()
+        return _candidate(
+            row,
+            context=context,
+            observed_at=observed_at,
+            blocker_reason=price,
+        ), ()
 
     cashflow = _bond_cashflow_evidence(
         broker=broker,
@@ -885,7 +882,12 @@ def _enrich_bond_candidate(
         observed_at=observed_at,
     )
     if isinstance(cashflow, str):
-        return _with_candidate_blocker(base, cashflow), ()
+        return _candidate(
+            row,
+            context=context,
+            observed_at=observed_at,
+            blocker_reason=cashflow,
+        ), ()
 
     liquidity = _bond_liquidity_evidence(
         broker=broker,
@@ -898,11 +900,21 @@ def _enrich_bond_candidate(
         observed_at=observed_at,
     )
     if isinstance(liquidity, str):
-        return _with_candidate_blocker(base, liquidity), ()
+        return _candidate(
+            row,
+            context=context,
+            observed_at=observed_at,
+            blocker_reason=liquidity,
+        ), ()
 
     term_months = _months_until(observed_at, terms.maturity)
     if term_months is None or term_months <= 0:
-        return _with_candidate_blocker(base, "bond_term_missing"), ()
+        return _candidate(
+            row,
+            context=context,
+            observed_at=observed_at,
+            blocker_reason="bond_term_missing",
+        ), ()
 
     future_cash = sum(
         (amount for _, amount in cashflow.cashflows),
@@ -1826,6 +1838,7 @@ def _candidate(
     *,
     context: dict[str, object],
     observed_at: datetime,
+    blocker_reason: str | None = None,
 ) -> Candidate:
     asset_class = str(row.get("instrument_type") or "")
     issuer_id = str(row.get("issuer_id") or "")
@@ -1843,6 +1856,8 @@ def _candidate(
         observed_at=observed_at,
     )
     access_reasons.extend(evidence_reasons)
+    if blocker_reason is not None:
+        access_reasons.append(blocker_reason)
     liquidity_days: int | None = None
 
     rating_bucket = "unknown" if asset_class == "bond" else "not_applicable"
