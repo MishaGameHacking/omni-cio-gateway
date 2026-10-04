@@ -596,7 +596,12 @@ async def usd_rub_market_stream(
 
 @app.get(
     "/api/market/instruments/{instrument_uid}",
-    responses={401: {"description": "Authenticated session required"}},
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": "T-Invest connection requires attention"},
+        422: {"description": "Instrument or period is invalid"},
+        503: {"description": "Instrument market data is temporarily unavailable"},
+    },
 )
 def instrument_market_snapshot(
     instrument_uid: str,
@@ -638,6 +643,40 @@ def instrument_market_snapshot(
     return asdict(snapshot)
 
 
+def _terminal_instrument_market_stream_state(error: Exception) -> str | None:
+    if isinstance(error, BrokerNotConnected):
+        return "disconnected"
+    if isinstance(error, TBankTokenRejected):
+        return "reconnect"
+    if isinstance(error, SecurityValueError):
+        return "offline"
+    if isinstance(error, ValueError):
+        return "invalid"
+    return None
+
+
+def _instrument_market_failure_event(
+    error: Exception,
+    *,
+    consecutive_failures: int,
+    retry_delay: int,
+) -> tuple[dict[str, object], int, int, int, bool]:
+    terminal_state = _terminal_instrument_market_stream_state(error)
+    if terminal_state is not None:
+        return {"state": terminal_state}, 0, 3, 0, True
+
+    failures = consecutive_failures + 1
+    if failures >= 6:
+        return {"state": "offline"}, 0, retry_delay, failures, True
+    return (
+        {"state": "unavailable"},
+        retry_delay,
+        min(retry_delay * 2, 30),
+        failures,
+        False,
+    )
+
+
 @app.get(
     "/api/market/instruments/{instrument_uid}/stream",
     responses={401: {"description": "Authenticated session required"}},
@@ -666,46 +705,26 @@ async def instrument_market_stream(
                     user.id,
                     instrument_uid,
                 )
-            except BrokerNotConnected:
-                payload = {"state": "disconnected"}
+            except (
+                BrokerNotConnected,
+                TBankTokenRejected,
+                SecurityValueError,
+                ValueError,
+                TBankUnavailable,
+                BrokerConnectionError,
+            ) as error:
+                (
+                    payload,
+                    delay,
+                    retry_delay,
+                    consecutive_failures,
+                    stop_after_event,
+                ) = _instrument_market_failure_event(
+                    error,
+                    consecutive_failures=consecutive_failures,
+                    retry_delay=retry_delay,
+                )
                 event = "status"
-                delay = 0
-                retry_delay = 3
-                consecutive_failures = 0
-                stop_after_event = True
-            except TBankTokenRejected:
-                payload = {"state": "reconnect"}
-                event = "status"
-                delay = 0
-                retry_delay = 3
-                consecutive_failures = 0
-                stop_after_event = True
-            except SecurityValueError:
-                payload = {"state": "offline"}
-                event = "status"
-                delay = 0
-                retry_delay = 3
-                consecutive_failures = 0
-                stop_after_event = True
-            except ValueError:
-                payload = {"state": "invalid"}
-                event = "status"
-                delay = 0
-                retry_delay = 3
-                consecutive_failures = 0
-                stop_after_event = True
-            except (TBankUnavailable, BrokerConnectionError):
-                consecutive_failures += 1
-                if consecutive_failures >= 6:
-                    payload = {"state": "offline"}
-                    event = "status"
-                    delay = 0
-                    stop_after_event = True
-                else:
-                    payload = {"state": "unavailable"}
-                    event = "status"
-                    delay = retry_delay
-                    retry_delay = min(retry_delay * 2, 30)
             else:
                 payload = asdict(state)
                 event = "market"
