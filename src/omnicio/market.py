@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from .broker import BrokerService
 from .cbr import CBRClient, CBRRate, CBRUnavailable
+from .tbank import TBankLastPrice, TBankTradingStatus, TBankUnavailable
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,60 @@ class UsdRubSnapshot:
     change_percent: str | None
     cbr_reference: MarketReferenceRate | None
     cbr_next_reference: MarketReferenceRate | None
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentMarketCandle:
+    time: str
+    open: str
+    high: str
+    low: str
+    close: str
+    volume_lots: int
+    is_complete: bool
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentMarketSnapshot:
+    instrument_uid: str
+    period: str
+    interval: str
+    source: str
+    observed_at: str
+    last_price: str | None
+    quote_time: str | None
+    quote_age_seconds: int | None
+    quote_status: str
+    trading_status: str
+    api_trade_available: bool
+    limit_order_available: bool
+    market_order_available: bool
+    candles: tuple[InstrumentMarketCandle, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentLiveState:
+    instrument_uid: str
+    observed_at: str
+    last_price: str | None
+    quote_time: str | None
+    quote_age_seconds: int | None
+    quote_status: str
+    trading_status: str
+    api_trade_available: bool
+    limit_order_available: bool
+    market_order_available: bool
+
+
+_MARKET_PERIODS: dict[str, tuple[timedelta, str]] = {
+    "1d": (timedelta(days=1), "CANDLE_INTERVAL_5_MIN"),
+    "1w": (timedelta(days=7), "CANDLE_INTERVAL_HOUR"),
+    "1m": (timedelta(days=31), "CANDLE_INTERVAL_4_HOUR"),
+    "3m": (timedelta(days=93), "CANDLE_INTERVAL_DAY"),
+    "1y": (timedelta(days=365), "CANDLE_INTERVAL_DAY"),
+}
+
+_PROVIDER_CLOCK_SKEW_TOLERANCE = timedelta(seconds=5)
 
 
 class MarketService:
@@ -94,6 +149,132 @@ class MarketService:
             cbr_reference=reference,
             cbr_next_reference=next_reference,
         )
+
+    def instrument_snapshot(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        *,
+        period: str,
+    ) -> InstrumentMarketSnapshot:
+        config = _MARKET_PERIODS.get(period)
+        if config is None:
+            raise ValueError("unsupported market period")
+        window, interval = config
+        requested_at = datetime.now(UTC)
+        candles = self.broker.market_exchange_candles(
+            user_id,
+            instrument_uid,
+            from_at=requested_at - window,
+            to_at=requested_at,
+            interval=interval,
+        )
+        price = self.broker.market_last_price(user_id, instrument_uid)
+        trading = self.broker.market_trading_status(user_id, instrument_uid)
+        observed = datetime.now(UTC)
+
+        live = _instrument_live_state(
+            instrument_uid,
+            observed=observed,
+            last_price=price,
+            trading=trading,
+            live_after_seconds=self.live_after_seconds,
+        )
+        market_candles = tuple(
+            InstrumentMarketCandle(
+                time=item.time.astimezone(UTC).isoformat(),
+                open=_required_market_price(item.open),
+                high=_required_market_price(item.high),
+                low=_required_market_price(item.low),
+                close=item.close,
+                volume_lots=item.volume_lots,
+                is_complete=item.is_complete,
+            )
+            for item in candles
+        )
+        return InstrumentMarketSnapshot(
+            instrument_uid=instrument_uid,
+            period=period,
+            interval=interval,
+            source="T-Invest exchange candles",
+            observed_at=observed.isoformat(),
+            last_price=live.last_price,
+            quote_time=live.quote_time,
+            quote_age_seconds=live.quote_age_seconds,
+            quote_status=live.quote_status,
+            trading_status=live.trading_status,
+            api_trade_available=live.api_trade_available,
+            limit_order_available=live.limit_order_available,
+            market_order_available=live.market_order_available,
+            candles=market_candles,
+        )
+
+    def instrument_live_state(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+    ) -> InstrumentLiveState:
+        price = self.broker.market_last_price(user_id, instrument_uid)
+        trading = self.broker.market_trading_status(user_id, instrument_uid)
+        observed = datetime.now(UTC)
+        return _instrument_live_state(
+            instrument_uid,
+            observed=observed,
+            last_price=price,
+            trading=trading,
+            live_after_seconds=self.live_after_seconds,
+        )
+
+
+def _required_market_price(value: str | None) -> str:
+    if value is None:
+        raise TBankUnavailable("T-Invest market candle is missing OHLC price")
+    try:
+        number = Decimal(value)
+    except InvalidOperation as exc:
+        raise TBankUnavailable("T-Invest market candle contains invalid OHLC price") from exc
+    if not number.is_finite() or number <= 0:
+        raise TBankUnavailable("T-Invest market candle contains non-positive OHLC price")
+    return value
+
+
+def _instrument_live_state(
+    instrument_uid: str,
+    *,
+    observed: datetime,
+    last_price: TBankLastPrice | None,
+    trading: TBankTradingStatus,
+    live_after_seconds: int,
+) -> InstrumentLiveState:
+    price = last_price
+    status = trading
+
+    quote_time: datetime | None = None
+    age_seconds: int | None = None
+    quote_status = "missing"
+    price_value: str | None = None
+    if price is not None:
+        quote_time = price.time.astimezone(UTC)
+        provider_age = observed - quote_time
+        if provider_age < -_PROVIDER_CLOCK_SKEW_TOLERANCE:
+            quote_status = "future"
+        else:
+            age_seconds = max(0, int(provider_age.total_seconds()))
+            quote_status = "live" if age_seconds <= live_after_seconds else "stale"
+            price_value = price.price
+
+    return InstrumentLiveState(
+        instrument_uid=instrument_uid,
+        observed_at=observed.isoformat(),
+        last_price=price_value,
+        quote_time=quote_time.isoformat() if quote_time is not None else None,
+        quote_age_seconds=age_seconds,
+        quote_status=quote_status,
+        trading_status=status.trading_status,
+        api_trade_available=status.api_trade_available,
+        limit_order_available=status.limit_order_available,
+        market_order_available=status.market_order_available,
+    )
 
 
 def _reference_rate(rate: CBRRate) -> MarketReferenceRate:

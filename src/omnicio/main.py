@@ -612,6 +612,173 @@ async def usd_rub_market_stream(
     )
 
 
+@app.get(
+    "/api/market/instruments/{instrument_uid}",
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": "T-Invest connection requires attention"},
+        422: {"description": "Instrument or period is invalid"},
+        503: {"description": "Instrument market data is temporarily unavailable"},
+    },
+)
+def instrument_market_snapshot(
+    instrument_uid: str,
+    request: Request,
+    response: Response,
+    period: Literal["1d", "1w", "1m", "3m", "1y"] = Query(default="1m"),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    try:
+        snapshot = market_service(request).instrument_snapshot(
+            user.id,
+            instrument_uid,
+            period=period,
+        )
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="stored T-Invest credential was rejected",
+        ) from exc
+    except SecurityValueError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="instrument market data unavailable",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except (TBankUnavailable, BrokerConnectionError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="instrument market data unavailable",
+        ) from exc
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
+    return asdict(snapshot)
+
+
+def _terminal_instrument_market_stream_state(error: Exception) -> str | None:
+    state: str | None = None
+    if isinstance(error, BrokerNotConnected):
+        state = "disconnected"
+    elif isinstance(error, TBankTokenRejected):
+        state = "reconnect"
+    elif isinstance(error, SecurityValueError):
+        state = "offline"
+    elif isinstance(error, ValueError):
+        state = "invalid"
+    return state
+
+
+def _instrument_market_failure_event(
+    error: Exception,
+    *,
+    consecutive_failures: int,
+    retry_delay: int,
+) -> tuple[dict[str, object], int, int, int, bool]:
+    terminal_state = _terminal_instrument_market_stream_state(error)
+    if terminal_state is not None:
+        return {"state": terminal_state}, 0, 3, 0, True
+
+    failures = consecutive_failures + 1
+    if failures >= 6:
+        return {"state": "offline"}, 0, retry_delay, failures, True
+    return (
+        {"state": "unavailable"},
+        retry_delay,
+        min(retry_delay * 2, 30),
+        failures,
+        False,
+    )
+
+
+async def _next_instrument_market_event(
+    market: MarketService,
+    user_id: UUID,
+    instrument_uid: str,
+    *,
+    consecutive_failures: int,
+    retry_delay: int,
+) -> tuple[str, dict[str, object], int, int, int, bool]:
+    try:
+        state = await asyncio.to_thread(
+            market.instrument_live_state,
+            user_id,
+            instrument_uid,
+        )
+    except (
+        TBankTokenRejected,
+        ValueError,
+        TBankUnavailable,
+        BrokerConnectionError,
+    ) as error:
+        payload, delay, next_retry_delay, failures, stop = (
+            _instrument_market_failure_event(
+                error,
+                consecutive_failures=consecutive_failures,
+                retry_delay=retry_delay,
+            )
+        )
+        return "status", payload, delay, next_retry_delay, failures, stop
+    return "market", asdict(state), 5, 3, 0, False
+
+
+async def _instrument_market_events(
+    request: Request,
+    market: MarketService,
+    user_id: UUID,
+    instrument_uid: str,
+) -> AsyncIterator[str]:
+    retry_delay = 3
+    consecutive_failures = 0
+    yield "retry: 5000\n\n"
+    while not await request.is_disconnected():
+        (
+            event,
+            payload,
+            delay,
+            retry_delay,
+            consecutive_failures,
+            stop_after_event,
+        ) = await _next_instrument_market_event(
+            market,
+            user_id,
+            instrument_uid,
+            consecutive_failures=consecutive_failures,
+            retry_delay=retry_delay,
+        )
+        data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        yield f"event: {event}\ndata: {data}\n\n"
+        if stop_after_event:
+            break
+        await asyncio.sleep(delay)
+
+
+@app.get(
+    "/api/market/instruments/{instrument_uid}/stream",
+    responses={401: {"description": "Authenticated session required"}},
+)
+async def instrument_market_stream(
+    instrument_uid: str,
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> StreamingResponse:
+    user = authenticated_user(request, session_token)
+    market = market_service(request)
+    return StreamingResponse(
+        _instrument_market_events(request, market, user.id, instrument_uid),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": _PRIVATE_NO_STORE,
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 def _profile_payload(profile: InvestmentProfileRecord) -> dict[str, object]:
     return {
         "version": profile.version,

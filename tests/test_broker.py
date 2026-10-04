@@ -6,7 +6,7 @@ import ssl
 import urllib.error
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import UUID
 
 import pytest
@@ -42,6 +42,7 @@ from omnicio.tbank import (
     TBankSandboxMaxLots,
     TBankSandboxOrderState,
     TBankTokenRejected,
+    TBankTradingStatus,
     TBankUnavailable,
     TBankUserInfo,
 )
@@ -1007,6 +1008,9 @@ def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> 
         {
             "candles": [
                 {
+                    "open": {"units": "99", "nano": 100000000},
+                    "high": {"units": "100", "nano": 0},
+                    "low": {"units": "98", "nano": 900000000},
                     "close": {"units": "99", "nano": 500000000},
                     "volume": "42",
                     "time": "2026-10-02T00:00:00Z",
@@ -1034,6 +1038,9 @@ def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> 
             time=datetime(2026, 10, 2, 0, 0, tzinfo=UTC),
             is_complete=True,
             source="CANDLE_SOURCE_EXCHANGE",
+            open="99.1",
+            high="100",
+            low="98.9",
         ),
     )
     request = urlopen.call_args.args[0]
@@ -1047,27 +1054,35 @@ def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> 
     }
 
 
-def test_tbank_daily_candles_reject_non_exchange_response() -> None:
+@pytest.mark.parametrize(
+    "source_name",
+    [None, "CANDLE_SOURCE_DEALER_WEEKEND"],
+)
+def test_tbank_daily_candles_require_confirmed_exchange_source(
+    source_name: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = TBankInvestClient()
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
-    response = FakeResponse(
-        {
-            "candles": [
-                {
-                    "close": {"units": "100", "nano": 0},
-                    "volume": "1",
-                    "time": "2026-10-02T00:00:00Z",
-                    "isComplete": True,
-                    "candleSourceType": "CANDLE_SOURCE_DEALER_WEEKEND",
-                }
-            ]
-        }
-    )
+    candle: dict[str, object] = {
+        "open": {"units": "100", "nano": 0},
+        "high": {"units": "101", "nano": 0},
+        "low": {"units": "99", "nano": 0},
+        "close": {"units": "100", "nano": 0},
+        "volume": "1",
+        "time": "2026-10-02T00:00:00Z",
+        "isComplete": True,
+    }
+    if source_name is not None:
+        candle["candleSourceType"] = source_name
+    response = FakeResponse({"candles": [candle]})
     from_at = now - timedelta(days=30)
-    with (
-        patch("urllib.request.urlopen", return_value=response),
-        pytest.raises(TBankUnavailable, match="exchange-sourced"),
-    ):
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *_args, **_kwargs: response,
+    )
+
+    with pytest.raises(TBankUnavailable, match="exchange-sourced"):
         client.get_daily_exchange_candles(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -1122,6 +1137,122 @@ def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
         "lastPriceType": "LAST_PRICE_EXCHANGE",
         "instrumentStatus": "INSTRUMENT_STATUS_BASE",
     }
+
+
+def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> None:
+    client = TBankInvestClient()
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    response = FakeResponse(
+        {
+            "candles": [
+                {
+                    "open": {"units": "100", "nano": 0},
+                    "high": {"units": "102", "nano": 0},
+                    "low": {"units": "99", "nano": 500000000},
+                    "close": {"units": "101", "nano": 250000000},
+                    "volume": "15",
+                    "time": "2026-10-03T04:00:00Z",
+                    "isComplete": False,
+                    "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+                }
+            ]
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        candles = client.get_exchange_candles(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "uid-1",
+            from_at=now - timedelta(hours=8),
+            to_at=now,
+            interval="CANDLE_INTERVAL_5_MIN",
+        )
+
+    assert candles == (
+        TBankHistoricCandle(
+            instrument_uid="uid-1",
+            open="100",
+            high="102",
+            low="99.5",
+            close="101.25",
+            volume_lots=15,
+            time=datetime(2026, 10, 3, 4, 0, tzinfo=UTC),
+            is_complete=False,
+            source="CANDLE_SOURCE_EXCHANGE",
+        ),
+    )
+    call = urlopen.call_args
+    assert call is not None
+    request = next(iter(call.args), None)
+    assert request is not None
+    assert request.full_url.endswith("MarketDataService/GetCandles")
+    assert json.loads(request.data.decode()) == {
+        "instrumentId": "uid-1",
+        "from": "2026-10-02T21:00:00Z",
+        "to": "2026-10-03T05:00:00Z",
+        "interval": "CANDLE_INTERVAL_5_MIN",
+        "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+    }
+
+
+@patch("urllib.request.urlopen")
+def test_tbank_exchange_candles_reject_too_short_window_before_network(
+    urlopen: Mock,
+) -> None:
+    client = TBankInvestClient()
+    now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
+    from_at = now - timedelta(minutes=4, seconds=59)
+
+    with pytest.raises(ValueError, match="at least one candle interval"):
+        client.get_exchange_candles(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "uid-1",
+            from_at=from_at,
+            to_at=now,
+            interval="CANDLE_INTERVAL_5_MIN",
+        )
+
+    urlopen.assert_not_called()
+
+
+def test_tbank_trading_status_is_bound_to_requested_instrument() -> None:
+    client = TBankInvestClient()
+    response = FakeResponse(
+        {
+            "instrumentUid": "uid-1",
+            "tradingStatus": "SECURITY_TRADING_STATUS_NORMAL_TRADING",
+            "limitOrderAvailableFlag": True,
+            "marketOrderAvailableFlag": False,
+            "apiTradeAvailableFlag": True,
+            "bestpriceOrderAvailableFlag": True,
+            "onlyBestPrice": False,
+        }
+    )
+
+    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+        result = client.get_trading_status(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "uid-1",
+        )
+
+    assert result == TBankTradingStatus(
+        instrument_uid="uid-1",
+        trading_status="SECURITY_TRADING_STATUS_NORMAL_TRADING",
+        limit_order_available=True,
+        market_order_available=False,
+        api_trade_available=True,
+        best_price_order_available=True,
+        only_best_price=False,
+    )
+    call = urlopen.call_args
+    assert call is not None
+    request = next(iter(call.args), None)
+    assert request is not None
+    assert request.full_url.endswith("MarketDataService/GetTradingStatus")
+    assert json.loads(request.data.decode()) == {"instrumentId": "uid-1"}
 
 
 def test_tbank_accrued_interest_preserves_value_and_timestamp() -> None:

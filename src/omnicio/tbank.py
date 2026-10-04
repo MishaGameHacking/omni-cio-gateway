@@ -111,6 +111,9 @@ class TBankHistoricCandle:
     time: datetime
     is_complete: bool
     source: str
+    open: str | None = None
+    high: str | None = None
+    low: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +121,17 @@ class TBankLastPrice:
     instrument_uid: str
     price: str
     time: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class TBankTradingStatus:
+    instrument_uid: str
+    trading_status: str
+    limit_order_available: bool
+    market_order_available: bool
+    api_trade_available: bool
+    best_price_order_available: bool
+    only_best_price: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -658,73 +672,108 @@ def _asset_fundamental(
     )
 
 
-def _daily_candle_fields(
+def _validate_exchange_candle_window(
+    from_at: datetime,
+    to_at: datetime,
+    interval: str,
+) -> None:
+    bounds = {
+        "CANDLE_INTERVAL_5_MIN": (timedelta(minutes=5), timedelta(days=7)),
+        "CANDLE_INTERVAL_30_MIN": (timedelta(minutes=30), timedelta(weeks=3)),
+        "CANDLE_INTERVAL_HOUR": (timedelta(hours=1), timedelta(days=93)),
+        "CANDLE_INTERVAL_4_HOUR": (timedelta(hours=4), timedelta(days=93)),
+        "CANDLE_INTERVAL_DAY": (timedelta(days=1), timedelta(days=366 * 6)),
+    }.get(interval)
+    if bounds is None:
+        raise ValueError("unsupported candle interval")
+    if from_at.tzinfo is None or to_at.tzinfo is None:
+        raise ValueError("candle boundaries must be timezone-aware")
+    if from_at > to_at:
+        raise ValueError("candle start must not be after end")
+
+    requested_window = to_at - from_at
+    min_window, max_window = bounds
+    if requested_window < min_window:
+        raise ValueError("candle window must cover at least one candle interval")
+    if requested_window > max_window:
+        raise ValueError("candle window exceeds interval limit")
+
+
+_HISTORIC_CANDLE_REQUIRED_FIELDS_ERROR = (
+    "T-Invest historic candle is missing required fields"
+)
+
+
+def _required_historic_candle_price(
     item: dict[str, object],
-) -> tuple[str, datetime, bool]:
-    close = _quotation(item.get("close"))
-    candle_time = _optional_provider_timestamp(item.get("time"))
-    complete = item.get("isComplete")
-    if close is None or candle_time is None or not isinstance(complete, bool):
-        raise TBankUnavailable(
-            "T-Invest historic candle is missing required fields"
-        )
-    try:
-        close_value = Decimal(close)
-    except InvalidOperation as exc:
-        raise TBankUnavailable(
-            "T-Invest historic candle has invalid close price"
-        ) from exc
-    if not close_value.is_finite() or close_value <= 0:
-        raise TBankUnavailable(
-            "T-Invest historic candle has non-positive close price"
-        )
-    return close, candle_time, complete
+    key: str,
+) -> str:
+    value = _quotation(item.get(key))
+    if value is None:
+        raise TBankUnavailable(_HISTORIC_CANDLE_REQUIRED_FIELDS_ERROR)
+    return value
 
 
-def _daily_candle_volume(item: dict[str, object]) -> int:
-    volume_raw = item.get("volume")
-    if isinstance(volume_raw, bool):
-        raise TBankUnavailable(
-            "T-Invest historic candle is missing required fields"
-        )
+def _historic_candle_volume(value: object) -> int:
+    if isinstance(value, bool):
+        raise TBankUnavailable(_HISTORIC_CANDLE_REQUIRED_FIELDS_ERROR)
     try:
-        volume = int(str(volume_raw))
+        volume = int(str(value))
     except ValueError as exc:
-        raise TBankUnavailable(
-            "T-Invest historic candle has invalid volume"
-        ) from exc
+        raise TBankUnavailable("T-Invest historic candle has invalid volume") from exc
     if volume < 0:
-        raise TBankUnavailable(
-            "T-Invest historic candle has negative volume"
-        )
+        raise TBankUnavailable("T-Invest historic candle has negative volume")
     return volume
 
 
-def _daily_exchange_candle(
+def _historic_exchange_candle(
     raw: object,
     instrument_uid: str,
-    seen_times: set[datetime],
 ) -> TBankHistoricCandle:
     item = _required_object(raw, "historic candle")
-    close, candle_time, complete = _daily_candle_fields(item)
-    volume = _daily_candle_volume(item)
-    source = _text(item.get("candleSourceType")).strip()
-    if source and source != "CANDLE_SOURCE_EXCHANGE":
+    open_value = _required_historic_candle_price(item, "open")
+    high = _required_historic_candle_price(item, "high")
+    low = _required_historic_candle_price(item, "low")
+    close = _required_historic_candle_price(item, "close")
+    candle_time = _optional_provider_timestamp(item.get("time"))
+    complete = item.get("isComplete")
+    if candle_time is None or not isinstance(complete, bool):
+        raise TBankUnavailable(_HISTORIC_CANDLE_REQUIRED_FIELDS_ERROR)
+
+    source_name = _text(item.get("candleSourceType")).strip()
+    if source_name != "CANDLE_SOURCE_EXCHANGE":
         raise TBankUnavailable(
-            "T-Invest historic candle is not exchange-sourced"
+            "T-Invest historic candle is not confirmed exchange-sourced"
         )
-    if candle_time in seen_times:
-        raise TBankUnavailable(
-            "T-Invest historic candles contain duplicate timestamps"
-        )
-    seen_times.add(candle_time)
+
+    volume = _historic_candle_volume(item.get("volume"))
+    open_decimal = Decimal(open_value)
+    high_decimal = Decimal(high)
+    low_decimal = Decimal(low)
+    close_decimal = Decimal(close)
+    if any(
+        value <= 0
+        for value in (open_decimal, high_decimal, low_decimal, close_decimal)
+    ):
+        raise TBankUnavailable("T-Invest historic candle has non-positive OHLC")
+    if high_decimal < low_decimal:
+        raise TBankUnavailable("T-Invest historic candle has invalid high/low")
+    if not (
+        low_decimal <= open_decimal <= high_decimal
+        and low_decimal <= close_decimal <= high_decimal
+    ):
+        raise TBankUnavailable("T-Invest historic candle OHLC is inconsistent")
+
     return TBankHistoricCandle(
         instrument_uid=instrument_uid,
         close=close,
         volume_lots=volume,
         time=candle_time,
         is_complete=complete,
-        source=source or "CANDLE_SOURCE_EXCHANGE",
+        source=source_name,
+        open=open_value,
+        high=high,
+        low=low,
     )
 
 
@@ -916,7 +965,7 @@ class TBankInvestClient:
             for raw in _optional_list(raw_instrument, "ratings")
         )
 
-    def get_daily_exchange_candles(
+    def get_exchange_candles(
         self,
         token: str,
         environment: TBankEnvironment,
@@ -924,14 +973,10 @@ class TBankInvestClient:
         *,
         from_at: datetime,
         to_at: datetime,
+        interval: str,
     ) -> tuple[TBankHistoricCandle, ...]:
         instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
-        if from_at.tzinfo is None or to_at.tzinfo is None:
-            raise ValueError("candle boundaries must be timezone-aware")
-        if from_at > to_at:
-            raise ValueError("candle start must not be after end")
-        if to_at - from_at > timedelta(days=366):
-            raise ValueError("candle window must not exceed one calendar year")
+        _validate_exchange_candle_window(from_at, to_at, interval)
         payload = self._post(
             token=token,
             environment=environment,
@@ -941,14 +986,89 @@ class TBankInvestClient:
                 "instrumentId": instrument,
                 "from": _utc_timestamp(from_at),
                 "to": _utc_timestamp(to_at),
-                "interval": "CANDLE_INTERVAL_DAY",
+                "interval": interval,
                 "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
             },
         )
+
+        result: list[TBankHistoricCandle] = []
         seen_times: set[datetime] = set()
-        return tuple(
-            _daily_exchange_candle(raw, instrument, seen_times)
-            for raw in _required_list(payload, "candles")
+        for raw in _required_list(payload, "candles"):
+            candle = _historic_exchange_candle(raw, instrument)
+            if candle.time in seen_times:
+                raise TBankUnavailable(
+                    "T-Invest historic candles contain duplicate timestamps"
+                )
+            seen_times.add(candle.time)
+            result.append(candle)
+        return tuple(result)
+
+    def get_daily_exchange_candles(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+    ) -> tuple[TBankHistoricCandle, ...]:
+        return self.get_exchange_candles(
+            token,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
+            interval="CANDLE_INTERVAL_DAY",
+        )
+
+    def get_trading_status(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
+    ) -> TBankTradingStatus:
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetTradingStatus",
+            body={"instrumentId": instrument},
+        )
+        returned_uid = _text(payload.get("instrumentUid")).strip()
+        if returned_uid != instrument:
+            raise TBankUnavailable(
+                "T-Invest trading status returned a different instrument"
+            )
+
+        limit_order_available = _optional_bool(payload, "limitOrderAvailableFlag")
+        market_order_available = _optional_bool(payload, "marketOrderAvailableFlag")
+        api_trade_available = _optional_bool(payload, "apiTradeAvailableFlag")
+        best_price_order_available = _optional_bool(
+            payload,
+            "bestpriceOrderAvailableFlag",
+        )
+        only_best_price = _optional_bool(payload, "onlyBestPrice")
+        if (
+            limit_order_available is None
+            or market_order_available is None
+            or api_trade_available is None
+            or best_price_order_available is None
+            or only_best_price is None
+        ):
+            raise TBankUnavailable("T-Invest trading status is missing availability flags")
+
+        trading_status = _text(payload.get("tradingStatus")).strip()
+        if not trading_status:
+            raise TBankUnavailable("T-Invest trading status is missing")
+        return TBankTradingStatus(
+            instrument_uid=instrument,
+            trading_status=trading_status,
+            limit_order_available=limit_order_available,
+            market_order_available=market_order_available,
+            api_trade_available=api_trade_available,
+            best_price_order_available=best_price_order_available,
+            only_best_price=only_best_price,
         )
 
     def get_last_prices(
