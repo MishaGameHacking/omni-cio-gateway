@@ -16,12 +16,26 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
     steps:
-      - name: Query public Sonar API
+      - name: Verify Sonar project
+        shell: cmd
+        run: >-
+          curl.exe --fail --silent --show-error -G
+          --data-urlencode "component=MishaGameHacking_omni-cio-gateway"
+          "https://sonarcloud.io/api/components/show"
+      - name: Query unresolved main issues
         shell: cmd
         run: >-
           curl.exe --fail --silent --show-error -G
           --data-urlencode "componentKeys=MishaGameHacking_omni-cio-gateway"
           --data-urlencode "branch=main"
-          --data-urlencode "issueStatuses=OPEN,CONFIRMED"
+          --data-urlencode "resolved=false"
           --data-urlencode "ps=100"
           "https://sonarcloud.io/api/issues/search"
+      - name: Query main measures
+        shell: cmd
+        run: >-
+          curl.exe --fail --silent --show-error -G
+          --data-urlencode "component=MishaGameHacking_omni-cio-gateway"
+          --data-urlencode "branch=main"
+          --data-urlencode "metricKeys=bugs,vulnerabilities,code_smells,security_hotspots"
+          "https://sonarcloud.io/api/measures/component"
