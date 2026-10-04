@@ -562,46 +562,53 @@ def _with_candidate_blocker(candidate: Candidate, reason: str) -> Candidate:
     )
 
 
-def _enrich_bond_candidate(
-    *,
-    user_id: UUID,
+@dataclass(frozen=True, slots=True)
+class _BondTermsEvidence:
+    info: TBankInstrumentMetadata
+    maturity: datetime
+    nominal_per_bond: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class _BondPriceEvidence:
+    best_ask: Decimal
+    initial: Decimal
+    total: Decimal
+    fee: Decimal
+    aci: Decimal
+    last_price_time: datetime
+    order_book_time: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class _BondCashflowEvidence:
+    cashflows: tuple[tuple[datetime, Decimal], ...]
+    ytw_percent: Decimal
+    duration_years: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class _BondLiquidityEvidence:
+    liquidity_days: int
+    max_liquid_lots: int
+
+
+def _bond_terms_evidence(
+    base: Candidate,
     row: dict[str, object],
-    context: dict[str, object],
-    profile: InvestmentProfileRecord,
-    policy_record: BalancingPolicyRecord,
-    broker: BrokerService,
-    fundamental: TBankAssetFundamental | None,
-    last_price: TBankLastPrice | None,
     observed_at: datetime,
-) -> tuple[Candidate, tuple[dict[str, object], ...]]:
-    nav_rub = _decimal(context.get("nav_rub"))
-    if nav_rub is None or nav_rub <= 0:
-        raise ValueError("candidate NAV is unavailable")
-    base = _candidate(
-        row,
-        context=context,
-        observed_at=observed_at,
-    )
+) -> _BondTermsEvidence | str:
     if base.asset_class != "bond":
-        return _with_candidate_blocker(
-            base,
-            "live_asset_class_not_supported",
-        ), ()
+        return "live_asset_class_not_supported"
 
     info = _metadata_from_row(row)
     if (
         not str(row.get("issuer_id") or "")
         or str(row.get("issuer_country_code") or "").upper() != "RU"
     ):
-        return _with_candidate_blocker(
-            base,
-            "issuer_identity_not_verified",
-        ), ()
+        return "issuer_identity_not_verified"
     if not str(row.get("group_id") or ""):
-        return _with_candidate_blocker(
-            base,
-            "issuer_group_not_verified",
-        ), ()
+        return "issuer_group_not_verified"
 
     maturity = info.maturity_date
     nominal = info.nominal
@@ -612,31 +619,32 @@ def _enrich_bond_candidate(
         or nominal.currency.upper() != "RUB"
         or base.lot_size <= 0
     ):
-        return _with_candidate_blocker(base, "bond_term_missing"), ()
+        return "bond_term_missing"
+
     nominal_per_bond = _money_rub(nominal)
     if nominal_per_bond <= 0:
         raise ValueError("bond nominal must be positive")
+    return _BondTermsEvidence(
+        info=info,
+        maturity=maturity,
+        nominal_per_bond=nominal_per_bond,
+    )
 
-    assessment = assess_candidate_fundamental_risk(
-        info,
-        fundamental,
-        assessed_at=observed_at,
-    )
-    ratings = broker.candidate_bond_ratings(
-        user_id,
-        base.instrument_uid,
-    )
-    rating_bucket, rating_notes, rating_under_watch = (
-        _rating_bucket_from_tbank(
-            ratings,
-            observed_at=observed_at,
-        )
-    )
+
+def _bond_price_evidence(
+    *,
+    broker: BrokerService,
+    user_id: UUID,
+    base: Candidate,
+    last_price: TBankLastPrice | None,
+    nominal_per_bond: Decimal,
+    observed_at: datetime,
+) -> _BondPriceEvidence | str:
     if last_price is None or not _fresh_market_time(
         last_price.time,
         observed_at,
     ):
-        return _with_candidate_blocker(base, "quote_missing"), ()
+        return "quote_missing"
 
     order_book = broker.candidate_order_book(
         user_id,
@@ -649,20 +657,17 @@ def _enrich_bond_candidate(
         or not order_book.bids
         or not _fresh_market_time(order_book.time, observed_at)
     ):
-        return _with_candidate_blocker(base, "order_book_unusable"), ()
+        return "order_book_unusable"
+
     best_ask = min(Decimal(level.price) for level in order_book.asks)
     best_bid = max(Decimal(level.price) for level in order_book.bids)
     if best_bid <= 0 or best_ask <= best_bid:
-        return _with_candidate_blocker(base, "order_book_unusable"), ()
+        return "order_book_unusable"
 
-    ask_currency_per_bond = _bond_points_to_currency(
-        best_ask,
-        nominal_per_bond,
-    )
     order_price = broker.candidate_order_price(
         user_id,
         base.instrument_uid,
-        price=str(ask_currency_per_bond),
+        price=str(_bond_points_to_currency(best_ask, nominal_per_bond)),
         direction="buy",
         quantity_lots=1,
     )
@@ -685,6 +690,27 @@ def _enrich_bond_candidate(
     ):
         raise ValueError("invalid T-Invest order price evidence")
 
+    return _BondPriceEvidence(
+        best_ask=best_ask,
+        initial=initial,
+        total=total,
+        fee=fee,
+        aci=aci,
+        last_price_time=last_price.time,
+        order_book_time=order_book.time,
+    )
+
+
+def _bond_cashflow_evidence(
+    *,
+    broker: BrokerService,
+    user_id: UUID,
+    base: Candidate,
+    maturity: datetime,
+    nominal_per_bond: Decimal,
+    price: _BondPriceEvidence,
+    observed_at: datetime,
+) -> _BondCashflowEvidence | str:
     cashflow_to = maturity + timedelta(days=1)
     coupons = broker.candidate_bond_coupons(
         user_id,
@@ -698,25 +724,18 @@ def _enrich_bond_candidate(
         from_at=observed_at,
         to_at=cashflow_to,
     )
-    defaulted = any(
+    if any(
         event.default_date is not None
         and event.default_date <= observed_at
         for event in events
-    )
-    if defaulted:
-        return _with_candidate_blocker(
-            base,
-            "candidate_confirmed_default",
-        ), ()
+    ):
+        return "candidate_confirmed_default"
     if any(
         event.event_type in {"EVENT_TYPE_CALL", "EVENT_TYPE_CONV"}
         and (event.event_date is None or event.event_date > observed_at)
         for event in events
     ):
-        return _with_candidate_blocker(
-            base,
-            "bond_option_events_unsupported",
-        ), ()
+        return "bond_option_events_unsupported"
 
     cashflows = _fixed_bond_cashflows(
         coupons=coupons,
@@ -725,14 +744,15 @@ def _enrich_bond_candidate(
         lot_size=base.lot_size,
         observed_at=observed_at,
     )
-    dirty_purchase = initial + aci
+    dirty_purchase = price.initial + price.aci
     ytw_percent = _yield_to_maturity_percent(
         dirty_purchase,
         cashflows,
         observed_at,
     )
     if ytw_percent is None or ytw_percent <= 0:
-        return _with_candidate_blocker(base, "bond_ytw_missing"), ()
+        return "bond_ytw_missing"
+
     duration_years = _macaulay_duration_years(
         dirty_purchase,
         cashflows,
@@ -740,15 +760,29 @@ def _enrich_bond_candidate(
         ytw_percent,
     )
     if duration_years is None or duration_years <= 0:
-        return _with_candidate_blocker(base, "bond_duration_missing"), ()
-
-    candles_from = observed_at - timedelta(
-        days=TBANK_LIQUIDITY_WINDOW_DAYS
+        return "bond_duration_missing"
+    return _BondCashflowEvidence(
+        cashflows=cashflows,
+        ytw_percent=ytw_percent,
+        duration_years=duration_years,
     )
+
+
+def _bond_liquidity_evidence(
+    *,
+    broker: BrokerService,
+    user_id: UUID,
+    base: Candidate,
+    nominal_per_bond: Decimal,
+    total: Decimal,
+    policy_record: BalancingPolicyRecord,
+    profile: InvestmentProfileRecord,
+    observed_at: datetime,
+) -> _BondLiquidityEvidence | str:
     candles = broker.candidate_daily_exchange_candles(
         user_id,
         base.instrument_uid,
-        from_at=candles_from,
+        from_at=observed_at - timedelta(days=TBANK_LIQUIDITY_WINDOW_DAYS),
         to_at=observed_at,
     )
     average_daily_turnover = _average_bond_daily_turnover_rub(
@@ -758,10 +792,7 @@ def _enrich_bond_candidate(
         observed_at=observed_at,
     )
     if average_daily_turnover is None:
-        return _with_candidate_blocker(
-            base,
-            "liquidity_evidence_missing",
-        ), ()
+        return "liquidity_evidence_missing"
 
     daily_capacity = (
         average_daily_turnover
@@ -769,7 +800,8 @@ def _enrich_bond_candidate(
         / Decimal("100")
     )
     if daily_capacity <= 0:
-        return _with_candidate_blocker(base, "liquidity_limit"), ()
+        return "liquidity_limit"
+
     liquidity_days = max(
         1,
         int(
@@ -785,18 +817,106 @@ def _enrich_bond_candidate(
             / total
         ).to_integral_value(rounding=ROUND_FLOOR)
     )
+    return _BondLiquidityEvidence(
+        liquidity_days=liquidity_days,
+        max_liquid_lots=max_liquid_lots,
+    )
 
-    term_months = _months_until(observed_at, maturity)
+
+def _enrich_bond_candidate(
+    *,
+    user_id: UUID,
+    row: dict[str, object],
+    context: dict[str, object],
+    profile: InvestmentProfileRecord,
+    policy_record: BalancingPolicyRecord,
+    broker: BrokerService,
+    fundamental: TBankAssetFundamental | None,
+    last_price: TBankLastPrice | None,
+    observed_at: datetime,
+) -> tuple[Candidate, tuple[dict[str, object], ...]]:
+    nav_rub = _decimal(context.get("nav_rub"))
+    if nav_rub is None or nav_rub <= 0:
+        raise ValueError("candidate NAV is unavailable")
+
+    base = _candidate(
+        row,
+        context=context,
+        observed_at=observed_at,
+    )
+    terms = _bond_terms_evidence(base, row, observed_at)
+    if isinstance(terms, str):
+        return _with_candidate_blocker(base, terms), ()
+
+    assessment = assess_candidate_fundamental_risk(
+        terms.info,
+        fundamental,
+        assessed_at=observed_at,
+    )
+    ratings = broker.candidate_bond_ratings(
+        user_id,
+        base.instrument_uid,
+    )
+    rating_bucket, rating_notes, rating_under_watch = _rating_bucket_from_tbank(
+        ratings,
+        observed_at=observed_at,
+    )
+
+    price = _bond_price_evidence(
+        broker=broker,
+        user_id=user_id,
+        base=base,
+        last_price=last_price,
+        nominal_per_bond=terms.nominal_per_bond,
+        observed_at=observed_at,
+    )
+    if isinstance(price, str):
+        return _with_candidate_blocker(base, price), ()
+
+    cashflow = _bond_cashflow_evidence(
+        broker=broker,
+        user_id=user_id,
+        base=base,
+        maturity=terms.maturity,
+        nominal_per_bond=terms.nominal_per_bond,
+        price=price,
+        observed_at=observed_at,
+    )
+    if isinstance(cashflow, str):
+        return _with_candidate_blocker(base, cashflow), ()
+
+    liquidity = _bond_liquidity_evidence(
+        broker=broker,
+        user_id=user_id,
+        base=base,
+        nominal_per_bond=terms.nominal_per_bond,
+        total=price.total,
+        policy_record=policy_record,
+        profile=profile,
+        observed_at=observed_at,
+    )
+    if isinstance(liquidity, str):
+        return _with_candidate_blocker(base, liquidity), ()
+
+    term_months = _months_until(observed_at, terms.maturity)
     if term_months is None or term_months <= 0:
         return _with_candidate_blocker(base, "bond_term_missing"), ()
 
-    future_cash = sum((amount for _, amount in cashflows), Decimal("0"))
+    future_cash = sum(
+        (amount for _, amount in cashflow.cashflows),
+        Decimal("0"),
+    )
+    dirty_purchase = price.initial + price.aci
     gross_gain = future_cash - dirty_purchase
     uncertainty = (
-        total * policy_record.uncertainty_haircut_percent / Decimal("100")
+        price.total
+        * policy_record.uncertainty_haircut_percent
+        / Decimal("100")
     )
     credit_loss = (
-        total * policy_record.credit_loss_haircut_percent / Decimal("100")
+        price.total
+        * policy_record.credit_loss_haircut_percent
+        / Decimal("100")
     )
 
     removable = {
@@ -833,21 +953,21 @@ def _enrich_bond_candidate(
         base,
         rating_bucket=rating_bucket,
         risk_state=risk_state,
-        market_lot_cost_rub=initial,
-        accrued_coupon_rub_per_lot=aci,
-        buy_fee_rub_per_lot=fee,
+        market_lot_cost_rub=price.initial,
+        accrued_coupon_rub_per_lot=price.aci,
+        buy_fee_rub_per_lot=price.fee,
         spread_cost_rub_per_lot=Decimal("0"),
         expected_horizon_gain_rub_per_lot=gross_gain,
         uncertainty_haircut_rub_per_lot=uncertainty,
         credit_loss_rub_per_lot=credit_loss,
         liquidity_penalty_rub_per_lot=Decimal("0"),
-        liquidity_days=liquidity_days,
-        max_liquid_lots=max_liquid_lots,
+        liquidity_days=liquidity.liquidity_days,
+        max_liquid_lots=liquidity.max_liquid_lots,
         term_months=term_months,
-        ytw_percent=ytw_percent,
-        duration_years=duration_years,
+        ytw_percent=cashflow.ytw_percent,
+        duration_years=cashflow.duration_years,
         evidence_complete=evidence_complete,
-        limit_price=best_ask,
+        limit_price=price.best_ask,
         limit_price_type="point",
         access_reasons=access_reasons,
         notes=notes,
@@ -857,13 +977,13 @@ def _enrich_bond_candidate(
             "id": f"tbank-last-price:{base.instrument_uid}",
             "provider": "tbank",
             "kind": "last_price",
-            "retrieved_at": last_price.time,
+            "retrieved_at": price.last_price_time,
         },
         {
             "id": f"tbank-order-book:{base.instrument_uid}",
             "provider": "tbank",
             "kind": "order_book",
-            "retrieved_at": order_book.time,
+            "retrieved_at": price.order_book_time,
         },
         {
             "id": f"tbank-order-price:{base.instrument_uid}",
@@ -891,7 +1011,6 @@ def _enrich_bond_candidate(
         },
     )
     return candidate, sources
-
 
 def _rating_bucket_from_tbank(
     ratings: tuple[TBankRating, ...],
