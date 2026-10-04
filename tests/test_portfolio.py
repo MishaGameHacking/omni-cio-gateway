@@ -256,11 +256,9 @@ def test_investment_profile_write_requires_origin_and_current_consent() -> None:
         (),
         {"has_legal_versions": lambda self, user_id, versions: False},
     )()
-    previous_database = getattr(app.state, "database", None)
-    app.state.database = database
 
-    try:
-        with (
+    with (
+        patch.object(app.state, "database", database, create=True),
             patch("omnicio.main.authenticated_user") as user,
             patch("omnicio.main.portfolio_store") as store,
             patch("omnicio.main.service") as auth,
@@ -286,11 +284,6 @@ def test_investment_profile_write_requires_origin_and_current_consent() -> None:
             )
             assert missing_consent.status_code == 409
             store.return_value.save_profile.assert_not_called()
-    finally:
-        if previous_database is None:
-            delattr(app.state, "database")
-        else:
-            app.state.database = previous_database
 
 
 def test_investment_profile_rejects_non_finite_decimal_values() -> None:
@@ -735,10 +728,8 @@ def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing()
         (),
         {"has_legal_versions": lambda self, user_id, versions: True},
     )()
-    previous_database = getattr(app.state, "database", None)
-    app.state.database = database
-    try:
-        with (
+    with (
+        patch.object(app.state, "database", database, create=True),
             patch("omnicio.main.authenticated_user") as user,
             patch("omnicio.main.portfolio_store") as store,
             patch("omnicio.main.service") as auth,
@@ -779,11 +770,6 @@ def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing()
         assert call.args[0] == "server-user"
         assert call.kwargs["account_id"] == "account-1"
         assert len(call.kwargs["session_digest"]) == 32
-    finally:
-        if previous_database is None:
-            delattr(app.state, "database")
-        else:
-            app.state.database = previous_database
 
 
 def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution() -> None:
@@ -1052,10 +1038,8 @@ def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
         (),
         {"has_legal_versions": lambda self, user_id, versions: True},
     )()
-    previous_database = getattr(app.state, "database", None)
-    app.state.database = database
-    try:
-        with (
+    with (
+        patch.object(app.state, "database", database, create=True),
             patch("omnicio.main.authenticated_user") as user,
             patch("omnicio.main.portfolio_store") as store,
             patch("omnicio.main.service") as auth,
@@ -1079,11 +1063,6 @@ def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
 
         assert response.status_code == 409
         assert response.json()["detail"] == "proposal_already_decided"
-    finally:
-        if previous_database is None:
-            delattr(app.state, "database")
-        else:
-            app.state.database = previous_database
 
 
 def test_live_mandate_http_rejects_sub_kopeck_caps_before_authority_checks() -> None:
