@@ -202,7 +202,18 @@ class CBRClient:
                 "User-Agent": "OmniCIO-Personal/1.0",
             },
         )
-        payload = self._read(request, "daily-rate")
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=self.timeout_seconds,
+            ) as response:
+                payload = response.read()
+        except (urllib.error.URLError, TimeoutError) as exc:
+            logger.warning(
+                "Bank of Russia daily-rate request failed reason=%s",
+                type(getattr(exc, "reason", exc)).__name__,
+            )
+            raise CBRUnavailable("Bank of Russia daily rate unavailable") from exc
 
         try:
             root = ET.fromstring(payload)
@@ -274,7 +285,18 @@ class CBRClient:
                 "User-Agent": "OmniCIO-Personal/1.0",
             },
         )
-        payload = self._read(request, "key-rate")
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=self.timeout_seconds,
+            ) as response:
+                payload = response.read()
+        except (urllib.error.URLError, TimeoutError) as exc:
+            logger.warning(
+                "Bank of Russia key-rate request failed reason=%s",
+                type(getattr(exc, "reason", exc)).__name__,
+            )
+            raise CBRUnavailable("Bank of Russia key rate unavailable") from exc
 
         try:
             root = ET.fromstring(payload)
@@ -291,22 +313,6 @@ class CBRClient:
             effective_date=effective_date,
             fetched_at=datetime.now(UTC),
         )
-
-    def _read(self, request: urllib.request.Request, feed: str) -> bytes:
-        try:
-            with urllib.request.urlopen(
-                request,
-                timeout=self.timeout_seconds,
-            ) as response:
-                return response.read()
-        except (urllib.error.URLError, TimeoutError) as exc:
-            logger.warning(
-                "Bank of Russia %s request failed reason=%s",
-                feed,
-                type(getattr(exc, "reason", exc)).__name__,
-            )
-            raise CBRUnavailable(f"Bank of Russia {feed} unavailable") from exc
-
 
 def _parse_key_rate_candidates(root: ET.Element) -> list[tuple[date, str]]:
     candidates = _key_rate_candidates_from_root(root)
