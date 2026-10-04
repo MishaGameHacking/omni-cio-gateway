@@ -1,0 +1,27 @@
+name: Sonar main issue inventory
+
+on:
+  push:
+    branches:
+      - diagnostic/sonar-main-remaining-2
+    paths:
+      - ".github/workflows/sonar-api-main-issues.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    name: Query Sonar main issues
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Query public Sonar API
+        shell: cmd
+        run: >-
+          curl.exe --fail --silent --show-error -G
+          --data-urlencode "componentKeys=MishaGameHacking_omni-cio-gateway"
+          --data-urlencode "branch=main"
+          --data-urlencode "issueStatuses=OPEN,CONFIRMED"
+          --data-urlencode "ps=100"
+          "https://sonarcloud.io/api/issues/search"
