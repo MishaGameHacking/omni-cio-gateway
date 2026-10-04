@@ -785,7 +785,7 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(f'data-cbr-value="{indicator}"', page)
             self.assertIn(f'data-cbr-item="{indicator}"', page)
 
-        self.assertIn(">Ставка</span>", page)
+        self.assertIn(">Ключевая</span>", page)
         self.assertIn("<span>$</span>", page)
         self.assertIn("<span>€</span>", page)
         self.assertIn("Ключевая ставка, USD/RUB и EUR/RUB", page)
