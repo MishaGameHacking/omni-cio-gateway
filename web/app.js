@@ -1628,19 +1628,26 @@
     return "API: не подтверждено";
   };
 
+  const instrumentMarketQuoteTimeText = (quoteTime, quoteAge) => {
+    if (!quoteTime) {
+      return "Последняя цена недоступна";
+    }
+    const parts = [formatExactDateTime(quoteTime)];
+    if (quoteAge !== null) {
+      parts.push(`возраст ${Math.max(0, Math.trunc(quoteAge))} с`);
+    }
+    return parts.join(" · ");
+  };
+
   const renderInstrumentMarketLive = (payload) => {
     const source = payload !== null && typeof payload === "object" ? payload : {};
     const quoteStatus = String(source.quote_status || "missing");
     const quoteAge = finiteMarketNumber(source.quote_age_seconds);
     instrumentMarketLastPrice.textContent = marketPriceText(source.last_price);
-    instrumentMarketQuoteTime.textContent = source.quote_time
-      ? [
-          formatExactDateTime(source.quote_time),
-          quoteAge !== null
-            ? `возраст ${Math.max(0, Math.trunc(quoteAge))} с`
-            : "",
-        ].filter(Boolean).join(" · ")
-      : "Последняя цена недоступна";
+    instrumentMarketQuoteTime.textContent = instrumentMarketQuoteTimeText(
+      source.quote_time,
+      quoteAge,
+    );
     const apiAvailability = marketApiAvailabilityLabel(source.api_trade_available);
     instrumentMarketTradingStatus.textContent = [
       marketTradingStatusLabel(source.trading_status),
