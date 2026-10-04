@@ -1,0 +1,23 @@
+name: Sonar main diagnostics
+
+on:
+  push:
+    branches:
+      - chore/sonar-zero-main
+    paths:
+      - ".github/workflows/sonar-main-diagnostics.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  issues:
+    name: Read main Sonar issues
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Query SonarQube Cloud issues
+        shell: cmd
+        run: >-
+          curl.exe --fail --silent --show-error
+          "https://sonarcloud.io/api/issues/search?componentKeys=MishaGameHacking_omni-cio-gateway^&branch=main^&issueStatuses=OPEN,CONFIRMED^&ps=500"
