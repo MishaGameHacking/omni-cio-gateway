@@ -644,15 +644,16 @@ def instrument_market_snapshot(
 
 
 def _terminal_instrument_market_stream_state(error: Exception) -> str | None:
+    state: str | None = None
     if isinstance(error, BrokerNotConnected):
-        return "disconnected"
-    if isinstance(error, TBankTokenRejected):
-        return "reconnect"
-    if isinstance(error, SecurityValueError):
-        return "offline"
-    if isinstance(error, ValueError):
-        return "invalid"
-    return None
+        state = "disconnected"
+    elif isinstance(error, TBankTokenRejected):
+        state = "reconnect"
+    elif isinstance(error, SecurityValueError):
+        state = "offline"
+    elif isinstance(error, ValueError):
+        state = "invalid"
+    return state
 
 
 def _instrument_market_failure_event(
