@@ -283,7 +283,7 @@
     portfolio: "Портфель",
     decisions: "Решения",
     system: "Система",
-    connections: "Интеграции",
+    connections: "Подключения",
     profile: "Профиль",
     settings: "Настройки",
     support: "Поддержка",
@@ -3850,7 +3850,7 @@
       const explanation = [...blockers, ...metrics, ...evidenceNotes];
       details.textContent = explanation.length
         ? explanation.join(" · ")
-        : "Все текущие R4 screening-гейты пройдены";
+        : "Все текущие проверки кандидатов пройдены";
       row.append(title, details);
       balancingScreening.append(row);
     });
@@ -3919,7 +3919,7 @@
     if (payload?.status !== "observed" || payload.live_status !== "received") {
       appendEmptyState(
         proposalCreateOptions,
-        "Сначала нужен свежий полностью доказанный R4 preview.",
+        "Сначала нужен свежий полностью подтверждённый сценарий балансировки.",
       );
       return;
     }
@@ -4067,8 +4067,8 @@
     live_mandate_inactive: "Live-разрешение отозвано или истекло. Новая заявка запрещена; уже отправленную можно только сверить или отменить.",
     live_account_mismatch: "Подключите exact production-счёт, для которого создано предложение и live-разрешение.",
     live_write_access_required: "T-Invest не подтвердил полный доступ к выбранному production-счёту.",
-    live_canary_deploy_cash_only: "R7 canary допускает только сценарий размещения свободного cash.",
-    live_canary_buy_only: "R7 canary пока допускает только покупки; replacement/sell остаются заблокированы.",
+    live_canary_deploy_cash_only: "Реальное исполнение допускает только сценарий размещения свободных средств.",
+    live_canary_buy_only: "Реальное исполнение пока допускает только покупки; замена и продажа остаются заблокированы.",
     live_order_notional_cap_exceeded: "Предварительная стоимость превышает лимит одной live-заявки. Заявка не отправлена.",
     live_daily_notional_cap_exceeded: "Дневной live-лимит исчерпан. Заявка не отправлена.",
     live_buy_lots_exceed_available: "T-Invest не подтверждает доступное количество лотов для live-покупки.",
@@ -4162,7 +4162,7 @@
       || !(liveProfileId instanceof HTMLInputElement)
       || !(liveConfirm instanceof HTMLInputElement)
     ) {
-      throw new TypeError("R7 live mandate form has invalid controls");
+      throw new TypeError("Live mandate form has invalid controls");
     }
 
     liveMaxOrder.max = String(liveOperatorMaxOrder || 1);
@@ -4177,7 +4177,7 @@
       liveMandateRevoke.classList.add("hidden");
       setStateBadge(liveMandateStatus, "Выключен server-side", "state-next");
       liveMandateSummary.textContent = (
-        "R7 технически подготовлен, но production live не активирован: "
+         "Реальное исполнение технически подготовлено, но не активировано: "
         + "опубликованные legal-документы v6 описывают режим без реальных поручений. "
         + "Shadow и Sandbox продолжают работать."
       );
@@ -4404,7 +4404,7 @@
         element.disabled = !accountMatches;
         element.title = accountMatches
           ? "Создать run для exact-пакета этого Sandbox-счёта"
-          : "Sandbox требует тот же exact account_id, из которого построен R5 proposal.";
+          : "Sandbox требует тот же счёт, для которого создан подтверждённый план.";
         return;
       }
       if (mode !== "live") {
@@ -4635,7 +4635,7 @@
       showMessage(
         proposalMessage,
         error.status === 409
-          ? "Сценарий изменился или устарел. Обновите R4 preview и зафиксируйте новую версию."
+          ? "Сценарий изменился или устарел. Обновите балансировку и зафиксируйте новую версию."
           : "Не удалось зафиксировать предложение. Предыдущие версии не изменены.",
         true,
       );
@@ -4886,7 +4886,7 @@
     if (!executionHistory.childElementCount) {
       appendEmptyState(
         executionHistory,
-        "R6 ещё не запускался. Сначала подтвердите R5-предложение.",
+        "Проверка исполнения ещё не запускалась. Сначала подтвердите план.",
       );
       executionDetails.replaceChildren();
       appendEmptyState(executionDetails, "Состояние запуска появится после shadow/sandbox.");
@@ -4935,8 +4935,8 @@
       }
       executionHistory.replaceChildren();
       executionDetails.replaceChildren();
-      appendEmptyState(executionHistory, "Не удалось загрузить R6 execution ledger.");
-      setStateBadge(executionStatus, "Ошибка чтения R6", "state-error");
+      appendEmptyState(executionHistory, "Не удалось загрузить журнал исполнения.");
+      setStateBadge(executionStatus, "Ошибка чтения исполнения", "state-error");
     }
   };
 
@@ -5050,7 +5050,7 @@
           error,
           error.status === 409
             ? "Запуск заблокирован: предложение устарело или контур счёта изменился."
-            : "R6 запуск не выполнен. Production-заявка не создавалась.",
+            : "Проверка исполнения не запущена. Production-заявка не создавалась.",
         ),
         true,
       );
@@ -5103,7 +5103,7 @@
           error,
           error.status === 503
             ? "Provider недоступен. Run оставлен в безопасном состоянии для последующей сверки."
-            : "R6 действие не выполнено. Run не продвинут в небезопасное состояние.",
+            : "Действие исполнения не выполнено. Запуск не продвинут в небезопасное состояние.",
         ),
         true,
       );
@@ -5127,7 +5127,7 @@
       balancingScenarios.replaceChildren();
       balancingScreening.replaceChildren();
       renderProposalCreateOptions(null);
-      appendEmptyState(balancingScenarios, "R4 preview временно недоступен.");
+      appendEmptyState(balancingScenarios, "Сценарий балансировки временно недоступен.");
       setStateBadge(balancingStatus, "Ошибка preview", "state-error");
     }
   };
@@ -5213,7 +5213,7 @@
       portfolioFreeCash.textContent = "—";
       lastPortfolioRefreshAt = 0;
       overviewAccount.textContent = "T-Invest не подключён";
-      overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Интеграции».";
+      overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Подключения».";
       homeConnectionCard.classList.add("is-offline");
       topConnectionIndicator.classList.add("is-offline");
       topConnectionText.textContent = "T-Invest не подключён";
