@@ -1060,6 +1060,7 @@ def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> 
 )
 def test_tbank_daily_candles_require_confirmed_exchange_source(
     source_name: str | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = TBankInvestClient()
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
@@ -1076,16 +1077,19 @@ def test_tbank_daily_candles_require_confirmed_exchange_source(
         candle["candleSourceType"] = source_name
     response = FakeResponse({"candles": [candle]})
     from_at = now - timedelta(days=30)
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *_args, **_kwargs: response,
+    )
 
-    with patch("urllib.request.urlopen", return_value=response):
-        with pytest.raises(TBankUnavailable, match="exchange-sourced"):
-            client.get_daily_exchange_candles(
-                "t.fake-owner-credential-1234567890",
-                "prod",
-                "bond-uid",
-                from_at=from_at,
-                to_at=now,
-            )
+    with pytest.raises(TBankUnavailable, match="exchange-sourced"):
+        client.get_daily_exchange_candles(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "bond-uid",
+            from_at=from_at,
+            to_at=now,
+        )
 
 
 def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
