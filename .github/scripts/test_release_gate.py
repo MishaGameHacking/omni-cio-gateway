@@ -11,6 +11,7 @@ import pathlib
 import unittest
 from unittest.mock import Mock, patch
 
+import report_sonar_annotations as diagnostics
 import verify_main_release as gate
 from report_sonar_annotations import report_annotations
 
@@ -275,6 +276,36 @@ class SonarScopePolicyTests(unittest.TestCase):
 
 
 class GitHubTransportTests(unittest.TestCase):
+    def test_sonar_annotation_transport_retry_is_bounded_and_fail_closed(self) -> None:
+        for error, recover in (
+            (gate.PendingChecks("temporary annotation timeout"), True),
+            (gate.PendingChecks("temporary annotation timeout"), False),
+            (gate.ReleaseBlocked("permission denied"), False),
+        ):
+            with (
+                self.subTest(error=type(error), recover=recover),
+                patch.dict(os.environ, {"SOURCE_SHA": SHA, "GH_TOKEN": "synthetic-test-token"}),
+                patch.object(diagnostics, "GitHubClient"),
+                patch.object(diagnostics, "completed_sonar", return_value=sonar()),
+                patch.object(
+                    diagnostics, "report_annotations", side_effect=[error, None],
+                ) as report,
+                patch.object(
+                    diagnostics.time, "monotonic", side_effect=[0, 1, 2 if recover else 241],
+                ),
+                patch.object(diagnostics.time, "sleep") as sleep,
+            ):
+                if recover:
+                    diagnostics.main()
+                    self.assertEqual(report.call_count, 2)
+                    sleep.assert_called_once_with(10)
+                else:
+                    with self.assertRaises(gate.ReleaseBlocked):
+                        diagnostics.main()
+                    self.assertEqual(report.call_count, 1)
+                    if isinstance(error, gate.ReleaseBlocked):
+                        sleep.assert_not_called()
+
     def test_sonar_summary_and_annotations_survive_windows_console_encoding(self) -> None:
         client = Mock(spec=gate.GitHubClient)
         client.get_list.return_value = [{"message": "Исправить ≤ 3%"}]
