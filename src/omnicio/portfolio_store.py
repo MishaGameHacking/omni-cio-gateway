@@ -228,6 +228,261 @@ def _proposal_decision_outcome(
     return action, "user_decision"
 
 
+def _source_document_id(
+    cur: Any,
+    document: EvidenceDocument,
+    retrieved_at: datetime,
+) -> tuple[UUID, bool]:
+    content_hash = _hash_json(document.payload)
+    cur.execute(
+        """
+        INSERT INTO source_documents (
+            provider,
+            document_type,
+            subject_uid,
+            provider_key,
+            source_url,
+            published_at,
+            effective_at,
+            first_retrieved_at,
+            content_hash,
+            payload
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+        ON CONFLICT (
+            provider,
+            document_type,
+            subject_uid,
+            provider_key,
+            content_hash
+        ) DO NOTHING
+        RETURNING id
+        """,
+        (
+            document.provider,
+            document.document_type,
+            document.subject_uid,
+            document.provider_key,
+            document.source_url,
+            document.published_at,
+            document.effective_at,
+            retrieved_at,
+            content_hash,
+            _json(document.payload),
+        ),
+    )
+    inserted = cur.fetchone()
+    created = inserted is not None
+    if inserted is None:
+        cur.execute(
+            """
+            SELECT id
+            FROM source_documents
+            WHERE provider = %s
+              AND document_type = %s
+              AND subject_uid = %s
+              AND provider_key = %s
+              AND content_hash = %s
+            """,
+            (
+                document.provider,
+                document.document_type,
+                document.subject_uid,
+                document.provider_key,
+                content_hash,
+            ),
+        )
+        inserted = cur.fetchone()
+        if inserted is None:
+            raise RuntimeError("evidence document conflict could not be resolved")
+    return cast(UUID, cast(dict[str, Any], inserted)["id"]), created
+
+
+def _save_source_retrieval(
+    cur: Any,
+    document_id: UUID,
+    retrieved_at: datetime,
+) -> None:
+    cur.execute(
+        """
+        INSERT INTO source_retrievals (source_document_id, retrieved_at)
+        VALUES (%s, %s)
+        ON CONFLICT (source_document_id, retrieved_at) DO NOTHING
+        """,
+        (document_id, retrieved_at),
+    )
+
+
+def _save_source_facts(
+    cur: Any,
+    document_id: UUID,
+    document: EvidenceDocument,
+) -> None:
+    for fact in document.facts:
+        fact_payload = {
+            "subject_uid": fact.subject_uid,
+            "fact_type": fact.fact_type,
+            "fact_key": fact.fact_key,
+            "value_numeric": fact.value_numeric,
+            "value_text": fact.value_text,
+            "currency": fact.currency,
+            "unit": fact.unit,
+            "effective_at": fact.effective_at,
+            "published_at": fact.published_at,
+            "payload": fact.payload or {},
+        }
+        cur.execute(
+            """
+            INSERT INTO source_facts (
+                source_document_id,
+                subject_uid,
+                fact_type,
+                fact_key,
+                value_numeric,
+                value_text,
+                currency,
+                unit,
+                effective_at,
+                published_at,
+                payload,
+                semantic_hash
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+            )
+            ON CONFLICT (source_document_id, semantic_hash) DO NOTHING
+            """,
+            (
+                document_id,
+                fact.subject_uid,
+                fact.fact_type,
+                fact.fact_key,
+                fact.value_numeric,
+                fact.value_text,
+                fact.currency,
+                fact.unit,
+                fact.effective_at,
+                fact.published_at,
+                _json(fact.payload or {}),
+                _hash_json(fact_payload),
+            ),
+        )
+
+
+def _save_payout_event(
+    cur: Any,
+    document_id: UUID,
+    document: EvidenceDocument,
+) -> None:
+    payout = document.payout
+    if payout is None:
+        return
+    payout_payload = {
+        "provider": document.provider,
+        "instrument_uid": payout.instrument_uid,
+        "event_type": payout.event_type,
+        "provider_key": payout.provider_key,
+        "announced_at": payout.announced_at,
+        "record_at": payout.record_at,
+        "expected_at": payout.expected_at,
+        "actual_at": payout.actual_at,
+        "amount": payout.amount,
+        "currency": payout.currency,
+        "status": payout.status,
+        "payload": payout.payload,
+    }
+    cur.execute(
+        """
+        INSERT INTO payout_events (
+            source_document_id,
+            provider,
+            instrument_uid,
+            event_type,
+            provider_key,
+            announced_at,
+            record_at,
+            expected_at,
+            actual_at,
+            amount,
+            currency,
+            status,
+            payload,
+            semantic_hash
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+        )
+        ON CONFLICT (
+            provider,
+            instrument_uid,
+            event_type,
+            provider_key,
+            semantic_hash
+        ) DO NOTHING
+        """,
+        (
+            document_id,
+            document.provider,
+            payout.instrument_uid,
+            payout.event_type,
+            payout.provider_key,
+            payout.announced_at,
+            payout.record_at,
+            payout.expected_at,
+            payout.actual_at,
+            payout.amount,
+            payout.currency,
+            payout.status,
+            _json(payout.payload),
+            _hash_json(payout_payload),
+        ),
+    )
+
+
+def _save_risk_assessment(
+    cur: Any,
+    *,
+    user_id: UUID,
+    snapshot_id: UUID,
+    assessment: InstrumentRiskAssessment,
+    retrieved_at: datetime,
+) -> bool:
+    cur.execute(
+        """
+        INSERT INTO portfolio_risk_assessments (
+            user_id,
+            snapshot_id,
+            instrument_uid,
+            state,
+            rating_status,
+            fundamental_status,
+            source_status,
+            reasons,
+            evidence,
+            assessed_at
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s
+        )
+        ON CONFLICT (snapshot_id, instrument_uid) DO NOTHING
+        RETURNING id
+        """,
+        (
+            user_id,
+            snapshot_id,
+            assessment.instrument_uid,
+            assessment.state,
+            assessment.rating_status,
+            assessment.fundamental_status,
+            assessment.source_status,
+            _json(list(assessment.reasons)),
+            _json(assessment.evidence),
+            retrieved_at,
+        ),
+    )
+    return cur.fetchone() is not None
+
+
 class PortfolioStore:
     """Store immutable observation facts behind explicit tenant context."""
 
@@ -1535,6 +1790,7 @@ class PortfolioStore:
     ) -> tuple[int, int]:
         if retrieved_at.tzinfo is None:
             raise ValueError("evidence retrieval time must be timezone-aware")
+
         documents_written = 0
         assessments_written = 0
         with (
@@ -1544,229 +1800,26 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             for document in documents:
-                content_hash = _hash_json(document.payload)
-                cur.execute(
-                    """
-                    INSERT INTO source_documents (
-                        provider,
-                        document_type,
-                        subject_uid,
-                        provider_key,
-                        source_url,
-                        published_at,
-                        effective_at,
-                        first_retrieved_at,
-                        content_hash,
-                        payload
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                    ON CONFLICT (
-                        provider,
-                        document_type,
-                        subject_uid,
-                        provider_key,
-                        content_hash
-                    ) DO NOTHING
-                    RETURNING id
-                    """,
-                    (
-                        document.provider,
-                        document.document_type,
-                        document.subject_uid,
-                        document.provider_key,
-                        document.source_url,
-                        document.published_at,
-                        document.effective_at,
-                        retrieved_at,
-                        content_hash,
-                        _json(document.payload),
-                    ),
+                document_id, created = _source_document_id(
+                    cur,
+                    document,
+                    retrieved_at,
                 )
-                inserted = cur.fetchone()
-                if inserted is None:
-                    cur.execute(
-                        """
-                        SELECT id
-                        FROM source_documents
-                        WHERE provider = %s
-                          AND document_type = %s
-                          AND subject_uid = %s
-                          AND provider_key = %s
-                          AND content_hash = %s
-                        """,
-                        (
-                            document.provider,
-                            document.document_type,
-                            document.subject_uid,
-                            document.provider_key,
-                            content_hash,
-                        ),
-                    )
-                    inserted = cur.fetchone()
-                    if inserted is None:
-                        raise RuntimeError("evidence document conflict could not be resolved")
-                else:
-                    documents_written += 1
-                document_id = cast(UUID, cast(dict[str, Any], inserted)["id"])
-
-                cur.execute(
-                    """
-                    INSERT INTO source_retrievals (source_document_id, retrieved_at)
-                    VALUES (%s, %s)
-                    ON CONFLICT (source_document_id, retrieved_at) DO NOTHING
-                    """,
-                    (document_id, retrieved_at),
-                )
-
-                for fact in document.facts:
-                    fact_payload = {
-                        "subject_uid": fact.subject_uid,
-                        "fact_type": fact.fact_type,
-                        "fact_key": fact.fact_key,
-                        "value_numeric": fact.value_numeric,
-                        "value_text": fact.value_text,
-                        "currency": fact.currency,
-                        "unit": fact.unit,
-                        "effective_at": fact.effective_at,
-                        "published_at": fact.published_at,
-                        "payload": fact.payload or {},
-                    }
-                    cur.execute(
-                        """
-                        INSERT INTO source_facts (
-                            source_document_id,
-                            subject_uid,
-                            fact_type,
-                            fact_key,
-                            value_numeric,
-                            value_text,
-                            currency,
-                            unit,
-                            effective_at,
-                            published_at,
-                            payload,
-                            semantic_hash
-                        )
-                        VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
-                        )
-                        ON CONFLICT (source_document_id, semantic_hash) DO NOTHING
-                        """,
-                        (
-                            document_id,
-                            fact.subject_uid,
-                            fact.fact_type,
-                            fact.fact_key,
-                            fact.value_numeric,
-                            fact.value_text,
-                            fact.currency,
-                            fact.unit,
-                            fact.effective_at,
-                            fact.published_at,
-                            _json(fact.payload or {}),
-                            _hash_json(fact_payload),
-                        ),
-                    )
-
-                if document.payout is not None:
-                    payout = document.payout
-                    payout_payload = {
-                        "provider": document.provider,
-                        "instrument_uid": payout.instrument_uid,
-                        "event_type": payout.event_type,
-                        "provider_key": payout.provider_key,
-                        "announced_at": payout.announced_at,
-                        "record_at": payout.record_at,
-                        "expected_at": payout.expected_at,
-                        "actual_at": payout.actual_at,
-                        "amount": payout.amount,
-                        "currency": payout.currency,
-                        "status": payout.status,
-                        "payload": payout.payload,
-                    }
-                    cur.execute(
-                        """
-                        INSERT INTO payout_events (
-                            source_document_id,
-                            provider,
-                            instrument_uid,
-                            event_type,
-                            provider_key,
-                            announced_at,
-                            record_at,
-                            expected_at,
-                            actual_at,
-                            amount,
-                            currency,
-                            status,
-                            payload,
-                            semantic_hash
-                        )
-                        VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
-                        )
-                        ON CONFLICT (
-                            provider,
-                            instrument_uid,
-                            event_type,
-                            provider_key,
-                            semantic_hash
-                        ) DO NOTHING
-                        """,
-                        (
-                            document_id,
-                            document.provider,
-                            payout.instrument_uid,
-                            payout.event_type,
-                            payout.provider_key,
-                            payout.announced_at,
-                            payout.record_at,
-                            payout.expected_at,
-                            payout.actual_at,
-                            payout.amount,
-                            payout.currency,
-                            payout.status,
-                            _json(payout.payload),
-                            _hash_json(payout_payload),
-                        ),
-                    )
+                documents_written += int(created)
+                _save_source_retrieval(cur, document_id, retrieved_at)
+                _save_source_facts(cur, document_id, document)
+                _save_payout_event(cur, document_id, document)
 
             for assessment in assessments:
-                cur.execute(
-                    """
-                    INSERT INTO portfolio_risk_assessments (
-                        user_id,
-                        snapshot_id,
-                        instrument_uid,
-                        state,
-                        rating_status,
-                        fundamental_status,
-                        source_status,
-                        reasons,
-                        evidence,
-                        assessed_at
+                assessments_written += int(
+                    _save_risk_assessment(
+                        cur,
+                        user_id=user_id,
+                        snapshot_id=snapshot_id,
+                        assessment=assessment,
+                        retrieved_at=retrieved_at,
                     )
-                    VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s
-                    )
-                    ON CONFLICT (snapshot_id, instrument_uid) DO NOTHING
-                    RETURNING id
-                    """,
-                    (
-                        user_id,
-                        snapshot_id,
-                        assessment.instrument_uid,
-                        assessment.state,
-                        assessment.rating_status,
-                        assessment.fundamental_status,
-                        assessment.source_status,
-                        _json(list(assessment.reasons)),
-                        _json(assessment.evidence),
-                        retrieved_at,
-                    ),
                 )
-                if cur.fetchone() is not None:
-                    assessments_written += 1
         return documents_written, assessments_written
 
     def portfolio_visualization(
