@@ -1028,6 +1028,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Math.min(1000 * (2 ** instrumentMarketRetryCount), 30000)", script)
         self.assertIn("finiteMarketNumber", script)
         self.assertIn('instrumentMarketQuoteUnit === "point"', script)
+        self.assertIn('["bond", "futures", "future"].includes', script)
+        self.assertIn('quoteStatus === "future"', script)
         self.assertIn('instrumentMarketScrubber.addEventListener("input"', script)
         self.assertIn("Number.parseInt(instrumentMarketScrubber.value, 10)", script)
         self.assertNotIn('instrumentMarketChart.addEventListener("pointermove"', script)
