@@ -1,0 +1,211 @@
+name: Auth application deploy
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/scripts/timeweb_addresses.py"
+      - ".github/scripts/bootstrap_self_hosted_python.cmd"
+      - "uv.lock"
+      - "requirements-runtime.txt"
+      - ".github/workflows/auth-app-deploy.yml"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
+      - ".github/scripts/timeweb_auth_app.py"
+      - ".github/scripts/test_timeweb_auth_app.py"
+      - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
+      - "src/omnicio/**"
+      - "web/**"
+      - "assets/brand/**"
+      - "pyproject.toml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/scripts/timeweb_addresses.py"
+      - ".github/scripts/bootstrap_self_hosted_python.cmd"
+      - "uv.lock"
+      - "requirements-runtime.txt"
+      - ".github/workflows/auth-app-deploy.yml"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
+      - ".github/scripts/timeweb_auth_app.py"
+      - ".github/scripts/test_timeweb_auth_app.py"
+      - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
+      - "src/omnicio/**"
+      - "web/**"
+      - "assets/brand/**"
+      - "pyproject.toml"
+  workflow_run:
+    workflows:
+      - Auth PostgreSQL
+    branches:
+      - main
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # PR validation must never block a production deployment. Production-triggered
+  # runs still share one lock so two releases cannot mutate the server at once.
+  group: auth-app-deploy-${{ github.event.pull_request.number || 'production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  tests:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.author_association == 'OWNER')
+    name: Test auth deployer
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout candidate state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
+
+      - name: Compile deploy scripts
+        shell: cmd
+        run: |
+          "%OMNICIO_PYTHON%" -m py_compile .github\scripts\timeweb_auth_postgres.py .github\scripts\timeweb_auth_app.py
+
+      - name: Validate browser JavaScript syntax
+        shell: cmd
+        run: |
+          where node.exe >nul 2>nul
+          if errorlevel 1 (
+            echo ::error::node.exe is required for browser JavaScript syntax validation.
+            exit /b 1
+          )
+          node.exe --check web\app.js
+
+      - name: Run deployer tests
+        shell: cmd
+        run: |
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_ssh_trust.py
+          if errorlevel 1 exit /b 1
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_auth_app.py
+
+      - name: Verify auth page markers
+        shell: cmd
+        run: >-
+          "%OMNICIO_PYTHON%" -c "from pathlib import Path; text=Path('web/index.html').read_text(encoding='utf-8'); assert 'name=\"omni-cio-white-site\"' in text; assert r'\n' not in text"
+
+  deploy:
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    name: Deploy auth application
+    concurrency:
+      group: omnicio-production-ssh
+      cancel-in-progress: false
+      queue: max
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_sha == github.sha)
+    needs: tests
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 30
+    env:
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}
+      SERVER_NAME: omni-cio-white-site
+      SERVER_COMMENT: "Managed by GitHub Actions: timeweb-white-site"
+      DB_CLUSTER_NAME: omnicio-auth-postgres
+      VPC_NAME: omni-cio-private
+      TARGET_LOCATION: ru-3
+      TARGET_ZONE: msk-1
+      VKID_APP_ID: ${{ vars.VKID_APP_ID }}
+      REGISTRATION_ENABLED: "true"
+      REGISTRATION_MAX_USERS: "2"
+      MULTIUSER_LEGAL_APPROVED: "true"
+      RKN_NOTIFICATION_CONFIRMED: "false"
+      CONTROLLED_LIVE_TEST_MODE: "true"
+      LEGACY_PROFILE_RESET_ENABLED: "false"
+      LEGAL_OPERATOR_NAME: "КЛИМАЧЕВ МИХАИЛ КОНСТАНТИНОВИЧ"
+      LEGAL_OPERATOR_EMAIL: "omnicioinfo@gmail.com"
+      LEGAL_PRIVACY_VERSION: "2026-10-02-v6"
+      LEGAL_CONSENT_VERSION: "2026-10-02-v6"
+      LEGAL_TERMS_VERSION: "2026-10-02-v6"
+      SESSION_TTL_SECONDS: "34560000"
+      PORTFOLIO_LIVE_EXECUTION_ENABLED: "false"
+      PORTFOLIO_LIVE_MAX_ORDER_RUB: "10000"
+      PORTFOLIO_LIVE_MAX_DAILY_RUB: "20000"
+
+    steps:
+      - name: Checkout accepted main state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
+
+      - name: Verify current main release checks
+        shell: cmd
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: '"%OMNICIO_PYTHON%" .github\scripts\verify_main_release.py'
+
+      - name: Validate verified SSH server key
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\timeweb_ssh_trust.py'
+
+      - name: Validate Timeweb secret
+        shell: cmd
+        run: |
+          @echo off
+          if not defined TIMEWEB_CLOUD_TOKEN (
+            echo ::error::TIMEWEB_CLOUD_TOKEN is missing
+            exit /b 1
+          )
+
+      - name: Deploy accepted auth release
+        id: app
+        shell: cmd
+        run: |
+          "%OMNICIO_PYTHON%" .github\scripts\timeweb_auth_app.py ^
+            --server-name "%SERVER_NAME%" ^
+            --server-comment "%SERVER_COMMENT%" ^
+            --release-sha "%GITHUB_SHA%" ^
+            --repository-root "%GITHUB_WORKSPACE%" ^
+            --cluster-name "%DB_CLUSTER_NAME%" ^
+            --vpc-name "%VPC_NAME%" ^
+            --location "%TARGET_LOCATION%" ^
+            --availability-zone "%TARGET_ZONE%"
+
+      - name: Surface database gate
+        if: steps.app.outputs.status == 'pending_database'
+        shell: cmd
+        run: echo ::warning title=Private PostgreSQL required::Auth application was not changed because the private PostgreSQL/runtime environment is not ready.
+
+      - name: Confirm application readiness
+        if: steps.app.outputs.status == 'app_ready'
+        shell: cmd
+        run: echo OmniCIO is healthy over HTTPS. VK ID auth is deployed with the reviewed access mode.
