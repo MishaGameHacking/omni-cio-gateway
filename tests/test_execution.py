@@ -98,8 +98,9 @@ def test_execution_plan_uses_only_exact_confirmed_proposal_trades() -> None:
 
 
 def test_unconfirmed_proposal_never_builds_execution_plan() -> None:
+    pending = _proposal(status="pending")
     with pytest.raises(ExecutionStateError, match="proposal_not_confirmed"):
-        build_execution_plan(_proposal(status="pending"))
+        build_execution_plan(pending)
 
 
 @pytest.mark.parametrize(
