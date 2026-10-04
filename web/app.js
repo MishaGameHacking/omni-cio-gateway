@@ -114,18 +114,18 @@
   const homeAttentionStateBadge = requiredElement("#home-attention-state");
   const homeAttentionList = requiredElement("#home-attention-list");
 
-  const usdRubCard = document.querySelector("#usd-rub-card");
-  const usdRubState = document.querySelector("#usd-rub-state");
-  const usdRubPrice = document.querySelector("#usd-rub-price");
-  const usdRubChange = document.querySelector("#usd-rub-change");
-  const usdRubNote = document.querySelector("#usd-rub-note");
-  const usdRubSource = document.querySelector("#usd-rub-source");
-  const usdRubTime = document.querySelector("#usd-rub-time");
-  const usdRubCbr = document.querySelector("#usd-rub-cbr");
-  const usdRubCbrDate = document.querySelector("#usd-rub-cbr-date");
-  const usdRubCbrNextRow = document.querySelector("#usd-rub-cbr-next-row");
-  const usdRubCbrNext = document.querySelector("#usd-rub-cbr-next");
-  const usdRubCbrNextDate = document.querySelector("#usd-rub-cbr-next-date");
+  const cbrMarketStrip = requiredElement("#cbr-market-strip");
+  const cbrMarketStripStatus = requiredElement("#cbr-market-strip-status");
+  const cbrValueElements = {
+    key_rate: [...document.querySelectorAll('[data-cbr-value="key_rate"]')],
+    usd_rub: [...document.querySelectorAll('[data-cbr-value="usd_rub"]')],
+    eur_rub: [...document.querySelectorAll('[data-cbr-value="eur_rub"]')],
+  };
+  const cbrItemElements = {
+    key_rate: [...document.querySelectorAll('[data-cbr-item="key_rate"]')],
+    usd_rub: [...document.querySelectorAll('[data-cbr-item="usd_rub"]')],
+    eur_rub: [...document.querySelectorAll('[data-cbr-item="eur_rub"]')],
+  };
 
   const portfolioStateBadge = document.querySelector("#portfolio-state-badge");
   const portfolioRefresh = document.querySelector("#portfolio-refresh");
@@ -329,8 +329,9 @@
   let connectedTbankEnvironment = null;
   let tbankAccountId = null;
   let owlTimer = null;
-  let usdRubEventSource = null;
-  let usdRubFallbackTimer = null;
+  let cbrIndicatorTimer = null;
+  let cbrIndicatorsLoaded = false;
+  let lastCbrIndicatorRefreshAt = 0;
   let navigationDepth = 0;
   const homeAttentionBuckets = {
     connection: null,
@@ -809,178 +810,117 @@
     }).format(date);
   };
 
-  const renderUsdRubStreamStatus = (state) => {
-    usdRubCard.classList.toggle("is-offline", state === "disconnected");
-    usdRubCard.classList.toggle("is-error", state === "unavailable");
-
-    if (state === "disconnected") {
-      setStateBadge(usdRubState, "Нет подключения", "state-next");
-      setStateBadge(homeFxState, "Нет подключения", "state-next");
-      usdRubNote.textContent = "Подключите T-Invest, чтобы получать оперативную котировку.";
-      owlFxStatus.textContent = "нет подключения";
-      return;
+  const formatCbrNumber = (
+    value,
+    {minimumFractionDigits = 2, maximumFractionDigits = 4} = {},
+  ) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      throw new TypeError("Bank of Russia indicator value is invalid");
     }
-
-    if (state === "reconnect") {
-      setStateBadge(usdRubState, "Нужен токен", "state-next");
-      setStateBadge(homeFxState, "Нужен токен", "state-next");
-      usdRubNote.textContent = "T-Invest отклонил сохранённый токен. Переподключите счёт.";
-      owlFxStatus.textContent = "нужно переподключение";
-      return;
-    }
-
-    setStateBadge(usdRubState, "Переподключение", "state-next");
-    setStateBadge(homeFxState, "Переподключение", "state-next");
-    usdRubNote.textContent = usdRubPrice.textContent === "—"
-      ? "T-Invest временно не отдаёт котировку. Повторяем запрос с паузой."
-      : "Поток временно недоступен. Показана последняя полученная котировка.";
-    owlFxStatus.textContent = "переподключение";
+    return new Intl.NumberFormat("ru-RU", {
+      minimumFractionDigits,
+      maximumFractionDigits,
+    }).format(number);
   };
 
-  const renderUsdRubQuote = (snapshot) => {
-    usdRubCard.classList.remove("is-offline", "is-error");
+  const setCbrIndicator = (key, text, title) => {
+    for (const element of cbrValueElements[key] || []) {
+      element.textContent = text;
+    }
+    for (const element of cbrItemElements[key] || []) {
+      element.title = title;
+    }
+  };
 
-    usdRubPrice.textContent = formatMoney({
-      currency: snapshot.currency,
-      value: String(snapshot.price),
-    });
+  const renderCbrIndicators = (snapshot) => {
+    const keyRate = snapshot?.key_rate;
+    const usd = snapshot?.usd_rub;
+    const eur = snapshot?.eur_rub;
+    if (!keyRate || !usd || !eur) {
+      throw new TypeError("Bank of Russia indicator payload is incomplete");
+    }
 
-    if (snapshot.change !== null && snapshot.change_percent !== null) {
-      const changeMoney = formatMoney(
-        {currency: snapshot.currency, value: String(snapshot.change)},
-        {sign: true},
+    const keyRateText = `${formatCbrNumber(keyRate.value, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}%`;
+    const usdText = `${formatCbrNumber(usd.value)} ₽`;
+    const eurText = `${formatCbrNumber(eur.value)} ₽`;
+    const source = snapshot.source === "Bank of Russia" ? "Банк России" : "ЦБ РФ";
+
+    setCbrIndicator(
+      "key_rate",
+      keyRateText,
+      `${source} · действует с ${formatCalendarDate(keyRate.effective_date)}`,
+    );
+    setCbrIndicator(
+      "usd_rub",
+      usdText,
+      `${source} · официальный курс на ${formatCalendarDate(usd.effective_date)}`,
+    );
+    setCbrIndicator(
+      "eur_rub",
+      eurText,
+      `${source} · официальный курс на ${formatCalendarDate(eur.effective_date)}`,
+    );
+
+    cbrMarketStrip.classList.remove("is-unavailable");
+    cbrMarketStripStatus.textContent = (
+      `Банк России: ключевая ставка ${keyRateText}, доллар ${usdText}, евро ${eurText}.`
+    );
+    setStateBadge(homeFxState, "Актуально", "state-ok");
+    owlFxStatus.textContent = `ЦБ РФ · ${formatCalendarDate(usd.effective_date)}`;
+    cbrIndicatorsLoaded = true;
+    lastCbrIndicatorRefreshAt = Date.now();
+  };
+
+  const renderCbrIndicatorFailure = () => {
+    cbrMarketStrip.classList.add("is-unavailable");
+    if (cbrIndicatorsLoaded) {
+      cbrMarketStripStatus.textContent = (
+        "Банк России временно недоступен. Показаны последние успешно полученные значения."
       );
-      usdRubChange.textContent = `${changeMoney} · ${formatPercent(
-        snapshot.change_percent,
-        {sign: true},
-      )}`;
-      applySignedClass(usdRubChange, snapshot.change);
-    } else {
-      usdRubChange.textContent = "Изменение к закрытию недоступно";
-      usdRubChange.classList.remove("value-positive", "value-negative");
-    }
-
-    const live = snapshot.status === "live";
-    setStateBadge(
-      usdRubState,
-      live ? "Оперативно" : "Последняя котировка",
-      live ? "state-ok" : "state-next",
-    );
-    setStateBadge(
-      homeFxState,
-      live ? "Работает" : "Последняя цена",
-      live ? "state-ok" : "state-next",
-    );
-
-    usdRubSource.textContent = snapshot.source === "dealer"
-      ? "T-Invest · дилер"
-      : "T-Invest · биржа";
-    usdRubTime.textContent = formatClock(snapshot.quote_time);
-    usdRubNote.textContent = live
-      ? "Рыночная котировка T-Invest. Она может отличаться от Google/Morningstar и курса ЦБ РФ."
-      : "Последняя доступная котировка T-Invest. Она может отличаться от Google/Morningstar и курса ЦБ РФ.";
-    owlFxStatus.textContent = live
-      ? `оперативно · ${formatClock(snapshot.quote_time)}`
-      : `последняя · ${formatClock(snapshot.quote_time)}`;
-
-    if (snapshot.cbr_reference) {
-      usdRubCbr.textContent = formatMoney({
-        currency: snapshot.cbr_reference.currency,
-        value: String(snapshot.cbr_reference.value),
-      });
-      usdRubCbrDate.textContent = `официальный курс на ${formatCalendarDate(
-        snapshot.cbr_reference.effective_date,
-      )}`;
-    } else {
-      usdRubCbr.textContent = "Недоступен";
-      usdRubCbrDate.textContent = "Справочный источник временно не отвечает";
-    }
-
-    if (snapshot.cbr_next_reference) {
-      usdRubCbrNext.textContent = formatMoney({
-        currency: snapshot.cbr_next_reference.currency,
-        value: String(snapshot.cbr_next_reference.value),
-      });
-      usdRubCbrNextDate.textContent = `вступает в силу ${formatCalendarDate(
-        snapshot.cbr_next_reference.effective_date,
-      )}`;
-      usdRubCbrNextRow.classList.remove("hidden");
-    } else {
-      usdRubCbrNextRow.classList.add("hidden");
-      usdRubCbrNext.textContent = "—";
-      usdRubCbrNextDate.textContent = "—";
-    }
-  };
-
-  const loadUsdRubSnapshot = async () => {
-    if (!tbankIsConnected) {
-      renderUsdRubStreamStatus("disconnected");
+      setStateBadge(homeFxState, "Последние данные", "state-next");
+      owlFxStatus.textContent = "последние полученные данные";
       return;
     }
+
+    cbrMarketStripStatus.textContent = "Официальные показатели Банка России временно недоступны.";
+    setStateBadge(homeFxState, "Недоступно", "state-next");
+    owlFxStatus.textContent = "временно недоступно";
+  };
+
+  const loadCbrIndicators = async () => {
     try {
-      const snapshot = await api("/api/market/usd-rub", {method: "GET"});
-      renderUsdRubQuote(snapshot);
+      const snapshot = await api("/api/market/cbr-indicators", {method: "GET"});
+      renderCbrIndicators(snapshot);
     } catch (error) {
       if (error.status === 401) {
         location.reload();
         return;
       }
-      renderUsdRubStreamStatus(error.status === 409 ? "reconnect" : "unavailable");
+      renderCbrIndicatorFailure();
     }
   };
 
-  const stopUsdRubStream = () => {
-    if (usdRubEventSource) {
-      usdRubEventSource.close();
-      usdRubEventSource = null;
+  const startCbrIndicators = () => {
+    void loadCbrIndicators();
+    if (cbrIndicatorTimer !== null) {
+      return;
     }
-    if (usdRubFallbackTimer !== null) {
-      window.clearInterval(usdRubFallbackTimer);
-      usdRubFallbackTimer = null;
-    }
+    cbrIndicatorTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void loadCbrIndicators();
+      }
+    }, 5 * 60 * 1000);
   };
 
-  const startUsdRubStream = () => {
-    if (!tbankIsConnected || usdRubEventSource || usdRubFallbackTimer !== null) {
-      if (!tbankIsConnected) {
-        renderUsdRubStreamStatus("disconnected");
-      }
-      return;
+  const stopCbrIndicators = () => {
+    if (cbrIndicatorTimer !== null) {
+      window.clearInterval(cbrIndicatorTimer);
+      cbrIndicatorTimer = null;
     }
-
-    if (!("EventSource" in window)) {
-      void loadUsdRubSnapshot();
-      usdRubFallbackTimer = window.setInterval(() => {
-        if (document.visibilityState === "visible") {
-          void loadUsdRubSnapshot();
-        }
-      }, 5 * 1000);
-      return;
-    }
-
-    const stream = new EventSource("/api/market/usd-rub/stream");
-    usdRubEventSource = stream;
-
-    stream.addEventListener("quote", (event) => {
-      try {
-        renderUsdRubQuote(JSON.parse(event.data));
-      } catch {
-        renderUsdRubStreamStatus("unavailable");
-      }
-    });
-
-    stream.addEventListener("status", (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        renderUsdRubStreamStatus(payload.state || "unavailable");
-      } catch {
-        renderUsdRubStreamStatus("unavailable");
-      }
-    });
-
-    stream.onerror = () => {
-      renderUsdRubStreamStatus("unavailable");
-    };
   };
 
   const applySignedClass = (element, value) => {
