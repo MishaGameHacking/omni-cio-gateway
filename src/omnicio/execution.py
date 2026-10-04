@@ -149,6 +149,19 @@ def run_status_for_legs(
     return "running"
 
 
+def _validate_trade_bounds(
+    action: TradeAction,
+    max_spend: Decimal | None,
+    min_proceeds: Decimal | None,
+) -> None:
+    if action == "buy":
+        if max_spend is None or min_proceeds is not None:
+            raise ExecutionStateError("proposal_buy_bounds_invalid")
+        return
+    if min_proceeds is None or max_spend is not None:
+        raise ExecutionStateError("proposal_sell_bounds_invalid")
+
+
 def _trade(index: int, value: object) -> ExecutionTrade:
     if not isinstance(value, dict):
         raise ExecutionStateError("proposal_trade_invalid")
@@ -174,11 +187,7 @@ def _trade(index: int, value: object) -> ExecutionTrade:
 
     max_spend = _optional_positive_decimal(trade.get("max_spend_rub"))
     min_proceeds = _optional_positive_decimal(trade.get("min_proceeds_rub"))
-    if action == "buy":
-        if max_spend is None or min_proceeds is not None:
-            raise ExecutionStateError("proposal_buy_bounds_invalid")
-    elif min_proceeds is None or max_spend is not None:
-        raise ExecutionStateError("proposal_sell_bounds_invalid")
+    _validate_trade_bounds(action, max_spend, min_proceeds)
 
     return ExecutionTrade(
         leg_index=index,
