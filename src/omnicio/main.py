@@ -46,6 +46,7 @@ from .portfolio_store import (
     InvestmentProfileRecord,
     PortfolioStore,
     ProposalStateError,
+    SettingsVersionConflict,
 )
 from .proposals import (
     ProposalBuildError,
@@ -117,6 +118,7 @@ class DeleteAccountBody(StrictRequestBody):
 
 
 class InvestmentProfileBody(StrictRequestBody):
+    expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
     reserve_rub: Decimal = Field(ge=0, le=1_000_000_000_000, allow_inf_nan=False)
     planned_withdrawal_rub: Decimal = Field(
         ge=0,
@@ -130,6 +132,7 @@ class InvestmentProfileBody(StrictRequestBody):
 
 
 class BalancingPolicyBody(StrictRequestBody):
+    expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
     max_instrument_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     max_sector_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     max_issuer_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
@@ -376,6 +379,13 @@ app = FastAPI(
     openapi_url=None,
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(SettingsVersionConflict)
+async def settings_conflict_response(
+    request: Request, exc: SettingsVersionConflict,
+) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": "settings_version_conflict"})
 
 
 @app.middleware("http")
@@ -932,6 +942,7 @@ def save_investment_profile(
         max_drawdown_percent=body.max_drawdown_percent,
         liquidity_horizon_days=body.liquidity_horizon_days,
         allow_below_investment_grade=body.allow_below_investment_grade,
+        expected_version=body.expected_version,
     )
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {"profile": _profile_payload(profile)}
@@ -989,6 +1000,7 @@ def save_balancing_policy(
             no_trade_band_percent=body.no_trade_band_percent,
             min_replace_benefit_rub=body.min_replace_benefit_rub,
         ),
+        expected_version=body.expected_version,
     )
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {"policy": _balancing_policy_payload(policy)}

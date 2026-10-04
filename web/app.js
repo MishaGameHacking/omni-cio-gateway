@@ -5425,23 +5425,6 @@
     profileAllowBelowGrade.checked = profile.allow_below_investment_grade === true;
   };
 
-  const loadInvestmentProfile = async () => {
-    try {
-      const result = await api("/api/profile/investment", {method: "GET"});
-      renderInvestmentProfile(result.profile || null);
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      showMessage(
-        investmentProfileMessage,
-        "Не удалось загрузить инвестиционные ограничения.",
-        true,
-      );
-    }
-  };
-
   const renderBalancingPolicy = (policy) => {
     showMessage(balancingPolicyMessage, "");
     if (!policy) {
@@ -5473,24 +5456,175 @@
     balanceMinReplaceBenefit.value = String(policy.min_replace_benefit_rub);
   };
 
-  const loadBalancingPolicy = async () => {
-    try {
-      const result = await api("/api/profile/balancing", {method: "GET"});
-      renderBalancingPolicy(result.policy || null);
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
+  // Drafts live only in this page. Never put personal settings in shared browser storage.
+  const createSettingsEditor = ({form, save, message, prefix, path, key, render, payload}) => {
+    const status = requiredElement(`#${prefix}-draft-status`);
+    const reload = requiredElement(`#${prefix}-reload`);
+    const inputs = Array.from(form.querySelectorAll("input"));
+    let version = null;
+    let baseline = "";
+    let busy = false;
+    let saving = false;
+    let conflicted = false;
+    let generation = 0;
+    const values = () => JSON.stringify(inputs.map((input) => (
+      input.type === "checkbox" ? input.checked : input.value
+    )));
+    const dirty = () => version !== null && values() !== baseline;
+    const sync = () => {
+      inputs.forEach((input) => { input.disabled = busy || version === null; });
+      save.disabled = busy || version === null || conflicted;
+      reload.disabled = busy;
+      form.setAttribute("aria-busy", String(busy));
+    };
+    const accept = (record) => {
+      if (record !== null && (!record || !Number.isSafeInteger(record.version)
+          || record.version < 1)) {
+        throw new Error("Invalid saved settings version");
       }
-      showMessage(
-        balancingPolicyMessage,
-        "Не удалось загрузить лимиты балансировки.",
-        true,
-      );
-    }
+      form.reset();
+      render(record);
+      version = record?.version ?? 0;
+      baseline = values();
+      conflicted = false;
+      status.textContent = record ? "Все изменения сохранены" : "Заполните параметры и сохраните";
+    };
+    const load = async ({confirmDiscard = false} = {}) => {
+      if (busy) return;
+      if (dirty() && (!confirmDiscard || !window.confirm(
+        "Заменить ваши несохранённые значения последней сохранённой версией?"
+      ))) return;
+      const requestGeneration = ++generation;
+      busy = true;
+      sync();
+      showMessage(message, "");
+      status.textContent = "Загружаем сохранённые параметры…";
+      try {
+        const result = await api(path, {method: "GET"});
+        if (requestGeneration !== generation) return;
+        if (!result || !(key in result)) throw new Error("Missing saved settings");
+        accept(result[key]);
+      } catch (error) {
+        if (requestGeneration !== generation) return;
+        status.textContent = "Не удалось проверить сохранённую версию";
+        showMessage(message, "Проверьте соединение и нажмите «Загрузить сохранённую версию»."
+          + errorReference(error), true);
+      } finally {
+        if (requestGeneration === generation) { busy = false; saving = false; sync(); }
+      }
+    };
+    const saveDraft = async (event) => {
+      event.preventDefault();
+      if (busy || version === null || conflicted) return;
+      if (!validateFormWithMessage(form, message, "Проверьте значения перед сохранением.")) return;
+      const requestGeneration = ++generation;
+      busy = true;
+      saving = true;
+      sync();
+      status.textContent = "Сохраняем… Дождитесь подтверждения";
+      showMessage(message, "");
+      try {
+        const result = await api(path, {
+          method: "PUT", body: JSON.stringify({...payload(), expected_version: version}),
+        });
+        if (requestGeneration !== generation) return;
+        if (!result?.[key]) throw new Error("Missing save confirmation");
+        accept(result[key]);
+        showMessage(message, "Сохранение подтверждено. Параметры применены к вашему профилю.");
+      } catch (error) {
+        if (requestGeneration !== generation) return;
+        status.textContent = "Изменения на экране не подтверждены";
+        if (error.status === 409 && error.message === "settings_version_conflict") {
+          conflicted = true;
+          showMessage(message, "Параметры уже изменены в другой вкладке или на другом устройстве. "
+            + "Ваш черновик остался на экране. Загрузите сохранённую версию перед новой правкой.", true);
+        } else if (error.status === 409) {
+          showMessage(message, "Для сохранения нужно принять актуальные документы. "
+            + "Черновик останется здесь, пока вы не закроете страницу.", true);
+        } else if (error.status === 401) {
+          showMessage(message, "Сессия завершена. Скопируйте нужные значения перед повторным входом.", true);
+        } else if (error.status === 422) {
+          showMessage(message, "Проверьте допустимые значения. Сервер отклонил изменения.", true);
+        } else {
+          showMessage(message, "Сохранение не подтверждено. Ваши значения остались на экране. "
+            + "Повторите сохранение или загрузите сохранённую версию." + errorReference(error), true);
+        }
+      } finally {
+        if (requestGeneration === generation) { busy = false; saving = false; sync(); }
+      }
+    };
+    const reset = () => {
+      generation += 1;
+      busy = false;
+      saving = false;
+      version = null;
+      conflicted = false;
+      form.reset();
+      render(null);
+      baseline = "";
+      status.textContent = "Проверяем сохранённые параметры…";
+      sync();
+    };
+    form.addEventListener("input", () => {
+      if (!busy && !conflicted) status.textContent = dirty()
+        ? "Есть несохранённые изменения. Они остаются в этой вкладке до её закрытия."
+        : "Значения соответствуют сохранённой версии";
+    });
+    form.addEventListener("submit", saveDraft);
+    reload.addEventListener("click", () => { void load({confirmDiscard: true}); });
+    reset();
+    return {load, reset, hasPending: () => saving || dirty()};
   };
 
+  const investmentEditor = createSettingsEditor({
+    form: investmentProfileForm, save: investmentProfileSave, message: investmentProfileMessage,
+    prefix: "investment-profile", path: "/api/profile/investment", key: "profile",
+    render: renderInvestmentProfile,
+    payload: () => ({
+      reserve_rub: profileReserveRub.value,
+      planned_withdrawal_rub: profileWithdrawalRub.value,
+      horizon_months: Number(profileHorizonMonths.value),
+      max_drawdown_percent: profileMaxDrawdown.value,
+      liquidity_horizon_days: Number(profileLiquidityDays.value),
+      allow_below_investment_grade: profileAllowBelowGrade.checked,
+    }),
+  });
+  const balancingEditor = createSettingsEditor({
+    form: balancingPolicyForm, save: balancingPolicySave, message: balancingPolicyMessage,
+    prefix: "balancing-policy", path: "/api/profile/balancing", key: "policy",
+    render: renderBalancingPolicy,
+    payload: () => ({
+      max_instrument_percent: balanceMaxInstrument.value,
+      max_sector_percent: balanceMaxSector.value,
+      max_issuer_percent: balanceMaxIssuer.value,
+      max_group_percent: balanceMaxGroup.value,
+      max_share_percent: balanceMaxShare.value,
+      max_bond_percent: balanceMaxBond.value,
+      max_etf_percent: balanceMaxEtf.value,
+      max_below_grade_percent: balanceMaxBelowGrade.value,
+      max_unknown_percent: balanceMaxUnknown.value,
+      max_term_months: Number(balanceMaxTerm.value),
+      turnover_budget_percent: balanceTurnoverBudget.value,
+      max_daily_turnover_participation_percent: balanceDailyParticipation.value,
+      securities_tax_rate_percent: balanceTaxRate.value,
+      uncertainty_haircut_percent: balanceUncertaintyHaircut.value,
+      credit_loss_haircut_percent: balanceCreditHaircut.value,
+      no_trade_band_percent: balanceNoTradeBand.value,
+      min_replace_benefit_rub: balanceMinReplaceBenefit.value,
+    }),
+  });
+  const settingsEditors = [investmentEditor, balancingEditor];
+  window.addEventListener("beforeunload", (event) => {
+    if (settingsEditors.some((editor) => editor.hasPending())) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
+
   const showProfile = (profile) => {
+    if (currentProfileId !== profile.public_id) {
+      settingsEditors.forEach((editor) => editor.reset());
+    }
     currentProfileId = profile.public_id;
     profileId.textContent = profile.public_id;
     drawerProfileId.textContent = profile.public_id;
@@ -5504,8 +5638,8 @@
     initializeNavigation();
     startCbrIndicators();
     void loadTbankStatus();
-    void loadInvestmentProfile();
-    void loadBalancingPolicy();
+    void investmentEditor.load();
+    void balancingEditor.load();
     void loadLiveMandate().then(() => {
       void loadProposals();
       void loadExecutions({inspectLatest: true});
@@ -5513,6 +5647,7 @@
   };
 
   const showAuth = () => {
+    settingsEditors.forEach((editor) => editor.reset());
     profilePanel.classList.add("hidden");
     authCard.classList.remove("hidden");
   };
@@ -5988,139 +6123,6 @@
     }
   });
 
-  investmentProfileForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    showMessage(investmentProfileMessage, "");
-
-    if (!validateFormWithMessage(
-      investmentProfileForm,
-      investmentProfileMessage,
-      "Проверьте значение перед сохранением.",
-    )) {
-      return;
-    }
-
-    investmentProfileSave.disabled = true;
-    try {
-      const result = await api("/api/profile/investment", {
-        method: "PUT",
-        body: JSON.stringify({
-          reserve_rub: profileReserveRub.value,
-          planned_withdrawal_rub: profileWithdrawalRub.value,
-          horizon_months: Number(profileHorizonMonths.value),
-          max_drawdown_percent: profileMaxDrawdown.value,
-          liquidity_horizon_days: Number(profileLiquidityDays.value),
-          allow_below_investment_grade: profileAllowBelowGrade.checked,
-        }),
-      });
-      renderInvestmentProfile(result.profile);
-      showMessage(
-        investmentProfileMessage,
-        "Новая версия ограничений сохранена. Предыдущие версии остаются в журнале.",
-      );
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      if (error.status === 409) {
-        showMessage(
-          investmentProfileMessage,
-          "Для новых финансовых параметров нужны обновлённые документы. Выйдите из аккаунта и войдите через VK ID снова, приняв актуальные версии.",
-          true,
-        );
-        return;
-      }
-      if (error.status === 422) {
-        showMessage(
-          investmentProfileMessage,
-          "Проверьте резерв, горизонт и допустимую просадку.",
-          true,
-        );
-        return;
-      }
-      showMessage(
-        investmentProfileMessage,
-        "Не удалось сохранить профиль. Действующая версия не изменена.",
-        true,
-      );
-    } finally {
-      investmentProfileSave.disabled = false;
-    }
-  });
-
-  balancingPolicyForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    showMessage(balancingPolicyMessage, "");
-
-    if (!validateFormWithMessage(
-      balancingPolicyForm,
-      balancingPolicyMessage,
-      "Проверьте значение лимита перед сохранением.",
-    )) {
-      return;
-    }
-
-    balancingPolicySave.disabled = true;
-    try {
-      const result = await api("/api/profile/balancing", {
-        method: "PUT",
-        body: JSON.stringify({
-          max_instrument_percent: balanceMaxInstrument.value,
-          max_sector_percent: balanceMaxSector.value,
-          max_issuer_percent: balanceMaxIssuer.value,
-          max_group_percent: balanceMaxGroup.value,
-          max_share_percent: balanceMaxShare.value,
-          max_bond_percent: balanceMaxBond.value,
-          max_etf_percent: balanceMaxEtf.value,
-          max_below_grade_percent: balanceMaxBelowGrade.value,
-          max_unknown_percent: balanceMaxUnknown.value,
-          max_term_months: Number(balanceMaxTerm.value),
-          turnover_budget_percent: balanceTurnoverBudget.value,
-          max_daily_turnover_participation_percent: balanceDailyParticipation.value,
-          securities_tax_rate_percent: balanceTaxRate.value,
-          uncertainty_haircut_percent: balanceUncertaintyHaircut.value,
-          credit_loss_haircut_percent: balanceCreditHaircut.value,
-          no_trade_band_percent: balanceNoTradeBand.value,
-          min_replace_benefit_rub: balanceMinReplaceBenefit.value,
-        }),
-      });
-      renderBalancingPolicy(result.policy);
-      showMessage(
-        balancingPolicyMessage,
-        "Новая версия лимитов сохранена. Предыдущая версия не перезаписывается.",
-      );
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      if (error.status === 409) {
-        showMessage(
-          balancingPolicyMessage,
-          "Для новых финансовых ограничений нужны актуальные согласия. Войдите через VK ID снова и примите текущие версии документов.",
-          true,
-        );
-        return;
-      }
-      if (error.status === 422) {
-        showMessage(
-          balancingPolicyMessage,
-          "Проверьте проценты, срок, бюджет оборота и минимальную выгоду замены.",
-          true,
-        );
-        return;
-      }
-      showMessage(
-        balancingPolicyMessage,
-        "Не удалось сохранить лимиты. Действующая версия не изменена.",
-        true,
-      );
-    } finally {
-      balancingPolicySave.disabled = false;
-    }
-  });
-
   tbankForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     showMessage(tbankMessage, "");
@@ -6344,6 +6346,10 @@
   });
 
   logoutButton.addEventListener("click", async () => {
+    if (settingsEditors.some((editor) => editor.hasPending()) && !window.confirm(
+      "Выйти из аккаунта? Несохранённые изменения профиля и лимитов будут потеряны."
+    )) return;
+    settingsEditors.forEach((editor) => editor.reset());
     stopCbrIndicators();
     try {
       await api("/api/auth/logout", {method: "POST"});

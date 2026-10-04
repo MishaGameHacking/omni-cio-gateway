@@ -425,6 +425,7 @@ def test_investment_profile_http_is_private_and_uses_session_tenant() -> None:
 
 def test_investment_profile_write_requires_origin_and_current_consent() -> None:
     payload = {
+        "expected_version": 0,
         "reserve_rub": "100000",
         "planned_withdrawal_rub": "25000",
         "horizon_months": 60,
@@ -471,6 +472,7 @@ def test_investment_profile_rejects_non_finite_decimal_values() -> None:
     response = TestClient(app).put(
         "/api/profile/investment",
         json={
+            "expected_version": 0,
             "reserve_rub": "NaN",
             "planned_withdrawal_rub": "0",
             "horizon_months": 12,
@@ -487,6 +489,7 @@ def test_investment_profile_rejects_unknown_json_fields_before_side_effects() ->
     response = TestClient(app).put(
         "/api/profile/investment",
         json={
+            "expected_version": 0,
             "reserve_rub": "100000",
             "planned_withdrawal_rub": "0",
             "horizon_months": 12,
@@ -558,6 +561,7 @@ def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
 
 def test_balancing_policy_write_requires_origin_and_current_consent() -> None:
     payload = {
+        "expected_version": 0,
         "max_instrument_percent": "20",
         "max_sector_percent": "30",
         "max_issuer_percent": "20",
@@ -615,6 +619,7 @@ def test_balancing_policy_rejects_non_finite_decimal_values() -> None:
     response = TestClient(app).put(
         "/api/profile/balancing",
         json={
+            "expected_version": 0,
             "max_instrument_percent": "NaN",
             "max_sector_percent": "30",
             "max_issuer_percent": "20",
