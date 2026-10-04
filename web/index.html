@@ -233,7 +233,7 @@
             </button>
             <button class="nav-item" type="button" data-view="connections">
               <span class="nav-icon nav-icon-orange"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"></use></svg></span>
-              <span>Интеграции</span>
+              <span>Подключения</span>
             </button>
           </div>
 
@@ -305,7 +305,7 @@
           <section class="view-panel" data-view-panel="home">
             <div class="page-heading command-heading">
               <div>
-                <p class="section-label">Командный центр</p>
+                <p class="section-label">Обзор портфеля</p>
                 <h2>Портфель — главное сейчас</h2>
                 <p>
                   Сначала капитал и события, которые требуют внимания. Подробные расчёты,
@@ -494,10 +494,10 @@
                 <article class="system-card">
                   <header class="system-card-header">
                     <div>
-                      <span class="system-symbol" aria-hidden="true">С</span>
+                      <span class="system-symbol" aria-hidden="true">W</span>
                       <div>
-                        <strong>Сова</strong>
-                        <span>Наблюдение за свежестью данных</span>
+                        <strong>Watchtower</strong>
+                        <span>Важные события и свежесть данных</span>
                       </div>
                     </div>
                     <span class="state-badge" id="owl-state">Ожидает</span>
@@ -525,10 +525,10 @@
                 <article class="system-card system-card-hunter">
                   <header class="system-card-header">
                     <div>
-                      <span class="system-symbol" aria-hidden="true">О</span>
+                      <span class="system-symbol" aria-hidden="true">П</span>
                       <div>
-                        <strong>Охотник</strong>
-                        <span>Поиск доступных инструментов</span>
+                        <strong>Поиск инструментов</strong>
+                        <span>Доступные инструменты и справочные данные</span>
                       </div>
                     </div>
                     <span class="state-badge state-ok">Работает</span>
@@ -559,10 +559,10 @@
                 <article class="system-card">
                   <header class="system-card-header">
                     <div>
-                      <span class="system-symbol" aria-hidden="true">С</span>
+                      <span class="system-symbol" aria-hidden="true">К</span>
                       <div>
-                        <strong>Страж</strong>
-                        <span>Объективный контроль состояния</span>
+                        <strong>Контроль рисков</strong>
+                        <span>Концентрация, ограничения и блокировки</span>
                       </div>
                     </div>
                     <span class="state-badge" id="guard-state">Ожидает</span>
@@ -853,7 +853,7 @@
                       <small id="instrument-detail-pnl-time">Текущий ответ T-Invest</small>
                     </article>
                     <article class="portfolio-metric">
-                      <span>Risk state</span>
+                      <span>Состояние риска</span>
                       <strong id="instrument-detail-risk">—</strong>
                       <small id="instrument-detail-risk-time">—</small>
                     </article>
@@ -981,10 +981,10 @@
             <div class="page-heading portfolio-heading">
               <div class="heading-with-state">
                 <div>
-                  <p class="section-label">Решения · этап R1</p>
+                  <p class="section-label">Анализ портфеля</p>
                   <h2>Фактический анализ портфеля</h2>
                 </div>
-                <span class="state-badge state-next">Только наблюдение</span>
+                <span class="state-badge state-next">Без торговых действий</span>
               </div>
               <p>
                 OmniCIO проверяет структуру счёта, доступность данных, блокировки и
@@ -1099,8 +1099,8 @@
               <article class="portfolio-card">
                 <header class="portfolio-card-header">
                   <div>
-                    <p class="card-label">Portfolio Intelligence R3</p>
-                    <h3>Доказательный риск-контур</h3>
+                    <p class="card-label">Research</p>
+                    <h3>Факты, источники и проверка риска</h3>
                   </div>
                   <span class="state-badge state-next" id="intelligence-status">Ожидает ежедневный снимок</span>
                 </header>
@@ -1127,8 +1127,8 @@
               <article class="portfolio-card">
                 <header class="portfolio-card-header">
                   <div>
-                    <p class="card-label">Portfolio Balancing R4</p>
-                    <h3>Целые лоты и сценарии без исполнения</h3>
+                    <p class="card-label">Балансировка</p>
+                    <h3>Сценарии портфеля и целые лоты</h3>
                   </div>
                   <span class="state-badge state-next" id="balancing-status">Проверяем готовность</span>
                 </header>
@@ -1155,13 +1155,13 @@
                     <div id="balancing-scenarios" class="analysis-sources"></div>
                   </div>
                   <div>
-                    <p class="card-label">Candidate screening</p>
+                    <p class="card-label">Проверка кандидатов</p>
                     <div id="balancing-screening" class="analysis-sources"></div>
                   </div>
                 </section>
                 <p class="field-hint">
-                  R4 только рассчитывает и объясняет сценарии. Он не создаёт immutable
-                  предложение, не подтверждает сделки и не вызывает broker OrdersService.
+                  Балансировка только рассчитывает и объясняет сценарии. Она не создаёт
+                  торговое поручение, не подтверждает сделки и не вызывает OrdersService.
                   Неполные quote/YTW/liquidity/issuer/tax/cost данные блокируют действие,
                   а не заменяются догадкой.
                 </p>
@@ -1170,8 +1170,8 @@
               <article class="portfolio-card">
                 <header class="portfolio-card-header">
                   <div>
-                    <p class="card-label">Portfolio Proposals R5</p>
-                    <h3>Неизменяемое предложение и решение владельца</h3>
+                    <p class="card-label">План</p>
+                    <h3>Точный план и решение владельца</h3>
                   </div>
                   <span class="state-badge state-next" id="proposal-status">Нет активного предложения</span>
                 </header>
@@ -1193,7 +1193,7 @@
                 </section>
                 <output id="proposal-message" class="message" aria-live="polite"></output>
                 <p class="field-hint">
-                  «Подтвердить план» в R5 только записывает решение владельца и hash версии.
+                  «Подтвердить план» фиксирует решение владельца только для точной версии плана.
                   Оно не вызывает <code>PostOrder</code>, не выставляет заявку и не включает
                   торговые полномочия. Отклонение требует причины; «отложить» сохраняет дату.
                   При новом snapshot/profile/policy старая версия не считается актуальной.
@@ -1203,16 +1203,16 @@
               <article class="portfolio-card">
                 <header class="portfolio-card-header">
                   <div>
-                    <p class="card-label">Execution rehearsal R6</p>
-                    <h3>Shadow и T-Invest Sandbox</h3>
+                    <p class="card-label">Проверка исполнения</p>
+                    <h3>Теневое и тестовое исполнение</h3>
                   </div>
                   <span class="state-badge state-next" id="execution-status">Live выключен</span>
                 </header>
                 <p class="card-description">
-                  R6 исполняет подтверждённую exact-версию R5-предложения в Shadow или
-                  T-Invest Sandbox. R7 добавляет отдельную production-boundary, но она
-                  не включается автоматически: нужен server-side feature gate, exact
-                  production-счёт, явный краткоживущий mandate и повторное подтверждение
+                  Проверка исполнения использует подтверждённую точную версию плана в Shadow или
+                  T-Invest Sandbox. Реальное исполнение подключается отдельно и никогда
+                  не включается автоматически: нужен server-side feature gate, точный
+                  production-счёт, краткоживущее разрешение и повторное подтверждение
                   пользователя. Пока опубликованные legal-документы v6 описывают режим
                   без реальных поручений, production live остаётся выключен.
                 </p>
@@ -1220,8 +1220,8 @@
                 <section class="portfolio-card" aria-labelledby="live-mandate-title">
                   <header class="portfolio-card-header">
                     <div>
-                      <p class="card-label">R7 · Production authority</p>
-                      <h4 id="live-mandate-title">Разрешение на ограниченный live-canary</h4>
+                      <p class="card-label">Реальное исполнение</p>
+                      <h4 id="live-mandate-title">Разрешение на реальные сделки</h4>
                     </div>
                     <span class="state-badge state-next" id="live-mandate-status">
                       Проверяем gate
@@ -1238,7 +1238,7 @@
                     novalidate
                   >
                     <div id="live-mandate-help" class="field-hint">
-                      Canary допускает только подтверждённый <code>deploy_cash</code>,
+                      Реальное исполнение допускает только подтверждённый <code>deploy_cash</code>,
                       buy-only, limit + Fill-and-Kill, без margin. Укажите собственные
                       лимиты не выше server-side caps и срок не более 24 часов.
                     </div>
@@ -1357,11 +1357,11 @@
 
           <section class="view-panel hidden" data-view-panel="connections">
             <div class="page-heading">
-              <p class="section-label">Интеграции</p>
-              <h2>Внешние подключения</h2>
+              <p class="section-label">Подключения</p>
+              <h2>Внешние аккаунты и доступ</h2>
               <p>
-                Здесь находятся только реальные внешние подключения. Сейчас
-                поддерживается T-Invest.
+                Здесь подключаются только пользовательские аккаунты и доступы. Публичные
+                рыночные, справочные и исследовательские данные не требуют токена T-Invest.
               </p>
             </div>
 
@@ -1420,10 +1420,10 @@
                     required
                   >
                   <p id="tbank-token-help" class="field-hint">
-                    Для аналитики production-счёта достаточно read-доступа. R6 Sandbox
-                    требует тестовые методы песочницы. R7 production-live, если он отдельно
-                    активирован сервером и пользователем, требует write-доступ только к
-                    выбранному счёту; transfer-access OmniCIO не требуется.
+                    Для чтения активов и состояния production-счёта достаточно read-доступа.
+                    T-Invest Sandbox требует тестовые методы песочницы. Реальное исполнение,
+                    если оно отдельно активировано сервером и пользователем, требует write-доступ
+                    только к выбранному счёту; transfer-access OmniCIO не требуется.
                   </p>
                 </div>
 
