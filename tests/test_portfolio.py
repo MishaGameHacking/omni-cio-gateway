@@ -14,7 +14,12 @@ from omnicio.db import ActiveLiveExecutionError
 from omnicio.execution_service import ExecutionServiceError
 from omnicio.execution_store import ExecutionLedgerError
 from omnicio.main import app
-from omnicio.market import InstrumentMarketCandle, InstrumentMarketSnapshot
+from omnicio.market import (
+    CBRIndicator,
+    CBRIndicatorSnapshot,
+    InstrumentMarketCandle,
+    InstrumentMarketSnapshot,
+)
 from omnicio.portfolio import PortfolioAnalysisError, analyze_portfolio
 from omnicio.portfolio_store import (
     BalancingPolicyRecord,
@@ -215,6 +220,50 @@ def test_duplicate_identity_is_rejected_instead_of_double_counted() -> None:
     available_cash = cash()
     with pytest.raises(PortfolioAnalysisError):
         analyze_portfolio(duplicated, available_cash, ())
+
+
+def test_cbr_indicator_http_is_private_but_broker_independent() -> None:
+    snapshot = CBRIndicatorSnapshot(
+        source="Bank of Russia",
+        fetched_at="2026-10-03T07:00:00+00:00",
+        key_rate=CBRIndicator(
+            code="KEY_RATE",
+            value="14",
+            unit="percent",
+            effective_date="2026-10-02",
+        ),
+        usd_rub=CBRIndicator(
+            code="USD_RUB",
+            value="83.4839",
+            unit="RUB",
+            effective_date="2026-10-03",
+        ),
+        eur_rub=CBRIndicator(
+            code="EUR_RUB",
+            value="94.3201",
+            unit="RUB",
+            effective_date="2026-10-03",
+        ),
+    )
+
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.market_service") as market,
+    ):
+        user.return_value.id = "server-user"
+        market.return_value.cbr_indicators.return_value = snapshot
+        response = TestClient(app).get(
+            "/api/market/cbr-indicators?user_id=attacker",
+        )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    body = response.json()
+    assert body["key_rate"]["value"] == "14"
+    assert body["usd_rub"]["value"] == "83.4839"
+    assert body["eur_rub"]["value"] == "94.3201"
+    user.assert_called_once()
+    market.return_value.cbr_indicators.assert_called_once_with()
 
 
 def test_instrument_market_http_is_private_and_uses_session_tenant() -> None:
