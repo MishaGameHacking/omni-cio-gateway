@@ -24,7 +24,7 @@ from .broker import (
     BrokerNotConnected,
     BrokerService,
 )
-from .cbr import CBRClient
+from .cbr import CBRClient, CBRUnavailable
 from .config import Settings, load_settings
 from .db import ActiveLiveExecutionError, Database, UserRecord
 from .execution_service import ExecutionServiceError, PortfolioExecutionService
@@ -527,6 +527,30 @@ def me(
         "status": user.status,
         "role": user.role,
     }
+
+
+@app.get(
+    "/api/market/cbr-indicators",
+    responses={
+        401: {"description": "Authenticated session required"},
+        503: {"description": "Bank of Russia indicators are temporarily unavailable"},
+    },
+)
+def cbr_market_indicators(
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    authenticated_user(request, session_token)
+    try:
+        snapshot = market_service(request).cbr_indicators()
+    except CBRUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Bank of Russia indicators unavailable",
+        ) from exc
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
+    return asdict(snapshot)
 
 
 @app.get(
