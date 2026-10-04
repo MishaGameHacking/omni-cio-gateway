@@ -1030,13 +1030,14 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('instrumentMarketQuoteUnit === "point"', script)
         self.assertIn('["bond", "futures", "future"].includes', script)
         self.assertIn('quoteStatus === "future"', script)
+        self.assertIn(
+            "const handleInstrumentMarketStreamFailure = (streamUid) => {",
+            script,
+        )
+        self.assertIn('renderInstrumentMarketStreamStatus("unavailable");', script)
         self.assertGreaterEqual(
-            script.count(
-                'stopInstrumentMarketStream();\n'
-                '        renderInstrumentMarketStreamStatus("unavailable");\n'
-                '        scheduleInstrumentMarketReconnect();'
-            ),
-            2,
+            script.count("handleInstrumentMarketStreamFailure(streamUid);"),
+            3,
         )
         self.assertIn("const displayedPeriod = displayedInstrumentMarketPeriod(instrumentUid);", script)
         self.assertIn("instrumentMarketPeriod = displayedPeriod;", script)
