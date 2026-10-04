@@ -657,7 +657,7 @@ def instrument_market_snapshot(
             status_code=503,
             detail="instrument market data unavailable",
         ) from exc
-    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return asdict(snapshot)
 
 
@@ -773,7 +773,7 @@ async def instrument_market_stream(
         _instrument_market_events(request, market, user.id, instrument_uid),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "private, no-store",
+            "Cache-Control": _PRIVATE_NO_STORE,
             "X-Accel-Buffering": "no",
         },
     )
