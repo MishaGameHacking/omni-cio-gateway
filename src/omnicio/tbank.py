@@ -10,7 +10,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Literal, cast
+from typing import Literal, Never, cast
 from uuid import UUID
 
 TBankEnvironment = Literal["prod", "sandbox"]
@@ -658,6 +658,156 @@ def _asset_fundamental(
     )
 
 
+def _daily_candle_fields(
+    item: dict[str, object],
+) -> tuple[str, datetime, bool]:
+    close = _quotation(item.get("close"))
+    candle_time = _optional_provider_timestamp(item.get("time"))
+    complete = item.get("isComplete")
+    if close is None or candle_time is None or not isinstance(complete, bool):
+        raise TBankUnavailable(
+            "T-Invest historic candle is missing required fields"
+        )
+    try:
+        close_value = Decimal(close)
+    except InvalidOperation as exc:
+        raise TBankUnavailable(
+            "T-Invest historic candle has invalid close price"
+        ) from exc
+    if not close_value.is_finite() or close_value <= 0:
+        raise TBankUnavailable(
+            "T-Invest historic candle has non-positive close price"
+        )
+    return close, candle_time, complete
+
+
+def _daily_candle_volume(item: dict[str, object]) -> int:
+    volume_raw = item.get("volume")
+    if isinstance(volume_raw, bool):
+        raise TBankUnavailable(
+            "T-Invest historic candle is missing required fields"
+        )
+    try:
+        volume = int(str(volume_raw))
+    except ValueError as exc:
+        raise TBankUnavailable(
+            "T-Invest historic candle has invalid volume"
+        ) from exc
+    if volume < 0:
+        raise TBankUnavailable(
+            "T-Invest historic candle has negative volume"
+        )
+    return volume
+
+
+def _daily_exchange_candle(
+    raw: object,
+    instrument_uid: str,
+    seen_times: set[datetime],
+) -> TBankHistoricCandle:
+    item = _required_object(raw, "historic candle")
+    close, candle_time, complete = _daily_candle_fields(item)
+    volume = _daily_candle_volume(item)
+    source = _text(item.get("candleSourceType")).strip()
+    if source and source != "CANDLE_SOURCE_EXCHANGE":
+        raise TBankUnavailable(
+            "T-Invest historic candle is not exchange-sourced"
+        )
+    if candle_time in seen_times:
+        raise TBankUnavailable(
+            "T-Invest historic candles contain duplicate timestamps"
+        )
+    seen_times.add(candle_time)
+    return TBankHistoricCandle(
+        instrument_uid=instrument_uid,
+        close=close,
+        volume_lots=volume,
+        time=candle_time,
+        is_complete=complete,
+        source=source or "CANDLE_SOURCE_EXCHANGE",
+    )
+
+
+def _raise_tbank_http_error(
+    method: str,
+    exc: urllib.error.HTTPError,
+) -> Never:
+    tracking_id = exc.headers.get("x-tracking-id", "")
+    logger.warning(
+        "T-Invest request failed method=%s status=%s tracking_id=%s",
+        method,
+        exc.code,
+        tracking_id or "-",
+    )
+    if exc.code in {401, 403}:
+        raise TBankTokenRejected("T-Invest token was rejected") from exc
+    if exc.code == 404:
+        raise TBankNotFound("T-Invest object was not found") from exc
+    if exc.code == 429 or exc.code >= 500:
+        raise TBankUnavailable(
+            f"T-Invest API unavailable: HTTP {exc.code}"
+        ) from exc
+    raise TBankUnavailable(
+        f"T-Invest API rejected request: HTTP {exc.code}"
+    ) from exc
+
+
+def _raise_tbank_url_error(
+    method: str,
+    exc: urllib.error.URLError,
+) -> Never:
+    reason = exc.reason
+    reason_name = type(reason).__name__
+    logger.warning(
+        "T-Invest network failure method=%s reason=%s",
+        method,
+        reason_name,
+    )
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        raise TBankUnavailable(
+            "T-Invest TLS certificate verification failed"
+        ) from exc
+    raise TBankUnavailable(
+        f"T-Invest API unavailable: {reason_name}"
+    ) from exc
+
+
+def _read_tbank_response(
+    request: urllib.request.Request,
+    *,
+    timeout_seconds: int,
+    method: str,
+) -> str:
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=timeout_seconds,
+        ) as response:
+            raw = response.read()
+            if not isinstance(raw, bytes):
+                raise TBankUnavailable(
+                    "T-Invest API returned invalid response body"
+                )
+            return raw.decode()
+    except urllib.error.HTTPError as exc:
+        _raise_tbank_http_error(method, exc)
+    except urllib.error.URLError as exc:
+        _raise_tbank_url_error(method, exc)
+    except TimeoutError as exc:
+        logger.warning("T-Invest request timed out method=%s", method)
+        raise TBankUnavailable("T-Invest API request timed out") from exc
+
+
+def _decode_tbank_response(raw: str) -> dict[str, object]:
+    try:
+        payload_raw = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise TBankUnavailable("T-Invest API returned invalid JSON") from exc
+    if not isinstance(payload_raw, dict):
+        raise TBankUnavailable("T-Invest API returned invalid payload")
+    return cast(dict[str, object], payload_raw)
+
+
 @dataclass(frozen=True, slots=True)
 class TBankInvestClient:
     timeout_seconds: int = 10
@@ -795,55 +945,11 @@ class TBankInvestClient:
                 "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
             },
         )
-        result: list[TBankHistoricCandle] = []
         seen_times: set[datetime] = set()
-        for raw in _required_list(payload, "candles"):
-            item = _required_object(raw, "historic candle")
-            close = _quotation(item.get("close"))
-            candle_time = _optional_provider_timestamp(item.get("time"))
-            volume_raw = item.get("volume")
-            complete = item.get("isComplete")
-            source = _text(item.get("candleSourceType")).strip()
-            if (
-                close is None
-                or Decimal(close) <= 0
-                or candle_time is None
-                or isinstance(volume_raw, bool)
-                or not isinstance(complete, bool)
-            ):
-                raise TBankUnavailable(
-                    "T-Invest historic candle is missing required fields"
-                )
-            try:
-                volume = int(str(volume_raw))
-            except ValueError as exc:
-                raise TBankUnavailable(
-                    "T-Invest historic candle has invalid volume"
-                ) from exc
-            if volume < 0:
-                raise TBankUnavailable(
-                    "T-Invest historic candle has negative volume"
-                )
-            if source and source != "CANDLE_SOURCE_EXCHANGE":
-                raise TBankUnavailable(
-                    "T-Invest historic candle is not exchange-sourced"
-                )
-            if candle_time in seen_times:
-                raise TBankUnavailable(
-                    "T-Invest historic candles contain duplicate timestamps"
-                )
-            seen_times.add(candle_time)
-            result.append(
-                TBankHistoricCandle(
-                    instrument_uid=instrument,
-                    close=close,
-                    volume_lots=volume,
-                    time=candle_time,
-                    is_complete=complete,
-                    source=source or "CANDLE_SOURCE_EXCHANGE",
-                )
-            )
-        return tuple(result)
+        return tuple(
+            _daily_exchange_candle(raw, instrument, seen_times)
+            for raw in _required_list(payload, "candles")
+        )
 
     def get_last_prices(
         self,
@@ -1894,58 +2000,12 @@ class TBankInvestClient:
                 "Accept": "application/json",
             },
         )
-
-        try:
-            with urllib.request.urlopen(
-                request,
-                timeout=self.timeout_seconds,
-            ) as response:
-                raw = response.read().decode()
-        except urllib.error.HTTPError as exc:
-            tracking_id = exc.headers.get("x-tracking-id", "")
-            logger.warning(
-                "T-Invest request failed method=%s status=%s tracking_id=%s",
-                method,
-                exc.code,
-                tracking_id or "-",
-            )
-            if exc.code in {401, 403}:
-                raise TBankTokenRejected("T-Invest token was rejected") from exc
-            if exc.code == 404:
-                raise TBankNotFound("T-Invest object was not found") from exc
-            if exc.code == 429 or exc.code >= 500:
-                raise TBankUnavailable(
-                    f"T-Invest API unavailable: HTTP {exc.code}"
-                ) from exc
-            raise TBankUnavailable(
-                f"T-Invest API rejected request: HTTP {exc.code}"
-            ) from exc
-        except urllib.error.URLError as exc:
-            reason = exc.reason
-            reason_name = type(reason).__name__
-            logger.warning(
-                "T-Invest network failure method=%s reason=%s",
-                method,
-                reason_name,
-            )
-            if isinstance(reason, ssl.SSLCertVerificationError):
-                raise TBankUnavailable(
-                    "T-Invest TLS certificate verification failed"
-                ) from exc
-            raise TBankUnavailable(
-                f"T-Invest API unavailable: {reason_name}"
-            ) from exc
-        except TimeoutError as exc:
-            logger.warning("T-Invest request timed out method=%s", method)
-            raise TBankUnavailable("T-Invest API request timed out") from exc
-
-        try:
-            payload_raw = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise TBankUnavailable("T-Invest API returned invalid JSON") from exc
-        if not isinstance(payload_raw, dict):
-            raise TBankUnavailable("T-Invest API returned invalid payload")
-        return cast(dict[str, object], payload_raw)
+        raw = _read_tbank_response(
+            request,
+            timeout_seconds=self.timeout_seconds,
+            method=method,
+        )
+        return _decode_tbank_response(raw)
 
 
 def _require_prod(environment: TBankEnvironment) -> None:
