@@ -370,12 +370,6 @@ def build_live_balancing_payload(
     }
     enriched: list[Candidate] = []
     live_sources: list[dict[str, object]] = []
-    policy = _policy(
-        profile,
-        policy_record,
-        _decimal(context.get("nav_rub")) or Decimal("0"),
-    )
-
     for row in rows:
         uid = str(row.get("instrument_uid") or "")
         if uid not in selected_uids:
