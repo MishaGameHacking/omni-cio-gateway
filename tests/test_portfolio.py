@@ -259,31 +259,31 @@ def test_investment_profile_write_requires_origin_and_current_consent() -> None:
 
     with (
         patch.object(app.state, "database", database, create=True),
-            patch("omnicio.main.authenticated_user") as user,
-            patch("omnicio.main.portfolio_store") as store,
-            patch("omnicio.main.service") as auth,
-        ):
-            user.return_value.id = "server-user"
-            auth.return_value.legal_versions.return_value = {
-                "privacy_policy": "2026-10-02-v6",
-                "personal_data_consent": "2026-10-02-v6",
-                "terms": "2026-10-02-v6",
-            }
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+        patch("omnicio.main.service") as auth,
+    ):
+        user.return_value.id = "server-user"
+        auth.return_value.legal_versions.return_value = {
+            "privacy_policy": "2026-10-02-v6",
+            "personal_data_consent": "2026-10-02-v6",
+            "terms": "2026-10-02-v6",
+        }
 
-            cross_origin = TestClient(app).put(
-                "/api/profile/investment",
-                json=payload,
-                headers={"Origin": "https://evil.example"},
-            )
-            assert cross_origin.status_code == 403
+        cross_origin = TestClient(app).put(
+            "/api/profile/investment",
+            json=payload,
+            headers={"Origin": "https://evil.example"},
+        )
+        assert cross_origin.status_code == 403
 
-            missing_consent = TestClient(app).put(
-                "/api/profile/investment",
-                json=payload,
-                headers={"Origin": "https://omnicio.ru"},
-            )
-            assert missing_consent.status_code == 409
-            store.return_value.save_profile.assert_not_called()
+        missing_consent = TestClient(app).put(
+            "/api/profile/investment",
+            json=payload,
+            headers={"Origin": "https://omnicio.ru"},
+        )
+        assert missing_consent.status_code == 409
+        store.return_value.save_profile.assert_not_called()
 
 
 def test_investment_profile_rejects_non_finite_decimal_values() -> None:
@@ -730,46 +730,46 @@ def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing()
     )()
     with (
         patch.object(app.state, "database", database, create=True),
-            patch("omnicio.main.authenticated_user") as user,
-            patch("omnicio.main.portfolio_store") as store,
-            patch("omnicio.main.service") as auth,
-            patch("omnicio.main._live_balancing_for_user") as balancing,
-            patch("omnicio.main.build_proposal_draft") as builder,
-        ):
-            user.return_value.id = "server-user"
-            auth.return_value.legal_versions.return_value = {"terms": "current"}
-            balancing.return_value = {"status": "observed"}
-            builder.return_value = draft
-            store.return_value.create_proposal.return_value = proposal
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main._live_balancing_for_user") as balancing,
+        patch("omnicio.main.build_proposal_draft") as builder,
+    ):
+        user.return_value.id = "server-user"
+        auth.return_value.legal_versions.return_value = {"terms": "current"}
+        balancing.return_value = {"status": "observed"}
+        builder.return_value = draft
+        store.return_value.create_proposal.return_value = proposal
 
-            rejected = TestClient(app).post(
-                "/api/portfolio/proposals",
-                json={"scenario_kind": "deploy_cash"},
-                headers={"Origin": "https://evil.example"},
-            )
-            assert rejected.status_code == 403
-
-            response = TestClient(app).post(
-                "/api/portfolio/proposals",
-                json={"scenario_kind": "deploy_cash"},
-                headers={"Origin": "https://omnicio.ru"},
-                cookies={"omnicio_session": "proposal-session-token"},
-            )
-
-        assert response.status_code == 201
-        assert response.headers["cache-control"] == "private, no-store"
-        assert response.json()["proposal"]["id"] == str(proposal_id)
-        assert response.json()["proposal"]["hash"] == (b"x" * 32).hex()
-        assert response.json()["execution_enabled"] is False
-        balancing.assert_called_once_with(
-            ANY,
-            "server-user",
+        rejected = TestClient(app).post(
+            "/api/portfolio/proposals",
+            json={"scenario_kind": "deploy_cash"},
+            headers={"Origin": "https://evil.example"},
         )
-        store.return_value.create_proposal.assert_called_once()
-        call = store.return_value.create_proposal.call_args
-        assert call.args[0] == "server-user"
-        assert call.kwargs["account_id"] == "account-1"
-        assert len(call.kwargs["session_digest"]) == 32
+        assert rejected.status_code == 403
+
+        response = TestClient(app).post(
+            "/api/portfolio/proposals",
+            json={"scenario_kind": "deploy_cash"},
+            headers={"Origin": "https://omnicio.ru"},
+            cookies={"omnicio_session": "proposal-session-token"},
+        )
+
+    assert response.status_code == 201
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["proposal"]["id"] == str(proposal_id)
+    assert response.json()["proposal"]["hash"] == (b"x" * 32).hex()
+    assert response.json()["execution_enabled"] is False
+    balancing.assert_called_once_with(
+        ANY,
+        "server-user",
+    )
+    store.return_value.create_proposal.assert_called_once()
+    call = store.return_value.create_proposal.call_args
+    assert call.args[0] == "server-user"
+    assert call.kwargs["account_id"] == "account-1"
+    assert len(call.kwargs["session_digest"]) == 32
 
 
 def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution() -> None:
@@ -1040,29 +1040,29 @@ def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
     )()
     with (
         patch.object(app.state, "database", database, create=True),
-            patch("omnicio.main.authenticated_user") as user,
-            patch("omnicio.main.portfolio_store") as store,
-            patch("omnicio.main.service") as auth,
-        ):
-            user.return_value.id = "server-user"
-            auth.return_value.legal_versions.return_value = {"terms": "current"}
-            store.return_value.decide_proposal.side_effect = ProposalStateError(
-                "proposal_already_decided"
-            )
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+        patch("omnicio.main.service") as auth,
+    ):
+        user.return_value.id = "server-user"
+        auth.return_value.legal_versions.return_value = {"terms": "current"}
+        store.return_value.decide_proposal.side_effect = ProposalStateError(
+            "proposal_already_decided"
+        )
 
-            response = TestClient(app).post(
-                f"/api/portfolio/proposals/{proposal_id}/decision",
-                json={
-                    "action": "confirm",
-                    "proposal_version": 4,
-                    "proposal_hash": (b"y" * 32).hex(),
-                },
-                headers={"Origin": "https://omnicio.ru"},
-                cookies={"omnicio_session": "replay-session-token"},
-            )
+        response = TestClient(app).post(
+            f"/api/portfolio/proposals/{proposal_id}/decision",
+            json={
+                "action": "confirm",
+                "proposal_version": 4,
+                "proposal_hash": (b"y" * 32).hex(),
+            },
+            headers={"Origin": "https://omnicio.ru"},
+            cookies={"omnicio_session": "replay-session-token"},
+        )
 
-        assert response.status_code == 409
-        assert response.json()["detail"] == "proposal_already_decided"
+    assert response.status_code == 409
+    assert response.json()["detail"] == "proposal_already_decided"
 
 
 def test_live_mandate_http_rejects_sub_kopeck_caps_before_authority_checks() -> None:
