@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import verify_main_release as gate
+from report_sonar_annotations import report_annotations
 
 SHA = "a" * 40
 BRANCH = {"commit": {"sha": SHA}}
@@ -274,6 +275,19 @@ class SonarScopePolicyTests(unittest.TestCase):
 
 
 class GitHubTransportTests(unittest.TestCase):
+    def test_sonar_summary_and_annotations_survive_windows_console_encoding(self) -> None:
+        client = Mock(spec=gate.GitHubClient)
+        client.get_list.return_value = [{"message": "Исправить ≤ 3%"}]
+        summary = "3.4% duplication (required ≤ 3%)"
+        buffer = io.BytesIO()
+        with io.TextIOWrapper(buffer, encoding="ascii", write_through=True) as output:
+            with contextlib.redirect_stdout(output):
+                report_annotations(client, sonar(output={"summary": summary}))
+            rows = buffer.getvalue().decode("ascii").splitlines()
+        self.assertEqual(json.loads(rows[0]), summary)
+        self.assertEqual(json.loads(rows[1])["message"], "Исправить ≤ 3%")
+        client.get_list.assert_called_once_with("/check-runs/10/annotations?per_page=100&page=1")
+
     def test_annotation_reader_rejects_malformed_lists(self) -> None:
         client = gate.GitHubClient("synthetic-test-token", deadline=100)
         for data in ({}, ["invalid"], None):

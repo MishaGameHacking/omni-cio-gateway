@@ -924,13 +924,11 @@ def investment_profile(
     }
 
 
-@app.put("/api/profile/investment")
-def save_investment_profile(
-    body: InvestmentProfileBody,
+def _settings_editor_user(
     request: Request,
-    response: Response,
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
+    session_token: str | None,
+    expected_public_id: str,
+) -> UserRecord:
     require_same_origin(request)
     user = authenticated_user(request, session_token)
     database: Database = request.app.state.database
@@ -940,8 +938,19 @@ def save_investment_profile(
             detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
     # This is a stale-page precondition; only the session chooses the tenant.
-    if body.expected_public_id != format_public_id(user.public_id):
+    if expected_public_id != format_public_id(user.public_id):
         raise HTTPException(status_code=409, detail="settings_owner_conflict")
+    return user
+
+
+@app.put("/api/profile/investment")
+def save_investment_profile(
+    body: InvestmentProfileBody,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = _settings_editor_user(request, session_token, body.expected_public_id)
     profile = portfolio_store(request).save_profile(
         user.id,
         reserve_rub=body.reserve_rub,
@@ -978,17 +987,7 @@ def save_balancing_policy(
     response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
-    require_same_origin(request)
-    user = authenticated_user(request, session_token)
-    database: Database = request.app.state.database
-    if not database.has_legal_versions(user.id, service(request).legal_versions()):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
-        )
-    # This is a stale-page precondition; only the session chooses the tenant.
-    if body.expected_public_id != format_public_id(user.public_id):
-        raise HTTPException(status_code=409, detail="settings_owner_conflict")
+    user = _settings_editor_user(request, session_token, body.expected_public_id)
     policy = portfolio_store(request).save_balancing_policy(
         user.id,
         BalancingPolicyInput(

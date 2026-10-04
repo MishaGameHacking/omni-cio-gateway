@@ -12,7 +12,7 @@ from verify_main_release import GitHubClient, PendingChecks, ReleaseBlocked
 
 
 def report_annotations(client: GitHubClient, check: dict[str, Any]) -> None:
-    print(check.get("output", {}).get("summary", "No summary"))
+    print(json.dumps(check.get("output", {}).get("summary", "No summary"), ensure_ascii=True))
     for page in range(1, 11):
         items = client.get_list(
             f"/check-runs/{int(check['id'])}/annotations?per_page=100&page={page}"
