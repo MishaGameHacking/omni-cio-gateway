@@ -1,0 +1,1920 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+  >
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f4f7fb">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="omni-cio-white-site" content="1">
+  <title>OmniCIO Personal</title>
+  <link rel="icon" href="/assets/brand/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon-180.png" sizes="180x180">
+  <link rel="manifest" href="/manifest.webmanifest?build=__OMNICIO_BUILD__">
+  <link rel="stylesheet" href="/assets/app.css?build=__OMNICIO_BUILD__">
+</head>
+<body data-theme="light" data-build="__OMNICIO_BUILD__">
+  <svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="icon-home" viewBox="0 0 24 24">
+      <path d="M4.5 10.5 12 4l7.5 6.5v8.25a1.25 1.25 0 0 1-1.25 1.25h-4.5v-5.5h-3.5V20h-4.5a1.25 1.25 0 0 1-1.25-1.25Z"/>
+    </symbol>
+    <symbol id="icon-portfolio" viewBox="0 0 24 24">
+      <rect x="3.5" y="6.5" width="17" height="13" rx="2.25"/>
+      <path d="M8 6.5V5.25A1.75 1.75 0 0 1 9.75 3.5h4.5A1.75 1.75 0 0 1 16 5.25V6.5M3.5 12h17M9.25 12v1.75h5.5V12"/>
+    </symbol>
+    <symbol id="icon-system" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3.25"/>
+      <path d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M18 6l-1.4 1.4M7.4 16.6 6 18M18 18l-1.4-1.4M7.4 7.4 6 6"/>
+    </symbol>
+    <symbol id="icon-decisions" viewBox="0 0 24 24">
+      <path d="M5 4.5h14M5 9.5h9M5 14.5h6M5 19.5h4"/>
+      <path d="m14.5 17 2.2 2.2 3.8-4.4"/>
+    </symbol>
+    <symbol id="icon-link" viewBox="0 0 24 24">
+      <path d="M9.5 14.5 14.5 9.5M8 16H6.75A4.25 4.25 0 0 1 6.75 7.5H10M16 8h1.25a4.25 4.25 0 0 1 0 8.5H14"/>
+    </symbol>
+    <symbol id="icon-user" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.25"/>
+      <path d="M5 20a7 7 0 0 1 14 0"/>
+    </symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="m19.1 13.6 1.15 1.85-2.1 2.1-1.85-1.15a7.6 7.6 0 0 1-2 .83L13.8 20h-3.6l-.5-2.77a7.6 7.6 0 0 1-2-.83l-1.85 1.15-2.1-2.1L4.9 13.6a7.6 7.6 0 0 1-.83-2L1.3 11.1V8.9l2.77-.5a7.6 7.6 0 0 1 .83-2L3.75 4.55l2.1-2.1L7.7 3.6a7.6 7.6 0 0 1 2-.83L10.2 0h3.6l.5 2.77a7.6 7.6 0 0 1 2 .83l1.85-1.15 2.1 2.1L19.1 6.4a7.6 7.6 0 0 1 .83 2l2.77.5v2.2l-2.77.5a7.6 7.6 0 0 1-.83 2Z" transform="scale(.85) translate(2.12 2.12)"/>
+    </symbol>
+    <symbol id="icon-support" viewBox="0 0 24 24">
+      <path d="M5.25 18.75h2.5l2.2 1.75 2.2-1.75h6.6A2.25 2.25 0 0 0 21 16.5v-9A2.25 2.25 0 0 0 18.75 5.25H5.25A2.25 2.25 0 0 0 3 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z"/>
+      <path d="M9.2 10a2.85 2.85 0 1 1 5.25 1.55c-.78 1.18-2.05 1.17-2.05 2.45M12.4 16.6h.01"/>
+    </symbol>
+    <symbol id="icon-back" viewBox="0 0 24 24">
+      <path d="M15.5 5.5 9 12l6.5 6.5M9.5 12H21"/>
+    </symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24">
+      <path d="m6 6 12 12M18 6 6 18"/>
+    </symbol>
+    <symbol id="icon-palette" viewBox="0 0 24 24">
+      <path d="M12 3.25a8.75 8.75 0 0 0 0 17.5h1.25a1.75 1.75 0 0 0 0-3.5h-1.1a1.9 1.9 0 0 1 0-3.8h2.6A5.25 5.25 0 0 0 20 8.2C20 5.05 16.3 3.25 12 3.25Z"/>
+      <circle cx="7.75" cy="9" r=".9"/><circle cx="11" cy="6.75" r=".9"/><circle cx="15" cy="7.25" r=".9"/>
+    </symbol>
+    <symbol id="icon-screen" viewBox="0 0 24 24">
+      <rect x="3" y="4.5" width="18" height="13" rx="2"/>
+      <path d="M8.5 20h7M12 17.5V20M6.5 9V7.5H8M17.5 9V7.5H16M6.5 13v1.5H8M17.5 13v1.5H16"/>
+    </symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24">
+      <path d="M12 3.25 19 6v5.3c0 4.55-2.9 7.9-7 9.45-4.1-1.55-7-4.9-7-9.45V6Z"/>
+      <path d="m8.8 12 2 2 4.4-4.4"/>
+    </symbol>
+    <symbol id="icon-info" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"/><path d="M12 10.5V17M12 7.25h.01"/>
+    </symbol>
+    <symbol id="icon-logout" viewBox="0 0 24 24">
+      <path d="M10 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20H10M14.5 8l4 4-4 4M8 12h10.5"/>
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24">
+      <path d="M5.5 7h13M9 7V4.5h6V7M7 7l.75 13h8.5L17 7M10 10.5v6M14 10.5v6"/>
+    </symbol>
+    <symbol id="icon-doc" viewBox="0 0 24 24">
+      <path d="M6 3.5h8l4 4V20.5H6Z"/><path d="M14 3.5v4h4M9 12h6M9 15.5h6"/>
+    </symbol>
+    <symbol id="icon-copy" viewBox="0 0 24 24">
+      <rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>
+    </symbol>
+  </svg>
+  <main class="shell">
+    <section class="auth-card" id="auth-card" aria-labelledby="auth-title">
+      <header class="auth-header">
+        <a class="brand" href="/" aria-label="OmniCIO Personal">
+          <img
+            class="brand-logo"
+            src="/assets/brand/omni-sentinel-core-color-1024.png"
+            width="48"
+            height="48"
+            alt=""
+            aria-hidden="true"
+            decoding="async"
+          >
+          <span class="brand-copy">
+            <strong>OmniCIO</strong>
+            <span>Personal</span>
+          </span>
+        </a>
+        <span class="release-chip" aria-label="Версия приложения">
+          v<span data-app-version>__OMNICIO_VERSION__</span>
+        </span>
+      </header>
+
+      <div class="auth-layout">
+        <section class="auth-intro" aria-label="О приложении">
+          <img
+            class="auth-logo"
+            src="/assets/brand/omni-sentinel-core-color-1024.png"
+            width="192"
+            height="192"
+            alt=""
+            aria-hidden="true"
+            decoding="async"
+          >
+          <p class="eyebrow" id="access-eyebrow">Персональный кабинет</p>
+          <h1 id="auth-title">Инвестиционный кабинет без лишнего шума.</h1>
+          <p class="lead" id="access-lead">
+            Вход через VK ID, отдельный пользовательский профиль и защищённое
+            подключение собственного брокерского счёта T-Invest.
+          </p>
+          <div class="trust-list" aria-label="Ключевые свойства">
+            <span>Вход: VK ID</span>
+            <span id="access-scope">Регистрация: лимит 2</span>
+            <span>Токен T-Invest: зашифрован</span>
+          </div>
+        </section>
+
+        <section class="auth-form-card" aria-labelledby="login-title">
+          <p class="section-label">Вход</p>
+          <h2 id="login-title">Войти в OmniCIO Personal</h2>
+          <p class="muted">
+            Перед входом подтвердите четыре обязательных пункта. Пароль VK
+            передаётся только VK ID и не попадает в OmniCIO.
+          </p>
+
+          <form id="vkid-form" novalidate>
+            <fieldset class="consent-group">
+              <legend>Подтверждения перед входом</legend>
+
+              <label class="check">
+                <input id="accept-privacy" type="checkbox">
+                <span>
+                  Я ознакомился с
+                  <a href="/legal/privacy.html" target="_blank" rel="noopener">политикой обработки персональных данных</a>.
+                </span>
+              </label>
+
+              <label class="check">
+                <input id="accept-pd" type="checkbox">
+                <span>
+                  Я подтверждаю
+                  <a href="/legal/consent.html" target="_blank" rel="noopener">отдельное согласие на обработку персональных данных</a>.
+                </span>
+              </label>
+
+              <label class="check">
+                <input id="accept-terms" type="checkbox">
+                <span>
+                  Я принимаю
+                  <a href="/legal/terms.html" target="_blank" rel="noopener">пользовательские правила OmniCIO Personal</a>.
+                </span>
+              </label>
+
+              <label class="check">
+                <input id="confirm-age-18" type="checkbox">
+                <span>Подтверждаю, что мне исполнилось 18 лет.</span>
+              </label>
+            </fieldset>
+
+            <button type="submit" id="vkid-login" class="button button-primary">
+              Войти через VK ID
+            </button>
+          </form>
+
+          <output id="auth-message" class="message" aria-live="polite"></output>
+
+          <footer class="auth-meta">
+            <span>OmniCIO Personal</span>
+            <span>v<span data-app-version>__OMNICIO_VERSION__</span> · сборка <span data-app-build>__OMNICIO_BUILD__</span></span>
+          </footer>
+        </section>
+      </div>
+    </section>
+
+    <section class="app-shell hidden" id="profile-panel" aria-label="Личный кабинет OmniCIO">
+      <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+      <aside class="sidebar" id="app-drawer" aria-label="Навигация OmniCIO">
+        <div class="drawer-head">
+          <button class="drawer-profile" type="button" data-view="profile" aria-label="Открыть профиль">
+            <span class="drawer-avatar" aria-hidden="true">
+              <img
+                src="/assets/brand/omni-sentinel-core-color-1024.png"
+                width="50"
+                height="50"
+                alt=""
+                decoding="async"
+              >
+            </span>
+            <span class="drawer-profile-copy">
+              <strong>Пользователь OmniCIO</strong>
+              <span>ID <b id="drawer-profile-id">000000000</b></span>
+            </span>
+          </button>
+          <button id="drawer-close" class="icon-button drawer-close" type="button" aria-label="Закрыть меню">
+            <svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+          </button>
+        </div>
+
+        <nav class="app-nav" aria-label="Основные разделы">
+          <div class="nav-group">
+            <span class="nav-group-label">Рабочее пространство</span>
+            <button class="nav-item is-active" type="button" data-view="home" aria-current="page">
+              <span class="nav-icon nav-icon-blue"><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg></span>
+              <span>Главная</span>
+            </button>
+            <button class="nav-item" type="button" data-view="portfolio">
+              <span class="nav-icon nav-icon-green"><svg class="ui-icon" aria-hidden="true"><use href="#icon-portfolio"></use></svg></span>
+              <span>Портфель</span>
+            </button>
+            <button class="nav-item" type="button" data-view="decisions">
+              <span class="nav-icon nav-icon-cyan"><svg class="ui-icon" aria-hidden="true"><use href="#icon-decisions"></use></svg></span>
+              <span>Решения</span>
+            </button>
+            <button class="nav-item" type="button" data-view="system">
+              <span class="nav-icon nav-icon-violet"><svg class="ui-icon" aria-hidden="true"><use href="#icon-system"></use></svg></span>
+              <span>Система</span>
+            </button>
+            <button class="nav-item" type="button" data-view="connections">
+              <span class="nav-icon nav-icon-orange"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"></use></svg></span>
+              <span>Интеграции</span>
+            </button>
+          </div>
+
+          <div class="nav-group">
+            <span class="nav-group-label">Аккаунт</span>
+            <button class="nav-item" type="button" data-view="profile">
+              <span class="nav-icon nav-icon-cyan"><svg class="ui-icon" aria-hidden="true"><use href="#icon-user"></use></svg></span>
+              <span>Профиль</span>
+            </button>
+            <button class="nav-item" type="button" data-view="settings">
+              <span class="nav-icon nav-icon-gray"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg></span>
+              <span>Настройки</span>
+            </button>
+            <button class="nav-item" type="button" data-view="support">
+              <span class="nav-icon nav-icon-green"><svg class="ui-icon" aria-hidden="true"><use href="#icon-support"></use></svg></span>
+              <span>Поддержка</span>
+            </button>
+          </div>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span>OmniCIO Personal</span>
+          <span>v<span data-app-version>__OMNICIO_VERSION__</span> · build <span data-app-build>__OMNICIO_BUILD__</span></span>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div class="topbar-leading">
+            <button id="app-back" class="icon-button topbar-back hidden" type="button" aria-label="Назад">
+              <svg class="ui-icon" aria-hidden="true"><use href="#icon-back"></use></svg>
+            </button>
+            <button
+              id="app-menu-toggle"
+              class="topbar-brand-button"
+              type="button"
+              aria-label="Открыть меню"
+              aria-controls="app-drawer"
+              aria-expanded="false"
+            >
+              <img
+                src="/assets/brand/omni-sentinel-core-color-1024.png"
+                width="40"
+                height="40"
+                alt=""
+                aria-hidden="true"
+              >
+            </button>
+            <div class="topbar-title">
+              <div>
+                <p class="topbar-context">OmniCIO Personal</p>
+                <h1 id="view-title">Главная</h1>
+              </div>
+            </div>
+          </div>
+
+          <div class="topbar-actions">
+            <span class="connection-indicator" id="top-connection-indicator">
+              <span class="status-dot" aria-hidden="true"></span>
+              <span id="top-connection-text">Проверяем T-Invest</span>
+            </span>
+            <span class="profile-badge" title="ID профиля">
+              ID&nbsp;<strong id="profile-id">000000000</strong>
+            </span>
+          </div>
+        </header>
+
+        <div class="workspace-scroll">
+          <section class="view-panel" data-view-panel="home">
+            <div class="page-heading command-heading">
+              <div>
+                <p class="section-label">Командный центр</p>
+                <h2>Портфель — главное сейчас</h2>
+                <p>
+                  Сначала капитал и события, которые требуют внимания. Подробные расчёты,
+                  источники и технические поля остаются в профильных разделах.
+                </p>
+              </div>
+              <button class="button button-secondary" type="button" data-go-view="portfolio">
+                Открыть портфель
+              </button>
+            </div>
+
+            <section class="command-kpis" aria-label="Ключевые показатели портфеля">
+              <article class="command-kpi command-kpi-primary">
+                <span>Стоимость портфеля</span>
+                <strong id="home-portfolio-total">—</strong>
+                <small id="home-snapshot-time">Ожидаем данные T-Invest</small>
+              </article>
+              <article class="command-kpi">
+                <span>Сегодня</span>
+                <strong id="home-daily-change">—</strong>
+                <small id="home-daily-relative">—</small>
+              </article>
+              <article class="command-kpi">
+                <span>Незаблокированные RUB</span>
+                <strong id="home-free-cash">—</strong>
+                <small>Не равно торговому бюджету до резервов и издержек</small>
+              </article>
+              <article class="command-kpi">
+                <span>Позиций</span>
+                <strong id="home-position-count">—</strong>
+                <small>В текущем снимке портфеля</small>
+              </article>
+              <article class="command-kpi command-kpi-attention">
+                <span>Требует внимания</span>
+                <strong id="home-attention-count">—</strong>
+                <small>Только подтверждённые состояния системы</small>
+              </article>
+            </section>
+
+            <article class="command-card command-history-card" aria-labelledby="home-history-title">
+              <header class="command-card-header">
+                <div>
+                  <p class="card-label">История капитала</p>
+                  <h3 id="home-history-title">Стоимость портфеля</h3>
+                </div>
+                <span class="state-badge" id="home-history-state">Ожидает снимки</span>
+              </header>
+              <div class="portfolio-chart-shell portfolio-chart-home">
+                <svg
+                  id="home-portfolio-history-chart"
+                  class="portfolio-line-chart"
+                  viewBox="0 0 720 220"
+                  role="img"
+                  aria-labelledby="home-history-title home-history-note"
+                  preserveAspectRatio="none"
+                ></svg>
+              </div>
+              <dl class="portfolio-chart-facts" id="home-history-facts">
+                <div><dt>Начало</dt><dd>—</dd></div>
+                <div><dt>Минимум</dt><dd>—</dd></div>
+                <div><dt>Максимум</dt><dd>—</dd></div>
+                <div><dt>Последний снимок</dt><dd>—</dd></div>
+              </dl>
+              <p class="field-hint" id="home-history-note">
+                График появится только после накопления реальных tenant-scoped снимков портфеля.
+              </p>
+            </article>
+
+            <section class="command-grid">
+              <article class="command-card" aria-labelledby="home-allocation-title">
+                <header class="command-card-header">
+                  <div>
+                    <p class="card-label">Структура</p>
+                    <h3 id="home-allocation-title">Классы активов</h3>
+                  </div>
+                  <span class="state-badge" id="home-portfolio-summary-state">Загружаем</span>
+                </header>
+                <div class="allocation-list command-allocation-list" id="home-allocation">
+                  <div class="portfolio-empty-inline">Ожидаем подтверждённый снимок портфеля.</div>
+                </div>
+                <footer class="command-card-footer">
+                  <span>Доли рассчитываются только по данным текущего снимка T-Invest.</span>
+                  <button class="button button-secondary" type="button" data-go-view="portfolio">
+                    Подробнее
+                  </button>
+                </footer>
+              </article>
+
+              <article class="command-card command-attention" aria-labelledby="home-attention-title">
+                <header class="command-card-header">
+                  <div>
+                    <p class="card-label">Контроль</p>
+                    <h3 id="home-attention-title">Требует внимания</h3>
+                  </div>
+                  <span class="state-badge" id="home-attention-state">Проверяем</span>
+                </header>
+                <div class="attention-list" id="home-attention-list" aria-live="polite">
+                  <div class="portfolio-empty-inline">Проверяем состояние системы.</div>
+                </div>
+                <footer class="command-card-footer">
+                  <span>Нет события — нет тревоги. Неизвестные данные не считаются нормой.</span>
+                  <button class="button button-secondary" type="button" data-go-view="decisions">
+                    Открыть решения
+                  </button>
+                </footer>
+              </article>
+            </section>
+
+            <section class="command-lower-grid">
+              <article class="market-card market-card-compact" id="usd-rub-card" aria-labelledby="usd-rub-title">
+                <div class="market-primary">
+                  <div class="market-heading">
+                    <div>
+                      <span class="card-label">Валютный рынок</span>
+                      <h3 id="usd-rub-title">USD / RUB</h3>
+                    </div>
+                    <span class="state-badge" id="usd-rub-state">Подключаем</span>
+                  </div>
+                  <div class="market-price-row">
+                    <strong id="usd-rub-price">—</strong>
+                    <span id="usd-rub-change">—</span>
+                  </div>
+                  <p id="usd-rub-note">Получаем оперативную котировку T-Invest.</p>
+                </div>
+
+                <dl class="market-meta">
+                  <div>
+                    <dt>Источник</dt>
+                    <dd id="usd-rub-source">T-Invest</dd>
+                  </div>
+                  <div>
+                    <dt>Время котировки</dt>
+                    <dd id="usd-rub-time">—</dd>
+                  </div>
+                  <div>
+                    <dt>ЦБ РФ — действует сегодня</dt>
+                    <dd id="usd-rub-cbr">—</dd>
+                    <small id="usd-rub-cbr-date">—</small>
+                  </div>
+                  <div class="hidden" id="usd-rub-cbr-next-row">
+                    <dt>Следующий курс ЦБ РФ</dt>
+                    <dd id="usd-rub-cbr-next">—</dd>
+                    <small id="usd-rub-cbr-next-date">—</small>
+                  </div>
+                </dl>
+              </article>
+
+              <article class="connection-card command-connection-card" id="home-connection-card">
+                <div class="connection-summary">
+                  <span class="connection-icon" aria-hidden="true">
+                    <span class="status-dot"></span>
+                  </span>
+                  <div>
+                    <span class="card-label">T-Invest</span>
+                    <h3 id="overview-account">Проверяем подключение…</h3>
+                    <p id="overview-connection-text">Получаем состояние брокерского подключения.</p>
+                  </div>
+                </div>
+                <button class="button button-secondary" type="button" data-go-view="connections">
+                  Управлять подключением
+                </button>
+              </article>
+            </section>
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="system">
+            <div class="page-heading">
+              <p class="section-label">Система</p>
+              <h2>Модули OmniCIO</h2>
+              <p>
+                Здесь собраны системные функции наблюдения, поиска и контроля.
+                Они отделены от портфеля и настроек, чтобы рабочие разделы не смешивались.
+              </p>
+            </div>
+
+            <section class="system-section" aria-labelledby="system-modules-title">
+              <div class="section-heading">
+                <div>
+                  <p class="section-label">Система</p>
+                  <h3 id="system-modules-title">Системные модули</h3>
+                </div>
+                <span class="section-note">Только чтение</span>
+              </div>
+
+              <div class="system-grid">
+                <article class="system-card">
+                  <header class="system-card-header">
+                    <div>
+                      <span class="system-symbol" aria-hidden="true">С</span>
+                      <div>
+                        <strong>Сова</strong>
+                        <span>Наблюдение за свежестью данных</span>
+                      </div>
+                    </div>
+                    <span class="state-badge" id="owl-state">Ожидает</span>
+                  </header>
+                  <p>
+                    Автоматически обновляет портфель раз в 5 минут, пока приложение
+                    открыто на экране. Никаких торговых действий не выполняет.
+                  </p>
+                  <dl class="system-facts">
+                    <div>
+                      <dt>Последние данные</dt>
+                      <dd id="owl-last-refresh">—</dd>
+                    </div>
+                    <div>
+                      <dt>USD/RUB</dt>
+                      <dd id="owl-fx-status">—</dd>
+                    </div>
+                    <div>
+                      <dt>Портфель</dt>
+                      <dd>каждые 5 минут</dd>
+                    </div>
+                  </dl>
+                </article>
+
+                <article class="system-card system-card-hunter">
+                  <header class="system-card-header">
+                    <div>
+                      <span class="system-symbol" aria-hidden="true">О</span>
+                      <div>
+                        <strong>Охотник</strong>
+                        <span>Поиск доступных инструментов</span>
+                      </div>
+                    </div>
+                    <span class="state-badge state-ok">Работает</span>
+                  </header>
+                  <p>
+                    Ищет инструменты в T-Invest по тикеру или названию. Результат поиска
+                    не является рекомендацией купить или продать актив.
+                  </p>
+                  <form id="hunter-form" class="hunter-form" novalidate>
+                    <label class="visually-hidden" for="hunter-query">Тикер или название</label>
+                    <input
+                      id="hunter-query"
+                      type="search"
+                      minlength="1"
+                      maxlength="64"
+                      autocomplete="off"
+                      placeholder="Например: SBER или Газпром"
+                      required
+                    >
+                    <button id="hunter-search" class="button button-primary" type="submit">
+                      Найти
+                    </button>
+                  </form>
+                  <output id="hunter-message" class="message" aria-live="polite"></output>
+                  <div class="hunter-results" id="hunter-results"></div>
+                </article>
+
+                <article class="system-card">
+                  <header class="system-card-header">
+                    <div>
+                      <span class="system-symbol" aria-hidden="true">С</span>
+                      <div>
+                        <strong>Страж</strong>
+                        <span>Объективный контроль состояния</span>
+                      </div>
+                    </div>
+                    <span class="state-badge" id="guard-state">Ожидает</span>
+                  </header>
+                  <p>
+                    Показывает фактические блокировки и концентрацию портфеля без
+                    оценки «хорошо/плохо» и без автоматических решений.
+                  </p>
+                  <dl class="system-facts">
+                    <div>
+                      <dt>Заблокированных позиций</dt>
+                      <dd id="guard-blocked-positions">—</dd>
+                    </div>
+                    <div>
+                      <dt>Заблокированных валют</dt>
+                      <dd id="guard-blocked-cash">—</dd>
+                    </div>
+                    <div>
+                      <dt>Крупнейший класс активов</dt>
+                      <dd id="guard-largest-class">—</dd>
+                    </div>
+                  </dl>
+                </article>
+              </div>
+            </section>
+
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="portfolio">
+            <div class="page-heading portfolio-heading">
+              <div class="heading-with-state">
+                <div>
+                  <p class="section-label">Портфель</p>
+                  <h2>Состояние брокерского счёта</h2>
+                </div>
+                <span class="state-badge" id="portfolio-state-badge">Загружаем</span>
+              </div>
+              <p>
+                Данные читаются напрямую из T-Invest через сохранённый read-only токен.
+                OmniCIO не выставляет заявки и не совершает сделки.
+              </p>
+              <button id="portfolio-refresh" class="button button-secondary" type="button">
+                Обновить данные
+              </button>
+            </div>
+
+            <article class="empty-card" id="portfolio-loading">
+              <div class="loading-spinner" aria-hidden="true"></div>
+              <h3>Получаем данные T-Invest</h3>
+              <p>Загружаем стоимость портфеля, позиции и денежные остатки.</p>
+            </article>
+
+            <article class="empty-card hidden" id="portfolio-disconnected">
+              <img
+                class="empty-logo"
+                src="/assets/brand/omni-sentinel-core-color-1024.png"
+                width="92"
+                height="92"
+                alt=""
+                aria-hidden="true"
+                decoding="async"
+              >
+              <h3>T-Invest не подключён</h3>
+              <p>Сначала подключите брокерский счёт, затем здесь появятся реальные данные.</p>
+              <button class="button button-secondary" type="button" data-go-view="connections">
+                Открыть интеграции
+              </button>
+            </article>
+
+            <article class="empty-card hidden" id="portfolio-error">
+              <h3>Не удалось получить портфель</h3>
+              <p id="portfolio-error-text">Попробуйте обновить данные позже.</p>
+              <button class="button button-secondary" type="button" data-portfolio-retry>
+                Повторить
+              </button>
+            </article>
+
+            <div class="portfolio-content hidden" id="portfolio-content">
+              <section class="portfolio-metrics portfolio-metrics-five" aria-label="Основные показатели портфеля">
+                <article class="portfolio-metric">
+                  <span>Стоимость портфеля</span>
+                  <strong id="portfolio-total">—</strong>
+                  <small id="portfolio-refreshed">—</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Общая доходность</span>
+                  <strong id="portfolio-yield">—</strong>
+                  <small>Текущий ответ T-Invest</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Сегодня</span>
+                  <strong id="portfolio-daily">—</strong>
+                  <small id="portfolio-daily-relative">—</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Незаблокированные RUB</span>
+                  <strong id="portfolio-free-cash">—</strong>
+                  <small>Не торговый бюджет до резервов и издержек</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Позиций</span>
+                  <strong id="portfolio-position-count">—</strong>
+                  <small>В текущем ответе брокера</small>
+                </article>
+              </section>
+
+              <article class="portfolio-card portfolio-history-card">
+                <header class="portfolio-card-header portfolio-history-header">
+                  <div>
+                    <p class="card-label">История</p>
+                    <h3>Стоимость портфеля во времени</h3>
+                  </div>
+                  <div class="portfolio-history-controls">
+                    <fieldset
+                      class="segmented-control portfolio-history-periods hidden"
+                      id="portfolio-history-periods"
+                    >
+                      <legend class="visually-hidden">Период истории портфеля</legend>
+                      <button type="button" data-portfolio-history-days="30" aria-pressed="false">1М</button>
+                      <button type="button" data-portfolio-history-days="90" aria-pressed="false">3М</button>
+                      <button type="button" data-portfolio-history-days="180" aria-pressed="false">6М</button>
+                      <button type="button" data-portfolio-history-days="365" aria-pressed="false">1Г</button>
+                    </fieldset>
+                    <span class="state-badge" id="portfolio-history-state">Ожидает снимки</span>
+                  </div>
+                </header>
+                <div class="portfolio-chart-shell">
+                  <svg
+                    id="portfolio-history-chart"
+                    class="portfolio-line-chart"
+                    viewBox="0 0 900 260"
+                    role="img"
+                    aria-label="История стоимости портфеля по сохранённым снимкам"
+                    preserveAspectRatio="none"
+                  ></svg>
+                </div>
+                <dl class="portfolio-chart-facts" id="portfolio-history-facts">
+                  <div><dt>Начало</dt><dd>—</dd></div>
+                  <div><dt>Минимум</dt><dd>—</dd></div>
+                  <div><dt>Максимум</dt><dd>—</dd></div>
+                  <div><dt>Последний снимок</dt><dd>—</dd></div>
+                </dl>
+                <p class="field-hint" id="portfolio-history-note">
+                  Время точки — captured_at сохранённого снимка. Это не время биржевой сделки и не market timestamp.
+                </p>
+              </article>
+
+              <section class="portfolio-two-column portfolio-visualization-grid">
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Просадка</p>
+                      <h3>Drawdown от предыдущего максимума</h3>
+                    </div>
+                    <span class="state-badge" id="portfolio-drawdown-state">Недостаточно истории</span>
+                  </header>
+                  <div class="portfolio-chart-shell portfolio-chart-small">
+                    <svg
+                      id="portfolio-drawdown-chart"
+                      class="portfolio-line-chart portfolio-drawdown-chart"
+                      viewBox="0 0 600 220"
+                      role="img"
+                      aria-label="Историческая просадка портфеля"
+                      preserveAspectRatio="none"
+                    ></svg>
+                  </div>
+                  <p class="field-hint" id="portfolio-drawdown-note">
+                    Показывается только когда накоплено достаточно подтверждённых снимков.
+                  </p>
+                </article>
+
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header portfolio-allocation-header">
+                    <div>
+                      <p class="card-label">Распределение</p>
+                      <h3>Экспозиции портфеля</h3>
+                    </div>
+                    <fieldset class="segmented-control portfolio-allocation-tabs">
+                      <legend class="visually-hidden">Разрез распределения</legend>
+                      <button type="button" data-allocation-view="class" aria-pressed="true">Классы</button>
+                      <button type="button" data-allocation-view="currency" aria-pressed="false">Валюты</button>
+                      <button type="button" data-allocation-view="sector" aria-pressed="false">Сектора</button>
+                      <button type="button" data-allocation-view="position" aria-pressed="false">Позиции</button>
+                    </fieldset>
+                  </header>
+                  <div class="allocation-list" id="asset-allocation"></div>
+                  <p class="field-hint" id="portfolio-allocation-note">
+                    Значения строятся из текущего ответа брокера и последнего сохранённого снимка.
+                  </p>
+                </article>
+              </section>
+
+              <section class="portfolio-two-column">
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Деньги</p>
+                      <h3>Денежные остатки</h3>
+                    </div>
+                  </header>
+                  <div class="cash-list" id="cash-list"></div>
+                  <p class="field-hint hidden" id="cash-loading-note">
+                    T-Invest ещё обновляет лимиты по счёту.
+                  </p>
+                </article>
+
+                <article class="portfolio-card portfolio-coverage-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Качество данных</p>
+                      <h3>Покрытие снимка</h3>
+                    </div>
+                    <span class="state-badge" id="portfolio-coverage-state">Ожидает снимок</span>
+                  </header>
+                  <dl class="portfolio-coverage-facts">
+                    <div><dt>Секторное покрытие</dt><dd id="portfolio-sector-coverage">—</dd></div>
+                    <div><dt>Оценено позиций</dt><dd id="portfolio-valued-count">—</dd></div>
+                    <div><dt>Состояние снимка</dt><dd id="portfolio-snapshot-status">—</dd></div>
+                    <div><dt>Получен</dt><dd id="portfolio-snapshot-time">—</dd></div>
+                  </dl>
+                </article>
+              </section>
+
+              <article class="portfolio-card portfolio-positions-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Позиции</p>
+                    <h3>Активы в портфеле</h3>
+                  </div>
+                  <span class="section-note">Точные значения + источник времени</span>
+                </header>
+                <div class="portfolio-position-table-scroll" id="positions-table-scroll">
+                  <table class="portfolio-position-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Инструмент</th>
+                        <th scope="col">Оценка</th>
+                        <th scope="col">Доля</th>
+                        <th scope="col">Цена</th>
+                        <th scope="col">Доходность</th>
+                        <th scope="col">Данные / риск</th>
+                        <th scope="col"><span class="visually-hidden">Детали</span></th>
+                      </tr>
+                    </thead>
+                    <tbody id="positions-table-body"></tbody>
+                  </table>
+                </div>
+                <div class="positions-list portfolio-position-cards" id="positions-list"></div>
+                <p class="field-hint" id="positions-freshness-note">
+                  Оценка и доля относятся к последнему сохранённому snapshot; текущая цена и доходность — к последнему чтению T-Invest.
+                </p>
+              </article>
+
+              <article class="portfolio-card instrument-detail hidden" id="instrument-detail" aria-labelledby="instrument-detail-title">
+                <header class="portfolio-card-header instrument-detail-header">
+                  <div>
+                    <p class="card-label">Детали инструмента</p>
+                    <h3 id="instrument-detail-title">Инструмент</h3>
+                    <p id="instrument-detail-subtitle">Выберите позицию.</p>
+                  </div>
+                  <button id="instrument-detail-close" class="button button-secondary" type="button">
+                    Закрыть
+                  </button>
+                </header>
+                <div id="instrument-detail-loading" class="portfolio-empty-inline hidden">
+                  Загружаем tenant-scoped историю и доказательства…
+                </div>
+                <div id="instrument-detail-content" class="instrument-detail-content hidden">
+                  <section class="portfolio-metrics instrument-detail-metrics">
+                    <article class="portfolio-metric">
+                      <span>Оценка позиции</span>
+                      <strong id="instrument-detail-value">—</strong>
+                      <small id="instrument-detail-weight">—</small>
+                    </article>
+                    <article class="portfolio-metric">
+                      <span>Текущая цена</span>
+                      <strong id="instrument-detail-price">—</strong>
+                      <small id="instrument-detail-price-time">—</small>
+                    </article>
+                    <article class="portfolio-metric">
+                      <span>Количество</span>
+                      <strong id="instrument-detail-quantity">—</strong>
+                      <small id="instrument-detail-blocked">—</small>
+                    </article>
+                    <article class="portfolio-metric">
+                      <span>Доходность позиции</span>
+                      <strong id="instrument-detail-pnl">—</strong>
+                      <small id="instrument-detail-pnl-time">Текущий ответ T-Invest</small>
+                    </article>
+                    <article class="portfolio-metric">
+                      <span>Risk state</span>
+                      <strong id="instrument-detail-risk">—</strong>
+                      <small id="instrument-detail-risk-time">—</small>
+                    </article>
+                  </section>
+
+                  <section class="portfolio-two-column">
+                    <div>
+                      <p class="card-label">История позиции</p>
+                      <div class="portfolio-chart-shell portfolio-chart-small">
+                        <svg
+                          id="instrument-history-chart"
+                          class="portfolio-line-chart"
+                          viewBox="0 0 600 220"
+                          role="img"
+                          aria-label="История оценки позиции по снимкам портфеля"
+                          preserveAspectRatio="none"
+                        ></svg>
+                      </div>
+                      <p class="field-hint" id="instrument-history-note">
+                        Точки относятся к времени snapshot, а не к биржевой ленте.
+                      </p>
+                    </div>
+                    <div>
+                      <p class="card-label">Доказательства и события</p>
+                      <div class="instrument-evidence-summary" id="instrument-evidence-summary"></div>
+                    </div>
+                  </section>
+
+                  <section class="portfolio-two-column">
+                    <div>
+                      <p class="card-label">Выплаты / события</p>
+                      <div class="analysis-sources" id="instrument-payouts"></div>
+                    </div>
+                    <div>
+                      <p class="card-label">Источники</p>
+                      <div class="analysis-sources" id="instrument-sources"></div>
+                    </div>
+                  </section>
+                </div>
+                <output id="instrument-detail-message" class="message" aria-live="polite"></output>
+              </article>
+            </div>
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="decisions">
+            <div class="page-heading portfolio-heading">
+              <div class="heading-with-state">
+                <div>
+                  <p class="section-label">Решения · этап R1</p>
+                  <h2>Фактический анализ портфеля</h2>
+                </div>
+                <span class="state-badge state-next">Только наблюдение</span>
+              </div>
+              <p>
+                OmniCIO проверяет структуру счёта, доступность данных, блокировки и
+                концентрацию по подтверждённым чтениям T-Invest. На этом этапе система
+                не формирует пакет сделок и не получает торговых полномочий.
+              </p>
+              <button id="analysis-refresh" class="button button-secondary" type="button">
+                Обновить анализ
+              </button>
+              <output id="analysis-status" class="message" aria-live="polite">
+                Подключите счёт T-Invest для анализа.
+              </output>
+            </div>
+
+            <div id="analysis-content" class="analysis-content hidden">
+              <section class="portfolio-metrics analysis-metrics" aria-label="Показатели анализа">
+                <article class="portfolio-metric">
+                  <span>Незаблокированные рубли</span>
+                  <strong id="analysis-cash">—</strong>
+                  <small>До резерва, налогов, комиссий и активных заявок</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Позиций в инструментах</span>
+                  <strong id="analysis-count">—</strong>
+                  <small>Не равно числу независимых эмитентов</small>
+                </article>
+                <article class="portfolio-metric">
+                  <span>Покрытие секторов</span>
+                  <strong id="analysis-coverage">—</strong>
+                  <small>Только среди оценённых рублёвых позиций</small>
+                </article>
+              </section>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Контроль</p>
+                    <h3>Что требует внимания</h3>
+                  </div>
+                </header>
+                <div id="analysis-observations" class="analysis-observations"></div>
+              </article>
+
+              <section class="portfolio-two-column">
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Структура</p>
+                      <h3>Типы активов</h3>
+                    </div>
+                  </header>
+                  <div id="analysis-classes" class="allocation-list"></div>
+                </article>
+
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Покрытие</p>
+                      <h3>Сектора</h3>
+                    </div>
+                  </header>
+                  <div id="analysis-sectors" class="allocation-list"></div>
+                  <p class="field-hint">
+                    Неизвестные сектора и состав фондов остаются неизвестными. Страна риска
+                    и сектор брокера не заменяют проверку юридического эмитента.
+                  </p>
+                </article>
+              </section>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Экспозиции</p>
+                    <h3>Доли отдельных инструментов</h3>
+                  </div>
+                </header>
+                <div class="analysis-table-scroll">
+                  <table class="analysis-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Инструмент</th>
+                        <th scope="col">Сектор</th>
+                        <th scope="col">Оценка</th>
+                        <th scope="col">Доля</th>
+                      </tr>
+                    </thead>
+                    <tbody id="analysis-securities"></tbody>
+                  </table>
+                </div>
+                <p class="field-hint">
+                  Облигации оцениваются с НКД. До подключения разрешённого рейтингового
+                  feed неизвестный рейтинг остаётся <code>data_missing</code>. Группа связанных
+                  компаний и look-through фондов не угадываются по названию или сектору.
+                </p>
+              </article>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Доказательства</p>
+                    <h3>Источники и время проверки</h3>
+                  </div>
+                </header>
+                <div id="analysis-sources" class="analysis-sources"></div>
+                <p class="field-hint">
+                  Время получения данных не является временем последней сделки и само по себе
+                  не доказывает свежесть рыночной цены. Недоступный источник отмечается как
+                  неполное покрытие, а не заменяется догадкой.
+                </p>
+              </article>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Portfolio Intelligence R3</p>
+                    <h3>Доказательный риск-контур</h3>
+                  </div>
+                  <span class="state-badge state-next" id="intelligence-status">Ожидает ежедневный снимок</span>
+                </header>
+                <div class="analysis-table-scroll">
+                  <table class="analysis-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Инструмент</th>
+                        <th scope="col">Состояние</th>
+                        <th scope="col">Рейтинг</th>
+                        <th scope="col">Фундаментальные данные</th>
+                      </tr>
+                    </thead>
+                    <tbody id="intelligence-risks"></tbody>
+                  </table>
+                </div>
+                <p class="field-hint">
+                  <code>confirmed_default</code> появляется только из подтверждённого provider
+                  evidence. Отсутствие рейтинга или свежих данных не превращается в
+                  «нормальный риск».
+                </p>
+              </article>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Portfolio Balancing R4</p>
+                    <h3>Целые лоты и сценарии без исполнения</h3>
+                  </div>
+                  <span class="state-badge state-next" id="balancing-status">Проверяем готовность</span>
+                </header>
+                <section class="portfolio-metrics analysis-metrics" aria-label="Показатели балансировки">
+                  <article class="portfolio-metric">
+                    <span>Свободные рубли</span>
+                    <strong id="balancing-free-cash">—</strong>
+                    <small>До резерва и плановых снятий</small>
+                  </article>
+                  <article class="portfolio-metric">
+                    <span>Кандидатов</span>
+                    <strong id="balancing-candidate-count">—</strong>
+                    <small id="balancing-eligible-note">Допустимость ещё не проверена</small>
+                  </article>
+                  <article class="portfolio-metric">
+                    <span>Версии ограничений</span>
+                    <strong id="balancing-policy-versions">—</strong>
+                    <small>Профиль капитала · policy балансировки</small>
+                  </article>
+                </section>
+                <section class="portfolio-two-column">
+                  <div>
+                    <p class="card-label">Сценарии</p>
+                    <div id="balancing-scenarios" class="analysis-sources"></div>
+                  </div>
+                  <div>
+                    <p class="card-label">Candidate screening</p>
+                    <div id="balancing-screening" class="analysis-sources"></div>
+                  </div>
+                </section>
+                <p class="field-hint">
+                  R4 только рассчитывает и объясняет сценарии. Он не создаёт immutable
+                  предложение, не подтверждает сделки и не вызывает broker OrdersService.
+                  Неполные quote/YTW/liquidity/issuer/tax/cost данные блокируют действие,
+                  а не заменяются догадкой.
+                </p>
+              </article>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Portfolio Proposals R5</p>
+                    <h3>Неизменяемое предложение и решение владельца</h3>
+                  </div>
+                  <span class="state-badge state-next" id="proposal-status">Нет активного предложения</span>
+                </header>
+                <p class="card-description">
+                  Сначала OmniCIO повторно проверяет live evidence и фиксирует конкретную
+                  версию сценария: счёт, snapshot, ограничения, before/after, целые лоты,
+                  limit price, max spend/min proceeds, комиссии, налоги и срок действия.
+                  Только после этого доступно решение по этой exact версии.
+                </p>
+                <section class="portfolio-two-column">
+                  <div>
+                    <p class="card-label">Доступно к фиксации</p>
+                    <div id="proposal-create-options" class="analysis-sources"></div>
+                  </div>
+                  <div>
+                    <p class="card-label">Версии и решения</p>
+                    <div id="proposal-history" class="analysis-sources"></div>
+                  </div>
+                </section>
+                <output id="proposal-message" class="message" aria-live="polite"></output>
+                <p class="field-hint">
+                  «Подтвердить план» в R5 только записывает решение владельца и hash версии.
+                  Оно не вызывает <code>PostOrder</code>, не выставляет заявку и не включает
+                  торговые полномочия. Отклонение требует причины; «отложить» сохраняет дату.
+                  При новом snapshot/profile/policy старая версия не считается актуальной.
+                </p>
+              </article>
+
+              <article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Execution rehearsal R6</p>
+                    <h3>Shadow и T-Invest Sandbox</h3>
+                  </div>
+                  <span class="state-badge state-next" id="execution-status">Live выключен</span>
+                </header>
+                <p class="card-description">
+                  R6 исполняет подтверждённую exact-версию R5-предложения в Shadow или
+                  T-Invest Sandbox. R7 добавляет отдельную production-boundary, но она
+                  не включается автоматически: нужен server-side feature gate, exact
+                  production-счёт, явный краткоживущий mandate и повторное подтверждение
+                  пользователя. Пока опубликованные legal-документы v6 описывают режим
+                  без реальных поручений, production live остаётся выключен.
+                </p>
+
+                <section class="portfolio-card" aria-labelledby="live-mandate-title">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">R7 · Production authority</p>
+                      <h4 id="live-mandate-title">Разрешение на ограниченный live-canary</h4>
+                    </div>
+                    <span class="state-badge state-next" id="live-mandate-status">
+                      Проверяем gate
+                    </span>
+                  </header>
+                  <p id="live-mandate-summary" class="field-hint">
+                    Это отдельное разрешение, а не настройка входа или T-Invest.
+                    Оно никогда не создаётся автоматически.
+                  </p>
+                  <form
+                    id="live-mandate-form"
+                    class="form-stack hidden"
+                    aria-describedby="live-mandate-help"
+                    novalidate
+                  >
+                    <div id="live-mandate-help" class="field-hint">
+                      Canary допускает только подтверждённый <code>deploy_cash</code>,
+                      buy-only, limit + Fill-and-Kill, без margin. Укажите собственные
+                      лимиты не выше server-side caps и срок не более 24 часов.
+                    </div>
+                    <div class="constraint-form-grid">
+                      <div class="field">
+                        <label for="live-max-order">Максимум одной заявки, ₽</label>
+                        <input
+                          id="live-max-order"
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          inputmode="decimal"
+                          required
+                        >
+                      </div>
+                      <div class="field">
+                        <label for="live-max-daily">Максимум за день, ₽</label>
+                        <input
+                          id="live-max-daily"
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          inputmode="decimal"
+                          required
+                        >
+                      </div>
+                      <div class="field">
+                        <label for="live-expires-at">Разрешение действует до</label>
+                        <input id="live-expires-at" type="datetime-local" required>
+                      </div>
+                      <div class="field">
+                        <label for="live-profile-id">ID профиля для подтверждения</label>
+                        <input
+                          id="live-profile-id"
+                          type="text"
+                          inputmode="numeric"
+                          autocomplete="off"
+                          pattern="[0-9]{9}"
+                          maxlength="9"
+                          placeholder="000000001"
+                          required
+                        >
+                      </div>
+                    </div>
+                    <label class="check">
+                      <input id="live-confirm" type="checkbox" required>
+                      <span>
+                        Я понимаю, что после отдельного запуска подтверждённого пакета
+                        OmniCIO сможет отправить реальные limit-поручения в пределах этих
+                        caps. Отзыв разрешения блокирует новые поручения, но не скрывает
+                        уже отправленные — их нужно сверить или отменить.
+                      </span>
+                    </label>
+                    <div class="proposal-decision-actions">
+                      <button id="live-mandate-save" class="button button-danger-secondary" type="submit">
+                        Создать live-разрешение
+                      </button>
+                      <button id="live-mandate-revoke" class="button button-secondary hidden" type="button">
+                        Kill switch · запретить новые заявки
+                      </button>
+                    </div>
+                  </form>
+                  <output id="live-mandate-message" class="message" aria-live="polite"></output>
+                </section>
+
+                <section class="portfolio-two-column">
+                  <div>
+                    <div class="portfolio-card-header">
+                      <p class="card-label">Журнал запусков</p>
+                      <button id="execution-refresh" class="button button-secondary" type="button">
+                        Обновить
+                      </button>
+                    </div>
+                    <div id="execution-history" class="analysis-sources"></div>
+                  </div>
+                  <div>
+                    <p class="card-label">Состояние запуска</p>
+                    <div id="execution-details" class="analysis-sources"></div>
+                  </div>
+                </section>
+                <output id="execution-message" class="message" aria-live="polite"></output>
+                <p class="field-hint">
+                  Запуск доступен только у предложения со статусом «подтверждено».
+                  Для sandbox подключите именно песочницу T-Invest. Кнопка «Сверить»
+                  продолжает state machine по сохранённому request ID; повторная
+                  отправка неоднозначной заявки запрещена. Live-торговля появится
+                  только на отдельном этапе R7 после новых release gates.
+                </p>
+              </article>
+
+              <section class="portfolio-two-column">
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Календарь</p>
+                      <h3>Выплаты и события</h3>
+                    </div>
+                  </header>
+                  <div id="intelligence-payouts" class="analysis-sources"></div>
+                  <p class="field-hint">
+                    Плановая дата выплаты не считается фактическим зачислением на счёт.
+                  </p>
+                </article>
+                <article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Свежесть</p>
+                      <h3>Версии доказательств</h3>
+                    </div>
+                  </header>
+                  <div id="intelligence-sources" class="analysis-sources"></div>
+                </article>
+              </section>
+            </div>
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="connections">
+            <div class="page-heading">
+              <p class="section-label">Интеграции</p>
+              <h2>Внешние подключения</h2>
+              <p>
+                Здесь находятся только реальные внешние подключения. Сейчас
+                поддерживается T-Invest.
+              </p>
+            </div>
+
+            <section class="broker-card" aria-labelledby="tbank-title">
+              <header class="card-header">
+                <div>
+                  <p class="card-label">Т-Банк Инвестиции</p>
+                  <h3 id="tbank-title">T-Invest API</h3>
+                </div>
+                <span class="state-badge" id="tbank-status-badge">Проверяем</span>
+              </header>
+
+              <p class="card-description">
+                Токен проверяется через T-Invest API и после подключения хранится
+                на сервере только в зашифрованном виде. Сохранённый токен обратно
+                в браузер не возвращается.
+              </p>
+
+              <div id="tbank-connected" class="hidden">
+                <div class="connected-panel">
+                  <span class="connection-icon" aria-hidden="true">
+                    <span class="status-dot"></span>
+                  </span>
+                  <div>
+                    <strong>Подключено</strong>
+                    <span id="tbank-account-label"></span>
+                  </div>
+                </div>
+                <button id="tbank-disconnect" class="button button-danger-secondary" type="button">
+                  Отключить T-Invest
+                </button>
+              </div>
+
+              <form id="tbank-form" class="form-stack" novalidate>
+                <div class="field">
+                  <label for="tbank-environment">Контур</label>
+                  <select id="tbank-environment" name="environment">
+                    <option value="prod" selected>Биржа — реальный счёт</option>
+                    <option value="sandbox">Песочница — тестовый контур</option>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label for="tbank-token">API-токен T-Invest</label>
+                  <input
+                    id="tbank-token"
+                    name="token"
+                    type="password"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                    placeholder="Вставьте токен"
+                    minlength="20"
+                    maxlength="4096"
+                    aria-describedby="tbank-token-help"
+                    required
+                  >
+                  <p id="tbank-token-help" class="field-hint">
+                    Для аналитики production-счёта достаточно read-доступа. R6 Sandbox
+                    требует тестовые методы песочницы. R7 production-live, если он отдельно
+                    активирован сервером и пользователем, требует write-доступ только к
+                    выбранному счёту; transfer-access OmniCIO не требуется.
+                  </p>
+                </div>
+
+                <label class="check broker-ack">
+                  <input id="tbank-terms-ack" type="checkbox" required>
+                  <span>
+                    Я понимаю, что токен будет передан T-Invest API для проверки
+                    прав и затем сохранён в зашифрованном виде. Я ознакомился с
+                    <a href="/legal/terms.html" target="_blank" rel="noopener">правилами и рисками</a>.
+                  </span>
+                </label>
+
+                <button type="submit" id="tbank-check" class="button button-primary">
+                  Проверить токен
+                </button>
+              </form>
+
+              <form id="tbank-account-form" class="form-stack hidden" novalidate>
+                <div class="field">
+                  <label for="tbank-account">Доступный брокерский счёт</label>
+                  <select id="tbank-account" name="account" required></select>
+                </div>
+                <button type="submit" id="tbank-connect" class="button button-primary">
+                  Подключить выбранный счёт
+                </button>
+              </form>
+
+              <output id="tbank-message" class="message" aria-live="polite"></output>
+            </section>
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="profile">
+            <div class="page-heading">
+              <p class="section-label">Профиль</p>
+              <h2>Пользователь OmniCIO</h2>
+              <p>
+                Идентификатор, права и вход собраны отдельно от системных настроек.
+              </p>
+            </div>
+
+            <section class="profile-grid">
+              <article class="profile-hero">
+                <span class="profile-hero-avatar" aria-hidden="true">
+                  <img src="/assets/brand/omni-sentinel-core-color-1024.png" width="88" height="88" alt="">
+                </span>
+                <div>
+                  <p class="card-label">Личный аккаунт</p>
+                  <h3>ID <span id="profile-page-id">000000000</span></h3>
+                  <span class="state-badge state-ok" id="account-mode-badge">User</span>
+                </div>
+              </article>
+
+              <article class="settings-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Доступ</p>
+                    <h3>Учётная запись</h3>
+                  </div>
+                </header>
+                <dl class="info-list">
+                  <div><dt>ID профиля</dt><dd id="settings-profile-id">000000000</dd></div>
+                  <div><dt>Роль</dt><dd id="settings-profile-role">Пользователь</dd></div>
+                  <div><dt>Вход</dt><dd>VK ID</dd></div>
+                  <div><dt>Регистрация новых аккаунтов</dt><dd id="settings-registration-state">Проверяем</dd></div>
+                </dl>
+                <button id="logout" class="button button-danger-secondary action-with-icon" type="button">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-logout"></use></svg>
+                  <span>Выйти из аккаунта</span>
+                </button>
+              </article>
+
+              <article class="settings-card profile-constraints-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Инвестиционные ограничения</p>
+                    <h3>Профиль капитала</h3>
+                  </div>
+                  <span class="state-badge" id="investment-profile-version">Не заполнен</span>
+                </header>
+                <p class="card-description">
+                  Эти параметры фиксируют резерв, горизонт и допустимый риск для будущих
+                  сценариев. Они не дают OmniCIO полномочий совершать сделки и не включают
+                  автоматическое исполнение.
+                </p>
+                <div id="investment-profile-help" class="field-hint">
+                  Заполняйте только фактические ограничения, которые относятся к вашему капиталу.
+                  Система не подставляет «рекомендуемые» значения: если параметр вам неизвестен,
+                  лучше не сохранять профиль до уточнения. Поля проверяются и в браузере, и на сервере.
+                </div>
+                <form
+                  id="investment-profile-form"
+                  class="form-stack"
+                  aria-describedby="investment-profile-help"
+                  novalidate
+                >
+                  <div class="constraint-form-grid">
+                    <div class="field">
+                      <label for="profile-reserve-rub">Резерв, ₽</label>
+                      <input id="profile-reserve-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" aria-describedby="profile-reserve-help" required>
+                      <p id="profile-reserve-help" class="field-hint">
+                        Сумма свободных рублей, которую optimizer обязан оставить нетронутой.
+                        Вместе с планируемыми снятиями она вычитается из доступного cash.
+                      </p>
+                    </div>
+                    <div class="field">
+                      <label for="profile-withdrawal-rub">Планируемые снятия, ₽</label>
+                      <input id="profile-withdrawal-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" aria-describedby="profile-withdrawal-help" required>
+                      <p id="profile-withdrawal-help" class="field-hint">
+                        Сумма ожидаемых выводов, которую нельзя считать бюджетом покупки.
+                        Если запланированных снятий нет, укажите 0.
+                      </p>
+                    </div>
+                    <div class="field">
+                      <label for="profile-horizon-months">Горизонт, месяцев</label>
+                      <input id="profile-horizon-months" type="number" min="1" max="1200" step="1" inputmode="numeric" aria-describedby="profile-horizon-help" required>
+                      <p id="profile-horizon-help" class="field-hint">
+                        Ваш горизонт в полных месяцах. Допустимо целое число от 1 до 1200;
+                        это ограничение сценария, а не обещание доходности.
+                      </p>
+                    </div>
+                    <div class="field">
+                      <label for="profile-max-drawdown">Допустимая просадка, %</label>
+                      <input id="profile-max-drawdown" type="number" min="0" max="100" step="0.1" inputmode="decimal" aria-describedby="profile-drawdown-help" required>
+                      <p id="profile-drawdown-help" class="field-hint">
+                        Максимальное снижение портфеля, которое вы задаёте как ограничение.
+                        Значение 0–100%; это не прогноз будущего убытка.
+                      </p>
+                    </div>
+                    <div class="field">
+                      <label for="profile-liquidity-days">Горизонт ликвидности, дней</label>
+                      <input id="profile-liquidity-days" type="number" min="0" max="36500" step="1" inputmode="numeric" aria-describedby="profile-liquidity-help" required>
+                      <p id="profile-liquidity-help" class="field-hint">
+                        За сколько дней позиция должна укладываться в подтверждённую ликвидность.
+                        R4 умножает дневную capacity на этот срок; 0 не даёт нового объёма по этому лимиту.
+                      </p>
+                    </div>
+                  </div>
+                  <label class="check">
+                    <input id="profile-allow-below-grade" type="checkbox">
+                    <span>
+                      Разрешать рассматривать бумаги ниже инвестиционного уровня.
+                      Это ограничение не является рекомендацией и не включает торговые права.
+                    </span>
+                  </label>
+                  <div class="profile-constraint-meta">
+                    <span id="investment-profile-created">Версия ещё не сохранена</span>
+                  </div>
+                  <button id="investment-profile-save" class="button button-primary" type="submit">
+                    Сохранить новую версию профиля
+                  </button>
+                  <output id="investment-profile-message" class="message" aria-live="polite"></output>
+                </form>
+              </article>
+
+              <article class="settings-card profile-constraints-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Балансировка · R4</p>
+                    <h3>Лимиты распределения</h3>
+                  </div>
+                  <span class="state-badge" id="balancing-policy-version">Не заполнена</span>
+                </header>
+                <p class="card-description">
+                  Эти значения задают явные ограничения для сценариев балансировки.
+                  OmniCIO не подставляет скрытые проценты концентрации и не получает
+                  торговых полномочий. Если policy не заполнена, сценарии сделок не строятся.
+                </p>
+                <div id="balancing-policy-help" class="field-hint">
+                  Лимиты инструмента, сектора, эмитента, группы и класса активов — это верхние
+                  доли портфеля, а не целевые значения. Бюджет оборота и no-trade band ограничивают
+                  лишние перестановки. Налог и haircut — только ваши сценарные допущения:
+                  OmniCIO не определяет их автоматически и не выдаёт haircut за вероятность дефолта.
+                </div>
+                <form
+                  id="balancing-policy-form"
+                  class="form-stack"
+                  aria-describedby="balancing-policy-help"
+                  novalidate
+                >
+                  <div class="constraint-form-grid">
+                    <div class="field">
+                      <label for="balance-max-instrument">Макс. один инструмент, %</label>
+                      <input id="balance-max-instrument" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-sector">Макс. сектор, %</label>
+                      <input id="balance-max-sector" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-issuer">Макс. эмитент, %</label>
+                      <input id="balance-max-issuer" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-group">Макс. группа, %</label>
+                      <input id="balance-max-group" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-share">Макс. акции, %</label>
+                      <input id="balance-max-share" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-bond">Макс. облигации, %</label>
+                      <input id="balance-max-bond" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-etf">Макс. фонды, %</label>
+                      <input id="balance-max-etf" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-below-grade">Макс. ниже инвест. уровня, %</label>
+                      <input id="balance-max-below-grade" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-unknown">Макс. неизвестный рейтинг, %</label>
+                      <input id="balance-max-unknown" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-term">Макс. срок облигаций, месяцев</label>
+                      <input id="balance-max-term" type="number" min="0" max="1200" step="1" inputmode="numeric" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-turnover-budget">Бюджет оборота, % NAV</label>
+                      <input id="balance-turnover-budget" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-daily-participation">Макс. участие в среднедневном обороте, %</label>
+                      <input id="balance-daily-participation" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-tax-rate">Ставка налога для сценария, %</label>
+                      <input id="balance-tax-rate" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-uncertainty-haircut">Haircut неопределённости, %</label>
+                      <input id="balance-uncertainty-haircut" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-credit-haircut">Кредитный stress-haircut, %</label>
+                      <input id="balance-credit-haircut" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-no-trade-band">No-trade band, % позиции</label>
+                      <input id="balance-no-trade-band" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-min-replace-benefit">Мин. выгода замены, ₽</label>
+                      <input id="balance-min-replace-benefit" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" required>
+                    </div>
+                  </div>
+                  <p class="field-hint">
+                    Ставка налога и оба haircut — явные сценарные допущения пользователя.
+                    Кредитный haircut не является вероятностью дефолта и не выдаётся за
+                    откалиброванный прогноз. Налоговый процент не определяется автоматически. Лимит участия ограничивает долю подтверждённого
+                    среднедневного оборота, которую optimizer вправе считать доступной для выхода.
+                    Системные границы текущего R4: новые покупки только RUB-инструментов
+                    классов акции/облигации/фонды со статусом риска <code>normal</code>.
+                    Резерв, снятия, горизонт ликвидности и разрешение below-grade берутся
+                    из версии «Профиль капитала».
+                  </p>
+                  <div class="profile-constraint-meta">
+                    <span id="balancing-policy-created">Версия ещё не сохранена</span>
+                  </div>
+                  <button id="balancing-policy-save" class="button button-primary" type="submit">
+                    Сохранить новую версию лимитов
+                  </button>
+                  <output id="balancing-policy-message" class="message" aria-live="polite"></output>
+                </form>
+              </article>
+            </section>
+          </section>
+
+          <section class="view-panel hidden" data-view-panel="settings">
+            <div class="page-heading">
+              <p class="section-label">Настройки</p>
+              <h2>Параметры приложения</h2>
+              <p>
+                Интерфейс, состояние системы, экран, интеграции и служебные параметры сгруппированы
+                по назначению. Профиль пользователя вынесен в отдельный раздел.
+              </p>
+            </div>
+
+            <section class="settings-stack">
+              <section class="status-section" aria-labelledby="working-now-title">
+                <div class="section-heading">
+                  <h3 id="working-now-title">Состояние системы</h3>
+                  <span class="section-note">Текущий статус</span>
+                </div>
+  
+                <div class="status-list">
+                  <div class="status-row">
+                    <div>
+                      <strong id="home-login-title">Вход владельца</strong>
+                      <span id="home-login-note">VK ID + защищённая сессия OmniCIO</span>
+                    </div>
+                    <span class="state-badge state-ok">Работает</span>
+                  </div>
+  
+                  <div class="status-row">
+                    <div>
+                      <strong>Подключение T-Invest</strong>
+                      <span>Проверка и защищённое хранение API-токена</span>
+                    </div>
+                    <span class="state-badge" id="home-tbank-state">Проверяем</span>
+                  </div>
+  
+                  <div class="status-row">
+                    <div>
+                      <strong>Данные портфеля</strong>
+                      <span>Стоимость, позиции и доходность</span>
+                    </div>
+                    <span class="state-badge" id="home-portfolio-state">Загружаем</span>
+                  </div>
+  
+                  <div class="status-row">
+                    <div>
+                      <strong>USD/RUB</strong>
+                      <span>Оперативная котировка T-Invest + официальный курс ЦБ РФ</span>
+                    </div>
+                    <span class="state-badge" id="home-fx-state">Подключаем</span>
+                  </div>
+                </div>
+              </section>
+
+              <article class="settings-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Интерфейс</p>
+                    <h3>Цветовая тема</h3>
+                  </div>
+                </header>
+
+                <div class="setting-row">
+                  <div>
+                    <strong>Оформление</strong>
+                    <span>Светлая тема — основная. Можно выбрать тёмную или системную.</span>
+                  </div>
+                  <fieldset class="segmented-control">
+                    <legend class="visually-hidden">Тема интерфейса</legend>
+                    <button type="button" data-theme-option="light" aria-pressed="true">Светлая</button>
+                    <button type="button" data-theme-option="dark" aria-pressed="false">Тёмная</button>
+                    <button type="button" data-theme-option="auto" aria-pressed="false">Авто</button>
+                  </fieldset>
+                </div>
+              </article>
+
+              <article class="settings-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Приложение</p>
+                    <h3>Версия OmniCIO</h3>
+                  </div>
+                  <span class="release-chip">v<span data-app-version>__OMNICIO_VERSION__</span></span>
+                </header>
+
+                <dl class="info-list">
+                  <div>
+                    <dt>Версия</dt>
+                    <dd>v<span data-app-version>__OMNICIO_VERSION__</span></dd>
+                  </div>
+                  <div>
+                    <dt>Сборка</dt>
+                    <dd><span data-app-build>__OMNICIO_BUILD__</span></dd>
+                  </div>
+                  <div>
+                    <dt>Режим</dt>
+                    <dd>OmniCIO Personal</dd>
+                  </div>
+                </dl>
+
+                <div class="install-row">
+                  <div class="setting-copy-with-icon">
+                    <span class="setting-icon nav-icon-blue">
+                      <svg class="ui-icon" aria-hidden="true"><use href="#icon-screen"></use></svg>
+                    </span>
+                    <div>
+                      <strong>Экран приложения</strong>
+                      <span id="fullscreen-status">Проверяем режим экрана</span>
+                    </div>
+                  </div>
+                  <button id="fullscreen-toggle" class="button button-secondary hidden" type="button">
+                    На весь экран
+                  </button>
+                </div>
+
+                <div class="install-row">
+                  <div>
+                    <strong>Режим приложения</strong>
+                    <span id="install-status">Открыто в браузере</span>
+                  </div>
+                  <button id="install-app" class="button button-secondary hidden" type="button">
+                    Установить приложение
+                  </button>
+                </div>
+              </article>
+
+              <article class="settings-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Разделы</p>
+                    <h3>Безопасность и интеграции</h3>
+                  </div>
+                </header>
+
+                <div class="settings-menu-list">
+                  <button class="settings-menu-row" type="button" data-go-view="profile">
+                    <span class="setting-icon nav-icon-cyan"><svg class="ui-icon" aria-hidden="true"><use href="#icon-user"></use></svg></span>
+                    <span><strong>Профиль и вход</strong><small>VK ID, роль, ID профиля и выход</small></span>
+                    <span class="row-chevron" aria-hidden="true">›</span>
+                  </button>
+                  <button class="settings-menu-row" type="button" data-go-view="connections">
+                    <span class="setting-icon nav-icon-orange"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"></use></svg></span>
+                    <span><strong>T-Invest и API-токен</strong><small>Проверка, подключение и удаление токена</small></span>
+                    <span class="row-chevron" aria-hidden="true">›</span>
+                  </button>
+                  <button class="settings-menu-row" type="button" data-go-view="support">
+                    <span class="setting-icon nav-icon-green"><svg class="ui-icon" aria-hidden="true"><use href="#icon-support"></use></svg></span>
+                    <span><strong>Поддержка</strong><small>Связь с оператором и диагностика</small></span>
+                    <span class="row-chevron" aria-hidden="true">›</span>
+                  </button>
+                </div>
+              </article>
+
+              <article class="settings-card danger-zone" aria-labelledby="delete-account-title">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Опасная зона</p>
+                    <h3 id="delete-account-title">Удаление аккаунта</h3>
+                  </div>
+                </header>
+
+                <p class="card-description">
+                  Удаление необратимо. OmniCIO удалит профиль, привязку VK ID,
+                  все активные сессии, сохранённое подключение T-Invest и
+                  связанные данные аккаунта. Освободившийся пользовательский
+                  слот снова станет доступен для регистрации.
+                </p>
+
+                <button
+                  id="delete-account-start"
+                  class="button button-danger-secondary"
+                  type="button"
+                  aria-expanded="false"
+                  aria-controls="delete-account-form"
+                >
+                  Удалить аккаунт
+                </button>
+
+                <form id="delete-account-form" class="account-delete-form hidden" novalidate>
+                  <div class="field">
+                    <label for="delete-account-confirmation">
+                      Для подтверждения введите ID профиля
+                      <strong id="delete-account-profile-id">000000000</strong>
+                    </label>
+                    <input
+                      id="delete-account-confirmation"
+                      name="confirmation"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                      pattern="[0-9]{9}"
+                      minlength="9"
+                      maxlength="9"
+                      placeholder="000000000"
+                      required
+                    >
+                  </div>
+
+                  <label class="check">
+                    <input id="delete-account-irreversible" type="checkbox" required>
+                    <span>
+                      Я понимаю, что удаление необратимо и текущая сессия будет
+                      завершена сразу после удаления.
+                    </span>
+                  </label>
+
+                  <div class="danger-actions">
+                    <button id="delete-account-cancel" class="button button-secondary" type="button">
+                      Отмена
+                    </button>
+                    <button id="delete-account-submit" class="button button-danger" type="submit">
+                      Удалить навсегда
+                    </button>
+                  </div>
+
+                  <output id="delete-account-message" class="message" aria-live="polite"></output>
+                </form>
+              </article>
+            </section>
+          </section>
+          <section class="view-panel hidden" data-view-panel="support">
+            <div class="page-heading">
+              <p class="section-label">Поддержка</p>
+              <h2>Помощь OmniCIO</h2>
+              <p>
+                Контакты, диагностическая информация и юридические документы
+                находятся в одном разделе.
+              </p>
+            </div>
+
+            <section class="support-grid">
+              <article class="support-hero">
+                <span class="support-hero-icon nav-icon-green">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-support"></use></svg>
+                </span>
+                <div>
+                  <p class="card-label">Связаться</p>
+                  <h3>Поддержка пользователя</h3>
+                  <p>Опишите проблему и укажите ID профиля. Не отправляйте API-токены, пароли и другие секреты.</p>
+                </div>
+                <a class="button button-primary support-mail" href="mailto:omnicioinfo@gmail.com?subject=OmniCIO%20Support">
+                  Написать в поддержку
+                </a>
+              </article>
+
+              <article class="settings-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Диагностика</p>
+                    <h3>Данные для обращения</h3>
+                  </div>
+                </header>
+                <dl class="info-list">
+                  <div><dt>ID профиля</dt><dd id="support-profile-id">000000000</dd></div>
+                  <div><dt>Версия</dt><dd>v<span data-app-version>__OMNICIO_VERSION__</span></dd></div>
+                  <div><dt>Сборка</dt><dd><span data-app-build>__OMNICIO_BUILD__</span></dd></div>
+                </dl>
+                <button id="copy-support-diagnostics" class="button button-secondary action-with-icon" type="button">
+                  <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg>
+                  <span>Скопировать диагностику</span>
+                </button>
+                <output id="support-copy-message" class="message" aria-live="polite"></output>
+              </article>
+
+              <article class="settings-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Документы</p>
+                    <h3>Правила и данные</h3>
+                  </div>
+                </header>
+                <div class="settings-menu-list">
+                  <a class="settings-menu-row" href="/legal/privacy.html" target="_blank" rel="noopener">
+                    <span class="setting-icon nav-icon-blue"><svg class="ui-icon" aria-hidden="true"><use href="#icon-doc"></use></svg></span>
+                    <span><strong>Политика обработки данных</strong><small>Какие данные и зачем обрабатывает OmniCIO</small></span>
+                    <span class="row-chevron" aria-hidden="true">↗</span>
+                  </a>
+                  <a class="settings-menu-row" href="/legal/consent.html" target="_blank" rel="noopener">
+                    <span class="setting-icon nav-icon-violet"><svg class="ui-icon" aria-hidden="true"><use href="#icon-shield"></use></svg></span>
+                    <span><strong>Согласие на обработку ПД</strong><small>Отдельное согласие пользователя</small></span>
+                    <span class="row-chevron" aria-hidden="true">↗</span>
+                  </a>
+                  <a class="settings-menu-row" href="/legal/terms.html" target="_blank" rel="noopener">
+                    <span class="setting-icon nav-icon-gray"><svg class="ui-icon" aria-hidden="true"><use href="#icon-info"></use></svg></span>
+                    <span><strong>Пользовательские правила</strong><small>Условия использования OmniCIO</small></span>
+                    <span class="row-chevron" aria-hidden="true">↗</span>
+                  </a>
+                </div>
+              </article>
+            </section>
+          </section>
+
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <script src="/version.js?build=__OMNICIO_BUILD__" defer></script>
+  <script src="/assets/app.js?build=__OMNICIO_BUILD__" defer></script>
+</body>
+</html>
