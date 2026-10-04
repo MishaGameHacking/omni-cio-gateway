@@ -118,6 +118,7 @@ class DeleteAccountBody(StrictRequestBody):
 
 
 class InvestmentProfileBody(StrictRequestBody):
+    expected_public_id: str = Field(pattern=r"^[0-9]{9}$")
     expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
     reserve_rub: Decimal = Field(ge=0, le=1_000_000_000_000, allow_inf_nan=False)
     planned_withdrawal_rub: Decimal = Field(
@@ -132,6 +133,7 @@ class InvestmentProfileBody(StrictRequestBody):
 
 
 class BalancingPolicyBody(StrictRequestBody):
+    expected_public_id: str = Field(pattern=r"^[0-9]{9}$")
     expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
     max_instrument_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     max_sector_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
@@ -916,7 +918,10 @@ def investment_profile(
     user = authenticated_user(request, session_token)
     profile = portfolio_store(request).current_profile(user.id)
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return {"profile": _profile_payload(profile) if profile is not None else None}
+    return {
+        "public_id": format_public_id(user.public_id),
+        "profile": _profile_payload(profile) if profile is not None else None,
+    }
 
 
 @app.put("/api/profile/investment")
@@ -934,6 +939,9 @@ def save_investment_profile(
             status_code=status.HTTP_409_CONFLICT,
             detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
+    # This is a stale-page precondition; only the session chooses the tenant.
+    if body.expected_public_id != format_public_id(user.public_id):
+        raise HTTPException(status_code=409, detail="settings_owner_conflict")
     profile = portfolio_store(request).save_profile(
         user.id,
         reserve_rub=body.reserve_rub,
@@ -958,7 +966,8 @@ def balancing_policy(
     policy = portfolio_store(request).current_balancing_policy(user.id)
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
-        "policy": _balancing_policy_payload(policy) if policy is not None else None
+        "public_id": format_public_id(user.public_id),
+        "policy": _balancing_policy_payload(policy) if policy is not None else None,
     }
 
 
@@ -977,6 +986,9 @@ def save_balancing_policy(
             status_code=status.HTTP_409_CONFLICT,
             detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
+    # This is a stale-page precondition; only the session chooses the tenant.
+    if body.expected_public_id != format_public_id(user.public_id):
+        raise HTTPException(status_code=409, detail="settings_owner_conflict")
     policy = portfolio_store(request).save_balancing_policy(
         user.id,
         BalancingPolicyInput(

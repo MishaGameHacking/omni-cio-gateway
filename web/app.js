@@ -5503,14 +5503,42 @@
         const result = await api(path, {method: "GET"});
         if (requestGeneration !== generation) return;
         if (!result || !(key in result)) throw new Error("Missing saved settings");
+        if (result.public_id !== currentProfileId) {
+          conflicted = true;
+          throw new Error("settings_owner_conflict");
+        }
         accept(result[key]);
       } catch (error) {
         if (requestGeneration !== generation) return;
         status.textContent = "Не удалось проверить сохранённую версию";
-        showMessage(message, "Проверьте соединение и нажмите «Загрузить сохранённую версию»."
-          + errorReference(error), true);
+        showMessage(message, error.message === "settings_owner_conflict"
+          ? "Аккаунт изменился в другой вкладке. Обновите страницу перед редактированием."
+          : "Проверьте соединение и нажмите «Загрузить сохранённую версию»."
+            + errorReference(error), true);
       } finally {
         if (requestGeneration === generation) { busy = false; saving = false; sync(); }
+      }
+    };
+    const showSaveFailure = (error) => {
+      status.textContent = "Изменения на экране не подтверждены";
+      if (error.status === 409 && error.message === "settings_version_conflict") {
+        conflicted = true;
+        showMessage(message, "Параметры уже изменены в другой вкладке или на другом устройстве. "
+          + "Ваш черновик остался на экране. Загрузите сохранённую версию перед новой правкой.", true);
+      } else if (error.status === 409 && error.message === "settings_owner_conflict") {
+        conflicted = true;
+        showMessage(message, "Аккаунт изменился в другой вкладке. "
+          + "Скопируйте нужные значения и обновите страницу перед редактированием.", true);
+      } else if (error.status === 409) {
+        showMessage(message, "Для сохранения нужно принять актуальные документы. "
+          + "Черновик останется здесь, пока вы не закроете страницу.", true);
+      } else if (error.status === 401) {
+        showMessage(message, "Сессия завершена. Скопируйте нужные значения перед повторным входом.", true);
+      } else if (error.status === 422) {
+        showMessage(message, "Проверьте допустимые значения. Сервер отклонил изменения.", true);
+      } else {
+        showMessage(message, "Сохранение не подтверждено. Ваши значения остались на экране. "
+          + "Повторите сохранение или загрузите сохранённую версию." + errorReference(error), true);
       }
     };
     const saveDraft = async (event) => {
@@ -5525,7 +5553,9 @@
       showMessage(message, "");
       try {
         const result = await api(path, {
-          method: "PUT", body: JSON.stringify({...payload(), expected_version: version}),
+          method: "PUT", body: JSON.stringify({
+            ...payload(), expected_version: version, expected_public_id: currentProfileId,
+          }),
         });
         if (requestGeneration !== generation) return;
         if (!result?.[key]) throw new Error("Missing save confirmation");
@@ -5533,22 +5563,7 @@
         showMessage(message, "Сохранение подтверждено. Параметры применены к вашему профилю.");
       } catch (error) {
         if (requestGeneration !== generation) return;
-        status.textContent = "Изменения на экране не подтверждены";
-        if (error.status === 409 && error.message === "settings_version_conflict") {
-          conflicted = true;
-          showMessage(message, "Параметры уже изменены в другой вкладке или на другом устройстве. "
-            + "Ваш черновик остался на экране. Загрузите сохранённую версию перед новой правкой.", true);
-        } else if (error.status === 409) {
-          showMessage(message, "Для сохранения нужно принять актуальные документы. "
-            + "Черновик останется здесь, пока вы не закроете страницу.", true);
-        } else if (error.status === 401) {
-          showMessage(message, "Сессия завершена. Скопируйте нужные значения перед повторным входом.", true);
-        } else if (error.status === 422) {
-          showMessage(message, "Проверьте допустимые значения. Сервер отклонил изменения.", true);
-        } else {
-          showMessage(message, "Сохранение не подтверждено. Ваши значения остались на экране. "
-            + "Повторите сохранение или загрузите сохранённую версию." + errorReference(error), true);
-        }
+        showSaveFailure(error);
       } finally {
         if (requestGeneration === generation) { busy = false; saving = false; sync(); }
       }
@@ -5561,6 +5576,8 @@
       conflicted = false;
       form.reset();
       render(null);
+      requiredElement(`#${prefix}-version`).textContent = "Проверяем";
+      requiredElement(`#${prefix}-created`).textContent = "Сохранённая версия ещё не получена";
       baseline = "";
       status.textContent = "Проверяем сохранённые параметры…";
       sync();
@@ -5617,7 +5634,6 @@
   window.addEventListener("beforeunload", (event) => {
     if (settingsEditors.some((editor) => editor.hasPending())) {
       event.preventDefault();
-      event.returnValue = "";
     }
   });
 

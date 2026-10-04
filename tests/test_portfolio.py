@@ -412,6 +412,7 @@ def test_investment_profile_http_is_private_and_uses_session_tenant() -> None:
         patch("omnicio.main.portfolio_store") as store,
     ):
         user.return_value.id = "server-user"
+        user.return_value.public_id = 901
         store.return_value.current_profile.return_value = profile
         response = TestClient(app).get(
             "/api/profile/investment?user_id=attacker",
@@ -425,7 +426,7 @@ def test_investment_profile_http_is_private_and_uses_session_tenant() -> None:
 
 def test_investment_profile_write_requires_origin_and_current_consent() -> None:
     payload = {
-        "expected_version": 0,
+        "expected_version": 0, "expected_public_id": "000000901",
         "reserve_rub": "100000",
         "planned_withdrawal_rub": "25000",
         "horizon_months": 60,
@@ -472,7 +473,7 @@ def test_investment_profile_rejects_non_finite_decimal_values() -> None:
     response = TestClient(app).put(
         "/api/profile/investment",
         json={
-            "expected_version": 0,
+            "expected_version": 0, "expected_public_id": "000000901",
             "reserve_rub": "NaN",
             "planned_withdrawal_rub": "0",
             "horizon_months": 12,
@@ -489,7 +490,7 @@ def test_investment_profile_rejects_unknown_json_fields_before_side_effects() ->
     response = TestClient(app).put(
         "/api/profile/investment",
         json={
-            "expected_version": 0,
+            "expected_version": 0, "expected_public_id": "000000901",
             "reserve_rub": "100000",
             "planned_withdrawal_rub": "0",
             "horizon_months": 12,
@@ -540,6 +541,7 @@ def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
         patch("omnicio.main.portfolio_store") as store,
     ):
         user.return_value.id = "server-user"
+        user.return_value.public_id = 901
         store.return_value.current_balancing_policy.return_value = policy
         response = TestClient(app).get(
             "/api/profile/balancing?user_id=attacker",
@@ -561,7 +563,7 @@ def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
 
 def test_balancing_policy_write_requires_origin_and_current_consent() -> None:
     payload = {
-        "expected_version": 0,
+        "expected_version": 0, "expected_public_id": "000000901",
         "max_instrument_percent": "20",
         "max_sector_percent": "30",
         "max_issuer_percent": "20",
@@ -619,7 +621,7 @@ def test_balancing_policy_rejects_non_finite_decimal_values() -> None:
     response = TestClient(app).put(
         "/api/profile/balancing",
         json={
-            "expected_version": 0,
+            "expected_version": 0, "expected_public_id": "000000901",
             "max_instrument_percent": "NaN",
             "max_sector_percent": "30",
             "max_issuer_percent": "20",

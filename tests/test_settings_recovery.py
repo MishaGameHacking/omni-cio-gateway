@@ -74,6 +74,7 @@ def test_settings_writes_require_version_and_session_owner(kind: str) -> None:
     payload = {
         key: str(value) if isinstance(value, Decimal) else value for key, value in values.items()
     }
+    payload["expected_public_id"] = "000000901"
     path = f"/api/profile/{kind}"
     database = Mock(spec=Database)
     database.has_legal_versions.return_value = True
@@ -101,7 +102,7 @@ def test_settings_writes_require_version_and_session_owner(kind: str) -> None:
             signed_in = TestClient(app, cookies={"omnicio_session": token})
             conflict = signed_in.put(
                 path + f"?user_id={B}",
-                json={**payload, "expected_version": 2},
+                json={**payload, "expected_version": 2, "expected_public_id": f"{owner.int:09d}"},
                 headers=headers,
             )
             assert conflict.status_code == 409
@@ -110,6 +111,14 @@ def test_settings_writes_require_version_and_session_owner(kind: str) -> None:
             assert writer.call_args.args[0] == owner
             assert writer.call_args.kwargs["expected_version"] == 2
         calls = writer.call_count
+        switched = TestClient(app, cookies={"omnicio_session": "b"}).put(
+            path,
+            json={**payload, "expected_version": 2},
+            headers=headers,
+        )
+        assert switched.status_code == 409
+        assert switched.json()["detail"] == "settings_owner_conflict"
+        assert writer.call_count == calls
         anonymous = TestClient(app).put(
             path,
             json={**payload, "expected_version": 2},
@@ -222,15 +231,16 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
                 (B,),
             )
             assert updated.rowcount == 0
-        with pytest.raises(psycopg.errors.InsufficientPrivilege), admin.transaction():
+        with admin.transaction():
             admin.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(A),))
-            admin.execute(
-                "INSERT INTO investment_profile_versions "
-                "(user_id,version,reserve_rub,planned_withdrawal_rub,horizon_months,"
-                "max_drawdown_percent,liquidity_horizon_days,allow_below_investment_grade) "
-                "VALUES (%s,99,0,0,12,10,7,false)",
-                (B,),
-            )
+            with pytest.raises(psycopg.errors.InsufficientPrivilege), admin.transaction():
+                admin.execute(
+                    "INSERT INTO investment_profile_versions "
+                    "(user_id,version,reserve_rub,planned_withdrawal_rub,horizon_months,"
+                    "max_drawdown_percent,liquidity_horizon_days,allow_below_investment_grade) "
+                    "VALUES (%s,99,0,0,12,10,7,false)",
+                    (B,),
+                )
     runtime_dsn = make_conninfo(dsn, user=role, password=password)
     with database_store(runtime_dsn) as (db, store):
         assert db.healthcheck()
@@ -246,7 +256,10 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
     not os.environ.get("OMNICIO_TEST_POSTGRES_BIN"),
     reason="the disposable PostgreSQL CI launcher supplies dump/restore binaries",
 )
-def test_dump_restore_preserves_settings_and_tenant_isolation(tmp_path: Path) -> None:
+def test_dump_restore_preserves_settings_and_tenant_isolation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     base = os.environ["OMNICIO_TEST_DATABASE_URL"]
     options = conninfo_to_dict(base)
     assert options["host"] == "127.0.0.1"
@@ -358,14 +371,18 @@ def test_dump_restore_preserves_settings_and_tenant_isolation(tmp_path: Path) ->
             subprocess.run([*restore, str(archive)], check=True, capture_output=True, timeout=90)
             _verify_restored(target_dsn, role, password, key, expected, guards)
             duration = round(time.monotonic() - started, 2)
+            report = (
+                f"Synthetic PostgreSQL 18 recovery: {len(expected)} tables, two isolated users, "
+                f"encrypted archive, truncated-restore rollback, {duration}s. "
+                "This is not a production-backup recovery proof."
+            )
+            with capsys.disabled():
+                print(report)
             summary = os.environ.get("GITHUB_STEP_SUMMARY")
             if summary:
                 with Path(summary).open("a", encoding="utf-8") as output:
-                    output.write(
-                        f"\n- Synthetic PostgreSQL 18 recovery: {len(expected)} tables, "
-                        f"two isolated users, encrypted archive, truncated-restore rollback, "
-                        f"{duration}s. This is not a production-backup recovery proof.\n"
-                    )
+                    output.write(f"\n- {report}\n")
+
         finally:
             for name in reversed(created):
                 control.execute(
