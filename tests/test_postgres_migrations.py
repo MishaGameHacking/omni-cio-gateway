@@ -703,6 +703,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 material_current=True,
                 now=created_at + timedelta(minutes=1),
             )
+            replay_at = created_at + timedelta(minutes=2)
             with pytest.raises(
                 ProposalStateError,
                 match="proposal_already_decided",
@@ -717,7 +718,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                     user_reason="",
                     deferred_until=None,
                     material_current=True,
-                    now=created_at + timedelta(minutes=2),
+                    now=replay_at,
                 )
 
             stale_material = store.create_proposal(
