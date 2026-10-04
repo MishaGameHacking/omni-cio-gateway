@@ -1038,8 +1038,9 @@ class AuthAppDeployTests(unittest.TestCase):
             ),
             2,
         )
-        self.assertIn("const displayedPeriod = (", script)
+        self.assertIn("const displayedPeriod = displayedInstrumentMarketPeriod(instrumentUid);", script)
         self.assertIn("instrumentMarketPeriod = displayedPeriod;", script)
+        self.assertNotIn('role="group"', page)
         self.assertIn("syncInstrumentMarketControls();", script)
         self.assertIn('instrumentMarketScrubber.addEventListener("input"', script)
         self.assertIn("Number.parseInt(instrumentMarketScrubber.value, 10)", script)
