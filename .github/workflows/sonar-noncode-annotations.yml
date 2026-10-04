@@ -1,0 +1,29 @@
+name: Sonar noncode annotations
+
+on:
+  push:
+    branches:
+      - diagnostic/sonar-main-noncode
+    paths:
+      - ".github/workflows/sonar-noncode-annotations.yml"
+
+permissions:
+  contents: read
+  checks: read
+
+jobs:
+  annotations:
+    name: Read noncode Sonar annotations
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Read Sonar annotations
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          curl.exe --fail --silent --show-error
+          -H "Accept: application/vnd.github+json"
+          -H "Authorization: Bearer %GH_TOKEN%"
+          -H "X-GitHub-Api-Version: 2022-11-28"
+          "https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/check-runs/111378522477/annotations?per_page=100"
