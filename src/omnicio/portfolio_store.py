@@ -169,6 +169,65 @@ class BrokerSyncState:
     updated_at: datetime
 
 
+def _validate_proposal_decision_input(
+    *,
+    expected_hash: bytes,
+    session_digest: bytes,
+    action: Literal["confirmed", "rejected", "deferred"],
+    user_reason: str,
+    deferred_until: datetime | None,
+    now: datetime,
+) -> str:
+    if now.tzinfo is None:
+        raise ValueError("proposal decision time must be timezone-aware")
+    if len(expected_hash) != 32:
+        raise ValueError("proposal hash must be SHA-256")
+    if len(session_digest) != 32:
+        raise ValueError("proposal session digest must be SHA-256")
+
+    clean_reason = user_reason.strip()
+    if len(clean_reason) > 500:
+        raise ValueError("proposal decision reason is too long")
+    if action == "rejected" and not clean_reason:
+        raise ValueError("proposal rejection reason is required")
+
+    if action == "deferred":
+        if deferred_until is None or deferred_until.tzinfo is None:
+            raise ValueError("proposal defer time must be timezone-aware")
+        if deferred_until.astimezone(UTC) <= now.astimezone(UTC):
+            raise ValueError("proposal defer time must be in the future")
+    elif deferred_until is not None:
+        raise ValueError("proposal defer time is only valid for defer")
+    return clean_reason
+
+
+def _proposal_decision_outcome(
+    cur: Any,
+    *,
+    proposal: PortfolioProposalRecord,
+    user_id: UUID,
+    action: Literal["confirmed", "rejected", "deferred"],
+    material_current: bool,
+    now: datetime,
+) -> tuple[ProposalAction, str]:
+    if proposal.expires_at <= now.astimezone(UTC):
+        return "expired", "proposal_expired"
+    if not material_current:
+        return "revoked", "proposal_material_changed"
+    try:
+        _require_current_proposal_sources(
+            cur,
+            user_id=user_id,
+            snapshot_id=proposal.source_snapshot_id,
+            account_id=proposal.account_id,
+            profile_version=proposal.profile_version,
+            policy_version=proposal.policy_version,
+        )
+    except ProposalStateError:
+        return "revoked", "proposal_sources_changed"
+    return action, "user_decision"
+
+
 class PortfolioStore:
     """Store immutable observation facts behind explicit tenant context."""
 
@@ -817,24 +876,14 @@ class PortfolioStore:
         material_current: bool,
         now: datetime,
     ) -> tuple[PortfolioProposalRecord, PortfolioProposalActionRecord]:
-        if now.tzinfo is None:
-            raise ValueError("proposal decision time must be timezone-aware")
-        if len(expected_hash) != 32:
-            raise ValueError("proposal hash must be SHA-256")
-        if len(session_digest) != 32:
-            raise ValueError("proposal session digest must be SHA-256")
-        clean_reason = user_reason.strip()
-        if len(clean_reason) > 500:
-            raise ValueError("proposal decision reason is too long")
-        if action == "rejected" and not clean_reason:
-            raise ValueError("proposal rejection reason is required")
-        if action == "deferred":
-            if deferred_until is None or deferred_until.tzinfo is None:
-                raise ValueError("proposal defer time must be timezone-aware")
-            if deferred_until.astimezone(UTC) <= now.astimezone(UTC):
-                raise ValueError("proposal defer time must be in the future")
-        elif deferred_until is not None:
-            raise ValueError("proposal defer time is only valid for defer")
+        clean_reason = _validate_proposal_decision_input(
+            expected_hash=expected_hash,
+            session_digest=session_digest,
+            action=action,
+            user_reason=user_reason,
+            deferred_until=deferred_until,
+            now=now,
+        )
         with (
             self.database.pool.connection() as conn,
             conn.transaction(),
@@ -894,30 +943,14 @@ class PortfolioStore:
             if existing is not None:
                 raise ProposalStateError("proposal_already_decided")
 
-            decided_action: ProposalAction
-            reason: str
-            if proposal.expires_at <= now.astimezone(UTC):
-                decided_action = "expired"
-                reason = "proposal_expired"
-            elif not material_current:
-                decided_action = "revoked"
-                reason = "proposal_material_changed"
-            else:
-                try:
-                    _require_current_proposal_sources(
-                        cur,
-                        user_id=user_id,
-                        snapshot_id=proposal.source_snapshot_id,
-                        account_id=proposal.account_id,
-                        profile_version=proposal.profile_version,
-                        policy_version=proposal.policy_version,
-                    )
-                except ProposalStateError:
-                    decided_action = "revoked"
-                    reason = "proposal_sources_changed"
-                else:
-                    decided_action = action
-                    reason = "user_decision"
+            decided_action, reason = _proposal_decision_outcome(
+                cur,
+                proposal=proposal,
+                user_id=user_id,
+                action=action,
+                material_current=material_current,
+                now=now,
+            )
 
             cur.execute(
                 """
