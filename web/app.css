@@ -446,6 +446,7 @@ body[data-theme="dark"] .button-danger {
 }
 
 .message {
+  display: block;
   min-height: 24px;
   margin: 12px 0 0;
   color: var(--text-muted);
@@ -666,10 +667,10 @@ body[data-theme="dark"] .sidebar {
 }
 
 .nav-icon-blue { background: #e8f0ff; color: #2b63e8; }
-.nav-icon-green { background: #e8f7f1; color: #15835e; }
-.nav-icon-violet { background: #f0eaff; color: #7655d5; }
-.nav-icon-orange { background: #fff0df; color: #b5630a; }
-.nav-icon-cyan { background: #e4f6fb; color: #1686a8; }
+.nav-icon-green { background: #e8f7f1; color: #116b4e; }
+.nav-icon-violet { background: #f0eaff; color: #6844c5; }
+.nav-icon-orange { background: #fff0df; color: #945108; }
+.nav-icon-cyan { background: #e4f6fb; color: #0f6f8a; }
 .nav-icon-gray { background: #edf0f4; color: #4f5e72; }
 
 body[data-theme="dark"] .nav-icon-blue { background: #182a42; color: #7db7ff; }
@@ -1304,6 +1305,8 @@ textarea:disabled {
 }
 
 .segmented-control {
+  margin: 0;
+  min-inline-size: 0;
   padding: 3px;
   display: inline-grid;
   grid-template-columns: repeat(3, 1fr);
