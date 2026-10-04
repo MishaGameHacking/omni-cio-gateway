@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from html import unescape
+from html.parser import HTMLParser
 import threading
 import time
 import urllib.error
@@ -20,6 +22,7 @@ _CBR_DAILY_INFO_URL = "https://www.cbr.ru/DailyInfoWebServ/DailyInfo.asmx"
 _CBR_KEY_RATE_ACTION = "http://web.cbr.ru/KeyRateXML"
 _MOSCOW = ZoneInfo("Europe/Moscow")
 _INDICATOR_CURRENCIES = frozenset({"USD", "EUR"})
+_MAX_PUBLIC_RESPONSE_BYTES = 512_000
 
 
 class CBRUnavailable(RuntimeError):
@@ -99,10 +102,7 @@ class CBRClient:
                 raise CBRUnavailable("Bank of Russia indicator retry is pending")
 
             try:
-                rates = self._fetch_currency_rates(
-                    effective_on=None,
-                    codes=_INDICATOR_CURRENCIES,
-                )
+                rates = self._fetch_latest_indicator_rates()
                 key_rate = self._fetch_key_rate()
             except CBRUnavailable:
                 self._indicator_retry_after = now + self.failure_retry_seconds
@@ -187,20 +187,6 @@ class CBRClient:
             return rate
 
     def _fetch_usd_rub(self, effective_on: date | None) -> CBRRate:
-        return self._fetch_currency_rates(
-            effective_on=effective_on,
-            codes=frozenset({"USD"}),
-        )["USD"]
-
-    def _fetch_currency_rates(
-        self,
-        *,
-        effective_on: date | None,
-        codes: frozenset[str],
-    ) -> dict[str, CBRRate]:
-        if not codes or not codes.issubset(_INDICATOR_CURRENCIES):
-            raise CBRUnavailable("Unsupported Bank of Russia currency request")
-
         url = _CBR_DAILY_URL
         if effective_on is not None:
             url = f"{url}?date_req={effective_on.strftime('%d/%m/%Y')}"
@@ -228,14 +214,12 @@ class CBRClient:
         try:
             root = ET.fromstring(payload)
         except ET.ParseError as exc:
-            raise CBRUnavailable("Bank of Russia returned invalid daily-rate XML") from exc
+            raise CBRUnavailable("Bank of Russia returned invalid XML") from exc
 
         effective_date = _parse_effective_date(root.attrib.get("Date", ""))
-        fetched_at = datetime.now(UTC)
-        result: dict[str, CBRRate] = {}
         for valute in root.findall("Valute"):
             char_code = (valute.findtext("CharCode") or "").strip().upper()
-            if char_code not in codes:
+            if char_code != "USD":
                 continue
 
             nominal_text = (valute.findtext("Nominal") or "").strip()
@@ -244,30 +228,52 @@ class CBRClient:
                 nominal = int(nominal_text)
                 value = Decimal(value_text)
             except (InvalidOperation, ValueError) as exc:
-                raise CBRUnavailable(
-                    f"Bank of Russia returned invalid {char_code} rate"
-                ) from exc
-            if nominal <= 0 or not value.is_finite() or value <= 0:
-                raise CBRUnavailable(
-                    f"Bank of Russia returned invalid {char_code} value"
-                )
+                raise CBRUnavailable("Bank of Russia returned invalid USD rate") from exc
+            if nominal <= 0:
+                raise CBRUnavailable("Bank of Russia returned invalid USD nominal")
 
             per_unit = value / Decimal(nominal)
-            result[char_code] = CBRRate(
+            return CBRRate(
                 currency="RUB",
                 value=format(per_unit.normalize(), "f"),
                 nominal=1,
                 effective_date=effective_date,
-                fetched_at=fetched_at,
+                fetched_at=datetime.now(UTC),
             )
 
-        missing = codes.difference(result)
-        if missing:
-            missing_codes = ",".join(sorted(missing))
-            raise CBRUnavailable(
-                f"Bank of Russia response is missing currency rate: {missing_codes}"
+        raise CBRUnavailable("Bank of Russia response has no USD rate")
+
+
+    def _fetch_latest_indicator_rates(self) -> dict[str, CBRRate]:
+        request = urllib.request.Request(
+            "https://www.cbr.ru/scripts/XML_daily.asp",
+            headers={
+                "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.1",
+                "User-Agent": "OmniCIO-Personal/1.0",
+            },
+        )
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=self.timeout_seconds,
+            ) as response:
+                payload = response.read(_MAX_PUBLIC_RESPONSE_BYTES + 1)
+        except (urllib.error.URLError, TimeoutError) as exc:
+            logger.warning(
+                "Bank of Russia indicator currency request failed reason=%s",
+                type(getattr(exc, "reason", exc)).__name__,
             )
-        return result
+            raise CBRUnavailable("Bank of Russia currency indicators unavailable") from exc
+        if len(payload) > _MAX_PUBLIC_RESPONSE_BYTES:
+            raise CBRUnavailable("Bank of Russia currency response is too large")
+
+        parser = _CurrencyIndicatorParser()
+        try:
+            parser.feed(payload.decode("windows-1251"))
+            parser.close()
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise CBRUnavailable("Bank of Russia returned invalid currency data") from exc
+        return parser.result()
 
     def _fetch_key_rate(self) -> CBRKeyRate:
         target = datetime.now(_MOSCOW).date()
@@ -285,13 +291,13 @@ class CBRClient:
 </soap:Envelope>
 """.encode()
         request = urllib.request.Request(
-            _CBR_DAILY_INFO_URL,
+            "https://www.cbr.ru/DailyInfoWebServ/DailyInfo.asmx",
             data=body,
             method="POST",
             headers={
                 "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.1",
                 "Content-Type": "text/xml; charset=utf-8",
-                "SOAPAction": f'"{_CBR_KEY_RATE_ACTION}"',
+                "SOAPAction": '"http://web.cbr.ru/KeyRateXML"',
                 "User-Agent": "OmniCIO-Personal/1.0",
             },
         )
@@ -300,20 +306,21 @@ class CBRClient:
                 request,
                 timeout=self.timeout_seconds,
             ) as response:
-                payload = response.read()
+                payload = response.read(_MAX_PUBLIC_RESPONSE_BYTES + 1)
         except (urllib.error.URLError, TimeoutError) as exc:
             logger.warning(
                 "Bank of Russia key-rate request failed reason=%s",
                 type(getattr(exc, "reason", exc)).__name__,
             )
             raise CBRUnavailable("Bank of Russia key rate unavailable") from exc
+        if len(payload) > _MAX_PUBLIC_RESPONSE_BYTES:
+            raise CBRUnavailable("Bank of Russia key-rate response is too large")
 
         try:
-            root = ET.fromstring(payload)
-        except ET.ParseError as exc:
-            raise CBRUnavailable("Bank of Russia returned invalid key-rate XML") from exc
-
-        candidates = _parse_key_rate_candidates(root)
+            document = payload.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise CBRUnavailable("Bank of Russia returned invalid key-rate encoding") from exc
+        candidates = _parse_key_rate_document(document)
         eligible = [item for item in candidates if item[0] <= target]
         if not eligible:
             raise CBRUnavailable("Bank of Russia response has no current key rate")
@@ -324,55 +331,187 @@ class CBRClient:
             fetched_at=datetime.now(UTC),
         )
 
-def _parse_key_rate_candidates(root: ET.Element) -> list[tuple[date, str]]:
-    candidates = _key_rate_candidates_from_root(root)
-    if candidates:
-        return candidates
 
-    result = next(
-        (
-            element
-            for element in root.iter()
-            if _local_name(element.tag) == "KeyRateXMLResult"
-        ),
-        None,
-    )
-    embedded = (result.text or "").strip() if result is not None else ""
-    if not embedded.startswith("<"):
-        return []
-    try:
-        embedded_root = ET.fromstring(embedded)
-    except ET.ParseError as exc:
-        raise CBRUnavailable("Bank of Russia returned invalid embedded key-rate XML") from exc
-    return _key_rate_candidates_from_root(embedded_root)
+class _CurrencyIndicatorParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.effective_date = ""
+        self._in_valute = False
+        self._field: str | None = None
+        self._current: dict[str, str] = {}
+        self._rows: list[dict[str, str]] = []
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        if tag == "valcurs":
+            attributes = dict(attrs)
+            self.effective_date = (attributes.get("date") or "").strip()
+        elif tag == "valute":
+            if self._in_valute:
+                raise ValueError("nested Valute element")
+            self._in_valute = True
+            self._current = {}
+        elif self._in_valute and tag in {"charcode", "nominal", "value"}:
+            self._field = tag
+
+    def handle_data(self, data: str) -> None:
+        if self._in_valute and self._field is not None:
+            self._current[self._field] = self._current.get(self._field, "") + data
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == self._field:
+            self._field = None
+        if tag == "valute":
+            if not self._in_valute:
+                raise ValueError("unexpected Valute end")
+            self._rows.append(self._current)
+            self._current = {}
+            self._in_valute = False
+            self._field = None
+
+    def result(self) -> dict[str, CBRRate]:
+        effective_date = _parse_effective_date(self.effective_date)
+        fetched_at = datetime.now(UTC)
+        result: dict[str, CBRRate] = {}
+        for row in self._rows:
+            char_code = row.get("charcode", "").strip().upper()
+            if char_code not in _INDICATOR_CURRENCIES:
+                continue
+            if char_code in result:
+                raise CBRUnavailable(
+                    f"Bank of Russia returned duplicate {char_code} rate"
+                )
+            nominal_text = row.get("nominal", "").strip()
+            value_text = row.get("value", "").strip().replace(",", ".")
+            try:
+                nominal = int(nominal_text)
+                value = Decimal(value_text)
+            except (InvalidOperation, ValueError) as exc:
+                raise CBRUnavailable(
+                    f"Bank of Russia returned invalid {char_code} rate"
+                ) from exc
+            if nominal <= 0 or not value.is_finite() or value <= 0:
+                raise CBRUnavailable(
+                    f"Bank of Russia returned invalid {char_code} value"
+                )
+            result[char_code] = CBRRate(
+                currency="RUB",
+                value=format((value / Decimal(nominal)).normalize(), "f"),
+                nominal=1,
+                effective_date=effective_date,
+                fetched_at=fetched_at,
+            )
+
+        missing = _INDICATOR_CURRENCIES.difference(result)
+        if missing:
+            raise CBRUnavailable(
+                "Bank of Russia response is missing currency rate: "
+                + ",".join(sorted(missing))
+            )
+        return result
 
 
-def _key_rate_candidates_from_root(root: ET.Element) -> list[tuple[date, str]]:
-    result: list[tuple[date, str]] = []
-    for row in root.iter():
-        if _local_name(row.tag) != "KR":
-            continue
-        values = {
-            _local_name(child.tag): (child.text or "").strip()
-            for child in row
-        }
-        date_text = values.get("DT", "")
-        rate_text = values.get("Rate", "").replace(",", ".")
+class _KeyRateParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._in_row = False
+        self._field: str | None = None
+        self._current: dict[str, str] = {}
+        self.rows: list[tuple[date, str]] = []
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        del attrs
+        if tag == "kr":
+            if self._in_row:
+                raise ValueError("nested key-rate row")
+            self._in_row = True
+            self._current = {}
+        elif self._in_row and tag in {"dt", "rate"}:
+            self._field = tag
+
+    def handle_data(self, data: str) -> None:
+        if self._in_row and self._field is not None:
+            self._current[self._field] = self._current.get(self._field, "") + data
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == self._field:
+            self._field = None
+        if tag != "kr":
+            return
+        if not self._in_row:
+            raise ValueError("unexpected key-rate row end")
+        date_text = self._current.get("dt", "").strip()
+        rate_text = self._current.get("rate", "").strip().replace(",", ".")
         try:
             effective_date = datetime.fromisoformat(
                 date_text.replace("Z", "+00:00")
             ).date()
             rate = Decimal(rate_text)
         except (InvalidOperation, ValueError) as exc:
-            raise CBRUnavailable("Bank of Russia returned invalid key rate") from exc
+            raise ValueError("invalid key-rate row") from exc
         if not rate.is_finite() or rate <= 0:
-            raise CBRUnavailable("Bank of Russia returned invalid key-rate value")
-        result.append((effective_date, format(rate.normalize(), "f")))
-    return result
+            raise ValueError("invalid key-rate value")
+        self.rows.append((effective_date, format(rate.normalize(), "f")))
+        self._current = {}
+        self._in_row = False
+        self._field = None
 
 
-def _local_name(tag: str) -> str:
-    return tag.rsplit("}", 1)[-1]
+class _SoapResultParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._capture = False
+        self.parts: list[str] = []
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        del attrs
+        if tag == "keyratexmlresult":
+            self._capture = True
+
+    def handle_data(self, data: str) -> None:
+        if self._capture:
+            self.parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "keyratexmlresult":
+            self._capture = False
+
+
+def _parse_key_rate_document(document: str) -> list[tuple[date, str]]:
+    direct = _KeyRateParser()
+    try:
+        direct.feed(document)
+        direct.close()
+    except ValueError as exc:
+        raise CBRUnavailable("Bank of Russia returned invalid key-rate data") from exc
+    if direct.rows:
+        return direct.rows
+
+    result = _SoapResultParser()
+    result.feed(document)
+    result.close()
+    embedded = unescape("".join(result.parts)).strip()
+    if not embedded:
+        return []
+
+    nested = _KeyRateParser()
+    try:
+        nested.feed(embedded)
+        nested.close()
+    except ValueError as exc:
+        raise CBRUnavailable("Bank of Russia returned invalid embedded key-rate data") from exc
+    return nested.rows
 
 
 def _parse_effective_date(value: str) -> date:
