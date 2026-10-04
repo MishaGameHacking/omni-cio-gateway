@@ -306,6 +306,7 @@ class FakeCBR:
                 fetched_at=fetched_at,
             ),
             fetched_at=fetched_at,
+            freshness="fresh",
         )
 
 
@@ -318,6 +319,7 @@ def test_market_service_maps_broker_independent_cbr_indicators() -> None:
     snapshot = service.cbr_indicators()
 
     assert snapshot.source == "Bank of Russia"
+    assert snapshot.freshness == "fresh"
     assert snapshot.key_rate.code == "KEY_RATE"
     assert snapshot.key_rate.value == "14"
     assert snapshot.key_rate.unit == "percent"
