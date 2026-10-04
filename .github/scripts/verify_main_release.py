@@ -122,7 +122,7 @@ def require_success(row: dict[str, Any], label: str) -> None:
 
 
 def sonar_summary_count(summary: str, label: str) -> int:
-    match = re.search(rf"\\[(\\d+) {re.escape(label)}s?\\]", summary)
+    match = re.search(rf"\[(\d+) {re.escape(label)}s?\]", summary)
     if match is None:
         raise ReleaseBlocked(f"SonarCloud summary is missing {label} count")
     return int(match.group(1))
