@@ -375,7 +375,7 @@
   const api = async (path, options = {}) => {
     const response = await fetch(apiPath(path), {
       credentials: "same-origin",
-      headers: {"Content-Type": "application/json", ...(options.headers || {})},
+      headers: {"Content-Type": "application/json", ...options.headers},
       ...options,
     });
     const body = response.status === 204 ? null : await response.json().catch(() => null);
@@ -447,8 +447,8 @@
   };
 
   const renderAccessMode = (config) => {
-    const registrationOpen = config && config.registration_enabled === true;
-    const capacity = Number(config && config.registration_max_users) || 1;
+    const registrationOpen = config?.registration_enabled === true;
+    const capacity = Number(config?.registration_max_users) || 1;
     accessEyebrow.textContent = "Персональный инвестиционный кабинет";
     accessLead.textContent = registrationOpen
       ? `Новый пользователь, прошедший VK ID, занимает один из ${capacity} доступных пользовательских слотов. Данные и брокерские подключения изолированы по профилям.`
@@ -2258,8 +2258,18 @@
     return items;
   };
 
+  const attentionMarkerText = (severity) => {
+    if (severity === "error") {
+      return "×";
+    }
+    if (severity === "warning") {
+      return "!";
+    }
+    return "i";
+  };
+
   const renderHomeAttention = () => {
-    const pending = Object.values(homeAttentionBuckets).some((value) => value === null);
+    const pending = Object.values(homeAttentionBuckets).includes(null);
     const items = Object.values(homeAttentionBuckets)
       .filter(Array.isArray)
       .flat()
@@ -2293,7 +2303,7 @@
       const marker = document.createElement("span");
       marker.className = "attention-marker";
       marker.setAttribute("aria-hidden", "true");
-      marker.textContent = item.severity === "error" ? "×" : item.severity === "warning" ? "!" : "i";
+      marker.textContent = attentionMarkerText(item.severity);
 
       const copy = document.createElement("div");
       const title = document.createElement("strong");
