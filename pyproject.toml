@@ -20,7 +20,6 @@ dev = [
   "httpx>=0.27,<1",
   "mypy>=1.13,<2",
   "pytest>=8,<10",
-  "pgserver==0.1.4; sys_platform == 'win32' and python_version == '3.12'",
   "ruff>=0.8,<1",
   "uv>=0.12,<0.13",
 ]

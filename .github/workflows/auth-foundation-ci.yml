@@ -47,7 +47,7 @@ jobs:
       matrix:
         include:
           - name: Ruff
-            command: '"%OMNICIO_PYTHON%" -m ruff check src tests .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py .github/scripts/test_with_postgres.py'
+            command: '"%OMNICIO_PYTHON%" -m ruff check src tests .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py .github/scripts/test_with_postgres.py .github/scripts/report_sonar_annotations.py'
           - name: Mypy
             command: '"%OMNICIO_PYTHON%" -m mypy src .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py'
           - name: Release gate tests
@@ -80,20 +80,8 @@ jobs:
 
       - name: Report Sonar annotations for this exact source
         if: matrix.name == 'Release gate tests'
-        shell: powershell
+        shell: cmd
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if ($env:SOURCE_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Invalid source SHA' }
-          $base = 'https://api.github.com/repos/MishaGameHacking/omni-cio-gateway'
-          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
-          $checks = Invoke-RestMethod -Uri "$base/commits/$env:SOURCE_SHA/check-runs?per_page=100" -Headers $headers
-          $sonar = $checks.check_runs | Where-Object { $_.name -eq 'SonarCloud Code Analysis' } | Sort-Object id -Descending | Select-Object -First 1
-          if (-not $sonar) { Write-Output 'Sonar analysis is not available yet'; exit 0 }
-          Write-Output $sonar.output.summary
-          if ($sonar.output.annotations_count -gt 0) {
-            $items = Invoke-RestMethod -Uri "$base/check-runs/$($sonar.id)/annotations?per_page=100" -Headers $headers
-            $items | Select-Object path, start_line, end_line, title, message | ConvertTo-Json -Depth 4
-          }
+        run: '"%OMNICIO_PYTHON%" .github/scripts/report_sonar_annotations.py'

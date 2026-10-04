@@ -14,35 +14,36 @@ SCRIPT = Path(__file__).resolve().parents[1] / ".github/scripts/test_with_postgr
 
 
 @pytest.mark.parametrize("times_out", [False, True])
-def test_ci_uses_own_database_and_always_stops_it(times_out: bool) -> None:
+def test_ci_uses_own_database_and_always_stops_it(tmp_path: Path, times_out: bool) -> None:
     spec = importlib.util.spec_from_file_location("ci_postgres_runner", SCRIPT)
     assert spec is not None and spec.loader is not None
     runner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runner)
-    server = MagicMock()
-    server.get_uri.side_effect = lambda database=None: (
-        "postgresql://localhost/" + (database or "postgres")
-    )
-    factory = MagicMock(return_value=server)
-    process = MagicMock(return_value=SimpleNamespace(returncode=0))
-    if times_out:
-        process.side_effect = subprocess.TimeoutExpired("pytest", 600)
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "postmaster.pid").write_text("fake", encoding="utf-8")
+
+    def run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        if "pytest" in command and times_out:
+            raise subprocess.TimeoutExpired(command, 600)
+        return SimpleNamespace(returncode=0)
+
+    process = MagicMock(side_effect=run)
     with (
-        patch.object(runner, "sys", SimpleNamespace(platform="win32", executable="python")),
-        patch.dict("sys.modules", {"pgserver": SimpleNamespace(get_server=factory)}),
         patch.dict("os.environ", {"OMNICIO_TEST_DATABASE_URL": "must-not-be-used"}),
+        patch.object(runner, "available_port", return_value=54321),
         patch.object(runner.psycopg, "connect") as connect,
         patch.object(runner.subprocess, "run", process),
     ):
         if times_out:
             with pytest.raises(subprocess.TimeoutExpired):
-                runner.main()
+                runner.run_suite(tmp_path / "bin", tmp_path)
         else:
-            assert runner.main() == 0
+            assert runner.run_suite(tmp_path / "bin", tmp_path) == 0
 
-    assert connect.call_args.args == ("postgresql://localhost/postgres",)
-    assert process.call_args.kwargs["env"]["OMNICIO_TEST_DATABASE_URL"] == (
-        "postgresql://localhost/omnicio_test"
+    assert connect.call_args.args == ("postgresql://postgres@127.0.0.1:54321/postgres",)
+    invocation = next(call for call in process.call_args_list if "pytest" in call.args[0])
+    assert invocation.kwargs["env"]["OMNICIO_TEST_DATABASE_URL"] == (
+        "postgresql://postgres@127.0.0.1:54321/omnicio_test"
     )
-    assert "omnicio-ci-postgres-" in str(factory.call_args.args[0])
-    server.cleanup.assert_called_once_with()
+    assert process.call_args.args[0][-3:] == ["-m", "fast", "stop"]

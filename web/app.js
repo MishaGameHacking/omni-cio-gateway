@@ -5322,6 +5322,8 @@
       setStateBadge(portfolioStateBadge, "Загружаем", "");
       updateOwlState(null);
       updateGuard(null);
+    } else {
+      renderPortfolioDataStatus();
     }
   };
 
