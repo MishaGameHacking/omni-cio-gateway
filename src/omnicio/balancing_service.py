@@ -1531,18 +1531,15 @@ def _holding(row: dict[str, object]) -> Holding:
     )
 
 
-def _candidate(
+def _candidate_access_reasons(
     row: dict[str, object],
-    *,
     context: dict[str, object],
-    observed_at: datetime,
-) -> Candidate:
-    asset_class = str(row.get("instrument_type") or "")
-    issuer_id = str(row.get("issuer_id") or "")
-    group_id = str(row.get("group_id") or "")
-    issuer_country = str(row.get("issuer_country_code") or "").upper()
-    access_reasons: list[str] = []
-
+    *,
+    asset_class: str,
+    issuer_id: str,
+    group_id: str,
+) -> tuple[list[str], tuple[str, ...]]:
+    reasons: list[str] = []
     required_tests = row.get("required_tests")
     pending_tests = (
         tuple(str(item) for item in required_tests)
@@ -1563,29 +1560,36 @@ def _candidate(
     )
 
     if row.get("for_qual_investor") is True and qualified is not True:
-        access_reasons.append("qualification_required")
+        reasons.append("qualification_required")
     if "IIS" in account_type and row.get("for_iis") is not True:
-        access_reasons.append("iis_not_allowed")
-    if not issuer_id or issuer_country != "RU":
-        access_reasons.append("issuer_identity_not_verified")
+        reasons.append("iis_not_allowed")
+    if not issuer_id or str(row.get("issuer_country_code") or "").upper() != "RU":
+        reasons.append("issuer_identity_not_verified")
     if not group_id:
-        access_reasons.append("issuer_group_not_verified")
+        reasons.append("issuer_group_not_verified")
     if asset_class == "etf":
-        access_reasons.append("fund_look_through_missing")
+        reasons.append("fund_look_through_missing")
+    return reasons, pending_tests
 
+
+def _candidate_evidence_reasons(
+    row: dict[str, object],
+    *,
+    asset_class: str,
+    observed_at: datetime,
+) -> tuple[list[str], int | None, bool]:
+    reasons: list[str] = []
     catalog_time = _datetime(row.get("provider_retrieved_at"))
     access_time = _datetime(row.get("access_observed_at"))
     if not _fresh(catalog_time, observed_at):
-        access_reasons.append("catalog_stale")
+        reasons.append("catalog_stale")
     if not _fresh(access_time, observed_at):
-        access_reasons.append("account_access_stale")
-    access_reasons.append("candidate_risk_assessment_missing")
-    access_reasons.append("quote_missing")
+        reasons.append("account_access_stale")
+    reasons.extend(("candidate_risk_assessment_missing", "quote_missing"))
     if asset_class in {"share", "etf"}:
-        access_reasons.append("expected_return_model_missing")
+        reasons.append("expected_return_model_missing")
     if asset_class == "bond":
-        access_reasons.append("bond_ytw_missing")
-        access_reasons.append("bond_duration_missing")
+        reasons.extend(("bond_ytw_missing", "bond_duration_missing"))
 
     maturity = _datetime(row.get("maturity_date"))
     term_months = _months_until(observed_at, maturity)
@@ -1596,18 +1600,43 @@ def _candidate(
         row.get("subordinated"),
     )
     structure_known = all(value is not None for value in structure_values)
-    structure_supported = (
-        structure_known
-        and not any(value is True for value in structure_values)
+    structure_supported = structure_known and not any(
+        value is True for value in structure_values
     )
     if asset_class == "bond" and not structure_known:
-        access_reasons.append("bond_structure_missing")
+        reasons.append("bond_structure_missing")
 
+    liquidity = row.get("liquidity")
+    if liquidity is False:
+        reasons.append("provider_liquidity_flag_false")
+    elif liquidity is None:
+        reasons.append("provider_liquidity_flag_missing")
+    return reasons, term_months, structure_supported
+
+
+def _candidate(
+    row: dict[str, object],
+    *,
+    context: dict[str, object],
+    observed_at: datetime,
+) -> Candidate:
+    asset_class = str(row.get("instrument_type") or "")
+    issuer_id = str(row.get("issuer_id") or "")
+    group_id = str(row.get("group_id") or "")
+    access_reasons, pending_tests = _candidate_access_reasons(
+        row,
+        context,
+        asset_class=asset_class,
+        issuer_id=issuer_id,
+        group_id=group_id,
+    )
+    evidence_reasons, term_months, structure_supported = _candidate_evidence_reasons(
+        row,
+        asset_class=asset_class,
+        observed_at=observed_at,
+    )
+    access_reasons.extend(evidence_reasons)
     liquidity_days: int | None = None
-    if row.get("liquidity") is False:
-        access_reasons.append("provider_liquidity_flag_false")
-    elif row.get("liquidity") is None:
-        access_reasons.append("provider_liquidity_flag_missing")
 
     rating_bucket = "unknown" if asset_class == "bond" else "not_applicable"
     risk_state: RiskState = "data_missing"
