@@ -33,8 +33,10 @@ class FakeXmlResponse:
     def __exit__(self, *args: object) -> None:
         return None
 
-    def read(self) -> bytes:
-        return self.payload
+    def read(self, amount: int = -1) -> bytes:
+        if amount < 0:
+            return self.payload
+        return self.payload[:amount]
 
 
 def _cbr_xml(*, effective_date: str, value: str) -> bytes:
