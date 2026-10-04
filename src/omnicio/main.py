@@ -619,12 +619,17 @@ def instrument_market_snapshot(
             status_code=409,
             detail="stored T-Invest credential was rejected",
         ) from exc
+    except SecurityValueError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="instrument market data unavailable",
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
-    except (TBankUnavailable, BrokerConnectionError, SecurityValueError) as exc:
+    except (TBankUnavailable, BrokerConnectionError) as exc:
         raise HTTPException(
             status_code=503,
             detail="instrument market data unavailable",
@@ -675,6 +680,13 @@ async def instrument_market_stream(
                 retry_delay = 3
                 consecutive_failures = 0
                 stop_after_event = True
+            except SecurityValueError:
+                payload = {"state": "offline"}
+                event = "status"
+                delay = 0
+                retry_delay = 3
+                consecutive_failures = 0
+                stop_after_event = True
             except ValueError:
                 payload = {"state": "invalid"}
                 event = "status"
@@ -682,7 +694,7 @@ async def instrument_market_stream(
                 retry_delay = 3
                 consecutive_failures = 0
                 stop_after_event = True
-            except (TBankUnavailable, BrokerConnectionError, SecurityValueError):
+            except (TBankUnavailable, BrokerConnectionError):
                 consecutive_failures += 1
                 if consecutive_failures >= 6:
                     payload = {"state": "offline"}
