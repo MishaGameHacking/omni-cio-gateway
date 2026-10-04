@@ -693,9 +693,7 @@ async def _next_instrument_market_event(
             instrument_uid,
         )
     except (
-        BrokerNotConnected,
         TBankTokenRejected,
-        SecurityValueError,
         ValueError,
         TBankUnavailable,
         BrokerConnectionError,
