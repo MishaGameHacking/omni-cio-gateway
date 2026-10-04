@@ -24,6 +24,7 @@ from omnicio.portfolio_store import (
     ProposalStateError,
 )
 from omnicio.proposals import ProposalDraft
+from omnicio.security import SecurityValueError
 from omnicio.tbank import (
     TBankAssetTotal,
     TBankInstrumentMetadata,
@@ -275,6 +276,43 @@ def test_instrument_market_http_rejects_unsupported_period() -> None:
         )
 
     assert response.status_code == 422
+
+
+def test_instrument_market_http_keeps_security_failures_server_side() -> None:
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.market_service") as market,
+    ):
+        user.return_value.id = "server-user"
+        market.return_value.instrument_snapshot.side_effect = SecurityValueError(
+            "security-sensitive-provider-state"
+        )
+        response = TestClient(app).get("/api/market/instruments/uid-1?period=1m")
+
+    assert response.status_code == 503
+    assert "security-sensitive-provider-state" not in response.text
+
+
+def test_instrument_market_stream_stops_after_security_failure() -> None:
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.market_service") as market,
+    ):
+        user.return_value.id = "server-user"
+        market.return_value.instrument_live_state.side_effect = SecurityValueError(
+            "security-sensitive-provider-state"
+        )
+        response = TestClient(app).get(
+            "/api/market/instruments/uid-1/stream",
+        )
+
+    assert response.status_code == 200
+    assert 'event: status\ndata: {"state":"offline"}' in response.text
+    assert "security-sensitive-provider-state" not in response.text
+    market.return_value.instrument_live_state.assert_called_once_with(
+        "server-user",
+        "uid-1",
+    )
 
 
 def test_instrument_market_stream_stops_after_terminal_connection_state() -> None:
