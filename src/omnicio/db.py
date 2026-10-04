@@ -12,6 +12,8 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 
+_ADVISORY_LOCK_SQL = _ADVISORY_LOCK_SQL
+
 @dataclass(frozen=True, slots=True)
 class UserRecord:
     id: UUID
@@ -206,7 +208,7 @@ class Database:
             conn.cursor() as cur,
         ):
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                _ADVISORY_LOCK_SQL,
                 (vk_user_id,),
             )
             cur.execute(
@@ -227,7 +229,7 @@ class Database:
                     raise RegistrationClosedError("registration is closed")
 
                 cur.execute(
-                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    _ADVISORY_LOCK_SQL,
                     ("omnicio-registration-capacity",),
                 )
                 cur.execute(
@@ -368,7 +370,7 @@ class Database:
 
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                _ADVISORY_LOCK_SQL,
                 (live_execution_lock_key(user_id),),
             )
             cur.execute(
@@ -385,7 +387,7 @@ class Database:
 
             vk_user_id = str(cast(dict[str, Any], identity)["vk_user_id"])
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                _ADVISORY_LOCK_SQL,
                 (vk_user_id,),
             )
             cur.execute(
@@ -565,7 +567,7 @@ class Database:
     def delete_tbank_connection(self, user_id: UUID) -> bool:
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                _ADVISORY_LOCK_SQL,
                 (live_execution_lock_key(user_id),),
             )
             cur.execute(
