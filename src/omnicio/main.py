@@ -5,16 +5,17 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
-from collections.abc import AsyncIterator
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, status
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .balancing_service import build_live_balancing_payload
@@ -35,6 +36,7 @@ from .execution_store import (
     ExecutionStore,
     LiveExecutionMandateRecord,
 )
+from .freshness import PORTFOLIO_MAX_AGE, describe_freshness
 from .intelligence import rating_source_references
 from .market import MarketService
 from .portfolio import PortfolioAnalysisError
@@ -83,6 +85,7 @@ _TBANK_CREDENTIAL_REJECTED_DETAIL = "stored T-Invest credential was rejected"
 _UPDATED_LEGAL_CONSENT_DETAIL = "updated legal consent required"
 _TBANK_NOT_CONNECTED_DETAIL = "T-Invest is not connected"
 _PRIVATE_NO_STORE = "private, no-store"
+logger = logging.getLogger(__name__)
 
 
 class StrictRequestBody(BaseModel):
@@ -375,6 +378,40 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def private_request_boundary(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Give every API result a server-owned trace and prevent private caching."""
+    request_id = uuid4().hex
+    request.state.request_id = request_id
+    error_type = ""
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        # Exception text/tracebacks may contain provider credentials or SQL data.
+        # Record only a safe class and a generated reference; never request input.
+        error_type = type(exc).__name__
+        response = JSONResponse(
+            status_code=500,
+            content={
+                "detail": "Сервис не смог завершить запрос. Проверьте состояние перед повтором.",
+                "request_id": request_id,
+            },
+        )
+    response.headers["X-Request-ID"] = request_id
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = _PRIVATE_NO_STORE
+    if response.status_code >= 400:
+        route = getattr(request.scope.get("route"), "path", "unmatched")
+        logger.warning(
+            "request_failed request_id=%s route=%s status=%s error_type=%s",
+            request_id, route, response.status_code, error_type,
+        )
+    return response
+
+
 @app.get("/health/live")
 def live() -> dict[str, str]:
     return {"status": "ok"}
@@ -527,6 +564,17 @@ def me(
         "status": user.status,
         "role": user.role,
     }
+
+
+@app.get("/api/me/activity")
+def account_activity(
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=50),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    database = cast(Database, request.app.state.database)
+    return {"events": database.recent_activity(user.id, limit=limit)}
 
 
 @app.get(
@@ -998,6 +1046,11 @@ def tbank_portfolio(
         "cash": [asdict(item) for item in snapshot.positions.money],
         "blocked_cash": [asdict(item) for item in snapshot.positions.blocked_money],
         "limits_loading_in_progress": snapshot.positions.limits_loading_in_progress,
+        "freshness": asdict(describe_freshness(
+            snapshot.refreshed_at,
+            max_age=PORTFOLIO_MAX_AGE,
+            coverage="partial" if snapshot.positions.limits_loading_in_progress else "complete",
+        )),
     }
 
 
@@ -1036,7 +1089,14 @@ def tbank_analysis(
         ) from exc
 
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return asdict(snapshot)
+    return {
+        **asdict(snapshot),
+        "freshness": asdict(describe_freshness(
+            snapshot.refreshed_at,
+            max_age=PORTFOLIO_MAX_AGE,
+            coverage="complete" if snapshot.analysis.status == "observed" else "partial",
+        )),
+    }
 
 
 def _live_balancing_for_user(

@@ -33,7 +33,7 @@ class GitHubClient:
         self.token = token
         self.deadline = deadline
 
-    def get(self, path: str) -> dict[str, Any]:
+    def _request(self, path: str) -> Any:
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             raise ReleaseBlocked("Timed out waiting for accepted main checks")
@@ -66,8 +66,18 @@ class GitHubClient:
             raise
         except (OSError, http.client.HTTPException):
             raise PendingChecks("GitHub verification is temporarily unavailable") from None
+        return data
+
+    def get(self, path: str) -> dict[str, Any]:
+        data = self._request(path)
         if not isinstance(data, dict):
             raise ReleaseBlocked("GitHub verification response is not an object")
+        return data
+
+    def get_list(self, path: str) -> list[dict[str, Any]]:
+        data = self._request(path)
+        if not isinstance(data, list) or not all(isinstance(item, dict) for item in data):
+            raise ReleaseBlocked("GitHub verification response is not an object list")
         return data
 
     def collect(self, path: str, key: str) -> list[dict[str, Any]]:

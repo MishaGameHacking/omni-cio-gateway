@@ -647,6 +647,7 @@
             </article>
 
             <div class="portfolio-content hidden" id="portfolio-content">
+              <output id="portfolio-data-notice" class="data-status-note"></output>
               <section class="portfolio-metrics portfolio-metrics-five" aria-label="Основные показатели портфеля">
                 <article class="portfolio-metric">
                   <span>Стоимость портфеля</span>
@@ -1501,6 +1502,19 @@
                 </button>
               </article>
 
+              <article class="settings-card profile-constraints-card" aria-labelledby="activity-heading">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Безопасность аккаунта</p>
+                    <h3 id="activity-heading">Последние действия</h3>
+                  </div>
+                  <button id="activity-refresh" class="button button-secondary" type="button">Обновить</button>
+                </header>
+                <p class="card-description">Входы, подключения и сохранённые настройки только вашего аккаунта. Показаны последние 20 событий.</p>
+                <ol id="activity-list" class="activity-list"></ol>
+                <output id="activity-message" class="message">Откройте профиль для загрузки событий.</output>
+              </article>
+
               <article class="settings-card profile-constraints-card">
                 <header class="card-header">
                   <div>
@@ -1784,6 +1798,11 @@
                   <span class="release-chip">v<span data-app-version>__OMNICIO_VERSION__</span></span>
                 </header>
 
+                <p><strong>Что нового в 0.18.2</strong></p>
+                <p>Портфель показывает, когда получены данные и когда их нужно обновить.
+                  При сбое последний снимок остаётся на экране с предупреждением.
+                  В профиле появились последние действия, а у ошибок — код обращения для поддержки.</p>
+
                 <dl class="info-list">
                   <div>
                     <dt>Версия</dt>
@@ -1957,6 +1976,7 @@
                   <div><dt>ID профиля</dt><dd id="support-profile-id">000000000</dd></div>
                   <div><dt>Версия</dt><dd>v<span data-app-version>__OMNICIO_VERSION__</span></dd></div>
                   <div><dt>Сборка</dt><dd><span data-app-build>__OMNICIO_BUILD__</span></dd></div>
+                  <div><dt>Последняя ошибка</dt><dd id="support-request-id">Нет ошибок в этой вкладке</dd></div>
                 </dl>
                 <button id="copy-support-diagnostics" class="button button-secondary action-with-icon" type="button">
                   <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg>

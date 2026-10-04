@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import base64
 import os
+from datetime import UTC, datetime
+from unittest.mock import Mock, patch
+from uuid import UUID
 
 import pytest
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from starlette.requests import Request
 
-from omnicio.main import CANONICAL_ORIGIN, client_ip, require_same_origin
+from omnicio.db import Database, UserRecord
+from omnicio.main import CANONICAL_ORIGIN, app, client_ip, require_same_origin
 from omnicio.security import (
     SecurityValueError,
     client_ip_digest,
@@ -178,3 +183,65 @@ def test_state_changing_requests_require_canonical_origin() -> None:
         with pytest.raises(HTTPException) as error:
             require_same_origin(rejected)
         assert error.value.status_code == 403
+
+
+
+def test_private_errors_have_unique_server_traces_without_secret_leaks(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "test-credential-must-not-leak"
+    with patch("omnicio.main.service") as auth:
+        auth.return_value.refresh_session.side_effect = RuntimeError(secret)
+        client = TestClient(app)
+        first = client.get("/api/me?token=" + secret, headers={"X-Request-ID": secret})
+        second = client.get("/api/me")
+    assert first.status_code == 500
+    request_id = first.headers["x-request-id"]
+    assert len(request_id) == 32
+    assert all(char in "0123456789abcdef" for char in request_id)
+    assert first.json()["request_id"] == request_id
+    assert second.headers["x-request-id"] != request_id
+    assert first.headers["cache-control"] == "private, no-store"
+    assert request_id in caplog.text
+    assert secret not in first.text
+    assert secret not in caplog.text
+
+
+@pytest.mark.parametrize("path", ["/api/me", "/api/me/activity", "/api/broker/tbank/portfolio"])
+def test_private_unauthorized_responses_cannot_be_cached(path: str) -> None:
+    with patch("omnicio.main.service") as auth:
+        auth.return_value.refresh_session.return_value = None
+        response = TestClient(app).get(path)
+    assert response.status_code == 401
+    assert response.headers["cache-control"] == "private, no-store"
+    assert len(response.headers["x-request-id"]) == 32
+
+
+def test_activity_uses_each_session_owner_and_ignores_browser_identity() -> None:
+    a = UserRecord(UUID(int=101), 101, "active", "user")
+    b = UserRecord(UUID(int=102), 102, "active", "user")
+    database = Mock(spec=Database)
+    events = {
+        a.id: [{"event_type": "account_created", "created_at": datetime(2026, 10, 1, tzinfo=UTC)}],
+        b.id: [{"event_type": "login_succeeded", "created_at": datetime(2026, 10, 2, tzinfo=UTC)}],
+    }
+    database.recent_activity.side_effect = lambda user_id, *, limit: events[user_id][:limit]
+    with (
+        patch("omnicio.main.service") as auth,
+        patch.object(app.state, "database", database, create=True),
+    ):
+        auth.return_value.refresh_session.side_effect = lambda token: {"a": a, "b": b}.get(token)
+        one = TestClient(app, cookies={"omnicio_session": "a"})
+        two = TestClient(app, cookies={"omnicio_session": "b"})
+        first = one.get(f"/api/me/activity?user_id={b.id}&limit=1")
+        second = two.get(f"/api/me/activity?user_id={a.id}&limit=1")
+        invalid = one.get("/api/me/activity?limit=500")
+        anonymous = TestClient(app).get("/api/me/activity")
+    assert first.status_code == second.status_code == 200
+    assert first.json()["events"][0]["event_type"] == "account_created"
+    assert second.json()["events"][0]["event_type"] == "login_succeeded"
+    assert invalid.status_code == 422
+    assert anonymous.status_code == 401
+    assert database.recent_activity.call_count == 2
+    assert database.recent_activity.call_args_list[0].args == (a.id,)
+    assert database.recent_activity.call_args_list[1].args == (b.id,)

@@ -353,6 +353,32 @@ class Database:
                 return None
             return _user(cast(dict[str, Any], fetched))
 
+    def recent_activity(self, user_id: UUID, *, limit: int = 20) -> list[dict[str, object]]:
+        """Expose only allowlisted event kinds and times for the session owner."""
+        if not 1 <= limit <= 50:
+            raise ValueError("activity limit must be between 1 and 50")
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT event_type, created_at
+                FROM audit_events
+                WHERE user_id = %s
+                  AND event_type = ANY (%s)
+                ORDER BY created_at DESC, id DESC
+                LIMIT %s
+                """,
+                (user_id, [
+                    "account_created", "login_succeeded", "tbank_connected",
+                    "tbank_disconnected", "investment_profile_saved",
+                    "balancing_policy_saved", "support_sessions_revoked",
+                ], limit),
+            )
+            rows = cast(list[dict[str, Any]], cur.fetchall())
+            return [
+                {"event_type": row["event_type"], "created_at": row["created_at"]}
+                for row in rows
+            ]
+
     def revoke_session(self, token_digest: bytes) -> None:
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
