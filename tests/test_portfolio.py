@@ -207,8 +207,10 @@ def test_non_finite_provider_numbers_are_rejected(value: str) -> None:
 
 def test_duplicate_identity_is_rejected_instead_of_double_counted() -> None:
     item = position("duplicate", "1", "100")
+    duplicated = portfolio(item, item)
+    available_cash = cash()
     with pytest.raises(PortfolioAnalysisError):
-        analyze_portfolio(portfolio(item, item), cash(), ())
+        analyze_portfolio(duplicated, available_cash, ())
 
 
 def test_investment_profile_http_is_private_and_uses_session_tenant() -> None:
