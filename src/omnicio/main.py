@@ -39,6 +39,7 @@ from .intelligence import rating_source_references
 from .market import MarketService
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import (
+    BalancingPolicyInput,
     BalancingPolicyRecord,
     InvestmentProfileRecord,
     PortfolioStore,
@@ -728,25 +729,27 @@ def save_balancing_policy(
         )
     policy = portfolio_store(request).save_balancing_policy(
         user.id,
-        max_instrument_percent=body.max_instrument_percent,
-        max_sector_percent=body.max_sector_percent,
-        max_issuer_percent=body.max_issuer_percent,
-        max_group_percent=body.max_group_percent,
-        max_share_percent=body.max_share_percent,
-        max_bond_percent=body.max_bond_percent,
-        max_etf_percent=body.max_etf_percent,
-        max_below_grade_percent=body.max_below_grade_percent,
-        max_unknown_percent=body.max_unknown_percent,
-        max_term_months=body.max_term_months,
-        turnover_budget_percent=body.turnover_budget_percent,
-        max_daily_turnover_participation_percent=(
-            body.max_daily_turnover_participation_percent
+        BalancingPolicyInput(
+            max_instrument_percent=body.max_instrument_percent,
+            max_sector_percent=body.max_sector_percent,
+            max_issuer_percent=body.max_issuer_percent,
+            max_group_percent=body.max_group_percent,
+            max_share_percent=body.max_share_percent,
+            max_bond_percent=body.max_bond_percent,
+            max_etf_percent=body.max_etf_percent,
+            max_below_grade_percent=body.max_below_grade_percent,
+            max_unknown_percent=body.max_unknown_percent,
+            max_term_months=body.max_term_months,
+            turnover_budget_percent=body.turnover_budget_percent,
+            max_daily_turnover_participation_percent=(
+                body.max_daily_turnover_participation_percent
+            ),
+            securities_tax_rate_percent=body.securities_tax_rate_percent,
+            uncertainty_haircut_percent=body.uncertainty_haircut_percent,
+            credit_loss_haircut_percent=body.credit_loss_haircut_percent,
+            no_trade_band_percent=body.no_trade_band_percent,
+            min_replace_benefit_rub=body.min_replace_benefit_rub,
         ),
-        securities_tax_rate_percent=body.securities_tax_rate_percent,
-        uncertainty_haircut_percent=body.uncertainty_haircut_percent,
-        credit_loss_haircut_percent=body.credit_loss_haircut_percent,
-        no_trade_band_percent=body.no_trade_band_percent,
-        min_replace_benefit_rub=body.min_replace_benefit_rub,
     )
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {"policy": _balancing_policy_payload(policy)}
