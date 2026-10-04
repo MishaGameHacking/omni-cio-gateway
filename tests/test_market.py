@@ -67,15 +67,16 @@ def test_cbr_client_fetches_requested_effective_day_not_next_published_rate() ->
 
 def test_cbr_client_backs_off_after_initial_provider_failure() -> None:
     client = CBRClient(failure_retry_seconds=300)
+    requested_date = date(2026, 10, 1)
 
     with patch(
         "urllib.request.urlopen",
         side_effect=TimeoutError("timeout"),
     ) as urlopen:
         with pytest.raises(CBRUnavailable):
-            client.usd_rub_rate(date(2026, 10, 1))
+            client.usd_rub_rate(requested_date)
         with pytest.raises(CBRUnavailable):
-            client.usd_rub_rate(date(2026, 10, 1))
+            client.usd_rub_rate(requested_date)
 
     urlopen.assert_called_once()
 

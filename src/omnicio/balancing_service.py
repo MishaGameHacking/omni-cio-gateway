@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
 from typing import Any, cast
@@ -57,6 +57,48 @@ _RISK_STATES: set[str] = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class _BalancingSnapshot:
+    captured_at: datetime
+    age_seconds: int
+    nav_rub: Decimal
+    cash_rub: Decimal
+
+
+def _validated_balancing_snapshot(
+    *,
+    base: dict[str, object],
+    profile: InvestmentProfileRecord,
+    policy_record: BalancingPolicyRecord,
+    context: dict[str, object],
+    observed_at: datetime,
+) -> _BalancingSnapshot | dict[str, object]:
+    captured_at = _datetime(context.get("captured_at"))
+    if captured_at is None:
+        return _blocked(base, profile, policy_record, "snapshot_time_missing")
+
+    age_seconds = int((observed_at - captured_at).total_seconds())
+    if age_seconds < 0:
+        return _blocked(base, profile, policy_record, "snapshot_time_in_future")
+    if age_seconds > int(EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds()):
+        return {
+            **_blocked(base, profile, policy_record, "snapshot_stale"),
+            "snapshot_age_seconds": age_seconds,
+        }
+    if context.get("analysis_status") != "observed":
+        return _blocked(base, profile, policy_record, "snapshot_not_observed")
+    if context.get("limits_loading_in_progress") is True:
+        return _blocked(base, profile, policy_record, "broker_limits_loading")
+
+    nav_rub = _decimal(context.get("nav_rub"))
+    cash_rub = _decimal(context.get("rub_cash_unblocked"))
+    if nav_rub is None or nav_rub <= 0:
+        return _blocked(base, profile, policy_record, "nav_unavailable")
+    if cash_rub is None or cash_rub < 0:
+        return _blocked(base, profile, policy_record, "free_cash_unavailable")
+    return _BalancingSnapshot(captured_at, age_seconds, nav_rub, cash_rub)
+
+
 def build_balancing_payload(
     *,
     profile: InvestmentProfileRecord | None,
@@ -89,28 +131,19 @@ def build_balancing_payload(
             "policy_version": policy_record.version,
         }
 
-    captured_at = _datetime(context.get("captured_at"))
-    if captured_at is None:
-        return _blocked(base, profile, policy_record, "snapshot_time_missing")
-    snapshot_age_seconds = int((observed_at - captured_at).total_seconds())
-    if snapshot_age_seconds < 0:
-        return _blocked(base, profile, policy_record, "snapshot_time_in_future")
-    if snapshot_age_seconds > int(EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds()):
-        return {
-            **_blocked(base, profile, policy_record, "snapshot_stale"),
-            "snapshot_age_seconds": snapshot_age_seconds,
-        }
-    if context.get("analysis_status") != "observed":
-        return _blocked(base, profile, policy_record, "snapshot_not_observed")
-    if context.get("limits_loading_in_progress") is True:
-        return _blocked(base, profile, policy_record, "broker_limits_loading")
-
-    nav_rub = _decimal(context.get("nav_rub"))
-    cash_rub = _decimal(context.get("rub_cash_unblocked"))
-    if nav_rub is None or nav_rub <= 0:
-        return _blocked(base, profile, policy_record, "nav_unavailable")
-    if cash_rub is None or cash_rub < 0:
-        return _blocked(base, profile, policy_record, "free_cash_unavailable")
+    snapshot = _validated_balancing_snapshot(
+        base=base,
+        profile=profile,
+        policy_record=policy_record,
+        context=context,
+        observed_at=observed_at,
+    )
+    if isinstance(snapshot, dict):
+        return snapshot
+    captured_at = snapshot.captured_at
+    snapshot_age_seconds = snapshot.age_seconds
+    nav_rub = snapshot.nav_rub
+    cash_rub = snapshot.cash_rub
 
     holdings_rows = _dict_rows(context.get("holdings"))
     candidate_rows = _dict_rows(context.get("candidates"))
@@ -127,7 +160,6 @@ def build_balancing_payload(
             _candidate(
                 row,
                 context=context,
-                policy=policy,
                 observed_at=observed_at,
             )
             for row in candidate_rows
@@ -338,12 +370,6 @@ def build_live_balancing_payload(
     }
     enriched: list[Candidate] = []
     live_sources: list[dict[str, object]] = []
-    policy = _policy(
-        profile,
-        policy_record,
-        _decimal(context.get("nav_rub")) or Decimal("0"),
-    )
-
     for row in rows:
         uid = str(row.get("instrument_uid") or "")
         if uid not in selected_uids:
@@ -352,7 +378,6 @@ def build_live_balancing_payload(
                     _candidate(
                         row,
                         context=context,
-                        policy=policy,
                         observed_at=observed_at,
                     ),
                     "live_enrichment_not_selected",
@@ -378,7 +403,6 @@ def build_live_balancing_payload(
                 _candidate(
                     row,
                     context=context,
-                    policy=policy,
                     observed_at=observed_at,
                 ),
                 "live_candidate_evidence_unavailable",
@@ -505,7 +529,6 @@ def _enrich_bond_candidate(
     base = _candidate(
         row,
         context=context,
-        policy=_policy(profile, policy_record, nav_rub),
         observed_at=observed_at,
     )
     if base.asset_class != "bond":
@@ -835,14 +858,14 @@ def _rating_bucket_from_tbank(
         if rating_date > observed_at:
             return (
                 "unknown",
-                tuple((*notes, "issuer_rating_time_invalid")),
+                (*notes, "issuer_rating_time_invalid"),
                 False,
             )
         bucket = _rating_level_bucket(rating.rating_level)
         if bucket is None:
             return (
                 "unknown",
-                tuple((*notes, "issuer_rating_level_unrecognized")),
+                (*notes, "issuer_rating_level_unrecognized"),
                 under_watch,
             )
         buckets.append(bucket)
@@ -1268,10 +1291,6 @@ def _scenario_before_after(
         uid: dict(position)
         for uid, position in before.items()
     }
-    holding_by_uid = {
-        item.instrument_uid: item
-        for item in holdings
-    }
     candidate_by_uid = {
         item.instrument_uid: item
         for item in candidates
@@ -1281,7 +1300,6 @@ def _scenario_before_after(
         _apply_trade_to_position_state(
             after,
             trade,
-            holding=holding_by_uid.get(trade.instrument_uid),
             candidate=candidate_by_uid.get(trade.instrument_uid),
         )
 
@@ -1336,7 +1354,6 @@ def _apply_trade_to_position_state(
     positions: dict[str, dict[str, object]],
     trade: PlannedTrade,
     *,
-    holding: Holding | None,
     candidate: Candidate | None,
 ) -> None:
     existing = positions.get(trade.instrument_uid)
@@ -1476,28 +1493,38 @@ def _policy(
     )
 
 
-def _holding(row: dict[str, object]) -> Holding:
-    value = _decimal(row.get("value_rub")) or Decimal("0")
-    quantity = _decimal(row.get("quantity")) or Decimal("0")
+def _holding_lot_state(
+    row: dict[str, object],
+    quantity: Decimal,
+) -> tuple[int, bool]:
     quantity_lots = _decimal(row.get("quantity_lots"))
-    lot = _integer(row.get("lot"))
-    lots = 0
-    quantity_misaligned = True
     if quantity_lots is not None and quantity_lots >= 0:
         integral_lots = quantity_lots.to_integral_value()
         if quantity_lots == integral_lots:
-            lots = int(integral_lots)
-            quantity_misaligned = False
-    elif lot > 0 and quantity >= 0:
-        raw_lots = quantity / Decimal(lot)
-        integral = raw_lots.to_integral_value()
-        if raw_lots == integral:
-            lots = int(integral)
-            quantity_misaligned = False
+            return int(integral_lots), False
+        return 0, True
 
+    lot = _integer(row.get("lot"))
+    if lot > 0 and quantity >= 0:
+        raw_lots = quantity / Decimal(lot)
+        integral_lots = raw_lots.to_integral_value()
+        if raw_lots == integral_lots:
+            return int(integral_lots), False
+    return 0, True
+
+
+def _holding_risk_state(row: dict[str, object]) -> RiskState:
     risk = str(row.get("risk_state") or "data_missing")
     if risk not in _RISK_STATES:
-        risk = "data_missing"
+        return "data_missing"
+    return cast(RiskState, risk)
+
+
+def _holding(row: dict[str, object]) -> Holding:
+    value = _decimal(row.get("value_rub")) or Decimal("0")
+    quantity = _decimal(row.get("quantity")) or Decimal("0")
+    lots, quantity_misaligned = _holding_lot_state(row, quantity)
+    risk = _holding_risk_state(row)
     rating_status = str(row.get("rating_status") or "data_missing")
     rating_bucket = "not_applicable" if rating_status == "not_applicable" else "unknown"
     issuer_id = str(row.get("issuer_id") or "") or "unknown_issuer"
@@ -1512,7 +1539,7 @@ def _holding(row: dict[str, object]) -> Holding:
         group_id=group_id,
         rating_bucket=cast(Any, rating_bucket),
         currency=str(row.get("currency") or "").upper(),
-        risk_state=cast(RiskState, risk),
+        risk_state=risk,
         lots=lots,
         value_rub=value,
         expected_horizon_gain_rub=Decimal("0"),
@@ -1525,19 +1552,15 @@ def _holding(row: dict[str, object]) -> Holding:
     )
 
 
-def _candidate(
+def _candidate_access_reasons(
     row: dict[str, object],
-    *,
     context: dict[str, object],
-    policy: BalancingPolicy,
-    observed_at: datetime,
-) -> Candidate:
-    asset_class = str(row.get("instrument_type") or "")
-    issuer_id = str(row.get("issuer_id") or "")
-    group_id = str(row.get("group_id") or "")
-    issuer_country = str(row.get("issuer_country_code") or "").upper()
-    access_reasons: list[str] = []
-
+    *,
+    asset_class: str,
+    issuer_id: str,
+    group_id: str,
+) -> tuple[list[str], tuple[str, ...]]:
+    reasons: list[str] = []
     required_tests = row.get("required_tests")
     pending_tests = (
         tuple(str(item) for item in required_tests)
@@ -1558,29 +1581,36 @@ def _candidate(
     )
 
     if row.get("for_qual_investor") is True and qualified is not True:
-        access_reasons.append("qualification_required")
+        reasons.append("qualification_required")
     if "IIS" in account_type and row.get("for_iis") is not True:
-        access_reasons.append("iis_not_allowed")
-    if not issuer_id or issuer_country != "RU":
-        access_reasons.append("issuer_identity_not_verified")
+        reasons.append("iis_not_allowed")
+    if not issuer_id or str(row.get("issuer_country_code") or "").upper() != "RU":
+        reasons.append("issuer_identity_not_verified")
     if not group_id:
-        access_reasons.append("issuer_group_not_verified")
+        reasons.append("issuer_group_not_verified")
     if asset_class == "etf":
-        access_reasons.append("fund_look_through_missing")
+        reasons.append("fund_look_through_missing")
+    return reasons, pending_tests
 
+
+def _candidate_evidence_reasons(
+    row: dict[str, object],
+    *,
+    asset_class: str,
+    observed_at: datetime,
+) -> tuple[list[str], int | None, bool]:
+    reasons: list[str] = []
     catalog_time = _datetime(row.get("provider_retrieved_at"))
     access_time = _datetime(row.get("access_observed_at"))
     if not _fresh(catalog_time, observed_at):
-        access_reasons.append("catalog_stale")
+        reasons.append("catalog_stale")
     if not _fresh(access_time, observed_at):
-        access_reasons.append("account_access_stale")
-    access_reasons.append("candidate_risk_assessment_missing")
-    access_reasons.append("quote_missing")
+        reasons.append("account_access_stale")
+    reasons.extend(("candidate_risk_assessment_missing", "quote_missing"))
     if asset_class in {"share", "etf"}:
-        access_reasons.append("expected_return_model_missing")
+        reasons.append("expected_return_model_missing")
     if asset_class == "bond":
-        access_reasons.append("bond_ytw_missing")
-        access_reasons.append("bond_duration_missing")
+        reasons.extend(("bond_ytw_missing", "bond_duration_missing"))
 
     maturity = _datetime(row.get("maturity_date"))
     term_months = _months_until(observed_at, maturity)
@@ -1591,18 +1621,43 @@ def _candidate(
         row.get("subordinated"),
     )
     structure_known = all(value is not None for value in structure_values)
-    structure_supported = (
-        structure_known
-        and not any(value is True for value in structure_values)
+    structure_supported = structure_known and not any(
+        value is True for value in structure_values
     )
     if asset_class == "bond" and not structure_known:
-        access_reasons.append("bond_structure_missing")
+        reasons.append("bond_structure_missing")
 
+    liquidity = row.get("liquidity")
+    if liquidity is False:
+        reasons.append("provider_liquidity_flag_false")
+    elif liquidity is None:
+        reasons.append("provider_liquidity_flag_missing")
+    return reasons, term_months, structure_supported
+
+
+def _candidate(
+    row: dict[str, object],
+    *,
+    context: dict[str, object],
+    observed_at: datetime,
+) -> Candidate:
+    asset_class = str(row.get("instrument_type") or "")
+    issuer_id = str(row.get("issuer_id") or "")
+    group_id = str(row.get("group_id") or "")
+    access_reasons, pending_tests = _candidate_access_reasons(
+        row,
+        context,
+        asset_class=asset_class,
+        issuer_id=issuer_id,
+        group_id=group_id,
+    )
+    evidence_reasons, term_months, structure_supported = _candidate_evidence_reasons(
+        row,
+        asset_class=asset_class,
+        observed_at=observed_at,
+    )
+    access_reasons.extend(evidence_reasons)
     liquidity_days: int | None = None
-    if row.get("liquidity") is False:
-        access_reasons.append("provider_liquidity_flag_false")
-    elif row.get("liquidity") is None:
-        access_reasons.append("provider_liquidity_flag_missing")
 
     rating_bucket = "unknown" if asset_class == "bond" else "not_applicable"
     risk_state: RiskState = "data_missing"

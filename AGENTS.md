@@ -514,6 +514,13 @@ Queued, pending, cancelled и failure не являются green.
 
 Skipped/neutral допустимы только если pipeline явно и корректно доказал, что check не применим к этому change.
 
+SonarQube Cloud является обязательным code-quality gate:
+- Quality Gate = success необходим, но сам по себе недостаточен;
+- на exact latest head unresolved New/Open issues = 0;
+- Accepted issues = 0 и unresolved GitHub/Sonar annotations = 0;
+- нельзя получать green отключением правил, исключением проверяемого production-кода, снижением quality threshold или переводом реального дефекта в Accepted;
+- перед feature merge accepted `main` также должен иметь 0 unresolved Sonar issues; обнаруженный debt сначала устраняется отдельной focused cleanup-веткой.
+
 ## 19. Green != Complete
 
 Это обязательное правило.

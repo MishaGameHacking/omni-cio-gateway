@@ -375,7 +375,7 @@
   const api = async (path, options = {}) => {
     const response = await fetch(apiPath(path), {
       credentials: "same-origin",
-      headers: {"Content-Type": "application/json", ...(options.headers || {})},
+      headers: {"Content-Type": "application/json", ...options.headers},
       ...options,
     });
     const body = response.status === 204 ? null : await response.json().catch(() => null);
@@ -447,8 +447,8 @@
   };
 
   const renderAccessMode = (config) => {
-    const registrationOpen = config && config.registration_enabled === true;
-    const capacity = Number(config && config.registration_max_users) || 1;
+    const registrationOpen = config?.registration_enabled === true;
+    const capacity = Number(config?.registration_max_users) || 1;
     accessEyebrow.textContent = "Персональный инвестиционный кабинет";
     accessLead.textContent = registrationOpen
       ? `Новый пользователь, прошедший VK ID, занимает один из ${capacity} доступных пользовательских слотов. Данные и брокерские подключения изолированы по профилям.`
@@ -1631,12 +1631,14 @@
         .map((item) => {
           const value = Number(item.value_rub);
           const percent = Number(item.nav_percent);
+          let resolvedPercent = percent;
+          if (!Number.isFinite(resolvedPercent)) {
+            resolvedPercent = nav > 0 ? value / nav * 100 : Number.NaN;
+          }
           return {
             label: item.ticker || item.name || item.instrument_uid || "Инструмент",
             value,
-            percent: Number.isFinite(percent)
-              ? percent
-              : (nav > 0 ? value / nav * 100 : Number.NaN),
+            percent: resolvedPercent,
           };
         })
         .sort((left, right) => right.value - left.value)
@@ -1968,21 +1970,21 @@
     )) || null
   );
 
-  const renderInstrumentDetail = (payload, requestedIdentity) => {
-    const latest = payload?.latest || {};
-    const livePosition = livePositionForIdentity(requestedIdentity);
-    instrumentDetailTitle.textContent = latest.ticker || latest.name || latest.instrument_uid || "Инструмент";
+  const renderInstrumentDetailOverview = (latest, payload, livePosition) => {
+    instrumentDetailTitle.textContent = (
+      latest.ticker || latest.name || latest.instrument_uid || "Инструмент"
+    );
     instrumentDetailSubtitle.textContent = [
       latest.name && latest.name !== latest.ticker ? latest.name : "",
       INSTRUMENT_LABELS[latest.instrument_type] || latest.instrument_type,
       latest.sector || "Сектор не подтверждён",
       payload.snapshot_freshness === "stale" ? "snapshot устарел" : "",
     ].filter(Boolean).join(" · ");
-
     instrumentDetailValue.textContent = storedMoney(latest.value_rub);
     instrumentDetailWeight.textContent = Number.isFinite(Number(latest.nav_percent))
       ? `Доля NAV: ${formatPercent(latest.nav_percent)}`
       : "Доля NAV не подтверждена";
+
     const livePrice = livePosition?.current_price;
     instrumentDetailPrice.textContent = livePrice
       ? formatMoney(livePrice)
@@ -1999,24 +2001,31 @@
     instrumentDetailBlocked.textContent = latest.blocked || Number(latest.blocked_lots) > 0
       ? `Есть блокировка · лотов: ${formatQuantity(latest.blocked_lots)}`
       : "Блокировок не зафиксировано";
-    if (livePosition) {
-      instrumentDetailPnl.textContent = formatPercent(
-        livePosition.expected_yield_percent,
-        {sign: true},
-      );
-      applySignedClass(instrumentDetailPnl, livePosition.expected_yield_percent);
-      const dailyYield = formatMoney(livePosition.daily_yield, {sign: true});
-      instrumentDetailPnlTime.textContent = [
-        dailyYield !== "—" ? `сегодня ${dailyYield}` : "",
-        lastPortfolioSnapshot?.refreshed_at
-          ? `T-Invest ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
-          : "",
-      ].filter(Boolean).join(" · ") || "Текущий ответ T-Invest";
-    } else {
+  };
+
+  const renderInstrumentDetailPnl = (livePosition) => {
+    if (!livePosition) {
       instrumentDetailPnl.textContent = "—";
       instrumentDetailPnl.classList.remove("value-positive", "value-negative");
       instrumentDetailPnlTime.textContent = "Live P&L не подтверждён";
+      return;
     }
+
+    instrumentDetailPnl.textContent = formatPercent(
+      livePosition.expected_yield_percent,
+      {sign: true},
+    );
+    applySignedClass(instrumentDetailPnl, livePosition.expected_yield_percent);
+    const dailyYield = formatMoney(livePosition.daily_yield, {sign: true});
+    instrumentDetailPnlTime.textContent = [
+      dailyYield !== "—" ? `сегодня ${dailyYield}` : "",
+      lastPortfolioSnapshot?.refreshed_at
+        ? `T-Invest ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
+        : "",
+    ].filter(Boolean).join(" · ") || "Текущий ответ T-Invest";
+  };
+
+  const renderInstrumentDetailRisk = (latest) => {
     instrumentDetailRisk.textContent = riskStateLabel(latest.risk_state);
     instrumentDetailRisk.classList.remove("value-positive", "value-negative");
     if (["critical", "confirmed_default"].includes(latest.risk_state)) {
@@ -2025,7 +2034,9 @@
     instrumentDetailRiskTime.textContent = latest.assessed_at
       ? `оценено ${formatDateTime(latest.assessed_at)} · ${latest.assessment_freshness || "freshness unknown"}`
       : "Risk assessment отсутствует";
+  };
 
+  const renderInstrumentDetailHistory = (payload) => {
     const history = Array.isArray(payload?.history) ? payload.history : [];
     const historyReady = renderSeriesChart(
       instrumentHistoryChart,
@@ -2035,19 +2046,19 @@
     instrumentHistoryNote.textContent = historyReady
       ? `Снимков позиции: ${history.length}. Время точки — captured_at snapshot, не биржевой timestamp.`
       : "Недостаточно сохранённых оценок позиции для линии.";
+  };
 
+  const renderInstrumentDetailEvidence = (latest) => {
     instrumentEvidenceSummary.replaceChildren();
+    const reasons = Array.isArray(latest.risk_reasons) && latest.risk_reasons.length
+      ? latest.risk_reasons.join(" · ")
+      : "Нет подтверждённых причин";
     const evidenceItems = [
       ["Risk state", riskStateLabel(latest.risk_state)],
       ["Рейтинг", riskStateLabel(latest.rating_status)],
       ["Фундаментальные данные", riskStateLabel(latest.fundamental_status)],
       ["Источник risk", String(latest.source_status || "Не подтверждено")],
-      [
-        "Причины",
-        Array.isArray(latest.risk_reasons) && latest.risk_reasons.length
-          ? latest.risk_reasons.join(" · ")
-          : "Нет подтверждённых причин",
-      ],
+      ["Причины", reasons],
     ];
     evidenceItems.forEach(([labelText, valueText]) => {
       const row = document.createElement("div");
@@ -2058,7 +2069,9 @@
       row.append(label, value);
       instrumentEvidenceSummary.append(row);
     });
+  };
 
+  const renderInstrumentDetailPayouts = (payload) => {
     instrumentPayouts.replaceChildren();
     (payload?.payouts || []).forEach((event) => {
       const row = document.createElement("div");
@@ -2069,11 +2082,12 @@
         bond_event: "Событие облигации",
       }[event.event_type] || String(event.event_type || "Событие");
       const details = document.createElement("small");
+      const amount = event.amount === null || event.amount === undefined
+        ? ""
+        : storedMoney(event.amount, event.currency || "RUB");
       details.textContent = [
         event.status || "статус не подтверждён",
-        event.amount === null || event.amount === undefined
-          ? ""
-          : storedMoney(event.amount, event.currency || "RUB"),
+        amount,
         event.expected_at ? `ожидается ${formatDateTime(event.expected_at)}` : "",
         event.actual_at ? `факт ${formatDateTime(event.actual_at)}` : "",
       ].filter(Boolean).join(" · ");
@@ -2083,7 +2097,9 @@
     if (!instrumentPayouts.childElementCount) {
       appendEmptyState(instrumentPayouts, "Подтверждённых выплат или событий нет.");
     }
+  };
 
+  const renderInstrumentDetailSources = (payload) => {
     instrumentSources.replaceChildren();
     (payload?.sources || []).forEach((source) => {
       const row = document.createElement("div");
@@ -2103,6 +2119,18 @@
     if (!instrumentSources.childElementCount) {
       appendEmptyState(instrumentSources, "Evidence sources ещё не сохранены.");
     }
+  };
+
+  const renderInstrumentDetail = (payload, requestedIdentity) => {
+    const latest = payload?.latest || {};
+    const livePosition = livePositionForIdentity(requestedIdentity);
+    renderInstrumentDetailOverview(latest, payload, livePosition);
+    renderInstrumentDetailPnl(livePosition);
+    renderInstrumentDetailRisk(latest);
+    renderInstrumentDetailHistory(payload);
+    renderInstrumentDetailEvidence(latest);
+    renderInstrumentDetailPayouts(payload);
+    renderInstrumentDetailSources(payload);
   };
 
   const openInstrumentDetail = async (instrumentUid) => {
@@ -2258,8 +2286,18 @@
     return items;
   };
 
+  const attentionMarkerText = (severity) => {
+    if (severity === "error") {
+      return "×";
+    }
+    if (severity === "warning") {
+      return "!";
+    }
+    return "i";
+  };
+
   const renderHomeAttention = () => {
-    const pending = Object.values(homeAttentionBuckets).some((value) => value === null);
+    const pending = Object.values(homeAttentionBuckets).includes(null);
     const items = Object.values(homeAttentionBuckets)
       .filter(Array.isArray)
       .flat()
@@ -2293,7 +2331,7 @@
       const marker = document.createElement("span");
       marker.className = "attention-marker";
       marker.setAttribute("aria-hidden", "true");
-      marker.textContent = item.severity === "error" ? "×" : item.severity === "warning" ? "!" : "i";
+      marker.textContent = attentionMarkerText(item.severity);
 
       const copy = document.createElement("div");
       const title = document.createElement("strong");
@@ -2326,7 +2364,13 @@
     if (!(name in homeAttentionBuckets)) {
       return;
     }
-    homeAttentionBuckets[name] = items === null ? null : (Array.isArray(items) ? items : []);
+    let bucket = [];
+    if (items === null) {
+      bucket = null;
+    } else if (Array.isArray(items)) {
+      bucket = items;
+    }
+    homeAttentionBuckets[name] = bucket;
     renderHomeAttention();
   };
 
@@ -2401,20 +2445,56 @@
     setStateBadge(homePortfolioState, "Работает", "state-ok");
   };
 
+  const renderDisconnectedPortfolio = () => {
+    portfolioLoaded = false;
+    lastPortfolioSnapshot = null;
+    lastPortfolioRefreshAt = 0;
+    resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
+    portfolioFreeCash.textContent = "—";
+    updateOwlState(null);
+    updateGuard(null);
+    resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
+    setHomeAttentionBucket("portfolio", []);
+    showPortfolioMode("disconnected");
+    setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
+    setStateBadge(homePortfolioState, "Нет подключения", "state-next");
+  };
+
+  const renderPortfolioLoadFailure = (error, hadPortfolio) => {
+    const needsReconnect = error.status === 409;
+    if (hadPortfolio && lastPortfolioSnapshot) {
+      portfolioLoaded = true;
+      showPortfolioMode("content");
+      setStateBadge(portfolioStateBadge, "Данные устарели", "state-next");
+      setStateBadge(homePortfolioState, "Данные устарели", "state-next");
+      setStateBadge(homePortfolioSummaryState, "Данные устарели", "state-next");
+      setHomeAttentionBucket(
+        "portfolio",
+        homePortfolioAttention(lastPortfolioSnapshot, {stale: true}),
+      );
+      setStateBadge(owlState, "Ошибка обновления", "state-next");
+      return;
+    }
+
+    portfolioLoaded = false;
+    portfolioFreeCash.textContent = "—";
+    showPortfolioMode("error");
+    portfolioErrorText.textContent = needsReconnect
+      ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
+      : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
+    setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
+    setStateBadge(homePortfolioState, "Ошибка", "state-error");
+    setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
+    resetHomePortfolioSummary("Портфель не подтверждён.");
+    setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
+    setHomeAttentionBucket("portfolio", homePortfolioAttention(null, {failed: true}));
+    setStateBadge(owlState, "Ошибка", "state-error");
+    updateGuard(null);
+  };
+
   const loadPortfolioData = async ({force = false} = {}) => {
     if (!tbankIsConnected) {
-      portfolioLoaded = false;
-      lastPortfolioSnapshot = null;
-      lastPortfolioRefreshAt = 0;
-      resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
-      portfolioFreeCash.textContent = "—";
-      updateOwlState(null);
-      updateGuard(null);
-      resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
-      setHomeAttentionBucket("portfolio", []);
-      showPortfolioMode("disconnected");
-      setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
-      setStateBadge(homePortfolioState, "Нет подключения", "state-next");
+      renderDisconnectedPortfolio();
       return;
     }
     if (portfolioRequestInFlight || (portfolioLoaded && !force)) {
@@ -2444,34 +2524,7 @@
         return;
       }
 
-      const needsReconnect = error.status === 409;
-      if (hadPortfolio && lastPortfolioSnapshot) {
-        portfolioLoaded = true;
-        showPortfolioMode("content");
-        setStateBadge(portfolioStateBadge, "Данные устарели", "state-next");
-        setStateBadge(homePortfolioState, "Данные устарели", "state-next");
-        setStateBadge(homePortfolioSummaryState, "Данные устарели", "state-next");
-        setHomeAttentionBucket(
-          "portfolio",
-          homePortfolioAttention(lastPortfolioSnapshot, {stale: true}),
-        );
-        setStateBadge(owlState, "Ошибка обновления", "state-next");
-      } else {
-        portfolioLoaded = false;
-        portfolioFreeCash.textContent = "—";
-        showPortfolioMode("error");
-        portfolioErrorText.textContent = needsReconnect
-          ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
-          : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
-        setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
-        setStateBadge(homePortfolioState, "Ошибка", "state-error");
-        setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
-        resetHomePortfolioSummary("Портфель не подтверждён.");
-        setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
-        setHomeAttentionBucket("portfolio", homePortfolioAttention(null, {failed: true}));
-        setStateBadge(owlState, "Ошибка", "state-error");
-        updateGuard(null);
-      }
+      renderPortfolioLoadFailure(error, hadPortfolio);
     } finally {
       portfolioRequestInFlight = false;
       portfolioRefresh.disabled = false;
@@ -3114,12 +3167,21 @@
     value === "replace" ? "Замена позиции" : "Размещение свободных денег"
   );
 
+  const proposalTradeBoundText = (trade) => {
+    if (trade.action === "sell") {
+      return trade.min_proceeds_rub
+        ? `min proceeds ${formatMoney({currency: "RUB", value: trade.min_proceeds_rub})}`
+        : "";
+    }
+    return trade.max_spend_rub
+      ? `max spend ${formatMoney({currency: "RUB", value: trade.max_spend_rub})}`
+      : "";
+  };
+
   const proposalTradeSummary = (trade) => {
     const action = trade.action === "sell" ? "продать" : "купить";
     const priceType = trade.limit_price_type === "point" ? "пункты" : "₽";
-    const bound = trade.action === "sell"
-      ? (trade.min_proceeds_rub ? `min proceeds ${formatMoney({currency: "RUB", value: trade.min_proceeds_rub})}` : "")
-      : (trade.max_spend_rub ? `max spend ${formatMoney({currency: "RUB", value: trade.max_spend_rub})}` : "");
+    const bound = proposalTradeBoundText(trade);
     return [
       `${action} ${trade.ticker || trade.instrument_uid}: ${trade.lots} лот.`,
       trade.limit_price ? `limit ${trade.limit_price} ${priceType}` : "",
@@ -3129,7 +3191,7 @@
 
   const renderProposalCreateOptions = (payload) => {
     proposalCreateOptions.replaceChildren();
-    if (!payload || payload.status !== "observed" || payload.live_status !== "received") {
+    if (payload?.status !== "observed" || payload.live_status !== "received") {
       appendEmptyState(
         proposalCreateOptions,
         "Сначала нужен свежий полностью доказанный R4 preview.",
@@ -3139,8 +3201,7 @@
 
     const addOption = (label, scenarioKind, scenario, replacedUid = null) => {
       if (
-        !scenario
-        || scenario.status !== "feasible"
+        scenario?.status !== "feasible"
         || !Array.isArray(scenario.trades)
         || !scenario.trades.length
         || !scenario.before_after
@@ -4838,7 +4899,7 @@
 
   positionsList.addEventListener("click", (event) => {
     const button = closestButtonTarget(event, "[data-instrument-detail]");
-    if (button && button.dataset.instrumentDetail) {
+    if (button?.dataset.instrumentDetail) {
       void openInstrumentDetail(button.dataset.instrumentDetail);
     }
   });

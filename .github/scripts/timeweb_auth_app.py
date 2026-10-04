@@ -238,6 +238,41 @@ def portfolio_live_caps() -> tuple[int, int]:
     return order_cap, daily_cap
 
 
+def _validate_registration_environment() -> None:
+    if not _strict_boolean_environment("MULTIUSER_LEGAL_APPROVED", False):
+        raise InfraError(
+            "Registration requires an explicit reviewed legal approval gate"
+        )
+
+    capacity = registration_max_users()
+    regulatory_ready = regulatory_gate_satisfied()
+    live_test = controlled_live_test_mode()
+    if not regulatory_ready and not live_test:
+        raise InfraError(
+            "Registration requires either confirmed regulatory readiness "
+            "or an explicit controlled live-test exception"
+        )
+    if live_test and capacity > CONTROLLED_LIVE_TEST_MAX_USERS:
+        raise InfraError(
+            "CONTROLLED_LIVE_TEST_MODE allows at most "
+            f"{CONTROLLED_LIVE_TEST_MAX_USERS} users"
+        )
+    if live_test and regulatory_ready:
+        raise InfraError(
+            "Disable CONTROLLED_LIVE_TEST_MODE after regulatory readiness is confirmed"
+        )
+
+    operator_name = os.environ.get("LEGAL_OPERATOR_NAME", "").strip()
+    operator_email = os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip()
+    if not 3 <= len(operator_name) <= 200:
+        raise InfraError("LEGAL_OPERATOR_NAME must contain 3-200 characters")
+    if not re.fullmatch(
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}",
+        operator_email,
+    ):
+        raise InfraError("LEGAL_OPERATOR_EMAIL must be a valid email address")
+
+
 def validate_product_environment() -> None:
     required_names = (
         "LEGAL_PRIVACY_VERSION",
@@ -259,38 +294,7 @@ def validate_product_environment() -> None:
         raise InfraError("VKID_APP_ID must be a positive numeric value")
 
     if registration_enabled():
-        if not _strict_boolean_environment("MULTIUSER_LEGAL_APPROVED", False):
-            raise InfraError(
-                "Registration requires an explicit reviewed legal approval gate"
-            )
-
-        capacity = registration_max_users()
-        regulatory_ready = regulatory_gate_satisfied()
-        live_test = controlled_live_test_mode()
-        if not regulatory_ready and not live_test:
-            raise InfraError(
-                "Registration requires either confirmed regulatory readiness "
-                "or an explicit controlled live-test exception"
-            )
-        if live_test and capacity > CONTROLLED_LIVE_TEST_MAX_USERS:
-            raise InfraError(
-                "CONTROLLED_LIVE_TEST_MODE allows at most "
-                f"{CONTROLLED_LIVE_TEST_MAX_USERS} users"
-            )
-        if live_test and regulatory_ready:
-            raise InfraError(
-                "Disable CONTROLLED_LIVE_TEST_MODE after regulatory readiness is confirmed"
-            )
-
-        operator_name = os.environ.get("LEGAL_OPERATOR_NAME", "").strip()
-        operator_email = os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip()
-        if not 3 <= len(operator_name) <= 200:
-            raise InfraError("LEGAL_OPERATOR_NAME must contain 3-200 characters")
-        if not re.fullmatch(
-            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}",
-            operator_email,
-        ):
-            raise InfraError("LEGAL_OPERATOR_EMAIL must be a valid email address")
+        _validate_registration_environment()
 
     portfolio_live_caps()
     if portfolio_live_execution_enabled():

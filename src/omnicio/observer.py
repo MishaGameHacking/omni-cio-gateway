@@ -112,7 +112,7 @@ class PortfolioObserver:
                 try:
                     result = future.result()
                 except Exception as exc:  # noqa: BLE001 - job boundary records safe class only
-                    logger.error(
+                    logger.exception(
                         "portfolio observer failed user=%s error_type=%s",
                         user_id,
                         type(exc).__name__,
@@ -319,7 +319,7 @@ class PortfolioObserver:
                     details=details,
                 )
             except Exception as finish_exc:  # noqa: BLE001 - retain original infrastructure failure
-                logger.error(
+                logger.exception(
                     "portfolio observer could not persist failure user=%s error_type=%s",
                     user_id,
                     type(finish_exc).__name__,

@@ -78,6 +78,8 @@ VKID_FLOW_COOKIE = "omnicio_vkid_flow"
 CANONICAL_ORIGIN = "https://omnicio.ru"
 VKID_CALLBACK = f"{CANONICAL_ORIGIN}/api/auth/vkid/callback"
 INVALID_VKID_CALLBACK = "VK ID callback payload is invalid"
+_TBANK_CREDENTIAL_REJECTED_DETAIL = "stored T-Invest credential was rejected"
+_UPDATED_LEGAL_CONSENT_DETAIL = "updated legal consent required"
 
 
 class StrictRequestBody(BaseModel):
@@ -400,7 +402,13 @@ def auth_config(request: Request) -> dict[str, object]:
     }
 
 
-@app.post("/api/auth/vkid/start")
+@app.post(
+    "/api/auth/vkid/start",
+    responses={
+        400: {"description": "Legal or age confirmation is invalid"},
+        503: {"description": "VK ID login is not configured"},
+    },
+)
 def start_vkid(
     body: StartVKIDBody,
     request: Request,
@@ -518,7 +526,14 @@ def me(
     }
 
 
-@app.get("/api/market/usd-rub")
+@app.get(
+    "/api/market/usd-rub",
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": "T-Invest connection requires attention"},
+        503: {"description": "USD/RUB market data is temporarily unavailable"},
+    },
+)
 def usd_rub_market_snapshot(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -531,7 +546,7 @@ def usd_rub_market_snapshot(
     except TBankTokenRejected as exc:
         raise HTTPException(
             status_code=409,
-            detail="stored T-Invest credential was rejected",
+            detail=_TBANK_CREDENTIAL_REJECTED_DETAIL,
         ) from exc
     except (TBankUnavailable, BrokerConnectionError, SecurityValueError, ValueError) as exc:
         raise HTTPException(
@@ -665,7 +680,7 @@ def save_investment_profile(
     if not database.has_legal_versions(user.id, service(request).legal_versions()):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="updated legal consent required",
+            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
     profile = portfolio_store(request).save_profile(
         user.id,
@@ -707,7 +722,7 @@ def save_balancing_policy(
     if not database.has_legal_versions(user.id, service(request).legal_versions()):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="updated legal consent required",
+            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
     policy = portfolio_store(request).save_balancing_policy(
         user.id,
@@ -751,7 +766,14 @@ def tbank_connection_status(
     }
 
 
-@app.get("/api/broker/tbank/portfolio")
+@app.get(
+    "/api/broker/tbank/portfolio",
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": "T-Invest connection requires attention"},
+        503: {"description": "T-Invest portfolio is temporarily unavailable"},
+    },
+)
 def tbank_portfolio(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -764,7 +786,7 @@ def tbank_portfolio(
     except TBankTokenRejected as exc:
         raise HTTPException(
             status_code=409,
-            detail="stored T-Invest credential was rejected",
+            detail=_TBANK_CREDENTIAL_REJECTED_DETAIL,
         ) from exc
     except (TBankUnavailable, BrokerConnectionError, SecurityValueError) as exc:
         raise HTTPException(
@@ -804,7 +826,7 @@ def tbank_analysis(
     except TBankTokenRejected as exc:
         raise HTTPException(
             status_code=409,
-            detail="stored T-Invest credential was rejected",
+            detail=_TBANK_CREDENTIAL_REJECTED_DETAIL,
         ) from exc
     except (
         TBankUnavailable,
@@ -932,7 +954,7 @@ def create_portfolio_proposal(
     if not database.has_legal_versions(user.id, service(request).legal_versions()):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="updated legal consent required",
+            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
 
     balancing = _live_balancing_for_user(request, user.id)
@@ -983,7 +1005,7 @@ def decide_portfolio_proposal(
     if not database.has_legal_versions(user.id, service(request).legal_versions()):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="updated legal consent required",
+            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
     try:
         expected_hash = parse_proposal_hash(body.proposal_hash)
@@ -1151,7 +1173,7 @@ def _require_current_legal_consent(request: Request, user: UserRecord) -> None:
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="updated legal consent required",
+            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
 
 
@@ -1458,7 +1480,15 @@ def portfolio_intelligence(
     }
 
 
-@app.get("/api/broker/tbank/instruments/search")
+@app.get(
+    "/api/broker/tbank/instruments/search",
+    responses={
+        400: {"description": "Instrument search query is invalid"},
+        401: {"description": "Authenticated session required"},
+        409: {"description": "T-Invest connection requires attention"},
+        503: {"description": "T-Invest instrument search is temporarily unavailable"},
+    },
+)
 def tbank_instrument_search(
     request: Request,
     q: str = Query(min_length=1, max_length=64),
@@ -1482,7 +1512,7 @@ def tbank_instrument_search(
     except TBankTokenRejected as exc:
         raise HTTPException(
             status_code=409,
-            detail="stored T-Invest credential was rejected",
+            detail=_TBANK_CREDENTIAL_REJECTED_DETAIL,
         ) from exc
     except (TBankUnavailable, BrokerConnectionError, SecurityValueError) as exc:
         raise HTTPException(
@@ -1495,7 +1525,14 @@ def tbank_instrument_search(
     }
 
 
-@app.post("/api/broker/tbank/accounts")
+@app.post(
+    "/api/broker/tbank/accounts",
+    responses={
+        400: {"description": "Broker credential or terms acknowledgment is invalid"},
+        401: {"description": "Authenticated session required"},
+        503: {"description": "T-Invest API is temporarily unavailable"},
+    },
+)
 def tbank_accounts(
     body: TBankCredentialBody,
     request: Request,
@@ -1531,7 +1568,14 @@ def tbank_accounts(
     }
 
 
-@app.put("/api/broker/tbank")
+@app.put(
+    "/api/broker/tbank",
+    responses={
+        400: {"description": "Broker credential, account, or terms are invalid"},
+        401: {"description": "Authenticated session required"},
+        503: {"description": "Broker connection storage or T-Invest API is unavailable"},
+    },
+)
 def connect_tbank(
     body: TBankConnectBody,
     request: Request,

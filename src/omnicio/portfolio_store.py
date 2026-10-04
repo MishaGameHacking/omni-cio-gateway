@@ -19,13 +19,18 @@ from .intelligence import (
     EvidenceDocument,
     InstrumentRiskAssessment,
 )
+from .portfolio import SecurityExposure
 from .tbank import (
     TBankAccount,
+    TBankInstrumentMetadata,
     TBankMoney,
     TBankOperation,
     TBankOperationsPage,
+    TBankPortfolioPosition,
     TBankUserInfo,
 )
+
+_ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
 
 JobStatus = Literal["running", "succeeded", "degraded", "failed"]
 ProposalAction = Literal[
@@ -251,7 +256,7 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                _ADVISORY_LOCK_SQL,
                 (f"investment-profile:{user_id}",),
             )
             cur.execute(
@@ -424,7 +429,7 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                _ADVISORY_LOCK_SQL,
                 (f"balancing-policy:{user_id}",),
             )
             cur.execute(
@@ -575,7 +580,7 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                _ADVISORY_LOCK_SQL,
                 (f"portfolio-proposal:{user_id}",),
             )
             _require_current_proposal_sources(
@@ -1113,6 +1118,258 @@ class PortfolioStore:
                 return None
             return _sync_state(cast(dict[str, Any], fetched))
 
+    def _save_snapshot_catalog(
+        self,
+        cur: Any,
+        user_id: UUID,
+        bundle: BrokerObservationBundle,
+        catalog_retrieved_at: datetime,
+    ) -> None:
+        if bundle.metadata:
+            catalog_rows = [
+                (
+                    item.uid,
+                    item.figi,
+                    item.asset_uid,
+                    item.position_uid,
+                    item.ticker,
+                    item.name,
+                    item.isin,
+                    item.instrument_type,
+                    item.currency,
+                    item.class_code,
+                    item.lot,
+                    item.sector,
+                    item.country_of_risk,
+                    item.for_qual_investor,
+                    item.for_iis,
+                    item.api_trade_available,
+                    item.buy_available,
+                    item.sell_available,
+                    _money_decimal(item.nominal),
+                    item.nominal.currency if item.nominal else None,
+                    item.maturity_date,
+                    item.floating_coupon,
+                    item.perpetual,
+                    item.amortization,
+                    item.subordinated,
+                    item.liquidity,
+                    catalog_retrieved_at,
+                )
+                for item in bundle.metadata
+            ]
+            cur.executemany(
+                """
+                INSERT INTO instrument_catalog (
+                    provider,
+                    instrument_uid,
+                    figi,
+                    asset_uid,
+                    position_uid,
+                    ticker,
+                    name,
+                    isin,
+                    instrument_type,
+                    currency,
+                    class_code,
+                    lot,
+                    sector,
+                    country_of_risk,
+                    for_qual_investor,
+                    for_iis,
+                    api_trade_available,
+                    buy_available,
+                    sell_available,
+                    nominal_value,
+                    nominal_currency,
+                    maturity_date,
+                    floating_coupon,
+                    perpetual,
+                    amortization,
+                    subordinated,
+                    liquidity,
+                    provider_retrieved_at
+                )
+                VALUES (
+                    'tbank', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s
+                )
+                ON CONFLICT (provider, instrument_uid) DO UPDATE SET
+                    figi = EXCLUDED.figi,
+                    asset_uid = EXCLUDED.asset_uid,
+                    position_uid = EXCLUDED.position_uid,
+                    ticker = EXCLUDED.ticker,
+                    name = EXCLUDED.name,
+                    isin = EXCLUDED.isin,
+                    instrument_type = EXCLUDED.instrument_type,
+                    currency = EXCLUDED.currency,
+                    class_code = EXCLUDED.class_code,
+                    lot = EXCLUDED.lot,
+                    sector = EXCLUDED.sector,
+                    country_of_risk = EXCLUDED.country_of_risk,
+                    for_qual_investor = EXCLUDED.for_qual_investor,
+                    for_iis = EXCLUDED.for_iis,
+                    api_trade_available = EXCLUDED.api_trade_available,
+                    buy_available = EXCLUDED.buy_available,
+                    sell_available = EXCLUDED.sell_available,
+                    nominal_value = EXCLUDED.nominal_value,
+                    nominal_currency = EXCLUDED.nominal_currency,
+                    maturity_date = EXCLUDED.maturity_date,
+                    floating_coupon = EXCLUDED.floating_coupon,
+                    perpetual = EXCLUDED.perpetual,
+                    amortization = EXCLUDED.amortization,
+                    subordinated = EXCLUDED.subordinated,
+                    liquidity = EXCLUDED.liquidity,
+                    last_seen_at = now(),
+                    provider_retrieved_at = EXCLUDED.provider_retrieved_at
+                """,
+                catalog_rows,
+            )
+
+            access_rows = [
+                (
+                    user_id,
+                    bundle.account_id,
+                    item.uid,
+                    _json(list(item.required_tests)),
+                    catalog_retrieved_at,
+                )
+                for item in bundle.metadata
+            ]
+            cur.executemany(
+                """
+                INSERT INTO account_instrument_access (
+                    user_id,
+                    account_id,
+                    provider,
+                    instrument_uid,
+                    required_tests,
+                    observed_at
+                )
+                VALUES (%s, %s, 'tbank', %s, %s::jsonb, %s)
+                ON CONFLICT (user_id, account_id, provider, instrument_uid)
+                DO UPDATE SET
+                    required_tests = EXCLUDED.required_tests,
+                    observed_at = EXCLUDED.observed_at
+                """,
+                access_rows,
+            )
+
+
+
+    @staticmethod
+    def _snapshot_position_row(
+        snapshot_id: UUID,
+        user_id: UUID,
+        position: TBankPortfolioPosition,
+        exposure: SecurityExposure | None,
+        info: TBankInstrumentMetadata | None,
+    ) -> tuple[object, ...]:
+        current_price_currency = (
+            position.current_price.currency if position.current_price else None
+        )
+        current_nkd_currency = (
+            position.current_nkd.currency if position.current_nkd else None
+        )
+        average_price_currency = (
+            position.average_price_fifo.currency
+            if position.average_price_fifo
+            else None
+        )
+        value_rub = (
+            Decimal(exposure.value_rub)
+            if exposure is not None and exposure.value_rub is not None
+            else None
+        )
+        nav_percent = (
+            Decimal(exposure.nav_percent)
+            if exposure is not None and exposure.nav_percent is not None
+            else None
+        )
+        sector = info.sector if info else ""
+        country_of_risk = info.country_of_risk if info else ""
+        for_qual_investor = info.for_qual_investor if info else None
+        return (
+            snapshot_id,
+            user_id,
+            position.instrument_uid or position.figi,
+            position.figi,
+            position.ticker,
+            position.instrument_type,
+            Decimal(position.quantity),
+            Decimal(position.quantity_lots),
+            _money_decimal(position.current_price),
+            current_price_currency,
+            _money_decimal(position.current_nkd),
+            current_nkd_currency,
+            _money_decimal(position.average_price_fifo),
+            average_price_currency,
+            position.blocked,
+            Decimal(position.blocked_lots),
+            value_rub,
+            nav_percent,
+            sector,
+            country_of_risk,
+            for_qual_investor,
+        )
+
+    def _save_snapshot_positions(
+        self,
+        cur: Any,
+        snapshot_id: UUID,
+        user_id: UUID,
+        bundle: BrokerObservationBundle,
+        securities: dict[str, SecurityExposure],
+        metadata: dict[str, TBankInstrumentMetadata],
+    ) -> None:
+        for position in bundle.portfolio.positions:
+            if Decimal(position.quantity) == 0 or position.instrument_type == "currency":
+                continue
+            uid = position.instrument_uid or position.figi
+            exposure = securities.get(uid)
+            info = metadata.get(position.instrument_uid)
+            cur.execute(
+                """
+                INSERT INTO portfolio_snapshot_positions (
+                    snapshot_id,
+                    user_id,
+                    instrument_uid,
+                    figi,
+                    ticker,
+                    instrument_type,
+                    quantity,
+                    quantity_lots,
+                    current_price_value,
+                    current_price_currency,
+                    current_nkd_value,
+                    current_nkd_currency,
+                    average_price_fifo_value,
+                    average_price_fifo_currency,
+                    blocked,
+                    blocked_lots,
+                    value_rub,
+                    nav_percent,
+                    sector,
+                    country_of_risk,
+                    for_qual_investor
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s
+                )
+                """,
+                self._snapshot_position_row(
+                    snapshot_id,
+                    user_id,
+                    position,
+                    exposure,
+                    info,
+                ),
+            )
+
+
     def save_snapshot(
         self,
         user_id: UUID,
@@ -1158,137 +1415,12 @@ class PortfolioStore:
             conn.cursor() as cur,
         ):
             self._tenant(cur, user_id)
-            if bundle.metadata:
-                catalog_rows = [
-                    (
-                        item.uid,
-                        item.figi,
-                        item.asset_uid,
-                        item.position_uid,
-                        item.ticker,
-                        item.name,
-                        item.isin,
-                        item.instrument_type,
-                        item.currency,
-                        item.class_code,
-                        item.lot,
-                        item.sector,
-                        item.country_of_risk,
-                        item.for_qual_investor,
-                        item.for_iis,
-                        item.api_trade_available,
-                        item.buy_available,
-                        item.sell_available,
-                        _money_decimal(item.nominal),
-                        item.nominal.currency if item.nominal else None,
-                        item.maturity_date,
-                        item.floating_coupon,
-                        item.perpetual,
-                        item.amortization,
-                        item.subordinated,
-                        item.liquidity,
-                        catalog_retrieved_at,
-                    )
-                    for item in bundle.metadata
-                ]
-                cur.executemany(
-                    """
-                    INSERT INTO instrument_catalog (
-                        provider,
-                        instrument_uid,
-                        figi,
-                        asset_uid,
-                        position_uid,
-                        ticker,
-                        name,
-                        isin,
-                        instrument_type,
-                        currency,
-                        class_code,
-                        lot,
-                        sector,
-                        country_of_risk,
-                        for_qual_investor,
-                        for_iis,
-                        api_trade_available,
-                        buy_available,
-                        sell_available,
-                        nominal_value,
-                        nominal_currency,
-                        maturity_date,
-                        floating_coupon,
-                        perpetual,
-                        amortization,
-                        subordinated,
-                        liquidity,
-                        provider_retrieved_at
-                    )
-                    VALUES (
-                        'tbank', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s
-                    )
-                    ON CONFLICT (provider, instrument_uid) DO UPDATE SET
-                        figi = EXCLUDED.figi,
-                        asset_uid = EXCLUDED.asset_uid,
-                        position_uid = EXCLUDED.position_uid,
-                        ticker = EXCLUDED.ticker,
-                        name = EXCLUDED.name,
-                        isin = EXCLUDED.isin,
-                        instrument_type = EXCLUDED.instrument_type,
-                        currency = EXCLUDED.currency,
-                        class_code = EXCLUDED.class_code,
-                        lot = EXCLUDED.lot,
-                        sector = EXCLUDED.sector,
-                        country_of_risk = EXCLUDED.country_of_risk,
-                        for_qual_investor = EXCLUDED.for_qual_investor,
-                        for_iis = EXCLUDED.for_iis,
-                        api_trade_available = EXCLUDED.api_trade_available,
-                        buy_available = EXCLUDED.buy_available,
-                        sell_available = EXCLUDED.sell_available,
-                        nominal_value = EXCLUDED.nominal_value,
-                        nominal_currency = EXCLUDED.nominal_currency,
-                        maturity_date = EXCLUDED.maturity_date,
-                        floating_coupon = EXCLUDED.floating_coupon,
-                        perpetual = EXCLUDED.perpetual,
-                        amortization = EXCLUDED.amortization,
-                        subordinated = EXCLUDED.subordinated,
-                        liquidity = EXCLUDED.liquidity,
-                        last_seen_at = now(),
-                        provider_retrieved_at = EXCLUDED.provider_retrieved_at
-                    """,
-                    catalog_rows,
-                )
-
-                access_rows = [
-                    (
-                        user_id,
-                        bundle.account_id,
-                        item.uid,
-                        _json(list(item.required_tests)),
-                        catalog_retrieved_at,
-                    )
-                    for item in bundle.metadata
-                ]
-                cur.executemany(
-                    """
-                    INSERT INTO account_instrument_access (
-                        user_id,
-                        account_id,
-                        provider,
-                        instrument_uid,
-                        required_tests,
-                        observed_at
-                    )
-                    VALUES (%s, %s, 'tbank', %s, %s::jsonb, %s)
-                    ON CONFLICT (user_id, account_id, provider, instrument_uid)
-                    DO UPDATE SET
-                        required_tests = EXCLUDED.required_tests,
-                        observed_at = EXCLUDED.observed_at
-                    """,
-                    access_rows,
-                )
-
+            self._save_snapshot_catalog(
+                cur,
+                user_id,
+                bundle,
+                catalog_retrieved_at,
+            )
             cur.execute(
                 """
                 INSERT INTO portfolio_snapshots (
@@ -1345,79 +1477,14 @@ class PortfolioStore:
                 return cast(UUID, cast(dict[str, Any], existing)["id"])
             snapshot_id = cast(UUID, cast(dict[str, Any], snapshot_row)["id"])
 
-            for position in bundle.portfolio.positions:
-                if Decimal(position.quantity) == 0 or position.instrument_type == "currency":
-                    continue
-                uid = position.instrument_uid or position.figi
-                exposure = securities.get(uid)
-                info = metadata.get(position.instrument_uid)
-                cur.execute(
-                    """
-                    INSERT INTO portfolio_snapshot_positions (
-                        snapshot_id,
-                        user_id,
-                        instrument_uid,
-                        figi,
-                        ticker,
-                        instrument_type,
-                        quantity,
-                        quantity_lots,
-                        current_price_value,
-                        current_price_currency,
-                        current_nkd_value,
-                        current_nkd_currency,
-                        average_price_fifo_value,
-                        average_price_fifo_currency,
-                        blocked,
-                        blocked_lots,
-                        value_rub,
-                        nav_percent,
-                        sector,
-                        country_of_risk,
-                        for_qual_investor
-                    )
-                    VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s
-                    )
-                    """,
-                    (
-                        snapshot_id,
-                        user_id,
-                        uid,
-                        position.figi,
-                        position.ticker,
-                        position.instrument_type,
-                        Decimal(position.quantity),
-                        Decimal(position.quantity_lots),
-                        _money_decimal(position.current_price),
-                        position.current_price.currency if position.current_price else None,
-                        _money_decimal(position.current_nkd),
-                        position.current_nkd.currency if position.current_nkd else None,
-                        _money_decimal(position.average_price_fifo),
-                        (
-                            position.average_price_fifo.currency
-                            if position.average_price_fifo
-                            else None
-                        ),
-                        position.blocked,
-                        Decimal(position.blocked_lots),
-                        (
-                            Decimal(exposure.value_rub)
-                            if exposure is not None and exposure.value_rub is not None
-                            else None
-                        ),
-                        (
-                            Decimal(exposure.nav_percent)
-                            if exposure is not None and exposure.nav_percent is not None
-                            else None
-                        ),
-                        info.sector if info else "",
-                        info.country_of_risk if info else "",
-                        info.for_qual_investor if info else None,
-                    ),
-                )
+            self._save_snapshot_positions(
+                cur,
+                snapshot_id,
+                user_id,
+                bundle,
+                securities,
+                metadata,
+            )
             return snapshot_id
 
     def save_evidence(

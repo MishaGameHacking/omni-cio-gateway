@@ -43,14 +43,14 @@ def _key_bytes(value: str, *, name: str) -> bytes:
 def encrypt_secret(value: str, crypto_key: str) -> bytes:
     try:
         return Fernet(crypto_key.encode("ascii")).encrypt(value.encode())
-    except (ValueError, UnicodeError) as exc:
+    except ValueError as exc:
         raise SecurityValueError("invalid secret encryption key") from exc
 
 
 def decrypt_secret(value: bytes, crypto_key: str) -> str:
     try:
         return Fernet(crypto_key.encode("ascii")).decrypt(value).decode()
-    except (InvalidToken, ValueError, UnicodeError) as exc:
+    except (InvalidToken, ValueError) as exc:
         raise SecurityValueError("invalid encrypted secret or encryption key") from exc
 
 
@@ -103,7 +103,7 @@ def seal_vkid_flow(
     ).encode()
     try:
         return Fernet(crypto_key.encode("ascii")).encrypt(payload).decode("ascii")
-    except (ValueError, UnicodeError) as exc:
+    except ValueError as exc:
         raise SecurityValueError("invalid VK ID flow encryption key") from exc
 
 
@@ -119,7 +119,7 @@ def open_vkid_flow(
             ttl=ttl_seconds,
         )
         payload = json.loads(raw)
-    except (InvalidToken, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+    except (InvalidToken, ValueError) as exc:
         raise SecurityValueError("invalid or expired VK ID flow") from exc
 
     if not isinstance(payload, dict):
