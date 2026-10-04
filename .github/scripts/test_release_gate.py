@@ -222,7 +222,7 @@ class SelfHostedCiPolicyTests(unittest.TestCase):
         self.assertIn("max-parallel: 4", workflow)
         self.assertIn("Full tests (includes security)", workflow)
         self.assertIn(
-            'command: \'"%OMNICIO_PYTHON%" -m pytest\'',
+            'command: \'"%OMNICIO_PYTHON%" .github/scripts/test_with_postgres.py\'',
             workflow,
         )
         self.assertNotIn("name: Security tests", workflow)

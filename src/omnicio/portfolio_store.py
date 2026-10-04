@@ -802,6 +802,11 @@ class PortfolioStore:
             fetched = cur.fetchone()
             if fetched is None:
                 raise RuntimeError("investment profile insert returned no row")
+            cur.execute(
+                "INSERT INTO audit_events (user_id, event_type) "
+                "VALUES (%s, 'investment_profile_saved')",
+                (user_id,),
+            )
             return _profile(cast(dict[str, Any], fetched))
 
     def current_balancing_policy(
@@ -999,6 +1004,11 @@ class PortfolioStore:
             fetched = cur.fetchone()
             if fetched is None:
                 raise RuntimeError("balancing policy insert returned no row")
+            cur.execute(
+                "INSERT INTO audit_events (user_id, event_type) "
+                "VALUES (%s, 'balancing_policy_saved')",
+                (user_id,),
+            )
             return _balancing_policy(cast(dict[str, Any], fetched))
 
     def create_proposal(

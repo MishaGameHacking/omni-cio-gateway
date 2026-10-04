@@ -133,6 +133,11 @@
   const portfolioDisconnected = document.querySelector("#portfolio-disconnected");
   const portfolioError = document.querySelector("#portfolio-error");
   const portfolioErrorText = document.querySelector("#portfolio-error-text");
+  const portfolioDataNotice = requiredElement("#portfolio-data-notice");
+  const activityList = requiredElement("#activity-list");
+  const activityMessage = requiredElement("#activity-message");
+  const activityRefresh = requiredElement("#activity-refresh");
+  const supportRequestId = requiredElement("#support-request-id");
   const portfolioContent = document.querySelector("#portfolio-content");
   const portfolioTotal = document.querySelector("#portfolio-total");
   const portfolioYield = document.querySelector("#portfolio-yield");
@@ -298,7 +303,12 @@
   let portfolioLoaded = false;
   let portfolioRequestInFlight = false;
   let lastPortfolioSnapshot = null;
+  let lastPortfolioLoadError = null;
   let lastPortfolioRefreshAt = 0;
+  let portfolioGeneration = 0;
+  let portfolioFreshnessTimer = null;
+  let lastFailedRequestId = "";
+  let activityRequestInFlight = false;
   let portfolioVisualizationLoaded = false;
   let portfolioVisualizationInFlight = false;
   let lastPortfolioVisualization = null;
@@ -403,6 +413,7 @@
 
   const api = async (path, options = {}) => {
     const response = await fetch(apiPath(path), {
+      cache: "no-store",
       credentials: "same-origin",
       headers: {"Content-Type": "application/json", ...options.headers},
       ...options,
@@ -411,9 +422,59 @@
     if (!response.ok) {
       const error = new Error(apiErrorMessage(response, body));
       error.status = response.status;
+      const requestId = response.headers.get("X-Request-ID") || "";
+      error.requestId = /^[0-9a-f]{32}$/.test(requestId) ? requestId : "";
+      if (error.requestId) {
+        lastFailedRequestId = error.requestId;
+        supportRequestId.textContent = error.requestId;
+      }
       throw error;
     }
     return body;
+  };
+
+  const errorReference = (error) => error?.requestId ? ` Код обращения: ${error.requestId}.` : "";
+
+  const ACTIVITY_LABELS = {
+    account_created: "Аккаунт создан",
+    login_succeeded: "Вход через VK ID",
+    tbank_connected: "Подключение T-Invest сохранено",
+    tbank_disconnected: "T-Invest отключён",
+    investment_profile_saved: "Профиль капитала сохранён",
+    balancing_policy_saved: "Лимиты портфеля сохранены",
+    support_sessions_revoked: "Сеансы входа завершены поддержкой",
+  };
+
+  const loadAccountActivity = async () => {
+    if (activityRequestInFlight || !currentProfileId) return;
+    activityRequestInFlight = true;
+    activityRefresh.disabled = true;
+    showMessage(activityMessage, "Загружаем действия…");
+    try {
+      const payload = await api("/api/me/activity", {method: "GET"});
+      activityList.replaceChildren();
+      (payload.events || []).forEach((event) => {
+        if (!Object.hasOwn(ACTIVITY_LABELS, event.event_type)) return;
+        const row = document.createElement("li");
+        const label = document.createElement("span");
+        label.textContent = ACTIVITY_LABELS[event.event_type];
+        const time = document.createElement("time");
+        time.dateTime = event.created_at;
+        time.textContent = formatDateTime(event.created_at);
+        row.append(label, time);
+        activityList.append(row);
+      });
+      showMessage(activityMessage, activityList.children.length ? "" : "Событий пока нет.");
+    } catch (error) {
+      if (error.status === 401) {
+        location.reload();
+        return;
+      }
+      showMessage(activityMessage, "Не удалось обновить журнал. Попробуйте позже." + errorReference(error), true);
+    } finally {
+      activityRequestInFlight = false;
+      activityRefresh.disabled = false;
+    }
   };
 
   const showMessage = (element, text, isError = false) => {
@@ -594,6 +655,7 @@
     } else if (view === "portfolio" && !portfolioVisualizationLoaded) {
       void loadPortfolioVisualization();
     }
+    if (view === "profile") void loadAccountActivity();
     if (
       view === "decisions"
       && tbankIsConnected
@@ -956,7 +1018,7 @@
       return;
     }
 
-    setStateBadge(owlState, "Наблюдает", "state-ok");
+    setStateBadge(owlState, "Снимок получен", "state-ok");
     owlLastRefresh.textContent = formatDateTime(timestamp);
   };
 
@@ -2898,7 +2960,7 @@
     return cash - blocked;
   };
 
-  const homePortfolioAttention = (snapshot, {stale = false, failed = false} = {}) => {
+  const homePortfolioAttention = (snapshot, {stale = false, failed = false, expired = false} = {}) => {
     const items = [];
     if (failed) {
       items.push({
@@ -2916,7 +2978,9 @@
       items.push({
         severity: "warning",
         title: "Данные портфеля устарели",
-        detail: "Последний подтверждённый снимок сохранён на экране, но новое чтение T-Invest завершилось ошибкой.",
+        detail: expired
+          ? "Срок актуальности снимка истёк. Обновите данные перед принятием решения."
+          : "Последний подтверждённый снимок сохранён на экране, но новое чтение T-Invest завершилось ошибкой.",
         view: "portfolio",
       });
     }
@@ -3082,9 +3146,68 @@
     setHomeAttentionBucket("portfolio", homePortfolioAttention(snapshot));
   };
 
+  const clearPortfolioFreshnessTimer = () => {
+    if (portfolioFreshnessTimer !== null) {
+      window.clearTimeout(portfolioFreshnessTimer);
+      portfolioFreshnessTimer = null;
+    }
+  };
+
+  const renderPortfolioDataStatus = () => {
+    clearPortfolioFreshnessTimer();
+    const snapshot = lastPortfolioSnapshot;
+    if (!snapshot) return;
+    const error = lastPortfolioLoadError;
+    const freshness = snapshot.freshness;
+    const validUntil = Date.parse(freshness?.valid_until || "");
+    const expired = Number.isFinite(validUntil) && Date.now() >= validUntil;
+    let state = freshness?.status || "unavailable";
+    if (error || expired) state = "stale";
+    const labels = {
+      fresh: "Данные получены",
+      partial: "Часть данных уточняется",
+      stale: "Нужно обновить",
+      unavailable: "Время не подтверждено",
+    };
+    const label = labels[state] || labels.unavailable;
+    [portfolioStateBadge, homePortfolioState, homePortfolioSummaryState, owlState].forEach(
+      (badge) => setStateBadge(badge, label, state === "fresh" ? "state-ok" : "state-next"),
+    );
+    const received = formatDateTime(freshness?.observed_at || snapshot.refreshed_at);
+    let note = `Снимок получен из T-Invest: ${received}. Это время чтения данных, а не время всех котировок.`;
+    if (state === "stale") {
+      note = error
+        ? `Обновление не удалось. Показан последний снимок от ${received}.` + errorReference(error)
+        : `Снимок от ${received} требует обновления. Нажмите «Обновить данные».`;
+      setHomeAttentionBucket("portfolio", homePortfolioAttention(snapshot, {stale: true, expired: !error}));
+    } else if (state === "partial") {
+      note += " Денежные лимиты ещё уточняются; доступная сумма не подтверждена.";
+    } else if (state === "unavailable") {
+      note = "Время данных не подтверждено. Обновите снимок перед принятием решения.";
+    }
+    portfolioDataNotice.textContent = note;
+    if (state !== "fresh") {
+      portfolioFreeCash.textContent = "Не подтверждены";
+      homeFreeCash.textContent = "Не подтверждены";
+      setStateBadge(guardState, "Нужны свежие данные", "state-next");
+    }
+    if (!error && !expired && Number.isFinite(validUntil)) {
+      portfolioFreshnessTimer = window.setTimeout(
+        () => renderPortfolioDataStatus(), Math.min(2147483647, Math.max(1, validUntil - Date.now() + 50)),
+      );
+    }
+  };
+
+  const invalidatePortfolioRequest = () => {
+    portfolioGeneration += 1;
+    portfolioRequestInFlight = false;
+    clearPortfolioFreshnessTimer();
+  };
+
   const renderPortfolio = (snapshot) => {
     const portfolio = snapshot.portfolio;
     lastPortfolioSnapshot = snapshot;
+    lastPortfolioLoadError = null;
     portfolioTotal.textContent = formatMoney(portfolio.total);
     portfolioYield.textContent = formatPercent(portfolio.expected_yield_percent, {sign: true});
     applySignedClass(portfolioYield, portfolio.expected_yield_percent);
@@ -3110,11 +3233,14 @@
     showPortfolioMode("content");
     setStateBadge(portfolioStateBadge, "Данные получены", "state-ok");
     setStateBadge(homePortfolioState, "Работает", "state-ok");
+    renderPortfolioDataStatus();
   };
 
   const renderDisconnectedPortfolio = () => {
+    clearPortfolioFreshnessTimer();
     portfolioLoaded = false;
     lastPortfolioSnapshot = null;
+    lastPortfolioLoadError = null;
     lastPortfolioRefreshAt = 0;
     resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
     portfolioFreeCash.textContent = "—";
@@ -3128,6 +3254,7 @@
   };
 
   const renderPortfolioLoadFailure = (error, hadPortfolio) => {
+    lastPortfolioLoadError = error;
     const needsReconnect = error.status === 409;
     if (hadPortfolio && lastPortfolioSnapshot) {
       portfolioLoaded = true;
@@ -3139,7 +3266,7 @@
         "portfolio",
         homePortfolioAttention(lastPortfolioSnapshot, {stale: true}),
       );
-      setStateBadge(owlState, "Ошибка обновления", "state-next");
+      renderPortfolioDataStatus();
       return;
     }
 
@@ -3149,6 +3276,7 @@
     portfolioErrorText.textContent = needsReconnect
       ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
       : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
+    portfolioErrorText.textContent += errorReference(error);
     setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
     setStateBadge(homePortfolioState, "Ошибка", "state-error");
     setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
@@ -3169,6 +3297,7 @@
     }
 
     const hadPortfolio = portfolioLoaded;
+    const generation = portfolioGeneration;
     portfolioRequestInFlight = true;
     portfolioRefresh.disabled = true;
     if (!hadPortfolio) {
@@ -3183,9 +3312,11 @@
 
     try {
       const snapshot = await api("/api/broker/tbank/portfolio", {method: "GET"});
+      if (generation !== portfolioGeneration || !tbankIsConnected) return;
       renderPortfolio(snapshot);
       void loadPortfolioVisualization({force});
     } catch (error) {
+      if (generation !== portfolioGeneration) return;
       if (error.status === 401) {
         location.reload();
         return;
@@ -3193,8 +3324,10 @@
 
       renderPortfolioLoadFailure(error, hadPortfolio);
     } finally {
-      portfolioRequestInFlight = false;
-      portfolioRefresh.disabled = false;
+      if (generation === portfolioGeneration) {
+        portfolioRequestInFlight = false;
+        portfolioRefresh.disabled = false;
+      }
     }
   };
 
@@ -5132,7 +5265,11 @@
   };
 
   const renderTbankSummary = (status) => {
+    invalidatePortfolioRequest();
     resetAnalysis();
+    const accountChanged = tbankAccountId !== String(status.account_id || "")
+      || connectedTbankEnvironment !== status.environment;
+    if (accountChanged) renderDisconnectedPortfolio();
     homeConnectionCard.classList.remove("is-offline", "is-error");
     topConnectionIndicator.classList.remove("is-offline", "is-error");
     tbankIsConnected = Boolean(status.connected);
@@ -5151,6 +5288,7 @@
       resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
       portfolioLoaded = false;
       lastPortfolioSnapshot = null;
+      lastPortfolioLoadError = null;
       resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
       portfolioFreeCash.textContent = "—";
       lastPortfolioRefreshAt = 0;
@@ -5212,6 +5350,7 @@
   };
 
   const renderTbankFailure = () => {
+    invalidatePortfolioRequest();
     resetAnalysis();
     setHomeAttentionBucket("connection", [{
       severity: "error",
@@ -5234,6 +5373,7 @@
     syncExecutionControls();
     portfolioLoaded = false;
     lastPortfolioSnapshot = null;
+    lastPortfolioLoadError = null;
     lastPortfolioRefreshAt = 0;
     setStateBadge(homeTbankState, "Ошибка", "state-error");
     setStateBadge(homePortfolioState, "Ошибка", "state-error");
@@ -5502,6 +5642,8 @@
       return;
     }
 
+    if (lastPortfolioSnapshot) renderPortfolioDataStatus();
+
     const cbrStale = Date.now() - lastCbrIndicatorRefreshAt >= 5 * 60 * 1000;
     if (cbrStale) {
       void loadCbrIndicators();
@@ -5516,6 +5658,7 @@
   portfolioRefresh.addEventListener("click", () => {
     void loadPortfolioData({force: true});
   });
+  activityRefresh.addEventListener("click", () => { void loadAccountActivity(); });
 
   portfolioRetry.addEventListener("click", () => {
     void loadPortfolioData({force: true});
@@ -5779,6 +5922,7 @@
       `OmniCIO v${release.version || "—"}`,
       `build ${release.build || "—"}`,
       `profile ${currentProfileId || "—"}`,
+      `request ${lastFailedRequestId || "нет ошибок в этой вкладке"}`,
     ].join("\n");
 
     try {
