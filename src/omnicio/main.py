@@ -78,7 +78,7 @@ VKID_FLOW_COOKIE = "omnicio_vkid_flow"
 CANONICAL_ORIGIN = "https://omnicio.ru"
 VKID_CALLBACK = f"{CANONICAL_ORIGIN}/api/auth/vkid/callback"
 INVALID_VKID_CALLBACK = "VK ID callback payload is invalid"
-_TBANK_CREDENTIAL_REJECTED_DETAIL = _TBANK_CREDENTIAL_REJECTED_DETAIL
+_TBANK_CREDENTIAL_REJECTED_DETAIL = "stored T-Invest credential was rejected"
 
 
 class StrictRequestBody(BaseModel):
