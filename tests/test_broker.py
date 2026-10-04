@@ -6,7 +6,7 @@ import ssl
 import urllib.error
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import UUID
 
 import pytest
@@ -1195,7 +1195,7 @@ def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> 
 
 @patch("urllib.request.urlopen")
 def test_tbank_exchange_candles_reject_too_short_window_before_network(
-    urlopen: object,
+    urlopen: Mock,
 ) -> None:
     client = TBankInvestClient()
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
