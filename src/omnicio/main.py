@@ -41,7 +41,6 @@ from .portfolio import PortfolioAnalysisError
 from .portfolio_store import (
     BalancingPolicyRecord,
     InvestmentProfileRecord,
-    PortfolioProposalRecord,
     PortfolioStore,
     ProposalStateError,
 )
