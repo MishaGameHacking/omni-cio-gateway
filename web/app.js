@@ -2015,6 +2015,37 @@
     syncInstrumentMarketControls();
   };
 
+  const fetchInstrumentMarketPayload = async (segment, instrumentUid, generation) => {
+    const payload = await api(
+      `/api/market/instruments/${segment}?period=${encodeURIComponent(instrumentMarketPeriod)}`,
+      {method: "GET"},
+    );
+    if (!instrumentMarketRequestIsCurrent(generation, instrumentUid)) {
+      return null;
+    }
+    if (!instrumentMarketPayloadMatches(payload, instrumentUid)) {
+      throw new TypeError("Instrument market response does not match request");
+    }
+    return payload;
+  };
+
+  const handleInstrumentMarketLoadError = (
+    error,
+    generation,
+    instrumentUid,
+    displayedPeriod,
+  ) => {
+    if (error.status === 401) {
+      location.reload();
+      return;
+    }
+    if (!instrumentMarketRequestIsCurrent(generation, instrumentUid)) {
+      return;
+    }
+    renderInstrumentMarketLoadFailure(error);
+    restoreDisplayedInstrumentMarketPeriod(displayedPeriod);
+  };
+
   const loadInstrumentMarket = async (instrumentUid, {force = false} = {}) => {
     const displayedPeriod = displayedInstrumentMarketPeriod(instrumentUid);
     let segment;
@@ -2040,29 +2071,20 @@
     setStateBadge(instrumentMarketState, "Загружаем", "");
     instrumentMarketNote.textContent = "Получаем биржевые свечи, последнюю цену и торговый статус T-Invest.";
     try {
-      const payload = await api(
-        `/api/market/instruments/${segment}?period=${encodeURIComponent(instrumentMarketPeriod)}`,
-        {method: "GET"},
-      );
-      if (!instrumentMarketRequestIsCurrent(generation, instrumentUid)) {
+      const payload = await fetchInstrumentMarketPayload(segment, instrumentUid, generation);
+      if (payload === null) {
         return;
-      }
-      if (!instrumentMarketPayloadMatches(payload, instrumentUid)) {
-        throw new TypeError("Instrument market response does not match request");
       }
       renderInstrumentMarketChart(payload);
       instrumentMarketRetryCount = 0;
       startInstrumentMarketStream();
     } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      if (!instrumentMarketRequestIsCurrent(generation, instrumentUid)) {
-        return;
-      }
-      renderInstrumentMarketLoadFailure(error);
-      restoreDisplayedInstrumentMarketPeriod(displayedPeriod);
+      handleInstrumentMarketLoadError(
+        error,
+        generation,
+        instrumentUid,
+        displayedPeriod,
+      );
     }
   };
 
