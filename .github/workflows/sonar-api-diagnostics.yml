@@ -1,0 +1,24 @@
+name: Sonar API diagnostics
+
+on:
+  push:
+    branches:
+      - diagnostic/sonar-main-remaining-2
+    paths:
+      - ".github/workflows/sonar-api-diagnostics.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  issues:
+    name: Query Sonar API
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Query open main issues
+        shell: bash
+        run: |
+          curl --fail --silent --show-error \
+            "https://sonarcloud.io/api/issues/search?componentKeys=MishaGameHacking_omni-cio-gateway&branch=main&issueStatuses=OPEN,CONFIRMED&ps=100" \
+            | python -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps({"total":d.get("total"),"issues":[{"key":i.get("key"),"rule":i.get("rule"),"component":i.get("component"),"line":i.get("line"),"message":i.get("message"),"severity":i.get("severity"),"type":i.get("type")} for i in d.get("issues",[]) ]}, ensure_ascii=False, indent=2))'
