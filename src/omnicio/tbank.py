@@ -2119,19 +2119,22 @@ def _text(value: object) -> str:
     raise TBankUnavailable("T-Invest API returned invalid text value")
 
 
+_INVALID_INTEGER_VALUE_ERROR = "T-Invest API returned invalid integer value"
+
+
 def _integer_text(value: object) -> str:
     if value is None:
         return "0"
     if isinstance(value, bool):
-        raise TBankUnavailable("T-Invest API returned invalid integer value")
+        raise TBankUnavailable(_INVALID_INTEGER_VALUE_ERROR)
     if isinstance(value, (str, int)):
         text = str(value)
         try:
             int(text)
         except ValueError as exc:
-            raise TBankUnavailable("T-Invest API returned invalid integer value") from exc
+            raise TBankUnavailable(_INVALID_INTEGER_VALUE_ERROR) from exc
         return text
-    raise TBankUnavailable("T-Invest API returned invalid integer value")
+    raise TBankUnavailable(_INVALID_INTEGER_VALUE_ERROR)
 
 
 def _quotation(value: object) -> str | None:
