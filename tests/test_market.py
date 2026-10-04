@@ -176,15 +176,17 @@ def test_cbr_client_rejects_key_rate_without_current_effective_value() -> None:
         rate="99.00",
     )
 
-    with patch(
-        "urllib.request.urlopen",
-        side_effect=[
-            FakeXmlResponse(daily),
-            FakeXmlResponse(future_key_rate),
-        ],
+    with (
+        patch(
+            "urllib.request.urlopen",
+            side_effect=[
+                FakeXmlResponse(daily),
+                FakeXmlResponse(future_key_rate),
+            ],
+        ),
+        pytest.raises(CBRUnavailable, match="no current key rate"),
     ):
-        with pytest.raises(CBRUnavailable, match="no current key rate"):
-            client.latest_indicators()
+        client.latest_indicators()
 
 
 class FakeBroker:
