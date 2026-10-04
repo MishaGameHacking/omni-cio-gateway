@@ -22,6 +22,23 @@ class MarketReferenceRate:
 
 
 @dataclass(frozen=True, slots=True)
+class CBRIndicator:
+    code: str
+    value: str
+    unit: str
+    effective_date: str
+
+
+@dataclass(frozen=True, slots=True)
+class CBRIndicatorSnapshot:
+    source: str
+    fetched_at: str
+    key_rate: CBRIndicator
+    usd_rub: CBRIndicator
+    eur_rub: CBRIndicator
+
+
+@dataclass(frozen=True, slots=True)
 class UsdRubSnapshot:
     pair: str
     price: str
@@ -106,6 +123,31 @@ class MarketService:
         self.broker = broker
         self.cbr = cbr
         self.live_after_seconds = live_after_seconds
+
+    def cbr_indicators(self) -> CBRIndicatorSnapshot:
+        indicators = self.cbr.latest_indicators()
+        return CBRIndicatorSnapshot(
+            source="Bank of Russia",
+            fetched_at=indicators.fetched_at.isoformat(),
+            key_rate=CBRIndicator(
+                code="KEY_RATE",
+                value=indicators.key_rate.value,
+                unit="percent",
+                effective_date=indicators.key_rate.effective_date.isoformat(),
+            ),
+            usd_rub=CBRIndicator(
+                code="USD_RUB",
+                value=indicators.usd_rub.value,
+                unit="RUB",
+                effective_date=indicators.usd_rub.effective_date.isoformat(),
+            ),
+            eur_rub=CBRIndicator(
+                code="EUR_RUB",
+                value=indicators.eur_rub.value,
+                unit="RUB",
+                effective_date=indicators.eur_rub.effective_date.isoformat(),
+            ),
+        )
 
     def usd_rub(self, user_id: UUID) -> UsdRubSnapshot:
         quote = self.broker.usd_rub_quote(user_id)
