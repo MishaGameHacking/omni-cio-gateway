@@ -1054,12 +1054,13 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
 
             # The user-facing journal filters both owner and event type, and
             # never serializes audit metadata (which is for server use only).
-            admin.execute(
-                "INSERT INTO audit_events (user_id, event_type, metadata) "
-                "VALUES (%s, 'login_succeeded', %s::jsonb), "
-                "(%s, 'internal_test_event', '{}'::jsonb)",
-                (USER_TWO, '{"private_marker": "not-for-the-journal"}', USER_ONE),
-            )
+            with psycopg.connect(DATABASE_URL, autocommit=True) as audit_admin:
+                audit_admin.execute(
+                    "INSERT INTO audit_events (user_id, event_type, metadata) "
+                    "VALUES (%s, 'login_succeeded', %s::jsonb), "
+                    "(%s, 'internal_test_event', '{}'::jsonb)",
+                    (USER_TWO, '{"private_marker": "not-for-the-journal"}', USER_ONE),
+                )
             own_activity = database.recent_activity(USER_ONE)
             other_activity = database.recent_activity(USER_TWO)
             assert [item["event_type"] for item in own_activity] == [

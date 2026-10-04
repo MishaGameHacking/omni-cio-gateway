@@ -13,10 +13,29 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[1] / ".github/scripts/test_with_postgres.py"
 
 
+def test_unverified_postgres_archive_is_never_extracted(tmp_path: Path) -> None:
+    spec = importlib.util.spec_from_file_location("ci_postgres_checksum", SCRIPT)
+    assert spec is not None
+    assert spec.loader is not None
+    runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runner)
+    response = MagicMock(status=200)
+    response.read.return_value = b"untrusted executable bytes"
+    client = MagicMock()
+    client.getresponse.return_value = response
+    destination = tmp_path / "postgres"
+    with patch.object(runner.http.client, "HTTPSConnection", return_value=client), \
+            pytest.raises(RuntimeError, match="checksum mismatch"):
+        runner.install_binaries(destination)
+    assert not destination.exists()
+    client.close.assert_called_once()
+
+
 @pytest.mark.parametrize("times_out", [False, True])
 def test_ci_uses_own_database_and_always_stops_it(tmp_path: Path, times_out: bool) -> None:
     spec = importlib.util.spec_from_file_location("ci_postgres_runner", SCRIPT)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     runner = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(runner)
     data = tmp_path / "data"

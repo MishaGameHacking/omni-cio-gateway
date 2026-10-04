@@ -51,9 +51,11 @@ def test_value_date_does_not_become_retrieval_time() -> None:
 
 
 def test_invalid_freshness_contract_is_rejected() -> None:
+    zero_age = timedelta(0)
+    naive_now = NOW.replace(tzinfo=None)
     with pytest.raises(ValueError):
-        describe_freshness(NOW, max_age=timedelta(0), coverage="complete", now=NOW)
+        describe_freshness(NOW, max_age=zero_age, coverage="complete", now=NOW)
     with pytest.raises(ValueError):
         describe_freshness(
-            NOW, max_age=PORTFOLIO_MAX_AGE, coverage="complete", now=NOW.replace(tzinfo=None),
+            NOW, max_age=PORTFOLIO_MAX_AGE, coverage="complete", now=naive_now,
         )

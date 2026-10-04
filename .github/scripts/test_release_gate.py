@@ -274,6 +274,15 @@ class SonarScopePolicyTests(unittest.TestCase):
 
 
 class GitHubTransportTests(unittest.TestCase):
+    def test_annotation_reader_rejects_malformed_lists(self) -> None:
+        client = gate.GitHubClient("synthetic-test-token", deadline=100)
+        for data in ({}, ["invalid"], None):
+            with patch.object(client, "_request", return_value=data), \
+                    self.subTest(data=data), self.assertRaises(gate.ReleaseBlocked):
+                client.get_list("/check-runs/1/annotations")
+        with patch.object(client, "_request", return_value=[{"path": "web/app.js"}]):
+            self.assertEqual(client.get_list("/check-runs/1/annotations"), [{"path": "web/app.js"}])
+
     def test_uses_fixed_https_host_get_and_closes_connection(self) -> None:
         response = Mock(status=200)
         response.read.return_value = json.dumps(BRANCH).encode()

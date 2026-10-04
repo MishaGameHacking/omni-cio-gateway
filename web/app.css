@@ -4038,6 +4038,7 @@ textarea:disabled {
   }
 }
 .data-status-note {
+  display: block;
   margin: 0 0 1rem;
   padding: 0.85rem 1rem;
   border: 1px solid currentColor;
@@ -4057,4 +4058,8 @@ textarea:disabled {
   display: block;
   font-size: 0.875rem;
   opacity: 0.8;
+}
+
+#activity-message {
+  display: block;
 }

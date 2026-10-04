@@ -42,10 +42,10 @@ def install_binaries(destination: Path) -> Path:
     if len(archive) > MAX_ARCHIVE_BYTES or hashlib.sha256(archive).hexdigest() != ARCHIVE_SHA256:
         raise RuntimeError("PostgreSQL binary checksum mismatch")
     with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
-        member = bundle.getinfo("postgres-windows-x86_64.txz")
-        if member.file_size > MAX_ARCHIVE_BYTES:
+        package = bundle.getinfo("postgres-windows-x86_64.txz")
+        if package.file_size > MAX_ARCHIVE_BYTES:
             raise RuntimeError("PostgreSQL inner archive is too large")
-        compressed = bundle.read(member)
+        compressed = bundle.read(package)
     destination.mkdir()
     root = destination.resolve()
     expanded = 0
