@@ -351,7 +351,7 @@ def build_live_balancing_payload(
                     _candidate(
                         row,
                         context=context,
-                                observed_at=observed_at,
+                        observed_at=observed_at,
                     ),
                     "live_enrichment_not_selected",
                 )
@@ -376,7 +376,7 @@ def build_live_balancing_payload(
                 _candidate(
                     row,
                     context=context,
-                        observed_at=observed_at,
+                    observed_at=observed_at,
                 ),
                 "live_candidate_evidence_unavailable",
             )
