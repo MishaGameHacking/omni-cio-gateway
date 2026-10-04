@@ -30,6 +30,8 @@ from .tbank import (
     TBankUserInfo,
 )
 
+_ADVISORY_LOCK_SQL = _ADVISORY_LOCK_SQL
+
 JobStatus = Literal["running", "succeeded", "degraded", "failed"]
 ProposalAction = Literal[
     "confirmed",
@@ -254,7 +256,7 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                _ADVISORY_LOCK_SQL,
                 (f"investment-profile:{user_id}",),
             )
             cur.execute(
@@ -427,7 +429,7 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                _ADVISORY_LOCK_SQL,
                 (f"balancing-policy:{user_id}",),
             )
             cur.execute(
@@ -578,7 +580,7 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             cur.execute(
-                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                _ADVISORY_LOCK_SQL,
                 (f"portfolio-proposal:{user_id}",),
             )
             _require_current_proposal_sources(
