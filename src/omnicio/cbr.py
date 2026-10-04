@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-from html import unescape
-from html.parser import HTMLParser
 import threading
 import time
 import urllib.error
@@ -13,13 +11,13 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from html import unescape
+from html.parser import HTMLParser
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
 _CBR_DAILY_URL = "https://www.cbr.ru/scripts/XML_daily.asp"
-_CBR_DAILY_INFO_URL = "https://www.cbr.ru/DailyInfoWebServ/DailyInfo.asmx"
-_CBR_KEY_RATE_ACTION = "http://web.cbr.ru/KeyRateXML"
 _MOSCOW = ZoneInfo("Europe/Moscow")
 _INDICATOR_CURRENCIES = frozenset({"USD", "EUR"})
 _MAX_PUBLIC_RESPONSE_BYTES = 512_000
@@ -242,7 +240,6 @@ class CBRClient:
             )
 
         raise CBRUnavailable("Bank of Russia response has no USD rate")
-
 
     def _fetch_latest_indicator_rates(self) -> dict[str, CBRRate]:
         request = urllib.request.Request(
