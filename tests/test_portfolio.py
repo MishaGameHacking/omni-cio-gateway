@@ -226,6 +226,7 @@ def test_cbr_indicator_http_is_private_but_broker_independent() -> None:
     snapshot = CBRIndicatorSnapshot(
         source="Bank of Russia",
         fetched_at="2026-10-03T07:00:00+00:00",
+        freshness="fresh",
         key_rate=CBRIndicator(
             code="KEY_RATE",
             value="14",
@@ -259,6 +260,7 @@ def test_cbr_indicator_http_is_private_but_broker_independent() -> None:
     assert response.status_code == 200
     assert response.headers["cache-control"] == "private, no-store"
     body = response.json()
+    assert body["freshness"] == "fresh"
     assert body["key_rate"]["value"] == "14"
     assert body["usd_rub"]["value"] == "83.4839"
     assert body["eur_rub"]["value"] == "94.3201"
