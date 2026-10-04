@@ -1036,7 +1036,7 @@ class AuthAppDeployTests(unittest.TestCase):
                 '        renderInstrumentMarketStreamStatus("unavailable");\n'
                 '        scheduleInstrumentMarketReconnect();'
             ),
-            3,
+            2,
         )
         self.assertIn("const displayedPeriod = (", script)
         self.assertIn("instrumentMarketPeriod = displayedPeriod;", script)
