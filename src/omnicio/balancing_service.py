@@ -554,15 +554,13 @@ def _eligible_for_live_enrichment(
     )
 
 def _with_candidate_blocker(candidate: Candidate, reason: str) -> Candidate:
-    return cast(
-        Candidate,
-        replace(
-            candidate,
-            access_reasons=tuple(
-                dict.fromkeys((*candidate.access_reasons, reason))
-            ),
+    updated: Candidate = replace(
+        candidate,
+        access_reasons=tuple(
+            dict.fromkeys((*candidate.access_reasons, reason))
         ),
     )
+    return updated
 
 
 @dataclass(frozen=True, slots=True)
