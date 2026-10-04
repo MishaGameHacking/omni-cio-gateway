@@ -48,6 +48,7 @@ class CBRIndicators:
     eur_rub: CBRRate
     key_rate: CBRKeyRate
     fetched_at: datetime
+    freshness: str
 
 
 class CBRClient:
@@ -109,6 +110,14 @@ class CBRClient:
                     logger.warning(
                         "Bank of Russia indicator refresh failed; using cached values"
                     )
+                    fallback = CBRIndicators(
+                        usd_rub=cached.usd_rub,
+                        eur_rub=cached.eur_rub,
+                        key_rate=cached.key_rate,
+                        fetched_at=cached.fetched_at,
+                        freshness="cached",
+                    )
+                    self._indicator_cached = fallback
                     self._indicator_expires_at = (
                         now
                         + min(
@@ -116,7 +125,7 @@ class CBRClient:
                             self.failure_retry_seconds,
                         )
                     )
-                    return cached
+                    return fallback
                 raise
 
             fetched_at = max(
@@ -129,6 +138,7 @@ class CBRClient:
                 eur_rub=rates["EUR"],
                 key_rate=key_rate,
                 fetched_at=fetched_at,
+                freshness="fresh",
             )
             self._indicator_cached = indicators
             self._indicator_expires_at = now + self.indicator_cache_seconds
