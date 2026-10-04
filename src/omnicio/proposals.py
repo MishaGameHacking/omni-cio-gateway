@@ -164,7 +164,7 @@ def build_proposal_draft(
         "scenario_kind": scenario_kind,
         "scenario": scenario,
         "alternatives": _alternative_summaries(
-            cast(dict[str, object], scenarios),
+            scenarios,
             selected_kind=scenario_kind,
             selected_replaced_uid=replaced_uid,
         ),
