@@ -1885,14 +1885,63 @@
     }
   };
 
+  const instrumentMarketStreamCanStart = () => (
+    Boolean(instrumentMarketUid)
+    && instrumentMarketEventSource === null
+    && instrumentMarketRetryTimer === null
+    && currentView === "portfolio"
+    && document.visibilityState === "visible"
+  );
+
+  const handleInstrumentMarketStreamFailure = (streamUid) => {
+    if (streamUid !== instrumentMarketUid) {
+      return;
+    }
+    stopInstrumentMarketStream();
+    renderInstrumentMarketStreamStatus("unavailable");
+    scheduleInstrumentMarketReconnect();
+  };
+
+  const handleInstrumentMarketEvent = (event, streamUid) => {
+    if (streamUid !== instrumentMarketUid) {
+      return;
+    }
+    try {
+      const payload = JSON.parse(event.data);
+      if (!instrumentMarketPayloadMatches(payload, instrumentMarketUid)) {
+        throw new TypeError("Market stream instrument does not match");
+      }
+      instrumentMarketRetryCount = 0;
+      renderInstrumentMarketLive(payload);
+      instrumentMarketSource.textContent = [
+        "T-Invest · серверное обновление",
+        payload.observed_at ? `получено ${formatExactDateTime(payload.observed_at)}` : "",
+      ].filter(Boolean).join(" · ");
+    } catch {
+      handleInstrumentMarketStreamFailure(streamUid);
+    }
+  };
+
+  const handleInstrumentMarketStatusEvent = (event, streamUid) => {
+    if (streamUid !== instrumentMarketUid) {
+      return;
+    }
+    try {
+      const payload = JSON.parse(event.data);
+      const state = payload !== null && typeof payload === "object"
+        ? String(payload.state || "unavailable")
+        : "unavailable";
+      renderInstrumentMarketStreamStatus(state);
+      if (["disconnected", "reconnect", "invalid", "offline"].includes(state)) {
+        stopInstrumentMarketStream();
+      }
+    } catch {
+      handleInstrumentMarketStreamFailure(streamUid);
+    }
+  };
+
   const startInstrumentMarketStream = () => {
-    if (
-      !instrumentMarketUid
-      || instrumentMarketEventSource
-      || instrumentMarketRetryTimer !== null
-      || currentView !== "portfolio"
-      || document.visibilityState !== "visible"
-    ) {
+    if (!instrumentMarketStreamCanStart()) {
       return;
     }
     if (!("EventSource" in window)) {
@@ -1903,6 +1952,7 @@
       instrumentMarketRetry.classList.remove("hidden");
       return;
     }
+
     let segment;
     try {
       segment = instrumentPathSegment(instrumentMarketUid);
@@ -1914,60 +1964,14 @@
     const streamUid = instrumentMarketUid;
     const stream = new EventSource(`/api/market/instruments/${segment}/stream`);
     instrumentMarketEventSource = stream;
-
     stream.addEventListener("market", (event) => {
-      if (streamUid !== instrumentMarketUid) {
-        return;
-      }
-      try {
-        const payload = JSON.parse(event.data);
-        if (
-          payload === null
-          || typeof payload !== "object"
-          || payload.instrument_uid !== instrumentMarketUid
-        ) {
-          throw new TypeError("Market stream instrument does not match");
-        }
-        instrumentMarketRetryCount = 0;
-        renderInstrumentMarketLive(payload);
-        instrumentMarketSource.textContent = [
-          "T-Invest · серверное обновление",
-          payload.observed_at ? `получено ${formatExactDateTime(payload.observed_at)}` : "",
-        ].filter(Boolean).join(" · ");
-      } catch {
-        stopInstrumentMarketStream();
-        renderInstrumentMarketStreamStatus("unavailable");
-        scheduleInstrumentMarketReconnect();
-      }
+      handleInstrumentMarketEvent(event, streamUid);
     });
-
     stream.addEventListener("status", (event) => {
-      if (streamUid !== instrumentMarketUid) {
-        return;
-      }
-      try {
-        const payload = JSON.parse(event.data);
-        const state = payload !== null && typeof payload === "object"
-          ? String(payload.state || "unavailable")
-          : "unavailable";
-        renderInstrumentMarketStreamStatus(state);
-        if (["disconnected", "reconnect", "invalid", "offline"].includes(state)) {
-          stopInstrumentMarketStream();
-        }
-      } catch {
-        stopInstrumentMarketStream();
-        renderInstrumentMarketStreamStatus("unavailable");
-        scheduleInstrumentMarketReconnect();
-      }
+      handleInstrumentMarketStatusEvent(event, streamUid);
     });
-
     stream.onerror = () => {
-      if (streamUid !== instrumentMarketUid) {
-        return;
-      }
-      stopInstrumentMarketStream();
-      renderInstrumentMarketStreamStatus("unavailable");
-      scheduleInstrumentMarketReconnect();
+      handleInstrumentMarketStreamFailure(streamUid);
     };
   };
 
