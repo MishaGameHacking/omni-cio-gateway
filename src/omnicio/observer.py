@@ -24,7 +24,7 @@ from .config import load_settings
 from .db import Database
 from .intelligence import build_tbank_evidence
 from .portfolio import PortfolioAnalysisError
-from .portfolio_store import PortfolioStore
+from .portfolio_store import BrokerSyncState, PortfolioStore
 from .security import SecurityValueError
 from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
 
@@ -37,6 +37,35 @@ MAX_HISTORY_PAGES_PER_RUN = 20
 HISTORY_PAGE_SIZE = 1000
 HISTORY_CORRECTION_OVERLAP = timedelta(days=7)
 PROVIDER_READ_ATTEMPTS = 3
+
+
+def _history_window(
+    state: BrokerSyncState | None,
+    account_opened_at: datetime | None,
+    now: datetime,
+) -> tuple[datetime, datetime, str] | Literal[
+    "opened_date_missing",
+    "opened_date_invalid",
+]:
+    if state is not None and state.pending_cursor:
+        if state.history_window_from is None or state.history_window_to is None:
+            raise RuntimeError("history cursor has no durable window")
+        return state.history_window_from, state.history_window_to, state.pending_cursor
+
+    if account_opened_at is None:
+        return "opened_date_missing"
+    opened_at = account_opened_at.astimezone(UTC)
+    if opened_at > now:
+        return "opened_date_invalid"
+
+    window_from = opened_at
+    if state is not None and state.last_complete_watermark is not None:
+        window_from = max(
+            opened_at,
+            state.last_complete_watermark - HISTORY_CORRECTION_OVERLAP,
+        )
+    return window_from, now, ""
+
 
 def provider_read[T](operation: Callable[[], T]) -> T:
     """Retry idempotent provider reads with bounded exponential jitter."""
@@ -112,7 +141,7 @@ class PortfolioObserver:
                 try:
                     result = future.result()
                 except Exception as exc:  # noqa: BLE001 - job boundary records safe class only
-                    logger.error(
+                    logger.exception(
                         "portfolio observer failed user=%s error_type=%s",
                         user_id,
                         type(exc).__name__,
@@ -319,7 +348,7 @@ class PortfolioObserver:
                     details=details,
                 )
             except Exception as finish_exc:  # noqa: BLE001 - retain original infrastructure failure
-                logger.error(
+                logger.exception(
                     "portfolio observer could not persist failure user=%s error_type=%s",
                     user_id,
                     type(finish_exc).__name__,
@@ -335,26 +364,10 @@ class PortfolioObserver:
         now: datetime,
     ) -> tuple[int, int, str]:
         state = self.store.sync_state(user_id, account_id)
-        if state is not None and state.pending_cursor:
-            if state.history_window_from is None or state.history_window_to is None:
-                raise RuntimeError("history cursor has no durable window")
-            window_from = state.history_window_from
-            window_to = state.history_window_to
-            cursor = state.pending_cursor
-        else:
-            if account_opened_at is None:
-                return 0, 0, "opened_date_missing"
-            opened_at = account_opened_at.astimezone(UTC)
-            if opened_at > now:
-                return 0, 0, "opened_date_invalid"
-            window_from = opened_at
-            if state is not None and state.last_complete_watermark is not None:
-                window_from = max(
-                    opened_at,
-                    state.last_complete_watermark - HISTORY_CORRECTION_OVERLAP,
-                )
-            window_to = now
-            cursor = ""
+        window = _history_window(state, account_opened_at, now)
+        if isinstance(window, str):
+            return 0, 0, window
+        window_from, window_to, cursor = window
 
         seen_cursors = {cursor} if cursor else set()
         inserted = 0

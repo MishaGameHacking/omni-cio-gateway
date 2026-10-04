@@ -234,19 +234,16 @@ def screen_candidates(
     return tuple(screened)
 
 
-def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[str, ...]:
+def _candidate_evidence_reasons(candidate: Candidate) -> list[str]:
     reasons: list[str] = []
-    if not candidate.evidence_complete:
-        reasons.append("critical_evidence_missing")
-    if not candidate.structure_supported:
-        reasons.append("instrument_structure_not_supported")
-    if not candidate.api_trade_available:
-        reasons.append("api_trade_unavailable")
-    if not candidate.buy_available:
-        reasons.append("buy_unavailable")
-    if not candidate.required_tests_passed:
-        reasons.append("required_tests_missing")
-    reasons.extend(candidate.access_reasons)
+    checks = (
+        (candidate.evidence_complete, "critical_evidence_missing"),
+        (candidate.structure_supported, "instrument_structure_not_supported"),
+        (candidate.api_trade_available, "api_trade_unavailable"),
+        (candidate.buy_available, "buy_unavailable"),
+        (candidate.required_tests_passed, "required_tests_missing"),
+    )
+    reasons.extend(reason for passed, reason in checks if not passed)
     if candidate.lot_size <= 0:
         reasons.append("invalid_lot_size")
     if candidate.market_lot_cost_rub <= 0:
@@ -255,6 +252,14 @@ def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[s
         reasons.append("limit_price_missing")
     if candidate.limit_price_type is None:
         reasons.append("limit_price_type_missing")
+    return reasons
+
+
+def _candidate_policy_reasons(
+    candidate: Candidate,
+    policy: BalancingPolicy,
+) -> list[str]:
+    reasons: list[str] = []
     if candidate.asset_class not in policy.allowed_asset_classes:
         reasons.append("asset_class_not_allowed")
     if candidate.currency.upper() not in policy.allowed_currencies:
@@ -268,6 +273,18 @@ def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[s
         reasons.append("below_grade_not_allowed")
     if candidate.rating_bucket == "unknown" and policy.max_unknown_percent <= 0:
         reasons.append("unknown_rating_not_allowed")
+    if _cap_for(policy.asset_class_caps, candidate.asset_class) is None:
+        reasons.append("asset_class_cap_missing")
+    if _cap_for(policy.currency_caps, candidate.currency.upper()) is None:
+        reasons.append("currency_cap_missing")
+    return reasons
+
+
+def _candidate_liquidity_and_term_reasons(
+    candidate: Candidate,
+    policy: BalancingPolicy,
+) -> list[str]:
+    reasons: list[str] = []
     if candidate.liquidity_days is None or candidate.max_liquid_lots is None:
         reasons.append("liquidity_evidence_missing")
     elif (
@@ -276,22 +293,24 @@ def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[s
         or candidate.max_liquid_lots <= 0
     ):
         reasons.append("liquidity_limit")
+
     if candidate.term_months is not None and candidate.term_months < 0:
         reasons.append("term_limit")
-    if candidate.asset_class == "bond":
-        if candidate.term_months is None:
-            reasons.append("bond_term_missing")
-        elif candidate.term_months > policy.max_term_months:
-            reasons.append("term_limit")
-        if candidate.ytw_percent is None:
-            reasons.append("bond_ytw_missing")
-        if candidate.duration_years is None:
-            reasons.append("bond_duration_missing")
-    if _cap_for(policy.asset_class_caps, candidate.asset_class) is None:
-        reasons.append("asset_class_cap_missing")
-    if _cap_for(policy.currency_caps, candidate.currency.upper()) is None:
-        reasons.append("currency_cap_missing")
-    for value, name in (
+    if candidate.asset_class != "bond":
+        return reasons
+    if candidate.term_months is None:
+        reasons.append("bond_term_missing")
+    elif candidate.term_months > policy.max_term_months:
+        reasons.append("term_limit")
+    if candidate.ytw_percent is None:
+        reasons.append("bond_ytw_missing")
+    if candidate.duration_years is None:
+        reasons.append("bond_duration_missing")
+    return reasons
+
+
+def _candidate_cost_reasons(candidate: Candidate) -> list[str]:
+    values = (
         (candidate.market_lot_cost_rub, "market_lot_cost_rub"),
         (candidate.accrued_coupon_rub_per_lot, "accrued_coupon_rub_per_lot"),
         (candidate.buy_fee_rub_per_lot, "buy_fee_rub_per_lot"),
@@ -299,11 +318,17 @@ def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[s
         (candidate.uncertainty_haircut_rub_per_lot, "uncertainty_haircut_rub_per_lot"),
         (candidate.credit_loss_rub_per_lot, "credit_loss_rub_per_lot"),
         (candidate.liquidity_penalty_rub_per_lot, "liquidity_penalty_rub_per_lot"),
-    ):
-        if value < 0:
-            reasons.append(f"negative_{name}")
-    return tuple(dict.fromkeys(reasons))
+    )
+    return [f"negative_{name}" for value, name in values if value < 0]
 
+
+def _candidate_reasons(candidate: Candidate, policy: BalancingPolicy) -> tuple[str, ...]:
+    reasons = _candidate_evidence_reasons(candidate)
+    reasons.extend(candidate.access_reasons)
+    reasons.extend(_candidate_policy_reasons(candidate, policy))
+    reasons.extend(_candidate_liquidity_and_term_reasons(candidate, policy))
+    reasons.extend(_candidate_cost_reasons(candidate))
+    return tuple(dict.fromkeys(reasons))
 
 def _hold_scenario(cash_rub: Decimal) -> BalancingScenario:
     return BalancingScenario(
@@ -426,37 +451,26 @@ def _optimize_cash(
     )
 
 
-def _replacement_scenario(
-    *,
-    holding: Holding,
-    nav_rub: Decimal,
-    screened: tuple[ScreenedCandidate, ...],
-    holdings: tuple[Holding, ...],
-    policy: BalancingPolicy,
-) -> BalancingScenario:
+def _replacement_blocker(holding: Holding) -> str | None:
     if holding.blocked:
-        return _fallback_cash(holding, "holding_blocked")
+        return "holding_blocked"
     if not holding.replacement_costs_complete:
-        return _fallback_cash(holding, "replacement_cost_model_missing")
+        return "replacement_cost_model_missing"
     if holding.limit_price is None or holding.limit_price <= 0:
-        return _fallback_cash(holding, "replacement_limit_price_missing")
+        return "replacement_limit_price_missing"
     if holding.limit_price_type is None:
-        return _fallback_cash(holding, "replacement_limit_price_type_missing")
+        return "replacement_limit_price_type_missing"
     if holding.lots <= 0 or holding.value_rub <= 0:
-        return _fallback_cash(holding, "holding_not_sellable")
+        return "holding_not_sellable"
+    return None
 
-    sale_cost = holding.sell_fee_rub + holding.exit_spread_cost_rub + holding.tax_if_sold_rub
-    sale_proceeds = holding.value_rub - sale_cost
-    if sale_proceeds <= 0:
-        return _fallback_cash(holding, "sale_costs_consume_proceeds")
 
-    base_holdings = tuple(
-        item
-        for item in holdings
-        if item.instrument_uid != holding.instrument_uid
-    )
-    base_exposure = _build_exposure(base_holdings)
-    candidates = [
+def _replacement_candidates(
+    holding: Holding,
+    screened: tuple[ScreenedCandidate, ...],
+    policy: BalancingPolicy,
+) -> tuple[Candidate, ...]:
+    return tuple(
         item.candidate
         for item in screened
         if item.eligible
@@ -466,91 +480,151 @@ def _replacement_scenario(
             not policy.replacement_same_asset_class
             or item.candidate.asset_class == holding.asset_class
         )
-    ]
+    )
+
+
+def _replacement_candidate_scenario(
+    *,
+    holding: Holding,
+    candidate: Candidate,
+    nav_rub: Decimal,
+    sale_cost: Decimal,
+    sale_proceeds: Decimal,
+    base_exposure: _Exposure,
+    policy: BalancingPolicy,
+) -> BalancingScenario | None:
+    lots = _max_buy_lots(
+        candidate=candidate,
+        nav_rub=nav_rub,
+        cash_available=sale_proceeds,
+        turnover_remaining=max(
+            Decimal("0"),
+            policy.turnover_budget_rub - holding.value_rub,
+        ),
+        exposure=_clone_exposure(base_exposure),
+        policy=policy,
+    )
+    if lots <= 0:
+        return None
+
+    spend = _transaction_cost_per_lot(candidate) * lots
+    notional = _exposure_value_per_lot(candidate) * lots
+    buy_cost = (
+        candidate.buy_fee_rub_per_lot + candidate.spread_cost_rub_per_lot
+    ) * lots
+    turnover = holding.value_rub + notional
+    if turnover > policy.turnover_budget_rub:
+        return None
+
+    replacement_gain = _net_gain_per_lot(candidate) * lots - sale_cost
+    improvement = replacement_gain - holding.expected_horizon_gain_rub
+    threshold = max(
+        policy.min_replace_benefit_rub,
+        holding.value_rub * policy.no_trade_band_percent / Decimal("100"),
+    )
+    if improvement <= threshold:
+        return None
+
+    return BalancingScenario(
+        kind="replace",
+        status="feasible",
+        reason="net_improvement_after_costs",
+        trades=(
+            PlannedTrade(
+                action="sell",
+                instrument_uid=holding.instrument_uid,
+                ticker=holding.ticker,
+                lots=holding.lots,
+                notional_rub=holding.value_rub,
+                estimated_cost_rub=holding.sell_fee_rub + holding.exit_spread_cost_rub,
+                tax_rub=holding.tax_if_sold_rub,
+                ytw_percent=None,
+                limit_price=holding.limit_price,
+                limit_price_type=holding.limit_price_type,
+                min_proceeds_rub=sale_proceeds,
+            ),
+            PlannedTrade(
+                action="buy",
+                instrument_uid=candidate.instrument_uid,
+                ticker=candidate.ticker,
+                lots=lots,
+                notional_rub=notional,
+                estimated_cost_rub=buy_cost,
+                tax_rub=Decimal("0"),
+                ytw_percent=candidate.ytw_percent,
+                limit_price=candidate.limit_price,
+                limit_price_type=candidate.limit_price_type,
+                max_spend_rub=spend,
+            ),
+        ),
+        residual_cash_rub=sale_proceeds - spend,
+        turnover_rub=turnover,
+        expected_incremental_gain_rub=improvement,
+        target_instrument_uid=candidate.instrument_uid,
+        replaced_instrument_uid=holding.instrument_uid,
+    )
+
+
+def _better_replacement(
+    best: BalancingScenario | None,
+    candidate: BalancingScenario,
+) -> BalancingScenario:
+    if best is None:
+        return candidate
+    candidate_key = (
+        candidate.expected_incremental_gain_rub,
+        candidate.target_instrument_uid or "",
+    )
+    best_key = (
+        best.expected_incremental_gain_rub,
+        best.target_instrument_uid or "",
+    )
+    return candidate if candidate_key > best_key else best
+
+
+def _replacement_scenario(
+    *,
+    holding: Holding,
+    nav_rub: Decimal,
+    screened: tuple[ScreenedCandidate, ...],
+    holdings: tuple[Holding, ...],
+    policy: BalancingPolicy,
+) -> BalancingScenario:
+    blocker = _replacement_blocker(holding)
+    if blocker is not None:
+        return _fallback_cash(holding, blocker)
+
+    sale_cost = holding.sell_fee_rub + holding.exit_spread_cost_rub + holding.tax_if_sold_rub
+    sale_proceeds = holding.value_rub - sale_cost
+    if sale_proceeds <= 0:
+        return _fallback_cash(holding, "sale_costs_consume_proceeds")
+
+    base_holdings = tuple(
+        item for item in holdings if item.instrument_uid != holding.instrument_uid
+    )
+    base_exposure = _build_exposure(base_holdings)
+    candidates = _replacement_candidates(holding, screened, policy)
     if not candidates:
         return _fallback_cash(holding, "no_eligible_replacement")
 
     best: BalancingScenario | None = None
     for candidate in candidates:
-        lots = _max_buy_lots(
+        scenario = _replacement_candidate_scenario(
+            holding=holding,
             candidate=candidate,
             nav_rub=nav_rub,
-            cash_available=sale_proceeds,
-            turnover_remaining=max(Decimal("0"), policy.turnover_budget_rub - holding.value_rub),
-            exposure=_clone_exposure(base_exposure),
+            sale_cost=sale_cost,
+            sale_proceeds=sale_proceeds,
+            base_exposure=base_exposure,
             policy=policy,
         )
-        if lots <= 0:
-            continue
-        spend = _transaction_cost_per_lot(candidate) * lots
-        notional = _exposure_value_per_lot(candidate) * lots
-        buy_cost = (
-            candidate.buy_fee_rub_per_lot + candidate.spread_cost_rub_per_lot
-        ) * lots
-        turnover = holding.value_rub + notional
-        if turnover > policy.turnover_budget_rub:
-            continue
+        if scenario is not None:
+            best = _better_replacement(best, scenario)
 
-        replacement_gain = _net_gain_per_lot(candidate) * lots - sale_cost
-        improvement = replacement_gain - holding.expected_horizon_gain_rub
-        threshold = max(
-            policy.min_replace_benefit_rub,
-            holding.value_rub * policy.no_trade_band_percent / Decimal("100"),
-        )
-        if improvement <= threshold:
-            continue
-
-        scenario = BalancingScenario(
-            kind="replace",
-            status="feasible",
-            reason="net_improvement_after_costs",
-            trades=(
-                PlannedTrade(
-                    action="sell",
-                    instrument_uid=holding.instrument_uid,
-                    ticker=holding.ticker,
-                    lots=holding.lots,
-                    notional_rub=holding.value_rub,
-                    estimated_cost_rub=holding.sell_fee_rub + holding.exit_spread_cost_rub,
-                    tax_rub=holding.tax_if_sold_rub,
-                    ytw_percent=None,
-                    limit_price=holding.limit_price,
-                    limit_price_type=holding.limit_price_type,
-                    min_proceeds_rub=sale_proceeds,
-                ),
-                PlannedTrade(
-                    action="buy",
-                    instrument_uid=candidate.instrument_uid,
-                    ticker=candidate.ticker,
-                    lots=lots,
-                    notional_rub=notional,
-                    estimated_cost_rub=buy_cost,
-                    tax_rub=Decimal("0"),
-                    ytw_percent=candidate.ytw_percent,
-                    limit_price=candidate.limit_price,
-                    limit_price_type=candidate.limit_price_type,
-                    max_spend_rub=spend,
-                ),
-            ),
-            residual_cash_rub=sale_proceeds - spend,
-            turnover_rub=turnover,
-            expected_incremental_gain_rub=improvement,
-            target_instrument_uid=candidate.instrument_uid,
-            replaced_instrument_uid=holding.instrument_uid,
-        )
-        if best is None or (
-            scenario.expected_incremental_gain_rub,
-            candidate.instrument_uid,
-        ) > (
-            best.expected_incremental_gain_rub,
-            best.target_instrument_uid or "",
-        ):
-            best = scenario
-
-    if best is not None:
-        return best
-    return _fallback_cash(holding, "no_replacement_clears_costs_and_no_trade_band")
-
+    return best or _fallback_cash(
+        holding,
+        "no_replacement_clears_costs_and_no_trade_band",
+    )
 
 def _fallback_cash(holding: Holding, reason: str) -> BalancingScenario:
     return BalancingScenario(

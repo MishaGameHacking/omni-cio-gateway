@@ -59,8 +59,9 @@ def test_secret_encryption_round_trip() -> None:
 
     assert decrypt_secret(encrypted, key) == plaintext
 
+    wrong_key = Fernet.generate_key().decode("ascii")
     with pytest.raises(SecurityValueError):
-        decrypt_secret(encrypted, Fernet.generate_key().decode("ascii"))
+        decrypt_secret(encrypted, wrong_key)
 
 
 def test_pkce_challenge_is_stable_and_urlsafe() -> None:
@@ -173,6 +174,7 @@ def test_state_changing_requests_require_canonical_origin() -> None:
     require_same_origin(accepted)
 
     for headers in ({}, {"origin": "https://evil.example"}):
+        rejected = _request("127.0.0.1", headers)
         with pytest.raises(HTTPException) as error:
-            require_same_origin(_request("127.0.0.1", headers))
+            require_same_origin(rejected)
         assert error.value.status_code == 403

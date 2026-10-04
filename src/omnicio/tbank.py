@@ -10,7 +10,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Literal, cast
+from typing import Literal, Never, cast
 from uuid import UUID
 
 TBankEnvironment = Literal["prod", "sandbox"]
@@ -23,6 +23,7 @@ _REST_BASES: dict[TBankEnvironment, str] = {
     "sandbox": "https://sandbox-invest-public-api.tbank.ru/rest/",
 }
 _API_PREFIX = "tinkoff.public.invest.api.contract.v1."
+_INSTRUMENT_UID_FIELD = "instrument uid"
 
 
 class TBankError(RuntimeError):
@@ -397,6 +398,280 @@ class TBankAssetFundamental:
     fiscal_period_end_date: datetime | None
 
 
+def _market_value_quotes(
+    item: dict[str, object],
+) -> tuple[str | None, list[tuple[datetime, int, str, str, TBankQuoteSource]]]:
+    previous_close: str | None = None
+    quotes: list[tuple[datetime, int, str, str, TBankQuoteSource]] = []
+    for value_raw in _optional_list(item, "values"):
+        value = _required_object(value_raw, "market value")
+        value_type = _text(value.get("type")).strip()
+        numeric = _quotation(value.get("value"))
+        if numeric is None:
+            continue
+        if value_type == "INSTRUMENT_VALUE_CLOSE_PRICE":
+            previous_close = numeric
+            continue
+        if value_type not in {
+            "INSTRUMENT_VALUE_LAST_PRICE",
+            "INSTRUMENT_VALUE_LAST_PRICE_DEALER",
+        }:
+            continue
+
+        quote_time = _text(value.get("time")).strip()
+        parsed_time = _provider_timestamp(quote_time)
+        if value_type == "INSTRUMENT_VALUE_LAST_PRICE_DEALER":
+            source: TBankQuoteSource = "dealer"
+            source_priority = 0
+        else:
+            source = "exchange"
+            source_priority = 1
+        quotes.append((parsed_time, source_priority, numeric, quote_time, source))
+    return previous_close, quotes
+
+
+def _ranked_usd_rub_quote(
+    raw: object,
+    candidate_by_uid: dict[str, TBankInstrument],
+) -> tuple[datetime, int, TBankFxQuote] | None:
+    item = _required_object(raw, "market value instrument")
+    uid = _text(item.get("instrumentUid")).strip()
+    instrument = candidate_by_uid.get(uid)
+    if instrument is None:
+        return None
+
+    currency = _text(item.get("priceCurrency")).strip().upper()
+    if currency != "RUB":
+        return None
+
+    previous_close, quotes = _market_value_quotes(item)
+    if not quotes:
+        return None
+
+    parsed_time, source_priority, price, quote_time, source = max(
+        quotes,
+        key=lambda quote: (quote[0], quote[1]),
+    )
+    quote = TBankFxQuote(
+        instrument_uid=instrument.uid,
+        ticker=instrument.ticker,
+        name=instrument.name,
+        class_code=instrument.class_code,
+        price=price,
+        currency=currency,
+        quote_time=quote_time,
+        source=source,
+        previous_close=previous_close,
+    )
+    return parsed_time, source_priority, quote
+
+
+_INVALID_METADATA_LOT_ERROR = "T-Invest metadata has invalid lot size"
+
+
+def _bond_rating(raw: object) -> TBankRating:
+    item = _required_object(raw, "bond rating")
+    agency = _text(item.get("agencyName")).strip()
+    level = _text(item.get("ratingLevel")).strip()
+    rating_date = _optional_provider_timestamp(item.get("ratingDate"))
+    under_watch = _optional_bool(item, "isUnderWatch")
+    if not agency or not level or rating_date is None or under_watch is None:
+        raise TBankUnavailable("T-Invest bond rating is missing required fields")
+    return TBankRating(
+        agency_name=agency,
+        rating_level=level,
+        rating_date=rating_date,
+        forecast=_text(item.get("forecast")).strip(),
+        is_under_watch=under_watch,
+    )
+
+
+def _market_yield_value(
+    item: dict[str, object],
+) -> tuple[str, datetime] | None:
+    for value_raw in _optional_list(item, "values"):
+        value = _required_object(value_raw, "market value")
+        if _text(value.get("type")).strip() != "INSTRUMENT_VALUE_YIELD":
+            continue
+        numeric = _quotation(value.get("value"))
+        observed = _optional_provider_timestamp(value.get("time"))
+        if numeric is None or observed is None:
+            raise TBankUnavailable("T-Invest market yield is missing required fields")
+        return numeric, observed
+    return None
+
+
+def _market_yield(
+    raw: object,
+    requested: set[str],
+    seen: set[str],
+) -> TBankMarketYield | None:
+    item = _required_object(raw, "market value instrument")
+    uid = _text(item.get("instrumentUid")).strip()
+    if not uid or uid not in requested or uid in seen:
+        raise TBankUnavailable(
+            "T-Invest market values returned invalid instrument uid"
+        )
+    seen.add(uid)
+    value = _market_yield_value(item)
+    if value is None:
+        return None
+    yield_percent, observed = value
+    return TBankMarketYield(
+        instrument_uid=uid,
+        yield_percent=yield_percent,
+        time=observed,
+    )
+
+
+def _search_instrument(raw: object) -> TBankInstrument | None:
+    item = _required_object(raw, "instrument")
+    api_available = item.get("apiTradeAvailableFlag", False)
+    if not isinstance(api_available, bool):
+        raise TBankUnavailable(
+            "T-Invest instrument has invalid API availability flag"
+        )
+    if not api_available:
+        return None
+
+    lot_raw = item.get("lot", 0)
+    if isinstance(lot_raw, bool):
+        raise TBankUnavailable("T-Invest instrument has invalid lot size")
+    try:
+        lot = int(str(lot_raw))
+    except ValueError as exc:
+        raise TBankUnavailable("T-Invest instrument has invalid lot size") from exc
+
+    for_qual = item.get("forQualInvestorFlag", False)
+    for_iis = item.get("forIisFlag", False)
+    weekend = item.get("weekendFlag", False)
+    if not all(isinstance(value, bool) for value in (for_qual, for_iis, weekend)):
+        raise TBankUnavailable("T-Invest instrument has invalid access flags")
+
+    uid = _text(item.get("uid")).strip()
+    ticker = _text(item.get("ticker")).strip()
+    name = _text(item.get("name")).strip()
+    if not uid or not ticker or not name:
+        return None
+
+    return TBankInstrument(
+        uid=uid,
+        figi=_text(item.get("figi")).strip(),
+        ticker=ticker,
+        name=name,
+        instrument_type=_text(item.get("instrumentType")).strip(),
+        class_code=_text(item.get("classCode")).strip(),
+        lot=lot,
+        for_qual_investor=cast(bool, for_qual),
+        for_iis=cast(bool, for_iis),
+        weekend_trading=cast(bool, weekend),
+    )
+
+
+def _operation_trade(raw: object) -> TBankOperationTrade:
+    trade = _required_object(raw, "operation trade")
+    trade_date = _optional_provider_timestamp(trade.get("date"))
+    if trade_date is None:
+        raise TBankUnavailable("T-Invest operation trade has no date")
+    return TBankOperationTrade(
+        num=_text(trade.get("num")).strip(),
+        date=trade_date,
+        quantity=_integer_text(trade.get("quantity")),
+        price=_money(trade.get("price")),
+    )
+
+
+def _operation_trades(item: dict[str, object]) -> tuple[TBankOperationTrade, ...]:
+    trades_info = item.get("tradesInfo")
+    if trades_info is None:
+        return ()
+    rows = _optional_list(
+        _required_object(trades_info, "operation trades"),
+        "trades",
+    )
+    return tuple(_operation_trade(raw) for raw in rows)
+
+
+def _operation(raw: object) -> TBankOperation:
+    item = _required_object(raw, "operation item")
+    operation_date = _optional_provider_timestamp(item.get("date"))
+    if operation_date is None:
+        raise TBankUnavailable("T-Invest operation item has no date")
+    return TBankOperation(
+        cursor=_text(item.get("cursor")).strip(),
+        broker_account_id=_text(item.get("brokerAccountId")).strip(),
+        id=_text(item.get("id")).strip(),
+        parent_operation_id=_text(item.get("parentOperationId")).strip(),
+        name=_text(item.get("name")).strip(),
+        date=operation_date,
+        operation_type=_text(item.get("type")).strip(),
+        description=_text(item.get("description")).strip(),
+        state=_text(item.get("state")).strip(),
+        instrument_uid=_text(item.get("instrumentUid")).strip(),
+        figi=_text(item.get("figi")).strip(),
+        instrument_type=_text(item.get("instrumentType")).strip(),
+        position_uid=_text(item.get("positionUid")).strip(),
+        ticker=_text(item.get("ticker")).strip(),
+        class_code=_text(item.get("classCode")).strip(),
+        payment=_money(item.get("payment")),
+        price=_money(item.get("price")),
+        commission=_money(item.get("commission")),
+        accrued_int=_money(item.get("accruedInt")),
+        quantity=_integer_text(item.get("quantity")),
+        quantity_rest=_integer_text(item.get("quantityRest")),
+        quantity_done=_integer_text(item.get("quantityDone")),
+        asset_uid=_text(item.get("assetUid")).strip(),
+        trades=_operation_trades(item),
+    )
+
+
+def _operation_page_cursor(payload: dict[str, object]) -> tuple[bool, str]:
+    has_next = payload.get("hasNext", False)
+    if not isinstance(has_next, bool):
+        raise TBankUnavailable("T-Invest operation page has invalid hasNext flag")
+    next_cursor = _text(payload.get("nextCursor")).strip()
+    if has_next and not next_cursor:
+        raise TBankUnavailable("T-Invest operation page is missing next cursor")
+    return has_next, next_cursor
+
+
+def _asset_fundamental(
+    raw: object,
+    requested: set[str],
+    seen: set[str],
+) -> TBankAssetFundamental:
+    item = _required_object(raw, "asset fundamental")
+    asset_uid = _text(item.get("assetUid")).strip()
+    if not asset_uid or asset_uid not in requested or asset_uid in seen:
+        raise TBankUnavailable("T-Invest fundamentals returned invalid asset uid")
+    seen.add(asset_uid)
+    return TBankAssetFundamental(
+        asset_uid=asset_uid,
+        currency=_text(item.get("currency")).strip().upper(),
+        revenue_ttm=_double_text(item.get("revenueTtm")),
+        ebitda_ttm=_double_text(item.get("ebitdaTtm")),
+        net_income_ttm=_double_text(item.get("netIncomeTtm")),
+        free_cash_flow_ttm=_double_text(item.get("freeCashFlowTtm")),
+        total_debt_mrq=_double_text(item.get("totalDebtMrq")),
+        total_debt_to_equity_mrq=_double_text(item.get("totalDebtToEquityMrq")),
+        total_debt_to_ebitda_mrq=_double_text(item.get("totalDebtToEbitdaMrq")),
+        net_debt_to_ebitda=_double_text(item.get("netDebtToEbitda")),
+        current_ratio_mrq=_double_text(item.get("currentRatioMrq")),
+        fixed_charge_coverage_ratio_fy=_double_text(
+            item.get("fixedChargeCoverageRatioFy")
+        ),
+        net_interest_margin_mrq=_double_text(item.get("netInterestMarginMrq")),
+        roe=_double_text(item.get("roe")),
+        roa=_double_text(item.get("roa")),
+        fiscal_period_start_date=_optional_provider_timestamp(
+            item.get("fiscalPeriodStartDate")
+        ),
+        fiscal_period_end_date=_optional_provider_timestamp(
+            item.get("fiscalPeriodEndDate")
+        ),
+    )
+
+
 def _validate_exchange_candle_window(
     from_at: datetime,
     to_at: datetime,
@@ -502,6 +777,86 @@ def _historic_exchange_candle(
     )
 
 
+def _raise_tbank_http_error(
+    method: str,
+    exc: urllib.error.HTTPError,
+) -> Never:
+    tracking_id = exc.headers.get("x-tracking-id", "")
+    logger.warning(
+        "T-Invest request failed method=%s status=%s tracking_id=%s",
+        method,
+        exc.code,
+        tracking_id or "-",
+    )
+    if exc.code in {401, 403}:
+        raise TBankTokenRejected("T-Invest token was rejected") from exc
+    if exc.code == 404:
+        raise TBankNotFound("T-Invest object was not found") from exc
+    if exc.code == 429 or exc.code >= 500:
+        raise TBankUnavailable(
+            f"T-Invest API unavailable: HTTP {exc.code}"
+        ) from exc
+    raise TBankUnavailable(
+        f"T-Invest API rejected request: HTTP {exc.code}"
+    ) from exc
+
+
+def _raise_tbank_url_error(
+    method: str,
+    exc: urllib.error.URLError,
+) -> Never:
+    reason = exc.reason
+    reason_name = type(reason).__name__
+    logger.warning(
+        "T-Invest network failure method=%s reason=%s",
+        method,
+        reason_name,
+    )
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        raise TBankUnavailable(
+            "T-Invest TLS certificate verification failed"
+        ) from exc
+    raise TBankUnavailable(
+        f"T-Invest API unavailable: {reason_name}"
+    ) from exc
+
+
+def _read_tbank_response(
+    request: urllib.request.Request,
+    *,
+    timeout_seconds: int,
+    method: str,
+) -> str:
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=timeout_seconds,
+        ) as response:
+            raw = response.read()
+            if not isinstance(raw, bytes):
+                raise TBankUnavailable(
+                    "T-Invest API returned invalid response body"
+                )
+            return raw.decode()
+    except urllib.error.HTTPError as exc:
+        _raise_tbank_http_error(method, exc)
+    except urllib.error.URLError as exc:
+        _raise_tbank_url_error(method, exc)
+    except TimeoutError as exc:
+        logger.warning("T-Invest request timed out method=%s", method)
+        raise TBankUnavailable("T-Invest API request timed out") from exc
+
+
+def _decode_tbank_response(raw: str) -> dict[str, object]:
+    try:
+        payload_raw = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise TBankUnavailable("T-Invest API returned invalid JSON") from exc
+    if not isinstance(payload_raw, dict):
+        raise TBankUnavailable("T-Invest API returned invalid payload")
+    return cast(dict[str, object], payload_raw)
+
+
 @dataclass(frozen=True, slots=True)
 class TBankInvestClient:
     timeout_seconds: int = 10
@@ -536,13 +891,13 @@ class TBankInvestClient:
 
             lot_raw = item.get("lot", 0)
             if isinstance(lot_raw, bool):
-                raise TBankUnavailable("T-Invest metadata has invalid lot size")
+                raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR)
             try:
                 lot = int(str(lot_raw))
             except ValueError as exc:
-                raise TBankUnavailable("T-Invest metadata has invalid lot size") from exc
+                raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR) from exc
             if lot < 0:
-                raise TBankUnavailable("T-Invest metadata has invalid lot size")
+                raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR)
 
             required_tests = tuple(
                 _text(value).strip()
@@ -588,7 +943,7 @@ class TBankInvestClient:
         environment: TBankEnvironment,
         instrument_uid: str,
     ) -> tuple[TBankRating, ...]:
-        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
         payload = self._post(
             token=token,
             environment=environment,
@@ -605,33 +960,10 @@ class TBankInvestClient:
             raise TBankUnavailable(
                 "T-Invest bond rating lookup returned a different instrument"
             )
-
-        result: list[TBankRating] = []
-        for raw in _optional_list(raw_instrument, "ratings"):
-            item = _required_object(raw, "bond rating")
-            agency = _text(item.get("agencyName")).strip()
-            level = _text(item.get("ratingLevel")).strip()
-            rating_date = _optional_provider_timestamp(item.get("ratingDate"))
-            under_watch = _optional_bool(item, "isUnderWatch")
-            if (
-                not agency
-                or not level
-                or rating_date is None
-                or under_watch is None
-            ):
-                raise TBankUnavailable(
-                    "T-Invest bond rating is missing required fields"
-                )
-            result.append(
-                TBankRating(
-                    agency_name=agency,
-                    rating_level=level,
-                    rating_date=rating_date,
-                    forecast=_text(item.get("forecast")).strip(),
-                    is_under_watch=under_watch,
-                )
-            )
-        return tuple(result)
+        return tuple(
+            _bond_rating(raw)
+            for raw in _optional_list(raw_instrument, "ratings")
+        )
 
     def get_exchange_candles(
         self,
@@ -643,7 +975,7 @@ class TBankInvestClient:
         to_at: datetime,
         interval: str,
     ) -> tuple[TBankHistoricCandle, ...]:
-        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
         _validate_exchange_candle_window(from_at, to_at, interval)
         payload = self._post(
             token=token,
@@ -695,7 +1027,7 @@ class TBankInvestClient:
         environment: TBankEnvironment,
         instrument_uid: str,
     ) -> TBankTradingStatus:
-        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
         payload = self._post(
             token=token,
             environment=environment,
@@ -747,7 +1079,7 @@ class TBankInvestClient:
     ) -> tuple[TBankLastPrice, ...]:
         clean = tuple(
             dict.fromkeys(
-                _validate_provider_id(value, "instrument uid")
+                _validate_provider_id(value, _INSTRUMENT_UID_FIELD)
                 for value in instrument_uids
             )
         )
@@ -835,7 +1167,7 @@ class TBankInvestClient:
     ) -> tuple[TBankMarketYield, ...]:
         clean = tuple(
             dict.fromkeys(
-                _validate_provider_id(value, "instrument uid")
+                _validate_provider_id(value, _INSTRUMENT_UID_FIELD)
                 for value in instrument_uids
             )
         )
@@ -854,41 +1186,12 @@ class TBankInvestClient:
             },
         )
         requested = set(clean)
-        result: list[TBankMarketYield] = []
         seen: set[str] = set()
-        for raw in _required_list(payload, "instruments"):
-            item = _required_object(raw, "market value instrument")
-            uid = _text(item.get("instrumentUid")).strip()
-            if not uid or uid not in requested or uid in seen:
-                raise TBankUnavailable(
-                    "T-Invest market values returned invalid instrument uid"
-                )
-            seen.add(uid)
-            yield_value: str | None = None
-            yield_time: datetime | None = None
-            for value_raw in _optional_list(item, "values"):
-                value = _required_object(value_raw, "market value")
-                if _text(value.get("type")).strip() != "INSTRUMENT_VALUE_YIELD":
-                    continue
-                numeric = _quotation(value.get("value"))
-                observed = _optional_provider_timestamp(value.get("time"))
-                if numeric is None or observed is None:
-                    raise TBankUnavailable(
-                        "T-Invest market yield is missing required fields"
-                    )
-                yield_value = numeric
-                yield_time = observed
-                break
-            if yield_value is None or yield_time is None:
-                continue
-            result.append(
-                TBankMarketYield(
-                    instrument_uid=uid,
-                    yield_percent=yield_value,
-                    time=yield_time,
-                )
-            )
-        return tuple(result)
+        result = (
+            _market_yield(raw, requested, seen)
+            for raw in _required_list(payload, "instruments")
+        )
+        return tuple(item for item in result if item is not None)
 
     def get_order_book(
         self,
@@ -898,7 +1201,7 @@ class TBankInvestClient:
         *,
         depth: int = 10,
     ) -> TBankOrderBook:
-        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
         if not 1 <= depth <= 50:
             raise ValueError("order book depth must be between 1 and 50")
         payload = self._post(
@@ -936,7 +1239,7 @@ class TBankInvestClient:
         quantity_lots: int,
     ) -> TBankOrderPrice:
         account = _validate_provider_id(account_id, "account id")
-        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
         try:
             price_value = Decimal(price)
         except InvalidOperation as exc:
@@ -1090,7 +1393,7 @@ class TBankInvestClient:
                 "orderId": request_uuid,
                 "instrumentId": _validate_provider_id(
                     instrument_uid,
-                    "instrument uid",
+                    _INSTRUMENT_UID_FIELD,
                 ),
                 "timeInForce": time_in_force,
                 "priceType": _provider_price_type(price_type),
@@ -1294,7 +1597,7 @@ class TBankInvestClient:
                 "accountId": _validate_account_id(account_id),
                 "instrumentId": _validate_provider_id(
                     instrument_uid,
-                    "instrument uid",
+                    _INSTRUMENT_UID_FIELD,
                 ),
                 "price": _quotation_payload(price_value),
             },
@@ -1400,57 +1703,13 @@ class TBankInvestClient:
                 "apiTradeAvailableFlag": True,
             },
         )
-
         instruments: list[TBankInstrument] = []
         for raw in _optional_list(payload, "instruments"):
-            item = _required_object(raw, "instrument")
-            api_available = item.get("apiTradeAvailableFlag", False)
-            if not isinstance(api_available, bool):
-                raise TBankUnavailable("T-Invest instrument has invalid API availability flag")
-            if not api_available:
-                continue
-
-            lot_raw = item.get("lot", 0)
-            if isinstance(lot_raw, bool):
-                raise TBankUnavailable("T-Invest instrument has invalid lot size")
-            try:
-                lot = int(str(lot_raw))
-            except ValueError as exc:
-                raise TBankUnavailable("T-Invest instrument has invalid lot size") from exc
-
-            for_qual = item.get("forQualInvestorFlag", False)
-            for_iis = item.get("forIisFlag", False)
-            weekend = item.get("weekendFlag", False)
-            if (
-                not isinstance(for_qual, bool)
-                or not isinstance(for_iis, bool)
-                or not isinstance(weekend, bool)
-            ):
-                raise TBankUnavailable("T-Invest instrument has invalid access flags")
-
-            uid = _text(item.get("uid")).strip()
-            ticker = _text(item.get("ticker")).strip()
-            name = _text(item.get("name")).strip()
-            if not uid or not ticker or not name:
-                continue
-
-            instruments.append(
-                TBankInstrument(
-                    uid=uid,
-                    figi=_text(item.get("figi")).strip(),
-                    ticker=ticker,
-                    name=name,
-                    instrument_type=_text(item.get("instrumentType")).strip(),
-                    class_code=_text(item.get("classCode")).strip(),
-                    lot=lot,
-                    for_qual_investor=for_qual,
-                    for_iis=for_iis,
-                    weekend_trading=weekend,
-                )
-            )
+            instrument = _search_instrument(raw)
+            if instrument is not None:
+                instruments.append(instrument)
             if len(instruments) >= limit:
                 break
-
         return tuple(instruments)
 
     def get_usd_rub_quote(
@@ -1494,65 +1753,9 @@ class TBankInvestClient:
 
         best: tuple[datetime, int, TBankFxQuote] | None = None
         for raw in _optional_list(payload, "instruments"):
-            item = _required_object(raw, "market value instrument")
-            uid = _text(item.get("instrumentUid")).strip()
-            instrument = candidate_by_uid.get(uid)
-            if instrument is None:
+            ranked = _ranked_usd_rub_quote(raw, candidate_by_uid)
+            if ranked is None:
                 continue
-
-            currency = _text(item.get("priceCurrency")).strip().upper()
-            if currency != "RUB":
-                continue
-
-            previous_close: str | None = None
-            quotes: list[tuple[datetime, int, str, str, TBankQuoteSource]] = []
-            for value_raw in _optional_list(item, "values"):
-                value = _required_object(value_raw, "market value")
-                value_type = _text(value.get("type")).strip()
-                numeric = _quotation(value.get("value"))
-                if numeric is None:
-                    continue
-
-                if value_type == "INSTRUMENT_VALUE_CLOSE_PRICE":
-                    previous_close = numeric
-                    continue
-                if value_type not in {
-                    "INSTRUMENT_VALUE_LAST_PRICE",
-                    "INSTRUMENT_VALUE_LAST_PRICE_DEALER",
-                }:
-                    continue
-
-                quote_time = _text(value.get("time")).strip()
-                parsed_time = _provider_timestamp(quote_time)
-                if value_type == "INSTRUMENT_VALUE_LAST_PRICE_DEALER":
-                    source: TBankQuoteSource = "dealer"
-                    source_priority = 0
-                else:
-                    source = "exchange"
-                    source_priority = 1
-                quotes.append(
-                    (parsed_time, source_priority, numeric, quote_time, source)
-                )
-
-            if not quotes:
-                continue
-
-            parsed_time, source_priority, price, quote_time, source = max(
-                quotes,
-                key=lambda quote: (quote[0], quote[1]),
-            )
-            quote = TBankFxQuote(
-                instrument_uid=instrument.uid,
-                ticker=instrument.ticker,
-                name=instrument.name,
-                class_code=instrument.class_code,
-                price=price,
-                currency=currency,
-                quote_time=quote_time,
-                source=source,
-                previous_close=previous_close,
-            )
-            ranked = (parsed_time, source_priority, quote)
             if best is None or ranked[:2] > best[:2]:
                 best = ranked
 
@@ -1679,12 +1882,6 @@ class TBankInvestClient:
         if len(cursor) > 4096 or "\n" in cursor or "\r" in cursor:
             raise ValueError("operation history cursor is invalid")
 
-        # The project selects the sandbox by host. T-Invest documents this as
-        # the preferred sandbox mode, so the ordinary OperationsService method is
-        # used on both hosts instead of mixing the sandbox host with SandboxService.
-        service = "OperationsService"
-        method = "GetOperationsByCursor"
-
         body: dict[str, object] = {
             "accountId": _validate_account_id(account_id),
             "from": _utc_timestamp(from_at),
@@ -1701,80 +1898,18 @@ class TBankInvestClient:
         payload = self._post(
             token=token,
             environment=environment,
-            service=service,
-            method=method,
+            service="OperationsService",
+            method="GetOperationsByCursor",
             body=body,
         )
-
-        has_next = payload.get("hasNext", False)
-        if not isinstance(has_next, bool):
-            raise TBankUnavailable("T-Invest operation page has invalid hasNext flag")
-        next_cursor = _text(payload.get("nextCursor")).strip()
-        if has_next and not next_cursor:
-            raise TBankUnavailable("T-Invest operation page is missing next cursor")
-
-        operations: list[TBankOperation] = []
-        for raw in _required_list(payload, "items"):
-            item = _required_object(raw, "operation item")
-            operation_date = _optional_provider_timestamp(item.get("date"))
-            if operation_date is None:
-                raise TBankUnavailable("T-Invest operation item has no date")
-
-            trades_info = item.get("tradesInfo")
-            trade_rows: list[object] = []
-            if trades_info is not None:
-                trade_rows = _optional_list(
-                    _required_object(trades_info, "operation trades"),
-                    "trades",
-                )
-            trades: list[TBankOperationTrade] = []
-            for trade_raw in trade_rows:
-                trade = _required_object(trade_raw, "operation trade")
-                trade_date = _optional_provider_timestamp(trade.get("date"))
-                if trade_date is None:
-                    raise TBankUnavailable("T-Invest operation trade has no date")
-                trades.append(
-                    TBankOperationTrade(
-                        num=_text(trade.get("num")).strip(),
-                        date=trade_date,
-                        quantity=_integer_text(trade.get("quantity")),
-                        price=_money(trade.get("price")),
-                    )
-                )
-
-            operations.append(
-                TBankOperation(
-                    cursor=_text(item.get("cursor")).strip(),
-                    broker_account_id=_text(item.get("brokerAccountId")).strip(),
-                    id=_text(item.get("id")).strip(),
-                    parent_operation_id=_text(item.get("parentOperationId")).strip(),
-                    name=_text(item.get("name")).strip(),
-                    date=operation_date,
-                    operation_type=_text(item.get("type")).strip(),
-                    description=_text(item.get("description")).strip(),
-                    state=_text(item.get("state")).strip(),
-                    instrument_uid=_text(item.get("instrumentUid")).strip(),
-                    figi=_text(item.get("figi")).strip(),
-                    instrument_type=_text(item.get("instrumentType")).strip(),
-                    position_uid=_text(item.get("positionUid")).strip(),
-                    ticker=_text(item.get("ticker")).strip(),
-                    class_code=_text(item.get("classCode")).strip(),
-                    payment=_money(item.get("payment")),
-                    price=_money(item.get("price")),
-                    commission=_money(item.get("commission")),
-                    accrued_int=_money(item.get("accruedInt")),
-                    quantity=_integer_text(item.get("quantity")),
-                    quantity_rest=_integer_text(item.get("quantityRest")),
-                    quantity_done=_integer_text(item.get("quantityDone")),
-                    asset_uid=_text(item.get("assetUid")).strip(),
-                    trades=tuple(trades),
-                )
-            )
-
+        has_next, next_cursor = _operation_page_cursor(payload)
         return TBankOperationsPage(
             has_next=has_next,
             next_cursor=next_cursor,
-            items=tuple(operations),
+            items=tuple(
+                _operation(raw)
+                for raw in _required_list(payload, "items")
+            ),
         )
 
     def get_dividends(
@@ -1938,7 +2073,10 @@ class TBankInvestClient:
         asset_uids: tuple[str, ...],
     ) -> tuple[TBankAssetFundamental, ...]:
         clean = tuple(
-            dict.fromkeys(_validate_provider_id(value, "asset uid") for value in asset_uids)
+            dict.fromkeys(
+                _validate_provider_id(value, "asset uid")
+                for value in asset_uids
+            )
         )
         if not clean:
             return ()
@@ -1953,41 +2091,10 @@ class TBankInvestClient:
         )
         requested = set(clean)
         seen: set[str] = set()
-        result: list[TBankAssetFundamental] = []
-        for raw in _required_list(payload, "fundamentals"):
-            item = _required_object(raw, "asset fundamental")
-            asset_uid = _text(item.get("assetUid")).strip()
-            if not asset_uid or asset_uid not in requested or asset_uid in seen:
-                raise TBankUnavailable("T-Invest fundamentals returned invalid asset uid")
-            seen.add(asset_uid)
-            result.append(
-                TBankAssetFundamental(
-                    asset_uid=asset_uid,
-                    currency=_text(item.get("currency")).strip().upper(),
-                    revenue_ttm=_double_text(item.get("revenueTtm")),
-                    ebitda_ttm=_double_text(item.get("ebitdaTtm")),
-                    net_income_ttm=_double_text(item.get("netIncomeTtm")),
-                    free_cash_flow_ttm=_double_text(item.get("freeCashFlowTtm")),
-                    total_debt_mrq=_double_text(item.get("totalDebtMrq")),
-                    total_debt_to_equity_mrq=_double_text(item.get("totalDebtToEquityMrq")),
-                    total_debt_to_ebitda_mrq=_double_text(item.get("totalDebtToEbitdaMrq")),
-                    net_debt_to_ebitda=_double_text(item.get("netDebtToEbitda")),
-                    current_ratio_mrq=_double_text(item.get("currentRatioMrq")),
-                    fixed_charge_coverage_ratio_fy=_double_text(
-                        item.get("fixedChargeCoverageRatioFy")
-                    ),
-                    net_interest_margin_mrq=_double_text(item.get("netInterestMarginMrq")),
-                    roe=_double_text(item.get("roe")),
-                    roa=_double_text(item.get("roa")),
-                    fiscal_period_start_date=_optional_provider_timestamp(
-                        item.get("fiscalPeriodStartDate")
-                    ),
-                    fiscal_period_end_date=_optional_provider_timestamp(
-                        item.get("fiscalPeriodEndDate")
-                    ),
-                )
-            )
-        return tuple(result)
+        return tuple(
+            _asset_fundamental(raw, requested, seen)
+            for raw in _required_list(payload, "fundamentals")
+        )
 
     def _post(
         self,
@@ -2013,58 +2120,12 @@ class TBankInvestClient:
                 "Accept": "application/json",
             },
         )
-
-        try:
-            with urllib.request.urlopen(
-                request,
-                timeout=self.timeout_seconds,
-            ) as response:
-                raw = response.read().decode()
-        except urllib.error.HTTPError as exc:
-            tracking_id = exc.headers.get("x-tracking-id", "")
-            logger.warning(
-                "T-Invest request failed method=%s status=%s tracking_id=%s",
-                method,
-                exc.code,
-                tracking_id or "-",
-            )
-            if exc.code in {401, 403}:
-                raise TBankTokenRejected("T-Invest token was rejected") from exc
-            if exc.code == 404:
-                raise TBankNotFound("T-Invest object was not found") from exc
-            if exc.code == 429 or exc.code >= 500:
-                raise TBankUnavailable(
-                    f"T-Invest API unavailable: HTTP {exc.code}"
-                ) from exc
-            raise TBankUnavailable(
-                f"T-Invest API rejected request: HTTP {exc.code}"
-            ) from exc
-        except urllib.error.URLError as exc:
-            reason = exc.reason
-            reason_name = type(reason).__name__
-            logger.warning(
-                "T-Invest network failure method=%s reason=%s",
-                method,
-                reason_name,
-            )
-            if isinstance(reason, ssl.SSLCertVerificationError):
-                raise TBankUnavailable(
-                    "T-Invest TLS certificate verification failed"
-                ) from exc
-            raise TBankUnavailable(
-                f"T-Invest API unavailable: {reason_name}"
-            ) from exc
-        except TimeoutError as exc:
-            logger.warning("T-Invest request timed out method=%s", method)
-            raise TBankUnavailable("T-Invest API request timed out") from exc
-
-        try:
-            payload_raw = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise TBankUnavailable("T-Invest API returned invalid JSON") from exc
-        if not isinstance(payload_raw, dict):
-            raise TBankUnavailable("T-Invest API returned invalid payload")
-        return cast(dict[str, object], payload_raw)
+        raw = _read_tbank_response(
+            request,
+            timeout_seconds=self.timeout_seconds,
+            method=method,
+        )
+        return _decode_tbank_response(raw)
 
 
 def _require_prod(environment: TBankEnvironment) -> None:
@@ -2160,7 +2221,7 @@ def _instrument_window_body(
     if from_at > to_at:
         raise ValueError("evidence window start must not be after end")
     return {
-        "instrumentId": _validate_provider_id(instrument_uid, "instrument uid"),
+        "instrumentId": _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD),
         "from": _utc_timestamp(from_at),
         "to": _utc_timestamp(to_at),
     }
@@ -2265,19 +2326,22 @@ def _text(value: object) -> str:
     raise TBankUnavailable("T-Invest API returned invalid text value")
 
 
+_INVALID_INTEGER_VALUE_ERROR = "T-Invest API returned invalid integer value"
+
+
 def _integer_text(value: object) -> str:
     if value is None:
         return "0"
     if isinstance(value, bool):
-        raise TBankUnavailable("T-Invest API returned invalid integer value")
+        raise TBankUnavailable(_INVALID_INTEGER_VALUE_ERROR)
     if isinstance(value, (str, int)):
         text = str(value)
         try:
             int(text)
         except ValueError as exc:
-            raise TBankUnavailable("T-Invest API returned invalid integer value") from exc
+            raise TBankUnavailable(_INVALID_INTEGER_VALUE_ERROR) from exc
         return text
-    raise TBankUnavailable("T-Invest API returned invalid integer value")
+    raise TBankUnavailable(_INVALID_INTEGER_VALUE_ERROR)
 
 
 def _quotation(value: object) -> str | None:

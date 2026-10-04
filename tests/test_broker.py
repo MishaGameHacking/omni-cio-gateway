@@ -1887,6 +1887,8 @@ def test_tbank_asset_reports_reject_mismatched_instrument_subject() -> None:
         }
     )
 
+    from_at = datetime(2026, 9, 1, tzinfo=UTC)
+    to_at = datetime(2026, 10, 2, tzinfo=UTC)
     with (
         patch("urllib.request.urlopen", return_value=response),
         pytest.raises(TBankUnavailable, match="instrument does not match"),
@@ -1895,8 +1897,8 @@ def test_tbank_asset_reports_reject_mismatched_instrument_subject() -> None:
             "t.fake-owner-credential-1234567890",
             "prod",
             "asset-report-uid",
-            from_at=datetime(2026, 9, 1, tzinfo=UTC),
-            to_at=datetime(2026, 10, 2, tzinfo=UTC),
+            from_at=from_at,
+            to_at=to_at,
         )
 
 

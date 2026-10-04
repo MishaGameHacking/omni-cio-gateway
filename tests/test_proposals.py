@@ -258,9 +258,10 @@ def test_replace_draft_requires_exact_server_side_replacement_selection() -> Non
     assert draft.target_instrument_uid == "candidate-1"
     assert draft.replaced_instrument_uid == "old-1"
 
+    balancing = _balancing()
     with pytest.raises(ProposalBuildError, match="scenario_not_found"):
         build_proposal_draft(
-            _balancing(),
+            balancing,
             scenario_kind="replace",
             replaced_instrument_uid="attacker-selected-position",
         )

@@ -358,11 +358,15 @@ def test_policy_requires_explicit_caps_instead_of_hidden_defaults() -> None:
 
 
 def test_invalid_policy_is_rejected_before_optimization() -> None:
+    nav_rub = Decimal("100000")
+    cash_rub = Decimal("10000")
+    invalid_policy = _policy(max_instrument_percent=Decimal("101"))
+
     with pytest.raises(ValueError, match="max_instrument_percent"):
         build_balancing_preview(
-            nav_rub=Decimal("100000"),
-            cash_rub=Decimal("10000"),
+            nav_rub=nav_rub,
+            cash_rub=cash_rub,
             holdings=(),
             candidates=(),
-            policy=_policy(max_instrument_percent=Decimal("101")),
+            policy=invalid_policy,
         )

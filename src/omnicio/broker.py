@@ -752,6 +752,120 @@ class BrokerService:
             )
         return operation(*args, **kwargs)
 
+    def _read_fundamentals(
+        self,
+        credential: str,
+        environment: TBankEnvironment,
+        asset_uids: tuple[str, ...],
+    ) -> tuple[list[TBankAssetFundamental], bool]:
+        fundamentals: list[TBankAssetFundamental] = []
+        failed = False
+        for start in range(0, len(asset_uids), 100):
+            try:
+                fundamentals.extend(
+                    self._paced_evidence_read(
+                        self.tbank.get_asset_fundamentals,
+                        credential,
+                        environment,
+                        asset_uids[start : start + 100],
+                    )
+                )
+            except TBankUnavailable:
+                failed = True
+        return fundamentals, failed
+
+    def _submit_evidence_tasks(
+        self,
+        reads: ThreadPoolExecutor,
+        metadata: tuple[TBankInstrumentMetadata, ...],
+        credential: str,
+        environment: TBankEnvironment,
+        *,
+        window_from: datetime,
+        window_to: datetime,
+    ) -> dict[Any, tuple[str, str]]:
+        tasks: dict[Any, tuple[str, str]] = {}
+        for item in metadata:
+            if item.instrument_type == "share":
+                tasks[
+                    reads.submit(
+                        self._paced_evidence_read,
+                        self.tbank.get_dividends,
+                        credential,
+                        environment,
+                        item.uid,
+                        from_at=window_from,
+                        to_at=window_to,
+                    )
+                ] = ("GetDividends", item.uid)
+            if item.instrument_type == "bond":
+                tasks[
+                    reads.submit(
+                        self._paced_evidence_read,
+                        self.tbank.get_bond_coupons,
+                        credential,
+                        environment,
+                        item.uid,
+                        from_at=window_from,
+                        to_at=window_to,
+                    )
+                ] = ("GetBondCoupons", item.uid)
+                tasks[
+                    reads.submit(
+                        self._paced_evidence_read,
+                        self.tbank.get_bond_events,
+                        credential,
+                        environment,
+                        item.uid,
+                        from_at=window_from,
+                        to_at=window_to,
+                    )
+                ] = ("GetBondEvents", item.uid)
+            if item.instrument_type in {"share", "bond"}:
+                tasks[
+                    reads.submit(
+                        self._paced_evidence_read,
+                        self.tbank.get_asset_reports,
+                        credential,
+                        environment,
+                        item.uid,
+                        from_at=window_from,
+                        to_at=window_to,
+                    )
+                ] = ("GetAssetReports", item.uid)
+        return tasks
+
+    @staticmethod
+    def _collect_evidence_tasks(
+        tasks: dict[Any, tuple[str, str]],
+    ) -> tuple[
+        list[TBankDividend],
+        list[TBankBondCoupon],
+        list[TBankBondEvent],
+        list[TBankAssetReport],
+        set[str],
+    ]:
+        dividends: list[TBankDividend] = []
+        coupons: list[TBankBondCoupon] = []
+        bond_events: list[TBankBondEvent] = []
+        reports: list[TBankAssetReport] = []
+        failed_methods: set[str] = set()
+        for future, (method, _instrument_uid) in tasks.items():
+            try:
+                rows = future.result()
+            except TBankUnavailable:
+                failed_methods.add(method)
+                continue
+            if method == "GetDividends":
+                dividends.extend(cast(tuple[TBankDividend, ...], rows))
+            elif method == "GetBondCoupons":
+                coupons.extend(cast(tuple[TBankBondCoupon, ...], rows))
+            elif method == "GetBondEvents":
+                bond_events.extend(cast(tuple[TBankBondEvent, ...], rows))
+            elif method == "GetAssetReports":
+                reports.extend(cast(tuple[TBankAssetReport, ...], rows))
+        return dividends, coupons, bond_events, reports, failed_methods
+
     def evidence(
         self,
         user_id: UUID,
@@ -783,92 +897,27 @@ class BrokerService:
         )
         asset_uids = tuple(dict.fromkeys(item.asset_uid for item in metadata if item.asset_uid))
 
-        fundamentals: list[TBankAssetFundamental] = []
-        fundamentals_failed = False
-        for start in range(0, len(asset_uids), 100):
-            try:
-                fundamentals.extend(
-                    self._paced_evidence_read(
-                        self.tbank.get_asset_fundamentals,
-                        credential,
-                        environment,
-                        asset_uids[start : start + 100],
-                    )
-                )
-            except TBankUnavailable:
-                fundamentals_failed = True
-
-        dividends: list[TBankDividend] = []
-        coupons: list[TBankBondCoupon] = []
-        bond_events: list[TBankBondEvent] = []
-        reports: list[TBankAssetReport] = []
-        failed_methods: set[str] = set()
-
-        tasks: dict[Any, tuple[str, str]] = {}
+        fundamentals, fundamentals_failed = self._read_fundamentals(
+            credential,
+            environment,
+            asset_uids,
+        )
         with ThreadPoolExecutor(max_workers=4) as reads:
-            for item in metadata:
-                if item.instrument_type == "share":
-                    tasks[
-                        reads.submit(
-                            self._paced_evidence_read,
-                            self.tbank.get_dividends,
-                            credential,
-                            environment,
-                            item.uid,
-                            from_at=window_from,
-                            to_at=window_to,
-                        )
-                    ] = ("GetDividends", item.uid)
-                if item.instrument_type == "bond":
-                    tasks[
-                        reads.submit(
-                            self._paced_evidence_read,
-                            self.tbank.get_bond_coupons,
-                            credential,
-                            environment,
-                            item.uid,
-                            from_at=window_from,
-                            to_at=window_to,
-                        )
-                    ] = ("GetBondCoupons", item.uid)
-                    tasks[
-                        reads.submit(
-                            self._paced_evidence_read,
-                            self.tbank.get_bond_events,
-                            credential,
-                            environment,
-                            item.uid,
-                            from_at=window_from,
-                            to_at=window_to,
-                        )
-                    ] = ("GetBondEvents", item.uid)
-                if item.instrument_type in {"share", "bond"}:
-                    tasks[
-                        reads.submit(
-                            self._paced_evidence_read,
-                            self.tbank.get_asset_reports,
-                            credential,
-                            environment,
-                            item.uid,
-                            from_at=window_from,
-                            to_at=window_to,
-                        )
-                    ] = ("GetAssetReports", item.uid)
-
-            for future, (method, _instrument_uid) in tasks.items():
-                try:
-                    rows = future.result()
-                except TBankUnavailable:
-                    failed_methods.add(method)
-                    continue
-                if method == "GetDividends":
-                    dividends.extend(cast(tuple[TBankDividend, ...], rows))
-                elif method == "GetBondCoupons":
-                    coupons.extend(cast(tuple[TBankBondCoupon, ...], rows))
-                elif method == "GetBondEvents":
-                    bond_events.extend(cast(tuple[TBankBondEvent, ...], rows))
-                elif method == "GetAssetReports":
-                    reports.extend(cast(tuple[TBankAssetReport, ...], rows))
+            tasks = self._submit_evidence_tasks(
+                reads,
+                metadata,
+                credential,
+                environment,
+                window_from=window_from,
+                window_to=window_to,
+            )
+            (
+                dividends,
+                coupons,
+                bond_events,
+                reports,
+                failed_methods,
+            ) = self._collect_evidence_tasks(tasks)
 
         root = "https://developer.tbank.ru/invest/services/instruments/methods"
         calendar_methods = ("InstrumentsService/GetDividends", "InstrumentsService/GetBondCoupons")
@@ -967,7 +1016,7 @@ class BrokerService:
         query: str,
         limit: int = 20,
     ) -> tuple[TBankInstrument, ...]:
-        record, credential, environment = self._connected_credential(user_id)
+        _record, credential, environment = self._connected_credential(user_id)
         return self.tbank.find_instruments(
             credential,
             environment,

@@ -178,7 +178,7 @@
             </button>
           </form>
 
-          <p id="auth-message" class="message" role="status" aria-live="polite"></p>
+          <output id="auth-message" class="message" aria-live="polite"></output>
 
           <footer class="auth-meta">
             <span>OmniCIO Personal</span>
@@ -552,7 +552,7 @@
                       Найти
                     </button>
                   </form>
-                  <p id="hunter-message" class="message" role="status" aria-live="polite"></p>
+                  <output id="hunter-message" class="message" aria-live="polite"></output>
                   <div class="hunter-results" id="hunter-results"></div>
                 </article>
 
@@ -972,7 +972,7 @@
                     </div>
                   </section>
                 </div>
-                <p id="instrument-detail-message" class="message" role="status" aria-live="polite"></p>
+                <output id="instrument-detail-message" class="message" aria-live="polite"></output>
               </article>
             </div>
           </section>
@@ -1191,7 +1191,7 @@
                     <div id="proposal-history" class="analysis-sources"></div>
                   </div>
                 </section>
-                <p id="proposal-message" class="message" role="status" aria-live="polite"></p>
+                <output id="proposal-message" class="message" aria-live="polite"></output>
                 <p class="field-hint">
                   «Подтвердить план» в R5 только записывает решение владельца и hash версии.
                   Оно не вызывает <code>PostOrder</code>, не выставляет заявку и не включает
@@ -1319,7 +1319,7 @@
                     <div id="execution-details" class="analysis-sources"></div>
                   </div>
                 </section>
-                <p id="execution-message" class="message" role="status" aria-live="polite"></p>
+                <output id="execution-message" class="message" aria-live="polite"></output>
                 <p class="field-hint">
                   Запуск доступен только у предложения со статусом «подтверждено».
                   Для sandbox подключите именно песочницу T-Invest. Кнопка «Сверить»
@@ -1451,7 +1451,7 @@
                 </button>
               </form>
 
-              <p id="tbank-message" class="message" role="status" aria-live="polite"></p>
+              <output id="tbank-message" class="message" aria-live="polite"></output>
             </section>
           </section>
 
@@ -1574,7 +1574,7 @@
                   <button id="investment-profile-save" class="button button-primary" type="submit">
                     Сохранить новую версию профиля
                   </button>
-                  <p id="investment-profile-message" class="message" role="status" aria-live="polite"></p>
+                  <output id="investment-profile-message" class="message" aria-live="polite"></output>
                 </form>
               </article>
 
@@ -1689,7 +1689,7 @@
                   <button id="balancing-policy-save" class="button button-primary" type="submit">
                     Сохранить новую версию лимитов
                   </button>
-                  <p id="balancing-policy-message" class="message" role="status" aria-live="polite"></p>
+                  <output id="balancing-policy-message" class="message" aria-live="polite"></output>
                 </form>
               </article>
             </section>
@@ -1760,11 +1760,12 @@
                     <strong>Оформление</strong>
                     <span>Светлая тема — основная. Можно выбрать тёмную или системную.</span>
                   </div>
-                  <div class="segmented-control" role="group" aria-label="Тема интерфейса">
+                  <fieldset class="segmented-control">
+                    <legend class="visually-hidden">Тема интерфейса</legend>
                     <button type="button" data-theme-option="light" aria-pressed="true">Светлая</button>
                     <button type="button" data-theme-option="dark" aria-pressed="false">Тёмная</button>
                     <button type="button" data-theme-option="auto" aria-pressed="false">Авто</button>
-                  </div>
+                  </fieldset>
                 </div>
               </article>
 
@@ -1909,7 +1910,7 @@
                     </button>
                   </div>
 
-                  <p id="delete-account-message" class="message" role="status" aria-live="polite"></p>
+                  <output id="delete-account-message" class="message" aria-live="polite"></output>
                 </form>
               </article>
             </section>
@@ -1955,7 +1956,7 @@
                   <svg class="ui-icon" aria-hidden="true"><use href="#icon-copy"></use></svg>
                   <span>Скопировать диагностику</span>
                 </button>
-                <p id="support-copy-message" class="message" role="status" aria-live="polite"></p>
+                <output id="support-copy-message" class="message" aria-live="polite"></output>
               </article>
 
               <article class="settings-card">

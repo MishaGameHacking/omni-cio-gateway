@@ -14,7 +14,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from omnicio.db import Database
 from omnicio.execution_store import ExecutionLedgerError, ExecutionStore
-from omnicio.portfolio_store import PortfolioStore, ProposalStateError
+from omnicio.portfolio_store import BalancingPolicyInput, PortfolioStore, ProposalStateError
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
 
@@ -23,6 +23,30 @@ MIGRATIONS = tuple(sorted((ROOT / "migrations").glob("*.sql")))
 USER_ONE = UUID("00000000-0000-0000-0000-000000000101")
 USER_TWO = UUID("00000000-0000-0000-0000-000000000102")
 RUNTIME_PASSWORD = secrets.token_urlsafe(32)
+
+
+def _balancing_policy_input(
+    max_instrument_percent: str = "20",
+) -> BalancingPolicyInput:
+    return BalancingPolicyInput(
+        max_instrument_percent=Decimal(max_instrument_percent),
+        max_sector_percent=Decimal("30"),
+        max_issuer_percent=Decimal("20"),
+        max_group_percent=Decimal("25"),
+        max_share_percent=Decimal("70"),
+        max_bond_percent=Decimal("80"),
+        max_etf_percent=Decimal("70"),
+        max_below_grade_percent=Decimal("5"),
+        max_unknown_percent=Decimal("0"),
+        max_term_months=120,
+        turnover_budget_percent=Decimal("25"),
+        max_daily_turnover_participation_percent=Decimal("5"),
+        securities_tax_rate_percent=Decimal("15"),
+        uncertainty_haircut_percent=Decimal("3"),
+        credit_loss_haircut_percent=Decimal("2"),
+        no_trade_band_percent=Decimal("1"),
+        min_replace_benefit_rub=Decimal("500"),
+    )
 
 
 def _runtime_url() -> str:
@@ -86,7 +110,8 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     execution_store_source = (
         ROOT / "src" / "omnicio" / "execution_store.py"
     ).read_text(encoding="utf-8")
-    assert 'run.mode == "live" and new_status == "submitting"' in execution_store_source
+    assert "def _require_live_transition_mandate(" in execution_store_source
+    assert 'run.mode != "live" or new_status != "submitting"' in execution_store_source
     assert 'raise ExecutionLedgerError("live_mandate_inactive")' in execution_store_source
     assert "portfolio_execution_runs_one_active_live_idx" in execution_store_source
     assert "live_execution_already_active" in execution_store_source
@@ -616,63 +641,15 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
 
             first_policy = store.save_balancing_policy(
                 USER_ONE,
-                max_instrument_percent=Decimal("20"),
-                max_sector_percent=Decimal("30"),
-                max_issuer_percent=Decimal("20"),
-                max_group_percent=Decimal("25"),
-                max_share_percent=Decimal("70"),
-                max_bond_percent=Decimal("80"),
-                max_etf_percent=Decimal("70"),
-                max_below_grade_percent=Decimal("5"),
-                max_unknown_percent=Decimal("0"),
-                max_term_months=120,
-                turnover_budget_percent=Decimal("25"),
-                max_daily_turnover_participation_percent=Decimal("5"),
-                securities_tax_rate_percent=Decimal("15"),
-                uncertainty_haircut_percent=Decimal("3"),
-                credit_loss_haircut_percent=Decimal("2"),
-                no_trade_band_percent=Decimal("1"),
-                min_replace_benefit_rub=Decimal("500"),
+                _balancing_policy_input("20"),
             )
             duplicate_policy = store.save_balancing_policy(
                 USER_ONE,
-                max_instrument_percent=Decimal("20"),
-                max_sector_percent=Decimal("30"),
-                max_issuer_percent=Decimal("20"),
-                max_group_percent=Decimal("25"),
-                max_share_percent=Decimal("70"),
-                max_bond_percent=Decimal("80"),
-                max_etf_percent=Decimal("70"),
-                max_below_grade_percent=Decimal("5"),
-                max_unknown_percent=Decimal("0"),
-                max_term_months=120,
-                turnover_budget_percent=Decimal("25"),
-                max_daily_turnover_participation_percent=Decimal("5"),
-                securities_tax_rate_percent=Decimal("15"),
-                uncertainty_haircut_percent=Decimal("3"),
-                credit_loss_haircut_percent=Decimal("2"),
-                no_trade_band_percent=Decimal("1"),
-                min_replace_benefit_rub=Decimal("500"),
+                _balancing_policy_input("20"),
             )
             revised_policy = store.save_balancing_policy(
                 USER_ONE,
-                max_instrument_percent=Decimal("15"),
-                max_sector_percent=Decimal("30"),
-                max_issuer_percent=Decimal("20"),
-                max_group_percent=Decimal("25"),
-                max_share_percent=Decimal("70"),
-                max_bond_percent=Decimal("80"),
-                max_etf_percent=Decimal("70"),
-                max_below_grade_percent=Decimal("5"),
-                max_unknown_percent=Decimal("0"),
-                max_term_months=120,
-                turnover_budget_percent=Decimal("25"),
-                max_daily_turnover_participation_percent=Decimal("5"),
-                securities_tax_rate_percent=Decimal("15"),
-                uncertainty_haircut_percent=Decimal("3"),
-                credit_loss_haircut_percent=Decimal("2"),
-                no_trade_band_percent=Decimal("1"),
-                min_replace_benefit_rub=Decimal("500"),
+                _balancing_policy_input("15"),
             )
             current_policy = store.current_balancing_policy(USER_ONE)
             created_at = datetime.now(UTC)
@@ -703,6 +680,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 material_current=True,
                 now=created_at + timedelta(minutes=1),
             )
+            replay_at = created_at + timedelta(minutes=2)
             with pytest.raises(
                 ProposalStateError,
                 match="proposal_already_decided",
@@ -717,7 +695,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                     user_reason="",
                     deferred_until=None,
                     material_current=True,
-                    now=created_at + timedelta(minutes=2),
+                    now=replay_at,
                 )
 
             stale_material = store.create_proposal(
@@ -1014,23 +992,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             )
             policy_after_confirmation = store.save_balancing_policy(
                 USER_ONE,
-                max_instrument_percent=Decimal("14"),
-                max_sector_percent=Decimal("30"),
-                max_issuer_percent=Decimal("20"),
-                max_group_percent=Decimal("25"),
-                max_share_percent=Decimal("70"),
-                max_bond_percent=Decimal("80"),
-                max_etf_percent=Decimal("70"),
-                max_below_grade_percent=Decimal("5"),
-                max_unknown_percent=Decimal("0"),
-                max_term_months=120,
-                turnover_budget_percent=Decimal("25"),
-                max_daily_turnover_participation_percent=Decimal("5"),
-                securities_tax_rate_percent=Decimal("15"),
-                uncertainty_haircut_percent=Decimal("3"),
-                credit_loss_haircut_percent=Decimal("2"),
-                no_trade_band_percent=Decimal("1"),
-                min_replace_benefit_rub=Decimal("500"),
+                _balancing_policy_input("14"),
             )
             with pytest.raises(
                 ExecutionLedgerError,

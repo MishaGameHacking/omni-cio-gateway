@@ -125,11 +125,12 @@ def test_unknown_identity_fails_closed_when_registration_is_closed() -> None:
     db.login_error = RegistrationClosedError("registration is closed")
     auth = AuthService(settings(registration_enabled=False), db)
 
+    accepted_versions = auth.legal_versions()
     with pytest.raises(RegistrationClosed):
         auth.complete_vkid_login(
             vk_user_id="111111111",
             client_ip="203.0.113.11",
-            accepted_legal_versions=auth.legal_versions(),
+            accepted_legal_versions=accepted_versions,
         )
 
 
@@ -138,11 +139,12 @@ def test_unknown_identity_fails_closed_when_capacity_is_full() -> None:
     db.login_error = RegistrationCapacityError("registration capacity reached")
     auth = AuthService(settings(registration_max_users=2), db)
 
+    accepted_versions = auth.legal_versions()
     with pytest.raises(RegistrationCapacityReached):
         auth.complete_vkid_login(
             vk_user_id="222222222",
             client_ip="203.0.113.12",
-            accepted_legal_versions=auth.legal_versions(),
+            accepted_legal_versions=accepted_versions,
         )
 
 
@@ -150,11 +152,12 @@ def test_vkid_login_rejects_malformed_provider_subject() -> None:
     db = FakeDatabase()
     auth = AuthService(settings(), db)
 
+    accepted_versions = auth.legal_versions()
     with pytest.raises(LoginUnavailable):
         auth.complete_vkid_login(
             vk_user_id="not-a-vk-id",
             client_ip="203.0.113.10",
-            accepted_legal_versions=auth.legal_versions(),
+            accepted_legal_versions=accepted_versions,
         )
 
     assert db.session_digest is None
