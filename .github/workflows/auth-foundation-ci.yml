@@ -22,6 +22,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 concurrency:
   group: auth-foundation-ci-${{ github.ref }}
@@ -76,3 +77,23 @@ jobs:
       - name: Run ${{ matrix.name }}
         shell: cmd
         run: ${{ matrix.command }}
+
+      - name: Report Sonar annotations for this exact source
+        if: matrix.name == 'Release gate tests'
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:SOURCE_SHA -notmatch '^[0-9a-f]{40}$') { throw 'Invalid source SHA' }
+          $base = 'https://api.github.com/repos/MishaGameHacking/omni-cio-gateway'
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
+          $checks = Invoke-RestMethod -Uri "$base/commits/$env:SOURCE_SHA/check-runs?per_page=100" -Headers $headers
+          $sonar = $checks.check_runs | Where-Object { $_.name -eq 'SonarCloud Code Analysis' } | Sort-Object id -Descending | Select-Object -First 1
+          if (-not $sonar) { Write-Output 'Sonar analysis is not available yet'; exit 0 }
+          Write-Output $sonar.output.summary
+          if ($sonar.output.annotations_count -gt 0) {
+            $items = Invoke-RestMethod -Uri "$base/check-runs/$($sonar.id)/annotations?per_page=100" -Headers $headers
+            $items | Select-Object path, start_line, end_line, title, message | ConvertTo-Json -Depth 4
+          }
