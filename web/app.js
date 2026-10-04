@@ -1645,6 +1645,8 @@
       setStateBadge(instrumentMarketState, "Оперативно", "state-ok");
     } else if (quoteStatus === "stale") {
       setStateBadge(instrumentMarketState, "Котировка устарела", "state-next");
+    } else if (quoteStatus === "future") {
+      setStateBadge(instrumentMarketState, "Время котировки некорректно", "state-error");
     } else {
       setStateBadge(instrumentMarketState, "Цена недоступна", "state-next");
     }
@@ -2593,7 +2595,11 @@
       || latest.currency
       || "",
     ).toUpperCase();
-    instrumentMarketQuoteUnit = latest.instrument_type === "bond" ? "point" : "money";
+    instrumentMarketQuoteUnit = ["bond", "futures", "future"].includes(
+      latest.instrument_type,
+    )
+      ? "point"
+      : "money";
     instrumentDetailTitle.textContent = latest.ticker || latest.name || latest.instrument_uid || "Инструмент";
     instrumentDetailSubtitle.textContent = [
       latest.name && latest.name !== latest.ticker ? latest.name : "",
