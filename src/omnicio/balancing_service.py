@@ -1304,7 +1304,6 @@ def _scenario_before_after(
         _apply_trade_to_position_state(
             after,
             trade,
-            holding=holding_by_uid.get(trade.instrument_uid),
             candidate=candidate_by_uid.get(trade.instrument_uid),
         )
 
@@ -1359,7 +1358,6 @@ def _apply_trade_to_position_state(
     positions: dict[str, dict[str, object]],
     trade: PlannedTrade,
     *,
-    holding: Holding | None,
     candidate: Candidate | None,
 ) -> None:
     existing = positions.get(trade.instrument_uid)
