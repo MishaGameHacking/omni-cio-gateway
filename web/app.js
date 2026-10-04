@@ -1631,12 +1631,14 @@
         .map((item) => {
           const value = Number(item.value_rub);
           const percent = Number(item.nav_percent);
+          let resolvedPercent = percent;
+          if (!Number.isFinite(resolvedPercent)) {
+            resolvedPercent = nav > 0 ? value / nav * 100 : Number.NaN;
+          }
           return {
             label: item.ticker || item.name || item.instrument_uid || "Инструмент",
             value,
-            percent: Number.isFinite(percent)
-              ? percent
-              : (nav > 0 ? value / nav * 100 : Number.NaN),
+            percent: resolvedPercent,
           };
         })
         .sort((left, right) => right.value - left.value)
@@ -2362,7 +2364,13 @@
     if (!(name in homeAttentionBuckets)) {
       return;
     }
-    homeAttentionBuckets[name] = items === null ? null : (Array.isArray(items) ? items : []);
+    let bucket = [];
+    if (items === null) {
+      bucket = null;
+    } else if (Array.isArray(items)) {
+      bucket = items;
+    }
+    homeAttentionBuckets[name] = bucket;
     renderHomeAttention();
   };
 
@@ -3150,12 +3158,21 @@
     value === "replace" ? "Замена позиции" : "Размещение свободных денег"
   );
 
+  const proposalTradeBoundText = (trade) => {
+    if (trade.action === "sell") {
+      return trade.min_proceeds_rub
+        ? `min proceeds ${formatMoney({currency: "RUB", value: trade.min_proceeds_rub})}`
+        : "";
+    }
+    return trade.max_spend_rub
+      ? `max spend ${formatMoney({currency: "RUB", value: trade.max_spend_rub})}`
+      : "";
+  };
+
   const proposalTradeSummary = (trade) => {
     const action = trade.action === "sell" ? "продать" : "купить";
     const priceType = trade.limit_price_type === "point" ? "пункты" : "₽";
-    const bound = trade.action === "sell"
-      ? (trade.min_proceeds_rub ? `min proceeds ${formatMoney({currency: "RUB", value: trade.min_proceeds_rub})}` : "")
-      : (trade.max_spend_rub ? `max spend ${formatMoney({currency: "RUB", value: trade.max_spend_rub})}` : "");
+    const bound = proposalTradeBoundText(trade);
     return [
       `${action} ${trade.ticker || trade.instrument_uid}: ${trade.lots} лот.`,
       trade.limit_price ? `limit ${trade.limit_price} ${priceType}` : "",
@@ -3165,7 +3182,7 @@
 
   const renderProposalCreateOptions = (payload) => {
     proposalCreateOptions.replaceChildren();
-    if (!payload || payload.status !== "observed" || payload.live_status !== "received") {
+    if (payload?.status !== "observed" || payload.live_status !== "received") {
       appendEmptyState(
         proposalCreateOptions,
         "Сначала нужен свежий полностью доказанный R4 preview.",
@@ -3175,8 +3192,7 @@
 
     const addOption = (label, scenarioKind, scenario, replacedUid = null) => {
       if (
-        !scenario
-        || scenario.status !== "feasible"
+        scenario?.status !== "feasible"
         || !Array.isArray(scenario.trades)
         || !scenario.trades.length
         || !scenario.before_after
@@ -4874,7 +4890,7 @@
 
   positionsList.addEventListener("click", (event) => {
     const button = closestButtonTarget(event, "[data-instrument-detail]");
-    if (button && button.dataset.instrumentDetail) {
+    if (button?.dataset.instrumentDetail) {
       void openInstrumentDetail(button.dataset.instrumentDetail);
     }
   });
