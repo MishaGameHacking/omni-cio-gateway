@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -20,9 +21,29 @@ DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = tuple(sorted((ROOT / "migrations").glob("*.sql")))
+ACCEPTED_MIGRATION_SHA256 = {
+    "0001_phone_auth.sql": "b92bc06b42cf837cf15d6688edd0ed6b32afabb6ef645b271ca5db6e4a766796",
+    "0002_tbank_connection.sql": "bd48f5bd0ce75abf43606005e40d72869b2881d4c7519af1f2fe9f17fcfe89d8",
+    "0003_vkid_owner_identity.sql": "df8d27cd03820a0ef62dcf2008a12aa0443791161061532a1d0412961e46d710",
+    "0004_user_role.sql": "fa57fd62d166c31dc9076451a1a4207d2f4fe1be0fc8d4ac8134b0f9a92f6b12",
+    "0005_drop_phone_auth.sql": "0476926a6588b9b3e0e3d80214e059c936568d1d7f2e565a47ec5a388c943a80",
+    "0006_portfolio_observer.sql": "c4b94e1ee1f9f087e60d8eed9f063edd601b4d53ad7b17005d82e4a17e50e256",
+    "0007_portfolio_evidence.sql": "9f2cb4effa5d6293ce4988b0b932241f7470d0eb8f3eeeb5223b8db61ca4b544",
+    "0008_balancing_policy.sql": "f169e65c4cd653da5dc9560acea9244daf2f697ea9da96e04e2a87d340cddda0",
+    "0009_portfolio_proposals.sql": "588c0f098e0341ef9931a9292ed167c9e9f5acd31300d0f83bb27b48ffded46c",
+    "0010_portfolio_execution.sql": "73f2d2d30caf5c4a1bc8364940e36c99991649bd389bdd61abcd81a5b3d687c4",
+    "0011_portfolio_live_execution.sql": "9ce5a36321cb88542b46cca33e6ebe5e1a65f4bf84e0bf00598af262a5550dc8",
+}
 USER_ONE = UUID("00000000-0000-0000-0000-000000000101")
 USER_TWO = UUID("00000000-0000-0000-0000-000000000102")
 RUNTIME_PASSWORD = secrets.token_urlsafe(32)
+
+
+def test_accepted_production_migrations_are_content_immutable() -> None:
+    for name, expected_digest in ACCEPTED_MIGRATION_SHA256.items():
+        content = (ROOT / "migrations" / name).read_text(encoding="utf-8")
+        normalized = content.replace("\r\n", "\n").encode()
+        assert hashlib.sha256(normalized).hexdigest() == expected_digest
 
 
 def _balancing_policy_input(

@@ -14,6 +14,7 @@ on:
       - "uv.lock"
       - "requirements-*.txt"
       - "AGENTS.md"
+      - ".sonarcloud.properties"
       - ".github/**"
   push:
     branches:
@@ -75,3 +76,52 @@ jobs:
       - name: Run ${{ matrix.name }}
         shell: cmd
         run: ${{ matrix.command }}
+
+  postgres_migrations:
+    name: GitHub-hosted / PostgreSQL 18 migration integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18.6-bookworm@sha256:9225e019a6c5d5b1975d0c728e8f6a56fb86f1e5a2de76666a3ef143b4d479f7
+        env:
+          POSTGRES_DB: omnicio_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d omnicio_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+        ports:
+          - 5432:5432
+    env:
+      OMNICIO_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/omnicio_test
+
+    steps:
+      - name: Checkout candidate state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Assert supported Python
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import sys
+          assert (3, 12) <= sys.version_info[:2] < (3, 14), sys.version
+          print(sys.version)
+          PY
+
+      - name: Install locked test environment
+        shell: bash
+        run: |
+          python3 -m venv .venv-ci
+          .venv-ci/bin/python -m pip install --only-binary=:all: --require-hashes -r requirements-dev.txt
+          .venv-ci/bin/python -m pip install --no-deps --no-build-isolation --no-index --only-binary=:all: -e .
+
+      - name: Apply and verify PostgreSQL migrations
+        shell: bash
+        run: .venv-ci/bin/python -m pytest tests/test_postgres_migrations.py
+
