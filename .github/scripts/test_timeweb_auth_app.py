@@ -673,7 +673,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertIn('"/api/profile/balancing"', script)
         self.assertIn('@app.get("/api/profile/balancing")', backend)
-        self.assertIn('@app.put("/api/profile/balancing")', backend)
+        self.assertRegex(backend, r'@app\.put\(\s*"/api/profile/balancing"\s*[,)]')
         self.assertIn("require_same_origin(request)", backend)
         self.assertNotIn("OrdersService", backend)
         self.assertIn("не подставляет скрытые проценты", page)
@@ -725,7 +725,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertIn('"/api/profile/investment"', script)
         self.assertIn('@app.get("/api/profile/investment")', backend)
-        self.assertIn('@app.put("/api/profile/investment")', backend)
+        self.assertRegex(backend, r'@app\.put\(\s*"/api/profile/investment"\s*[,)]')
         self.assertIn("require_same_origin(request)", backend)
         self.assertIn("authenticated_user(request, session_token)", backend)
         self.assertIn("не дают OmniCIO полномочий совершать сделки", page)
