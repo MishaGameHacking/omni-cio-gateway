@@ -685,14 +685,17 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             first_policy = store.save_balancing_policy(
                 USER_ONE,
                 _balancing_policy_input("20"),
+                expected_version=0,
             )
             duplicate_policy = store.save_balancing_policy(
                 USER_ONE,
                 _balancing_policy_input("20"),
+                expected_version=1,
             )
             revised_policy = store.save_balancing_policy(
                 USER_ONE,
                 _balancing_policy_input("15"),
+                expected_version=1,
             )
             current_policy = store.current_balancing_policy(USER_ONE)
             created_at = datetime.now(UTC)
@@ -1036,6 +1039,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             policy_after_confirmation = store.save_balancing_policy(
                 USER_ONE,
                 _balancing_policy_input("14"),
+                expected_version=2,
             )
             with pytest.raises(
                 ExecutionLedgerError,

@@ -65,4 +65,6 @@ def test_ci_uses_own_database_and_always_stops_it(tmp_path: Path, times_out: boo
     assert invocation.kwargs["env"]["OMNICIO_TEST_DATABASE_URL"] == (
         "postgresql://postgres@127.0.0.1:54321/omnicio_test"
     )
+    expected_binary = str((tmp_path / "bin").resolve())
+    assert invocation.kwargs["env"]["OMNICIO_TEST_POSTGRES_BIN"] == expected_binary
     assert process.call_args.args[0][-3:] == ["-m", "fast", "stop"]

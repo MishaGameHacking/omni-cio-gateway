@@ -46,6 +46,7 @@ from .portfolio_store import (
     InvestmentProfileRecord,
     PortfolioStore,
     ProposalStateError,
+    SettingsVersionConflict,
 )
 from .proposals import (
     ProposalBuildError,
@@ -85,6 +86,7 @@ _TBANK_CREDENTIAL_REJECTED_DETAIL = "stored T-Invest credential was rejected"
 _UPDATED_LEGAL_CONSENT_DETAIL = "updated legal consent required"
 _TBANK_NOT_CONNECTED_DETAIL = "T-Invest is not connected"
 _PRIVATE_NO_STORE = "private, no-store"
+_PUBLIC_ID_PATTERN = r"^[0-9]{9}$"
 logger = logging.getLogger(__name__)
 
 
@@ -112,11 +114,13 @@ class TBankConnectBody(TBankCredentialBody):
 
 
 class DeleteAccountBody(StrictRequestBody):
-    confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    confirm_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
     confirm_irreversible: bool
 
 
 class InvestmentProfileBody(StrictRequestBody):
+    expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
+    expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
     reserve_rub: Decimal = Field(ge=0, le=1_000_000_000_000, allow_inf_nan=False)
     planned_withdrawal_rub: Decimal = Field(
         ge=0,
@@ -130,6 +134,8 @@ class InvestmentProfileBody(StrictRequestBody):
 
 
 class BalancingPolicyBody(StrictRequestBody):
+    expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
+    expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
     max_instrument_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     max_sector_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
     max_issuer_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
@@ -188,7 +194,7 @@ class PortfolioLiveMandateBody(StrictRequestBody):
         allow_inf_nan=False,
     )
     expires_at: datetime
-    confirm_public_id: str = Field(pattern=r"^[0-9]{9}$")
+    confirm_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
     confirm_live_execution: bool
 
 
@@ -376,6 +382,13 @@ app = FastAPI(
     openapi_url=None,
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(SettingsVersionConflict)
+async def settings_conflict_response(
+    request: Request, exc: SettingsVersionConflict,
+) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": "settings_version_conflict"})
 
 
 @app.middleware("http")
@@ -906,16 +919,17 @@ def investment_profile(
     user = authenticated_user(request, session_token)
     profile = portfolio_store(request).current_profile(user.id)
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return {"profile": _profile_payload(profile) if profile is not None else None}
+    return {
+        "public_id": format_public_id(user.public_id),
+        "profile": _profile_payload(profile) if profile is not None else None,
+    }
 
 
-@app.put("/api/profile/investment")
-def save_investment_profile(
-    body: InvestmentProfileBody,
+def _settings_editor_user(
     request: Request,
-    response: Response,
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
+    session_token: str | None,
+    expected_public_id: str,
+) -> UserRecord:
     require_same_origin(request)
     user = authenticated_user(request, session_token)
     database: Database = request.app.state.database
@@ -924,6 +938,23 @@ def save_investment_profile(
             status_code=status.HTTP_409_CONFLICT,
             detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
+    # This is a stale-page precondition; only the session chooses the tenant.
+    if expected_public_id != format_public_id(user.public_id):
+        raise HTTPException(status_code=409, detail="settings_owner_conflict")
+    return user
+
+
+@app.put(
+    "/api/profile/investment",
+    responses={409: {"description": "Settings owner/version conflict or updated consent required"}},
+)
+def save_investment_profile(
+    body: InvestmentProfileBody,
+    request: Request,
+    response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = _settings_editor_user(request, session_token, body.expected_public_id)
     profile = portfolio_store(request).save_profile(
         user.id,
         reserve_rub=body.reserve_rub,
@@ -932,6 +963,7 @@ def save_investment_profile(
         max_drawdown_percent=body.max_drawdown_percent,
         liquidity_horizon_days=body.liquidity_horizon_days,
         allow_below_investment_grade=body.allow_below_investment_grade,
+        expected_version=body.expected_version,
     )
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {"profile": _profile_payload(profile)}
@@ -947,25 +979,22 @@ def balancing_policy(
     policy = portfolio_store(request).current_balancing_policy(user.id)
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
-        "policy": _balancing_policy_payload(policy) if policy is not None else None
+        "public_id": format_public_id(user.public_id),
+        "policy": _balancing_policy_payload(policy) if policy is not None else None,
     }
 
 
-@app.put("/api/profile/balancing")
+@app.put(
+    "/api/profile/balancing",
+    responses={409: {"description": "Settings owner/version conflict or updated consent required"}},
+)
 def save_balancing_policy(
     body: BalancingPolicyBody,
     request: Request,
     response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
-    require_same_origin(request)
-    user = authenticated_user(request, session_token)
-    database: Database = request.app.state.database
-    if not database.has_legal_versions(user.id, service(request).legal_versions()):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
-        )
+    user = _settings_editor_user(request, session_token, body.expected_public_id)
     policy = portfolio_store(request).save_balancing_policy(
         user.id,
         BalancingPolicyInput(
@@ -989,6 +1018,7 @@ def save_balancing_policy(
             no_trade_band_percent=body.no_trade_band_percent,
             min_replace_benefit_rub=body.min_replace_benefit_rub,
         ),
+        expected_version=body.expected_version,
     )
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {"policy": _balancing_policy_payload(policy)}

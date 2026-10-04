@@ -673,7 +673,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertIn('"/api/profile/balancing"', script)
         self.assertIn('@app.get("/api/profile/balancing")', backend)
-        self.assertIn('@app.put("/api/profile/balancing")', backend)
+        self.assertRegex(backend, r'@app\.put\(\s*"/api/profile/balancing"\s*[,)]')
         self.assertIn("require_same_origin(request)", backend)
         self.assertNotIn("OrdersService", backend)
         self.assertIn("не подставляет скрытые проценты", page)
@@ -725,7 +725,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertIn('"/api/profile/investment"', script)
         self.assertIn('@app.get("/api/profile/investment")', backend)
-        self.assertIn('@app.put("/api/profile/investment")', backend)
+        self.assertRegex(backend, r'@app\.put\(\s*"/api/profile/investment"\s*[,)]')
         self.assertIn("require_same_origin(request)", backend)
         self.assertIn("authenticated_user(request, session_token)", backend)
         self.assertIn("не дают OmniCIO полномочий совершать сделки", page)
@@ -1233,7 +1233,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.18.2"', project)
+        self.assertIn('version = "0.18.3"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

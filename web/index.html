@@ -1591,6 +1591,12 @@
                   <div class="profile-constraint-meta">
                     <span id="investment-profile-created">Версия ещё не сохранена</span>
                   </div>
+                  <output id="investment-profile-draft-status" class="field-hint" aria-live="polite">
+                    Проверяем сохранённые параметры…
+                  </output>
+                  <button id="investment-profile-reload" class="button button-secondary" type="button">
+                    Загрузить сохранённую версию
+                  </button>
                   <button id="investment-profile-save" class="button button-primary" type="submit">
                     Сохранить новую версию профиля
                   </button>
@@ -1706,6 +1712,12 @@
                   <div class="profile-constraint-meta">
                     <span id="balancing-policy-created">Версия ещё не сохранена</span>
                   </div>
+                  <output id="balancing-policy-draft-status" class="field-hint" aria-live="polite">
+                    Проверяем сохранённые параметры…
+                  </output>
+                  <button id="balancing-policy-reload" class="button button-secondary" type="button">
+                    Загрузить сохранённую версию
+                  </button>
                   <button id="balancing-policy-save" class="button button-primary" type="submit">
                     Сохранить новую версию лимитов
                   </button>
@@ -1798,10 +1810,13 @@
                   <span class="release-chip">v<span data-app-version>__OMNICIO_VERSION__</span></span>
                 </header>
 
-                <p><strong>Что нового в 0.18.2</strong></p>
-                <p>Портфель показывает, когда получены данные и когда их нужно обновить.
-                  При сбое последний снимок остаётся на экране с предупреждением.
-                  В профиле появились последние действия, а у ошибок — код обращения для поддержки.</p>
+                <p><strong>Что нового в 0.18.3</strong></p>
+                <p>Профиль капитала и лимиты защищены от случайной перезаписи из другой вкладки.
+                  При ошибке ваши правки остаются на экране, а сохранение подтверждает сервер.
+                  Перед закрытием страницы с несохранёнными изменениями появится предупреждение.</p>
+                <button class="button button-secondary" type="button" data-go-view="profile">
+                  Открыть профиль и лимиты
+                </button>
 
                 <dl class="info-list">
                   <div>

@@ -32,6 +32,17 @@ from .tbank import (
 
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
 
+
+class SettingsVersionConflict(ValueError):
+    """The user's draft was based on a different saved settings version."""
+
+
+def _require_settings_version(expected: int, actual: int, *, unchanged: bool = False) -> None:
+    # A retry after a lost response may acknowledge exactly one identical save.
+    if expected != actual and not (unchanged and expected + 1 == actual):
+        raise SettingsVersionConflict("settings_version_conflict")
+
+
 JobStatus = Literal["running", "succeeded", "degraded", "failed"]
 ProposalAction = Literal[
     "confirmed",
@@ -717,6 +728,7 @@ class PortfolioStore:
         max_drawdown_percent: Decimal,
         liquidity_horizon_days: int,
         allow_below_investment_grade: bool,
+        expected_version: int,
     ) -> InvestmentProfileRecord:
         with (
             self.database.pool.connection() as conn,
@@ -750,6 +762,7 @@ class PortfolioStore:
             )
             latest_row = cur.fetchone()
             if latest_row is None:
+                _require_settings_version(expected_version, 0)
                 version = 1
             else:
                 latest = _profile(cast(dict[str, Any], latest_row))
@@ -761,7 +774,9 @@ class PortfolioStore:
                     and latest.liquidity_horizon_days == liquidity_horizon_days
                     and latest.allow_below_investment_grade == allow_below_investment_grade
                 ):
+                    _require_settings_version(expected_version, latest.version, unchanged=True)
                     return latest
+                _require_settings_version(expected_version, latest.version)
                 version = latest.version + 1
             cur.execute(
                 """
@@ -859,6 +874,8 @@ class PortfolioStore:
         self,
         user_id: UUID,
         policy: BalancingPolicyInput,
+        *,
+        expected_version: int,
     ) -> BalancingPolicyRecord:
         desired = (
             policy.max_instrument_percent,
@@ -922,6 +939,7 @@ class PortfolioStore:
             )
             latest_row = cur.fetchone()
             if latest_row is None:
+                _require_settings_version(expected_version, 0)
                 version = 1
             else:
                 latest = _balancing_policy(cast(dict[str, Any], latest_row))
@@ -945,7 +963,9 @@ class PortfolioStore:
                     latest.min_replace_benefit_rub,
                 )
                 if current == desired:
+                    _require_settings_version(expected_version, latest.version, unchanged=True)
                     return latest
+                _require_settings_version(expected_version, latest.version)
                 version = latest.version + 1
 
             cur.execute(
