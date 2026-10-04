@@ -651,11 +651,13 @@ def _bond_price_evidence(
         base.instrument_uid,
         depth=10,
     )
+    order_book_time = order_book.time
     if (
         not order_book.is_consistent
         or not order_book.asks
         or not order_book.bids
-        or not _fresh_market_time(order_book.time, observed_at)
+        or order_book_time is None
+        or not _fresh_market_time(order_book_time, observed_at)
     ):
         return "order_book_unusable"
 
@@ -697,7 +699,7 @@ def _bond_price_evidence(
         fee=fee,
         aci=aci,
         last_price_time=last_price.time,
-        order_book_time=order_book.time,
+        order_book_time=order_book_time,
     )
 
 
