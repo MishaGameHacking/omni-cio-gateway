@@ -639,6 +639,559 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             ) is None
 
             first_policy = store.save_balancing_policy(
-            first_policy =     USER_ONE,
-            first_policy =     _balancing_policy_input("20"),
-            first_policy = )
+                USER_ONE,
+                _balancing_policy_input("20"),
+            )
+            duplicate_policy = store.save_balancing_policy(
+                USER_ONE,
+                _balancing_policy_input("20"),
+            )
+            revised_policy = store.save_balancing_policy(
+                USER_ONE,
+                _balancing_policy_input("15"),
+            )
+            current_policy = store.current_balancing_policy(USER_ONE)
+            created_at = datetime.now(UTC)
+            first_proposal = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="instrument-1",
+                replaced_instrument_uid=None,
+                proposal_hash=b"p" * 32,
+                session_digest=b"s" * 32,
+                payload={"schema": "omnicio.portfolio.proposal.v1", "trades": []},
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            proposal_before = store.proposals(USER_ONE)
+            decided_proposal, confirmed = store.decide_proposal(
+                USER_ONE,
+                proposal_id=first_proposal.id,
+                expected_version=first_proposal.version,
+                expected_hash=first_proposal.proposal_hash,
+                action="confirmed",
+                session_digest=b"d" * 32,
+                user_reason="",
+                deferred_until=None,
+                material_current=True,
+                now=created_at + timedelta(minutes=1),
+            )
+            replay_at = created_at + timedelta(minutes=2)
+            with pytest.raises(
+                ProposalStateError,
+                match="proposal_already_decided",
+            ):
+                store.decide_proposal(
+                    USER_ONE,
+                    proposal_id=first_proposal.id,
+                    expected_version=first_proposal.version,
+                    expected_hash=first_proposal.proposal_hash,
+                    action="confirmed",
+                    session_digest=b"d" * 32,
+                    user_reason="",
+                    deferred_until=None,
+                    material_current=True,
+                    now=replay_at,
+                )
+
+            stale_material = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="instrument-1",
+                replaced_instrument_uid=None,
+                proposal_hash=b"m" * 32,
+                session_digest=b"s" * 32,
+                payload={"schema": "omnicio.portfolio.proposal.v1", "trades": []},
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            stale_proposal, stale_action = store.decide_proposal(
+                USER_ONE,
+                proposal_id=stale_material.id,
+                expected_version=stale_material.version,
+                expected_hash=stale_material.proposal_hash,
+                action="confirmed",
+                session_digest=b"d" * 32,
+                user_reason="",
+                deferred_until=None,
+                material_current=False,
+                now=created_at + timedelta(minutes=2),
+            )
+
+            pending = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="instrument-1",
+                replaced_instrument_uid=None,
+                proposal_hash=b"q" * 32,
+                session_digest=b"s" * 32,
+                payload={"schema": "omnicio.portfolio.proposal.v1", "trades": []},
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            newest = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="instrument-1",
+                replaced_instrument_uid=None,
+                proposal_hash=b"r" * 32,
+                session_digest=b"s" * 32,
+                payload={"schema": "omnicio.portfolio.proposal.v1", "trades": []},
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            proposal_after_supersede = store.proposals(USER_ONE)
+            expired_proposal, expired_action = store.decide_proposal(
+                USER_ONE,
+                proposal_id=newest.id,
+                expected_version=newest.version,
+                expected_hash=newest.proposal_hash,
+                action="deferred",
+                session_digest=b"d" * 32,
+                user_reason="wait",
+                deferred_until=created_at + timedelta(hours=2),
+                material_current=True,
+                now=created_at + timedelta(hours=1),
+            )
+            execution_ready = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="provider-bond-uid",
+                replaced_instrument_uid=None,
+                proposal_hash=b"x" * 32,
+                session_digest=b"s" * 32,
+                payload={
+                    "schema": "omnicio.portfolio.proposal.v1",
+                    "execution_enabled": False,
+                    "source": {
+                        "snapshot_id": str(snapshot_id),
+                        "account_id": "account-1",
+                        "profile_version": 1,
+                        "policy_version": 2,
+                    },
+                    "scenario": {
+                        "status": "feasible",
+                        "trades": [
+                            {
+                                "action": "buy",
+                                "instrument_uid": "provider-bond-uid",
+                                "ticker": "BOND",
+                                "lots": 2,
+                                "limit_price": "101.25",
+                                "limit_price_type": "point",
+                                "max_spend_rub": "2500",
+                                "min_proceeds_rub": None,
+                            }
+                        ],
+                    },
+                },
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            execution_proposal, execution_confirmation = store.decide_proposal(
+                USER_ONE,
+                proposal_id=execution_ready.id,
+                expected_version=execution_ready.version,
+                expected_hash=execution_ready.proposal_hash,
+                action="confirmed",
+                session_digest=b"d" * 32,
+                user_reason="",
+                deferred_until=None,
+                material_current=True,
+                now=created_at + timedelta(minutes=3),
+            )
+            execution_store = ExecutionStore(database)
+            shadow_run, shadow_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="shadow",
+                session_digest=b"e" * 32,
+            )
+            duplicate_run, duplicate_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="shadow",
+                session_digest=b"e" * 32,
+            )
+            sandbox_run, sandbox_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="sandbox",
+                session_digest=b"e" * 32,
+            )
+            invalid_mandate_expiry = created_at + timedelta(minutes=30)
+            invalid_mandate_now = created_at + timedelta(minutes=5)
+            invalid_order_cap = Decimal("3000.001")
+            invalid_daily_cap = Decimal("5000")
+            with pytest.raises(ValueError, match="kopeck precision"):
+                execution_store.create_live_mandate(
+                    USER_ONE,
+                    account_id="account-1",
+                    max_order_notional_rub=invalid_order_cap,
+                    max_daily_notional_rub=invalid_daily_cap,
+                    session_digest=b"l" * 32,
+                    expires_at=invalid_mandate_expiry,
+                    now=invalid_mandate_now,
+                )
+            live_mandate = execution_store.create_live_mandate(
+                USER_ONE,
+                account_id="account-1",
+                max_order_notional_rub=Decimal("3000"),
+                max_daily_notional_rub=Decimal("5000"),
+                session_digest=b"l" * 32,
+                expires_at=created_at + timedelta(minutes=30),
+                now=created_at + timedelta(minutes=5),
+            )
+            live_run, live_legs = execution_store.create_run(
+                USER_ONE,
+                proposal_id=execution_proposal.id,
+                expected_version=execution_proposal.version,
+                expected_hash=execution_proposal.proposal_hash,
+                mode="live",
+                session_digest=b"e" * 32,
+            )
+            competing_live_proposal = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=execution_proposal.source_snapshot_id,
+                account_id=execution_proposal.account_id,
+                profile_version=execution_proposal.profile_version,
+                policy_version=execution_proposal.policy_version,
+                scenario_kind=execution_proposal.scenario_kind,
+                target_instrument_uid=execution_proposal.target_instrument_uid,
+                replaced_instrument_uid=execution_proposal.replaced_instrument_uid,
+                proposal_hash=b"w" * 32,
+                session_digest=b"w" * 32,
+                payload=execution_proposal.payload,
+                expires_at=created_at + timedelta(minutes=12),
+            )
+            competing_live_proposal, _ = store.decide_proposal(
+                USER_ONE,
+                proposal_id=competing_live_proposal.id,
+                expected_version=competing_live_proposal.version,
+                expected_hash=competing_live_proposal.proposal_hash,
+                action="confirmed",
+                session_digest=b"w" * 32,
+                user_reason="",
+                deferred_until=None,
+                material_current=True,
+                now=created_at + timedelta(minutes=5, seconds=30),
+            )
+            with pytest.raises(
+                ExecutionLedgerError,
+                match="live_execution_already_active",
+            ):
+                execution_store.create_run(
+                    USER_ONE,
+                    proposal_id=competing_live_proposal.id,
+                    expected_version=competing_live_proposal.version,
+                    expected_hash=competing_live_proposal.proposal_hash,
+                    mode="live",
+                    session_digest=b"w" * 32,
+                )
+            revoked_mandate = execution_store.revoke_live_mandate(
+                USER_ONE,
+                now=created_at + timedelta(minutes=6),
+            )
+            live_run_id = live_run.id
+            live_leg_id = live_legs[0].id
+            live_submit_details = {"request_id": str(live_legs[0].request_id)}
+            live_submit_now = created_at + timedelta(minutes=6)
+            with pytest.raises(ExecutionLedgerError, match="live_mandate_inactive"):
+                execution_store.transition_leg(
+                    USER_ONE,
+                    run_id=live_run_id,
+                    leg_id=live_leg_id,
+                    expected_statuses=("pending",),
+                    new_status="submitting",
+                    event_type="live_preflight_passed",
+                    details=live_submit_details,
+                    now=live_submit_now,
+                )
+            cancelled_live_run, cancelled_live_leg = execution_store.transition_leg(
+                USER_ONE,
+                run_id=live_run.id,
+                leg_id=live_legs[0].id,
+                expected_statuses=("pending",),
+                new_status="cancelled",
+                event_type="cancelled_before_submission",
+                details={"reason": "kill_switch_regression"},
+                now=created_at + timedelta(minutes=7),
+            )
+
+            stale_execution_ready = store.create_proposal(
+                USER_ONE,
+                source_snapshot_id=snapshot_id,
+                account_id="account-1",
+                profile_version=1,
+                policy_version=2,
+                scenario_kind="deploy_cash",
+                target_instrument_uid="provider-bond-uid",
+                replaced_instrument_uid=None,
+                proposal_hash=b"z" * 32,
+                session_digest=b"s" * 32,
+                payload={
+                    "schema": "omnicio.portfolio.proposal.v1",
+                    "execution_enabled": False,
+                    "source": {
+                        "snapshot_id": str(snapshot_id),
+                        "account_id": "account-1",
+                        "profile_version": 1,
+                        "policy_version": 2,
+                    },
+                    "scenario": {
+                        "status": "feasible",
+                        "trades": [
+                            {
+                                "action": "buy",
+                                "instrument_uid": "provider-bond-uid",
+                                "ticker": "BOND",
+                                "lots": 1,
+                                "limit_price": "101.25",
+                                "limit_price_type": "point",
+                                "max_spend_rub": "1300",
+                                "min_proceeds_rub": None,
+                            }
+                        ],
+                    },
+                },
+                expires_at=created_at + timedelta(minutes=10),
+            )
+            stale_execution_proposal, _ = store.decide_proposal(
+                USER_ONE,
+                proposal_id=stale_execution_ready.id,
+                expected_version=stale_execution_ready.version,
+                expected_hash=stale_execution_ready.proposal_hash,
+                action="confirmed",
+                session_digest=b"d" * 32,
+                user_reason="",
+                deferred_until=None,
+                material_current=True,
+                now=created_at + timedelta(minutes=4),
+            )
+            policy_after_confirmation = store.save_balancing_policy(
+                USER_ONE,
+                _balancing_policy_input("14"),
+            )
+            with pytest.raises(
+                ExecutionLedgerError,
+                match="proposal_policy_stale",
+            ):
+                execution_store.create_run(
+                    USER_ONE,
+                    proposal_id=stale_execution_proposal.id,
+                    expected_version=stale_execution_proposal.version,
+                    expected_hash=stale_execution_proposal.proposal_hash,
+                    mode="shadow",
+                    session_digest=b"e" * 32,
+                )
+
+            intelligence = store.latest_intelligence(USER_ONE)
+        finally:
+            database.close()
+        assert first_policy.version == 1
+        assert duplicate_policy.id == first_policy.id
+        assert duplicate_policy.version == 1
+        assert revised_policy.version == 2
+        assert current_policy is not None
+        assert current_policy.version == 2
+        assert current_policy.max_instrument_percent == Decimal("15")
+        assert current_policy.max_daily_turnover_participation_percent == Decimal("5")
+        assert current_policy.securities_tax_rate_percent == Decimal("15")
+        assert current_policy.uncertainty_haircut_percent == Decimal("3")
+        assert current_policy.credit_loss_haircut_percent == Decimal("2")
+        assert proposal_before[0].id == first_proposal.id
+        assert proposal_before[0].status == "pending"
+        assert decided_proposal.id == first_proposal.id
+        assert confirmed.action == "confirmed"
+        assert stale_proposal.id == stale_material.id
+        assert stale_action.action == "revoked"
+        assert stale_action.reason == "proposal_material_changed"
+        superseded = next(
+            item
+            for item in proposal_after_supersede
+            if item.id == pending.id
+        )
+        assert superseded.status == "superseded"
+        assert superseded.decision_reason == "superseded_by_new_proposal"
+        assert expired_proposal.id == newest.id
+        assert expired_action.action == "expired"
+        assert expired_action.deferred_until is None
+        assert execution_confirmation.action == "confirmed"
+        assert shadow_run.mode == "shadow"
+        assert shadow_run.provider_environment is None
+        assert shadow_legs[0].request_id == duplicate_legs[0].request_id
+        assert duplicate_run.id == shadow_run.id
+        assert sandbox_run.id != shadow_run.id
+        assert sandbox_run.provider_environment == "sandbox"
+        assert sandbox_legs[0].request_id != shadow_legs[0].request_id
+        assert live_run.mode == "live"
+        assert live_run.provider_environment == "prod"
+        assert live_run.live_mandate_id == live_mandate.id
+        assert revoked_mandate is not None
+        assert revoked_mandate.id == live_mandate.id
+        assert revoked_mandate.revoked_at is not None
+        assert cancelled_live_run.status == "cancelled"
+        assert cancelled_live_leg.status == "cancelled"
+        assert policy_after_confirmation.version == 3
+        assert intelligence is not None
+        assert intelligence["snapshot_freshness"] == "fresh"
+        assert [item["instrument_uid"] for item in intelligence["payouts"]] == [
+            "provider-bond-uid"
+        ]
+        assert any(
+            item["document_type"] == "bond_coupon"
+            and item["freshness_status"] == "fresh"
+            for item in intelligence["sources"]
+        )
+
+        proposal_id = first_proposal.id
+        action_id = confirmed.id
+        with pytest.raises(
+            psycopg.errors.RaiseException,
+            match="immutable proposal",
+        ):
+            runtime.execute(
+                "UPDATE portfolio_proposals SET version = version + 1 WHERE id = %s",
+                (proposal_id,),
+            )
+        with pytest.raises(
+            psycopg.errors.RaiseException,
+            match="immutable proposal",
+        ):
+            runtime.execute(
+                "DELETE FROM portfolio_proposal_actions WHERE id = %s",
+                (action_id,),
+            )
+
+        runtime.execute(
+            "SELECT set_config('omnicio.user_id', %s, false)",
+            (str(USER_TWO),),
+        )
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_risk_assessments"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM balancing_policy_versions"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_proposals"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_proposal_actions"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_execution_runs"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_execution_legs"
+        ).fetchone()[0] == 0
+        assert runtime.execute(
+            "SELECT count(*) FROM portfolio_execution_events"
+        ).fetchone()[0] == 0
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            runtime.execute(
+                """
+                INSERT INTO balancing_policy_versions (
+                    user_id,
+                    version,
+                    max_instrument_percent,
+                    max_sector_percent,
+                    max_issuer_percent,
+                    max_group_percent,
+                    max_share_percent,
+                    max_bond_percent,
+                    max_etf_percent,
+                    max_below_grade_percent,
+                    max_unknown_percent,
+                    max_term_months,
+                    turnover_budget_percent,
+                    max_daily_turnover_participation_percent,
+                    securities_tax_rate_percent,
+                    uncertainty_haircut_percent,
+                    credit_loss_haircut_percent,
+                    no_trade_band_percent,
+                    min_replace_benefit_rub
+                )
+                VALUES (
+                    %s, 3, 10, 20, 10, 15, 60, 80, 60, 0, 0, 120,
+                    20, 5, 15, 3, 2, 1, 500
+                )
+                """,
+                (USER_ONE,),
+            )
+
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            runtime.execute(
+                """
+                INSERT INTO investment_profile_versions (
+                    user_id,
+                    version,
+                    reserve_rub,
+                    planned_withdrawal_rub,
+                    horizon_months,
+                    max_drawdown_percent,
+                    liquidity_horizon_days,
+                    allow_below_investment_grade
+                )
+                VALUES (%s, 2, 100000, 0, 60, 20, 30, false)
+                """,
+                (USER_ONE,),
+            )
+
+
+    with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
+        admin.execute(
+            """
+            INSERT INTO vkid_identities (user_id, vk_user_id, verified_at)
+            VALUES (%s, 'r6-delete-regression', now())
+            """,
+            (USER_ONE,),
+        )
+
+    database = Database(DATABASE_URL)
+    database.open()
+    try:
+        assert database.delete_user_account(USER_ONE) is True
+    finally:
+        database.close()
+
+    with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
+        assert admin.execute(
+            "SELECT count(*) FROM users WHERE id = %s",
+            (USER_ONE,),
+        ).fetchone()[0] == 0
+        for table in (
+            "portfolio_proposals",
+            "portfolio_proposal_actions",
+            "portfolio_execution_runs",
+            "portfolio_execution_legs",
+            "portfolio_execution_events",
+        ):
+            assert admin.execute(
+                sql.SQL("SELECT count(*) FROM {} WHERE user_id = %s").format(
+                    sql.Identifier(table)
+                ),
+                (USER_ONE,),
+            ).fetchone()[0] == 0
