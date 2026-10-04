@@ -678,6 +678,70 @@ def _instrument_market_failure_event(
     )
 
 
+async def _next_instrument_market_event(
+    market: MarketService,
+    user_id: UUID,
+    instrument_uid: str,
+    *,
+    consecutive_failures: int,
+    retry_delay: int,
+) -> tuple[str, dict[str, object], int, int, int, bool]:
+    try:
+        state = await asyncio.to_thread(
+            market.instrument_live_state,
+            user_id,
+            instrument_uid,
+        )
+    except (
+        BrokerNotConnected,
+        TBankTokenRejected,
+        SecurityValueError,
+        ValueError,
+        TBankUnavailable,
+        BrokerConnectionError,
+    ) as error:
+        payload, delay, next_retry_delay, failures, stop = (
+            _instrument_market_failure_event(
+                error,
+                consecutive_failures=consecutive_failures,
+                retry_delay=retry_delay,
+            )
+        )
+        return "status", payload, delay, next_retry_delay, failures, stop
+    return "market", asdict(state), 5, 3, 0, False
+
+
+async def _instrument_market_events(
+    request: Request,
+    market: MarketService,
+    user_id: UUID,
+    instrument_uid: str,
+) -> AsyncIterator[str]:
+    retry_delay = 3
+    consecutive_failures = 0
+    yield "retry: 5000\n\n"
+    while not await request.is_disconnected():
+        (
+            event,
+            payload,
+            delay,
+            retry_delay,
+            consecutive_failures,
+            stop_after_event,
+        ) = await _next_instrument_market_event(
+            market,
+            user_id,
+            instrument_uid,
+            consecutive_failures=consecutive_failures,
+            retry_delay=retry_delay,
+        )
+        data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        yield f"event: {event}\ndata: {data}\n\n"
+        if stop_after_event:
+            break
+        await asyncio.sleep(delay)
+
+
 @app.get(
     "/api/market/instruments/{instrument_uid}/stream",
     responses={401: {"description": "Authenticated session required"}},
@@ -689,58 +753,8 @@ async def instrument_market_stream(
 ) -> StreamingResponse:
     user = authenticated_user(request, session_token)
     market = market_service(request)
-
-    async def events() -> AsyncIterator[str]:
-        retry_delay = 3
-        consecutive_failures = 0
-        yield "retry: 5000\n\n"
-        while True:
-            if await request.is_disconnected():
-                break
-
-            payload: dict[str, object]
-            stop_after_event = False
-            try:
-                state = await asyncio.to_thread(
-                    market.instrument_live_state,
-                    user.id,
-                    instrument_uid,
-                )
-            except (
-                BrokerNotConnected,
-                TBankTokenRejected,
-                SecurityValueError,
-                ValueError,
-                TBankUnavailable,
-                BrokerConnectionError,
-            ) as error:
-                (
-                    payload,
-                    delay,
-                    retry_delay,
-                    consecutive_failures,
-                    stop_after_event,
-                ) = _instrument_market_failure_event(
-                    error,
-                    consecutive_failures=consecutive_failures,
-                    retry_delay=retry_delay,
-                )
-                event = "status"
-            else:
-                payload = asdict(state)
-                event = "market"
-                delay = 5
-                retry_delay = 3
-                consecutive_failures = 0
-
-            data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-            yield f"event: {event}\ndata: {data}\n\n"
-            if stop_after_event:
-                break
-            await asyncio.sleep(delay)
-
     return StreamingResponse(
-        events(),
+        _instrument_market_events(request, market, user.id, instrument_uid),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "private, no-store",
