@@ -23,7 +23,16 @@ def sonar(identifier: int = 10, **changes: object) -> dict:
         "name": "SonarCloud Code Analysis",
         "app": {"id": 12526, "slug": "sonarqubecloud"},
         "details_url": f"https://sonarcloud.io/dashboard?id={gate.SONAR_PROJECT}&branch=main",
-        "status": "completed", "conclusion": "success", **changes,
+        "status": "completed", "conclusion": "success",
+        "output": {
+            "annotations_count": 0,
+            "summary": (
+                "Issues\n[0 New issues](https://sonarcloud.io/new)\n"
+                "[0 Accepted issues](https://sonarcloud.io/accepted)\n"
+                "Measures\n[0 Security Hotspots](https://sonarcloud.io/hotspots)"
+            ),
+        },
+        **changes,
     }
 
 
@@ -48,6 +57,47 @@ class ReleaseEvidenceTests(unittest.TestCase):
         gate.verify(client, SHA)
         self.assertEqual(client.get.call_count, 2)
         self.assertIn("filter=all", client.collect.call_args_list[0].args[0])
+
+    def test_sonar_requires_zero_issue_summary_and_annotations(self) -> None:
+        dirty_outputs = (
+            {"annotations_count": 1, "summary": sonar()["output"]["summary"]},
+            {
+                "annotations_count": 0,
+                "summary": sonar()["output"]["summary"].replace(
+                    "[0 New issues]", "[2 New issues]"
+                ),
+            },
+            {
+                "annotations_count": 0,
+                "summary": sonar()["output"]["summary"].replace(
+                    "[0 Accepted issues]", "[1 Accepted issue]"
+                ),
+            },
+            {
+                "annotations_count": 0,
+                "summary": sonar()["output"]["summary"].replace(
+                    "[0 Security Hotspots]", "[1 Security Hotspot]"
+                ),
+            },
+        )
+        for output in dirty_outputs:
+            check = sonar(output=output)
+            with self.subTest(output=output), self.assertRaises(gate.ReleaseBlocked):
+                gate.require_sonar([check], SHA)
+
+    def test_sonar_missing_or_malformed_output_blocks_release(self) -> None:
+        malformed = (
+            None,
+            {},
+            {"annotations_count": True, "summary": sonar()["output"]["summary"]},
+            {"annotations_count": -1, "summary": sonar()["output"]["summary"]},
+            {"annotations_count": 0, "summary": ""},
+            {"annotations_count": 0, "summary": "Quality Gate passed"},
+        )
+        for output in malformed:
+            check = sonar(output=output)
+            with self.subTest(output=output), self.assertRaises(gate.ReleaseBlocked):
+                gate.require_sonar([check], SHA)
 
     def test_same_sha_pr_success_cannot_hide_failed_main(self) -> None:
         pull_request = sonar(12, details_url=(
