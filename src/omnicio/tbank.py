@@ -666,7 +666,7 @@ class TBankInvestClient:
             result.append(candle)
         return tuple(result)
 
-    def get_daily_exchange_candles(    def get_daily_exchange_candles(
+    def get_daily_exchange_candles(
         self,
         token: str,
         environment: TBankEnvironment,
