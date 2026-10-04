@@ -451,6 +451,9 @@ def _ranked_usd_rub_quote(
     return parsed_time, source_priority, quote
 
 
+_INVALID_METADATA_LOT_ERROR = _INVALID_METADATA_LOT_ERROR
+
+
 @dataclass(frozen=True, slots=True)
 class TBankInvestClient:
     timeout_seconds: int = 10
@@ -485,13 +488,13 @@ class TBankInvestClient:
 
             lot_raw = item.get("lot", 0)
             if isinstance(lot_raw, bool):
-                raise TBankUnavailable("T-Invest metadata has invalid lot size")
+                raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR)
             try:
                 lot = int(str(lot_raw))
             except ValueError as exc:
-                raise TBankUnavailable("T-Invest metadata has invalid lot size") from exc
+                raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR) from exc
             if lot < 0:
-                raise TBankUnavailable("T-Invest metadata has invalid lot size")
+                raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR)
 
             required_tests = tuple(
                 _text(value).strip()
