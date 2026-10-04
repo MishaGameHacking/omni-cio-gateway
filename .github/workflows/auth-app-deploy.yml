@@ -52,6 +52,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 concurrency:
   # PR validation must never block a production deployment. Production-triggered
@@ -106,6 +107,20 @@ jobs:
         shell: cmd
         run: >-
           "%OMNICIO_PYTHON%" -c "from pathlib import Path; text=Path('web/index.html').read_text(encoding='utf-8'); assert 'name=\"omni-cio-white-site\"' in text; assert r'\n' not in text"
+
+      - name: Diagnostic current Sonar annotations
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $headers = @{
+            Accept = "application/vnd.github+json"
+            Authorization = "Bearer $env:GH_TOKEN"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $uri = "https://api.github.com/repos/${{ github.repository }}/check-runs/111403674796/annotations?per_page=100"
+          $rows = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
+          $rows | Select-Object path, start_line, end_line, annotation_level, message, title, raw_details | ConvertTo-Json -Depth 6
 
   deploy:
     permissions:
