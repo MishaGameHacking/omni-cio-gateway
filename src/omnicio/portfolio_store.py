@@ -30,7 +30,7 @@ from .tbank import (
     TBankUserInfo,
 )
 
-_ADVISORY_LOCK_SQL = _ADVISORY_LOCK_SQL
+_ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
 
 JobStatus = Literal["running", "succeeded", "degraded", "failed"]
 ProposalAction = Literal[
