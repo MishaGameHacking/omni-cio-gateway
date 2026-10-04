@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
 from typing import Any, cast
@@ -57,6 +57,48 @@ _RISK_STATES: set[str] = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class _BalancingSnapshot:
+    captured_at: datetime
+    age_seconds: int
+    nav_rub: Decimal
+    cash_rub: Decimal
+
+
+def _validated_balancing_snapshot(
+    *,
+    base: dict[str, object],
+    profile: InvestmentProfileRecord,
+    policy_record: BalancingPolicyRecord,
+    context: dict[str, object],
+    observed_at: datetime,
+) -> _BalancingSnapshot | dict[str, object]:
+    captured_at = _datetime(context.get("captured_at"))
+    if captured_at is None:
+        return _blocked(base, profile, policy_record, "snapshot_time_missing")
+
+    age_seconds = int((observed_at - captured_at).total_seconds())
+    if age_seconds < 0:
+        return _blocked(base, profile, policy_record, "snapshot_time_in_future")
+    if age_seconds > int(EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds()):
+        return {
+            **_blocked(base, profile, policy_record, "snapshot_stale"),
+            "snapshot_age_seconds": age_seconds,
+        }
+    if context.get("analysis_status") != "observed":
+        return _blocked(base, profile, policy_record, "snapshot_not_observed")
+    if context.get("limits_loading_in_progress") is True:
+        return _blocked(base, profile, policy_record, "broker_limits_loading")
+
+    nav_rub = _decimal(context.get("nav_rub"))
+    cash_rub = _decimal(context.get("rub_cash_unblocked"))
+    if nav_rub is None or nav_rub <= 0:
+        return _blocked(base, profile, policy_record, "nav_unavailable")
+    if cash_rub is None or cash_rub < 0:
+        return _blocked(base, profile, policy_record, "free_cash_unavailable")
+    return _BalancingSnapshot(captured_at, age_seconds, nav_rub, cash_rub)
+
+
 def build_balancing_payload(
     *,
     profile: InvestmentProfileRecord | None,
@@ -89,28 +131,19 @@ def build_balancing_payload(
             "policy_version": policy_record.version,
         }
 
-    captured_at = _datetime(context.get("captured_at"))
-    if captured_at is None:
-        return _blocked(base, profile, policy_record, "snapshot_time_missing")
-    snapshot_age_seconds = int((observed_at - captured_at).total_seconds())
-    if snapshot_age_seconds < 0:
-        return _blocked(base, profile, policy_record, "snapshot_time_in_future")
-    if snapshot_age_seconds > int(EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds()):
-        return {
-            **_blocked(base, profile, policy_record, "snapshot_stale"),
-            "snapshot_age_seconds": snapshot_age_seconds,
-        }
-    if context.get("analysis_status") != "observed":
-        return _blocked(base, profile, policy_record, "snapshot_not_observed")
-    if context.get("limits_loading_in_progress") is True:
-        return _blocked(base, profile, policy_record, "broker_limits_loading")
-
-    nav_rub = _decimal(context.get("nav_rub"))
-    cash_rub = _decimal(context.get("rub_cash_unblocked"))
-    if nav_rub is None or nav_rub <= 0:
-        return _blocked(base, profile, policy_record, "nav_unavailable")
-    if cash_rub is None or cash_rub < 0:
-        return _blocked(base, profile, policy_record, "free_cash_unavailable")
+    snapshot = _validated_balancing_snapshot(
+        base=base,
+        profile=profile,
+        policy_record=policy_record,
+        context=context,
+        observed_at=observed_at,
+    )
+    if isinstance(snapshot, dict):
+        return snapshot
+    captured_at = snapshot.captured_at
+    snapshot_age_seconds = snapshot.age_seconds
+    nav_rub = snapshot.nav_rub
+    cash_rub = snapshot.cash_rub
 
     holdings_rows = _dict_rows(context.get("holdings"))
     candidate_rows = _dict_rows(context.get("candidates"))
