@@ -424,19 +424,24 @@ def _validate_exchange_candle_window(
         raise ValueError("candle window exceeds interval limit")
 
 
+_HISTORIC_CANDLE_REQUIRED_FIELDS_ERROR = (
+    "T-Invest historic candle is missing required fields"
+)
+
+
 def _required_historic_candle_price(
     item: dict[str, object],
     key: str,
 ) -> str:
     value = _quotation(item.get(key))
     if value is None:
-        raise TBankUnavailable("T-Invest historic candle is missing required fields")
+        raise TBankUnavailable(_HISTORIC_CANDLE_REQUIRED_FIELDS_ERROR)
     return value
 
 
 def _historic_candle_volume(value: object) -> int:
     if isinstance(value, bool):
-        raise TBankUnavailable("T-Invest historic candle is missing required fields")
+        raise TBankUnavailable(_HISTORIC_CANDLE_REQUIRED_FIELDS_ERROR)
     try:
         volume = int(str(value))
     except ValueError as exc:
@@ -458,7 +463,7 @@ def _historic_exchange_candle(
     candle_time = _optional_provider_timestamp(item.get("time"))
     complete = item.get("isComplete")
     if candle_time is None or not isinstance(complete, bool):
-        raise TBankUnavailable("T-Invest historic candle is missing required fields")
+        raise TBankUnavailable(_HISTORIC_CANDLE_REQUIRED_FIELDS_ERROR)
 
     source_name = _text(item.get("candleSourceType")).strip()
     if source_name != "CANDLE_SOURCE_EXCHANGE":
