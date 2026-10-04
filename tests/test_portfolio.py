@@ -402,41 +402,34 @@ def test_balancing_policy_write_requires_origin_and_current_consent() -> None:
         (),
         {"has_legal_versions": lambda self, user_id, versions: False},
     )()
-    previous_database = getattr(app.state, "database", None)
-    app.state.database = database
 
-    try:
-        with (
-            patch("omnicio.main.authenticated_user") as user,
-            patch("omnicio.main.portfolio_store") as store,
-            patch("omnicio.main.service") as auth,
-        ):
-            user.return_value.id = "server-user"
-            auth.return_value.legal_versions.return_value = {
-                "privacy_policy": "2026-10-02-v6",
-                "personal_data_consent": "2026-10-02-v6",
-                "terms": "2026-10-02-v6",
-            }
+    with (
+        patch.object(app.state, "database", database, create=True),
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+        patch("omnicio.main.service") as auth,
+    ):
+        user.return_value.id = "server-user"
+        auth.return_value.legal_versions.return_value = {
+            "privacy_policy": "2026-10-02-v6",
+            "personal_data_consent": "2026-10-02-v6",
+            "terms": "2026-10-02-v6",
+        }
 
-            cross_origin = TestClient(app).put(
-                "/api/profile/balancing",
-                json=payload,
-                headers={"Origin": "https://evil.example"},
-            )
-            assert cross_origin.status_code == 403
+        cross_origin = TestClient(app).put(
+            "/api/profile/balancing",
+            json=payload,
+            headers={"Origin": "https://evil.example"},
+        )
+        assert cross_origin.status_code == 403
 
-            missing_consent = TestClient(app).put(
-                "/api/profile/balancing",
-                json=payload,
-                headers={"Origin": "https://omnicio.ru"},
-            )
-            assert missing_consent.status_code == 409
-            store.return_value.save_balancing_policy.assert_not_called()
-    finally:
-        if previous_database is None:
-            delattr(app.state, "database")
-        else:
-            app.state.database = previous_database
+        missing_consent = TestClient(app).put(
+            "/api/profile/balancing",
+            json=payload,
+            headers={"Origin": "https://omnicio.ru"},
+        )
+        assert missing_consent.status_code == 409
+        store.return_value.save_balancing_policy.assert_not_called()
 
 
 def test_balancing_policy_rejects_non_finite_decimal_values() -> None:
@@ -811,9 +804,6 @@ def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution(
         (),
         {"has_legal_versions": lambda self, user_id, versions: True},
     )()
-    previous_database = getattr(app.state, "database", None)
-    app.state.database = database
-    try:
         refreshed = ProposalDraft(
             source_snapshot_id=snapshot_id,
             account_id="account-1",
@@ -826,57 +816,53 @@ def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution(
             proposal_hash=b"z" * 32,
             expires_at=now + timedelta(minutes=10),
         )
-        with (
-            patch("omnicio.main.authenticated_user") as user,
-            patch("omnicio.main.portfolio_store") as store,
-            patch("omnicio.main.service") as auth,
-            patch("omnicio.main.broker_service") as broker,
-            patch("omnicio.main._live_balancing_for_user") as balancing,
-            patch("omnicio.main.build_proposal_draft") as builder,
-            patch("omnicio.main.proposal_generated_at") as generated_at,
-            patch("omnicio.main.proposal_material_hash") as material_hash,
-        ):
-            user.return_value.id = "server-user"
-            auth.return_value.legal_versions.return_value = {"terms": "current"}
-            store.return_value.proposal.return_value = proposal
-            store.return_value.decide_proposal.return_value = (proposal, action)
-            balancing.return_value = {"status": "observed"}
-            builder.return_value = refreshed
-            generated_at.return_value = now
-            material_hash.side_effect = [b"m" * 32, b"m" * 32]
+    with (
+        patch.object(app.state, "database", database, create=True),
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.broker_service") as broker,
+        patch("omnicio.main._live_balancing_for_user") as balancing,
+        patch("omnicio.main.build_proposal_draft") as builder,
+        patch("omnicio.main.proposal_generated_at") as generated_at,
+        patch("omnicio.main.proposal_material_hash") as material_hash,
+    ):
+        user.return_value.id = "server-user"
+        auth.return_value.legal_versions.return_value = {"terms": "current"}
+        store.return_value.proposal.return_value = proposal
+        store.return_value.decide_proposal.return_value = (proposal, action)
+        balancing.return_value = {"status": "observed"}
+        builder.return_value = refreshed
+        generated_at.return_value = now
+        material_hash.side_effect = [b"m" * 32, b"m" * 32]
 
-            response = TestClient(app).post(
-                f"/api/portfolio/proposals/{proposal_id}/decision",
-                json={
-                    "action": "confirm",
-                    "proposal_version": 4,
-                    "proposal_hash": (b"y" * 32).hex(),
-                },
-                headers={"Origin": "https://omnicio.ru"},
-                cookies={"omnicio_session": "decision-session-token"},
-            )
+        response = TestClient(app).post(
+            f"/api/portfolio/proposals/{proposal_id}/decision",
+            json={
+                "action": "confirm",
+                "proposal_version": 4,
+                "proposal_hash": (b"y" * 32).hex(),
+            },
+            headers={"Origin": "https://omnicio.ru"},
+            cookies={"omnicio_session": "decision-session-token"},
+        )
 
-        assert response.status_code == 200
-        assert response.json()["proposal"]["status"] == "confirmed"
-        assert response.json()["execution_enabled"] is False
-        store.return_value.decide_proposal.assert_called_once()
-        call = store.return_value.decide_proposal.call_args
-        assert call.args[0] == "server-user"
-        assert call.kwargs["expected_version"] == 4
-        assert call.kwargs["expected_hash"] == b"y" * 32
-        assert call.kwargs["action"] == "confirmed"
-        assert len(call.kwargs["session_digest"]) == 32
-        assert call.kwargs["user_reason"] == ""
-        assert call.kwargs["deferred_until"] is None
-        assert call.kwargs["material_current"] is True
-        balancing.assert_called_once_with(ANY, "server-user")
-        builder.assert_called_once()
-        broker.assert_not_called()
-    finally:
-        if previous_database is None:
-            delattr(app.state, "database")
-        else:
-            app.state.database = previous_database
+    assert response.status_code == 200
+    assert response.json()["proposal"]["status"] == "confirmed"
+    assert response.json()["execution_enabled"] is False
+    store.return_value.decide_proposal.assert_called_once()
+    call = store.return_value.decide_proposal.call_args
+    assert call.args[0] == "server-user"
+    assert call.kwargs["expected_version"] == 4
+    assert call.kwargs["expected_hash"] == b"y" * 32
+    assert call.kwargs["action"] == "confirmed"
+    assert len(call.kwargs["session_digest"]) == 32
+    assert call.kwargs["user_reason"] == ""
+    assert call.kwargs["deferred_until"] is None
+    assert call.kwargs["material_current"] is True
+    balancing.assert_called_once_with(ANY, "server-user")
+    builder.assert_called_once()
+    broker.assert_not_called()
 
 
 def test_proposal_confirmation_marks_materially_changed_live_package_stale() -> None:
@@ -934,47 +920,40 @@ def test_proposal_confirmation_marks_materially_changed_live_package_stale() -> 
         (),
         {"has_legal_versions": lambda self, user_id, versions: True},
     )()
-    previous_database = getattr(app.state, "database", None)
-    app.state.database = database
-    try:
-        with (
-            patch("omnicio.main.authenticated_user") as user,
-            patch("omnicio.main.portfolio_store") as store,
-            patch("omnicio.main.service") as auth,
-            patch("omnicio.main._live_balancing_for_user") as balancing,
-            patch("omnicio.main.build_proposal_draft") as builder,
-            patch("omnicio.main.proposal_generated_at", return_value=now),
-            patch("omnicio.main.proposal_material_hash") as material_hash,
-        ):
-            user.return_value.id = "server-user"
-            auth.return_value.legal_versions.return_value = {"terms": "current"}
-            store.return_value.proposal.return_value = proposal
-            store.return_value.decide_proposal.return_value = (revoked, action)
-            balancing.return_value = {"status": "observed"}
-            builder.return_value = refreshed
-            material_hash.side_effect = [b"old" * 10 + b"xx", b"new" * 10 + b"xx"]
+    with (
+        patch.object(app.state, "database", database, create=True),
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main._live_balancing_for_user") as balancing,
+        patch("omnicio.main.build_proposal_draft") as builder,
+        patch("omnicio.main.proposal_generated_at", return_value=now),
+        patch("omnicio.main.proposal_material_hash") as material_hash,
+    ):
+        user.return_value.id = "server-user"
+        auth.return_value.legal_versions.return_value = {"terms": "current"}
+        store.return_value.proposal.return_value = proposal
+        store.return_value.decide_proposal.return_value = (revoked, action)
+        balancing.return_value = {"status": "observed"}
+        builder.return_value = refreshed
+        material_hash.side_effect = [b"old" * 10 + b"xx", b"new" * 10 + b"xx"]
 
-            response = TestClient(app).post(
-                f"/api/portfolio/proposals/{proposal_id}/decision",
-                json={
-                    "action": "confirm",
-                    "proposal_version": 5,
-                    "proposal_hash": (b"a" * 32).hex(),
-                },
-                headers={"Origin": "https://omnicio.ru"},
-                cookies={"omnicio_session": "stale-session-token"},
-            )
+        response = TestClient(app).post(
+            f"/api/portfolio/proposals/{proposal_id}/decision",
+            json={
+                "action": "confirm",
+                "proposal_version": 5,
+                "proposal_hash": (b"a" * 32).hex(),
+            },
+            headers={"Origin": "https://omnicio.ru"},
+            cookies={"omnicio_session": "stale-session-token"},
+        )
 
-        assert response.status_code == 409
-        assert response.json()["proposal"]["status"] == "revoked"
-        assert response.json()["decision"]["reason"] == "proposal_material_changed"
-        call = store.return_value.decide_proposal.call_args
-        assert call.kwargs["material_current"] is False
-    finally:
-        if previous_database is None:
-            delattr(app.state, "database")
-        else:
-            app.state.database = previous_database
+    assert response.status_code == 409
+    assert response.json()["proposal"]["status"] == "revoked"
+    assert response.json()["decision"]["reason"] == "proposal_material_changed"
+    call = store.return_value.decide_proposal.call_args
+    assert call.kwargs["material_current"] is False
 
 
 def test_proposal_reject_requires_reason_and_defer_requires_future_date() -> None:
@@ -984,53 +963,46 @@ def test_proposal_reject_requires_reason_and_defer_requires_future_date() -> Non
         (),
         {"has_legal_versions": lambda self, user_id, versions: True},
     )()
-    previous_database = getattr(app.state, "database", None)
-    app.state.database = database
-    try:
-        with (
-            patch("omnicio.main.authenticated_user") as user,
-            patch("omnicio.main.portfolio_store") as store,
-            patch("omnicio.main.service") as auth,
-        ):
-            user.return_value.id = "server-user"
-            auth.return_value.legal_versions.return_value = {"terms": "current"}
-            store.return_value.decide_proposal.side_effect = ValueError(
-                "proposal rejection reason is required"
-            )
+    with (
+        patch.object(app.state, "database", database, create=True),
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.portfolio_store") as store,
+        patch("omnicio.main.service") as auth,
+    ):
+        user.return_value.id = "server-user"
+        auth.return_value.legal_versions.return_value = {"terms": "current"}
+        store.return_value.decide_proposal.side_effect = ValueError(
+            "proposal rejection reason is required"
+        )
 
-            rejected = TestClient(app).post(
-                f"/api/portfolio/proposals/{proposal_id}/decision",
-                json={
-                    "action": "reject",
-                    "proposal_version": 4,
-                    "proposal_hash": (b"y" * 32).hex(),
-                    "reason": "",
-                },
-                headers={"Origin": "https://omnicio.ru"},
-                cookies={"omnicio_session": "reject-session-token"},
-            )
-            assert rejected.status_code == 422
+        rejected = TestClient(app).post(
+            f"/api/portfolio/proposals/{proposal_id}/decision",
+            json={
+                "action": "reject",
+                "proposal_version": 4,
+                "proposal_hash": (b"y" * 32).hex(),
+                "reason": "",
+            },
+            headers={"Origin": "https://omnicio.ru"},
+            cookies={"omnicio_session": "reject-session-token"},
+        )
+        assert rejected.status_code == 422
 
-            store.return_value.decide_proposal.side_effect = ValueError(
-                "proposal defer time must be in the future"
-            )
-            deferred = TestClient(app).post(
-                f"/api/portfolio/proposals/{proposal_id}/decision",
-                json={
-                    "action": "defer",
-                    "proposal_version": 4,
-                    "proposal_hash": (b"y" * 32).hex(),
-                    "deferred_until": "2020-01-01T00:00:00Z",
-                },
-                headers={"Origin": "https://omnicio.ru"},
-                cookies={"omnicio_session": "defer-session-token"},
-            )
-            assert deferred.status_code == 422
-    finally:
-        if previous_database is None:
-            delattr(app.state, "database")
-        else:
-            app.state.database = previous_database
+        store.return_value.decide_proposal.side_effect = ValueError(
+            "proposal defer time must be in the future"
+        )
+        deferred = TestClient(app).post(
+            f"/api/portfolio/proposals/{proposal_id}/decision",
+            json={
+                "action": "defer",
+                "proposal_version": 4,
+                "proposal_hash": (b"y" * 32).hex(),
+                "deferred_until": "2020-01-01T00:00:00Z",
+            },
+            headers={"Origin": "https://omnicio.ru"},
+            cookies={"omnicio_session": "defer-session-token"},
+        )
+        assert deferred.status_code == 422
 
 
 def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
