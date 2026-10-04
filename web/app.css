@@ -2455,7 +2455,7 @@ textarea:disabled {
 .market-strip {
   position: relative;
   min-height: 52px;
-  margin: -4px 0 16px;
+  margin: 0 0 16px;
   display: flex;
   align-items: center;
   overflow: hidden;
