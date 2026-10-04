@@ -39,14 +39,7 @@ class ProposalDraft:
     expires_at: datetime
 
 
-def build_proposal_draft(
-    balancing: dict[str, object],
-    *,
-    scenario_kind: ProposalScenarioKind,
-    replaced_instrument_uid: str | None,
-    now: datetime | None = None,
-) -> ProposalDraft:
-    created_at = (now or datetime.now(UTC)).astimezone(UTC)
+def _validate_proposal_boundary(balancing: dict[str, object]) -> None:
     if balancing.get("status") != "observed":
         raise ProposalBuildError("balancing_not_observed")
     if balancing.get("live_status") != "received":
@@ -56,6 +49,10 @@ def build_proposal_draft(
     if balancing.get("proposal_enabled") is not False:
         raise ProposalBuildError("r4_proposal_boundary_invalid")
 
+
+def _proposal_identity(
+    balancing: dict[str, object],
+) -> tuple[UUID, str, int, int]:
     snapshot_raw = str(balancing.get("snapshot_id") or "")
     try:
         snapshot_id = UUID(snapshot_raw)
@@ -74,12 +71,21 @@ def build_proposal_draft(
         balancing.get("policy_version"),
         "policy_version_invalid",
     )
+    return snapshot_id, account_id, profile_version, policy_version
 
-    scenarios = balancing.get("scenarios")
-    if not isinstance(scenarios, dict):
+
+def _validated_scenario(
+    balancing: dict[str, object],
+    *,
+    scenario_kind: ProposalScenarioKind,
+    replaced_instrument_uid: str | None,
+) -> tuple[dict[str, object], dict[str, object]]:
+    scenarios_raw = balancing.get("scenarios")
+    if not isinstance(scenarios_raw, dict):
         raise ProposalBuildError("scenario_set_missing")
+    scenarios = cast(dict[str, object], scenarios_raw)
     scenario = _select_scenario(
-        cast(dict[str, object], scenarios),
+        scenarios,
         scenario_kind=scenario_kind,
         replaced_instrument_uid=replaced_instrument_uid,
     )
@@ -90,24 +96,56 @@ def build_proposal_draft(
         raise ProposalBuildError("scenario_has_no_trades")
     for trade in trades:
         _validate_trade(trade)
+    _validate_before_after(scenario.get("before_after"))
+    return scenarios, scenario
 
-    before_after = scenario.get("before_after")
-    _validate_before_after(before_after)
 
+def _validated_scenario_uids(
+    scenario: dict[str, object],
+    *,
+    scenario_kind: ProposalScenarioKind,
+    replaced_instrument_uid: str | None,
+) -> tuple[str | None, str | None]:
+    target_uid = _optional_uid(scenario.get("target_instrument_uid"))
+    replaced_uid = _optional_uid(scenario.get("replaced_instrument_uid"))
+    if scenario_kind == "deploy_cash":
+        if replaced_uid is not None:
+            raise ProposalBuildError("scenario_shape_invalid")
+        return target_uid, replaced_uid
+
+    requested = _optional_uid(replaced_instrument_uid)
+    if requested is None or replaced_uid != requested:
+        raise ProposalBuildError("replacement_selection_changed")
+    if target_uid is None:
+        raise ProposalBuildError("scenario_shape_invalid")
+    return target_uid, replaced_uid
+
+
+def build_proposal_draft(
+    balancing: dict[str, object],
+    *,
+    scenario_kind: ProposalScenarioKind,
+    replaced_instrument_uid: str | None,
+    now: datetime | None = None,
+) -> ProposalDraft:
+    created_at = (now or datetime.now(UTC)).astimezone(UTC)
+    _validate_proposal_boundary(balancing)
+    snapshot_id, account_id, profile_version, policy_version = _proposal_identity(
+        balancing
+    )
+    scenarios, scenario = _validated_scenario(
+        balancing,
+        scenario_kind=scenario_kind,
+        replaced_instrument_uid=replaced_instrument_uid,
+    )
     constraints = balancing.get("constraints")
     if not isinstance(constraints, dict) or not constraints:
         raise ProposalBuildError("proposal_constraints_missing")
-
-    target_uid = _optional_uid(scenario.get("target_instrument_uid"))
-    replaced_uid = _optional_uid(scenario.get("replaced_instrument_uid"))
-    if scenario_kind == "deploy_cash" and replaced_uid is not None:
-        raise ProposalBuildError("scenario_shape_invalid")
-    if scenario_kind == "replace":
-        requested = _optional_uid(replaced_instrument_uid)
-        if requested is None or replaced_uid != requested:
-            raise ProposalBuildError("replacement_selection_changed")
-        if target_uid is None:
-            raise ProposalBuildError("scenario_shape_invalid")
+    target_uid, replaced_uid = _validated_scenario_uids(
+        scenario,
+        scenario_kind=scenario_kind,
+        replaced_instrument_uid=replaced_instrument_uid,
+    )
 
     expires_at = created_at + PROPOSAL_TTL
     payload: dict[str, object] = {
