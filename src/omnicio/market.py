@@ -33,6 +33,7 @@ class CBRIndicator:
 class CBRIndicatorSnapshot:
     source: str
     fetched_at: str
+    freshness: str
     key_rate: CBRIndicator
     usd_rub: CBRIndicator
     eur_rub: CBRIndicator
@@ -129,6 +130,7 @@ class MarketService:
         return CBRIndicatorSnapshot(
             source="Bank of Russia",
             fetched_at=indicators.fetched_at.isoformat(),
+            freshness=indicators.freshness,
             key_rate=CBRIndicator(
                 code="KEY_RATE",
                 value=indicators.key_rate.value,
