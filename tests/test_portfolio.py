@@ -804,18 +804,18 @@ def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution(
         (),
         {"has_legal_versions": lambda self, user_id, versions: True},
     )()
-        refreshed = ProposalDraft(
-            source_snapshot_id=snapshot_id,
-            account_id="account-1",
-            profile_version=3,
-            policy_version=2,
-            scenario_kind="deploy_cash",
-            target_instrument_uid="candidate-1",
-            replaced_instrument_uid=None,
-            payload={"schema": "omnicio.portfolio.proposal.v1"},
-            proposal_hash=b"z" * 32,
-            expires_at=now + timedelta(minutes=10),
-        )
+    refreshed = ProposalDraft(
+        source_snapshot_id=snapshot_id,
+        account_id="account-1",
+        profile_version=3,
+        policy_version=2,
+        scenario_kind="deploy_cash",
+        target_instrument_uid="candidate-1",
+        replaced_instrument_uid=None,
+        payload={"schema": "omnicio.portfolio.proposal.v1"},
+        proposal_hash=b"z" * 32,
+        expires_at=now + timedelta(minutes=10),
+    )
     with (
         patch.object(app.state, "database", database, create=True),
         patch("omnicio.main.authenticated_user") as user,
