@@ -540,8 +540,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "/api/portfolio/executions",
             "/api/profile/balancing",
             "/api/broker/tbank/instruments/search",
-            "/api/market/usd-rub",
-            "/api/market/usd-rub/stream",
+            "/api/market/cbr-indicators",
         ):
             self.assertIn(endpoint, script)
 
@@ -768,37 +767,43 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('document.visibilityState === "visible"', script)
         self.assertNotIn("innerHTML", script)
 
-    def test_personal_dashboard_shows_live_usd_rub_without_fake_rate(self) -> None:
+    def test_personal_dashboard_shows_compact_cbr_indicator_strip(self) -> None:
         root = SCRIPT_DIR.parent.parent
         page = (root / "web" / "index.html").read_text(encoding="utf-8")
         script = (root / "web" / "app.js").read_text(encoding="utf-8")
+        stylesheet = (root / "web" / "app.css").read_text(encoding="utf-8")
 
         for element_id in (
-            "usd-rub-card",
-            "usd-rub-state",
-            "usd-rub-price",
-            "usd-rub-change",
-            "usd-rub-source",
-            "usd-rub-time",
-            "usd-rub-cbr",
-            "usd-rub-cbr-date",
-            "usd-rub-cbr-next-row",
-            "usd-rub-cbr-next",
-            "usd-rub-cbr-next-date",
+            "cbr-market-strip",
+            "cbr-market-strip-status",
             "home-fx-state",
             "owl-fx-status",
         ):
             self.assertIn(f'id="{element_id}"', page)
 
-        self.assertIn("Оперативная котировка T-Invest", page)
-        self.assertIn("ЦБ РФ — действует сегодня", page)
-        self.assertIn("Следующий курс ЦБ РФ", page)
-        self.assertIn('new EventSource("/api/market/usd-rub/stream")', script)
-        self.assertIn('/api/market/usd-rub"', script)
-        self.assertIn("5 * 1000", script)
-        self.assertNotIn("92,47", page)
-        self.assertNotIn("91,86", page)
+        for indicator in ("key_rate", "usd_rub", "eur_rub"):
+            self.assertIn(f'data-cbr-value="{indicator}"', page)
+            self.assertIn(f'data-cbr-item="{indicator}"', page)
+
+        self.assertIn(">Ставка</span>", page)
+        self.assertIn("<span>$</span>", page)
+        self.assertIn("<span>€</span>", page)
+        self.assertIn("Ключевая ставка, USD/RUB и EUR/RUB", page)
+        self.assertIn('api("/api/market/cbr-indicators"', script)
+        self.assertIn("startCbrIndicators", script)
+        self.assertIn("5 * 60 * 1000", script)
+        self.assertNotIn('id="usd-rub-card"', page)
+        self.assertNotIn('new EventSource("/api/market/usd-rub/stream")', script)
+        self.assertNotIn("83,4839", page)
+        self.assertNotIn("94,3201", page)
+        self.assertNotIn("14,00%", page)
         self.assertNotIn("innerHTML", script)
+
+        self.assertIn(".market-strip", stylesheet)
+        self.assertIn("@keyframes market-strip-cycle", stylesheet)
+        self.assertIn("animation-play-state: paused", stylesheet)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", stylesheet)
+        self.assertIn('.market-strip-set[aria-hidden="true"]', stylesheet)
 
     def test_personal_dashboard_uses_grouped_drawer_navigation(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -909,7 +914,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Портфель — главное сейчас", page)
         self.assertIn("Незаблокированные RUB", page)
         self.assertIn("Требует внимания", page)
-        self.assertIn("ЦБ РФ — действует сегодня", page)
+        self.assertIn("Официальные показатели Банка России", page)
+        self.assertIn("Данные ЦБ", page)
         self.assertIn('content="#f4f7fb"', page)
         self.assertIn('"background_color": "#f4f7fb"', manifest)
         self.assertIn('"theme_color": "#f4f7fb"', manifest)
@@ -926,7 +932,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertIn(".command-kpis", stylesheet)
         self.assertIn(".attention-item", stylesheet)
-        self.assertIn(".market-card-compact", stylesheet)
+        self.assertIn(".market-strip", stylesheet)
         self.assertIn("@media (max-width: 420px)", stylesheet)
 
     def test_portfolio_visualization_uses_persisted_tenant_history_and_semantic_mobile_cards(self) -> None:
