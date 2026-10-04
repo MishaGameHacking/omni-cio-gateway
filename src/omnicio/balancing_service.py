@@ -441,38 +441,38 @@ def build_live_balancing_payload(
     return payload
 
 
-def _eligible_for_live_enrichment(
+def _candidate_static_live_eligible(row: dict[str, object]) -> bool:
+    required_tests = row.get("required_tests")
+    structure = (
+        row.get("floating_coupon"),
+        row.get("perpetual"),
+        row.get("amortization"),
+        row.get("subordinated"),
+    )
+    nominal = _decimal(row.get("nominal_value"))
+    return all(
+        (
+            str(row.get("instrument_type") or "") == "bond",
+            str(row.get("currency") or "").upper() == "RUB",
+            row.get("api_trade_available") is True,
+            row.get("buy_available") is True,
+            _integer(row.get("lot")) > 0,
+            bool(str(row.get("instrument_uid") or "")),
+            bool(str(row.get("issuer_id") or "")),
+            str(row.get("issuer_country_code") or "").upper() == "RU",
+            bool(str(row.get("group_id") or "")),
+            nominal is not None and nominal > 0,
+            str(row.get("nominal_currency") or "").upper() == "RUB",
+            not (isinstance(required_tests, list) and required_tests),
+            all(value is False for value in structure),
+        )
+    )
+
+
+def _candidate_account_live_eligible(
     row: dict[str, object],
     context: dict[str, object],
-    observed_at: datetime,
 ) -> bool:
-    if str(row.get("instrument_type") or "") != "bond":
-        return False
-    if str(row.get("currency") or "").upper() != "RUB":
-        return False
-    if (
-        row.get("api_trade_available") is not True
-        or row.get("buy_available") is not True
-    ):
-        return False
-    if _integer(row.get("lot")) <= 0:
-        return False
-    if not str(row.get("instrument_uid") or ""):
-        return False
-    if (
-        not str(row.get("issuer_id") or "")
-        or str(row.get("issuer_country_code") or "").upper() != "RU"
-        or not str(row.get("group_id") or "")
-    ):
-        return False
-    nominal = _decimal(row.get("nominal_value"))
-    if nominal is None or nominal <= 0:
-        return False
-    if str(row.get("nominal_currency") or "").upper() != "RUB":
-        return False
-    required_tests = row.get("required_tests")
-    if isinstance(required_tests, list) and required_tests:
-        return False
     broker_user = context.get("broker_user")
     qualified = (
         broker_user.get("qualified")
@@ -481,26 +481,38 @@ def _eligible_for_live_enrichment(
     )
     if row.get("for_qual_investor") is True and qualified is not True:
         return False
+
     account = context.get("account")
     account_type = (
         str(account.get("type") or "").upper()
         if isinstance(account, dict)
         else ""
     )
-    if "IIS" in account_type and row.get("for_iis") is not True:
-        return False
-    if not _fresh(_datetime(row.get("provider_retrieved_at")), observed_at):
-        return False
-    if not _fresh(_datetime(row.get("access_observed_at")), observed_at):
-        return False
-    structure = (
-        row.get("floating_coupon"),
-        row.get("perpetual"),
-        row.get("amortization"),
-        row.get("subordinated"),
-    )
-    return all(value is False for value in structure)
+    return "IIS" not in account_type or row.get("for_iis") is True
 
+
+def _candidate_live_evidence_fresh(
+    row: dict[str, object],
+    observed_at: datetime,
+) -> bool:
+    return all(
+        (
+            _fresh(_datetime(row.get("provider_retrieved_at")), observed_at),
+            _fresh(_datetime(row.get("access_observed_at")), observed_at),
+        )
+    )
+
+
+def _eligible_for_live_enrichment(
+    row: dict[str, object],
+    context: dict[str, object],
+    observed_at: datetime,
+) -> bool:
+    return (
+        _candidate_static_live_eligible(row)
+        and _candidate_account_live_eligible(row, context)
+        and _candidate_live_evidence_fresh(row, observed_at)
+    )
 
 def _with_candidate_blocker(candidate: Candidate, reason: str) -> Candidate:
     return replace(
@@ -1520,37 +1532,51 @@ def _holding_risk_state(row: dict[str, object]) -> RiskState:
     return cast(RiskState, risk)
 
 
+def _holding_rating_bucket(row: dict[str, object]) -> str:
+    rating_status = str(row.get("rating_status") or "data_missing")
+    return "not_applicable" if rating_status == "not_applicable" else "unknown"
+
+
+def _holding_blocked(
+    row: dict[str, object],
+    *,
+    blocked_lots: Decimal,
+    quantity_misaligned: bool,
+) -> bool:
+    return any(
+        (
+            row.get("blocked") is True,
+            blocked_lots > 0,
+            quantity_misaligned,
+        )
+    )
+
+
 def _holding(row: dict[str, object]) -> Holding:
     value = _decimal(row.get("value_rub")) or Decimal("0")
     quantity = _decimal(row.get("quantity")) or Decimal("0")
     lots, quantity_misaligned = _holding_lot_state(row, quantity)
-    risk = _holding_risk_state(row)
-    rating_status = str(row.get("rating_status") or "data_missing")
-    rating_bucket = "not_applicable" if rating_status == "not_applicable" else "unknown"
-    issuer_id = str(row.get("issuer_id") or "") or "unknown_issuer"
-    group_id = str(row.get("group_id") or "") or "unverified_group"
     blocked_lots = _decimal(row.get("blocked_lots")) or Decimal("0")
     return Holding(
         instrument_uid=str(row.get("instrument_uid") or ""),
         ticker=str(row.get("ticker") or ""),
         asset_class=str(row.get("instrument_type") or ""),
         sector=str(row.get("sector") or "") or "unknown_sector",
-        issuer_id=issuer_id,
-        group_id=group_id,
-        rating_bucket=cast(Any, rating_bucket),
+        issuer_id=str(row.get("issuer_id") or "") or "unknown_issuer",
+        group_id=str(row.get("group_id") or "") or "unverified_group",
+        rating_bucket=cast(Any, _holding_rating_bucket(row)),
         currency=str(row.get("currency") or "").upper(),
-        risk_state=risk,
+        risk_state=_holding_risk_state(row),
         lots=lots,
         value_rub=value,
         expected_horizon_gain_rub=Decimal("0"),
-        blocked=(
-            row.get("blocked") is True
-            or blocked_lots > 0
-            or quantity_misaligned
+        blocked=_holding_blocked(
+            row,
+            blocked_lots=blocked_lots,
+            quantity_misaligned=quantity_misaligned,
         ),
         replacement_costs_complete=False,
     )
-
 
 def _candidate_access_reasons(
     row: dict[str, object],
