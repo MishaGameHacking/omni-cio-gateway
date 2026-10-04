@@ -79,6 +79,7 @@ CANONICAL_ORIGIN = "https://omnicio.ru"
 VKID_CALLBACK = f"{CANONICAL_ORIGIN}/api/auth/vkid/callback"
 INVALID_VKID_CALLBACK = "VK ID callback payload is invalid"
 _TBANK_CREDENTIAL_REJECTED_DETAIL = "stored T-Invest credential was rejected"
+_UPDATED_LEGAL_CONSENT_DETAIL = _UPDATED_LEGAL_CONSENT_DETAIL
 
 
 class StrictRequestBody(BaseModel):
@@ -679,7 +680,7 @@ def save_investment_profile(
     if not database.has_legal_versions(user.id, service(request).legal_versions()):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="updated legal consent required",
+            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
     profile = portfolio_store(request).save_profile(
         user.id,
@@ -721,7 +722,7 @@ def save_balancing_policy(
     if not database.has_legal_versions(user.id, service(request).legal_versions()):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="updated legal consent required",
+            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
     policy = portfolio_store(request).save_balancing_policy(
         user.id,
@@ -953,7 +954,7 @@ def create_portfolio_proposal(
     if not database.has_legal_versions(user.id, service(request).legal_versions()):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="updated legal consent required",
+            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
 
     balancing = _live_balancing_for_user(request, user.id)
@@ -1004,7 +1005,7 @@ def decide_portfolio_proposal(
     if not database.has_legal_versions(user.id, service(request).legal_versions()):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="updated legal consent required",
+            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
     try:
         expected_hash = parse_proposal_hash(body.proposal_hash)
@@ -1172,7 +1173,7 @@ def _require_current_legal_consent(request: Request, user: UserRecord) -> None:
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="updated legal consent required",
+            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
         )
 
 
