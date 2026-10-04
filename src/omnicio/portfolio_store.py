@@ -1327,8 +1327,8 @@ class PortfolioStore:
             if Decimal(position.quantity) == 0 or position.instrument_type == "currency":
                 continue
             uid = position.instrument_uid or position.figi
-            exposure = cast(SecurityExposure | None, securities.get(uid))
-            info = cast(TBankInstrumentMetadata | None, metadata.get(position.instrument_uid))
+            exposure = securities.get(uid)
+            info = metadata.get(position.instrument_uid)
             cur.execute(
                 """
                 INSERT INTO portfolio_snapshot_positions (
