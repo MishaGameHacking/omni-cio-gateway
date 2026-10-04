@@ -19,11 +19,14 @@ from .intelligence import (
     EvidenceDocument,
     InstrumentRiskAssessment,
 )
+from .portfolio import SecurityExposure
 from .tbank import (
     TBankAccount,
     TBankMoney,
     TBankOperation,
+    TBankInstrumentMetadata,
     TBankOperationsPage,
+    TBankPortfolioPosition,
     TBankUserInfo,
 )
 
@@ -1253,21 +1256,77 @@ class PortfolioStore:
 
 
 
+    @staticmethod
+    def _snapshot_position_row(
+        snapshot_id: UUID,
+        user_id: UUID,
+        position: TBankPortfolioPosition,
+        exposure: SecurityExposure | None,
+        info: TBankInstrumentMetadata | None,
+    ) -> tuple[object, ...]:
+        current_price_currency = (
+            position.current_price.currency if position.current_price else None
+        )
+        current_nkd_currency = (
+            position.current_nkd.currency if position.current_nkd else None
+        )
+        average_price_currency = (
+            position.average_price_fifo.currency
+            if position.average_price_fifo
+            else None
+        )
+        value_rub = (
+            Decimal(exposure.value_rub)
+            if exposure is not None and exposure.value_rub is not None
+            else None
+        )
+        nav_percent = (
+            Decimal(exposure.nav_percent)
+            if exposure is not None and exposure.nav_percent is not None
+            else None
+        )
+        sector = info.sector if info else ""
+        country_of_risk = info.country_of_risk if info else ""
+        for_qual_investor = info.for_qual_investor if info else None
+        return (
+            snapshot_id,
+            user_id,
+            position.instrument_uid or position.figi,
+            position.figi,
+            position.ticker,
+            position.instrument_type,
+            Decimal(position.quantity),
+            Decimal(position.quantity_lots),
+            _money_decimal(position.current_price),
+            current_price_currency,
+            _money_decimal(position.current_nkd),
+            current_nkd_currency,
+            _money_decimal(position.average_price_fifo),
+            average_price_currency,
+            position.blocked,
+            Decimal(position.blocked_lots),
+            value_rub,
+            nav_percent,
+            sector,
+            country_of_risk,
+            for_qual_investor,
+        )
+
     def _save_snapshot_positions(
         self,
         cur: Any,
         snapshot_id: UUID,
         user_id: UUID,
         bundle: BrokerObservationBundle,
-        securities: dict[str, Any],
-        metadata: dict[str, Any],
+        securities: dict[str, SecurityExposure],
+        metadata: dict[str, TBankInstrumentMetadata],
     ) -> None:
         for position in bundle.portfolio.positions:
             if Decimal(position.quantity) == 0 or position.instrument_type == "currency":
                 continue
             uid = position.instrument_uid or position.figi
-            exposure = securities.get(uid)
-            info = metadata.get(position.instrument_uid)
+            exposure = cast(SecurityExposure | None, securities.get(uid))
+            info = cast(TBankInstrumentMetadata | None, metadata.get(position.instrument_uid))
             cur.execute(
                 """
                 INSERT INTO portfolio_snapshot_positions (
@@ -1299,40 +1358,12 @@ class PortfolioStore:
                     %s, %s, %s
                 )
                 """,
-                (
+                self._snapshot_position_row(
                     snapshot_id,
                     user_id,
-                    uid,
-                    position.figi,
-                    position.ticker,
-                    position.instrument_type,
-                    Decimal(position.quantity),
-                    Decimal(position.quantity_lots),
-                    _money_decimal(position.current_price),
-                    position.current_price.currency if position.current_price else None,
-                    _money_decimal(position.current_nkd),
-                    position.current_nkd.currency if position.current_nkd else None,
-                    _money_decimal(position.average_price_fifo),
-                    (
-                        position.average_price_fifo.currency
-                        if position.average_price_fifo
-                        else None
-                    ),
-                    position.blocked,
-                    Decimal(position.blocked_lots),
-                    (
-                        Decimal(exposure.value_rub)
-                        if exposure is not None and exposure.value_rub is not None
-                        else None
-                    ),
-                    (
-                        Decimal(exposure.nav_percent)
-                        if exposure is not None and exposure.nav_percent is not None
-                        else None
-                    ),
-                    info.sector if info else "",
-                    info.country_of_risk if info else "",
-                    info.for_qual_investor if info else None,
+                    position,
+                    exposure,
+                    info,
                 ),
             )
 
