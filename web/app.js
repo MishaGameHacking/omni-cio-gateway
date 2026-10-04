@@ -114,18 +114,18 @@
   const homeAttentionStateBadge = requiredElement("#home-attention-state");
   const homeAttentionList = requiredElement("#home-attention-list");
 
-  const usdRubCard = document.querySelector("#usd-rub-card");
-  const usdRubState = document.querySelector("#usd-rub-state");
-  const usdRubPrice = document.querySelector("#usd-rub-price");
-  const usdRubChange = document.querySelector("#usd-rub-change");
-  const usdRubNote = document.querySelector("#usd-rub-note");
-  const usdRubSource = document.querySelector("#usd-rub-source");
-  const usdRubTime = document.querySelector("#usd-rub-time");
-  const usdRubCbr = document.querySelector("#usd-rub-cbr");
-  const usdRubCbrDate = document.querySelector("#usd-rub-cbr-date");
-  const usdRubCbrNextRow = document.querySelector("#usd-rub-cbr-next-row");
-  const usdRubCbrNext = document.querySelector("#usd-rub-cbr-next");
-  const usdRubCbrNextDate = document.querySelector("#usd-rub-cbr-next-date");
+  const cbrMarketStrip = requiredElement("#cbr-market-strip");
+  const cbrMarketStripStatus = requiredElement("#cbr-market-strip-status");
+  const cbrValueElements = {
+    key_rate: [...document.querySelectorAll('[data-cbr-value="key_rate"]')],
+    usd_rub: [...document.querySelectorAll('[data-cbr-value="usd_rub"]')],
+    eur_rub: [...document.querySelectorAll('[data-cbr-value="eur_rub"]')],
+  };
+  const cbrItemElements = {
+    key_rate: [...document.querySelectorAll('[data-cbr-item="key_rate"]')],
+    usd_rub: [...document.querySelectorAll('[data-cbr-item="usd_rub"]')],
+    eur_rub: [...document.querySelectorAll('[data-cbr-item="eur_rub"]')],
+  };
 
   const portfolioStateBadge = document.querySelector("#portfolio-state-badge");
   const portfolioRefresh = document.querySelector("#portfolio-refresh");
@@ -283,7 +283,7 @@
     portfolio: "Портфель",
     decisions: "Решения",
     system: "Система",
-    connections: "Интеграции",
+    connections: "Подключения",
     profile: "Профиль",
     settings: "Настройки",
     support: "Поддержка",
@@ -329,8 +329,9 @@
   let connectedTbankEnvironment = null;
   let tbankAccountId = null;
   let owlTimer = null;
-  let usdRubEventSource = null;
-  let usdRubFallbackTimer = null;
+  let cbrIndicatorTimer = null;
+  let cbrIndicatorsLoaded = false;
+  let lastCbrIndicatorRefreshAt = 0;
   let navigationDepth = 0;
   const homeAttentionBuckets = {
     connection: null,
@@ -760,21 +761,6 @@
     }).format(date);
   };
 
-  const formatClock = (value) => {
-    if (!value) {
-      return "—";
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return String(value);
-    }
-    return new Intl.DateTimeFormat("ru-RU", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(date);
-  };
-
   const formatExactDateTime = (value) => {
     if (!value) {
       return "—";
@@ -809,178 +795,134 @@
     }).format(date);
   };
 
-  const renderUsdRubStreamStatus = (state) => {
-    usdRubCard.classList.toggle("is-offline", state === "disconnected");
-    usdRubCard.classList.toggle("is-error", state === "unavailable");
-
-    if (state === "disconnected") {
-      setStateBadge(usdRubState, "Нет подключения", "state-next");
-      setStateBadge(homeFxState, "Нет подключения", "state-next");
-      usdRubNote.textContent = "Подключите T-Invest, чтобы получать оперативную котировку.";
-      owlFxStatus.textContent = "нет подключения";
-      return;
+  const formatCbrNumber = (
+    value,
+    {minimumFractionDigits = 2, maximumFractionDigits = 4} = {},
+  ) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      throw new TypeError("Bank of Russia indicator value is invalid");
     }
-
-    if (state === "reconnect") {
-      setStateBadge(usdRubState, "Нужен токен", "state-next");
-      setStateBadge(homeFxState, "Нужен токен", "state-next");
-      usdRubNote.textContent = "T-Invest отклонил сохранённый токен. Переподключите счёт.";
-      owlFxStatus.textContent = "нужно переподключение";
-      return;
-    }
-
-    setStateBadge(usdRubState, "Переподключение", "state-next");
-    setStateBadge(homeFxState, "Переподключение", "state-next");
-    usdRubNote.textContent = usdRubPrice.textContent === "—"
-      ? "T-Invest временно не отдаёт котировку. Повторяем запрос с паузой."
-      : "Поток временно недоступен. Показана последняя полученная котировка.";
-    owlFxStatus.textContent = "переподключение";
+    return new Intl.NumberFormat("ru-RU", {
+      minimumFractionDigits,
+      maximumFractionDigits,
+    }).format(number);
   };
 
-  const renderUsdRubQuote = (snapshot) => {
-    usdRubCard.classList.remove("is-offline", "is-error");
+  const setCbrIndicator = (key, text, title) => {
+    for (const element of cbrValueElements[key] || []) {
+      element.textContent = text;
+    }
+    for (const element of cbrItemElements[key] || []) {
+      element.title = title;
+    }
+  };
 
-    usdRubPrice.textContent = formatMoney({
-      currency: snapshot.currency,
-      value: String(snapshot.price),
-    });
-
-    if (snapshot.change !== null && snapshot.change_percent !== null) {
-      const changeMoney = formatMoney(
-        {currency: snapshot.currency, value: String(snapshot.change)},
-        {sign: true},
-      );
-      usdRubChange.textContent = `${changeMoney} · ${formatPercent(
-        snapshot.change_percent,
-        {sign: true},
-      )}`;
-      applySignedClass(usdRubChange, snapshot.change);
-    } else {
-      usdRubChange.textContent = "Изменение к закрытию недоступно";
-      usdRubChange.classList.remove("value-positive", "value-negative");
+  const renderCbrIndicators = (snapshot) => {
+    const keyRate = snapshot?.key_rate;
+    const usd = snapshot?.usd_rub;
+    const eur = snapshot?.eur_rub;
+    if (!keyRate || !usd || !eur) {
+      throw new TypeError("Bank of Russia indicator payload is incomplete");
     }
 
-    const live = snapshot.status === "live";
-    setStateBadge(
-      usdRubState,
-      live ? "Оперативно" : "Последняя котировка",
-      live ? "state-ok" : "state-next",
+    const keyRateText = `${formatCbrNumber(keyRate.value, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}%`;
+    const usdText = `${formatCbrNumber(usd.value)} ₽`;
+    const eurText = `${formatCbrNumber(eur.value)} ₽`;
+    const source = snapshot.source === "Bank of Russia" ? "Банк России" : "ЦБ РФ";
+
+    setCbrIndicator(
+      "key_rate",
+      keyRateText,
+      `${source} · действует с ${formatCalendarDate(keyRate.effective_date)}`,
     );
+    setCbrIndicator(
+      "usd_rub",
+      usdText,
+      `${source} · официальный курс на ${formatCalendarDate(usd.effective_date)}`,
+    );
+    setCbrIndicator(
+      "eur_rub",
+      eurText,
+      `${source} · официальный курс на ${formatCalendarDate(eur.effective_date)}`,
+    );
+
+    const cached = snapshot.freshness === "cached";
+    if (!cached && snapshot.freshness !== "fresh") {
+      throw new TypeError("Bank of Russia indicator freshness is invalid");
+    }
+
+    cbrMarketStrip.classList.toggle("is-unavailable", cached);
+    cbrMarketStripStatus.textContent = cached
+      ? (
+        `Банк России временно недоступен. Последние значения: ставка ${keyRateText}, `
+        + `доллар ${usdText}, евро ${eurText}.`
+      )
+      : (
+        `Банк России: ключевая ставка ${keyRateText}, доллар ${usdText}, `
+        + `евро ${eurText}.`
+      );
     setStateBadge(
       homeFxState,
-      live ? "Работает" : "Последняя цена",
-      live ? "state-ok" : "state-next",
+      cached ? "Последние данные" : "Актуально",
+      cached ? "state-next" : "state-ok",
     );
-
-    usdRubSource.textContent = snapshot.source === "dealer"
-      ? "T-Invest · дилер"
-      : "T-Invest · биржа";
-    usdRubTime.textContent = formatClock(snapshot.quote_time);
-    usdRubNote.textContent = live
-      ? "Рыночная котировка T-Invest. Она может отличаться от Google/Morningstar и курса ЦБ РФ."
-      : "Последняя доступная котировка T-Invest. Она может отличаться от Google/Morningstar и курса ЦБ РФ.";
-    owlFxStatus.textContent = live
-      ? `оперативно · ${formatClock(snapshot.quote_time)}`
-      : `последняя · ${formatClock(snapshot.quote_time)}`;
-
-    if (snapshot.cbr_reference) {
-      usdRubCbr.textContent = formatMoney({
-        currency: snapshot.cbr_reference.currency,
-        value: String(snapshot.cbr_reference.value),
-      });
-      usdRubCbrDate.textContent = `официальный курс на ${formatCalendarDate(
-        snapshot.cbr_reference.effective_date,
-      )}`;
-    } else {
-      usdRubCbr.textContent = "Недоступен";
-      usdRubCbrDate.textContent = "Справочный источник временно не отвечает";
-    }
-
-    if (snapshot.cbr_next_reference) {
-      usdRubCbrNext.textContent = formatMoney({
-        currency: snapshot.cbr_next_reference.currency,
-        value: String(snapshot.cbr_next_reference.value),
-      });
-      usdRubCbrNextDate.textContent = `вступает в силу ${formatCalendarDate(
-        snapshot.cbr_next_reference.effective_date,
-      )}`;
-      usdRubCbrNextRow.classList.remove("hidden");
-    } else {
-      usdRubCbrNextRow.classList.add("hidden");
-      usdRubCbrNext.textContent = "—";
-      usdRubCbrNextDate.textContent = "—";
-    }
+    owlFxStatus.textContent = cached
+      ? `последние данные · ${formatCalendarDate(usd.effective_date)}`
+      : `ЦБ РФ · ${formatCalendarDate(usd.effective_date)}`;
+    cbrIndicatorsLoaded = true;
+    lastCbrIndicatorRefreshAt = Date.now();
   };
 
-  const loadUsdRubSnapshot = async () => {
-    if (!tbankIsConnected) {
-      renderUsdRubStreamStatus("disconnected");
+  const renderCbrIndicatorFailure = () => {
+    cbrMarketStrip.classList.add("is-unavailable");
+    if (cbrIndicatorsLoaded) {
+      cbrMarketStripStatus.textContent = (
+        "Банк России временно недоступен. Показаны последние успешно полученные значения."
+      );
+      setStateBadge(homeFxState, "Последние данные", "state-next");
+      owlFxStatus.textContent = "последние полученные данные";
       return;
     }
+
+    cbrMarketStripStatus.textContent = "Официальные показатели Банка России временно недоступны.";
+    setStateBadge(homeFxState, "Недоступно", "state-next");
+    owlFxStatus.textContent = "временно недоступно";
+  };
+
+  const loadCbrIndicators = async () => {
     try {
-      const snapshot = await api("/api/market/usd-rub", {method: "GET"});
-      renderUsdRubQuote(snapshot);
+      const snapshot = await api("/api/market/cbr-indicators", {method: "GET"});
+      renderCbrIndicators(snapshot);
     } catch (error) {
       if (error.status === 401) {
         location.reload();
         return;
       }
-      renderUsdRubStreamStatus(error.status === 409 ? "reconnect" : "unavailable");
+      renderCbrIndicatorFailure();
     }
   };
 
-  const stopUsdRubStream = () => {
-    if (usdRubEventSource) {
-      usdRubEventSource.close();
-      usdRubEventSource = null;
+  const startCbrIndicators = () => {
+    void loadCbrIndicators();
+    if (cbrIndicatorTimer !== null) {
+      return;
     }
-    if (usdRubFallbackTimer !== null) {
-      window.clearInterval(usdRubFallbackTimer);
-      usdRubFallbackTimer = null;
-    }
+    cbrIndicatorTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void loadCbrIndicators();
+      }
+    }, 5 * 60 * 1000);
   };
 
-  const startUsdRubStream = () => {
-    if (!tbankIsConnected || usdRubEventSource || usdRubFallbackTimer !== null) {
-      if (!tbankIsConnected) {
-        renderUsdRubStreamStatus("disconnected");
-      }
-      return;
+  const stopCbrIndicators = () => {
+    if (cbrIndicatorTimer !== null) {
+      window.clearInterval(cbrIndicatorTimer);
+      cbrIndicatorTimer = null;
     }
-
-    if (!("EventSource" in window)) {
-      void loadUsdRubSnapshot();
-      usdRubFallbackTimer = window.setInterval(() => {
-        if (document.visibilityState === "visible") {
-          void loadUsdRubSnapshot();
-        }
-      }, 5 * 1000);
-      return;
-    }
-
-    const stream = new EventSource("/api/market/usd-rub/stream");
-    usdRubEventSource = stream;
-
-    stream.addEventListener("quote", (event) => {
-      try {
-        renderUsdRubQuote(JSON.parse(event.data));
-      } catch {
-        renderUsdRubStreamStatus("unavailable");
-      }
-    });
-
-    stream.addEventListener("status", (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        renderUsdRubStreamStatus(payload.state || "unavailable");
-      } catch {
-        renderUsdRubStreamStatus("unavailable");
-      }
-    });
-
-    stream.onerror = () => {
-      renderUsdRubStreamStatus("unavailable");
-    };
   };
 
   const applySignedClass = (element, value) => {
@@ -3850,7 +3792,7 @@
       const explanation = [...blockers, ...metrics, ...evidenceNotes];
       details.textContent = explanation.length
         ? explanation.join(" · ")
-        : "Все текущие R4 screening-гейты пройдены";
+        : "Все текущие проверки кандидатов пройдены";
       row.append(title, details);
       balancingScreening.append(row);
     });
@@ -3919,7 +3861,7 @@
     if (payload?.status !== "observed" || payload.live_status !== "received") {
       appendEmptyState(
         proposalCreateOptions,
-        "Сначала нужен свежий полностью доказанный R4 preview.",
+        "Сначала нужен свежий полностью подтверждённый сценарий балансировки.",
       );
       return;
     }
@@ -4067,8 +4009,8 @@
     live_mandate_inactive: "Live-разрешение отозвано или истекло. Новая заявка запрещена; уже отправленную можно только сверить или отменить.",
     live_account_mismatch: "Подключите exact production-счёт, для которого создано предложение и live-разрешение.",
     live_write_access_required: "T-Invest не подтвердил полный доступ к выбранному production-счёту.",
-    live_canary_deploy_cash_only: "R7 canary допускает только сценарий размещения свободного cash.",
-    live_canary_buy_only: "R7 canary пока допускает только покупки; replacement/sell остаются заблокированы.",
+    live_canary_deploy_cash_only: "Реальное исполнение допускает только сценарий размещения свободных средств.",
+    live_canary_buy_only: "Реальное исполнение пока допускает только покупки; замена и продажа остаются заблокированы.",
     live_order_notional_cap_exceeded: "Предварительная стоимость превышает лимит одной live-заявки. Заявка не отправлена.",
     live_daily_notional_cap_exceeded: "Дневной live-лимит исчерпан. Заявка не отправлена.",
     live_buy_lots_exceed_available: "T-Invest не подтверждает доступное количество лотов для live-покупки.",
@@ -4162,7 +4104,7 @@
       || !(liveProfileId instanceof HTMLInputElement)
       || !(liveConfirm instanceof HTMLInputElement)
     ) {
-      throw new TypeError("R7 live mandate form has invalid controls");
+      throw new TypeError("Live mandate form has invalid controls");
     }
 
     liveMaxOrder.max = String(liveOperatorMaxOrder || 1);
@@ -4177,7 +4119,7 @@
       liveMandateRevoke.classList.add("hidden");
       setStateBadge(liveMandateStatus, "Выключен server-side", "state-next");
       liveMandateSummary.textContent = (
-        "R7 технически подготовлен, но production live не активирован: "
+         "Реальное исполнение технически подготовлено, но не активировано: "
         + "опубликованные legal-документы v6 описывают режим без реальных поручений. "
         + "Shadow и Sandbox продолжают работать."
       );
@@ -4404,7 +4346,7 @@
         element.disabled = !accountMatches;
         element.title = accountMatches
           ? "Создать run для exact-пакета этого Sandbox-счёта"
-          : "Sandbox требует тот же exact account_id, из которого построен R5 proposal.";
+          : "Sandbox требует тот же счёт, для которого создан подтверждённый план.";
         return;
       }
       if (mode !== "live") {
@@ -4635,7 +4577,7 @@
       showMessage(
         proposalMessage,
         error.status === 409
-          ? "Сценарий изменился или устарел. Обновите R4 preview и зафиксируйте новую версию."
+          ? "Сценарий изменился или устарел. Обновите балансировку и зафиксируйте новую версию."
           : "Не удалось зафиксировать предложение. Предыдущие версии не изменены.",
         true,
       );
@@ -4886,7 +4828,7 @@
     if (!executionHistory.childElementCount) {
       appendEmptyState(
         executionHistory,
-        "R6 ещё не запускался. Сначала подтвердите R5-предложение.",
+        "Проверка исполнения ещё не запускалась. Сначала подтвердите план.",
       );
       executionDetails.replaceChildren();
       appendEmptyState(executionDetails, "Состояние запуска появится после shadow/sandbox.");
@@ -4935,8 +4877,8 @@
       }
       executionHistory.replaceChildren();
       executionDetails.replaceChildren();
-      appendEmptyState(executionHistory, "Не удалось загрузить R6 execution ledger.");
-      setStateBadge(executionStatus, "Ошибка чтения R6", "state-error");
+      appendEmptyState(executionHistory, "Не удалось загрузить журнал исполнения.");
+      setStateBadge(executionStatus, "Ошибка чтения исполнения", "state-error");
     }
   };
 
@@ -5050,7 +4992,7 @@
           error,
           error.status === 409
             ? "Запуск заблокирован: предложение устарело или контур счёта изменился."
-            : "R6 запуск не выполнен. Production-заявка не создавалась.",
+            : "Проверка исполнения не запущена. Production-заявка не создавалась.",
         ),
         true,
       );
@@ -5103,7 +5045,7 @@
           error,
           error.status === 503
             ? "Provider недоступен. Run оставлен в безопасном состоянии для последующей сверки."
-            : "R6 действие не выполнено. Run не продвинут в небезопасное состояние.",
+            : "Действие исполнения не выполнено. Запуск не продвинут в небезопасное состояние.",
         ),
         true,
       );
@@ -5127,7 +5069,7 @@
       balancingScenarios.replaceChildren();
       balancingScreening.replaceChildren();
       renderProposalCreateOptions(null);
-      appendEmptyState(balancingScenarios, "R4 preview временно недоступен.");
+      appendEmptyState(balancingScenarios, "Сценарий балансировки временно недоступен.");
       setStateBadge(balancingStatus, "Ошибка preview", "state-error");
     }
   };
@@ -5213,15 +5155,13 @@
       portfolioFreeCash.textContent = "—";
       lastPortfolioRefreshAt = 0;
       overviewAccount.textContent = "T-Invest не подключён";
-      overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Интеграции».";
+      overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Подключения».";
       homeConnectionCard.classList.add("is-offline");
       topConnectionIndicator.classList.add("is-offline");
       topConnectionText.textContent = "T-Invest не подключён";
       setStateBadge(homeTbankState, "Не подключено", "state-next");
       setStateBadge(homePortfolioState, "Нет подключения", "state-next");
       setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
-      stopUsdRubStream();
-      renderUsdRubStreamStatus("disconnected");
       updateOwlState(null);
       updateGuard(null);
       hunterResults.replaceChildren();
@@ -5239,7 +5179,6 @@
     topConnectionText.textContent = "T-Invest подключён";
     setStateBadge(homeTbankState, "Работает", "state-ok");
     showMessage(hunterMessage, "");
-    startUsdRubStream();
     if (!portfolioLoaded) {
       setStateBadge(homePortfolioState, "Загружаем", "");
       setStateBadge(portfolioStateBadge, "Загружаем", "");
@@ -5296,8 +5235,6 @@
     portfolioLoaded = false;
     lastPortfolioSnapshot = null;
     lastPortfolioRefreshAt = 0;
-    stopUsdRubStream();
-    renderUsdRubStreamStatus("unavailable");
     setStateBadge(homeTbankState, "Ошибка", "state-error");
     setStateBadge(homePortfolioState, "Ошибка", "state-error");
     setStateBadge(tbankStatusBadge, "Ошибка", "state-error");
@@ -5423,6 +5360,7 @@
     authCard.classList.add("hidden");
     profilePanel.classList.remove("hidden");
     initializeNavigation();
+    startCbrIndicators();
     void loadTbankStatus();
     void loadInvestmentProfile();
     void loadBalancingPolicy();
@@ -5560,18 +5498,17 @@
   });
 
   document.addEventListener("visibilitychange", () => {
-    const visible = document.visibilityState === "visible";
-    const stale = Date.now() - lastPortfolioRefreshAt >= 5 * 60 * 1000;
-
-    if (!visible) {
-      stopUsdRubStream();
+    if (document.visibilityState !== "visible") {
       return;
     }
 
-    if (tbankIsConnected) {
-      startUsdRubStream();
+    const cbrStale = Date.now() - lastCbrIndicatorRefreshAt >= 5 * 60 * 1000;
+    if (cbrStale) {
+      void loadCbrIndicators();
     }
-    if (tbankIsConnected && stale && !portfolioRequestInFlight) {
+
+    const portfolioStale = Date.now() - lastPortfolioRefreshAt >= 5 * 60 * 1000;
+    if (tbankIsConnected && portfolioStale && !portfolioRequestInFlight) {
       void loadPortfolioData({force: true});
     }
   });
@@ -6222,7 +6159,7 @@
     deleteAccountSubmit.disabled = true;
     deleteAccountCancel.disabled = true;
     deleteAccountStart.disabled = true;
-    stopUsdRubStream();
+    stopCbrIndicators();
 
     try {
       await api("/api/account/delete", {
@@ -6261,7 +6198,7 @@
   });
 
   logoutButton.addEventListener("click", async () => {
-    stopUsdRubStream();
+    stopCbrIndicators();
     try {
       await api("/api/auth/logout", {method: "POST"});
     } finally {

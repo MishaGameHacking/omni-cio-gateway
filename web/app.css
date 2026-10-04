@@ -2155,6 +2155,21 @@ textarea:disabled {
     animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
   }
+
+  .market-strip-track {
+    width: 100%;
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .market-strip-set {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .market-strip-set[aria-hidden="true"] {
+    display: none;
+  }
 }
 
 @media (prefers-contrast: more) {
@@ -2296,18 +2311,17 @@ textarea:disabled {
   line-height: 1.4;
 }
 
-.command-grid,
-.command-lower-grid {
+.command-grid {
+  margin-bottom: 16px;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
   gap: 16px;
 }
 
-.command-grid {
-  margin-bottom: 16px;
-}
-
 .command-lower-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
   align-items: stretch;
 }
 
@@ -2438,42 +2452,106 @@ textarea:disabled {
   background: var(--accent-soft);
 }
 
-.market-card-compact {
-  margin: 0;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
+.market-strip {
+  position: relative;
+  min-height: 52px;
+  margin: 0 0 16px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--accent-soft) 44%, var(--surface)),
+      var(--surface) 48%,
+      color-mix(in srgb, var(--accent-soft) 24%, var(--surface))
+    );
+  box-shadow: var(--shadow-card);
 }
 
-.market-card-compact .market-price-row {
-  margin-top: 14px;
+.market-strip-accent {
+  width: 4px;
+  height: 30px;
+  flex: 0 0 auto;
+  margin-left: 12px;
+  border-radius: 999px;
+  background: var(--accent);
 }
 
-.market-card-compact .market-price-row > strong {
-  font-size: clamp(32px, 4vw, 44px);
+.market-strip-viewport {
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 3%, #000 97%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 3%, #000 97%, transparent);
 }
 
-.market-card-compact .market-meta {
-  padding: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: 16px;
-  border-top: 1px solid var(--border);
-  border-left: 0;
+.market-strip-track {
+  width: 200%;
+  display: flex;
+  align-items: center;
+  will-change: transform;
+  animation: market-strip-cycle 18s cubic-bezier(.45, 0, .55, 1) infinite;
 }
 
-.market-card-compact .market-meta > div {
+.market-strip-set {
+  width: 50%;
+  flex: 0 0 50%;
   min-height: 50px;
-  grid-template-columns: 1fr;
-  align-content: center;
-  gap: 2px;
+  padding: 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  gap: 24px;
+  white-space: nowrap;
 }
 
-.market-card-compact .market-meta > div:nth-child(2) {
-  border-top: 0;
+.market-strip-item {
+  position: relative;
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.market-card-compact .market-meta dd,
-.market-card-compact .market-meta small {
-  text-align: left;
+.market-strip-item strong {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.015em;
+}
+
+.market-strip-item + .market-strip-item::before {
+  content: "•";
+  position: absolute;
+  left: -16px;
+  color: var(--border-strong);
+}
+
+.market-strip.is-unavailable {
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--border));
+}
+
+.market-strip:hover .market-strip-track {
+  animation-play-state: paused;
+}
+
+@keyframes market-strip-cycle {
+  0%,
+  18% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  82%,
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
 }
 
 .command-connection-card {
@@ -2560,12 +2638,34 @@ textarea:disabled {
     width: fit-content;
   }
 
-  .market-card-compact .market-meta {
-    grid-template-columns: 1fr;
+  .market-strip {
+    min-height: 48px;
+    margin-inline: -2px;
+    border-radius: 14px;
   }
 
-  .market-card-compact .market-meta > div:nth-child(2) {
-    border-top: 1px solid var(--border);
+  .market-strip-accent {
+    height: 26px;
+    margin-left: 9px;
+  }
+
+  .market-strip-set {
+    min-height: 46px;
+    padding: 0 14px;
+    gap: 18px;
+  }
+
+  .market-strip-item {
+    gap: 5px;
+    font-size: 12px;
+  }
+
+  .market-strip-item strong {
+    font-size: 14px;
+  }
+
+  .market-strip-item + .market-strip-item::before {
+    left: -11px;
   }
 }
 
