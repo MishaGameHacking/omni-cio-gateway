@@ -33,6 +33,7 @@ from .tbank import (
     TBankHistoricCandle,
     TBankInstrumentMetadata,
     TBankLastPrice,
+    TBankMarketYield,
     TBankMoney,
     TBankRating,
     TBankUnavailable,
@@ -254,6 +255,117 @@ def build_balancing_payload(
     }
 
 
+def _selected_live_rows(
+    prefiltered: tuple[dict[str, object], ...],
+    shortlist_yields: tuple[TBankMarketYield, ...],
+    observed_at: datetime,
+) -> tuple[dict[str, object], ...]:
+    yield_by_uid = {
+        item.instrument_uid: item
+        for item in shortlist_yields
+        if _fresh_market_time(item.time, observed_at)
+        and (_decimal(item.yield_percent) or Decimal("0")) > 0
+    }
+    ranked = sorted(
+        (
+            (
+                _decimal(yield_by_uid[str(row["instrument_uid"])].yield_percent)
+                or Decimal("0"),
+                str(row["instrument_uid"]),
+                row,
+            )
+            for row in prefiltered[:100]
+            if str(row["instrument_uid"]) in yield_by_uid
+        ),
+        key=lambda item: (-item[0], item[1]),
+    )
+    return tuple(item[2] for item in ranked[:LIVE_CANDIDATE_LIMIT])
+
+
+def _candidate_live_evidence_maps(
+    broker: BrokerService,
+    user_id: UUID,
+    selected: tuple[dict[str, object], ...],
+) -> tuple[dict[str, TBankAssetFundamental], dict[str, TBankLastPrice]]:
+    fundamentals = broker.candidate_fundamentals(
+        user_id,
+        tuple(
+            str(row.get("asset_uid") or "")
+            for row in selected
+            if row.get("asset_uid")
+        ),
+    )
+    prices = broker.candidate_last_prices(
+        user_id,
+        tuple(str(row["instrument_uid"]) for row in selected),
+    )
+    return (
+        {item.asset_uid: item for item in fundamentals},
+        {item.instrument_uid: item for item in prices},
+    )
+
+
+def _enrich_live_candidate_rows(
+    *,
+    rows: tuple[dict[str, object], ...],
+    selected: tuple[dict[str, object], ...],
+    user_id: UUID,
+    context: dict[str, object],
+    profile: InvestmentProfileRecord,
+    policy_record: BalancingPolicyRecord,
+    broker: BrokerService,
+    fundamental_by_asset: dict[str, TBankAssetFundamental],
+    price_by_uid: dict[str, TBankLastPrice],
+    observed_at: datetime,
+) -> tuple[tuple[Candidate, ...], list[dict[str, object]]]:
+    selected_uids = {
+        str(item.get("instrument_uid") or "")
+        for item in selected
+    }
+    enriched: list[Candidate] = []
+    live_sources: list[dict[str, object]] = []
+    for row in rows:
+        uid = str(row.get("instrument_uid") or "")
+        if uid not in selected_uids:
+            candidate = _with_candidate_blocker(
+                _candidate(
+                    row,
+                    context=context,
+                    observed_at=observed_at,
+                ),
+                "live_enrichment_not_selected",
+            )
+            sources: tuple[dict[str, object], ...] = ()
+        else:
+            try:
+                candidate, sources = _enrich_bond_candidate(
+                    user_id=user_id,
+                    row=row,
+                    context=context,
+                    profile=profile,
+                    policy_record=policy_record,
+                    broker=broker,
+                    fundamental=fundamental_by_asset.get(
+                        str(row.get("asset_uid") or "")
+                    ),
+                    last_price=price_by_uid.get(uid),
+                    observed_at=observed_at,
+                )
+            except (BrokerConnectionError, TBankUnavailable, ValueError):
+                candidate = _with_candidate_blocker(
+                    _candidate(
+                        row,
+                        context=context,
+                        observed_at=observed_at,
+                    ),
+                    "live_candidate_evidence_unavailable",
+                )
+                sources = ()
+        enriched.append(candidate)
+        live_sources.extend(sources)
+    return tuple(enriched), live_sources
+
+
 def build_live_balancing_payload(
     *,
     user_id: UUID,
@@ -295,10 +407,7 @@ def build_live_balancing_payload(
     try:
         shortlist_yields = broker.candidate_market_yields(
             user_id,
-            tuple(
-                str(row["instrument_uid"])
-                for row in prefiltered[:100]
-            ),
+            tuple(str(row["instrument_uid"]) for row in prefiltered[:100]),
         )
     except (BrokerConnectionError, TBankUnavailable, ValueError):
         return {
@@ -308,26 +417,7 @@ def build_live_balancing_payload(
             "live_candidate_count": 0,
         }
 
-    yield_by_uid = {
-        item.instrument_uid: item
-        for item in shortlist_yields
-        if _fresh_market_time(item.time, observed_at)
-        and (_decimal(item.yield_percent) or Decimal("0")) > 0
-    }
-    ranked = sorted(
-        (
-            (
-                _decimal(yield_by_uid[str(row["instrument_uid"])].yield_percent)
-                or Decimal("0"),
-                str(row["instrument_uid"]),
-                row,
-            )
-            for row in prefiltered[:100]
-            if str(row["instrument_uid"]) in yield_by_uid
-        ),
-        key=lambda item: (-item[0], item[1]),
-    )
-    selected = tuple(item[2] for item in ranked[:LIVE_CANDIDATE_LIMIT])
+    selected = _selected_live_rows(prefiltered, shortlist_yields, observed_at)
     if not selected:
         return {
             **durable,
@@ -336,17 +426,10 @@ def build_live_balancing_payload(
         }
 
     try:
-        fundamentals = broker.candidate_fundamentals(
+        fundamental_by_asset, price_by_uid = _candidate_live_evidence_maps(
+            broker,
             user_id,
-            tuple(
-                str(row.get("asset_uid") or "")
-                for row in selected
-                if row.get("asset_uid")
-            ),
-        )
-        prices = broker.candidate_last_prices(
-            user_id,
-            tuple(str(row["instrument_uid"]) for row in selected),
+            selected,
         )
     except (BrokerConnectionError, TBankUnavailable, ValueError):
         return {
@@ -356,67 +439,24 @@ def build_live_balancing_payload(
             "live_candidate_count": len(selected),
         }
 
-    fundamental_by_asset = {
-        item.asset_uid: item
-        for item in fundamentals
-    }
-    price_by_uid = {
-        item.instrument_uid: item
-        for item in prices
-    }
-    selected_uids = {
-        str(item.get("instrument_uid") or "")
-        for item in selected
-    }
-    enriched: list[Candidate] = []
-    live_sources: list[dict[str, object]] = []
-    for row in rows:
-        uid = str(row.get("instrument_uid") or "")
-        if uid not in selected_uids:
-            enriched.append(
-                _with_candidate_blocker(
-                    _candidate(
-                        row,
-                        context=context,
-                        observed_at=observed_at,
-                    ),
-                    "live_enrichment_not_selected",
-                )
-            )
-            continue
-        try:
-            candidate, sources = _enrich_bond_candidate(
-                user_id=user_id,
-                row=row,
-                context=context,
-                profile=profile,
-                policy_record=policy_record,
-                broker=broker,
-                fundamental=fundamental_by_asset.get(
-                    str(row.get("asset_uid") or "")
-                ),
-                last_price=price_by_uid.get(uid),
-                observed_at=observed_at,
-            )
-        except (BrokerConnectionError, TBankUnavailable, ValueError):
-            candidate = _with_candidate_blocker(
-                _candidate(
-                    row,
-                    context=context,
-                    observed_at=observed_at,
-                ),
-                "live_candidate_evidence_unavailable",
-            )
-            sources = ()
-        enriched.append(candidate)
-        live_sources.extend(sources)
-
+    enriched, live_sources = _enrich_live_candidate_rows(
+        rows=rows,
+        selected=selected,
+        user_id=user_id,
+        context=context,
+        profile=profile,
+        policy_record=policy_record,
+        broker=broker,
+        fundamental_by_asset=fundamental_by_asset,
+        price_by_uid=price_by_uid,
+        observed_at=observed_at,
+    )
     payload = build_balancing_payload(
         profile=profile,
         policy_record=policy_record,
         context=context,
         now=observed_at,
-        candidates_override=tuple(enriched),
+        candidates_override=enriched,
     )
     payload["live_status"] = "received"
     payload["live_candidate_count"] = len(selected)
@@ -439,7 +479,6 @@ def build_live_balancing_payload(
         "execution_enabled": False,
     }
     return payload
-
 
 def _candidate_static_live_eligible(row: dict[str, object]) -> bool:
     required_tests = row.get("required_tests")
