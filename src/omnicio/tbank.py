@@ -783,7 +783,12 @@ def _read_tbank_response(
             request,
             timeout=timeout_seconds,
         ) as response:
-            return response.read().decode()
+            raw = response.read()
+            if not isinstance(raw, bytes):
+                raise TBankUnavailable(
+                    "T-Invest API returned invalid response body"
+                )
+            return raw.decode()
     except urllib.error.HTTPError as exc:
         _raise_tbank_http_error(method, exc)
     except urllib.error.URLError as exc:
