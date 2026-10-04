@@ -397,6 +397,106 @@ class TBankAssetFundamental:
     fiscal_period_end_date: datetime | None
 
 
+def _validate_exchange_candle_window(
+    from_at: datetime,
+    to_at: datetime,
+    interval: str,
+) -> None:
+    bounds = {
+        "CANDLE_INTERVAL_5_MIN": (timedelta(minutes=5), timedelta(days=7)),
+        "CANDLE_INTERVAL_30_MIN": (timedelta(minutes=30), timedelta(weeks=3)),
+        "CANDLE_INTERVAL_HOUR": (timedelta(hours=1), timedelta(days=93)),
+        "CANDLE_INTERVAL_4_HOUR": (timedelta(hours=4), timedelta(days=93)),
+        "CANDLE_INTERVAL_DAY": (timedelta(days=1), timedelta(days=366 * 6)),
+    }.get(interval)
+    if bounds is None:
+        raise ValueError("unsupported candle interval")
+    if from_at.tzinfo is None or to_at.tzinfo is None:
+        raise ValueError("candle boundaries must be timezone-aware")
+    if from_at > to_at:
+        raise ValueError("candle start must not be after end")
+
+    requested_window = to_at - from_at
+    min_window, max_window = bounds
+    if requested_window < min_window:
+        raise ValueError("candle window must cover at least one candle interval")
+    if requested_window > max_window:
+        raise ValueError("candle window exceeds interval limit")
+
+
+def _required_historic_candle_price(
+    item: dict[str, object],
+    key: str,
+) -> str:
+    value = _quotation(item.get(key))
+    if value is None:
+        raise TBankUnavailable("T-Invest historic candle is missing required fields")
+    return value
+
+
+def _historic_candle_volume(value: object) -> int:
+    if isinstance(value, bool):
+        raise TBankUnavailable("T-Invest historic candle is missing required fields")
+    try:
+        volume = int(str(value))
+    except ValueError as exc:
+        raise TBankUnavailable("T-Invest historic candle has invalid volume") from exc
+    if volume < 0:
+        raise TBankUnavailable("T-Invest historic candle has negative volume")
+    return volume
+
+
+def _historic_exchange_candle(
+    raw: object,
+    instrument_uid: str,
+) -> TBankHistoricCandle:
+    item = _required_object(raw, "historic candle")
+    open_value = _required_historic_candle_price(item, "open")
+    high = _required_historic_candle_price(item, "high")
+    low = _required_historic_candle_price(item, "low")
+    close = _required_historic_candle_price(item, "close")
+    candle_time = _optional_provider_timestamp(item.get("time"))
+    complete = item.get("isComplete")
+    if candle_time is None or not isinstance(complete, bool):
+        raise TBankUnavailable("T-Invest historic candle is missing required fields")
+
+    source_name = _text(item.get("candleSourceType")).strip()
+    if source_name != "CANDLE_SOURCE_EXCHANGE":
+        raise TBankUnavailable(
+            "T-Invest historic candle is not confirmed exchange-sourced"
+        )
+
+    volume = _historic_candle_volume(item.get("volume"))
+    open_decimal = Decimal(open_value)
+    high_decimal = Decimal(high)
+    low_decimal = Decimal(low)
+    close_decimal = Decimal(close)
+    if any(
+        value <= 0
+        for value in (open_decimal, high_decimal, low_decimal, close_decimal)
+    ):
+        raise TBankUnavailable("T-Invest historic candle has non-positive OHLC")
+    if high_decimal < low_decimal:
+        raise TBankUnavailable("T-Invest historic candle has invalid high/low")
+    if not (
+        low_decimal <= open_decimal <= high_decimal
+        and low_decimal <= close_decimal <= high_decimal
+    ):
+        raise TBankUnavailable("T-Invest historic candle OHLC is inconsistent")
+
+    return TBankHistoricCandle(
+        instrument_uid=instrument_uid,
+        close=close,
+        volume_lots=volume,
+        time=candle_time,
+        is_complete=complete,
+        source=source_name,
+        open=open_value,
+        high=high,
+        low=low,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class TBankInvestClient:
     timeout_seconds: int = 10
@@ -539,121 +639,34 @@ class TBankInvestClient:
         interval: str,
     ) -> tuple[TBankHistoricCandle, ...]:
         instrument = _validate_provider_id(instrument_uid, "instrument uid")
-        allowed_intervals = {
-            "CANDLE_INTERVAL_5_MIN": (timedelta(minutes=5), timedelta(days=7)),
-            "CANDLE_INTERVAL_30_MIN": (timedelta(minutes=30), timedelta(weeks=3)),
-            "CANDLE_INTERVAL_HOUR": (timedelta(hours=1), timedelta(days=93)),
-            "CANDLE_INTERVAL_4_HOUR": (timedelta(hours=4), timedelta(days=93)),
-            "CANDLE_INTERVAL_DAY": (timedelta(days=1), timedelta(days=366 * 6)),
-        }
-        interval_bounds = allowed_intervals.get(interval)
-        if interval_bounds is None:
-            raise ValueError("unsupported candle interval")
-        min_window, max_window = interval_bounds
-        if from_at.tzinfo is None or to_at.tzinfo is None:
-            raise ValueError("candle boundaries must be timezone-aware")
-        if from_at > to_at:
-            raise ValueError("candle start must not be after end")
-        requested_window = to_at - from_at
-        if requested_window < min_window:
-            raise ValueError("candle window must cover at least one candle interval")
-        if requested_window > max_window:
-            raise ValueError("candle window exceeds interval limit")
-
-        body: dict[str, object] = {
-            "instrumentId": instrument,
-            "from": _utc_timestamp(from_at),
-            "to": _utc_timestamp(to_at),
-            "interval": interval,
-            "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
-        }
-
+        _validate_exchange_candle_window(from_at, to_at, interval)
         payload = self._post(
             token=token,
             environment=environment,
             service="MarketDataService",
             method="GetCandles",
-            body=body,
+            body={
+                "instrumentId": instrument,
+                "from": _utc_timestamp(from_at),
+                "to": _utc_timestamp(to_at),
+                "interval": interval,
+                "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+            },
         )
+
         result: list[TBankHistoricCandle] = []
         seen_times: set[datetime] = set()
         for raw in _required_list(payload, "candles"):
-            item = _required_object(raw, "historic candle")
-            open_value = _quotation(item.get("open"))
-            high = _quotation(item.get("high"))
-            low = _quotation(item.get("low"))
-            close = _quotation(item.get("close"))
-            candle_time = _optional_provider_timestamp(item.get("time"))
-            volume_raw = item.get("volume")
-            complete = item.get("isComplete")
-            source_name = _text(item.get("candleSourceType")).strip()
-            if (
-                open_value is None
-                or high is None
-                or low is None
-                or close is None
-                or candle_time is None
-                or isinstance(volume_raw, bool)
-                or not isinstance(complete, bool)
-            ):
-                raise TBankUnavailable(
-                    "T-Invest historic candle is missing required fields"
-                )
-            open_decimal = Decimal(open_value)
-            high_decimal = Decimal(high)
-            low_decimal = Decimal(low)
-            close_decimal = Decimal(close)
-            if any(
-                value <= 0
-                for value in (open_decimal, high_decimal, low_decimal, close_decimal)
-            ):
-                raise TBankUnavailable(
-                    "T-Invest historic candle has non-positive OHLC"
-                )
-            try:
-                volume = int(str(volume_raw))
-            except ValueError as exc:
-                raise TBankUnavailable(
-                    "T-Invest historic candle has invalid volume"
-                ) from exc
-            if volume < 0:
-                raise TBankUnavailable(
-                    "T-Invest historic candle has negative volume"
-                )
-            if source_name != "CANDLE_SOURCE_EXCHANGE":
-                raise TBankUnavailable(
-                    "T-Invest historic candle is not confirmed exchange-sourced"
-                )
-            if candle_time in seen_times:
+            candle = _historic_exchange_candle(raw, instrument)
+            if candle.time in seen_times:
                 raise TBankUnavailable(
                     "T-Invest historic candles contain duplicate timestamps"
                 )
-            if high_decimal < low_decimal:
-                raise TBankUnavailable("T-Invest historic candle has invalid high/low")
-            if (
-                open_decimal < low_decimal
-                or open_decimal > high_decimal
-                or close_decimal < low_decimal
-                or close_decimal > high_decimal
-            ):
-                raise TBankUnavailable("T-Invest historic candle OHLC is inconsistent")
-            seen_times.add(candle_time)
-            result.append(
-                TBankHistoricCandle(
-                    instrument_uid=instrument,
-                    close=close,
-                    volume_lots=volume,
-                    time=candle_time,
-                    is_complete=complete,
-                    source=source_name,
-                    open=open_value,
-                    high=high,
-                    low=low,
-                )
-            )
+            seen_times.add(candle.time)
+            result.append(candle)
         return tuple(result)
 
-    def get_daily_exchange_candles(
+    def get_daily_exchange_candles(    def get_daily_exchange_candles(
         self,
         token: str,
         environment: TBankEnvironment,
