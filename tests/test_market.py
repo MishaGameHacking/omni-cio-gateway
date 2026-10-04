@@ -6,7 +6,13 @@ from uuid import UUID
 
 import pytest
 
-from omnicio.cbr import CBRClient, CBRRate, CBRUnavailable
+from omnicio.cbr import (
+    CBRClient,
+    CBRIndicators,
+    CBRKeyRate,
+    CBRRate,
+    CBRUnavailable,
+)
 from omnicio.market import MarketService
 from omnicio.tbank import (
     TBankFxQuote,
@@ -42,6 +48,39 @@ def _cbr_xml(*, effective_date: str, value: str) -> bytes:
     <Value>{value}</Value>
   </Valute>
 </ValCurs>
+""".encode()
+
+
+def _cbr_indicators_xml(*, effective_date: str, usd: str, eur: str) -> bytes:
+    return f"""<?xml version="1.0" encoding="windows-1251"?>
+<ValCurs Date="{effective_date}" name="Foreign Currency Market">
+  <Valute ID="R01235">
+    <CharCode>USD</CharCode>
+    <Nominal>1</Nominal>
+    <Value>{usd}</Value>
+  </Valute>
+  <Valute ID="R01239">
+    <CharCode>EUR</CharCode>
+    <Nominal>1</Nominal>
+    <Value>{eur}</Value>
+  </Valute>
+</ValCurs>
+""".encode()
+
+
+def _cbr_key_rate_soap(*, effective_date: str, rate: str) -> bytes:
+    embedded = (
+        f"&lt;Root&gt;&lt;KR&gt;&lt;DT&gt;{effective_date}T00:00:00&lt;/DT&gt;"
+        f"&lt;Rate&gt;{rate}&lt;/Rate&gt;&lt;/KR&gt;&lt;/Root&gt;"
+    )
+    return f"""<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <KeyRateXMLResponse xmlns="http://web.cbr.ru/">
+      <KeyRateXMLResult>{embedded}</KeyRateXMLResult>
+    </KeyRateXMLResponse>
+  </soap:Body>
+</soap:Envelope>
 """.encode()
 
 
@@ -85,6 +124,67 @@ def test_cbr_client_backs_off_after_initial_provider_failure() -> None:
             client.usd_rub_rate(requested_date)
 
     urlopen.assert_called_once()
+
+
+def test_cbr_client_fetches_and_caches_compact_public_indicators() -> None:
+    client = CBRClient(indicator_cache_seconds=300)
+    daily = _cbr_indicators_xml(
+        effective_date="03.10.2026",
+        usd="83,4839",
+        eur="94,3201",
+    )
+    key_rate = _cbr_key_rate_soap(effective_date="2026-10-02", rate="14.00")
+
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=[
+            FakeXmlResponse(daily),
+            FakeXmlResponse(key_rate),
+        ],
+    ) as urlopen:
+        indicators = client.latest_indicators()
+        cached = client.latest_indicators()
+
+    assert indicators == cached
+    assert indicators.usd_rub.value == "83.4839"
+    assert indicators.usd_rub.effective_date == date(2026, 10, 3)
+    assert indicators.eur_rub.value == "94.3201"
+    assert indicators.eur_rub.effective_date == date(2026, 10, 3)
+    assert indicators.key_rate.value == "14"
+    assert indicators.key_rate.effective_date == date(2026, 10, 2)
+    assert urlopen.call_count == 2
+
+    daily_request = urlopen.call_args_list[0].args[0]
+    key_rate_request = urlopen.call_args_list[1].args[0]
+    assert daily_request.full_url == "https://www.cbr.ru/scripts/XML_daily.asp"
+    assert key_rate_request.full_url == "https://www.cbr.ru/DailyInfoWebServ/DailyInfo.asmx"
+    assert key_rate_request.data is not None
+    assert b"<KeyRateXML" in key_rate_request.data
+    assert b"<fromDate>" in key_rate_request.data
+    assert b"<ToDate>" in key_rate_request.data
+
+
+def test_cbr_client_rejects_key_rate_without_current_effective_value() -> None:
+    client = CBRClient()
+    daily = _cbr_indicators_xml(
+        effective_date="03.10.2026",
+        usd="83,4839",
+        eur="94,3201",
+    )
+    future_key_rate = _cbr_key_rate_soap(
+        effective_date="2999-01-01",
+        rate="99.00",
+    )
+
+    with patch(
+        "urllib.request.urlopen",
+        side_effect=[
+            FakeXmlResponse(daily),
+            FakeXmlResponse(future_key_rate),
+        ],
+    ):
+        with pytest.raises(CBRUnavailable, match="no current key rate"):
+            client.latest_indicators()
 
 
 class FakeBroker:
@@ -182,6 +282,48 @@ class FakeCBR:
             effective_date=date(2026, 10, 2),
             fetched_at=datetime(2026, 10, 1, 15, 30, tzinfo=UTC),
         )
+
+    def latest_indicators(self) -> CBRIndicators:
+        fetched_at = datetime(2026, 10, 3, 7, 0, tzinfo=UTC)
+        return CBRIndicators(
+            usd_rub=CBRRate(
+                currency="RUB",
+                value="83.4839",
+                nominal=1,
+                effective_date=date(2026, 10, 3),
+                fetched_at=fetched_at,
+            ),
+            eur_rub=CBRRate(
+                currency="RUB",
+                value="94.3201",
+                nominal=1,
+                effective_date=date(2026, 10, 3),
+                fetched_at=fetched_at,
+            ),
+            key_rate=CBRKeyRate(
+                value="14",
+                effective_date=date(2026, 10, 2),
+                fetched_at=fetched_at,
+            ),
+            fetched_at=fetched_at,
+        )
+
+
+def test_market_service_maps_broker_independent_cbr_indicators() -> None:
+    service = MarketService(
+        broker=FakeBroker(datetime.now(UTC).isoformat()),  # type: ignore[arg-type]
+        cbr=FakeCBR(),  # type: ignore[arg-type]
+    )
+
+    snapshot = service.cbr_indicators()
+
+    assert snapshot.source == "Bank of Russia"
+    assert snapshot.key_rate.code == "KEY_RATE"
+    assert snapshot.key_rate.value == "14"
+    assert snapshot.key_rate.unit == "percent"
+    assert snapshot.key_rate.effective_date == "2026-10-02"
+    assert snapshot.usd_rub.value == "83.4839"
+    assert snapshot.eur_rub.value == "94.3201"
 
 
 def test_market_service_separates_market_today_cbr_and_next_cbr_rate() -> None:
