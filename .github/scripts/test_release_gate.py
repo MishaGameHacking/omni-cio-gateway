@@ -259,6 +259,20 @@ class SelfHostedCiPolicyTests(unittest.TestCase):
 
 
 
+class SonarScopePolicyTests(unittest.TestCase):
+    def test_postgresql_migrations_only_are_excluded_from_incompatible_plsql_analysis(self) -> None:
+        config = (
+            pathlib.Path(__file__).resolve().parents[2]
+            / ".sonarcloud.properties"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("sonar.exclusions=migrations/*.sql", config)
+        for forbidden in ("src/**", "web/**", "tests/**", "**/*.py", "**/*.js"):
+            self.assertNotIn(forbidden, config)
+        self.assertNotIn("sonar.issue.ignore", config)
+        self.assertNotIn("sonar.coverage.exclusions", config)
+
+
 class GitHubTransportTests(unittest.TestCase):
     def test_uses_fixed_https_host_get_and_closes_connection(self) -> None:
         response = Mock(status=200)

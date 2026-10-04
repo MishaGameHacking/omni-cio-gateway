@@ -14,18 +14,11 @@ from typing import Literal, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from .broker import (
-    BrokerAccountNotAccessible,
-    BrokerConnectionError,
-    BrokerNotConnected,
-    BrokerService,
-)
+from .broker import BrokerConnectionError, BrokerService
 from .config import load_settings
 from .db import Database
 from .intelligence import build_tbank_evidence
-from .portfolio import PortfolioAnalysisError
 from .portfolio_store import BrokerSyncState, PortfolioStore
-from .security import SecurityValueError
 from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
 
 logger = logging.getLogger(__name__)
@@ -315,13 +308,9 @@ class PortfolioObserver:
                 history_items_inserted=history_items_inserted,
             )
         except (
-            BrokerAccountNotAccessible,
-            BrokerNotConnected,
             BrokerConnectionError,
             TBankTokenRejected,
             TBankUnavailable,
-            PortfolioAnalysisError,
-            SecurityValueError,
             ValueError,
         ) as exc:
             details["stage_error"] = type(exc).__name__

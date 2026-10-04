@@ -554,10 +554,13 @@ def _eligible_for_live_enrichment(
     )
 
 def _with_candidate_blocker(candidate: Candidate, reason: str) -> Candidate:
-    return replace(
-        candidate,
-        access_reasons=tuple(
-            dict.fromkeys((*candidate.access_reasons, reason))
+    return cast(
+        Candidate,
+        replace(
+            candidate,
+            access_reasons=tuple(
+                dict.fromkeys((*candidate.access_reasons, reason))
+            ),
         ),
     )
 
