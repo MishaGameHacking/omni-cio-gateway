@@ -252,6 +252,76 @@ def test_market_service_instrument_snapshot_preserves_quote_time_ohlc_and_status
     assert candle.is_complete is True
 
 
+def test_market_service_future_quote_timestamp_fails_closed() -> None:
+    broker = FakeBroker(datetime.now(UTC).isoformat())
+
+    def future_price(
+        user_id: UUID,
+        instrument_uid: str,
+    ) -> TBankLastPrice:
+        assert user_id == UUID("00000000-0000-0000-0000-000000000001")
+        assert instrument_uid == "uid-1"
+        return TBankLastPrice(
+            instrument_uid="uid-1",
+            price="102.5",
+            time=datetime.now(UTC) + timedelta(hours=1),
+        )
+
+    broker.market_last_price = future_price  # type: ignore[method-assign]
+    service = MarketService(
+        broker=broker,  # type: ignore[arg-type]
+        cbr=FakeCBR(),  # type: ignore[arg-type]
+        live_after_seconds=30,
+    )
+
+    state = service.instrument_live_state(
+        UUID("00000000-0000-0000-0000-000000000001"),
+        "uid-1",
+    )
+
+    assert state.quote_status == "future"
+    assert state.last_price is None
+    assert state.quote_age_seconds is None
+    assert state.quote_time is not None
+
+
+def test_market_service_one_year_period_stays_within_provider_request_window() -> None:
+    class OneYearBroker(FakeBroker):
+        def market_exchange_candles(
+            self,
+            user_id: UUID,
+            instrument_uid: str,
+            *,
+            from_at: datetime,
+            to_at: datetime,
+            interval: str,
+        ) -> tuple[TBankHistoricCandle, ...]:
+            assert to_at - from_at == timedelta(days=365)
+            assert interval == "CANDLE_INTERVAL_DAY"
+            return super().market_exchange_candles(
+                user_id,
+                instrument_uid,
+                from_at=to_at - timedelta(days=31),
+                to_at=to_at,
+                interval="CANDLE_INTERVAL_4_HOUR",
+            )
+
+    service = MarketService(
+        broker=OneYearBroker(datetime.now(UTC).isoformat()),  # type: ignore[arg-type]
+        cbr=FakeCBR(),  # type: ignore[arg-type]
+        live_after_seconds=30,
+    )
+
+    snapshot = service.instrument_snapshot(
+        UUID("00000000-0000-0000-0000-000000000001"),
+        "uid-1",
+        period="1y",
+    )
+
+    assert snapshot.period == "1y"
+    assert snapshot.interval == "CANDLE_INTERVAL_DAY"
+
+
 def test_market_service_rejects_malformed_provider_ohlc_as_unavailable() -> None:
     broker = FakeBroker(datetime.now(UTC).isoformat())
     original = broker.market_exchange_candles
