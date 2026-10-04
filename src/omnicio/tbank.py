@@ -23,7 +23,7 @@ _REST_BASES: dict[TBankEnvironment, str] = {
     "sandbox": "https://sandbox-invest-public-api.tbank.ru/rest/",
 }
 _API_PREFIX = "tinkoff.public.invest.api.contract.v1."
-_INSTRUMENT_UID_FIELD = _INSTRUMENT_UID_FIELD
+_INSTRUMENT_UID_FIELD = "instrument uid"
 
 
 class TBankError(RuntimeError):
