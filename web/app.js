@@ -1672,6 +1672,21 @@
     }
   };
 
+  const instrumentMarketCandleNote = (candles, incompleteCount) => {
+    if (!candles.length) {
+      return "T-Invest не вернул свечи для выбранного периода. Последняя цена показана отдельно.";
+    }
+    let completionNote = "Все показанные свечи завершены.";
+    if (incompleteCount) {
+      completionNote = `Незавершённых: ${incompleteCount}; они отмечены пунктиром.`;
+    }
+    return [
+      `Свечей: ${candles.length}.`,
+      completionNote,
+      "Время свечи и время загрузки — разные значения.",
+    ].join(" ");
+  };
+
   const renderInstrumentMarketChart = (payload) => {
     const source = payload !== null && typeof payload === "object" ? payload : {};
     instrumentMarketPayload = source;
@@ -1707,15 +1722,10 @@
       source.source || "T-Invest",
       source.observed_at ? `загружено ${formatExactDateTime(source.observed_at)}` : "",
     ].filter(Boolean).join(" · ");
-    instrumentMarketNote.textContent = candles.length
-      ? [
-          `Свечей: ${candles.length}.`,
-          incompleteCount
-            ? `Незавершённых: ${incompleteCount}; они отмечены пунктиром.`
-            : "Все показанные свечи завершены.",
-          "Время свечи и время загрузки — разные значения.",
-        ].join(" ")
-      : "T-Invest не вернул свечи для выбранного периода. Последняя цена показана отдельно.";
+    instrumentMarketNote.textContent = instrumentMarketCandleNote(
+      candles,
+      incompleteCount,
+    );
     instrumentMarketRetry.classList.add("hidden");
   };
 
