@@ -23,6 +23,7 @@ _REST_BASES: dict[TBankEnvironment, str] = {
     "sandbox": "https://sandbox-invest-public-api.tbank.ru/rest/",
 }
 _API_PREFIX = "tinkoff.public.invest.api.contract.v1."
+_INSTRUMENT_UID_FIELD = _INSTRUMENT_UID_FIELD
 
 
 class TBankError(RuntimeError):
@@ -540,7 +541,7 @@ class TBankInvestClient:
         environment: TBankEnvironment,
         instrument_uid: str,
     ) -> tuple[TBankRating, ...]:
-        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
         payload = self._post(
             token=token,
             environment=environment,
@@ -594,7 +595,7 @@ class TBankInvestClient:
         from_at: datetime,
         to_at: datetime,
     ) -> tuple[TBankHistoricCandle, ...]:
-        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
         if from_at.tzinfo is None or to_at.tzinfo is None:
             raise ValueError("candle boundaries must be timezone-aware")
         if from_at > to_at:
@@ -672,7 +673,7 @@ class TBankInvestClient:
     ) -> tuple[TBankLastPrice, ...]:
         clean = tuple(
             dict.fromkeys(
-                _validate_provider_id(value, "instrument uid")
+                _validate_provider_id(value, _INSTRUMENT_UID_FIELD)
                 for value in instrument_uids
             )
         )
@@ -760,7 +761,7 @@ class TBankInvestClient:
     ) -> tuple[TBankMarketYield, ...]:
         clean = tuple(
             dict.fromkeys(
-                _validate_provider_id(value, "instrument uid")
+                _validate_provider_id(value, _INSTRUMENT_UID_FIELD)
                 for value in instrument_uids
             )
         )
@@ -823,7 +824,7 @@ class TBankInvestClient:
         *,
         depth: int = 10,
     ) -> TBankOrderBook:
-        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
         if not 1 <= depth <= 50:
             raise ValueError("order book depth must be between 1 and 50")
         payload = self._post(
@@ -861,7 +862,7 @@ class TBankInvestClient:
         quantity_lots: int,
     ) -> TBankOrderPrice:
         account = _validate_provider_id(account_id, "account id")
-        instrument = _validate_provider_id(instrument_uid, "instrument uid")
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
         try:
             price_value = Decimal(price)
         except InvalidOperation as exc:
@@ -1015,7 +1016,7 @@ class TBankInvestClient:
                 "orderId": request_uuid,
                 "instrumentId": _validate_provider_id(
                     instrument_uid,
-                    "instrument uid",
+                    _INSTRUMENT_UID_FIELD,
                 ),
                 "timeInForce": time_in_force,
                 "priceType": _provider_price_type(price_type),
@@ -1219,7 +1220,7 @@ class TBankInvestClient:
                 "accountId": _validate_account_id(account_id),
                 "instrumentId": _validate_provider_id(
                     instrument_uid,
-                    "instrument uid",
+                    _INSTRUMENT_UID_FIELD,
                 ),
                 "price": _quotation_payload(price_value),
             },
@@ -2029,7 +2030,7 @@ def _instrument_window_body(
     if from_at > to_at:
         raise ValueError("evidence window start must not be after end")
     return {
-        "instrumentId": _validate_provider_id(instrument_uid, "instrument uid"),
+        "instrumentId": _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD),
         "from": _utc_timestamp(from_at),
         "to": _utc_timestamp(to_at),
     }
