@@ -1193,21 +1193,23 @@ def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> 
     }
 
 
-def test_tbank_exchange_candles_reject_too_short_window_before_network() -> None:
+@patch("urllib.request.urlopen")
+def test_tbank_exchange_candles_reject_too_short_window_before_network(
+    urlopen: object,
+) -> None:
     client = TBankInvestClient()
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
     from_at = now - timedelta(minutes=4, seconds=59)
 
-    with patch("urllib.request.urlopen") as urlopen:
-        with pytest.raises(ValueError, match="at least one candle interval"):
-            client.get_exchange_candles(
-                "t.fake-owner-credential-1234567890",
-                "prod",
-                "uid-1",
-                from_at=from_at,
-                to_at=now,
-                interval="CANDLE_INTERVAL_5_MIN",
-            )
+    with pytest.raises(ValueError, match="at least one candle interval"):
+        client.get_exchange_candles(
+            "t.fake-owner-credential-1234567890",
+            "prod",
+            "uid-1",
+            from_at=from_at,
+            to_at=now,
+            interval="CANDLE_INTERVAL_5_MIN",
+        )
 
     urlopen.assert_not_called()
 
