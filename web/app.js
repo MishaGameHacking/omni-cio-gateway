@@ -1404,7 +1404,7 @@
   };
 
   const historyForDays = (history, days) => {
-    if (!Number.isFinite(days) || !(days > 0) || !history?.length) {
+    if (!Number.isFinite(days) || days <= 0 || !history?.length) {
       return history || [];
     }
     const latest = historyTimestamp(history[history.length - 1]);
@@ -4906,7 +4906,7 @@
 
   positionsTableBody.addEventListener("click", (event) => {
     const button = closestButtonTarget(event, "[data-instrument-detail]");
-    if (button && button.dataset.instrumentDetail) {
+    if (button?.dataset.instrumentDetail) {
       void openInstrumentDetail(button.dataset.instrumentDetail);
     }
   });
