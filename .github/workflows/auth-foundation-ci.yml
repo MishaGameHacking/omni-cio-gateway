@@ -80,7 +80,7 @@ jobs:
 
       - name: Diagnostic current Sonar annotations
         if: matrix.name == 'Ruff'
-        shell: pwsh
+        shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
