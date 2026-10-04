@@ -519,7 +519,8 @@ SonarQube Cloud является обязательным code-quality gate:
 - на exact latest head unresolved New/Open issues = 0;
 - Accepted issues = 0 и unresolved GitHub/Sonar annotations = 0;
 - нельзя получать green отключением правил, исключением проверяемого production-кода, снижением quality threshold или переводом реального дефекта в Accepted;
-- перед feature merge accepted `main` также должен иметь 0 unresolved Sonar issues; обнаруженный debt сначала устраняется отдельной focused cleanup-веткой.
+- перед feature merge accepted `main` также должен иметь 0 unresolved Sonar issues; обнаруженный debt сначала устраняется отдельной focused cleanup-веткой;
+- baseline проверяется свежим анализом exact current `main` и актуальным unresolved issue inventory; исторический summary старого commit/check не считается текущим состоянием после последующих исправлений.
 
 ## 19. Green != Complete
 
