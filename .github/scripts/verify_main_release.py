@@ -121,6 +121,38 @@ def require_success(row: dict[str, Any], label: str) -> None:
         raise ReleaseBlocked(f"{label} did not pass; production must remain unchanged")
 
 
+def sonar_summary_count(summary: str, label: str) -> int:
+    match = re.search(rf"\\[(\\d+) {re.escape(label)}s?\\]", summary)
+    if match is None:
+        raise ReleaseBlocked(f"SonarCloud summary is missing {label} count")
+    return int(match.group(1))
+
+
+def require_clean_sonar_output(check: dict[str, Any]) -> None:
+    output = check.get("output")
+    if not isinstance(output, dict):
+        raise ReleaseBlocked("SonarCloud result is missing output")
+    annotations = output.get("annotations_count")
+    if type(annotations) is not int or annotations < 0:
+        raise ReleaseBlocked("SonarCloud annotation count is malformed")
+    if annotations != 0:
+        raise ReleaseBlocked("SonarCloud has unresolved annotations")
+
+    summary = output.get("summary")
+    if not isinstance(summary, str) or not summary:
+        raise ReleaseBlocked("SonarCloud result is missing issue summary")
+    counts = {
+        "New issue": sonar_summary_count(summary, "New issue"),
+        "Accepted issue": sonar_summary_count(summary, "Accepted issue"),
+        "Security Hotspot": sonar_summary_count(summary, "Security Hotspot"),
+    }
+    nonzero = [label for label, count in counts.items() if count != 0]
+    if nonzero:
+        raise ReleaseBlocked(
+            "SonarCloud is not zero-issue clean: " + ", ".join(nonzero)
+        )
+
+
 def require_sonar(checks: list[dict[str, Any]], sha: str) -> None:
     candidates = [
         check for check in checks
@@ -135,6 +167,7 @@ def require_sonar(checks: list[dict[str, Any]], sha: str) -> None:
     if sonar_scope(check) != "main":
         raise PendingChecks("Waiting for unambiguous main SonarCloud analysis")
     require_success(check, "Main SonarCloud analysis")
+    require_clean_sonar_output(check)
 
 
 def require_foundation(runs: list[dict[str, Any]], sha: str) -> None:
