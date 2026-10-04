@@ -89,8 +89,10 @@ _MARKET_PERIODS: dict[str, tuple[timedelta, str]] = {
     "1w": (timedelta(days=7), "CANDLE_INTERVAL_HOUR"),
     "1m": (timedelta(days=31), "CANDLE_INTERVAL_4_HOUR"),
     "3m": (timedelta(days=93), "CANDLE_INTERVAL_DAY"),
-    "1y": (timedelta(days=366), "CANDLE_INTERVAL_DAY"),
+    "1y": (timedelta(days=365), "CANDLE_INTERVAL_DAY"),
 }
+
+_PROVIDER_CLOCK_SKEW_TOLERANCE = timedelta(seconds=5)
 
 
 class MarketService:
@@ -253,9 +255,13 @@ def _instrument_live_state(
     price_value: str | None = None
     if price is not None:
         quote_time = price.time.astimezone(UTC)
-        age_seconds = max(0, int((observed - quote_time).total_seconds()))
-        quote_status = "live" if age_seconds <= live_after_seconds else "stale"
-        price_value = price.price
+        provider_age = observed - quote_time
+        if provider_age < -_PROVIDER_CLOCK_SKEW_TOLERANCE:
+            quote_status = "future"
+        else:
+            age_seconds = max(0, int(provider_age.total_seconds()))
+            quote_status = "live" if age_seconds <= live_after_seconds else "stale"
+            price_value = price.price
 
     return InstrumentLiveState(
         instrument_uid=instrument_uid,
