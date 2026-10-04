@@ -11,7 +11,6 @@ from uuid import UUID
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
 
 @dataclass(frozen=True, slots=True)
