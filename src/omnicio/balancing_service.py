@@ -127,7 +127,6 @@ def build_balancing_payload(
             _candidate(
                 row,
                 context=context,
-                policy=policy,
                 observed_at=observed_at,
             )
             for row in candidate_rows
@@ -352,8 +351,7 @@ def build_live_balancing_payload(
                     _candidate(
                         row,
                         context=context,
-                        policy=policy,
-                        observed_at=observed_at,
+                                observed_at=observed_at,
                     ),
                     "live_enrichment_not_selected",
                 )
@@ -378,8 +376,7 @@ def build_live_balancing_payload(
                 _candidate(
                     row,
                     context=context,
-                    policy=policy,
-                    observed_at=observed_at,
+                        observed_at=observed_at,
                 ),
                 "live_candidate_evidence_unavailable",
             )
@@ -505,7 +502,6 @@ def _enrich_bond_candidate(
     base = _candidate(
         row,
         context=context,
-        policy=_policy(profile, policy_record, nav_rub),
         observed_at=observed_at,
     )
     if base.asset_class != "bond":
@@ -835,14 +831,14 @@ def _rating_bucket_from_tbank(
         if rating_date > observed_at:
             return (
                 "unknown",
-                tuple((*notes, "issuer_rating_time_invalid")),
+                (*notes, "issuer_rating_time_invalid"),
                 False,
             )
         bucket = _rating_level_bucket(rating.rating_level)
         if bucket is None:
             return (
                 "unknown",
-                tuple((*notes, "issuer_rating_level_unrecognized")),
+                (*notes, "issuer_rating_level_unrecognized"),
                 under_watch,
             )
         buckets.append(bucket)
@@ -1529,7 +1525,6 @@ def _candidate(
     row: dict[str, object],
     *,
     context: dict[str, object],
-    policy: BalancingPolicy,
     observed_at: datetime,
 ) -> Candidate:
     asset_class = str(row.get("instrument_type") or "")
