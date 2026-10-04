@@ -5160,8 +5160,6 @@
       setStateBadge(homeTbankState, "Не подключено", "state-next");
       setStateBadge(homePortfolioState, "Нет подключения", "state-next");
       setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
-      stopUsdRubStream();
-      renderUsdRubStreamStatus("disconnected");
       updateOwlState(null);
       updateGuard(null);
       hunterResults.replaceChildren();
@@ -5179,7 +5177,6 @@
     topConnectionText.textContent = "T-Invest подключён";
     setStateBadge(homeTbankState, "Работает", "state-ok");
     showMessage(hunterMessage, "");
-    startUsdRubStream();
     if (!portfolioLoaded) {
       setStateBadge(homePortfolioState, "Загружаем", "");
       setStateBadge(portfolioStateBadge, "Загружаем", "");
@@ -5236,8 +5233,6 @@
     portfolioLoaded = false;
     lastPortfolioSnapshot = null;
     lastPortfolioRefreshAt = 0;
-    stopUsdRubStream();
-    renderUsdRubStreamStatus("unavailable");
     setStateBadge(homeTbankState, "Ошибка", "state-error");
     setStateBadge(homePortfolioState, "Ошибка", "state-error");
     setStateBadge(tbankStatusBadge, "Ошибка", "state-error");
@@ -5363,6 +5358,7 @@
     authCard.classList.add("hidden");
     profilePanel.classList.remove("hidden");
     initializeNavigation();
+    startCbrIndicators();
     void loadTbankStatus();
     void loadInvestmentProfile();
     void loadBalancingPolicy();
@@ -5500,18 +5496,17 @@
   });
 
   document.addEventListener("visibilitychange", () => {
-    const visible = document.visibilityState === "visible";
-    const stale = Date.now() - lastPortfolioRefreshAt >= 5 * 60 * 1000;
-
-    if (!visible) {
-      stopUsdRubStream();
+    if (document.visibilityState !== "visible") {
       return;
     }
 
-    if (tbankIsConnected) {
-      startUsdRubStream();
+    const cbrStale = Date.now() - lastCbrIndicatorRefreshAt >= 5 * 60 * 1000;
+    if (cbrStale) {
+      void loadCbrIndicators();
     }
-    if (tbankIsConnected && stale && !portfolioRequestInFlight) {
+
+    const portfolioStale = Date.now() - lastPortfolioRefreshAt >= 5 * 60 * 1000;
+    if (tbankIsConnected && portfolioStale && !portfolioRequestInFlight) {
       void loadPortfolioData({force: true});
     }
   });
@@ -6162,7 +6157,7 @@
     deleteAccountSubmit.disabled = true;
     deleteAccountCancel.disabled = true;
     deleteAccountStart.disabled = true;
-    stopUsdRubStream();
+    stopCbrIndicators();
 
     try {
       await api("/api/account/delete", {
@@ -6201,7 +6196,7 @@
   });
 
   logoutButton.addEventListener("click", async () => {
-    stopUsdRubStream();
+    stopCbrIndicators();
     try {
       await api("/api/auth/logout", {method: "POST"});
     } finally {
