@@ -21,6 +21,8 @@ _CBR_DAILY_URL = "https://www.cbr.ru/scripts/XML_daily.asp"
 _MOSCOW = ZoneInfo("Europe/Moscow")
 _INDICATOR_CURRENCIES = frozenset({"USD", "EUR"})
 _MAX_PUBLIC_RESPONSE_BYTES = 512_000
+_CBR_XML_ACCEPT = "application/xml,text/xml;q=0.9,*/*;q=0.1"
+_CBR_USER_AGENT = "OmniCIO-Personal/1.0"
 
 
 class CBRUnavailable(RuntimeError):
@@ -192,8 +194,8 @@ class CBRClient:
         request = urllib.request.Request(
             url,
             headers={
-                "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.1",
-                "User-Agent": "OmniCIO-Personal/1.0",
+                "Accept": _CBR_XML_ACCEPT,
+                "User-Agent": _CBR_USER_AGENT,
             },
         )
         try:
@@ -245,8 +247,8 @@ class CBRClient:
         request = urllib.request.Request(
             "https://www.cbr.ru/scripts/XML_daily.asp",
             headers={
-                "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.1",
-                "User-Agent": "OmniCIO-Personal/1.0",
+                "Accept": _CBR_XML_ACCEPT,
+                "User-Agent": _CBR_USER_AGENT,
             },
         )
         try:
@@ -268,7 +270,7 @@ class CBRClient:
         try:
             parser.feed(payload.decode("windows-1251"))
             parser.close()
-        except (UnicodeDecodeError, ValueError) as exc:
+        except ValueError as exc:
             raise CBRUnavailable("Bank of Russia returned invalid currency data") from exc
         return parser.result()
 
@@ -292,10 +294,10 @@ class CBRClient:
             data=body,
             method="POST",
             headers={
-                "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.1",
+                "Accept": _CBR_XML_ACCEPT,
                 "Content-Type": "text/xml; charset=utf-8",
                 "SOAPAction": '"http://web.cbr.ru/KeyRateXML"',
-                "User-Agent": "OmniCIO-Personal/1.0",
+                "User-Agent": _CBR_USER_AGENT,
             },
         )
         try:
