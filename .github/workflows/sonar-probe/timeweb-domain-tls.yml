@@ -1,0 +1,101 @@
+name: Timeweb domain TLS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/timeweb-domain-tls.yml"
+      - ".github/scripts/bootstrap_self_hosted_python.cmd"
+      - ".github/scripts/verify_main_release.py"
+      - ".github/scripts/test_release_gate.py"
+      - ".github/scripts/timeweb_domain_tls.py"
+      - ".github/scripts/timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_ssh_trust.py"
+      - ".github/scripts/test_timeweb_domain_tls.py"
+  schedule:
+    - cron: "*/15 * * * *"
+      timezone: "Europe/Moscow"
+
+concurrency:
+  group: timeweb-domain-tls
+  cancel-in-progress: false
+
+jobs:
+  tests:
+    name: Test TLS bootstrap
+    permissions:
+      contents: read
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout candidate repository state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
+
+      - name: Run TLS bootstrap regression tests
+        shell: cmd
+        run: |
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_ssh_trust.py
+          if errorlevel 1 exit /b 1
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_domain_tls.py
+
+  configure:
+    name: Configure omnicio.ru HTTPS
+    concurrency:
+      group: omnicio-production-ssh
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    if: github.ref == 'refs/heads/main'
+    needs: tests
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 30
+    env:
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}
+
+    steps:
+      - name: Checkout accepted main state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
+
+      - name: Verify current main release checks
+        shell: cmd
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: '"%OMNICIO_PYTHON%" .github\scripts\verify_main_release.py'
+
+      - name: Validate verified SSH server key
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\timeweb_ssh_trust.py'
+
+      - name: Validate Timeweb secret
+        shell: cmd
+        run: |
+          @echo off
+          if not defined TIMEWEB_CLOUD_TOKEN (
+            echo ::error::Repository secret TIMEWEB_CLOUD_TOKEN is missing or empty.
+            exit /b 1
+          )
+
+      - name: Configure domain and TLS
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\timeweb_domain_tls.py'
