@@ -159,6 +159,7 @@
     let updateRequested = false;
     let allocationExported = JSON.stringify(initialAllocation);
     let goalsExported = "[]";
+    let notificationsDirty = false;
 
     const toast = (text) => {
       const target = $("#workspace-toast");
@@ -569,10 +570,12 @@
     $("#assistant-memory").addEventListener("click", () => {
       showDialog("Память ассистента").append(node("p", "Сохранённых воспоминаний нет. После подключения ассистента вы сможете просмотреть точный текст перед сохранением и удалить отдельную запись.", "inline-note"));
     });
+    $("#notifications-form").addEventListener("input", () => { notificationsDirty = true; });
     $("#notifications-form").addEventListener("submit", (event) => {
       event.preventDefault();
       download("omnicio-notifications-draft.json", JSON.stringify({kind: "notification_draft", active: false, digest_time: $("#digest-time").value, time_zone: $("#digest-zone").value, quiet_hours: [$("#quiet-start").value, $("#quiet-end").value], max_daily_push: 3, security: $("#notify-security").checked, income: $("#notify-income").checked, critical_at_night: $("#notify-night").checked, lock_screen_amounts: $("#notify-amounts").checked}, null, 2));
       $("#notifications-message").textContent = "Настройки скачаны. Доставка уведомлений ещё не включена.";
+      notificationsDirty = false;
     });
 
     const onboarding = (step = 1) => {
@@ -688,7 +691,7 @@
       } catch { /* Online operation remains available without installation. */ }
     };
     $("#apply-update").addEventListener("click", () => {
-      if (adapter.hasPending() || dialog.open || $("#assistant-input").value.trim()
+      if (adapter.hasPending() || dialog.open || notificationsDirty || $("#assistant-input").value.trim()
         || JSON.stringify(allocation) !== allocationExported || JSON.stringify(goals) !== goalsExported) {
         toast("Завершите или сохраните открытый черновик перед обновлением.");
         return;

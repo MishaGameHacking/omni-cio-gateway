@@ -58,6 +58,7 @@ BRAND_RUNTIME_FILES = (
 BRAND_PUBLIC_MARK = "/assets/brand/omni-sentinel-core-color-1024.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
+JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
 
 
 def add_summary(line: str) -> None:
@@ -1083,10 +1084,10 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         raise InfraError("Public application build does not match release")
 
     runtime_assets = (
-        ("/assets/app.js", b"window.OmniWorkspace.init", ("text/javascript", "application/javascript")),
-        ("/assets/workspace.js", b"window.OmniWorkspace", ("text/javascript", "application/javascript")),
+        ("/assets/app.js", b"window.OmniWorkspace.init", JAVASCRIPT_CONTENT_TYPES),
+        ("/assets/workspace.js", b"window.OmniWorkspace", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/app.css", b"--sidebar-width", ("text/css",)),
-        ("/sw.js", b"omnicio-public-", ("text/javascript", "application/javascript")),
+        ("/sw.js", b"omnicio-public-", JAVASCRIPT_CONTENT_TYPES),
         ("/offline.html", b"<html", ("text/html",)),
     )
     for path, marker, content_types in runtime_assets:
