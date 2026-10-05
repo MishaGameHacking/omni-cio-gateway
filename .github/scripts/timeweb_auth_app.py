@@ -483,6 +483,9 @@ python3 -m venv "$RELEASE/.venv"
 install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
 install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
 install -m 0644 "$RELEASE/web/app.js" "$WEB_RELEASE/assets/app.js"
+install -m 0644 "$RELEASE/web/workspace.js" "$WEB_RELEASE/assets/workspace.js"
+install -m 0644 "$RELEASE/web/sw.js" "$WEB_RELEASE/sw.js"
+install -m 0644 "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
 install -m 0644 "$RELEASE/assets/brand/transparent/omni-sentinel-core-color-1024.png" "$WEB_RELEASE/assets/brand/omni-sentinel-core-color-1024.png"
 install -m 0644 "$RELEASE/assets/brand/web/apple-touch-icon-180.png" "$WEB_RELEASE/assets/brand/apple-touch-icon-180.png"
@@ -788,6 +791,22 @@ server {
     }
 
     location = /assets/app.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /assets/workspace.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /sw.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+        add_header Service-Worker-Allowed "/";
+    }
+
+    location = /offline.html {
         try_files $uri =404;
         add_header Cache-Control "no-cache";
     }
@@ -1235,3 +1254,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

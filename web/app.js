@@ -1,6 +1,10 @@
 (() => {
   "use strict";
 
+  let workspace = null;
+  let hunterRequest = null;
+  let hunterGeneration = 0;
+
   const requiredElement = (selector) => {
     const element = document.querySelector(selector);
     if (!element) {
@@ -294,6 +298,14 @@
   const VIEW_TITLES = {
     home: "Главная",
     portfolio: "Портфель",
+    events: "События",
+    assets: "Поиск активов",
+    strategy: "Стратегия",
+    orders: "Сделки",
+    payouts: "Выплаты",
+    goals: "Цели",
+    assistant: "Ассистент",
+    notifications: "Уведомления",
     decisions: "Решения",
     system: "Система",
     connections: "Подключения",
@@ -446,6 +458,8 @@
   };
 
   const api = async (path, options = {}) => {
+    if (workspace?.isDemo()) throw Object.assign(new Error("demo_mode_no_server_access"), {status: 0});
+    if (!navigator.onLine && options.method && !["GET", "HEAD"].includes(options.method)) throw Object.assign(new Error("Нет сети. Изменение не отправлено."), {status: 0});
     if (profileContextLost) throw profileContextError();
     const headers = new Headers(options.headers);
     headers.set("Content-Type", "application/json");
@@ -456,6 +470,7 @@
       ...options,
       headers,
     });
+    if (workspace?.isDemo()) throw Object.assign(new Error("demo_mode_no_server_access"), {status: 0});
     const body = response.status === 204 ? null : await response.json().catch(() => null);
     if (profileContextLost) throw profileContextError();
     if (!response.ok) {
@@ -663,9 +678,9 @@
   const storedTheme = () => {
     try {
       const value = window.localStorage.getItem(THEME_KEY);
-      return ["light", "dark", "auto"].includes(value) ? value : "light";
+      return ["light", "dark", "auto"].includes(value) ? value : "auto";
     } catch {
-      return "light";
+      return "auto";
     }
   };
 
@@ -695,10 +710,14 @@
     });
   };
 
-  const mobileDrawerMode = () => window.matchMedia("(max-width: 820px)").matches;
+  const mobileDrawerMode = () => window.matchMedia("(max-width: 1199px)").matches;
 
   const closeDrawer = () => {
+    const hadFocus = appDrawer.contains(document.activeElement);
     document.body.classList.remove("drawer-open");
+    appDrawer.inert = mobileDrawerMode();
+    drawerBackdrop.hidden = true;
+    if (hadFocus && mobileDrawerMode()) appMenuToggle.focus();
     appMenuToggle.setAttribute("aria-expanded", "false");
     if (mobileDrawerMode()) {
       appDrawer.setAttribute("aria-hidden", "true");
@@ -711,10 +730,12 @@
     if (!mobileDrawerMode()) {
       return;
     }
+    appDrawer.inert = false;
     drawerBackdrop.hidden = false;
     document.body.classList.add("drawer-open");
     appMenuToggle.setAttribute("aria-expanded", "true");
     appDrawer.setAttribute("aria-hidden", "false");
+    drawerClose.focus();
   };
 
   const renderView = (view, {scroll = true} = {}) => {
@@ -723,6 +744,8 @@
     }
 
     currentView = view;
+    document.title = `${VIEW_TITLES[view]} · OmniCIO`;
+    workspace?.onView(view);
     viewTitle.textContent = VIEW_TITLES[view];
 
   desktopNavItems.forEach((item) => {
@@ -762,7 +785,7 @@
     if (view === "profile") void loadAccountActivity();
     if (view === "settings") void loadRecoveryStatus();
     if (
-      view === "decisions"
+      ["decisions", "events", "payouts"].includes(view)
       && tbankIsConnected
       && Date.now() - lastAnalysisAt >= 5 * 60 * 1000
     ) {
@@ -813,6 +836,7 @@
     navigationDepth = nextDepth;
     renderView(view);
     closeDrawer();
+    viewTitle.focus({preventScroll: true});
   };
 
   const initializeNavigation = () => {
@@ -1165,6 +1189,7 @@
   };
 
   const renderHunterResults = (items) => {
+    items = workspace?.filterAssets(items || []) || items;
     hunterResults.replaceChildren();
     if (!items?.length) {
       appendEmptyState(hunterResults, "T-Invest не нашёл доступных инструментов по этому запросу.");
@@ -1224,12 +1249,24 @@
       card.append(main, flags);
       hunterResults.append(card);
     });
+    workspace?.decorateAssets(items);
   };
 
   const searchHunter = async () => {
     const query = hunterQuery.value.trim();
+    const generation = ++hunterGeneration;
+    hunterRequest?.abort();
+    hunterRequest = new AbortController();
+    hunterSearch.disabled = false;
+    hunterSearch.textContent = "Найти";
     showMessage(hunterMessage, "");
-    hunterResults.replaceChildren();
+    if (workspace?.isDemo()) {
+      const items = workspace.demoSearch(query);
+      workspace.setCatalog(items);
+      renderHunterResults(items);
+      showMessage(hunterMessage, `Демонстрационные инструменты: ${items.length}. Данные вымышлены.`);
+      return;
+    }
 
     if (!tbankIsConnected) {
       showMessage(hunterMessage, "Сначала подключите T-Invest.", true);
@@ -1241,13 +1278,14 @@
     }
 
     hunterSearch.disabled = true;
-    const originalText = hunterSearch.textContent;
     hunterSearch.textContent = "Ищем…";
     try {
       const payload = await api(
         `/api/broker/tbank/instruments/search?q=${encodeURIComponent(query)}`,
-        {method: "GET"},
+        {method: "GET", signal: hunterRequest.signal},
       );
+      if (generation !== hunterGeneration) return;
+      workspace?.setCatalog(payload.items || []);
       renderHunterResults(payload.items || []);
       showMessage(
         hunterMessage,
@@ -1256,6 +1294,7 @@
           : "Совпадений не найдено.",
       );
     } catch (error) {
+      if (error.name === "AbortError" || generation !== hunterGeneration) return;
       if (error.status === 401) {
         location.reload();
         return;
@@ -1266,8 +1305,10 @@
         showMessage(hunterMessage, "Поиск T-Invest временно недоступен.", true);
       }
     } finally {
-      hunterSearch.disabled = false;
-      hunterSearch.textContent = originalText;
+      if (generation === hunterGeneration) {
+        hunterSearch.disabled = false;
+        hunterSearch.textContent = "Найти";
+      }
     }
   };
 
@@ -2317,7 +2358,7 @@
       portfolioHistoryNote.textContent = (
         chartPoints.length === 1
           ? "Есть один реальный снимок. Для линии нужно минимум два снимка того же счёта и окружения."
-          : "История появится после сохранения tenant-scoped снимков портфеля."
+          : "История появится после сохранения снимков вашего счёта портфеля."
       );
     } else {
       setStateBadge(
@@ -2326,7 +2367,7 @@
         "state-ok",
       );
       portfolioHistoryNote.textContent = (
-        "Точки используют captured_at сохранённых snapshot. Это не market timestamp и не время сделки."
+        "На графике указано время сохранения сводки, а не время сделки или биржевой котировки."
       );
     }
 
@@ -2967,6 +3008,7 @@
   };
 
   const openInstrumentDetail = async (instrumentUid) => {
+    if (workspace?.isDemo()) { workspace.openDemoInstrument(instrumentUid); return; }
     if (instrumentDetailRequestInFlight) {
       return;
     }
@@ -3352,6 +3394,7 @@
     setStateBadge(portfolioStateBadge, "Данные получены", "state-ok");
     setStateBadge(homePortfolioState, "Работает", "state-ok");
     renderPortfolioDataStatus();
+    workspace?.setSnapshot(snapshot);
   };
 
   const renderDisconnectedPortfolio = () => {
@@ -3551,6 +3594,7 @@
   };
 
   const renderAnalysis = (snapshot) => {
+    workspace?.setAnalysis(snapshot);
     const report = snapshot.analysis;
     const sourceItems = Array.isArray(snapshot.sources) ? snapshot.sources : [];
     const sources = new Map(sourceItems.map((source) => [source.id, source]));
@@ -3721,6 +3765,7 @@
   }[value] || String(value || "—"));
 
   const renderIntelligence = (snapshot) => {
+    workspace?.setPayouts(snapshot.payouts || []);
     intelligenceRisks.replaceChildren();
     (snapshot.risks || []).forEach((risk) => {
       const row = document.createElement("tr");
@@ -5784,7 +5829,8 @@
   });
 
   const showProfile = (profile) => {
-    if (profileContextLost) return;
+    if (profileContextLost || workspace?.isDemo()) return;
+    workspace?.setSession();
     if (currentProfileId && currentProfileId !== profile.public_id) {
       pauseProfileContext();
       return;
@@ -5814,7 +5860,7 @@
   };
 
   const showAuth = () => {
-    if (profileContextLost) return;
+    if (profileContextLost || workspace?.isDemo()) return;
     recoveryGeneration += 1;
     clearTimeout(recoveryTimer);
     settingsEditors.forEach((editor) => editor.reset());
@@ -5862,6 +5908,7 @@
       }
     }
 
+    if (workspace?.isDemo()) return;
     showAuth();
     showCallbackResult();
 
@@ -5963,6 +6010,15 @@
     installButton.classList.add("hidden");
     refreshScreenState();
   };
+
+  let searchDebounce;
+  hunterQuery.addEventListener("input", () => {
+    clearTimeout(searchDebounce);
+    hunterRequest?.abort();
+    hunterGeneration += 1;
+    if (hunterQuery.value.trim()) searchDebounce = setTimeout(() => { void searchHunter(); }, 250);
+    else { hunterResults.replaceChildren(); workspace?.setCatalog([]); hunterSearch.disabled = false; hunterSearch.textContent = "Найти"; }
+  });
 
   hunterForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -6560,6 +6616,63 @@
       pendingTbankCredential = null;
       if (!profileContextLost) location.reload();
     }
+  });
+
+  const enterDemoWorkspace = (data, historyPoints) => {
+    stopCbrIndicators();
+    window.clearInterval(owlTimer);
+    invalidatePortfolioRequest();
+    settingsEditors.forEach((editor) => editor.reset());
+    authCard.classList.add("hidden");
+    profilePanel.classList.remove("hidden");
+    currentProfileId = "";
+    tbankIsConnected = false;
+    portfolioVisualizationLoaded = true;
+    for (const element of [profileId, drawerProfileId, profilePageId, supportProfileId, settingsProfileId]) element.textContent = "Демо";
+    initializeNavigation();
+    renderPortfolio(data);
+    renderPortfolioVisualization({history: historyPoints, latest: null});
+    clearPortfolioFreshnessTimer();
+    homeHistoryNote.textContent = "Вымышленная история за 90 дней. Демонстрация интерфейса, не результат инвестиций.";
+    portfolioHistoryNote.textContent = homeHistoryNote.textContent;
+    portfolioRefreshed.textContent = "Демонстрационные данные";
+    homeSnapshotTime.textContent = "Вымышленный портфель · без подключения";
+    topConnectionText.textContent = "Демонстрация";
+    overviewAccount.textContent = "Посмотрите, как устроен OmniCIO";
+    overviewConnectionText.textContent = "Для своего портфеля перейдите ко входу и подключите счёт.";
+    setStateBadge(homeHistoryState, "Демо", "state-next");
+    setStateBadge(portfolioStateBadge, "Демо", "state-next");
+    portfolioDataNotice.textContent = "Все значения на этом экране вымышлены. Вход и доступ к брокеру не используются.";
+    setHomeAttentionBucket("connection", [{severity: "info", title: "Демонстрационный режим", detail: "Познакомьтесь с интерфейсом без реальных сделок.", view: "assets"}]);
+    for (const form of [tbankForm, tbankAccountForm, liveMandateForm, deleteAccountForm]) {
+      form.querySelectorAll("input,select,button").forEach((control) => { control.disabled = true; });
+    }
+    for (const control of [portfolioRefresh, analysisRefresh, tbankDisconnect, logoutButton, deleteAccountStart, executionRefresh]) control.disabled = true;
+    showMessage(tbankMessage, "В демо подключение счёта недоступно. Перейдите ко входу для своего аккаунта.");
+    showMessage(executionMessage, "Деморежим: заявки брокеру не отправляются.");
+    showMessage(analysisStatus, "Деморежим: персональный анализ не запрашивается. Изучите каталог, структуру портфеля и черновик стратегии.");
+  };
+
+  workspace = window.OmniWorkspace.init({
+    navigate: navigateToView,
+    openInstrument: openInstrumentDetail,
+    renderAssets: renderHunterResults,
+    enterDemo: enterDemoWorkspace,
+    theme: (preference) => { saveTheme(preference); applyTheme(preference); },
+    hasPending: () => settingsEditors.some((editor) => editor.hasPending()) || executionRequestInFlight || liveMandateRequestInFlight || proposalRequestInFlight,
+    refreshAnalysis: () => {
+      if (tbankIsConnected) void loadAnalysis();
+      else workspace.toast("Подключите свой счёт для подтверждённых событий.");
+    },
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab" || !document.body.classList.contains("drawer-open")) return;
+    const focusable = [...appDrawer.querySelectorAll("button:not(:disabled), a[href]")].filter((item) => item.getClientRects().length);
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   });
 
   renderReleaseInfo();

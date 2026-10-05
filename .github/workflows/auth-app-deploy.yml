@@ -20,6 +20,7 @@ on:
       - ".github/scripts/test_timeweb_ssh_trust.py"
       - "src/omnicio/**"
       - "web/**"
+      - "tests/frontend-smoke.cjs"
       - "assets/brand/**"
       - "pyproject.toml"
   push:
@@ -41,6 +42,7 @@ on:
       - ".github/scripts/test_timeweb_ssh_trust.py"
       - "src/omnicio/**"
       - "web/**"
+      - "tests/frontend-smoke.cjs"
       - "assets/brand/**"
       - "pyproject.toml"
   workflow_run:
@@ -96,6 +98,23 @@ jobs:
             exit /b 1
           )
           node.exe --check web\app.js
+          if errorlevel 1 exit /b 1
+          node.exe --check web\workspace.js
+          if errorlevel 1 exit /b 1
+          node.exe --check web\sw.js
+
+      - name: Browser workspace and demo isolation
+        shell: cmd
+        run: node.exe tests\frontend-smoke.cjs
+
+      - name: Upload synthetic interface screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-screenshots
+          path: artifacts/frontend/*.png
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Run deployer tests
         shell: cmd

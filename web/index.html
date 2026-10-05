@@ -12,7 +12,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="omni-cio-white-site" content="1">
-  <title>OmniCIO Personal</title>
+  <meta name="description" content="OmniCIO — понятный портфель, персональный помощник и решения под вашим контролем.">
+  <title>OmniCIO — ваш капитал под контролем</title>
   <link rel="icon" href="/assets/brand/favicon.ico" sizes="any">
   <link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon-180.png" sizes="180x180">
   <link rel="manifest" href="/manifest.webmanifest?build=__OMNICIO_BUILD__">
@@ -83,7 +84,9 @@
     <symbol id="icon-copy" viewBox="0 0 24 24">
       <rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>
     </symbol>
+<symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol><symbol id="icon-events" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12 19 5"/></symbol><symbol id="icon-strategy" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></symbol><symbol id="icon-orders" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2ZM9 8h6M9 12h6"/></symbol><symbol id="icon-assistant" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 1-8 8H5l-3 3V11a9 9 0 0 1 18 0Z"/><path d="M7 9h8M7 13h5"/></symbol><symbol id="icon-goals" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol><symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18M8 14h2M14 14h2M8 17h2"/></symbol><symbol id="icon-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/></symbol><symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol><symbol id="icon-moon" viewBox="0 0 24 24"><path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z"/></symbol><symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol><symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol><symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol><symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol><symbol id="icon-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></symbol><symbol id="icon-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></symbol><symbol id="icon-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol><symbol id="icon-star" viewBox="0 0 24 24"><path d="m12 3 3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 10l6-1Z"/></symbol>
   </svg>
+  <a class="skip-link" href="#view-title">К содержимому</a>
   <main class="shell">
     <section class="auth-card" id="auth-card" aria-labelledby="auth-title">
       <header class="auth-header">
@@ -119,11 +122,12 @@
             decoding="async"
           >
           <p class="eyebrow" id="access-eyebrow">Персональный кабинет</p>
-          <h1 id="auth-title">Инвестиционный кабинет без лишнего шума.</h1>
+          <h1 id="auth-title">Понятный портфель.<br>Спокойные решения.</h1>
           <p class="lead" id="access-lead">
             Вход через VK ID, отдельный пользовательский профиль и защищённое
             подключение собственного брокерского счёта T-Invest.
           </p>
+          <div class="auth-illustration" aria-hidden="true"><div class="auth-preview-head"><span>Ваш капитал</span><span class="preview-label">ДЕМО</span></div><strong>1 250 000 <small>₽</small></strong><div class="auth-chart"><svg viewBox="0 0 400 100"><path d="M0 90 35 83 65 87 105 60 140 68 175 42 215 48 250 27 290 35 330 13 365 20 400 4"/></svg></div><div class="auth-preview-foot"><span>Полная картина</span><span>Каждое решение — ваше</span></div></div>
           <div class="trust-list" aria-label="Ключевые свойства">
             <span>Вход: VK ID</span>
             <span id="access-scope">Регистрация: лимит 2</span>
@@ -132,11 +136,10 @@
         </section>
 
         <section class="auth-form-card" aria-labelledby="login-title">
-          <p class="section-label">Вход</p>
-          <h2 id="login-title">Войти в OmniCIO Personal</h2>
+          <div class="auth-tabs" role="group" aria-label="Вход или регистрация"><button type="button" data-auth-mode="login" aria-pressed="true">Вход</button><button type="button" data-auth-mode="register" aria-pressed="false">Регистрация</button></div>
+          <h2 id="login-title">С возвращением</h2>
           <p class="muted">
-            Перед входом подтвердите четыре обязательных пункта. Пароль VK
-            передаётся только VK ID и не попадает в OmniCIO.
+            Продолжите через VK ID. Пароль остаётся у VK, а ваш портфель доступен только вам.
           </p>
 
           <form id="vkid-form" novalidate>
@@ -180,6 +183,12 @@
 
           <output id="auth-message" class="message" aria-live="polite"></output>
 
+          <div class="auth-demo">
+            <span>Сначала познакомимся?</span>
+            <button id="start-demo" type="button" class="button button-secondary">Посмотреть демо <svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow"></use></svg></button>
+            <small>Без регистрации и реальных сделок</small>
+          </div>
+
           <footer class="auth-meta">
             <span>OmniCIO Personal</span>
             <span>v<span data-app-version>__OMNICIO_VERSION__</span> · сборка <span data-app-build>__OMNICIO_BUILD__</span></span>
@@ -213,7 +222,7 @@
               >
             </span>
             <span class="drawer-profile-copy">
-              <strong>Пользователь OmniCIO</strong>
+              <strong>OmniCIO</strong>
               <span>ID <b id="drawer-profile-id">000000000</b></span>
             </span>
           </button>
@@ -222,49 +231,9 @@
           </button>
         </div>
 
-        <nav class="app-nav" aria-label="Основные разделы">
-          <div class="nav-group">
-            <span class="nav-group-label">Рабочее пространство</span>
-            <button class="nav-item is-active" type="button" data-view="home" aria-current="page">
-              <span class="nav-icon nav-icon-blue"><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg></span>
-              <span>Главная</span>
-            </button>
-            <button class="nav-item" type="button" data-view="portfolio">
-              <span class="nav-icon nav-icon-green"><svg class="ui-icon" aria-hidden="true"><use href="#icon-portfolio"></use></svg></span>
-              <span>Портфель</span>
-            </button>
-            <button class="nav-item" type="button" data-view="decisions">
-              <span class="nav-icon nav-icon-cyan"><svg class="ui-icon" aria-hidden="true"><use href="#icon-decisions"></use></svg></span>
-              <span>Решения</span>
-            </button>
-            <button class="nav-item" type="button" data-view="system">
-              <span class="nav-icon nav-icon-violet"><svg class="ui-icon" aria-hidden="true"><use href="#icon-system"></use></svg></span>
-              <span>Система</span>
-            </button>
-            <button class="nav-item" type="button" data-view="connections">
-              <span class="nav-icon nav-icon-orange"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"></use></svg></span>
-              <span>Подключения</span>
-            </button>
-          </div>
+        <nav class="app-nav" aria-label="Основные разделы"><div class="nav-group"><span class="nav-group-label">Обзор</span><button class="nav-item" type="button" data-view="home"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg></span><span>Главная</span></button><button class="nav-item" type="button" data-view="portfolio"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-portfolio"></use></svg></span><span>Портфель</span></button><button class="nav-item" type="button" data-view="events"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-events"></use></svg></span><span>События</span></button><button class="nav-item" type="button" data-view="assets"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-search"></use></svg></span><span>Поиск активов</span></button></div><div class="nav-group"><span class="nav-group-label">Управление</span><button class="nav-item" type="button" data-view="strategy"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-strategy"></use></svg></span><span>Стратегия</span></button><button class="nav-item" type="button" data-view="decisions"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-decisions"></use></svg></span><span>Решения</span></button><button class="nav-item" type="button" data-view="orders"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-orders"></use></svg></span><span>Сделки</span></button><button class="nav-item" type="button" data-view="payouts"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-calendar"></use></svg></span><span>Выплаты</span></button><button class="nav-item" type="button" data-view="goals"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-goals"></use></svg></span><span>Цели</span></button></div><div class="nav-group"><span class="nav-group-label">Помощь</span><button class="nav-item" type="button" data-view="assistant"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-assistant"></use></svg></span><span>Ассистент</span></button><button class="nav-item" type="button" data-view="settings"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg></span><span>Профиль и сервис</span></button></div></nav>
 
-          <div class="nav-group">
-            <span class="nav-group-label">Аккаунт</span>
-            <button class="nav-item" type="button" data-view="profile">
-              <span class="nav-icon nav-icon-cyan"><svg class="ui-icon" aria-hidden="true"><use href="#icon-user"></use></svg></span>
-              <span>Профиль</span>
-            </button>
-            <button class="nav-item" type="button" data-view="settings">
-              <span class="nav-icon nav-icon-gray"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg></span>
-              <span>Настройки</span>
-            </button>
-            <button class="nav-item" type="button" data-view="support">
-              <span class="nav-icon nav-icon-green"><svg class="ui-icon" aria-hidden="true"><use href="#icon-support"></use></svg></span>
-              <span>Поддержка</span>
-            </button>
-          </div>
-        </nav>
-
-        <div class="sidebar-footer">
+        <div class="sidebar-footer"><button class="sidebar-assistant" type="button" data-go-view="assistant"><svg class="ui-icon" aria-hidden="true"><use href="#icon-assistant"></use></svg><span>Разобраться вместе<small>Ассистент OmniCIO</small></span><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow"></use></svg></button>
           <span>OmniCIO Personal</span>
           <span>v<span data-app-version>__OMNICIO_VERSION__</span> · build <span data-app-build>__OMNICIO_BUILD__</span></span>
         </div>
@@ -295,12 +264,12 @@
             <div class="topbar-title">
               <div>
                 <p class="topbar-context">OmniCIO Personal</p>
-                <h1 id="view-title">Главная</h1>
+                <h1 id="view-title" tabindex="-1">Главная</h1>
               </div>
             </div>
           </div>
 
-          <div class="topbar-actions">
+          <div class="topbar-actions"><button class="top-search" type="button" data-go-view="assets" aria-label="Поиск активов"><svg class="ui-icon" aria-hidden="true"><use href="#icon-search"></use></svg><span>Найти актив</span><kbd>⌘ K</kbd></button><button id="privacy-toggle" class="icon-button" type="button" aria-label="Скрыть суммы" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="#icon-eye"></use></svg></button><button id="quick-theme" class="icon-button" type="button" aria-label="Сменить тему"><svg class="ui-icon" aria-hidden="true"><use href="#icon-moon"></use></svg></button><button class="icon-button" type="button" data-go-view="events" aria-label="Уведомления"><svg class="ui-icon" aria-hidden="true"><use href="#icon-bell"></use></svg></button>
             <span class="connection-indicator" id="top-connection-indicator">
               <span class="status-dot" aria-hidden="true"></span>
               <span id="top-connection-text">Проверяем T-Invest</span>
@@ -311,10 +280,10 @@
           </div>
         </header>
 
-        <div class="workspace-scroll">
+        <div class="workspace-scroll"><div id="demo-banner" class="workspace-banner hidden"><span><strong>Демонстрационный портфель</strong> · вымышленные данные, без подключения к брокеру</span><button id="exit-demo" class="button button-secondary" type="button">Перейти ко входу</button></div><output id="network-banner" class="workspace-banner hidden" aria-live="polite">Нет сети. Показаны последние данные. Финансовые действия недоступны.</output><div id="update-banner" class="workspace-banner hidden"><span>Доступна новая версия OmniCIO</span><button id="apply-update" class="button button-secondary" type="button">Обновить приложение</button></div>
           <section class="view-panel" data-view-panel="home">
             <section
-              class="market-strip"
+              class="market-strip quiet-market"
               id="cbr-market-strip"
               aria-label="Официальные показатели Банка России"
               aria-describedby="cbr-market-strip-status"
@@ -360,10 +329,9 @@
             <div class="page-heading command-heading">
               <div>
                 <p class="section-label">Обзор портфеля</p>
-                <h2>Портфель — главное сейчас</h2>
+                <h2>Всё важное. На одном экране.</h2>
                 <p>
-                  Сначала капитал и события, которые требуют внимания. Подробные расчёты,
-                  источники и технические поля остаются в профильных разделах.
+                  Стоимость, движение капитала и следующий понятный шаг.
                 </p>
               </div>
               <button class="button button-secondary" type="button" data-go-view="portfolio">
@@ -371,6 +339,7 @@
               </button>
             </div>
 
+            <div class="onboarding-callout"><span><svg class="ui-icon" aria-hidden="true"><use href="#icon-check"></use></svg><span><strong>Ваш личный кабинет</strong><small>Подключение, предпочтения и первый обзор за несколько шагов</small></span></span><button class="button button-secondary" id="open-onboarding" type="button">Настроить кабинет</button></div>
             <section class="command-kpis" aria-label="Ключевые показатели портфеля">
               <article class="command-kpi command-kpi-primary">
                 <span>Стоимость портфеля</span>
@@ -383,19 +352,19 @@
                 <small id="home-daily-relative">—</small>
               </article>
               <article class="command-kpi">
-                <span>Незаблокированные RUB</span>
+                <span>Свободные рубли</span>
                 <strong id="home-free-cash">—</strong>
                 <small>Не равно торговому бюджету до резервов и издержек</small>
               </article>
               <article class="command-kpi">
                 <span>Позиций</span>
                 <strong id="home-position-count">—</strong>
-                <small>В текущем снимке портфеля</small>
+                <small>В составе портфеля</small>
               </article>
               <article class="command-kpi command-kpi-attention">
                 <span>Требует внимания</span>
                 <strong id="home-attention-count">—</strong>
-                <small>Только подтверждённые состояния системы</small>
+                <small>Проверенные события</small>
               </article>
             </section>
 
@@ -424,7 +393,7 @@
                 <div><dt>Последний снимок</dt><dd>—</dd></div>
               </dl>
               <p class="field-hint" id="home-history-note">
-                График появится только после накопления реальных tenant-scoped снимков портфеля.
+                История появится после первых сохранённых снимков вашего портфеля.
               </p>
             </article>
 
@@ -487,6 +456,374 @@
             </section>
           </section>
 
+<section class="view-panel hidden" data-view-panel="events"><div class="page-heading"><p class="section-label">НАБЛЮДЕНИЕ</p><h2>События, которые имеют значение</h2><p>Изменения портфеля, качество данных и важные сообщения — с понятной причиной.</p></div><div class="view-toolbar"><div class="chip-group" id="event-filters" aria-label="Тип событий"><button type="button" class="filter-chip" data-event-filter="all" aria-pressed="true">Все события</button><button type="button" class="filter-chip" data-event-filter="risk" aria-pressed="false">Требуют внимания</button><button type="button" class="filter-chip" data-event-filter="income" aria-pressed="false">Выплаты</button><button type="button" class="filter-chip" data-event-filter="system" aria-pressed="false">Сервис</button></div><button id="events-refresh" class="button button-secondary" type="button">Обновить</button></div><div class="events-layout"><div id="events-feed" class="events-feed" aria-live="polite"></div><aside class="settings-card"><p class="card-label">СПОКОЙНЫЙ КОНТРОЛЬ</p><h3>Только значимое</h3><p class="muted">Важность определяется изменением фактов. Отсутствие данных всегда обозначается отдельно.</p><hr><h4>Ежедневный обзор</h4><p class="muted">Итоги, ожидаемые выплаты и следующие шаги. Настройте удобное время в уведомлениях.</p><button class="button button-secondary" type="button" data-go-view="notifications">Настроить уведомления</button></aside></div></section><section class="view-panel hidden" data-view-panel="assets"><div class="page-heading"><p class="section-label">КАТАЛОГ</p><h2>Найдите актив. Разберитесь в деталях.</h2><p>Параметры инструмента, ограничения и сравнение — до принятия решения.</p></div><article class="system-card system-card-hunter">
+
+                  <p>
+                    Ищет инструменты в T-Invest по тикеру или названию. Результат поиска
+                    не является рекомендацией купить или продать актив.
+                  </p>
+                  <form id="hunter-form" class="hunter-form" novalidate>
+                    <label for="hunter-query">Название, тикер или ISIN</label>
+                    <input
+                      id="hunter-query"
+                      type="search"
+                      minlength="1"
+                      maxlength="64"
+                      autocomplete="off"
+                      placeholder="Например: SBER или Газпром"
+                      required
+                    >
+                    <button id="hunter-search" class="button button-primary" type="submit">
+                      Найти
+                    </button>
+                  </form>
+                  <output id="hunter-message" class="message" aria-live="polite"></output>
+                  <div class="chip-group" id="asset-filters" aria-label="Тип инструмента"><button type="button" class="filter-chip" data-asset-filter="all" aria-pressed="true">Все</button><button type="button" class="filter-chip" data-asset-filter="bond" aria-pressed="false">Облигации</button><button type="button" class="filter-chip" data-asset-filter="share" aria-pressed="false">Акции</button><button type="button" class="filter-chip" data-asset-filter="etf" aria-pressed="false">Фонды</button><button type="button" class="filter-chip" data-asset-filter="favorites" aria-pressed="false">Избранное</button></div><p class="field-hint">Доступность покупки проверяется отдельно. Результат поиска не подтверждает право на сделку. Избранное хранится до закрытия вкладки.</p><div class="hunter-results" id="hunter-results"></div>
+                </article><div id="comparison-tray" class="comparison-tray hidden"><span id="comparison-count"></span><button id="compare-assets" class="button button-primary" type="button">Сравнить</button><button id="clear-comparison" class="button button-secondary" type="button">Очистить</button></div></section><section class="view-panel hidden" data-view-panel="strategy"><div class="page-heading"><p class="section-label">ПРЕДПОЧТЕНИЯ</p><h2>Ваша стратегия. Ваши правила.</h2><p>Сначала изучите влияние изменений. Ни один ползунок сам по себе не создаёт сделку.</p></div><div class="strategy-layout"><article class="settings-card"><p class="card-label">ЧЕРНОВИК РАСПРЕДЕЛЕНИЯ</p><h3>Как вы хотите распределить капитал?</h3><div class="chip-group" aria-label="Пример подхода"><button class="filter-chip" type="button" data-preset="income">Доход</button><button class="filter-chip" type="button" data-preset="growth">Накопление</button><button class="filter-chip" type="button" data-preset="balanced">Сочетание</button></div><p class="field-hint">Примеры для редактирования, не персональная рекомендация. Верхние лимиты ниже — отдельные ограничения.</p><div class="allocation-control" data-allocation-key="shares"><label class="allowed-class"><input type="checkbox" data-allow="shares" checked>Разрешить: Акции</label><div class="allocation-control-head"><label for="target-shares">Акции</label><button type="button" class="icon-button allocation-lock" data-lock="shares" aria-label="Закрепить долю: Акции" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="#icon-lock"></use></svg></button><label class="allocation-number"><span class="visually-hidden">Акции, процентов</span><input type="number" data-target-number="shares" min="0" max="100" step="1" value="20"><span>%</span></label></div><input id="target-shares" data-target-range="shares" type="range" min="0" max="100" step="1" value="20" aria-label="Акции, процентов"></div><div class="allocation-control" data-allocation-key="bonds"><label class="allowed-class"><input type="checkbox" data-allow="bonds" checked>Разрешить: Облигации</label><div class="allocation-control-head"><label for="target-bonds">Облигации</label><button type="button" class="icon-button allocation-lock" data-lock="bonds" aria-label="Закрепить долю: Облигации" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="#icon-lock"></use></svg></button><label class="allocation-number"><span class="visually-hidden">Облигации, процентов</span><input type="number" data-target-number="bonds" min="0" max="100" step="1" value="60"><span>%</span></label></div><input id="target-bonds" data-target-range="bonds" type="range" min="0" max="100" step="1" value="60" aria-label="Облигации, процентов"></div><div class="allocation-control" data-allocation-key="funds"><label class="allowed-class"><input type="checkbox" data-allow="funds" checked>Разрешить: Фонды</label><div class="allocation-control-head"><label for="target-funds">Фонды</label><button type="button" class="icon-button allocation-lock" data-lock="funds" aria-label="Закрепить долю: Фонды" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="#icon-lock"></use></svg></button><label class="allocation-number"><span class="visually-hidden">Фонды, процентов</span><input type="number" data-target-number="funds" min="0" max="100" step="1" value="10"><span>%</span></label></div><input id="target-funds" data-target-range="funds" type="range" min="0" max="100" step="1" value="10" aria-label="Фонды, процентов"></div><div class="allocation-control" data-allocation-key="cash"><label class="allowed-class"><input type="checkbox" data-allow="cash" checked>Разрешить: Резерв</label><div class="allocation-control-head"><label for="target-cash">Денежный резерв</label><button type="button" class="icon-button allocation-lock" data-lock="cash" aria-label="Закрепить долю: Денежный резерв" aria-pressed="false"><svg class="ui-icon" aria-hidden="true"><use href="#icon-lock"></use></svg></button><label class="allocation-number"><span class="visually-hidden">Денежный резерв, процентов</span><input type="number" data-target-number="cash" min="0" max="100" step="1" value="10"><span>%</span></label></div><input id="target-cash" data-target-range="cash" type="range" min="0" max="100" step="1" value="10" aria-label="Денежный резерв, процентов"></div><output id="allocation-status" class="message" aria-live="polite">Распределено 100%. Изменения ещё не сохранены.</output><button id="review-allocation" class="button button-primary" type="button">Посмотреть изменения</button></article><aside class="settings-card strategy-summary"><p class="card-label">ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР</p><div id="strategy-donut" class="strategy-donut" role="img" aria-label="Структура черновика"><span>100<small>% капитала</small></span></div><div id="allocation-legend"></div><div class="inline-note">Черновик остаётся в этой вкладке. Для переноса можно скачать его. Серверный профиль и лимиты сохраняются отдельно ниже.</div><button id="reset-allocation" class="button button-secondary" type="button">Вернуть начальные доли</button></aside></div><div class="section-heading"><h3>Подтверждённые настройки</h3><span class="section-note">Сохраняются в вашем аккаунте</span></div><div class="strategy-live-settings"><article class="settings-card profile-constraints-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Инвестиционные ограничения</p>
+                    <h3>Профиль капитала</h3>
+                  </div>
+                  <span class="state-badge" id="investment-profile-version">Не заполнен</span>
+                </header>
+                <p class="card-description">
+                  Эти параметры фиксируют резерв, горизонт и допустимый риск для будущих
+                  сценариев. Они не дают OmniCIO полномочий совершать сделки и не включают
+                  автоматическое исполнение.
+                </p>
+                <div id="investment-profile-help" class="field-hint">
+                  Заполняйте только фактические ограничения, которые относятся к вашему капиталу.
+                  Система не подставляет «рекомендуемые» значения: если параметр вам неизвестен,
+                  лучше не сохранять профиль до уточнения. Поля проверяются и в браузере, и на сервере.
+                </div>
+                <form
+                  id="investment-profile-form"
+                  class="form-stack"
+                  aria-describedby="investment-profile-help"
+                  novalidate
+                >
+                  <div class="constraint-form-grid">
+                    <div class="field">
+                      <label for="profile-reserve-rub">Резерв, ₽</label>
+                      <input id="profile-reserve-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" aria-describedby="profile-reserve-help" required>
+                      <p id="profile-reserve-help" class="field-hint">
+                        Сумма свободных рублей, которую optimizer обязан оставить нетронутой.
+                        Вместе с планируемыми снятиями она вычитается из доступного cash.
+                      </p>
+                    </div>
+                    <div class="field">
+                      <label for="profile-withdrawal-rub">Планируемые снятия, ₽</label>
+                      <input id="profile-withdrawal-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" aria-describedby="profile-withdrawal-help" required>
+                      <p id="profile-withdrawal-help" class="field-hint">
+                        Сумма ожидаемых выводов, которую нельзя считать бюджетом покупки.
+                        Если запланированных снятий нет, укажите 0.
+                      </p>
+                    </div>
+                    <div class="field">
+                      <label for="profile-horizon-months">Горизонт, месяцев</label>
+                      <input id="profile-horizon-months" type="number" min="1" max="1200" step="1" inputmode="numeric" aria-describedby="profile-horizon-help" required>
+                      <p id="profile-horizon-help" class="field-hint">
+                        Ваш горизонт в полных месяцах. Допустимо целое число от 1 до 1200;
+                        это ограничение сценария, а не обещание доходности.
+                      </p>
+                    </div>
+                    <div class="field">
+                      <label for="profile-max-drawdown">Допустимая просадка, %</label>
+                      <input id="profile-max-drawdown" type="number" min="0" max="100" step="0.1" inputmode="decimal" aria-describedby="profile-drawdown-help" required>
+                      <p id="profile-drawdown-help" class="field-hint">
+                        Максимальное снижение портфеля, которое вы задаёте как ограничение.
+                        Значение 0–100%; это не прогноз будущего убытка.
+                      </p>
+                    </div>
+                    <div class="field">
+                      <label for="profile-liquidity-days">Горизонт ликвидности, дней</label>
+                      <input id="profile-liquidity-days" type="number" min="0" max="36500" step="1" inputmode="numeric" aria-describedby="profile-liquidity-help" required>
+                      <p id="profile-liquidity-help" class="field-hint">
+                        За сколько дней позиция должна укладываться в подтверждённую ликвидность.
+                        R4 умножает дневную capacity на этот срок; 0 не даёт нового объёма по этому лимиту.
+                      </p>
+                    </div>
+                  </div>
+                  <label class="check">
+                    <input id="profile-allow-below-grade" type="checkbox">
+                    <span>
+                      Разрешать рассматривать бумаги ниже инвестиционного уровня.
+                      Это ограничение не является рекомендацией и не включает торговые права.
+                    </span>
+                  </label>
+                  <div class="profile-constraint-meta">
+                    <span id="investment-profile-created">Версия ещё не сохранена</span>
+                  </div>
+                  <output id="investment-profile-draft-status" class="field-hint" aria-live="polite">
+                    Проверяем сохранённые параметры…
+                  </output>
+                  <button id="investment-profile-reload" class="button button-secondary" type="button">
+                    Загрузить сохранённую версию
+                  </button>
+                  <button id="investment-profile-save" class="button button-primary" type="submit">
+                    Сохранить новую версию профиля
+                  </button>
+                  <output id="investment-profile-message" class="message" aria-live="polite"></output>
+                </form>
+              </article><article class="settings-card profile-constraints-card">
+                <header class="card-header">
+                  <div>
+                    <p class="card-label">Балансировка · R4</p>
+                    <h3>Лимиты распределения</h3>
+                  </div>
+                  <span class="state-badge" id="balancing-policy-version">Не заполнена</span>
+                </header>
+                <p class="card-description">
+                  Эти значения задают явные ограничения для сценариев балансировки.
+                  OmniCIO не подставляет скрытые проценты концентрации и не получает
+                  торговых полномочий. Если policy не заполнена, сценарии сделок не строятся.
+                </p>
+                <div id="balancing-policy-help" class="field-hint">
+                  Лимиты инструмента, сектора, эмитента, группы и класса активов — это верхние
+                  доли портфеля, а не целевые значения. Бюджет оборота и no-trade band ограничивают
+                  лишние перестановки. Налог и haircut — только ваши сценарные допущения:
+                  OmniCIO не определяет их автоматически и не выдаёт haircut за вероятность дефолта.
+                </div>
+                <form
+                  id="balancing-policy-form"
+                  class="form-stack"
+                  aria-describedby="balancing-policy-help"
+                  novalidate
+                >
+                  <div class="constraint-form-grid">
+                    <div class="field">
+                      <label for="balance-max-instrument">Макс. один инструмент, %</label>
+                      <input id="balance-max-instrument" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-sector">Макс. сектор, %</label>
+                      <input id="balance-max-sector" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-issuer">Макс. эмитент, %</label>
+                      <input id="balance-max-issuer" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-group">Макс. группа, %</label>
+                      <input id="balance-max-group" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-share">Макс. акции, %</label>
+                      <input id="balance-max-share" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-bond">Макс. облигации, %</label>
+                      <input id="balance-max-bond" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-etf">Макс. фонды, %</label>
+                      <input id="balance-max-etf" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-below-grade">Макс. ниже инвест. уровня, %</label>
+                      <input id="balance-max-below-grade" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-unknown">Макс. неизвестный рейтинг, %</label>
+                      <input id="balance-max-unknown" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-max-term">Макс. срок облигаций, месяцев</label>
+                      <input id="balance-max-term" type="number" min="0" max="1200" step="1" inputmode="numeric" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-turnover-budget">Бюджет оборота, % NAV</label>
+                      <input id="balance-turnover-budget" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-daily-participation">Макс. участие в среднедневном обороте, %</label>
+                      <input id="balance-daily-participation" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-tax-rate">Ставка налога для сценария, %</label>
+                      <input id="balance-tax-rate" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-uncertainty-haircut">Haircut неопределённости, %</label>
+                      <input id="balance-uncertainty-haircut" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-credit-haircut">Кредитный stress-haircut, %</label>
+                      <input id="balance-credit-haircut" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-no-trade-band">No-trade band, % позиции</label>
+                      <input id="balance-no-trade-band" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                      <label for="balance-min-replace-benefit">Мин. выгода замены, ₽</label>
+                      <input id="balance-min-replace-benefit" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" required>
+                    </div>
+                  </div>
+                  <p class="field-hint">
+                    Ставка налога и оба haircut — явные сценарные допущения пользователя.
+                    Кредитный haircut не является вероятностью дефолта и не выдаётся за
+                    откалиброванный прогноз. Налоговый процент не определяется автоматически. Лимит участия ограничивает долю подтверждённого
+                    среднедневного оборота, которую optimizer вправе считать доступной для выхода.
+                    Системные границы текущего R4: новые покупки только RUB-инструментов
+                    классов акции/облигации/фонды со статусом риска <code>normal</code>.
+                    Резерв, снятия, горизонт ликвидности и разрешение below-grade берутся
+                    из версии «Профиль капитала».
+                  </p>
+                  <div class="profile-constraint-meta">
+                    <span id="balancing-policy-created">Версия ещё не сохранена</span>
+                  </div>
+                  <output id="balancing-policy-draft-status" class="field-hint" aria-live="polite">
+                    Проверяем сохранённые параметры…
+                  </output>
+                  <button id="balancing-policy-reload" class="button button-secondary" type="button">
+                    Загрузить сохранённую версию
+                  </button>
+                  <button id="balancing-policy-save" class="button button-primary" type="submit">
+                    Сохранить новую версию лимитов
+                  </button>
+                  <output id="balancing-policy-message" class="message" aria-live="polite"></output>
+                </form>
+              </article></div></section><section class="view-panel hidden" data-view-panel="orders"><div class="page-heading"><p class="section-label">ИСПОЛНЕНИЕ</p><h2>Сделки под вашим контролем</h2><p>Заявки OmniCIO, их статус и сверка. Подтверждение плана и отправка заявки — отдельные действия.</p></div><article class="portfolio-card">
+                <header class="portfolio-card-header">
+                  <div>
+                    <p class="card-label">Проверка исполнения</p>
+                    <h3>Теневое и тестовое исполнение</h3>
+                  </div>
+                  <span class="state-badge state-next" id="execution-status">Live выключен</span>
+                </header>
+                <p class="card-description">
+                  Проверка исполнения использует подтверждённую точную версию плана в Shadow или
+                  T-Invest Sandbox. Реальное исполнение подключается отдельно и никогда
+                  не включается автоматически: нужен server-side feature gate, точный
+                  production-счёт, краткоживущее разрешение и повторное подтверждение
+                  пользователя. Пока опубликованные legal-документы v6 описывают режим
+                  без реальных поручений, production live остаётся выключен.
+                </p>
+
+                <section class="portfolio-card" aria-labelledby="live-mandate-title">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Реальное исполнение</p>
+                      <h4 id="live-mandate-title">Разрешение на реальные сделки</h4>
+                    </div>
+                    <span class="state-badge state-next" id="live-mandate-status">
+                      Проверяем gate
+                    </span>
+                  </header>
+                  <p id="live-mandate-summary" class="field-hint">
+                    Это отдельное разрешение, а не настройка входа или T-Invest.
+                    Оно никогда не создаётся автоматически.
+                  </p>
+                  <form
+                    id="live-mandate-form"
+                    class="form-stack hidden"
+                    aria-describedby="live-mandate-help"
+                    novalidate
+                  >
+                    <div id="live-mandate-help" class="field-hint">
+                      Реальное исполнение допускает только подтверждённый <code>deploy_cash</code>,
+                      buy-only, limit + Fill-and-Kill, без margin. Укажите собственные
+                      лимиты не выше server-side caps и срок не более 24 часов.
+                    </div>
+                    <div class="constraint-form-grid">
+                      <div class="field">
+                        <label for="live-max-order">Максимум одной заявки, ₽</label>
+                        <input
+                          id="live-max-order"
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          inputmode="decimal"
+                          required
+                        >
+                      </div>
+                      <div class="field">
+                        <label for="live-max-daily">Максимум за день, ₽</label>
+                        <input
+                          id="live-max-daily"
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          inputmode="decimal"
+                          required
+                        >
+                      </div>
+                      <div class="field">
+                        <label for="live-expires-at">Разрешение действует до</label>
+                        <input id="live-expires-at" type="datetime-local" required>
+                      </div>
+                      <div class="field">
+                        <label for="live-profile-id">ID профиля для подтверждения</label>
+                        <input
+                          id="live-profile-id"
+                          type="text"
+                          inputmode="numeric"
+                          autocomplete="off"
+                          pattern="[0-9]{9}"
+                          maxlength="9"
+                          placeholder="000000001"
+                          required
+                        >
+                      </div>
+                    </div>
+                    <label class="check">
+                      <input id="live-confirm" type="checkbox" required>
+                      <span>
+                        Я понимаю, что после отдельного запуска подтверждённого пакета
+                        OmniCIO сможет отправить реальные limit-поручения в пределах этих
+                        caps. Отзыв разрешения блокирует новые поручения, но не скрывает
+                        уже отправленные — их нужно сверить или отменить.
+                      </span>
+                    </label>
+                    <div class="proposal-decision-actions">
+                      <button id="live-mandate-save" class="button button-danger-secondary" type="submit">
+                        Создать live-разрешение
+                      </button>
+                      <button id="live-mandate-revoke" class="button button-secondary hidden" type="button">
+                        Kill switch · запретить новые заявки
+                      </button>
+                    </div>
+                  </form>
+                  <output id="live-mandate-message" class="message" aria-live="polite"></output>
+                </section>
+
+                <section class="portfolio-two-column">
+                  <div>
+                    <div class="portfolio-card-header">
+                      <p class="card-label">Журнал запусков</p>
+                      <button id="execution-refresh" class="button button-secondary" type="button">
+                        Обновить
+                      </button>
+                    </div>
+                    <div id="execution-history" class="analysis-sources"></div>
+                  </div>
+                  <div>
+                    <p class="card-label">Состояние запуска</p>
+                    <div id="execution-details" class="analysis-sources"></div>
+                  </div>
+                </section>
+                <output id="execution-message" class="message" aria-live="polite"></output>
+                <p class="field-hint">
+                  Запуск доступен только у предложения со статусом «подтверждено».
+                  Для sandbox подключите именно песочницу T-Invest. Кнопка «Сверить»
+                  продолжает state machine по сохранённому request ID; повторная
+                  отправка неоднозначной заявки запрещена. Live-торговля появится
+                  только на отдельном этапе R7 после новых release gates.
+                </p>
+              </article></section><section class="view-panel hidden" data-view-panel="payouts"><div class="page-heading"><p class="section-label">ДОХОД ОТ ВЛАДЕНИЯ</p><h2>Календарь выплат</h2><p>Купоны и дивиденды отдельно от возврата вложенного капитала.</p></div><div class="view-toolbar"><div class="calendar-navigation"><button id="payout-prev" class="icon-button" type="button" aria-label="Предыдущий месяц">‹</button><h3 id="payout-month"></h3><button id="payout-next" class="icon-button" type="button" aria-label="Следующий месяц">›</button></div><button id="payout-today" type="button" class="button button-secondary">Текущий месяц</button></div><div class="metric-strip"><article class="settings-card"><span>Объявленный доход</span><strong id="payout-announced">—</strong><small>В выбранном месяце</small></article><article class="settings-card"><span>Оценочные выплаты</span><strong id="payout-estimated">—</strong><small>Не свободный остаток</small></article><article class="settings-card"><span>Возврат номинала</span><strong id="payout-principal">—</strong><small>Возвращённый капитал, не доход</small></article></div><div class="settings-card"><div class="calendar-week" aria-hidden="true"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div><div id="payout-calendar" class="payout-calendar"></div></div><article class="portfolio-card">
+                  <header class="portfolio-card-header">
+                    <div>
+                      <p class="card-label">Календарь</p>
+                      <h3>Выплаты и события</h3>
+                    </div>
+                  </header>
+                  <div id="intelligence-payouts" class="analysis-sources"></div>
+                  <p class="field-hint">
+                    Плановая дата выплаты не считается фактическим зачислением на счёт.
+                  </p>
+                </article></section><section class="view-panel hidden" data-view-panel="goals"><div class="page-heading"><p class="section-label">ВАШ ОРИЕНТИР</p><h2>Капитал с понятной целью</h2><p>Планируйте будущий капитал без обещаний доходности.</p></div><div class="view-toolbar"><p class="muted">Сценарии хранятся только в открытой вкладке. Скачайте план, чтобы сохранить его.</p><button id="create-goal" class="button button-primary" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg>Создать цель</button></div><div id="goals-list" class="goals-grid"></div><div class="settings-card milestone-card"><div class="milestone-mark"><svg class="ui-icon" aria-hidden="true"><use href="#icon-goals"></use></svg></div><div><p class="card-label">МАЛЕНЬКИЕ ШАГИ</p><h3>Порядок важнее спешки</h3><p class="muted">Уточните цель, сохраните профиль и разберитесь в выплатах. Достижения связаны с пониманием, а не с количеством сделок.</p></div><button class="button button-secondary" type="button" data-go-view="strategy">Открыть стратегию</button></div></section><section class="view-panel hidden" data-view-panel="assistant"><div class="page-heading"><p class="section-label">ЛИЧНЫЙ ПОМОЩНИК</p><h2>Разберёмся вместе</h2><p>Объяснения, источники и изменения — с вашим подтверждением.</p></div><div class="assistant-workspace"><aside class="assistant-sidebar"><button id="new-chat" class="button button-secondary" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#icon-plus"></use></svg>Новый разговор</button><p class="card-label">КОНТЕКСТ</p><label class="field">Данные для вопроса<select id="assistant-context"><option value="general">Общий вопрос</option><option value="portfolio">Мой портфель</option></select></label><p class="field-hint">Контекст не отправляется, пока сервис ассистента не подключён.</p><button id="assistant-memory" type="button" class="button button-secondary">Память ассистента</button><div class="inline-note">Qwen3-14B<br>Подключение сервиса ожидается</div></aside><div class="assistant-main"><div class="assistant-status"><span class="state-badge state-next">Ассистент пока не подключён</span><span id="assistant-context-label">Без данных портфеля</span></div><div class="chat-stage" id="chat-stage"><span class="assistant-orb"><svg class="ui-icon" aria-hidden="true"><use href="#icon-assistant"></use></svg></span><h3>С чего начнём?</h3><p>Выберите вопрос или напишите свой.<br>Черновик останется здесь до подключения ассистента.</p><div class="prompt-grid"><button type="button" class="prompt-card" data-prompt="Что изменилось в моём портфеле?">Что изменилось в моём портфеле? <svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow"></use></svg></button><button type="button" class="prompt-card" data-prompt="Как устроены купонные выплаты?">Как устроены купонные выплаты? <svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow"></use></svg></button><button type="button" class="prompt-card" data-prompt="Объясни распределение активов">Объясни распределение активов <svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow"></use></svg></button><button type="button" class="prompt-card" data-prompt="Как настроить резерв?">Как настроить резерв? <svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow"></use></svg></button></div></div><form id="assistant-form" class="chat-composer"><label for="assistant-input" class="visually-hidden">Ваш вопрос ассистенту</label><textarea id="assistant-input" rows="2" maxlength="4000" placeholder="Задайте вопрос или вставьте публичную ссылку…"></textarea><div class="composer-tools"><label><svg class="ui-icon" aria-hidden="true"><use href="#icon-globe"></use></svg><select id="assistant-search" aria-label="Поиск в интернете"><option>Поиск: Авто</option><option>Поиск: Всегда</option><option>Поиск: Выкл</option></select></label><button type="submit" class="button button-primary">Сохранить черновик</button></div><output id="assistant-message" class="message" aria-live="polite"></output></form><p class="field-hint">Изменения настроек требуют отдельного подтверждения. Поручения брокеру из чата не отправляются.</p></div></div></section><section class="view-panel hidden" data-view-panel="notifications"><div class="page-heading"><p class="section-label">ПРОФИЛЬ И СЕРВИС</p><h2>Уведомления без лишнего шума</h2><p>Важное — вовремя. Остальное — в ежедневном обзоре.</p></div><form id="notifications-form" class="settings-card form-stack"><div class="inline-note">Черновик расписания. Серверная доставка push ещё не подключена; разрешение браузера сейчас не запрашивается.</div><div class="constraint-form-grid"><label class="field">Время обзора<input id="digest-time" type="time" value="20:30" required></label><label class="field">Часовой пояс<select id="digest-zone"><option>Europe/Moscow</option><option>Europe/Kaliningrad</option><option>Asia/Yekaterinburg</option><option>Asia/Novosibirsk</option><option>Asia/Vladivostok</option></select></label><label class="field">Тихие часы: с<input id="quiet-start" type="time" value="22:00" required></label><label class="field">Тихие часы: до<input id="quiet-end" type="time" value="09:00" required></label></div><label class="toggle-row"><span><strong>Безопасность и статус заявок</strong><small>Важные события всегда остаются в центре уведомлений.</small></span><input type="checkbox" id="notify-security" role="switch" checked></label><label class="toggle-row"><span><strong>Купоны и дивиденды</strong><small>Объединять обычные выплаты в дневной обзор.</small></span><input type="checkbox" id="notify-income" role="switch" checked></label><label class="toggle-row"><span><strong>Критические события ночью</strong><small>Разрешить попытку доставки в тихие часы.</small></span><input type="checkbox" id="notify-night" role="switch" ></label><label class="toggle-row"><span><strong>Суммы на экране блокировки</strong><small>По умолчанию показывать только факт обновления.</small></span><input type="checkbox" id="notify-amounts" role="switch" ></label><button class="button button-primary" type="submit">Скачать настройки</button><output id="notifications-message" class="message" aria-live="polite"></output></form></section>
           <section class="view-panel hidden" data-view-panel="system">
             <div class="page-heading">
               <p class="section-label">Система</p>
@@ -538,39 +875,7 @@
                   </dl>
                 </article>
 
-                <article class="system-card system-card-hunter">
-                  <header class="system-card-header">
-                    <div>
-                      <span class="system-symbol" aria-hidden="true">П</span>
-                      <div>
-                        <strong>Поиск инструментов</strong>
-                        <span>Доступные инструменты и справочные данные</span>
-                      </div>
-                    </div>
-                    <span class="state-badge state-ok">Работает</span>
-                  </header>
-                  <p>
-                    Ищет инструменты в T-Invest по тикеру или названию. Результат поиска
-                    не является рекомендацией купить или продать актив.
-                  </p>
-                  <form id="hunter-form" class="hunter-form" novalidate>
-                    <label class="visually-hidden" for="hunter-query">Тикер или название</label>
-                    <input
-                      id="hunter-query"
-                      type="search"
-                      minlength="1"
-                      maxlength="64"
-                      autocomplete="off"
-                      placeholder="Например: SBER или Газпром"
-                      required
-                    >
-                    <button id="hunter-search" class="button button-primary" type="submit">
-                      Найти
-                    </button>
-                  </form>
-                  <output id="hunter-message" class="message" aria-live="polite"></output>
-                  <div class="hunter-results" id="hunter-results"></div>
-                </article>
+
 
                 <article class="system-card">
                   <header class="system-card-header">
@@ -675,7 +980,7 @@
                   <small id="portfolio-daily-relative">—</small>
                 </article>
                 <article class="portfolio-metric">
-                  <span>Незаблокированные RUB</span>
+                  <span>Свободные рубли</span>
                   <strong id="portfolio-free-cash">—</strong>
                   <small>Не торговый бюджет до резервов и издержек</small>
                 </article>
@@ -1217,148 +1522,10 @@
                 </p>
               </article>
 
-              <article class="portfolio-card">
-                <header class="portfolio-card-header">
-                  <div>
-                    <p class="card-label">Проверка исполнения</p>
-                    <h3>Теневое и тестовое исполнение</h3>
-                  </div>
-                  <span class="state-badge state-next" id="execution-status">Live выключен</span>
-                </header>
-                <p class="card-description">
-                  Проверка исполнения использует подтверждённую точную версию плана в Shadow или
-                  T-Invest Sandbox. Реальное исполнение подключается отдельно и никогда
-                  не включается автоматически: нужен server-side feature gate, точный
-                  production-счёт, краткоживущее разрешение и повторное подтверждение
-                  пользователя. Пока опубликованные legal-документы v6 описывают режим
-                  без реальных поручений, production live остаётся выключен.
-                </p>
 
-                <section class="portfolio-card" aria-labelledby="live-mandate-title">
-                  <header class="portfolio-card-header">
-                    <div>
-                      <p class="card-label">Реальное исполнение</p>
-                      <h4 id="live-mandate-title">Разрешение на реальные сделки</h4>
-                    </div>
-                    <span class="state-badge state-next" id="live-mandate-status">
-                      Проверяем gate
-                    </span>
-                  </header>
-                  <p id="live-mandate-summary" class="field-hint">
-                    Это отдельное разрешение, а не настройка входа или T-Invest.
-                    Оно никогда не создаётся автоматически.
-                  </p>
-                  <form
-                    id="live-mandate-form"
-                    class="form-stack hidden"
-                    aria-describedby="live-mandate-help"
-                    novalidate
-                  >
-                    <div id="live-mandate-help" class="field-hint">
-                      Реальное исполнение допускает только подтверждённый <code>deploy_cash</code>,
-                      buy-only, limit + Fill-and-Kill, без margin. Укажите собственные
-                      лимиты не выше server-side caps и срок не более 24 часов.
-                    </div>
-                    <div class="constraint-form-grid">
-                      <div class="field">
-                        <label for="live-max-order">Максимум одной заявки, ₽</label>
-                        <input
-                          id="live-max-order"
-                          type="number"
-                          min="1"
-                          step="0.01"
-                          inputmode="decimal"
-                          required
-                        >
-                      </div>
-                      <div class="field">
-                        <label for="live-max-daily">Максимум за день, ₽</label>
-                        <input
-                          id="live-max-daily"
-                          type="number"
-                          min="1"
-                          step="0.01"
-                          inputmode="decimal"
-                          required
-                        >
-                      </div>
-                      <div class="field">
-                        <label for="live-expires-at">Разрешение действует до</label>
-                        <input id="live-expires-at" type="datetime-local" required>
-                      </div>
-                      <div class="field">
-                        <label for="live-profile-id">ID профиля для подтверждения</label>
-                        <input
-                          id="live-profile-id"
-                          type="text"
-                          inputmode="numeric"
-                          autocomplete="off"
-                          pattern="[0-9]{9}"
-                          maxlength="9"
-                          placeholder="000000001"
-                          required
-                        >
-                      </div>
-                    </div>
-                    <label class="check">
-                      <input id="live-confirm" type="checkbox" required>
-                      <span>
-                        Я понимаю, что после отдельного запуска подтверждённого пакета
-                        OmniCIO сможет отправить реальные limit-поручения в пределах этих
-                        caps. Отзыв разрешения блокирует новые поручения, но не скрывает
-                        уже отправленные — их нужно сверить или отменить.
-                      </span>
-                    </label>
-                    <div class="proposal-decision-actions">
-                      <button id="live-mandate-save" class="button button-danger-secondary" type="submit">
-                        Создать live-разрешение
-                      </button>
-                      <button id="live-mandate-revoke" class="button button-secondary hidden" type="button">
-                        Kill switch · запретить новые заявки
-                      </button>
-                    </div>
-                  </form>
-                  <output id="live-mandate-message" class="message" aria-live="polite"></output>
-                </section>
-
-                <section class="portfolio-two-column">
-                  <div>
-                    <div class="portfolio-card-header">
-                      <p class="card-label">Журнал запусков</p>
-                      <button id="execution-refresh" class="button button-secondary" type="button">
-                        Обновить
-                      </button>
-                    </div>
-                    <div id="execution-history" class="analysis-sources"></div>
-                  </div>
-                  <div>
-                    <p class="card-label">Состояние запуска</p>
-                    <div id="execution-details" class="analysis-sources"></div>
-                  </div>
-                </section>
-                <output id="execution-message" class="message" aria-live="polite"></output>
-                <p class="field-hint">
-                  Запуск доступен только у предложения со статусом «подтверждено».
-                  Для sandbox подключите именно песочницу T-Invest. Кнопка «Сверить»
-                  продолжает state machine по сохранённому request ID; повторная
-                  отправка неоднозначной заявки запрещена. Live-торговля появится
-                  только на отдельном этапе R7 после новых release gates.
-                </p>
-              </article>
 
               <section class="portfolio-two-column">
-                <article class="portfolio-card">
-                  <header class="portfolio-card-header">
-                    <div>
-                      <p class="card-label">Календарь</p>
-                      <h3>Выплаты и события</h3>
-                    </div>
-                  </header>
-                  <div id="intelligence-payouts" class="analysis-sources"></div>
-                  <p class="field-hint">
-                    Плановая дата выплаты не считается фактическим зачислением на счёт.
-                  </p>
-                </article>
+
                 <article class="portfolio-card">
                   <header class="portfolio-card-header">
                     <div>
@@ -1525,215 +1692,9 @@
                 <output id="activity-message" class="message">Откройте профиль для загрузки событий.</output>
               </article>
 
-              <article class="settings-card profile-constraints-card">
-                <header class="card-header">
-                  <div>
-                    <p class="card-label">Инвестиционные ограничения</p>
-                    <h3>Профиль капитала</h3>
-                  </div>
-                  <span class="state-badge" id="investment-profile-version">Не заполнен</span>
-                </header>
-                <p class="card-description">
-                  Эти параметры фиксируют резерв, горизонт и допустимый риск для будущих
-                  сценариев. Они не дают OmniCIO полномочий совершать сделки и не включают
-                  автоматическое исполнение.
-                </p>
-                <div id="investment-profile-help" class="field-hint">
-                  Заполняйте только фактические ограничения, которые относятся к вашему капиталу.
-                  Система не подставляет «рекомендуемые» значения: если параметр вам неизвестен,
-                  лучше не сохранять профиль до уточнения. Поля проверяются и в браузере, и на сервере.
-                </div>
-                <form
-                  id="investment-profile-form"
-                  class="form-stack"
-                  aria-describedby="investment-profile-help"
-                  novalidate
-                >
-                  <div class="constraint-form-grid">
-                    <div class="field">
-                      <label for="profile-reserve-rub">Резерв, ₽</label>
-                      <input id="profile-reserve-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" aria-describedby="profile-reserve-help" required>
-                      <p id="profile-reserve-help" class="field-hint">
-                        Сумма свободных рублей, которую optimizer обязан оставить нетронутой.
-                        Вместе с планируемыми снятиями она вычитается из доступного cash.
-                      </p>
-                    </div>
-                    <div class="field">
-                      <label for="profile-withdrawal-rub">Планируемые снятия, ₽</label>
-                      <input id="profile-withdrawal-rub" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" aria-describedby="profile-withdrawal-help" required>
-                      <p id="profile-withdrawal-help" class="field-hint">
-                        Сумма ожидаемых выводов, которую нельзя считать бюджетом покупки.
-                        Если запланированных снятий нет, укажите 0.
-                      </p>
-                    </div>
-                    <div class="field">
-                      <label for="profile-horizon-months">Горизонт, месяцев</label>
-                      <input id="profile-horizon-months" type="number" min="1" max="1200" step="1" inputmode="numeric" aria-describedby="profile-horizon-help" required>
-                      <p id="profile-horizon-help" class="field-hint">
-                        Ваш горизонт в полных месяцах. Допустимо целое число от 1 до 1200;
-                        это ограничение сценария, а не обещание доходности.
-                      </p>
-                    </div>
-                    <div class="field">
-                      <label for="profile-max-drawdown">Допустимая просадка, %</label>
-                      <input id="profile-max-drawdown" type="number" min="0" max="100" step="0.1" inputmode="decimal" aria-describedby="profile-drawdown-help" required>
-                      <p id="profile-drawdown-help" class="field-hint">
-                        Максимальное снижение портфеля, которое вы задаёте как ограничение.
-                        Значение 0–100%; это не прогноз будущего убытка.
-                      </p>
-                    </div>
-                    <div class="field">
-                      <label for="profile-liquidity-days">Горизонт ликвидности, дней</label>
-                      <input id="profile-liquidity-days" type="number" min="0" max="36500" step="1" inputmode="numeric" aria-describedby="profile-liquidity-help" required>
-                      <p id="profile-liquidity-help" class="field-hint">
-                        За сколько дней позиция должна укладываться в подтверждённую ликвидность.
-                        R4 умножает дневную capacity на этот срок; 0 не даёт нового объёма по этому лимиту.
-                      </p>
-                    </div>
-                  </div>
-                  <label class="check">
-                    <input id="profile-allow-below-grade" type="checkbox">
-                    <span>
-                      Разрешать рассматривать бумаги ниже инвестиционного уровня.
-                      Это ограничение не является рекомендацией и не включает торговые права.
-                    </span>
-                  </label>
-                  <div class="profile-constraint-meta">
-                    <span id="investment-profile-created">Версия ещё не сохранена</span>
-                  </div>
-                  <output id="investment-profile-draft-status" class="field-hint" aria-live="polite">
-                    Проверяем сохранённые параметры…
-                  </output>
-                  <button id="investment-profile-reload" class="button button-secondary" type="button">
-                    Загрузить сохранённую версию
-                  </button>
-                  <button id="investment-profile-save" class="button button-primary" type="submit">
-                    Сохранить новую версию профиля
-                  </button>
-                  <output id="investment-profile-message" class="message" aria-live="polite"></output>
-                </form>
-              </article>
 
-              <article class="settings-card profile-constraints-card">
-                <header class="card-header">
-                  <div>
-                    <p class="card-label">Балансировка · R4</p>
-                    <h3>Лимиты распределения</h3>
-                  </div>
-                  <span class="state-badge" id="balancing-policy-version">Не заполнена</span>
-                </header>
-                <p class="card-description">
-                  Эти значения задают явные ограничения для сценариев балансировки.
-                  OmniCIO не подставляет скрытые проценты концентрации и не получает
-                  торговых полномочий. Если policy не заполнена, сценарии сделок не строятся.
-                </p>
-                <div id="balancing-policy-help" class="field-hint">
-                  Лимиты инструмента, сектора, эмитента, группы и класса активов — это верхние
-                  доли портфеля, а не целевые значения. Бюджет оборота и no-trade band ограничивают
-                  лишние перестановки. Налог и haircut — только ваши сценарные допущения:
-                  OmniCIO не определяет их автоматически и не выдаёт haircut за вероятность дефолта.
-                </div>
-                <form
-                  id="balancing-policy-form"
-                  class="form-stack"
-                  aria-describedby="balancing-policy-help"
-                  novalidate
-                >
-                  <div class="constraint-form-grid">
-                    <div class="field">
-                      <label for="balance-max-instrument">Макс. один инструмент, %</label>
-                      <input id="balance-max-instrument" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-max-sector">Макс. сектор, %</label>
-                      <input id="balance-max-sector" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-max-issuer">Макс. эмитент, %</label>
-                      <input id="balance-max-issuer" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-max-group">Макс. группа, %</label>
-                      <input id="balance-max-group" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-max-share">Макс. акции, %</label>
-                      <input id="balance-max-share" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-max-bond">Макс. облигации, %</label>
-                      <input id="balance-max-bond" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-max-etf">Макс. фонды, %</label>
-                      <input id="balance-max-etf" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-max-below-grade">Макс. ниже инвест. уровня, %</label>
-                      <input id="balance-max-below-grade" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-max-unknown">Макс. неизвестный рейтинг, %</label>
-                      <input id="balance-max-unknown" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-max-term">Макс. срок облигаций, месяцев</label>
-                      <input id="balance-max-term" type="number" min="0" max="1200" step="1" inputmode="numeric" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-turnover-budget">Бюджет оборота, % NAV</label>
-                      <input id="balance-turnover-budget" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-daily-participation">Макс. участие в среднедневном обороте, %</label>
-                      <input id="balance-daily-participation" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-tax-rate">Ставка налога для сценария, %</label>
-                      <input id="balance-tax-rate" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-uncertainty-haircut">Haircut неопределённости, %</label>
-                      <input id="balance-uncertainty-haircut" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-credit-haircut">Кредитный stress-haircut, %</label>
-                      <input id="balance-credit-haircut" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-no-trade-band">No-trade band, % позиции</label>
-                      <input id="balance-no-trade-band" type="number" min="0" max="100" step="0.1" inputmode="decimal" required>
-                    </div>
-                    <div class="field">
-                      <label for="balance-min-replace-benefit">Мин. выгода замены, ₽</label>
-                      <input id="balance-min-replace-benefit" type="number" min="0" max="1000000000000" step="0.01" inputmode="decimal" required>
-                    </div>
-                  </div>
-                  <p class="field-hint">
-                    Ставка налога и оба haircut — явные сценарные допущения пользователя.
-                    Кредитный haircut не является вероятностью дефолта и не выдаётся за
-                    откалиброванный прогноз. Налоговый процент не определяется автоматически. Лимит участия ограничивает долю подтверждённого
-                    среднедневного оборота, которую optimizer вправе считать доступной для выхода.
-                    Системные границы текущего R4: новые покупки только RUB-инструментов
-                    классов акции/облигации/фонды со статусом риска <code>normal</code>.
-                    Резерв, снятия, горизонт ликвидности и разрешение below-grade берутся
-                    из версии «Профиль капитала».
-                  </p>
-                  <div class="profile-constraint-meta">
-                    <span id="balancing-policy-created">Версия ещё не сохранена</span>
-                  </div>
-                  <output id="balancing-policy-draft-status" class="field-hint" aria-live="polite">
-                    Проверяем сохранённые параметры…
-                  </output>
-                  <button id="balancing-policy-reload" class="button button-secondary" type="button">
-                    Загрузить сохранённую версию
-                  </button>
-                  <button id="balancing-policy-save" class="button button-primary" type="submit">
-                    Сохранить новую версию лимитов
-                  </button>
-                  <output id="balancing-policy-message" class="message" aria-live="polite"></output>
-                </form>
-              </article>
+
+
             </section>
           </section>
 
@@ -1747,13 +1708,13 @@
               </p>
             </div>
 
-            <section class="settings-stack">
+            <div class="service-links"><button type="button" class="settings-menu-row" data-go-view="profile"><span class="setting-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-user"></use></svg></span><span><strong>Мой профиль</strong><small>Аккаунт, вход и безопасность</small></span><span aria-hidden="true">›</span></button><button type="button" class="settings-menu-row" data-go-view="connections"><span class="setting-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-link"></use></svg></span><span><strong>Подключения</strong><small>Брокерский счёт T-Invest</small></span><span aria-hidden="true">›</span></button><button type="button" class="settings-menu-row" data-go-view="notifications"><span class="setting-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-bell"></use></svg></span><span><strong>Уведомления</strong><small>Обзор и тихие часы</small></span><span aria-hidden="true">›</span></button><button type="button" class="settings-menu-row" data-go-view="system"><span class="setting-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-events"></use></svg></span><span><strong>Состояние сервисов</strong><small>Данные, наблюдение и источники</small></span><span aria-hidden="true">›</span></button><button type="button" class="settings-menu-row" data-go-view="support"><span class="setting-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-support"></use></svg></span><span><strong>Помощь и документы</strong><small>Поддержка и правила сервиса</small></span><span aria-hidden="true">›</span></button></div><section class="settings-stack">
               <section class="status-section" aria-labelledby="working-now-title">
                 <div class="section-heading">
                   <h3 id="working-now-title">Состояние системы</h3>
                   <span class="section-note">Текущий статус</span>
                 </div>
-  
+
                 <div class="status-list">
                   <div class="status-row">
                     <div>
@@ -1762,7 +1723,7 @@
                     </div>
                     <span class="state-badge state-ok">Работает</span>
                   </div>
-  
+
                   <div class="status-row">
                     <div>
                       <strong>Подключение T-Invest</strong>
@@ -1770,7 +1731,7 @@
                     </div>
                     <span class="state-badge" id="home-tbank-state">Проверяем</span>
                   </div>
-  
+
                   <div class="status-row">
                     <div>
                       <strong>Данные портфеля</strong>
@@ -1778,7 +1739,7 @@
                     </div>
                     <span class="state-badge" id="home-portfolio-state">Загружаем</span>
                   </div>
-  
+
                   <div class="status-row">
                     <div>
                       <strong>Данные ЦБ</strong>
@@ -2069,6 +2030,8 @@
     </section>
   </main>
 
+  <dialog id="workspace-dialog" class="workspace-dialog" aria-labelledby="dialog-title"><div class="dialog-top"><h2 id="dialog-title"></h2><button id="dialog-close" class="icon-button" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg></button></div><div id="dialog-content"></div></dialog><div id="workspace-toast" class="workspace-toast hidden" role="status"></div>
+  <script src="/assets/workspace.js?build=__OMNICIO_BUILD__" defer></script>
   <script src="/version.js?build=__OMNICIO_BUILD__" defer></script>
   <script src="/assets/app.js?build=__OMNICIO_BUILD__" defer></script>
 </body>
