@@ -84,13 +84,18 @@ const verifyHelp = async (check) => {
   const tap = () => { pointer("pointerdown"); pointer("pointerup"); pointer("click", trigger, {detail: 1}); };
   const reset = () => { trigger.blur(); escape(); };
   check(Boolean(trigger && popup), "Help reuses the workspace component");
-  trigger.focus();
+  // Complete the viewport change before starting a timed hover gesture.
+  trigger.scrollIntoView({block: "center", behavior: "instant"});
+  await pause(100);
+  trigger.focus({preventScroll: true});
   check(!popup.hidden && popup.getAttribute("role") === "tooltip", "Keyboard focus opens noninteractive help");
+  document.dispatchEvent(new Event("scroll"));
+  check(!popup.hidden && document.activeElement === trigger, "Focus scrolling preserves the keyboard explanation");
   check(Boolean(document.getElementById(trigger.getAttribute("aria-describedby"))?.textContent), "Help has a valid accessible description");
   check([...popup.querySelectorAll("button")].every((item) => getComputedStyle(item).display === "none"), "Transient tooltip contains no visible interactive control");
   trigger.click();
   check(popup.getAttribute("role") === "dialog" && popup.contains(document.activeElement), "Keyboard activation pins help and moves focus to its close control");
-  trigger.focus();
+  trigger.focus({preventScroll: true});
   check(popup.getAttribute("role") === "dialog", "Returning focus does not unpin help");
   popup.querySelector("button").click();
   check(popup.hidden && document.activeElement === trigger, "Close restores focus without reopening help");
@@ -109,7 +114,7 @@ const verifyHelp = async (check) => {
   await pause(180);
   check(popup.hidden, "Leaving both hover surfaces closes help after the grace period");
   const start = pointer("pointerdown");
-  trigger.focus();
+  trigger.focus({preventScroll: true});
   check(!start.defaultPrevented && popup.hidden, "Touch keeps native scrolling and does not open on pointer-induced focus");
   pointer("pointerup");
   pointer("click", trigger, {detail: 1});
@@ -163,7 +168,7 @@ const verifyHelp = async (check) => {
   window.__smokeWorkspace.onView("home");
   await pause(390);
   check(popup.hidden, "View changes cancel delayed help instead of resurrecting it");
-  trigger.focus();
+  trigger.focus({preventScroll: true});
   const rect = popup.getBoundingClientRect();
   check(rect.left >= 15 && rect.right <= innerWidth - 15 && rect.top >= 15 && rect.bottom <= innerHeight - 15, "Help stays inside the viewport");
   reset();
@@ -342,9 +347,10 @@ const verifyHelpInput = async (send, evaluate) => {
   const pinned = () => evaluate('!document.querySelector("#workspace-help").hidden && document.querySelector("#workspace-help").getAttribute("role") === "dialog"');
   const key = async (name, code, value) => {
     const text = {Enter: "\r", Space: " "}[code] || "";
-    for (const type of ["keyDown", "keyUp"]) await send("Input.dispatchKeyEvent", {type, key: name, code, windowsVirtualKeyCode: value, text: type === "keyDown" ? text : ""});
+    await send("Input.dispatchKeyEvent", {type: "keyDown", key: name, code, windowsVirtualKeyCode: value, text});
+    await send("Input.dispatchKeyEvent", {type: "keyUp", key: name, code, windowsVirtualKeyCode: value, text: ""});
   };
-  await evaluate('document.querySelector(".help-trigger").scrollIntoView({block:"center"})');
+  await evaluate('document.querySelector(".help-trigger").scrollIntoView({block:"center",behavior:"instant"})');
   await delay(100);
   await evaluate('document.querySelector(".help-trigger").focus()');
   await key("Enter", "Enter", 13);
@@ -372,7 +378,8 @@ const verifyHelpInput = async (send, evaluate) => {
     await send("Input.dispatchTouchEvent", {type: "touchEnd", touchPoints: []});
     await delay(220);
     assert.equal(await hidden(), true, "Native touch release and compatibility click do not reopen help");
-    for (const type of ["touchStart", "touchEnd"]) await send("Input.dispatchTouchEvent", {type, touchPoints: type === "touchStart" ? [{...center, id: 2}] : []});
+    await send("Input.dispatchTouchEvent", {type: "touchStart", touchPoints: [{...center, id: 2}]});
+    await send("Input.dispatchTouchEvent", {type: "touchEnd", touchPoints: []});
     assert.equal(await pinned(), true, "The next native short tap remains available");
     assert.equal(await hidden(), false, "The next native tap pins visible help");
     await key("Escape", "Escape", 27);

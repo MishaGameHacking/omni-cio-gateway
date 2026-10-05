@@ -243,7 +243,12 @@
       close(visible && popover.contains(document.activeElement));
       if (visible) { event.preventDefault(); event.stopPropagation(); }
     }, true);
-    document.addEventListener("scroll", (event) => { if (!popover.contains(event.target)) close(); }, true);
+    document.addEventListener("scroll", (event) => {
+      if (popover.contains(event.target)) return;
+      // Browser focus scrolling must not dismiss a keyboard user's explanation.
+      if (active && !pinned && !gesture && active === document.activeElement) position();
+      else close();
+    }, true);
     document.addEventListener("visibilitychange", () => { if (document.hidden) close(); });
     window.addEventListener("pagehide", () => close());
     window.addEventListener("resize", () => close());
