@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import base64
 import importlib.util
 import io
@@ -27,6 +28,28 @@ if SPEC is None or SPEC.loader is None:
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+
+def declared_http_routes(source: str) -> set[tuple[str, str]]:
+    """Check route declarations independently of whitespace or response metadata."""
+    routes = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for decorator in node.decorator_list:
+            if (
+                isinstance(decorator, ast.Call)
+                and isinstance(decorator.func, ast.Attribute)
+                and isinstance(decorator.func.value, ast.Name)
+                and decorator.func.value.id == "app"
+                and decorator.func.attr in {
+                    "get", "post", "put", "delete", "patch", "head", "options",
+                }
+                and decorator.args
+                and isinstance(decorator.args[0], ast.Constant)
+            ):
+                routes.add((decorator.func.attr, str(decorator.args[0].value)))
+    return routes
 
 
 class FakeSsh:
@@ -565,8 +588,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Подтвердить план", script)
         self.assertIn("Причина отклонения", script)
         self.assertIn("Отложить до даты", script)
-        self.assertIn('@app.get("/api/portfolio/proposals")', backend)
-        self.assertIn('@app.post("/api/portfolio/proposals"', backend)
+        self.assertIn(("get", "/api/portfolio/proposals"), declared_http_routes(backend))
+        self.assertIn(("post", "/api/portfolio/proposals"), declared_http_routes(backend))
         self.assertIn('"/api/portfolio/proposals/{proposal_id}/decision"', backend)
         self.assertIn("require_same_origin(request)", backend)
         self.assertIn("authenticated_session_digest", backend)
@@ -626,8 +649,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Подключения", page)
         for internal_name in ("Сова", "Охотник", "Страж", "Portfolio Intelligence R3", "Portfolio Balancing R4", "Portfolio Proposals R5", "Execution rehearsal R6"):
             self.assertNotIn(internal_name, page)
-        self.assertIn('@app.get("/api/portfolio/executions")', backend)
-        self.assertIn('@app.post("/api/portfolio/executions"', backend)
+        self.assertIn(("get", "/api/portfolio/executions"), declared_http_routes(backend))
+        self.assertIn(("post", "/api/portfolio/executions"), declared_http_routes(backend))
         self.assertIn('"/api/portfolio/executions/{run_id}/advance"', backend)
         self.assertIn('"/api/portfolio/executions/{run_id}/cancel"', backend)
         self.assertIn("portfolio_live_execution_enabled", backend)
@@ -673,7 +696,7 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(f'id="{element_id}"', page)
 
         self.assertIn('"/api/profile/balancing"', script)
-        self.assertIn('@app.get("/api/profile/balancing")', backend)
+        self.assertIn(("get", "/api/profile/balancing"), declared_http_routes(backend))
         self.assertRegex(backend, r'@app\.put\(\s*"/api/profile/balancing"\s*[,)]')
         self.assertIn("require_same_origin(request)", backend)
         self.assertNotIn("OrdersService", backend)
@@ -725,7 +748,7 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(f'id="{element_id}"', page)
 
         self.assertIn('"/api/profile/investment"', script)
-        self.assertIn('@app.get("/api/profile/investment")', backend)
+        self.assertIn(("get", "/api/profile/investment"), declared_http_routes(backend))
         self.assertRegex(backend, r'@app\.put\(\s*"/api/profile/investment"\s*[,)]')
         self.assertIn("require_same_origin(request)", backend)
         self.assertIn("authenticated_user(request, session_token)", backend)
@@ -740,7 +763,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertNotIn("Последние исполненные операции", page)
         self.assertNotIn("/api/broker/tbank/operations", script)
-        self.assertNotIn('@app.get("/api/broker/tbank/operations")', backend)
+        self.assertNotIn(("get", "/api/broker/tbank/operations"), declared_http_routes(backend))
 
     def test_personal_dashboard_system_modules_are_real_and_read_only(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -1234,7 +1257,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.18.6"', project)
+        self.assertIn('version = "0.18.7"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

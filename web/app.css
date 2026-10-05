@@ -227,6 +227,28 @@ button {
   border-bottom: 1px solid var(--border);
 }
 
+.profile-context-card {
+  width: min(600px, calc(100% - 32px));
+  min-height: auto;
+  grid-template-rows: none;
+  align-content: start;
+  gap: 20px;
+  padding:
+    max(clamp(20px, 5vw, 36px), env(safe-area-inset-top))
+    max(clamp(20px, 5vw, 36px), env(safe-area-inset-right))
+    max(clamp(20px, 5vw, 36px), env(safe-area-inset-bottom))
+    max(clamp(20px, 5vw, 36px), env(safe-area-inset-left));
+}
+
+.profile-context-card button {
+  justify-self: start;
+}
+
+.profile-context-card p,
+.profile-context-card h1 {
+  margin: 0;
+}
+
 .auth-layout {
   min-height: 0;
   display: grid;

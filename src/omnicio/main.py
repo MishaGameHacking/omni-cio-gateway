@@ -88,6 +88,9 @@ _UPDATED_LEGAL_CONSENT_DETAIL = "updated legal consent required"
 _TBANK_NOT_CONNECTED_DETAIL = "T-Invest is not connected"
 _PRIVATE_NO_STORE = "private, no-store"
 _PUBLIC_ID_PATTERN = r"^[0-9]{9}$"
+_PROFILE_CONTEXT_HEADER = "X-Omnicio-Profile"
+_PROFILE_CONTEXT_CONFLICT_DESCRIPTION = "Viewed profile is missing or differs from the session"
+_PROFILE_CHANGED_EVENT = 'event: status\ndata: {"state":"profile_context_changed"}\n\n'
 logger = logging.getLogger(__name__)
 
 
@@ -262,6 +265,14 @@ def vkid_client(request: Request) -> VKIDClient:
     return cast(VKIDClient, request.app.state.vkid_client)
 
 
+def _require_profile_context(user: UserRecord, expected_public_id: str | None) -> None:
+    # A precondition on the viewed profile, never a tenant selector or credential.
+    if expected_public_id is None:
+        raise HTTPException(status_code=409, detail="profile_context_required")
+    if expected_public_id != format_public_id(user.public_id):
+        raise HTTPException(status_code=409, detail="profile_context_changed")
+
+
 def authenticated_user(
     request: Request,
     session_token: str | None,
@@ -272,6 +283,9 @@ def authenticated_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="authentication required",
         )
+    expected = request.headers.get(_PROFILE_CONTEXT_HEADER)
+    if expected is not None or request.method not in {"GET", "HEAD", "OPTIONS"}:
+        _require_profile_context(user, expected)
     return user
 
 
@@ -555,7 +569,10 @@ def vkid_callback(
     return response
 
 
-@app.get("/api/me")
+@app.get(
+    "/api/me",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def me(
     request: Request,
     response: Response,
@@ -580,7 +597,10 @@ def me(
     }
 
 
-@app.get("/api/me/activity")
+@app.get(
+    "/api/me/activity",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def account_activity(
     request: Request,
     limit: int = Query(default=20, ge=1, le=50),
@@ -591,7 +611,10 @@ def account_activity(
     return {"events": database.recent_activity(user.id, limit=limit)}
 
 
-@app.get("/api/system/recovery")
+@app.get(
+    "/api/system/recovery",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def system_recovery(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -603,6 +626,7 @@ def system_recovery(
 @app.get(
     "/api/market/cbr-indicators",
     responses={
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         401: {"description": "Authenticated session required"},
         503: {"description": "Bank of Russia indicators are temporarily unavailable"},
     },
@@ -654,51 +678,71 @@ def usd_rub_market_snapshot(
     return asdict(snapshot)
 
 
-@app.get("/api/market/usd-rub/stream")
+async def _stream_session_current(
+    request: Request, session_token: str | None, user_id: UUID,
+) -> bool:
+    user = await asyncio.to_thread(service(request).refresh_session, session_token or "")
+    return user is not None and user.id == user_id
+
+
+async def _usd_rub_market_events(
+    request: Request,
+    market: MarketService,
+    user_id: UUID,
+    session_token: str | None,
+) -> AsyncIterator[str]:
+    retry_delay = 5
+    yield "retry: 5000\n\n"
+    while not await request.is_disconnected():
+        if not await _stream_session_current(request, session_token, user_id):
+            yield _PROFILE_CHANGED_EVENT
+            break
+
+        payload: dict[str, object]
+        try:
+            snapshot = await asyncio.to_thread(market.usd_rub, user_id)
+        except BrokerNotConnected:
+            payload = {"state": "disconnected"}
+            event = "status"
+            delay = 15
+            retry_delay = 5
+        except TBankTokenRejected:
+            payload = {"state": "reconnect"}
+            event = "status"
+            delay = 30
+            retry_delay = 5
+        except (TBankUnavailable, BrokerConnectionError, ValueError):
+            payload = {"state": "unavailable"}
+            event = "status"
+            delay = retry_delay
+            retry_delay = min(retry_delay * 2, 30)
+        else:
+            payload = asdict(snapshot)
+            event = "quote"
+            delay = 5
+            retry_delay = 5
+
+        if not await _stream_session_current(request, session_token, user_id):
+            yield _PROFILE_CHANGED_EVENT
+            break
+        data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        yield f"event: {event}\ndata: {data}\n\n"
+        await asyncio.sleep(delay)
+
+
+@app.get(
+    "/api/market/usd-rub/stream",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 async def usd_rub_market_stream(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> StreamingResponse:
     user = authenticated_user(request, session_token)
+    _require_profile_context(user, request.query_params.get("profile_context"))
     market = market_service(request)
-
-    async def events() -> AsyncIterator[str]:
-        retry_delay = 5
-        yield "retry: 5000\n\n"
-        while True:
-            if await request.is_disconnected():
-                break
-
-            payload: dict[str, object]
-            try:
-                snapshot = await asyncio.to_thread(market.usd_rub, user.id)
-            except BrokerNotConnected:
-                payload = {"state": "disconnected"}
-                event = "status"
-                delay = 15
-                retry_delay = 5
-            except TBankTokenRejected:
-                payload = {"state": "reconnect"}
-                event = "status"
-                delay = 30
-                retry_delay = 5
-            except (TBankUnavailable, BrokerConnectionError, ValueError):
-                payload = {"state": "unavailable"}
-                event = "status"
-                delay = retry_delay
-                retry_delay = min(retry_delay * 2, 30)
-            else:
-                payload = asdict(snapshot)
-                event = "quote"
-                delay = 5
-                retry_delay = 5
-
-            data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-            yield f"event: {event}\ndata: {data}\n\n"
-            await asyncio.sleep(delay)
-
     return StreamingResponse(
-        events(),
+        _usd_rub_market_events(request, market, user.id, session_token),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-store",
@@ -827,11 +871,15 @@ async def _instrument_market_events(
     market: MarketService,
     user_id: UUID,
     instrument_uid: str,
+    session_token: str | None,
 ) -> AsyncIterator[str]:
     retry_delay = 3
     consecutive_failures = 0
     yield "retry: 5000\n\n"
     while not await request.is_disconnected():
+        if not await _stream_session_current(request, session_token, user_id):
+            yield _PROFILE_CHANGED_EVENT
+            break
         (
             event,
             payload,
@@ -846,6 +894,9 @@ async def _instrument_market_events(
             consecutive_failures=consecutive_failures,
             retry_delay=retry_delay,
         )
+        if not await _stream_session_current(request, session_token, user_id):
+            yield _PROFILE_CHANGED_EVENT
+            break
         data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         yield f"event: {event}\ndata: {data}\n\n"
         if stop_after_event:
@@ -855,7 +906,10 @@ async def _instrument_market_events(
 
 @app.get(
     "/api/market/instruments/{instrument_uid}/stream",
-    responses={401: {"description": "Authenticated session required"}},
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 async def instrument_market_stream(
     instrument_uid: str,
@@ -863,9 +917,10 @@ async def instrument_market_stream(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> StreamingResponse:
     user = authenticated_user(request, session_token)
+    _require_profile_context(user, request.query_params.get("profile_context"))
     market = market_service(request)
     return StreamingResponse(
-        _instrument_market_events(request, market, user.id, instrument_uid),
+        _instrument_market_events(request, market, user.id, instrument_uid, session_token),
         media_type="text/event-stream",
         headers={
             "Cache-Control": _PRIVATE_NO_STORE,
@@ -920,7 +975,10 @@ def _balancing_policy_payload(
     }
 
 
-@app.get("/api/profile/investment")
+@app.get(
+    "/api/profile/investment",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def investment_profile(
     request: Request,
     response: Response,
@@ -979,7 +1037,10 @@ def save_investment_profile(
     return {"profile": _profile_payload(profile)}
 
 
-@app.get("/api/profile/balancing")
+@app.get(
+    "/api/profile/balancing",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def balancing_policy(
     request: Request,
     response: Response,
@@ -1034,7 +1095,10 @@ def save_balancing_policy(
     return {"policy": _balancing_policy_payload(policy)}
 
 
-@app.get("/api/broker/tbank")
+@app.get(
+    "/api/broker/tbank",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def tbank_connection_status(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1156,7 +1220,10 @@ def _live_balancing_for_user(
 
 @app.get(
     "/api/portfolio/visualization",
-    responses={401: {"description": "Authenticated session required"}},
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def portfolio_visualization(
     request: Request,
@@ -1176,6 +1243,7 @@ def portfolio_visualization(
 @app.get(
     "/api/portfolio/instruments/{instrument_uid}/visualization",
     responses={
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         401: {"description": "Authenticated session required"},
         404: {"description": "Instrument is not present in the current account history"},
     },
@@ -1210,7 +1278,10 @@ def portfolio_instrument_visualization(
 
 @app.get(
     "/api/portfolio/balancing",
-    responses={401: {"description": "Authenticated session required"}},
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def portfolio_balancing(
     request: Request,
@@ -1223,7 +1294,10 @@ def portfolio_balancing(
     return payload
 
 
-@app.get("/api/portfolio/proposals")
+@app.get(
+    "/api/portfolio/proposals",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def portfolio_proposals(
     request: Request,
     response: Response,
@@ -1238,7 +1312,11 @@ def portfolio_proposals(
     }
 
 
-@app.post("/api/portfolio/proposals", status_code=status.HTTP_201_CREATED)
+@app.post(
+    "/api/portfolio/proposals",
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def create_portfolio_proposal(
     body: PortfolioProposalBody,
     request: Request,
@@ -1353,7 +1431,10 @@ def _proposal_material_is_current(
     )
 
 
-@app.post("/api/portfolio/proposals/{proposal_id}/decision")
+@app.post(
+    "/api/portfolio/proposals/{proposal_id}/decision",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def decide_portfolio_proposal(
     proposal_id: UUID,
     body: PortfolioProposalDecisionBody,
@@ -1528,7 +1609,10 @@ def _execution_error(exc: Exception) -> HTTPException:
     )
 
 
-@app.get("/api/portfolio/live-execution/mandate")
+@app.get(
+    "/api/portfolio/live-execution/mandate",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def portfolio_live_execution_mandate(
     request: Request,
     response: Response,
@@ -1550,7 +1634,10 @@ def portfolio_live_execution_mandate(
     }
 
 
-@app.put("/api/portfolio/live-execution/mandate")
+@app.put(
+    "/api/portfolio/live-execution/mandate",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def save_portfolio_live_execution_mandate(
     body: PortfolioLiveMandateBody,
     request: Request,
@@ -1635,7 +1722,11 @@ def save_portfolio_live_execution_mandate(
     }
 
 
-@app.delete("/api/portfolio/live-execution/mandate", status_code=204)
+@app.delete(
+    "/api/portfolio/live-execution/mandate",
+    status_code=204,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def revoke_portfolio_live_execution_mandate(
     request: Request,
     response: Response,
@@ -1648,7 +1739,10 @@ def revoke_portfolio_live_execution_mandate(
     return response
 
 
-@app.get("/api/portfolio/executions")
+@app.get(
+    "/api/portfolio/executions",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def portfolio_executions(
     request: Request,
     response: Response,
@@ -1671,7 +1765,10 @@ def portfolio_executions(
     }
 
 
-@app.get("/api/portfolio/executions/{run_id}")
+@app.get(
+    "/api/portfolio/executions/{run_id}",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def portfolio_execution(
     run_id: UUID,
     request: Request,
@@ -1703,7 +1800,11 @@ def portfolio_execution(
     }
 
 
-@app.post("/api/portfolio/executions", status_code=status.HTTP_201_CREATED)
+@app.post(
+    "/api/portfolio/executions",
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def create_portfolio_execution(
     body: PortfolioExecutionBody,
     request: Request,
@@ -1731,7 +1832,10 @@ def create_portfolio_execution(
     }
 
 
-@app.post("/api/portfolio/executions/{run_id}/advance")
+@app.post(
+    "/api/portfolio/executions/{run_id}/advance",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def advance_portfolio_execution(
     run_id: UUID,
     request: Request,
@@ -1752,7 +1856,10 @@ def advance_portfolio_execution(
     }
 
 
-@app.post("/api/portfolio/executions/{run_id}/cancel")
+@app.post(
+    "/api/portfolio/executions/{run_id}/cancel",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def cancel_portfolio_execution(
     run_id: UUID,
     request: Request,
@@ -1775,7 +1882,10 @@ def cancel_portfolio_execution(
 
 @app.get(
     "/api/portfolio/intelligence",
-    responses={401: {"description": "Authenticated session required"}},
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def portfolio_intelligence(
     request: Request,
@@ -1850,6 +1960,7 @@ def tbank_instrument_search(
 @app.post(
     "/api/broker/tbank/accounts",
     responses={
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         400: {"description": "Broker credential or terms acknowledgment is invalid"},
         401: {"description": "Authenticated session required"},
         503: {"description": "T-Invest API is temporarily unavailable"},
@@ -1949,7 +2060,11 @@ def connect_tbank(
     }
 
 
-@app.delete("/api/broker/tbank", status_code=204)
+@app.delete(
+    "/api/broker/tbank",
+    status_code=204,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def disconnect_tbank(
     request: Request,
     response: Response,
@@ -1975,7 +2090,11 @@ def disconnect_tbank(
     return response
 
 
-@app.post("/api/account/delete", status_code=204)
+@app.post(
+    "/api/account/delete",
+    status_code=204,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def delete_account(
     body: DeleteAccountBody,
     request: Request,
@@ -2030,14 +2149,22 @@ def delete_account(
     return response
 
 
-@app.post("/api/auth/logout", status_code=204)
+@app.post(
+    "/api/auth/logout",
+    status_code=204,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def logout(
     request: Request,
     response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> Response:
     require_same_origin(request)
-    service(request).logout(session_token or "")
+    auth = service(request)
+    user = auth.refresh_session(session_token or "")
+    if user is not None:
+        _require_profile_context(user, request.headers.get(_PROFILE_CONTEXT_HEADER))
+    auth.logout(session_token or "")
     response.delete_cookie(
         SESSION_COOKIE,
         path="/",
