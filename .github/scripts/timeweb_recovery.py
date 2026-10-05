@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Any, Protocol
 
 REMOTE_STATUS_PATH = "/var/lib/omnicio-recovery/status.json"
+REMOTE_PYTHON = "python3 -"
 BOOTSTRAP_COMMENT = "Managed by OmniCIO: initial R0 recovery point v1"
 
 
@@ -50,7 +51,7 @@ def load_policy() -> BackupPolicy:
 
 
 def read_state(ssh: Remote) -> dict[str, Any]:
-    raw = ssh.run("python3 -", input_text=f"""
+    raw = ssh.run(REMOTE_PYTHON, input_text=f"""
 import json, pathlib
 path = pathlib.Path({REMOTE_STATUS_PATH!r})
 if path.exists():
@@ -74,7 +75,7 @@ print(json.dumps(value))
 def write_state(ssh: Remote, state: dict[str, Any]) -> None:
     # Contains only operational evidence and mutation receipts, never rows, URLs or credentials.
     encoded = json.dumps(state, ensure_ascii=True, separators=(",", ":"))
-    ssh.run("python3 -", input_text=f"""
+    ssh.run(REMOTE_PYTHON, input_text=f"""
 import os, pathlib
 path = pathlib.Path({REMOTE_STATUS_PATH!r})
 path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -278,6 +279,55 @@ def validate_budget(cluster: dict[str, Any], policy: BackupPolicy) -> None:
         raise RecoveryBlocked("Backup storage allowance exceeds the approved ceiling")
     if (cluster.get("disk_autoscaling") or {}).get("is_enabled") is not False:
         raise RecoveryBlocked("Unbounded database disk autoscaling is not permitted")
+
+
+def inspect_restore_capacity(client: Provider, ssh: Remote, cluster_id: int) -> None:
+    """Read-only preparation for an isolated drill; never print storage credentials."""
+    report: dict[str, Any] = {"cluster_id": cluster_id, "restore_verified": False}
+    for name, path, version, key in (
+        ("logical_backups", f"/databases/{cluster_id}/backups", "v2", "backups"),
+        ("storage", "/storages/buckets", "v1", "buckets"),
+    ):
+        try:
+            rows = client.request("GET", path, api_version=version).get(key)
+            if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+                raise ValueError("Incomplete inventory")
+            allowed = ("id", "type", "status", "size", "created_at", "location")
+            report[name] = {
+                "count": len(rows),
+                "items": [{k: row[k] for k in allowed if k in row} for row in rows[:20]],
+            }
+        except (RuntimeError, OSError, ValueError):
+            report[name] = {"status": "unavailable"}
+    raw = ssh.run(REMOTE_PYTHON, input_text=RESTORE_CAPACITY_SCRIPT)
+    host = json.loads(raw)
+    if not isinstance(host, dict):
+        raise RecoveryBlocked("Invalid restore capacity response")
+    report["host"] = host
+    print("Recovery drill capacity: " + json.dumps(report, sort_keys=True))
+
+
+RESTORE_CAPACITY_SCRIPT = r"""
+import json, os, pathlib, shutil
+memory = {}
+for line in pathlib.Path('/proc/meminfo').read_text().splitlines():
+    key, value = line.split(':', 1)
+    if key in {'MemTotal', 'MemAvailable', 'SwapTotal', 'SwapFree'}:
+        memory[key] = int(value.split()[0]) * 1024
+release = {}
+for line in pathlib.Path('/etc/os-release').read_text().splitlines():
+    key, sep, value = line.partition('=')
+    if sep and key in {'ID', 'VERSION_ID', 'VERSION_CODENAME'}:
+        release[key] = value.strip('"')
+disk = shutil.disk_usage('/var/lib')
+print(json.dumps({
+    'cpu_count': os.cpu_count(), 'memory_bytes': memory,
+    'disk_total_bytes': disk.total, 'disk_free_bytes': disk.free,
+    'os': release, 'systemd_run': bool(shutil.which('systemd-run')),
+    'postgres_majors': sorted(p.name for p in pathlib.Path('/usr/lib/postgresql').glob('*')
+                              if p.is_dir() and p.name.isdecimal()),
+}))
+"""
 
 
 def ensure_recovery_point(client: Provider, ssh: Remote, cluster: dict[str, Any]) -> None:

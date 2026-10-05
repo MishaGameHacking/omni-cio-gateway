@@ -21,7 +21,12 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from timeweb_addresses import network_addresses
-from timeweb_recovery import RecoveryBlocked, ensure_recovery_point, load_policy
+from timeweb_recovery import (
+    RecoveryBlocked,
+    ensure_recovery_point,
+    inspect_restore_capacity,
+    load_policy,
+)
 from timeweb_ssh_trust import (
     ssh_base_args,
     ssh_keygen_executable,
@@ -968,6 +973,7 @@ def reconcile(
             )
 
         ensure_recovery_point(client, ssh, cluster)
+        inspect_restore_capacity(client, ssh, cluster_id)
         if backup_only:
             set_output("status", "recovery_point_ready")
             add_summary("- Scheduled backup verification completed; schema and runtime unchanged.")
