@@ -22,49 +22,35 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.author_association == 'OWNER' &&
       github.actor == 'MishaGameHacking'
-    name: Verify sealed candidate and publish immutable blobs only
+    name: Package pinned source without running application code
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 8
-    permissions:
-      contents: write
+    timeout-minutes: 5
     steps:
-      - name: Read pinned transfer and its parent source
+      - name: Read accepted source only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: e5eebaf3cac81aed89eead86258941d6d79f9f6e
-          fetch-depth: 2
+          ref: 0ae04f3c5f8b31cc52fb08e21364655d5540754b
           persist-credentials: false
           clean: true
-      - name: Bootstrap existing pinned Python
-        shell: cmd
-        run: call .github\scripts\bootstrap_self_hosted_python.cmd
-      - name: Extract hash-verified Python transport into job temporary directory
-        shell: cmd
-        run: >-
-          "%OMNICIO_PYTHON%" -c "import hashlib,os,pathlib,subprocess,textwrap; data=subprocess.run([r'C:\Program Files\Git\cmd\git.exe','show','e5eebaf3cac81aed89eead86258941d6d79f9f6e:.github/workflows/ui-candidate-transfer.yml'],check=True,capture_output=True).stdout; assert hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()=='edccd6340fe98b445d67a76cad9deafd31120b0a'; script=textwrap.dedent(data.decode().split(\"$script = @'\n\",1)[1].split(\"'@\",1)[0]); old='subprocess.run([GIT, *args]'; assert script.count(old)==1; script=script.replace(old,\"subprocess.run([GIT, *(['-c', 'core.autocrlf=false'] if args[0] == 'apply' else []), *args]\"); compile(script,'sealed-transfer','exec'); (pathlib.Path(os.environ['RUNNER_TEMP'])/('omnicio-transfer-'+os.environ['GITHUB_RUN_ID']+'.py')).write_text(script,encoding='utf-8')"
-      - name: Verify exact patch and transfer blobs without moving any ref
-        shell: cmd
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: '"%OMNICIO_PYTHON%" "%RUNNER_TEMP%\omnicio-transfer-%GITHUB_RUN_ID%.py"'
-      - name: Candidate syntax and browser preflight without write token
-        shell: cmd
-        run: |
-          node --check web\app.js
-          if errorlevel 1 exit /b 1
-          node --check web\workspace.js
-          if errorlevel 1 exit /b 1
-          node --check tests\frontend-smoke.cjs
-          if errorlevel 1 exit /b 1
-          node tests\frontend-smoke.cjs
-      - name: Preserve private candidate evidence
-        if: always()
+      - name: Upload private integration baseline
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: ui-candidate-evidence-750
+          name: strategy-integration-baseline-750
           path: |
-            candidate-blobs.json
-            artifacts/frontend/*.png
-          if-no-files-found: warn
+            src/omnicio/
+            migrations/
+            tests/
+            web/
+            .github/scripts/
+            .github/workflows/auth-foundation.yml
+            .github/workflows/auth-app-deploy.yml
+            .github/workflows/auth-postgres.yml
+            .sonarcloud.properties
+            pyproject.toml
+            uv.lock
+            requirements-runtime.txt
+            requirements-dev.txt
+            AGENTS.md
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 1
