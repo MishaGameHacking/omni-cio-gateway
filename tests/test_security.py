@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import os
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 from uuid import UUID
@@ -245,3 +246,133 @@ def test_activity_uses_each_session_owner_and_ignores_browser_identity() -> None
     assert database.recent_activity.call_count == 2
     assert database.recent_activity.call_args_list[0].args == (a.id,)
     assert database.recent_activity.call_args_list[1].args == (b.id,)
+
+
+@pytest.mark.parametrize("expected", [None, "", "102", "000000000", "000000101"])
+def test_stale_tab_cannot_attach_its_broker_token_to_another_session_user(expected) -> None:
+    active_user = UserRecord(UUID(int=102), 102, "active", "user")
+    with (
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.broker_service") as broker,
+        patch("omnicio.main.settings") as configuration,
+    ):
+        auth.return_value.refresh_session.return_value = active_user
+        configuration.return_value.terms_version = "test"
+        broker.return_value.connect.return_value = Mock(
+            connected=True, environment="prod", account_id="synthetic-account",
+            account_name="Synthetic", verified_at=datetime.now(UTC),
+        )
+        response = TestClient(app, cookies={"omnicio_session": "session-b"}).put(
+            "/api/broker/tbank",
+            headers={"Origin": CANONICAL_ORIGIN, **(
+                {"X-Omnicio-Profile": expected} if expected is not None else {}
+            )},
+            json={
+                "credential": "synthetic-token-from-tab-a", "environment": "prod",
+                "account_id": "synthetic-account", "accept_personal_terms": True,
+            },
+        )
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "profile_context_required" if expected is None else "profile_context_changed"
+    )
+    assert response.headers["cache-control"] == "private, no-store"
+    broker.assert_not_called()
+
+
+@pytest.mark.parametrize("method,path,payload", [
+    ("GET", "/api/me/activity", None),
+    ("GET", "/api/broker/tbank/portfolio", None),
+    ("POST", "/api/broker/tbank/accounts", {
+        "credential": "synthetic-token-from-tab-a", "environment": "prod",
+        "accept_personal_terms": True,
+    }),
+    ("DELETE", "/api/broker/tbank", None),
+    ("POST", "/api/auth/logout", None),
+])
+def test_profile_header_never_selects_a_different_tenant(method, path, payload) -> None:
+    active_user = UserRecord(UUID(int=102), 102, "active", "user")
+    database = Mock(spec=Database)
+    with (
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.broker_service") as broker,
+        patch("omnicio.main.execution_store") as ledger,
+        patch.object(app.state, "database", database, create=True),
+    ):
+        auth.return_value.refresh_session.return_value = active_user
+        response = TestClient(app, cookies={"omnicio_session": "session-b"}).request(
+            method, path, json=payload,
+            headers={"Origin": CANONICAL_ORIGIN, "X-Omnicio-Profile": "000000101"},
+        )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "profile_context_changed"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert "set-cookie" not in response.headers
+    broker.assert_not_called()
+    ledger.assert_not_called()
+    database.recent_activity.assert_not_called()
+    auth.return_value.logout.assert_not_called()
+
+
+def test_matching_view_allows_only_session_user_and_expired_logout_still_clears_cookie() -> None:
+    active_user = UserRecord(UUID(int=102), 102, "active", "user")
+    headers = {"Origin": CANONICAL_ORIGIN, "X-Omnicio-Profile": "000000102"}
+    with (
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.broker_service") as broker,
+        patch("omnicio.main.execution_store") as ledger,
+    ):
+        auth.return_value.refresh_session.return_value = active_user
+        ledger.return_value.has_active_live_execution.return_value = False
+        client = TestClient(app, cookies={"omnicio_session": "session-b"})
+        disconnected = client.delete("/api/broker/tbank?user_id=other", headers=headers)
+        assert disconnected.status_code == 204
+        broker.return_value.disconnect.assert_called_once_with(active_user.id)
+        ledger.return_value.revoke_live_mandate.assert_called_once_with(active_user.id)
+        logged_out = client.post("/api/auth/logout", headers=headers)
+        assert logged_out.status_code == 204
+        assert "Max-Age=0" in logged_out.headers["set-cookie"]
+        auth.return_value.logout.assert_called_once_with("session-b")
+        auth.return_value.refresh_session.return_value = None
+        expired = client.post("/api/auth/logout", headers={"Origin": CANONICAL_ORIGIN})
+        assert expired.status_code == 204
+        assert "Max-Age=0" in expired.headers["set-cookie"]
+        anonymous = client.delete("/api/broker/tbank", headers=headers)
+        assert anonymous.status_code == 401
+        assert broker.return_value.disconnect.call_count == 1
+
+
+@pytest.mark.parametrize("path", [
+    "/api/market/instruments/uid-1/stream", "/api/market/usd-rub/stream",
+])
+@pytest.mark.parametrize("revoked_during_read", [False, True])
+def test_market_stream_suppresses_data_after_session_revocation(path, revoked_during_read) -> None:
+    @dataclass
+    class PrivateMarketData:
+        marker: str = "synthetic-private-market-data"
+
+    active_user = UserRecord(UUID(int=102), 102, "active", "user")
+    with (
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.market_service") as market,
+    ):
+        auth.return_value.refresh_session.return_value = active_user
+        client = TestClient(app, cookies={"omnicio_session": "session-b"})
+        for query in ("", "?profile_context=000000101"):
+            rejected = client.get(path + query)
+            assert rejected.status_code == 409
+        market.assert_not_called()
+        auth.return_value.refresh_session.side_effect = (
+            [active_user, active_user, None] if revoked_during_read else [active_user, None]
+        )
+        market.return_value.instrument_live_state.return_value = PrivateMarketData()
+        market.return_value.usd_rub.return_value = PrivateMarketData()
+        response = client.get(path + "?profile_context=000000102")
+        reads = (market.return_value.instrument_live_state.call_count
+                 + market.return_value.usd_rub.call_count)
+    assert response.status_code == 200
+    assert "profile_context_changed" in response.text
+    assert "synthetic-private-market-data" not in response.text
+    assert "event: market" not in response.text
+    assert "event: quote" not in response.text
+    assert reads == int(revoked_during_read)

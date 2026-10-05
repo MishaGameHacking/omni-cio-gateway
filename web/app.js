@@ -304,6 +304,8 @@
 
   let currentView = "home";
   let currentProfileId = "";
+  let profileContextLost = false;
+  let profileCheckInFlight = false;
   let pendingTbankCredential = null;
   let pendingTbankEnvironment = null;
   let deferredInstallPrompt = null;
@@ -421,14 +423,41 @@
     return fallbackByStatus[response.status] || "Запрос не выполнен. Проверьте состояние и повторите.";
   };
 
+  const profileContextError = () => Object.assign(new Error("profile_context_changed"), {status: 409});
+
+  const pauseProfileContext = () => {
+    if (profileContextLost) return;
+    profileContextLost = true;
+    resetTbankPreview();
+    tbankToken.value = "";
+    tbankTermsAck.checked = false;
+    stopCbrIndicators();
+    window.clearInterval(owlTimer);
+    clearTimeout(recoveryTimer);
+    recoveryGeneration += 1;
+    invalidatePortfolioRequest();
+    resetAnalysis();
+    closeDrawer();
+    profilePanel.inert = true;
+    profilePanel.classList.add("hidden");
+    authCard.classList.add("hidden");
+    requiredElement("#profile-context-panel").classList.remove("hidden");
+    requiredElement("#profile-context-reload").focus();
+  };
+
   const api = async (path, options = {}) => {
+    if (profileContextLost) throw profileContextError();
+    const headers = new Headers(options.headers);
+    headers.set("Content-Type", "application/json");
+    if (currentProfileId) headers.set("X-Omnicio-Profile", currentProfileId);
     const response = await fetch(apiPath(path), {
       cache: "no-store",
       credentials: "same-origin",
-      headers: {"Content-Type": "application/json", ...options.headers},
       ...options,
+      headers,
     });
     const body = response.status === 204 ? null : await response.json().catch(() => null);
+    if (profileContextLost) throw profileContextError();
     if (!response.ok) {
       const error = new Error(apiErrorMessage(response, body));
       error.status = response.status;
@@ -437,6 +466,12 @@
       if (error.requestId) {
         lastFailedRequestId = error.requestId;
         supportRequestId.textContent = error.requestId;
+      }
+      if ((currentProfileId && error.status === 401)
+        || ["profile_context_changed", "profile_context_required", "settings_owner_conflict"].includes(error.message)) {
+        pauseProfileContext();
+        error.message = "profile_context_changed";
+        error.status = 409;
       }
       throw error;
     }
@@ -1960,7 +1995,8 @@
   };
 
   const instrumentMarketStreamCanStart = () => (
-    Boolean(instrumentMarketUid)
+    !profileContextLost
+    && Boolean(instrumentMarketUid)
     && instrumentMarketEventSource === null
     && instrumentMarketRetryTimer === null
     && currentView === "portfolio"
@@ -1972,6 +2008,7 @@
       return;
     }
     stopInstrumentMarketStream();
+    void verifyProfileContext();
     renderInstrumentMarketStreamStatus("unavailable");
     scheduleInstrumentMarketReconnect();
   };
@@ -2005,6 +2042,10 @@
       const state = payload !== null && typeof payload === "object"
         ? String(payload.state || "unavailable")
         : "unavailable";
+      if (state === "profile_context_changed") {
+        pauseProfileContext();
+        return;
+      }
       renderInstrumentMarketStreamStatus(state);
       if (["disconnected", "reconnect", "invalid", "offline"].includes(state)) {
         stopInstrumentMarketStream();
@@ -2036,7 +2077,7 @@
     }
 
     const streamUid = instrumentMarketUid;
-    const stream = new EventSource(`/api/market/instruments/${segment}/stream`);
+    const stream = new EventSource(`/api/market/instruments/${segment}/stream?profile_context=${encodeURIComponent(currentProfileId)}`);
     instrumentMarketEventSource = stream;
     stream.addEventListener("market", (event) => {
       handleInstrumentMarketEvent(event, streamUid);
@@ -5743,6 +5784,11 @@
   });
 
   const showProfile = (profile) => {
+    if (profileContextLost) return;
+    if (currentProfileId && currentProfileId !== profile.public_id) {
+      pauseProfileContext();
+      return;
+    }
     if (currentProfileId !== profile.public_id) {
       settingsEditors.forEach((editor) => editor.reset());
     }
@@ -5768,6 +5814,7 @@
   };
 
   const showAuth = () => {
+    if (profileContextLost) return;
     recoveryGeneration += 1;
     clearTimeout(recoveryTimer);
     settingsEditors.forEach((editor) => editor.reset());
@@ -5838,6 +5885,31 @@
     window.matchMedia("(display-mode: fullscreen)").matches
   );
 
+  const verifyProfileContext = async () => {
+    if (!currentProfileId || profileContextLost || profileCheckInFlight
+      || document.visibilityState !== "visible") return;
+    profileCheckInFlight = true;
+    try {
+      await api("/api/me", {method: "GET"});
+    } catch {
+      // api pauses on identity changes. A network failure grants no new authority.
+    } finally {
+      profileCheckInFlight = false;
+    }
+  };
+
+  window.addEventListener("focus", () => { void verifyProfileContext(); });
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) void verifyProfileContext();
+  });
+  requiredElement("#profile-context-reload").addEventListener("click", () => {
+    if (settingsEditors.some((editor) => editor.hasPending()) && !window.confirm(
+      "Обновить страницу? Несохранённые изменения этой вкладки будут потеряны."
+    )) return;
+    settingsEditors.forEach((editor) => editor.reset());
+    location.reload();
+  });
+
   const standaloneMode = () => (
     fullscreenDisplayMode()
     || window.matchMedia("(display-mode: standalone)").matches
@@ -5901,6 +5973,7 @@
     if (document.visibilityState !== "visible") {
       return;
     }
+    void verifyProfileContext();
 
     if (lastPortfolioSnapshot) renderPortfolioDataStatus();
 
@@ -6481,9 +6554,11 @@
     stopCbrIndicators();
     try {
       await api("/api/auth/logout", {method: "POST"});
+    } catch (error) {
+      if (!profileContextLost) throw error;
     } finally {
       pendingTbankCredential = null;
-      location.reload();
+      if (!profileContextLost) location.reload();
     }
   });
 

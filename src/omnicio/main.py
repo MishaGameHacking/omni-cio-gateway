@@ -88,6 +88,8 @@ _UPDATED_LEGAL_CONSENT_DETAIL = "updated legal consent required"
 _TBANK_NOT_CONNECTED_DETAIL = "T-Invest is not connected"
 _PRIVATE_NO_STORE = "private, no-store"
 _PUBLIC_ID_PATTERN = r"^[0-9]{9}$"
+_PROFILE_CONTEXT_HEADER = "X-Omnicio-Profile"
+_PROFILE_CHANGED_EVENT = 'event: status\ndata: {"state":"profile_context_changed"}\n\n'
 logger = logging.getLogger(__name__)
 
 
@@ -262,6 +264,14 @@ def vkid_client(request: Request) -> VKIDClient:
     return cast(VKIDClient, request.app.state.vkid_client)
 
 
+def _require_profile_context(user: UserRecord, expected_public_id: str | None) -> None:
+    # A precondition on the viewed profile, never a tenant selector or credential.
+    if expected_public_id is None:
+        raise HTTPException(status_code=409, detail="profile_context_required")
+    if expected_public_id != format_public_id(user.public_id):
+        raise HTTPException(status_code=409, detail="profile_context_changed")
+
+
 def authenticated_user(
     request: Request,
     session_token: str | None,
@@ -272,6 +282,9 @@ def authenticated_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="authentication required",
         )
+    expected = request.headers.get(_PROFILE_CONTEXT_HEADER)
+    if expected is not None or request.method not in {"GET", "HEAD", "OPTIONS"}:
+        _require_profile_context(user, expected)
     return user
 
 
@@ -654,12 +667,20 @@ def usd_rub_market_snapshot(
     return asdict(snapshot)
 
 
+async def _stream_session_current(
+    request: Request, session_token: str | None, user_id: UUID,
+) -> bool:
+    user = await asyncio.to_thread(service(request).refresh_session, session_token or "")
+    return user is not None and user.id == user_id
+
+
 @app.get("/api/market/usd-rub/stream")
 async def usd_rub_market_stream(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> StreamingResponse:
     user = authenticated_user(request, session_token)
+    _require_profile_context(user, request.query_params.get("profile_context"))
     market = market_service(request)
 
     async def events() -> AsyncIterator[str]:
@@ -667,6 +688,9 @@ async def usd_rub_market_stream(
         yield "retry: 5000\n\n"
         while True:
             if await request.is_disconnected():
+                break
+            if not await _stream_session_current(request, session_token, user.id):
+                yield _PROFILE_CHANGED_EVENT
                 break
 
             payload: dict[str, object]
@@ -693,6 +717,9 @@ async def usd_rub_market_stream(
                 delay = 5
                 retry_delay = 5
 
+            if not await _stream_session_current(request, session_token, user.id):
+                yield _PROFILE_CHANGED_EVENT
+                break
             data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
             yield f"event: {event}\ndata: {data}\n\n"
             await asyncio.sleep(delay)
@@ -827,11 +854,15 @@ async def _instrument_market_events(
     market: MarketService,
     user_id: UUID,
     instrument_uid: str,
+    session_token: str | None,
 ) -> AsyncIterator[str]:
     retry_delay = 3
     consecutive_failures = 0
     yield "retry: 5000\n\n"
     while not await request.is_disconnected():
+        if not await _stream_session_current(request, session_token, user_id):
+            yield _PROFILE_CHANGED_EVENT
+            break
         (
             event,
             payload,
@@ -846,6 +877,9 @@ async def _instrument_market_events(
             consecutive_failures=consecutive_failures,
             retry_delay=retry_delay,
         )
+        if not await _stream_session_current(request, session_token, user_id):
+            yield _PROFILE_CHANGED_EVENT
+            break
         data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         yield f"event: {event}\ndata: {data}\n\n"
         if stop_after_event:
@@ -863,9 +897,10 @@ async def instrument_market_stream(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> StreamingResponse:
     user = authenticated_user(request, session_token)
+    _require_profile_context(user, request.query_params.get("profile_context"))
     market = market_service(request)
     return StreamingResponse(
-        _instrument_market_events(request, market, user.id, instrument_uid),
+        _instrument_market_events(request, market, user.id, instrument_uid, session_token),
         media_type="text/event-stream",
         headers={
             "Cache-Control": _PRIVATE_NO_STORE,
@@ -2037,7 +2072,11 @@ def logout(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> Response:
     require_same_origin(request)
-    service(request).logout(session_token or "")
+    auth = service(request)
+    user = auth.refresh_session(session_token or "")
+    if user is not None:
+        _require_profile_context(user, request.headers.get(_PROFILE_CONTEXT_HEADER))
+    auth.logout(session_token or "")
     response.delete_cookie(
         SESSION_COOKIE,
         path="/",

@@ -91,7 +91,7 @@ def test_settings_writes_require_version_and_session_owner(kind: str) -> None:
             "b": UserRecord(B, 902, "active", "user"),
         }.get(token)
         client = TestClient(app, cookies={"omnicio_session": "a"})
-        headers = {"Origin": "https://omnicio.ru"}
+        headers = {"Origin": "https://omnicio.ru", "X-Omnicio-Profile": "000000901"}
         missing = client.put(path, json=payload, headers=headers)
         assert missing.status_code == 422
         for bad in (-1, True, "1", 1.2):
@@ -103,7 +103,7 @@ def test_settings_writes_require_version_and_session_owner(kind: str) -> None:
             conflict = signed_in.put(
                 path + f"?user_id={B}",
                 json={**payload, "expected_version": 2, "expected_public_id": f"{owner.int:09d}"},
-                headers=headers,
+                headers={**headers, "X-Omnicio-Profile": f"{owner.int:09d}"},
             )
             assert conflict.status_code == 409
             assert conflict.json()["detail"] == "settings_version_conflict"
@@ -114,7 +114,7 @@ def test_settings_writes_require_version_and_session_owner(kind: str) -> None:
         switched = TestClient(app, cookies={"omnicio_session": "b"}).put(
             path,
             json={**payload, "expected_version": 2},
-            headers=headers,
+            headers={**headers, "X-Omnicio-Profile": "000000902"},
         )
         assert switched.status_code == 409
         assert switched.json()["detail"] == "settings_owner_conflict"

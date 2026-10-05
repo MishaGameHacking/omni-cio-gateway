@@ -352,13 +352,16 @@ def test_instrument_market_stream_stops_after_security_failure() -> None:
     with (
         patch("omnicio.main.authenticated_user") as user,
         patch("omnicio.main.market_service") as market,
+        patch("omnicio.main.service") as auth,
     ):
         user.return_value.id = "server-user"
+        user.return_value.public_id = 101
+        auth.return_value.refresh_session.return_value = user.return_value
         market.return_value.instrument_live_state.side_effect = SecurityValueError(
             "security-sensitive-provider-state"
         )
         response = TestClient(app).get(
-            "/api/market/instruments/uid-1/stream",
+            "/api/market/instruments/uid-1/stream?profile_context=000000101",
         )
 
     assert response.status_code == 200
@@ -374,13 +377,16 @@ def test_instrument_market_stream_stops_after_terminal_connection_state() -> Non
     with (
         patch("omnicio.main.authenticated_user") as user,
         patch("omnicio.main.market_service") as market,
+        patch("omnicio.main.service") as auth,
     ):
         user.return_value.id = "server-user"
+        user.return_value.public_id = 101
+        auth.return_value.refresh_session.return_value = user.return_value
         market.return_value.instrument_live_state.side_effect = BrokerNotConnected(
             "not connected"
         )
         response = TestClient(app).get(
-            "/api/market/instruments/uid-1/stream",
+            "/api/market/instruments/uid-1/stream?profile_context=000000101",
         )
 
     assert response.status_code == 200
