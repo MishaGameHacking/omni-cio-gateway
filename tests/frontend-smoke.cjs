@@ -8,6 +8,8 @@ const assert = require("node:assert/strict");
 
 const root = resolve(__dirname, "..");
 const web = join(root, "web");
+const version = /^version = "([^"\r\n]+)"$/m.exec(readFileSync(join(root, "pyproject.toml"), "utf8"))[1];
+const build = "smoke-" + version;
 const candidates = [
   process.env.OMNICIO_TEST_BROWSER,
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
@@ -63,6 +65,12 @@ const verifyPublicWorker = async () => {
 };
 
 const suite = String.raw`
+const initializeWorkspace = window.OmniWorkspace.init;
+window.OmniWorkspace.init = (adapter) => {
+  const controls = initializeWorkspace(adapter);
+  window.__smokeWorkspace = controls;
+  return controls;
+};
 window.addEventListener("load", () => setTimeout(async () => {
   const results = [];
   const check = (value, label) => { if (!value) throw new Error(label); results.push(label); };
@@ -173,7 +181,7 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify(pathname === "/api/auth/config" ? {auth_provider: "vkid", login_enabled: true, registration_enabled: true, registration_max_users: 2} : {detail: "unauthenticated"}));
     return;
   }
-  if (pathname === "/version.js") { response.setHeader("Content-Type", "text/javascript"); response.end('window.OMNICIO_RELEASE={version:"0.19.0",build:"smoke0190"};'); return; }
+  if (pathname === "/version.js") { response.setHeader("Content-Type", "text/javascript"); response.end('window.OMNICIO_RELEASE=' + JSON.stringify({version, build}) + ';'); return; }
   if (pathname === "/smoke.js") { response.setHeader("Content-Type", "text/javascript"); response.end(suite); return; }
   let file = join(web, pathname === "/" ? "index.html" : pathname.replace(/^\/assets\//, ""));
   if (pathname.startsWith("/assets/brand/")) file = join(root, "assets/brand/transparent/omni-sentinel-core-color-1024.png");
@@ -182,9 +190,9 @@ const server = createServer((request, response) => {
   response.setHeader("Content-Type", types[extension] || "application/octet-stream");
   let body = readFileSync(file);
   if (pathname === "/") {
-    body = body.toString().replaceAll("__OMNICIO_BUILD__", "smoke0190").replaceAll("__OMNICIO_VERSION__", "0.19.0");
+    body = body.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version);
     body = body.replace("<head>", '<head><script>window.__smokeErrors=[];addEventListener("error",e=>window.__smokeErrors.push(e.message));addEventListener("unhandledrejection",e=>window.__smokeErrors.push(String(e.reason)));</script>');
-    body = body.replace("</body>", '<script src="/smoke.js" defer></script></body>');
+    body = body.replace('<script src="/assets/app.js?', '<script src="/smoke.js" defer></script><script src="/assets/app.js?');
   }
   response.end(body);
 });
@@ -277,6 +285,16 @@ const run = async (url, width) => {
       await evaluate(`document.querySelector('[data-view="${view}"]').click()`);
       await screenshot(view);
     }), Promise.resolve());
+    const calendarDays = await evaluate(`(() => {
+      const now = new Date();
+      const stamp = (day) => new Date(now.getFullYear(), now.getMonth(), day, 12).toISOString();
+      window.__smokeWorkspace.setPayouts([
+        {instrument_uid: "record-only", event_type: "dividend", record_at: stamp(15), status: "announced"},
+        {instrument_uid: "paid", event_type: "coupon", actual_at: stamp(10), expected_at: stamp(20), amount: "10", currency: "RUB", status: "paid"},
+      ]);
+      return [...document.querySelectorAll(".calendar-day.has-payout")].map(element => element.firstChild.textContent);
+    })()`);
+    assert.deepEqual(calendarDays, ["10"], "Record dates are not payment dates, and actual payment dates supersede estimates");
     console.log(`Browser smoke ${width}: ${JSON.stringify(result)}`);
   } finally {
     if (client) {

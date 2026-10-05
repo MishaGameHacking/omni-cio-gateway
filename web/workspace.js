@@ -407,7 +407,7 @@
       body.append(table, node("p", "Цена, доходность и право покупки требуют отдельного подтверждения брокером. Отсутствующие данные не заменяются оценкой.", "inline-note"));
     });
 
-    const eventDate = (item) => item.expected_at || item.actual_at || item.record_at;
+    const eventDate = (item) => item.actual_at || item.expected_at;
     const monthPayouts = () => payouts.filter((item) => {
       const date = new Date(eventDate(item));
       return date.getFullYear() === calendarMonth.getFullYear() && date.getMonth() === calendarMonth.getMonth();
