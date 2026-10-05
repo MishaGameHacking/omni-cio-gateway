@@ -71,6 +71,138 @@ window.OmniWorkspace.init = (adapter) => {
   window.__smokeWorkspace = controls;
   return controls;
 };
+const verifyHelp = async (check) => {
+  const trigger = document.querySelector(".help-trigger");
+  const popup = document.querySelector("#workspace-help");
+  const pause = (ms) => new Promise((resolvePause) => setTimeout(resolvePause, ms));
+  const escape = () => document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+  const pointer = (type, target = trigger, options = {}) => {
+    const event = new PointerEvent(type, {bubbles: true, cancelable: true, isPrimary: true, button: 0, pointerType: "touch", pointerId: 17, clientX: 30, clientY: 30, ...options});
+    target.dispatchEvent(event);
+    return event;
+  };
+  const tap = () => { pointer("pointerdown"); pointer("pointerup"); pointer("click", trigger, {detail: 1}); };
+  const reset = () => { trigger.blur(); escape(); };
+  check(Boolean(trigger && popup), "Help reuses the workspace component");
+  // Complete the viewport change before starting a timed hover gesture.
+  trigger.scrollIntoView({block: "center", behavior: "instant"});
+  await pause(100);
+  trigger.focus({preventScroll: true});
+  check(!popup.hidden && popup.getAttribute("role") === "tooltip", "Keyboard focus opens noninteractive help");
+  document.dispatchEvent(new Event("scroll"));
+  check(!popup.hidden && document.activeElement === trigger, "Focus scrolling preserves the keyboard explanation");
+  check(Boolean(document.getElementById(trigger.getAttribute("aria-describedby"))?.textContent), "Help has a valid accessible description");
+  check([...popup.querySelectorAll("button")].every((item) => getComputedStyle(item).display === "none"), "Transient tooltip contains no visible interactive control");
+  trigger.click();
+  check(popup.getAttribute("role") === "dialog" && popup.contains(document.activeElement), "Keyboard activation pins help and moves focus to its close control");
+  trigger.focus({preventScroll: true});
+  check(popup.getAttribute("role") === "dialog", "Returning focus does not unpin help");
+  popup.querySelector("button").click();
+  check(popup.hidden && document.activeElement === trigger, "Close restores focus without reopening help");
+  check(!trigger.hasAttribute("aria-describedby"), "Closing removes the stale description binding");
+  await ["scroll", "resize"].reduce((previous, eventName) => previous.then(async () => {
+    trigger.click();
+    check(popup.contains(document.activeElement) && !popup.hidden, "Pinned lifecycle starts with dialog focus: " + eventName);
+    (eventName === "scroll" ? document : window).dispatchEvent(new Event(eventName));
+    check(popup.hidden && document.activeElement === trigger, "Lifecycle dismissal restores trigger focus: " + eventName);
+    await pause(390);
+    check(popup.hidden && document.activeElement === trigger, "Restored lifecycle focus does not reopen help: " + eventName);
+  }), Promise.resolve());
+  trigger.click();
+  check(popup.contains(document.activeElement), "View-change regression starts with dialog focus");
+  window.__smokeWorkspace.onView("assets");
+  check(popup.hidden && !popup.contains(document.activeElement) && document.activeElement !== trigger, "A destination view never restores focus to the old-screen trigger");
+  await pause(390);
+  check(popup.hidden, "View-change dismissal leaves no delayed reopen");
+  window.__smokeWorkspace.onView("home");
+  trigger.focus({preventScroll: true});
+  trigger.click();
+  const outside = document.querySelector("#privacy-toggle");
+  outside.focus({preventScroll: true});
+  check(document.activeElement === outside, "Outside-focus precondition uses a visible control at this viewport");
+  window.__smokeWorkspace.onView("assets");
+  check(popup.hidden && document.activeElement === outside, "View-change cleanup preserves focus already moved to another control");
+  window.__smokeWorkspace.onView("home");
+  trigger.focus({preventScroll: true});
+  trigger.click();
+  outside.focus({preventScroll: true});
+  check(document.activeElement === outside, "Resize starts with focus outside the popover");
+  window.dispatchEvent(new Event("resize"));
+  check(popup.hidden && document.activeElement === outside, "Lifecycle cleanup does not steal focus outside the popover");
+  outside.blur();
+  reset();
+  pointer("pointerenter", trigger, {pointerType: "mouse"});
+  await pause(180);
+  check(popup.hidden, "Mouse hover does not open before the delay");
+  await pause(220);
+  check(!popup.hidden, "Mouse hover opens after 350 ms");
+  pointer("pointerleave", trigger, {pointerType: "mouse"});
+  pointer("pointerenter", popup, {pointerType: "mouse"});
+  await pause(180);
+  check(!popup.hidden, "Pointer can move onto help without losing its text");
+  pointer("pointerleave", popup, {pointerType: "mouse"});
+  await pause(180);
+  check(popup.hidden, "Leaving both hover surfaces closes help after the grace period");
+  const start = pointer("pointerdown");
+  trigger.focus({preventScroll: true});
+  check(!start.defaultPrevented && popup.hidden, "Touch keeps native scrolling and does not open on pointer-induced focus");
+  pointer("pointerup");
+  pointer("click", trigger, {detail: 1});
+  check(!popup.hidden && popup.getAttribute("role") === "dialog", "Short tap pins help");
+  tap();
+  check(popup.hidden, "A second tap closes pinned help");
+  pointer("pointerdown");
+  await pause(330);
+  check(!popup.hidden && popup.getAttribute("role") === "tooltip", "Long press opens temporary help");
+  pointer("pointerup", document.body);
+  check(popup.hidden, "Releasing outside the trigger closes temporary help");
+  pointer("click", trigger, {detail: 1});
+  check(popup.hidden, "Synthetic click from the long press is suppressed");
+  tap();
+  check(!popup.hidden && popup.getAttribute("role") === "dialog", "The next tap is not suppressed by the previous gesture");
+  pointer("pointerdown", document.body);
+  check(popup.hidden, "Outside pointer action dismisses pinned help");
+  for (const afterHold of [false, true]) {
+    pointer("pointerdown");
+    if (afterHold) await pause(330);
+    pointer("pointermove", document.body, {clientX: 41});
+    pointer("pointerup", document.body);
+    pointer("click", trigger, {detail: 1});
+    await pause(330);
+    check(popup.hidden, "Movement over 10 px cancels help and click, held=" + afterHold);
+  }
+  pointer("pointerdown");
+  await pause(330);
+  pointer("pointercancel", document.body);
+  check(popup.hidden, "Pointer cancellation closes an active long press");
+  reset();
+  for (const eventName of ["scroll", "resize", "pagehide"]) {
+    pointer("pointerenter", trigger, {pointerType: "mouse"});
+    (eventName === "scroll" ? document : window).dispatchEvent(new Event(eventName));
+    await pause(390);
+    check(popup.hidden, "Lifecycle cancels delayed hover: " + eventName);
+  }
+  pointer("pointerdown");
+  const previousHidden = Object.getOwnPropertyDescriptor(document, "hidden");
+  try {
+    Object.defineProperty(document, "hidden", {configurable: true, value: true});
+    document.dispatchEvent(new Event("visibilitychange"));
+  } finally {
+    if (previousHidden) Object.defineProperty(document, "hidden", previousHidden);
+    else delete document.hidden;
+  }
+  await pause(330);
+  check(popup.hidden, "Hiding the document cancels a pending long press");
+  reset();
+  pointer("pointerenter", trigger, {pointerType: "mouse"});
+  window.__smokeWorkspace.onView("home");
+  await pause(390);
+  check(popup.hidden, "View changes cancel delayed help instead of resurrecting it");
+  trigger.focus({preventScroll: true});
+  const rect = popup.getBoundingClientRect();
+  check(rect.left >= 15 && rect.right <= innerWidth - 15 && rect.top >= 15 && rect.bottom <= innerHeight - 15, "Help stays inside the viewport");
+  reset();
+};
 window.addEventListener("load", () => setTimeout(async () => {
   const results = [];
   const check = (value, label) => { if (!value) throw new Error(label); results.push(label); };
@@ -148,6 +280,7 @@ window.addEventListener("load", () => setTimeout(async () => {
     one("#assistant-form").requestSubmit();
     check(one("#assistant-message").textContent.includes("не отправлено"), "Unconfigured AI is honestly marked");
     navigate("home");
+    await verifyHelp(check);
     click("#privacy-toggle");
     check(document.body.classList.contains("privacy-mode"), "Hide amounts");
     click("#privacy-toggle");
@@ -239,6 +372,53 @@ const protocolClient = async (url) => {
   };
 };
 
+const verifyHelpInput = async (send, evaluate) => {
+  const hidden = () => evaluate('document.querySelector("#workspace-help").hidden');
+  const pinned = () => evaluate('!document.querySelector("#workspace-help").hidden && document.querySelector("#workspace-help").getAttribute("role") === "dialog"');
+  const key = async (name, code, value) => {
+    const text = {Enter: "\r", Space: " "}[code] || "";
+    await send("Input.dispatchKeyEvent", {type: "keyDown", key: name, code, windowsVirtualKeyCode: value, text});
+    await send("Input.dispatchKeyEvent", {type: "keyUp", key: name, code, windowsVirtualKeyCode: value, text: ""});
+  };
+  await evaluate('document.querySelector(".help-trigger").scrollIntoView({block:"center",behavior:"instant"})');
+  await delay(100);
+  await evaluate('document.querySelector(".help-trigger").focus()');
+  await key("Enter", "Enter", 13);
+  assert.equal(await pinned(), true, "Native Enter pins help");
+  await key("Escape", "Escape", 27);
+  assert.equal(await hidden(), true, "Native Escape closes pinned help");
+  assert.equal(await evaluate('document.activeElement === document.querySelector(".help-trigger")'), true, "Native Escape restores the trigger focus");
+  await key(" ", "Space", 32);
+  assert.equal(await pinned(), true, "Native Space pins help without an extra activation");
+  await key("Escape", "Escape", 27);
+  await evaluate('document.activeElement.blur()');
+  const center = await evaluate('(() => { const r=document.querySelector(".help-trigger").getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()');
+  await send("Input.dispatchMouseEvent", {type: "mouseMoved", ...center});
+  assert.equal(await waitUntil(async () => !await hidden()), true, "Native mouse hover opens help");
+  const popupPoint = await evaluate('(() => { const r=document.querySelector("#workspace-help").getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()');
+  await send("Input.dispatchMouseEvent", {type: "mouseMoved", ...popupPoint});
+  await delay(220);
+  assert.equal(await hidden(), false, "Native pointer can hover over the help text");
+  await send("Input.dispatchMouseEvent", {type: "mouseMoved", x: 1, y: 1});
+  assert.equal(await waitUntil(hidden), true, "Native pointer departure closes unpinned help");
+  await send("Emulation.setTouchEmulationEnabled", {enabled: true});
+  try {
+    await send("Input.dispatchTouchEvent", {type: "touchStart", touchPoints: [{...center, id: 1}]});
+    assert.equal(await waitUntil(async () => !await hidden()), true, "Native long press opens temporary help");
+    await send("Input.dispatchTouchEvent", {type: "touchEnd", touchPoints: []});
+    await delay(220);
+    assert.equal(await hidden(), true, "Native touch release and compatibility click do not reopen help");
+    await send("Input.dispatchTouchEvent", {type: "touchStart", touchPoints: [{...center, id: 2}]});
+    await send("Input.dispatchTouchEvent", {type: "touchEnd", touchPoints: []});
+    assert.equal(await pinned(), true, "The next native short tap remains available");
+    assert.equal(await hidden(), false, "The next native tap pins visible help");
+    await key("Escape", "Escape", 27);
+  } finally {
+    await send("Emulation.setTouchEmulationEnabled", {enabled: false});
+  }
+  await evaluate('document.activeElement.blur()');
+};
+
 const run = async (url, width) => {
   const profile = mkdtempSync(join(tmpdir(), "omnicio-browser-test-"));
   const child = spawn(executable, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], {stdio: ["ignore", "ignore", "pipe"]});
@@ -280,6 +460,7 @@ const run = async (url, width) => {
     await visit(url + "?login");
     await screenshot("registration");
     const result = await visit(url);
+    await verifyHelpInput(send, evaluate);
     await evaluate("document.querySelector('#smoke-result').remove()");
     await screenshot("home-light");
     await evaluate("document.querySelector('#quick-theme').click()");

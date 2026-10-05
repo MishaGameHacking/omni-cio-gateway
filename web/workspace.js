@@ -77,24 +77,126 @@
   const initHelp = () => {
     const popover = node("div", undefined, "help-popover");
     popover.id = "workspace-help";
-    popover.setAttribute("role", "tooltip");
     popover.hidden = true;
+    popover.style.maxHeight = "calc(100dvh - 32px)";
+    popover.style.overflowY = "auto";
+    const description = node("p");
+    description.id = "workspace-help-text";
+    const dismiss = button("Закрыть справку", () => close(true));
+    dismiss.hidden = true;
+    dismiss.classList.add("hidden");
+    popover.append(description, dismiss);
     document.body.append(popover);
     let active = null;
-    const close = () => {
-      active?.removeAttribute("aria-describedby");
-      active = null;
-      popover.hidden = true;
+    let pinned = false;
+    let restoringFocus = false;
+    let hovering = null;
+    let gesture = null;
+    let suppressedClick = null;
+    let hoverTimer;
+    let leaveTimer;
+    let holdTimer;
+
+    const clearTimers = () => {
+      clearTimeout(hoverTimer);
+      clearTimeout(leaveTimer);
+      clearTimeout(holdTimer);
     };
-    const show = (trigger, text) => {
-      close();
-      active = trigger;
-      trigger.setAttribute("aria-describedby", popover.id);
-      popover.textContent = text;
-      popover.hidden = false;
-      const rect = trigger.getBoundingClientRect();
+    const unbind = () => {
+      active?.removeAttribute("aria-describedby");
+      active?.removeAttribute("aria-controls");
+      active?.removeAttribute("aria-expanded");
+    };
+    const canRestoreFocus = (trigger, view) => trigger?.isConnected && !trigger.disabled
+      && !trigger.closest("[hidden], .hidden, [inert]") && trigger.getClientRects().length > 0
+      && getComputedStyle(trigger).visibility === "visible"
+      && (view === null || trigger.closest("[data-view-panel]")?.dataset.viewPanel === view);
+    const close = (restoreFocus = false, view = null) => {
+      const focused = document.activeElement;
+      const focusInside = popover.contains(focused);
+      clearTimers();
+      hovering = null;
+      if (gesture) suppressedClick = {trigger: gesture.trigger, id: gesture.id};
+      gesture = null;
+      const trigger = active;
+      unbind();
+      active = null;
+      pinned = false;
+      popover.hidden = true;
+      dismiss.hidden = true;
+      dismiss.classList.add("hidden");
+      // Capture focus before hiding: the browser may already have moved it to body.
+      if ((restoreFocus || focusInside) && canRestoreFocus(trigger, view)) {
+        restoringFocus = true;
+        trigger.focus({preventScroll: true});
+        restoringFocus = false;
+      } else if (focusInside) focused.blur();
+    };
+    const position = () => {
+      const rect = active.getBoundingClientRect();
+      const above = rect.top - popover.offsetHeight - 8;
+      const top = above >= 16 ? above : rect.bottom + 8;
       popover.style.left = `${Math.max(16, Math.min(innerWidth - popover.offsetWidth - 16, rect.left))}px`;
-      popover.style.top = `${Math.max(16, Math.min(innerHeight - popover.offsetHeight - 16, rect.bottom + 8))}px`;
+      popover.style.top = `${Math.max(16, Math.min(innerHeight - popover.offsetHeight - 16, top))}px`;
+    };
+    const show = (trigger, text, pin = false) => {
+      clearTimeout(hoverTimer);
+      clearTimeout(leaveTimer);
+      unbind();
+      active = trigger;
+      pinned = pin;
+      description.textContent = text;
+      trigger.setAttribute("aria-describedby", description.id);
+      popover.setAttribute("role", pin ? "dialog" : "tooltip");
+      popover.setAttribute("aria-label", trigger.getAttribute("aria-label"));
+      dismiss.hidden = !pin;
+      dismiss.classList.toggle("hidden", !pin);
+      if (pin) {
+        trigger.setAttribute("aria-controls", popover.id);
+        trigger.setAttribute("aria-expanded", "true");
+      }
+      popover.hidden = false;
+      position();
+    };
+    const scheduleClose = () => {
+      clearTimeout(leaveTimer);
+      leaveTimer = setTimeout(() => {
+        if (!pinned && active !== document.activeElement && hovering !== active && !popover.matches(":hover")) close();
+      }, 150);
+    };
+    const beginGesture = (event, trigger, text) => {
+      if (!event.isPrimary || event.button !== 0) return;
+      clearTimers();
+      suppressedClick = null;
+      gesture = {trigger, id: event.pointerId, x: event.clientX, y: event.clientY, held: false};
+      if (event.pointerType === "mouse" || (active === trigger && pinned)) return;
+      holdTimer = setTimeout(() => {
+        if (!gesture || document.hidden) return;
+        gesture.held = true;
+        show(trigger, text);
+      }, 300);
+    };
+    const finishGesture = (event) => {
+      if (gesture?.id !== event.pointerId) return;
+      clearTimeout(holdTimer);
+      const held = gesture.held;
+      const trigger = gesture.trigger;
+      if (held || event.type === "pointercancel") suppressedClick = {trigger, id: gesture.id};
+      gesture = null;
+      if (!pinned && active === trigger && (held || event.type === "pointercancel")) close();
+    };
+    const pinOrClose = (event, trigger, text) => {
+      const suppressed = suppressedClick;
+      suppressedClick = null;
+      if (event.detail !== 0 && suppressed?.trigger === trigger
+        && (event.pointerId === undefined || event.pointerId === suppressed.id)) return;
+      clearTimers();
+      gesture = null;
+      if (active === trigger && pinned) close();
+      else {
+        show(trigger, text, true);
+        if (event.detail === 0) dismiss.focus({preventScroll: true});
+      }
     };
     const attach = (selector, title, text) => {
       const target = $(selector);
@@ -103,32 +205,61 @@
       trigger.type = "button";
       trigger.setAttribute("aria-label", title);
       target.append(trigger);
-      let timer;
-      let origin;
-      let held = false;
-      trigger.addEventListener("focus", () => show(trigger, text));
-      trigger.addEventListener("blur", close);
-      trigger.addEventListener("pointerenter", (event) => { if (event.pointerType === "mouse") show(trigger, text); });
-      trigger.addEventListener("pointerleave", () => { clearTimeout(timer); if (document.activeElement !== trigger) close(); });
-      trigger.addEventListener("pointerdown", (event) => {
-        held = false;
-        origin = [event.clientX, event.clientY];
-        if (event.pointerType !== "mouse") timer = setTimeout(() => { held = true; show(trigger, text); }, 300);
+      trigger.addEventListener("focus", () => {
+        if (!restoringFocus && gesture?.trigger !== trigger && suppressedClick?.trigger !== trigger
+          && !(active === trigger && pinned)) show(trigger, text);
       });
-      trigger.addEventListener("pointermove", (event) => {
-        if (origin && Math.hypot(event.clientX - origin[0], event.clientY - origin[1]) > 10) clearTimeout(timer);
+      trigger.addEventListener("blur", scheduleClose);
+      trigger.addEventListener("pointerenter", (event) => {
+        if (event.pointerType !== "mouse") return;
+        hovering = trigger;
+        clearTimeout(leaveTimer);
+        clearTimeout(hoverTimer);
+        if (pinned || active === trigger) return;
+        hoverTimer = setTimeout(() => { if (!document.hidden) show(trigger, text); }, 350);
       });
-      for (const event of ["pointerup", "pointercancel"]) trigger.addEventListener(event, () => clearTimeout(timer));
-      trigger.addEventListener("click", () => { if (!held) show(trigger, text); });
-      trigger.addEventListener("contextmenu", (event) => { if (held) event.preventDefault(); });
+      trigger.addEventListener("pointerleave", (event) => {
+        if (event.pointerType !== "mouse") return;
+        hovering = null;
+        clearTimeout(hoverTimer);
+        scheduleClose();
+      });
+      trigger.addEventListener("pointerdown", (event) => beginGesture(event, trigger, text));
+      trigger.addEventListener("click", (event) => pinOrClose(event, trigger, text));
+      trigger.addEventListener("contextmenu", (event) => {
+        if ((gesture?.trigger === trigger && gesture.held) || suppressedClick?.trigger === trigger) event.preventDefault();
+      });
     };
     attach(".command-kpi-primary > span", "Как рассчитана стоимость портфеля", "Сумма активов и денег по последнему снимку брокера. Это оценка: при продаже итог зависит от цены исполнения и издержек.");
     attach(".command-kpi:nth-child(2) > span", "Что означает изменение за день", "Изменение стоимости за день по данным брокера. Пополнения и выплаты могут влиять на капитал; это не обещание доходности.");
     attach(".command-kpi:nth-child(3) > span", "Какие рубли считаются свободными", "Незаблокированные рубли на счёте. Перед расчётом торгового бюджета отдельно учитываются резерв, заявки, комиссии и НКД.");
-    document.addEventListener("pointerdown", (event) => { if (active && !active.contains(event.target) && !popover.contains(event.target)) close(); });
-    document.addEventListener("keydown", (event) => { if (event.key === "Escape") close(); });
-    document.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
+    popover.addEventListener("pointerenter", () => clearTimeout(leaveTimer));
+    popover.addEventListener("pointerleave", scheduleClose);
+    document.addEventListener("pointerdown", (event) => {
+      suppressedClick = null;
+      if (!active?.contains(event.target) && !popover.contains(event.target)) close();
+    }, true);
+    document.addEventListener("pointermove", (event) => {
+      if (gesture?.id === event.pointerId && Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) > 10) close();
+    }, {passive: true});
+    for (const name of ["pointerup", "pointercancel"]) document.addEventListener(name, finishGesture);
+    document.addEventListener("keydown", (event) => {
+      suppressedClick = null;
+      if (event.key !== "Escape") return;
+      const visible = !popover.hidden;
+      close(visible && popover.contains(document.activeElement));
+      if (visible) { event.preventDefault(); event.stopPropagation(); }
+    }, true);
+    document.addEventListener("scroll", (event) => {
+      if (popover.contains(event.target)) return;
+      // Browser focus scrolling must not dismiss a keyboard user's explanation.
+      if (active && !pinned && !gesture && active === document.activeElement) position();
+      else close();
+    }, true);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) close(); });
+    window.addEventListener("pagehide", () => close());
+    window.addEventListener("resize", () => close());
+    return {close};
   };
 
   window.OmniWorkspace = {init(adapter) {
@@ -716,7 +847,7 @@
     });
 
     renderAllocation();
-    initHelp();
+    const help = initHelp();
     renderCalendar();
     renderEvents();
     renderGoals();
@@ -741,6 +872,7 @@
       filterAssets, decorateAssets, toast,
       demoSearch: (query) => demoInstruments.filter((item) => `${item.name} ${item.ticker}`.toLocaleLowerCase("ru-RU").includes(query.toLocaleLowerCase("ru-RU"))),
       onView: (view) => {
+        help.close(false, view);
         if (view === "goals") renderGoals();
         if (view === "events") renderEvents();
         if (view === "payouts") renderCalendar();
