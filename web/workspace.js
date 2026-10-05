@@ -107,7 +107,13 @@
       active?.removeAttribute("aria-controls");
       active?.removeAttribute("aria-expanded");
     };
-    const close = (restoreFocus = false) => {
+    const canRestoreFocus = (trigger, view) => trigger?.isConnected && !trigger.disabled
+      && !trigger.closest("[hidden], .hidden, [inert]") && trigger.getClientRects().length > 0
+      && getComputedStyle(trigger).visibility === "visible"
+      && (view === null || trigger.closest("[data-view-panel]")?.dataset.viewPanel === view);
+    const close = (restoreFocus = false, view = null) => {
+      const focused = document.activeElement;
+      const focusInside = popover.contains(focused);
       clearTimers();
       hovering = null;
       if (gesture) suppressedClick = {trigger: gesture.trigger, id: gesture.id};
@@ -119,11 +125,12 @@
       popover.hidden = true;
       dismiss.hidden = true;
       dismiss.classList.add("hidden");
-      if (restoreFocus && trigger?.isConnected) {
+      // Capture focus before hiding: the browser may already have moved it to body.
+      if ((restoreFocus || focusInside) && canRestoreFocus(trigger, view)) {
         restoringFocus = true;
         trigger.focus({preventScroll: true});
         restoringFocus = false;
-      }
+      } else if (focusInside) focused.blur();
     };
     const position = () => {
       const rect = active.getBoundingClientRect();
@@ -865,7 +872,7 @@
       filterAssets, decorateAssets, toast,
       demoSearch: (query) => demoInstruments.filter((item) => `${item.name} ${item.ticker}`.toLocaleLowerCase("ru-RU").includes(query.toLocaleLowerCase("ru-RU"))),
       onView: (view) => {
-        help.close();
+        help.close(false, view);
         if (view === "goals") renderGoals();
         if (view === "events") renderEvents();
         if (view === "payouts") renderCalendar();
