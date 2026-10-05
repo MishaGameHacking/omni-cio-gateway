@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Any, Protocol
 
 REMOTE_STATUS_PATH = "/var/lib/omnicio-recovery/status.json"
+REMOTE_PYTHON = "python3 -"
 BOOTSTRAP_COMMENT = "Managed by OmniCIO: initial R0 recovery point v1"
 
 
@@ -50,7 +51,7 @@ def load_policy() -> BackupPolicy:
 
 
 def read_state(ssh: Remote) -> dict[str, Any]:
-    raw = ssh.run("python3 -", input_text=f"""
+    raw = ssh.run(REMOTE_PYTHON, input_text=f"""
 import json, pathlib
 path = pathlib.Path({REMOTE_STATUS_PATH!r})
 if path.exists():
@@ -74,7 +75,7 @@ print(json.dumps(value))
 def write_state(ssh: Remote, state: dict[str, Any]) -> None:
     # Contains only operational evidence and mutation receipts, never rows, URLs or credentials.
     encoded = json.dumps(state, ensure_ascii=True, separators=(",", ":"))
-    ssh.run("python3 -", input_text=f"""
+    ssh.run(REMOTE_PYTHON, input_text=f"""
 import os, pathlib
 path = pathlib.Path({REMOTE_STATUS_PATH!r})
 path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -298,7 +299,7 @@ def inspect_restore_capacity(client: Provider, ssh: Remote, cluster_id: int) -> 
             }
         except (RuntimeError, OSError, ValueError):
             report[name] = {"status": "unavailable"}
-    raw = ssh.run("python3 -", input_text=RESTORE_CAPACITY_SCRIPT)
+    raw = ssh.run(REMOTE_PYTHON, input_text=RESTORE_CAPACITY_SCRIPT)
     host = json.loads(raw)
     if not isinstance(host, dict):
         raise RecoveryBlocked("Invalid restore capacity response")
