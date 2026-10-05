@@ -4,15 +4,13 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import pathlib
-import secrets
 import sys
 import tempfile
 import unittest
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 MODULE_PATH = pathlib.Path(__file__).with_name("timeweb_auth_postgres.py")
 SPEC = importlib.util.spec_from_file_location("timeweb_auth_postgres", MODULE_PATH)
@@ -38,39 +36,6 @@ class PostgresTests(unittest.TestCase):
             min_disk_mb=20480,
         )
 
-    def test_recovery_inventory_is_read_only_and_excludes_provider_secrets(self) -> None:
-        client, ssh = Mock(), Mock()
-        client.request.side_effect = [
-            {"auto_backups_settings": {"is_enabled": False, "password": "private"}},
-            {"backups": [{"id": 9, "status": "done", "comment": "private", "url": "private"}]},
-        ]
-        ssh.run.side_effect = [json.dumps({"bypass_rls": False}), json.dumps({"docker": None})]
-        with patch.object(MODULE, "add_summary") as summary:
-            MODULE.report_recovery_inventory(
-                client, ssh, cluster_id=42,
-                endpoint=MODULE.DatabaseEndpoint("10.77.0.5", 5432), desired=self.desired,
-            )
-        self.assertTrue(all(call.args[0] == "GET" for call in client.request.call_args_list))
-        self.assertNotIn("private", str(summary.call_args_list))
-        self.assertIn('"is_enabled": false', str(summary.call_args_list))
-        self.assertIn("default_transaction_read_only=on", ssh.run.call_args_list[0].args[0])
-
-    def test_ambiguous_database_creation_is_not_retried(self) -> None:
-        for recovered in (None, {"id": 42}):
-            with self.subTest(recovered=recovered):
-                client = Mock()
-                error = MODULE.AmbiguousProviderError("timeout")
-                client.create_database_cluster.side_effect = error
-                with patch.object(
-                    MODULE, "reconcile_after_ambiguous_create", return_value=recovered,
-                ):
-                    if recovered is None:
-                        with self.assertRaises(MODULE.InfraError):
-                            MODULE.create_database_cluster(client, {}, cluster_name="managed")
-                    else:
-                        result = MODULE.create_database_cluster(client, {}, cluster_name="managed")
-                        self.assertEqual(result, 42)
-                client.create_database_cluster.assert_called_once_with({})
 
     def test_address_inventory_keeps_private_endpoint_separate(self) -> None:
         cluster = {"networks": [
@@ -136,18 +101,6 @@ class PostgresTests(unittest.TestCase):
         selected = MODULE.select_database_preset(presets, self.desired)
         self.assertEqual(selected["id"], 2)
 
-    def test_create_payload_is_private_only_and_no_autoscale(self) -> None:
-        payload = MODULE.create_payload(
-            desired=self.desired,
-            db_type="postgres18",
-            preset={"id": 2},
-            vpc_id="network-123",
-            password=secrets.token_urlsafe(18),
-        )
-        self.assertEqual(payload["network"], {"id": "network-123"})
-        self.assertFalse(payload["is_public_ipv6"])
-        self.assertNotIn("floating_ip", payload["network"])
-        self.assertEqual(payload["disk_autoscaling"], {"is_enabled": False})
 
     def test_private_server_cidr_uses_vpc_prefix(self) -> None:
         vpc = {"subnet_v4": "10.77.0.0/24"}
@@ -223,7 +176,7 @@ class PostgresTests(unittest.TestCase):
 
     def test_workflow_applies_portfolio_observer_migration_after_existing_schema(self) -> None:
         root = MODULE_PATH.parents[2]
-        workflow = (root / ".github" / "workflows" / "auth-postgres.yml").read_text(encoding="utf-8")
+        workflow = (root / ".github/workflows/auth-postgres.yml").read_text(encoding="utf-8")
 
         migrations = [
             "migrations/0001_phone_auth.sql",

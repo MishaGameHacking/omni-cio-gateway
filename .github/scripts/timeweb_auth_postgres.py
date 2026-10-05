@@ -21,6 +21,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from timeweb_addresses import network_addresses
+from timeweb_recovery import RecoveryBlocked, ensure_recovery_point, load_policy
 from timeweb_ssh_trust import (
     ssh_base_args,
     ssh_keygen_executable,
@@ -188,17 +189,6 @@ class TimewebClient:
     def get_database_cluster(self, cluster_id: int) -> dict[str, Any]:
         return dict(
             self.request("GET", f"/databases/{cluster_id}").get("db") or {}
-        )
-
-    def create_database_cluster(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return dict(
-            self.request(
-                "POST",
-                "/databases",
-                payload=payload,
-                timeout=45,
-            ).get("db")
-            or {}
         )
 
     def create_ssh_key(self, public_key: str, name: str) -> int:
@@ -481,35 +471,6 @@ def validate_existing_cluster(
         raise InfraError("Managed auth database unexpectedly has public IPv4 enabled")
     if bool(cluster.get("is_enabled_public_ipv6")):
         raise InfraError("Managed auth database unexpectedly has public IPv6 enabled")
-
-
-def create_payload(
-    *,
-    desired: DesiredDatabase,
-    db_type: str,
-    preset: dict[str, Any],
-    vpc_id: str,
-    password: str,
-) -> dict[str, Any]:
-    return {
-        "name": desired.cluster_name,
-        "type": db_type,
-        "admin": {
-            "login": desired.admin_login,
-            "password": password,
-            "description": "OmniCIO application database user",
-        },
-        "instance": {
-            "name": desired.instance_name,
-            "description": "OmniCIO account and authentication data",
-        },
-        "preset_id": integer_value(preset["id"]),
-        "network": {"id": vpc_id},
-        "is_public_ipv6": False,
-        "description": DB_OWNERSHIP_MARKER,
-        "availability_zone": desired.availability_zone,
-        "disk_autoscaling": {"is_enabled": False},
-    }
 
 
 class EphemeralSsh:
@@ -821,63 +782,11 @@ print(path.read_text(), end="")
 """
 
 
-REMOTE_DB_PASSWORD_ROTATE = r"""
-from __future__ import annotations
-
-import os
-import pathlib
-import secrets
-
-path = pathlib.Path("/etc/omnicio/auth-secrets.env")
-if not path.is_file():
-    raise SystemExit("auth secret file does not exist")
-
-lines = path.read_text().splitlines()
-new_password = secrets.token_urlsafe(18)
-updated = []
-replaced = False
-
-for line in lines:
-    if line.startswith("OMNICIO_DB_ADMIN_PASSWORD="):
-        updated.append(f"OMNICIO_DB_ADMIN_PASSWORD={new_password}")
-        replaced = True
-    else:
-        updated.append(line)
-
-if not replaced:
-    raise SystemExit("database admin password key is missing")
-
-temp = path.with_suffix(".tmp")
-temp.write_text("\n".join(updated) + "\n")
-os.chmod(temp, 0o600)
-temp.replace(path)
-os.chmod(path, 0o600)
-print(path.read_text(), end="")
-"""
-
-
-def load_or_create_server_secrets(
-    ssh: EphemeralSsh,
-    *,
-    allow_db_password_rotation: bool,
-) -> dict[str, str]:
+def load_or_create_server_secrets(ssh: EphemeralSsh) -> dict[str, str]:
     raw = ssh.run("python3 -", input_text=REMOTE_SECRET_BOOTSTRAP)
     values = parse_secret_bundle(raw)
-    password = values["OMNICIO_DB_ADMIN_PASSWORD"]
-
-    if is_valid_timeweb_db_password(password):
-        return values
-
-    if not allow_db_password_rotation:
-        raise InfraError(
-            "Stored database admin password violates the provider policy and "
-            "cannot be rotated after a managed cluster exists"
-        )
-
-    rotated = ssh.run("python3 -", input_text=REMOTE_DB_PASSWORD_ROTATE)
-    values = parse_secret_bundle(rotated)
     if not is_valid_timeweb_db_password(values["OMNICIO_DB_ADMIN_PASSWORD"]):
-        raise InfraError("Generated database admin password violates provider policy")
+        raise InfraError("Stored database password is invalid; automatic rotation is disabled")
     return values
 
 
@@ -939,60 +848,6 @@ def run_schema_migration(
     ssh.run(command, input_text=migration_sql)
 
 
-def report_recovery_inventory(
-    client: TimewebClient,
-    ssh: EphemeralSsh,
-    *,
-    cluster_id: int,
-    endpoint: DatabaseEndpoint,
-    desired: DesiredDatabase,
-) -> None:
-    """Inspect existing recovery capabilities without exporting customer rows or changing backups."""
-    try:
-        settings = client.request("GET", f"/dbs/{cluster_id}/auto-backups")
-        backups = client.request("GET", f"/dbs/{cluster_id}/backups?limit=100&offset=0")
-    except (TimewebApiError, InfraError):
-        add_summary("- Recovery inventory unavailable; backup existence is unverified.")
-        return
-    safe_settings = {
-        key: value for key, value in (settings.get("auto_backups_settings") or {}).items()
-        if key in {"is_enabled", "copy_count", "interval", "day_of_week", "creation_start_at"}
-    }
-    safe_backups = [
-        {key: value for key, value in item.items()
-         if key in {"id", "status", "created_at", "size", "type", "progress"}}
-        for item in (backups.get("backups") or [])
-    ]
-    add_summary("- Recovery inventory (metadata only; not a restore proof): " + json.dumps({
-        "cluster_id": cluster_id, "schedule": safe_settings, "backups": safe_backups,
-    }, ensure_ascii=True))
-    command = (
-        f"set -a; . {shlex.quote(REMOTE_SECRET_PATH)}; set +a; "
-        'export PGPASSWORD="$OMNICIO_DB_ADMIN_PASSWORD"; '
-        'export PGCONNECT_TIMEOUT=10; '
-        'export PGOPTIONS="-c default_transaction_read_only=on -c statement_timeout=5000"; '
-        f"psql -h {shlex.quote(endpoint.host)} -p {endpoint.port} "
-        f"-U {shlex.quote(desired.admin_login)} -d {shlex.quote(desired.instance_name)} "
-        "-v ON_ERROR_STOP=1 -qAt"
-    )
-    inventory = ssh.run(command, input_text="""
-SELECT json_build_object(
-    'server_version', current_setting('server_version_num'),
-    'database_bytes', pg_database_size(current_database()),
-    'superuser', rolsuper, 'create_database', rolcreatedb,
-    'create_role', rolcreaterole, 'bypass_rls', rolbypassrls
-) FROM pg_roles WHERE rolname = current_user;
-""")
-    add_summary("- Database recovery capability: " + json.dumps(json.loads(inventory)))
-    tools = ssh.run(
-        "python3 -c 'import json,pathlib,shutil; "
-        "print(json.dumps({\"pg_dump\":shutil.which(\"pg_dump\"),"
-        "\"postgres_bins\":[p.name for p in pathlib.Path(\"/usr/lib/postgresql\").glob(\"*\")],"
-        "\"docker\":shutil.which(\"docker\")}))'"
-    )
-    add_summary("- Isolated recovery tools: " + json.dumps(json.loads(tools)))
-
-
 def wait_for_database_endpoint(
     client: TimewebClient,
     cluster_id: int,
@@ -1017,51 +872,6 @@ def wait_for_database_endpoint(
     )
 
 
-def reconcile_after_ambiguous_create(
-    client: TimewebClient,
-    *,
-    cluster_name: str,
-    attempts: int = 6,
-    sleep_seconds: int = 10,
-) -> dict[str, Any] | None:
-    for _ in range(attempts):
-        time.sleep(sleep_seconds)
-        existing = find_database_cluster(
-            client.get_database_clusters(),
-            cluster_name=cluster_name,
-        )
-        if existing:
-            return existing
-    return None
-
-
-def create_database_cluster(
-    client: TimewebClient, payload: dict[str, Any], *, cluster_name: str,
-) -> int:
-    add_summary("- Creating the approved private PostgreSQL cluster.")
-    try:
-        cluster = client.create_database_cluster(payload)
-    except AmbiguousProviderError:
-        add_summary(
-            "- Create result was ambiguous; reconciling by managed "
-            "cluster name before any retry."
-        )
-        cluster = reconcile_after_ambiguous_create(
-            client,
-            cluster_name=cluster_name,
-        )
-        if cluster is None:
-            raise InfraError(
-                "Database create was ambiguous and reconciliation did "
-                "not prove the resulting state"
-            ) from None
-    if "id" not in cluster:
-        raise InfraError("Timeweb returned database success without an id")
-    cluster_id = integer_value(cluster["id"])
-    add_summary(f"- Created PostgreSQL cluster id {cluster_id}.")
-    return cluster_id
-
-
 def reconcile(
     client: TimewebClient,
     *,
@@ -1070,6 +880,7 @@ def reconcile(
     server_comment: str,
     vpc_name: str,
     migration_sqls: list[str],
+    backup_only: bool = False,
 ) -> int:
     add_summary("## OmniCIO auth PostgreSQL")
     add_summary(
@@ -1100,30 +911,13 @@ def reconcile(
         resource_name=server_name,
     )
     if server_vpc_service is None:
-        add_summary(
-            "- Result: pending_server_network. The managed VDS is not yet "
-            "attached to the approved private VPC."
-        )
-        add_summary("- No database was created or changed.")
-        set_output("status", "pending_server_network")
-        return 0
+        raise InfraError("Production VDS is missing from the approved private VPC")
 
     server_private_cidr = private_server_cidr(vpc, server_vpc_service)
 
-    try:
-        database_types = client.get_database_types()
-        database_presets = client.get_database_presets()
-        database_clusters = client.get_database_clusters()
-    except TimewebApiError as exc:
-        if exc.status_code == 403:
-            add_summary(
-                "- Result: pending_token_permission. The Timeweb API token "
-                "does not currently have DBaaS access; no database was created "
-                "or changed."
-            )
-            set_output("status", "pending_token_permission")
-            return 0
-        raise
+    database_types = client.get_database_types()
+    database_presets = client.get_database_presets()
+    database_clusters = client.get_database_clusters()
 
     db_type = select_postgres_type(
         database_types,
@@ -1144,40 +938,18 @@ def reconcile(
         database_clusters,
         cluster_name=desired.cluster_name,
     )
+    if existing is None or integer_value(existing["id"]) != load_policy().cluster_id:
+        raise InfraError(
+            "Expected production database is missing or replaced; automatic creation is disabled"
+        )
 
     with EphemeralSsh(
         client=client,
         server_id=server_id,
         server_ip=public_ipv4(server),
     ) as ssh:
-        ensure_server_private_network(
-            ssh,
-            private_cidr=server_private_cidr,
-        )
-        add_summary(
-            f"- Managed VDS private IPv4 configured as {server_private_cidr}."
-        )
-
-        secret_bundle = load_or_create_server_secrets(
-            ssh,
-            allow_db_password_rotation=existing is None,
-        )
-
-        if existing is None:
-            payload = create_payload(
-                desired=desired,
-                db_type=db_type,
-                preset=preset,
-                vpc_id=vpc_id,
-                password=secret_bundle["OMNICIO_DB_ADMIN_PASSWORD"],
-            )
-            cluster_id = create_database_cluster(
-                client, payload, cluster_name=desired.cluster_name,
-            )
-        else:
-            cluster_id = integer_value(existing["id"])
-            cluster = client.get_database_cluster(cluster_id)
-            add_summary(f"- Reusing managed PostgreSQL cluster id {cluster_id}.")
+        cluster_id = integer_value(existing["id"])
+        add_summary(f"- Reusing managed PostgreSQL cluster id {cluster_id}.")
 
         cluster, endpoint = wait_for_database_endpoint(client, cluster_id)
         validate_existing_cluster(cluster, desired=desired, db_type=db_type)
@@ -1195,11 +967,14 @@ def reconcile(
                 "Managed PostgreSQL cluster is not attached to approved VPC"
             )
 
-        if existing is not None:
-            report_recovery_inventory(
-                client, ssh, cluster_id=cluster_id, endpoint=endpoint, desired=desired,
-            )
+        ensure_recovery_point(client, ssh, cluster)
+        if backup_only:
+            set_output("status", "recovery_point_ready")
+            add_summary("- Scheduled backup verification completed; schema and runtime unchanged.")
+            return 0
 
+        ensure_server_private_network(ssh, private_cidr=server_private_cidr)
+        secret_bundle = load_or_create_server_secrets(ssh)
         write_runtime_env(
             ssh,
             endpoint=endpoint,
@@ -1240,6 +1015,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-ram-mb", type=int, required=True)
     parser.add_argument("--min-disk-mb", type=int, required=True)
     parser.add_argument("--migration", action="append", required=True)
+    parser.add_argument("--backup-only", action="store_true")
     return parser.parse_args()
 
 
@@ -1287,8 +1063,9 @@ def main() -> int:
             server_comment=args.server_comment,
             vpc_name=args.vpc_name,
             migration_sqls=migration_sqls,
+            backup_only=args.backup_only,
         )
-    except (InfraError, TimewebApiError, AmbiguousProviderError) as exc:
+    except (InfraError, TimewebApiError, AmbiguousProviderError, RecoveryBlocked) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
 

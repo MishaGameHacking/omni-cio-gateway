@@ -102,6 +102,12 @@
   const topConnectionText = document.querySelector("#top-connection-text");
   const homePortfolioState = document.querySelector("#home-portfolio-state");
   const homeFxState = document.querySelector("#home-fx-state");
+  const recoveryState = requiredElement("#recovery-state");
+  const recoveryNote = requiredElement("#recovery-note");
+  const recoveryBackupAt = requiredElement("#recovery-backup-at");
+  const recoveryObservedAt = requiredElement("#recovery-observed-at");
+  const recoverySchedule = requiredElement("#recovery-schedule");
+  const recoveryRefresh = requiredElement("#recovery-refresh");
   const homePortfolioTotal = requiredElement("#home-portfolio-total");
   const homeDailyChange = requiredElement("#home-daily-change");
   const homeDailyRelative = requiredElement("#home-daily-relative");
@@ -309,6 +315,8 @@
   let portfolioFreshnessTimer = null;
   let lastFailedRequestId = "";
   let activityRequestInFlight = false;
+  let recoveryGeneration = 0;
+  let recoveryTimer = null;
   let portfolioVisualizationLoaded = false;
   let portfolioVisualizationInFlight = false;
   let lastPortfolioVisualization = null;
@@ -536,6 +544,52 @@
     });
   };
 
+  const RECOVERY_STATES = {
+    fresh: ["Копия создана", "Ежедневные резервные копии включены.", "state-ok"],
+    missing: ["Копия не найдена", "Наличие готовой резервной копии пока не подтверждено.", "state-error"],
+    backup_stale: ["Копия устарела", "Последней подтверждённой копии больше суток. Требуется проверка сервиса.", "state-error"],
+    check_stale: ["Проверка устарела", "Состояние резервных копий давно не проверялось. Показаны последние известные даты.", "state-next"],
+    schedule_attention: ["Нужно внимание", "Копия есть, но ежедневное хранение семи копий не подтверждено.", "state-next"],
+    unavailable: ["Нет подтверждения", "Не удалось подтвердить состояние резервных копий. Попробуйте обновить статус позже.", "state-next"],
+  };
+
+  const loadRecoveryStatus = async () => {
+    if (!currentProfileId || profilePanel.classList.contains("hidden")) return;
+    const generation = ++recoveryGeneration;
+    clearTimeout(recoveryTimer);
+    recoveryRefresh.disabled = true;
+    setStateBadge(recoveryState, "Проверяем", "");
+    recoveryNote.textContent = "Проверяем состояние резервных копий…";
+    try {
+      const payload = await api("/api/system/recovery", {method: "GET"});
+      if (generation !== recoveryGeneration) return;
+      const state = Object.hasOwn(RECOVERY_STATES, payload.status) ? payload.status : "unavailable";
+      const [label, note, badge] = RECOVERY_STATES[state];
+      setStateBadge(recoveryState, label, badge);
+      recoveryNote.textContent = note;
+      recoveryBackupAt.textContent = formatDateTime(payload.backup?.observed_at);
+      recoveryObservedAt.textContent = formatDateTime(payload.freshness?.observed_at);
+      recoverySchedule.textContent = payload.daily_schedule === true
+        ? `Ежедневно · копий для хранения: ${payload.retention_copies}` : "Не подтверждено";
+      if (state === "fresh") {
+        const deadline = Math.min(Date.parse(payload.freshness?.valid_until), Date.parse(payload.backup?.valid_until));
+        const remaining = deadline - Date.parse(payload.checked_at);
+        if (Number.isFinite(remaining) && remaining > 0) {
+          recoveryTimer = window.setTimeout(() => { void loadRecoveryStatus(); }, Math.min(remaining + 50, 2147483647));
+        }
+      }
+    } catch (error) {
+      if (generation !== recoveryGeneration) return;
+      setStateBadge(recoveryState, "Нет подтверждения", "state-next");
+      recoveryNote.textContent = RECOVERY_STATES.unavailable[1] + errorReference(error);
+      recoveryBackupAt.textContent = "—";
+      recoveryObservedAt.textContent = "—";
+      recoverySchedule.textContent = "Не подтверждено";
+    } finally {
+      if (generation === recoveryGeneration) recoveryRefresh.disabled = false;
+    }
+  };
+
   const renderAccessMode = (config) => {
     const registrationOpen = config?.registration_enabled === true;
     const capacity = Number(config?.registration_max_users) || 1;
@@ -656,6 +710,7 @@
       void loadPortfolioVisualization();
     }
     if (view === "profile") void loadAccountActivity();
+    if (view === "settings") void loadRecoveryStatus();
     if (
       view === "decisions"
       && tbankIsConnected
@@ -5663,6 +5718,8 @@
   };
 
   const showAuth = () => {
+    recoveryGeneration += 1;
+    clearTimeout(recoveryTimer);
     settingsEditors.forEach((editor) => editor.reset());
     profilePanel.classList.add("hidden");
     authCard.classList.remove("hidden");
@@ -5812,6 +5869,7 @@
     void loadPortfolioData({force: true});
   });
   activityRefresh.addEventListener("click", () => { void loadAccountActivity(); });
+  recoveryRefresh.addEventListener("click", () => { void loadRecoveryStatus(); });
 
   portfolioRetry.addEventListener("click", () => {
     void loadPortfolioData({force: true});

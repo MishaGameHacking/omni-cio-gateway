@@ -57,6 +57,7 @@ from .proposals import (
     proposal_material_hash,
     proposal_payload,
 )
+from .recovery import recovery_status
 from .security import (
     SecurityValueError,
     format_public_id,
@@ -588,6 +589,15 @@ def account_activity(
     user = authenticated_user(request, session_token)
     database = cast(Database, request.app.state.database)
     return {"events": database.recent_activity(user.id, limit=limit)}
+
+
+@app.get("/api/system/recovery")
+def system_recovery(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    authenticated_user(request, session_token)
+    return recovery_status()
 
 
 @app.get(

@@ -246,6 +246,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('REGISTRATION_ENABLED="true"', product_env)
         self.assertIn('REGISTRATION_MAX_USERS="2"', product_env)
         self.assertIn('LEGAL_OPERATOR_EMAIL="operator@example.com"', product_env)
+        self.assertIn('OMNICIO_RECOVERY_STATUS_PATH="/var/lib/omnicio-recovery/status.json"', product_env)
         self.assertNotIn("OWNER_VK_ID", product_env)
 
     def test_registration_environment_rejects_invalid_boolean(self) -> None:
@@ -482,9 +483,9 @@ class AuthAppDeployTests(unittest.TestCase):
         consent = (root / "web" / "legal" / "consent.html").read_text(encoding="utf-8")
         terms = (root / "web" / "legal" / "terms.html").read_text(encoding="utf-8")
 
-        for document in (privacy, consent, terms):
+        for document, version in ((privacy, "2026-10-05-v7"), (consent, "2026-10-02-v6"), (terms, "2026-10-02-v6")):
             self.assertIn('content="noindex,nofollow"', document)
-            self.assertIn("2026-10-02-v6", document)
+            self.assertIn(version, document)
             self.assertIn("__OMNICIO_OPERATOR_", document)
 
         self.assertIn("OmniCIO Personal", privacy)
@@ -1233,7 +1234,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.18.3"', project)
+        self.assertIn('version = "0.18.4"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
