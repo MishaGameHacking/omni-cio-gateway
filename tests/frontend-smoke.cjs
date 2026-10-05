@@ -170,6 +170,16 @@ window.addEventListener("load", () => setTimeout(async () => {
 let writes = 0;
 let brokerReads = 0;
 const types = {".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".webmanifest": "application/manifest+json", ".png": "image/png"};
+const renderPublicBody = (pathname, file) => {
+  let body = readFileSync(file);
+  if (pathname === "/sw.js") body = body.toString().replaceAll("__OMNICIO_BUILD__", build);
+  if (pathname === "/") {
+    body = body.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version);
+    body = body.replace("<head>", '<head><script>window.__smokeErrors=[];addEventListener("error",e=>window.__smokeErrors.push(e.message));addEventListener("unhandledrejection",e=>window.__smokeErrors.push(String(e.reason)));</script>');
+    body = body.replace('<script src="/assets/app.js?', '<script src="/smoke.js" defer></script><script src="/assets/app.js?');
+  }
+  return body;
+};
 const server = createServer((request, response) => {
   const pathname = new URL(request.url, "http://127.0.0.1").pathname;
   response.setHeader("Cache-Control", "no-store");
@@ -188,14 +198,7 @@ const server = createServer((request, response) => {
   if (!file.startsWith(root) || !existsSync(file)) { response.statusCode=404; response.end(); return; }
   const extension = require("node:path").extname(file);
   response.setHeader("Content-Type", types[extension] || "application/octet-stream");
-  let body = readFileSync(file);
-  if (pathname === "/sw.js") body = body.toString().replaceAll("__OMNICIO_BUILD__", build);
-  if (pathname === "/") {
-    body = body.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version);
-    body = body.replace("<head>", '<head><script>window.__smokeErrors=[];addEventListener("error",e=>window.__smokeErrors.push(e.message));addEventListener("unhandledrejection",e=>window.__smokeErrors.push(String(e.reason)));</script>');
-    body = body.replace('<script src="/assets/app.js?', '<script src="/smoke.js" defer></script><script src="/assets/app.js?');
-  }
-  response.end(body);
+  response.end(renderPublicBody(pathname, file));
 });
 
 const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
