@@ -117,14 +117,16 @@ const verifyHelp = async (check) => {
   window.__smokeWorkspace.onView("home");
   trigger.focus({preventScroll: true});
   trigger.click();
-  const outside = document.querySelector("#quick-theme");
+  const outside = document.querySelector("#privacy-toggle");
   outside.focus({preventScroll: true});
+  check(document.activeElement === outside, "Outside-focus precondition uses a visible control at this viewport");
   window.__smokeWorkspace.onView("assets");
   check(popup.hidden && document.activeElement === outside, "View-change cleanup preserves focus already moved to another control");
   window.__smokeWorkspace.onView("home");
   trigger.focus({preventScroll: true});
   trigger.click();
   outside.focus({preventScroll: true});
+  check(document.activeElement === outside, "Resize starts with focus outside the popover");
   window.dispatchEvent(new Event("resize"));
   check(popup.hidden && document.activeElement === outside, "Lifecycle cleanup does not steal focus outside the popover");
   outside.blur();
