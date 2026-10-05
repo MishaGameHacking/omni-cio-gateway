@@ -144,10 +144,9 @@ class RecoveryTests(unittest.TestCase):
                 recovery.ensure_recovery_point(self.provider, self.remote, self.cluster | changes)
         self.assertEqual(self.mutations("PATCH"), [])
         self.assertEqual(self.mutations("POST"), [])
+        smaller_budget = recovery.BackupPolicy(CLUSTER_ID, 7, 20971520, 900, 6)
         with self.assertRaises(recovery.RecoveryBlocked):
-            recovery.validate_budget(
-                self.cluster, recovery.BackupPolicy(CLUSTER_ID, 7, 20971520, 900, 6)
-            )
+            recovery.validate_budget(self.cluster, smaller_budget)
 
     def test_existing_retention_and_unknown_inventory_are_not_overwritten(self) -> None:
         self.provider.schedule = {"is_enabled": False, "copy_count": 30}
@@ -155,11 +154,12 @@ class RecoveryTests(unittest.TestCase):
             self.run_controller()
         self.assertEqual(self.mutations("PATCH"), [])
         for response in ({}, {"backups": ["invalid"]}, {"backups": [{}] * 100}):
+            provider = Mock(request=Mock(return_value=response))
             with (
                 self.subTest(response_type=str(type(response))),
                 self.assertRaises(recovery.RecoveryBlocked),
             ):
-                recovery.get_backups(Mock(request=Mock(return_value=response)), CLUSTER_ID)
+                recovery.get_backups(provider, CLUSTER_ID)
 
     def test_old_failed_or_in_progress_backup_does_not_create_more_copies(self) -> None:
         for item in (
@@ -182,8 +182,9 @@ class RecoveryTests(unittest.TestCase):
             {"size": float("nan")},
             {"id": True},
         ):
+            item, now = backup() | changes, datetime.now(UTC)
             with self.subTest(changes=changes), self.assertRaises(recovery.RecoveryBlocked):
-                recovery.completed_backup(backup() | changes, datetime.now(UTC))
+                recovery.completed_backup(item, now)
         self.assertFalse(recovery.completed_backup(backup(age=-1), datetime.now(UTC)))
         self.provider.wrong_detail = True
         with self.assertRaises(recovery.RecoveryBlocked):
