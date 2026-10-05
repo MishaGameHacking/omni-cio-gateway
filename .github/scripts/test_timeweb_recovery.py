@@ -253,6 +253,7 @@ class MigrationGateTests(unittest.TestCase):
                     "add_summary": None,
                     "set_output": None,
                     "ensure_recovery_point": None,
+                    "inspect_restore_capacity": None,
                 }
                 for name, value in values.items():
                     mocks[name] = stack.enter_context(
@@ -283,6 +284,32 @@ class MigrationGateTests(unittest.TestCase):
                 ):
                     self.assertEqual(mocks[name].call_count, int(not backup_only and not rejected))
                 client.create_database_cluster.assert_not_called()
+
+
+class RestoreCapacityTests(unittest.TestCase):
+    def test_inventory_is_read_only_and_filters_storage_credentials(self) -> None:
+        provider = Mock()
+        provider.request.side_effect = [
+            {"backups": []},
+            {"buckets": [{"id": 1, "type": "private", "secret_key": "private-canary",
+                          "access_key": "credential-canary", "name": "personal-name"}]},
+        ]
+        remote = Mock(run=Mock(return_value='{"disk_free_bytes":100}'))
+        with patch("builtins.print") as output:
+            recovery.inspect_restore_capacity(provider, remote, CLUSTER_ID)
+        rendered = output.call_args.args[0]
+        for secret in ("private-canary", "credential-canary", "personal-name"):
+            self.assertNotIn(secret, rendered)
+        self.assertIn('"restore_verified": false', rendered)
+        self.assertTrue(all(call.args[0] == "GET" for call in provider.request.call_args_list))
+
+    def test_unavailable_inventory_does_not_claim_success_or_print_provider_error(self) -> None:
+        provider = Mock(request=Mock(side_effect=RuntimeError("sensitive-provider-response")))
+        remote = Mock(run=Mock(return_value="{}"))
+        with patch("builtins.print") as output:
+            recovery.inspect_restore_capacity(provider, remote, CLUSTER_ID)
+        self.assertNotIn("sensitive-provider-response", output.call_args.args[0])
+        self.assertIn('"status": "unavailable"', output.call_args.args[0])
 
 
 if __name__ == "__main__":
