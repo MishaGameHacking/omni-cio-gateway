@@ -41,7 +41,7 @@ jobs:
       - name: Extract hash-verified Python transport into job temporary directory
         shell: cmd
         run: >-
-          "%OMNICIO_PYTHON%" -c "import hashlib,os,pathlib,subprocess,textwrap; data=subprocess.run([r'C:\Program Files\Git\cmd\git.exe','show','e5eebaf3cac81aed89eead86258941d6d79f9f6e:.github/workflows/ui-candidate-transfer.yml'],check=True,capture_output=True).stdout; assert hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()=='edccd6340fe98b445d67a76cad9deafd31120b0a'; script=textwrap.dedent(data.decode().split(\"$script = @'\n\",1)[1].split(\"'@\",1)[0]); compile(script,'sealed-transfer','exec'); (pathlib.Path(os.environ['RUNNER_TEMP'])/('omnicio-transfer-'+os.environ['GITHUB_RUN_ID']+'.py')).write_text(script,encoding='utf-8')"
+          "%OMNICIO_PYTHON%" -c "import hashlib,os,pathlib,subprocess,textwrap; data=subprocess.run([r'C:\Program Files\Git\cmd\git.exe','show','e5eebaf3cac81aed89eead86258941d6d79f9f6e:.github/workflows/ui-candidate-transfer.yml'],check=True,capture_output=True).stdout; assert hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()=='edccd6340fe98b445d67a76cad9deafd31120b0a'; script=textwrap.dedent(data.decode().split(\"$script = @'\n\",1)[1].split(\"'@\",1)[0]); old='subprocess.run([GIT, *args]'; assert script.count(old)==1; script=script.replace(old,\"subprocess.run([GIT, '-c', 'core.autocrlf=false', *args]\"); compile(script,'sealed-transfer','exec'); (pathlib.Path(os.environ['RUNNER_TEMP'])/('omnicio-transfer-'+os.environ['GITHUB_RUN_ID']+'.py')).write_text(script,encoding='utf-8')"
       - name: Verify exact patch and transfer blobs without moving any ref
         shell: cmd
         env:
