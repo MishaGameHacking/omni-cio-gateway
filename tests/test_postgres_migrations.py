@@ -13,7 +13,7 @@ import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-from omnicio.db import Database
+from omnicio.db import ActiveLiveExecutionError, Database
 from omnicio.execution_store import ExecutionLedgerError, ExecutionStore
 from omnicio.portfolio_store import BalancingPolicyInput, PortfolioStore, ProposalStateError
 
@@ -925,6 +925,12 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 mode="live",
                 session_digest=b"e" * 32,
             )
+            with pytest.raises(ActiveLiveExecutionError):
+                database.upsert_tbank_connection(
+                    user_id=USER_ONE, environment="prod", account_id="account-1",
+                    account_name="Synthetic", encrypted_credential=b"replacement-token",
+                    terms_version="test",
+                )
             competing_live_proposal = store.create_proposal(
                 USER_ONE,
                 source_snapshot_id=execution_proposal.source_snapshot_id,

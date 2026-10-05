@@ -539,6 +539,7 @@ class Database:
     ) -> TBankConnectionRecord:
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+            cur.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(user_id),))
             cur.execute(
                 "SELECT id FROM users WHERE id = %s AND status = 'active' FOR UPDATE",
                 (user_id,),
