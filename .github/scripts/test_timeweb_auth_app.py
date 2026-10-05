@@ -1266,7 +1266,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.19.0"', project)
+        self.assertIn('version = "0.19.1"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
@@ -1341,7 +1341,7 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ("/assets/app.js", b"window.OmniWorkspace.init", "text/javascript"),
             ("/assets/workspace.js", b"window.OmniWorkspace", "application/javascript"),
             ("/assets/app.css", b"--sidebar-width:240px", "text/css"),
-            ("/sw.js", b"omnicio-public-test", "text/javascript"),
+            ("/sw.js", b"omnicio-public-test " + self.sha[:12].encode(), "text/javascript"),
             ("/offline.html", b'<html lang="ru">Offline</html>', "text/html"),
         ):
             self.responses[f"{path}?build={self.sha[:12]}"] = (body, content_type, 200)
@@ -1387,6 +1387,7 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             (MODULE.VERSION_PUBLIC_PATH, b"window.OMNICIO_RELEASE = {}", "text/javascript", 200),
             (f"/assets/workspace.js?build={self.sha[:12]}", b"wrong asset", "text/javascript", 200),
             (f"/sw.js?build={self.sha[:12]}", b"<html>fallback</html>", "text/html", 200),
+            (f"/sw.js?build={self.sha[:12]}", b"omnicio-public-__OMNICIO_BUILD__", "text/javascript", 200),
             ("/api/auth/config", b"[]", "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": true}', "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": false}', "application/json", 200),

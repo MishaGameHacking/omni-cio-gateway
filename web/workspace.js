@@ -407,7 +407,7 @@
       body.append(table, node("p", "Цена, доходность и право покупки требуют отдельного подтверждения брокером. Отсутствующие данные не заменяются оценкой.", "inline-note"));
     });
 
-    const eventDate = (item) => item.expected_at || item.actual_at || item.record_at;
+    const eventDate = (item) => item.actual_at || item.expected_at;
     const monthPayouts = () => payouts.filter((item) => {
       const date = new Date(eventDate(item));
       return date.getFullYear() === calendarMonth.getFullYear() && date.getMonth() === calendarMonth.getMonth();
@@ -688,6 +688,15 @@
             if (worker.state === "installed" && navigator.serviceWorker.controller) offer(registration.waiting);
           });
         });
+        let checkedAt = Date.now();
+        const checkForUpdate = () => {
+          if (!navigator.onLine || document.hidden || Date.now() - checkedAt < 60000) return;
+          checkedAt = Date.now();
+          void registration.update().catch(() => { /* Retry on a later online/visible check. */ });
+        };
+        window.addEventListener("online", checkForUpdate);
+        document.addEventListener("visibilitychange", checkForUpdate);
+        window.setInterval(checkForUpdate, 60 * 60 * 1000);
       } catch { /* Online operation remains available without installation. */ }
     };
     $("#apply-update").addEventListener("click", () => {
