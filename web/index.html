@@ -1782,6 +1782,29 @@
               <article class="settings-card">
                 <header class="card-header">
                   <div>
+                    <p class="card-label">Ваши данные</p>
+                    <h3>Резервные копии</h3>
+                  </div>
+                  <span class="state-badge" id="recovery-state">Проверяем</span>
+                </header>
+                <p id="recovery-note" aria-live="polite">Проверяем наличие резервной копии.</p>
+                <dl class="info-list">
+                  <div><dt>Последняя копия</dt><dd id="recovery-backup-at">—</dd></div>
+                  <div><dt>Состояние проверено</dt><dd id="recovery-observed-at">—</dd></div>
+                  <div><dt>Расписание</dt><dd id="recovery-schedule">—</dd></div>
+                  <div><dt>Проверка восстановления рабочей копии</dt><dd>Ещё не подтверждена</dd></div>
+                </dl>
+                <p class="field-hint">Копия помогает восстановить данные сайта после сбоя.
+                  Изменения после её создания могут не сохраниться. Деньги и ценные бумаги
+                  учитываются у вашего брокера.</p>
+                <button class="button button-secondary" type="button" id="recovery-refresh">
+                  Обновить статус
+                </button>
+              </article>
+
+              <article class="settings-card">
+                <header class="card-header">
+                  <div>
                     <p class="card-label">Интерфейс</p>
                     <h3>Цветовая тема</h3>
                   </div>
@@ -1810,13 +1833,10 @@
                   <span class="release-chip">v<span data-app-version>__OMNICIO_VERSION__</span></span>
                 </header>
 
-                <p><strong>Что нового в 0.18.3</strong></p>
-                <p>Профиль капитала и лимиты защищены от случайной перезаписи из другой вкладки.
-                  При ошибке ваши правки остаются на экране, а сохранение подтверждает сервер.
-                  Перед закрытием страницы с несохранёнными изменениями появится предупреждение.</p>
-                <button class="button button-secondary" type="button" data-go-view="profile">
-                  Открыть профиль и лимиты
-                </button>
+                <p><strong>Что нового в 0.18.4</strong></p>
+                <p>В настройках появился статус резервных копий: дата последней копии,
+                  расписание и предупреждение, если проверка устарела.
+                  Перед изменением структуры базы система проверяет наличие свежей копии.</p>
 
                 <dl class="info-list">
                   <div>

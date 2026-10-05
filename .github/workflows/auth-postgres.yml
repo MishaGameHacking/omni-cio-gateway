@@ -20,6 +20,8 @@ on:
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_recovery.py"
+      - ".github/scripts/test_timeweb_recovery.py"
       - ".github/scripts/timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_auth_postgres.py"
@@ -43,11 +45,15 @@ on:
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/timeweb_recovery.py"
+      - ".github/scripts/test_timeweb_recovery.py"
       - ".github/scripts/timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_auth_postgres.py"
       - "migrations/**"
   workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
 
 permissions:
   contents: read
@@ -87,6 +93,8 @@ jobs:
           "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_ssh_trust.py
           if errorlevel 1 exit /b 1
           "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_auth_postgres.py
+          if errorlevel 1 exit /b 1
+          "%OMNICIO_PYTHON%" .github\scripts\test_timeweb_recovery.py
 
   reconcile:
     permissions:
@@ -118,6 +126,7 @@ jobs:
       MIN_DB_CPU: "1"
       MIN_DB_RAM_MB: "2048"
       MIN_DB_DISK_MB: "20480"
+      BACKUP_ONLY: ${{ github.event_name == 'schedule' && '--backup-only' || '' }}
 
     steps:
       - name: Checkout accepted main state
@@ -155,6 +164,7 @@ jobs:
         shell: cmd
         run: |
           "%OMNICIO_PYTHON%" .github\scripts\timeweb_auth_postgres.py ^
+            %BACKUP_ONLY% ^
             --server-name "%SERVER_NAME%" ^
             --server-comment "%SERVER_COMMENT%" ^
             --vpc-name "%VPC_NAME%" ^
@@ -179,16 +189,6 @@ jobs:
             --migration migrations/0009_portfolio_proposals.sql ^
             --migration migrations/0010_portfolio_execution.sql ^
             --migration migrations/0011_portfolio_live_execution.sql
-
-      - name: Surface private network gate
-        if: steps.postgres.outputs.status == 'pending_server_network'
-        shell: cmd
-        run: echo ::warning title=VDS private network required::PostgreSQL was not created. Attach omni-cio-white-site to omni-cio-private, then rerun this accepted-main workflow.
-
-      - name: Surface DBaaS token permission gate
-        if: steps.postgres.outputs.status == 'pending_token_permission'
-        shell: cmd
-        run: echo ::warning title=Timeweb DBaaS permission required::The existing TIMEWEB_CLOUD_TOKEN needs management access to cloud databases before PostgreSQL can be created.
 
       - name: Confirm database readiness
         if: steps.postgres.outputs.status == 'database_ready'
