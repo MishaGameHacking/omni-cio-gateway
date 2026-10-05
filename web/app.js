@@ -2704,8 +2704,8 @@
   };
 
   const loadPortfolioVisualization = async ({force = false} = {}) => {
-    if (!tbankIsConnected) return;
-    if (portfolioVisualizationInFlight || (portfolioVisualizationLoaded && !force)) {
+    if (!tbankIsConnected || portfolioVisualizationInFlight
+      || (portfolioVisualizationLoaded && !force)) {
       return;
     }
     const generation = portfolioGeneration;

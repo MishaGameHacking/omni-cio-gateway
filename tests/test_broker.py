@@ -1609,11 +1609,12 @@ def test_broker_read_discards_result_after_connection_changes(operation: str) ->
         database.delete_tbank_connection(user_id)
         return value
 
+    read = getattr(service, operation)
     with (
         patch.object(broker, "get_positions", side_effect=disconnected),
         pytest.raises(BrokerConnectionError, match="connection changed"),
     ):
-        getattr(service, operation)(user_id)
+        read(user_id)
 
 
 def test_broker_service_keeps_two_users_strictly_isolated() -> None:

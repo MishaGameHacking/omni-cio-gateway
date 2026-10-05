@@ -528,7 +528,8 @@ def connected_database():
     if not base:
         pytest.skip("disposable PostgreSQL is required for connection race coverage")
     options = conninfo_to_dict(base)
-    assert options["host"] == "127.0.0.1" and options["dbname"] == "omnicio_test"
+    assert options["host"] == "127.0.0.1"
+    assert options["dbname"] == "omnicio_test"
     identity = uuid4().hex
     name, role = f"lifecycle_{identity}", f"lifecycle_role_{identity}"
     password = uuid4().hex
@@ -588,13 +589,18 @@ def claim_job(store, user_id=USER_ID):
 def test_native_connection_lifecycle_keeps_tenants_and_discards_old_jobs(connected_database):
     database, store, admin = connected_database
     other = UUID(int=2)
+    observation = bundle()
+    wrong_account = replace(observation, account_id="old")
+    observed_at = datetime.now(UTC)
+    window_from = datetime(2026, 1, 1, tzinfo=UTC)
+    empty_page = TBankOperationsPage(items=(), has_next=False, next_cursor="")
     assert store.claim_daily_job(
         USER_ID, job_type="portfolio_daily", scheduled_for=date.today(),
     ) is None
     current = connect_user(database)
     connect_user(database, other)
     job, other_job = claim_job(store), claim_job(store, other)
-    snapshot = store.save_snapshot(USER_ID, job_run_id=job.id, bundle=bundle())
+    snapshot = store.save_snapshot(USER_ID, job_run_id=job.id, bundle=observation)
     other_snapshot = store.save_snapshot(
         other, job_run_id=other_job.id,
         bundle=replace(bundle(), analysis=replace(analysis(), nav_rub="2000")),
@@ -610,13 +616,13 @@ def test_native_connection_lifecycle_keeps_tenants_and_discards_old_jobs(connect
     assert renewed.account_id == current.account_id
     assert store.portfolio_visualization(USER_ID)["latest"]["snapshot_id"] == str(snapshot)
     with pytest.raises(ObservationCancelled):
-        store.save_snapshot(USER_ID, job_run_id=other_job.id, bundle=bundle())
+        store.save_snapshot(USER_ID, job_run_id=other_job.id, bundle=observation)
     with pytest.raises(ObservationCancelled):
-        store.save_snapshot(USER_ID, job_run_id=job.id, bundle=replace(bundle(), account_id="old"))
+        store.save_snapshot(USER_ID, job_run_id=job.id, bundle=wrong_account)
     with pytest.raises(ObservationCancelled):
         store.save_evidence(
             USER_ID, job_run_id=job.id, snapshot_id=other_snapshot,
-            documents=(), assessments=(), retrieved_at=datetime.now(UTC),
+            documents=(), assessments=(), retrieved_at=observed_at,
         )
 
     # Old account rows left by a previous version cannot become the selected account.
@@ -632,27 +638,27 @@ def test_native_connection_lifecycle_keeps_tenants_and_discards_old_jobs(connect
     new_job = claim_job(store)
     assert new_job.id != job.id
     with pytest.raises(ObservationCancelled):
-        store.save_snapshot(USER_ID, job_run_id=job.id, bundle=bundle())
+        store.save_snapshot(USER_ID, job_run_id=job.id, bundle=observation)
     with pytest.raises(ObservationCancelled):
         store.save_evidence(
             USER_ID, job_run_id=job.id, snapshot_id=snapshot,
-            documents=(), assessments=(), retrieved_at=datetime.now(UTC),
+            documents=(), assessments=(), retrieved_at=observed_at,
         )
     with pytest.raises(ObservationCancelled):
         store.save_history_page(
             USER_ID, job_run_id=job.id, account_id="account-1", environment="prod",
-            window_from=datetime(2026, 1, 1, tzinfo=UTC), window_to=datetime.now(UTC),
-            page=TBankOperationsPage(items=(), has_next=False, next_cursor=""),
-            observed_at=datetime.now(UTC),
+            window_from=window_from, window_to=observed_at,
+            page=empty_page,
+            observed_at=observed_at,
         )
     assert not store.finish_job(USER_ID, job.id, status="succeeded", details={})
     assert store.sync_state(USER_ID, "account-1") is None
     assert store.portfolio_visualization(USER_ID)["status"] == "pending"
     assert store.portfolio_visualization(other)["latest"]["snapshot_id"] == str(other_snapshot)
-    store.save_snapshot(USER_ID, job_run_id=new_job.id, bundle=bundle())
+    store.save_snapshot(USER_ID, job_run_id=new_job.id, bundle=observation)
     assert database.delete_user_account(USER_ID)
     with pytest.raises(ObservationCancelled):
-        store.save_snapshot(USER_ID, job_run_id=new_job.id, bundle=bundle())
+        store.save_snapshot(USER_ID, job_run_id=new_job.id, bundle=observation)
     assert store.portfolio_visualization(other)["status"] == "observed"
 
 
@@ -705,6 +711,7 @@ def test_observer_treats_disconnected_job_as_degraded_without_recreating_it():
     observer = PortfolioObserver(store, FakeBroker(), legal_versions=LEGAL_VERSIONS)
     with patch.object(store, "save_snapshot", side_effect=ObservationCancelled("disconnected")):
         result = observer.run_user(USER_ID, now=datetime(2026, 10, 2, tzinfo=UTC))
-    assert result.status == "degraded" and not result.snapshot_saved
+    assert result.status == "degraded"
+    assert not result.snapshot_saved
     assert store.saved_pages == []
     assert store.saved_evidence == 0

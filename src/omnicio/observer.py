@@ -84,6 +84,12 @@ class UserObservationResult:
     history_items_inserted: int
 
 
+def _confirmed_job_result(result: UserObservationResult, persisted: bool) -> UserObservationResult:
+    if persisted:
+        return result
+    return UserObservationResult(result.user_id, "degraded", False, 0, 0)
+
+
 @dataclass(frozen=True, slots=True)
 class ObserverRunResult:
     total_users: int
@@ -303,13 +309,13 @@ class PortfolioObserver:
                 status=final_status,
                 details=details,
             )
-            return UserObservationResult(
+            return _confirmed_job_result(UserObservationResult(
                 user_id=user_id,
-                status=final_status if finished else "degraded",
-                snapshot_saved=snapshot_saved and finished,
-                history_pages=history_pages if finished else 0,
-                history_items_inserted=history_items_inserted if finished else 0,
-            )
+                status=final_status,
+                snapshot_saved=snapshot_saved,
+                history_pages=history_pages,
+                history_items_inserted=history_items_inserted,
+            ), finished)
         except ObservationCancelled:
             self.store.finish_job(
                 user_id, job.id, status="degraded",
@@ -329,13 +335,13 @@ class PortfolioObserver:
                 status="degraded",
                 details=details,
             )
-            return UserObservationResult(
+            return _confirmed_job_result(UserObservationResult(
                 user_id=user_id,
                 status="degraded",
-                snapshot_saved=snapshot_saved and finished,
-                history_pages=history_pages if finished else 0,
-                history_items_inserted=history_items_inserted if finished else 0,
-            )
+                snapshot_saved=snapshot_saved,
+                history_pages=history_pages,
+                history_items_inserted=history_items_inserted,
+            ), finished)
         except Exception as exc:
             details["stage_error"] = type(exc).__name__
             try:

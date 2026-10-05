@@ -332,6 +332,13 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         )
         admin.execute(
             """
+            INSERT INTO tbank_connection (user_id, account_id, environment, token_ciphertext)
+            VALUES (%s, 'account-1', 'prod', %s), (%s, 'account-1', 'prod', %s)
+            """,
+            (USER_ONE, b"synthetic-one", USER_TWO, b"synthetic-two"),
+        )
+        admin.execute(
+            """
             INSERT INTO instrument_catalog (
                 provider,
                 instrument_uid,
