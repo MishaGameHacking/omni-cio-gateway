@@ -12,6 +12,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
+_SET_USER_CONTEXT_SQL = "SELECT set_config('omnicio.user_id', %s, true)"
 
 @dataclass(frozen=True, slots=True)
 class UserRecord:
@@ -439,7 +440,7 @@ class Database:
                 raise PermissionError("account is not active")
 
             cur.execute(
-                "SELECT set_config('omnicio.user_id', %s, true)",
+                _SET_USER_CONTEXT_SQL,
                 (str(user.id),),
             )
             cur.execute(
@@ -539,7 +540,7 @@ class Database:
     ) -> TBankConnectionRecord:
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
-            cur.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(user_id),))
+            cur.execute(_SET_USER_CONTEXT_SQL, (str(user_id),))
             cur.execute(
                 "SELECT id FROM users WHERE id = %s AND status = 'active' FOR UPDATE",
                 (user_id,),
@@ -646,7 +647,7 @@ class Database:
             # Derived broker facts are retained only while the integration is
             # connected. The user-owned investment profile remains independent.
             cur.execute(
-                "SELECT set_config('omnicio.user_id', %s, true)",
+                _SET_USER_CONTEXT_SQL,
                 (str(user_id),),
             )
             cur.execute(
