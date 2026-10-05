@@ -70,6 +70,25 @@ def _weekly_evidence(payload: dict[str, object], now: datetime) -> tuple[Freshne
     return freshness, copies if type(copies) is int and freshness.status == "fresh" else None
 
 
+def _status_label(
+    inventory: FreshnessDTO, backup: FreshnessDTO, weekly: FreshnessDTO,
+    daily: bool, copies: int | None,
+) -> str:
+    if inventory.status == "stale":
+        return "check_stale"
+    if inventory.status != "fresh":
+        return "unavailable"
+    if backup.status == "unavailable":
+        return "missing"
+    if backup.status == "stale":
+        return "backup_stale"
+    if not daily or copies is None or copies < 7:
+        return "schedule_attention"
+    if weekly.status != "fresh":
+        return "weekly_attention"
+    return "fresh"
+
+
 def recovery_status(*, now: datetime | None = None) -> dict[str, object]:
     checked_at = now or datetime.now(UTC)
     payload = _read_evidence()
@@ -88,22 +107,8 @@ def recovery_status(*, now: datetime | None = None) -> dict[str, object]:
     if type(copies) is not int or not 1 <= copies <= 99:
         copies = None
     daily = payload.get("schedule_enabled") is True and payload.get("schedule_interval") == "day"
-    if inventory.status == "stale":
-        status = "check_stale"
-    elif inventory.status != "fresh":
-        status = "unavailable"
-    elif backup.status == "unavailable":
-        status = "missing"
-    elif backup.status == "stale":
-        status = "backup_stale"
-    elif not daily or copies is None or copies < 7:
-        status = "schedule_attention"
-    elif weekly.status != "fresh":
-        status = "weekly_attention"
-    else:
-        status = "fresh"
     return {
-        "status": status,
+        "status": _status_label(inventory, backup, weekly, daily, copies),
         "checked_at": checked_at,
         "freshness": asdict(inventory),
         "backup": asdict(backup),
