@@ -1,7 +1,7 @@
 "use strict";
 
 // Only public, versioned interface assets. Never cache API, HTML sessions or messages.
-const build = new URL(self.location.href).searchParams.get("build");
+const build = "__OMNICIO_BUILD__";
 const cacheName = `omnicio-public-${build}`;
 const publicPaths = ["/assets/app.css", "/assets/app.js", "/assets/workspace.js"];
 const offlineUrl = `/offline.html?build=${encodeURIComponent(build)}`;

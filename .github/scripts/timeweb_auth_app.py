@@ -485,7 +485,6 @@ install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEA
 install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
 install -m 0644 "$RELEASE/web/app.js" "$WEB_RELEASE/assets/app.js"
 install -m 0644 "$RELEASE/web/workspace.js" "$WEB_RELEASE/assets/workspace.js"
-install -m 0644 "$RELEASE/web/sw.js" "$WEB_RELEASE/sw.js"
 install -m 0644 "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
 install -m 0644 "$RELEASE/assets/brand/transparent/omni-sentinel-core-color-1024.png" "$WEB_RELEASE/assets/brand/omni-sentinel-core-color-1024.png"
@@ -520,7 +519,7 @@ for name in ("privacy.html", "consent.html", "terms.html"):
 PY
 chmod 0644 "$WEB_RELEASE/legal/privacy.html" "$WEB_RELEASE/legal/consent.html" "$WEB_RELEASE/legal/terms.html"
 
-python3 - "$RELEASE/pyproject.toml" "$SHA" "$RELEASE/web/index.html" "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" <<'PY'
+python3 - "$RELEASE/pyproject.toml" "$SHA" "$RELEASE/web/index.html" "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" "$RELEASE/web/sw.js" "$WEB_RELEASE/sw.js" <<'PY'
 import json
 import pathlib
 import sys
@@ -546,8 +545,14 @@ pathlib.Path(sys.argv[5]).write_text(
     + ";\n",
     encoding="utf-8",
 )
+worker_template = pathlib.Path(sys.argv[6]).read_text(encoding="utf-8")
+if "__OMNICIO_BUILD__" not in worker_template:
+    raise SystemExit("service worker release marker is missing")
+pathlib.Path(sys.argv[7]).write_text(
+    worker_template.replace("__OMNICIO_BUILD__", build), encoding="utf-8",
+)
 PY
-chmod 0644 "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js"
+chmod 0644 "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" "$WEB_RELEASE/sw.js"
 
 cat > "$SERVICE.new" <<'EOF'
 [Unit]
@@ -1094,6 +1099,10 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         body, content_type = fetch_public(f"{path}?build={release_sha[:12]}", context)
         if content_type not in content_types or marker not in body:
             raise InfraError(f"Public runtime asset verification failed: {path}")
+        if path == "/sw.js" and (
+            release_sha[:12].encode() not in body or b"__OMNICIO_BUILD__" in body
+        ):
+            raise InfraError("Public service worker build does not match release")
 
 
 def verify_public(release_sha: str) -> None:

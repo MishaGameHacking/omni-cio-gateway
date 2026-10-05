@@ -688,6 +688,15 @@
             if (worker.state === "installed" && navigator.serviceWorker.controller) offer(registration.waiting);
           });
         });
+        let checkedAt = Date.now();
+        const checkForUpdate = () => {
+          if (!navigator.onLine || document.hidden || Date.now() - checkedAt < 60000) return;
+          checkedAt = Date.now();
+          void registration.update().catch(() => { /* Retry on a later online/visible check. */ });
+        };
+        window.addEventListener("online", checkForUpdate);
+        document.addEventListener("visibilitychange", checkForUpdate);
+        window.setInterval(checkForUpdate, 60 * 60 * 1000);
       } catch { /* Online operation remains available without installation. */ }
     };
     $("#apply-update").addEventListener("click", () => {

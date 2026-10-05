@@ -42,8 +42,8 @@ const verifyPublicWorker = async () => {
     require("../web/sw.js");
     handlers.get("install")({waitUntil: (task) => tasks.push(task)});
     await Promise.all(tasks);
-    assert.ok(cached.includes("/offline.html?build=contract"), "The offline fallback must be public");
-    assert.ok(cached.every((path) => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js))\?build=contract$/.test(path)), "Only the public interface allowlist may be cached");
+    assert.ok(cached.includes("/offline.html?build=__OMNICIO_BUILD__"), "The offline fallback must be public");
+    assert.ok(cached.every((path) => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js))\?build=__OMNICIO_BUILD__$/.test(path)), "Only the public interface allowlist may be cached");
     let intercepted = 0;
     for (const [path, method] of [["/api/auth/me", "GET"], ["/api/broker/tbank/portfolio", "GET"], ["/api/auth/logout", "POST"], ["/health/ready", "GET"]]) {
       handlers.get("fetch")({request: {url: origin + path, method, mode: "navigate"}, respondWith: () => { intercepted += 1; }});
@@ -189,6 +189,7 @@ const server = createServer((request, response) => {
   const extension = require("node:path").extname(file);
   response.setHeader("Content-Type", types[extension] || "application/octet-stream");
   let body = readFileSync(file);
+  if (pathname === "/sw.js") body = body.toString().replaceAll("__OMNICIO_BUILD__", build);
   if (pathname === "/") {
     body = body.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version);
     body = body.replace("<head>", '<head><script>window.__smokeErrors=[];addEventListener("error",e=>window.__smokeErrors.push(e.message));addEventListener("unhandledrejection",e=>window.__smokeErrors.push(String(e.reason)));</script>');
@@ -295,6 +296,8 @@ const run = async (url, width) => {
       return [...document.querySelectorAll(".calendar-day.has-payout")].map(element => element.firstChild.textContent);
     })()`);
     assert.deepEqual(calendarDays, ["10"], "Record dates are not payment dates, and actual payment dates supersede estimates");
+    const cacheNames = await evaluate("navigator.serviceWorker.ready.then(() => caches.keys())");
+    assert.ok(cacheNames.includes("omnicio-public-" + build), "The installed worker cache must use the rendered release build");
     console.log(`Browser smoke ${width}: ${JSON.stringify(result)}`);
   } finally {
     if (client) {
