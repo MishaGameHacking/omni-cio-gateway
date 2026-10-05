@@ -5,6 +5,7 @@ const {join, resolve} = require("node:path");
 const {tmpdir} = require("node:os");
 const {spawn} = require("node:child_process");
 const assert = require("node:assert/strict");
+const {runInNewContext} = require("node:vm");
 
 const root = resolve(__dirname, "..");
 const web = join(root, "web");
@@ -15,11 +16,42 @@ const candidates = [
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "/usr/bin/chromium", "/usr/bin/google-chrome",
 ].filter(Boolean);
-const executable = candidates.find(existsSync);
+const executable = candidates.find((candidate) => existsSync(candidate));
 assert.ok(executable, "Install Chrome/Edge on the CI runner or set OMNICIO_TEST_BROWSER; browser QA cannot be skipped.");
 assert.equal(typeof WebSocket, "function", "Node 22+ is required for the browser protocol client.");
 const artifacts = join(root, "artifacts", "frontend");
 mkdirSync(artifacts, {recursive: true});
+
+const verifyPublicWorker = async () => {
+  const handlers = new Map();
+  const cached = [];
+  const tasks = [];
+  let activations = 0;
+  const origin = "https://example.test";
+  const worker = {
+    location: {origin, href: origin + "/sw.js?build=contract"},
+    addEventListener: (name, action) => handlers.set(name, action),
+    skipWaiting: async () => { activations += 1; },
+  };
+  const caches = {open: async () => ({addAll: async (urls) => cached.push(...urls)})};
+  runInNewContext(readFileSync(join(web, "sw.js"), "utf8"), {self: worker, caches, URL});
+  handlers.get("install")({waitUntil: (task) => tasks.push(task)});
+  await Promise.all(tasks);
+  assert.ok(cached.includes("/offline.html?build=contract"), "The offline fallback must be public");
+  assert.ok(cached.every((path) => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js))\?build=contract$/.test(path)), "Only the public interface allowlist may be cached");
+  let intercepted = 0;
+  for (const [path, method] of [["/api/auth/me", "GET"], ["/api/broker/tbank/portfolio", "GET"], ["/api/auth/logout", "POST"], ["/health/ready", "GET"]]) {
+    handlers.get("fetch")({request: {url: origin + path, method, mode: "navigate"}, respondWith: () => { intercepted += 1; }});
+  }
+  assert.equal(intercepted, 0, "The worker must not intercept private requests, writes or health checks");
+  const message = {data: {type: "ACTIVATE_UPDATE"}, waitUntil: (task) => tasks.push(task)};
+  handlers.get("message")({...message, origin: "https://untrusted.example"});
+  assert.equal(activations, 0, "A foreign message cannot activate a worker");
+  handlers.get("message")({...message, origin});
+  await Promise.all(tasks);
+  assert.equal(activations, 1, "Same-origin explicit update is supported");
+  console.log("PWA contract: public cache only, private requests untouched, update origin verified");
+};
 
 const suite = String.raw`
 window.addEventListener("load", () => setTimeout(async () => {
@@ -47,6 +79,13 @@ window.addEventListener("load", () => setTimeout(async () => {
     check(!one("#profile-panel").classList.contains("hidden"), "Demo workspace opened");
     check(one("#home-portfolio-total").textContent.replace(/\s/g, "").includes("1250000"), "Demo capital rendered");
     check(!one("#demo-banner").classList.contains("hidden"), "Permanent demo label");
+    if (innerWidth < 1200) {
+      check(one("#app-drawer").inert, "Closed drawer is not keyboard reachable");
+      click("#app-menu-toggle");
+      check(document.activeElement.id === "drawer-close", "Drawer receives focus");
+      document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+      check(one("#app-drawer").inert && document.activeElement.id === "app-menu-toggle", "Escape closes drawer and restores focus");
+    }
     for (const view of ["home", "portfolio", "events", "assets", "strategy", "decisions", "orders", "payouts", "goals", "assistant", "settings"]) navigate(view);
     navigate("strategy");
     click('[data-lock="bonds"]');
@@ -57,6 +96,10 @@ window.addEventListener("load", () => setTimeout(async () => {
     click("#review-allocation");
     check(one("#workspace-dialog").open, "Draft diff dialog");
     click("#dialog-close");
+    click("#reset-allocation");
+    click('[data-allow="shares"]');
+    check(one('[data-target-number="shares"]').disabled && one('[data-target-number="shares"]').value === "0", "Excluded class has zero allocation");
+    check([...document.querySelectorAll("[data-target-number]")].reduce((sum, item) => sum + Number(item.value), 0) === 100, "Allowed classes still total 100%");
     click("#reset-allocation");
     navigate("assets");
     check(document.querySelectorAll(".hunter-result").length===4, "Synthetic catalog");
@@ -237,6 +280,7 @@ const run = async (url, width) => {
 
 server.listen(0, "127.0.0.1", async () => {
   try {
+    await verifyPublicWorker();
     const url = `http://127.0.0.1:${server.address().port}/`;
     await [1440, 768, 390, 320].reduce((previous, width) => previous.then(() => run(url, width)), Promise.resolve());
     assert.equal(writes, 0, "Demo must never call a write endpoint");

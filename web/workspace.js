@@ -19,9 +19,11 @@
     svg.append(use);
     return svg;
   };
-  const money = (value) => Number.isFinite(Number(value)) && value !== null
-    ? new Intl.NumberFormat("ru-RU", {style: "currency", currency: "RUB", maximumFractionDigits: 0}).format(Number(value))
-    : "Не подтверждено";
+  const money = (value, maximumFractionDigits = 0) => {
+    const numeric = typeof value === "bigint" ? value : Number(value);
+    if (value === null || (typeof numeric !== "bigint" && !Number.isFinite(numeric))) return "Не подтверждено";
+    return new Intl.NumberFormat("ru-RU", {style: "currency", currency: "RUB", maximumFractionDigits}).format(numeric);
+  };
   const decimalToKopecks = (value) => {
     const text = String(value).trim();
     if (!/^\d{1,12}(?:\.\d{1,2})?$/.test(text)) return null;
@@ -447,7 +449,7 @@
             items.forEach((item) => {
               const row = node("div", undefined, "settings-card");
               row.append(node("h3", item.name || item.instrument_uid), node("p", ({coupon: "Купон", dividend: "Дивиденд", redemption: "Возврат номинала", amortization: "Амортизация"}[item.event_type] || "Событие облигации")));
-              const amount = node("strong", item.currency?.toUpperCase() === "RUB" ? money(item.amount) : `${item.amount ?? "—"} ${item.currency || ""}`);
+              const amount = node("strong", item.currency?.toUpperCase() === "RUB" ? money(item.amount, 2) : `${item.amount ?? "—"} ${item.currency || ""}`);
               amount.dataset.private = "";
               const state = {announced: "объявлено", scheduled: "запланировано", cancelled: "отменено", paid: "выплачено по данным источника", defaulted: "не исполнено", observed: "наблюдается"}[item.status] || "требует подтверждения";
               row.append(amount, node("p", `Статус: ${state}. Дата выплаты не подтверждает зачисление денег.`, "field-hint"));
@@ -469,6 +471,14 @@
       renderCalendar();
     });
 
+    const deleteGoal = (index) => {
+      const body = showDialog("Удалить сценарий?");
+      body.append(node("p", goals[index].name), button("Удалить сценарий", () => {
+        goals.splice(index, 1);
+        renderGoals();
+        dialog.close();
+      }, true));
+    };
     const renderGoals = () => {
       const list = $("#goals-list");
       list.replaceChildren();
@@ -494,16 +504,13 @@
         progress.setAttribute("aria-valuemin", "0");
         progress.setAttribute("aria-valuemax", "100");
         progress.append(bar);
-        card.append(node("span", "СЦЕНАРИЙ · В ТЕКУЩЕЙ ВКЛАДКЕ", "card-label"), node("h3", goal.name), node("strong", money(goal.target), "goal-value"), progress, node("p", `${percent}% · начальная сумма ${money(goal.initial)}`), node("p", `К ${new Date(goal.date + "T12:00:00").toLocaleDateString("ru-RU")}: ${money(Number(projected) / 100)} при пополнении ${money(goal.monthly)} в месяц. Доходность и инфляция не включены.`));
-        card.append(node("p", remaining > 0n ? `До цели не хватает ${money(Number(remaining) / 100)}. Измените срок или пополнения.` : "Плановые пополнения покрывают номинальную цель. Это сценарий, не гарантия.", "inline-note"));
+        card.append(node("span", "СЦЕНАРИЙ · В ТЕКУЩЕЙ ВКЛАДКЕ", "card-label"), node("h3", goal.name), node("strong", money(goal.target), "goal-value"), progress, node("p", `${percent}% · начальная сумма ${money(goal.initial)}`), node("p", `К ${new Date(goal.date + "T12:00:00").toLocaleDateString("ru-RU")}: ${money(projected / 100n)} при пополнении ${money(goal.monthly)} в месяц. Доходность и инфляция не включены.`));
+        card.append(node("p", remaining > 0n ? `До цели не хватает ${money(remaining / 100n)}. Измените срок или пополнения.` : "Плановые пополнения покрывают номинальную цель. Это сценарий, не гарантия.", "inline-note"));
         const actions = node("div", undefined, "goal-actions");
         actions.append(button("Изменить", () => editGoal(index)), button("Скачать все цели", () => {
           download("omnicio-goals.json", JSON.stringify({kind: "goal_scenarios", goals, linked_to_portfolio: false}, null, 2));
           goalsExported = JSON.stringify(goals);
-        }), button("Удалить", () => {
-          const body = showDialog("Удалить сценарий?");
-          body.append(node("p", goal.name), button("Удалить сценарий", () => { goals.splice(index, 1); renderGoals(); dialog.close(); }, true));
-        }));
+        }), button("Удалить", () => deleteGoal(index)));
         card.append(actions);
         list.append(card);
       });
@@ -628,7 +635,7 @@
       }));
       const data = {refreshed_at: stamp, environment: "demo", account_name: "Демонстрационный портфель", cash: [m(125000)], blocked_cash: [m(0)], limits_loading_in_progress: false, freshness: {state: "fresh", coverage: "complete"}, portfolio: {total: m(1250000), expected_yield_percent: "3.2", daily_yield: m(2350), daily_yield_percent: ".188", positions, asset_totals: [{kind: "bonds", money: m(750000)}, {kind: "shares", money: m(250000)}, {kind: "funds", money: m(125000)}, {kind: "currencies", money: m(125000)}]}};
       const history = Array.from({length: 90}, (_, i) => ({captured_at: new Date(Date.now() - (89-i) * 86400000).toISOString(), nav_rub: String(1120000 + i * 1400 + Math.round(Math.sin(i / 4) * 7200))}));
-      history[history.length - 1].nav_rub = "1250000";
+      history.at(-1).nav_rub = "1250000";
       snapshot = data;
       catalog = [...demoInstruments];
       events = [{kind: "income", title: "В примере ожидается купон", detail: "1 240 ₽ · Север Энерго. Объявленная выплата ещё не является свободными деньгами.", time: stamp, view: "payouts"}, {kind: "system", title: "Всё начинается с понятной картины", detail: "Изучите структуру, сравните инструменты и настройте пример стратегии. Данные вымышлены.", time: stamp, view: "strategy"}];

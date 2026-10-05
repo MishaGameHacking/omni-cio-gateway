@@ -457,8 +457,12 @@
     requiredElement("#profile-context-reload").focus();
   };
 
-  const api = async (path, options = {}) => {
+  const requireServerMode = () => {
     if (workspace?.isDemo()) throw Object.assign(new Error("demo_mode_no_server_access"), {status: 0});
+  };
+
+  const api = async (path, options = {}) => {
+    requireServerMode();
     if (!navigator.onLine && !["GET", "HEAD"].includes(options.method || "GET")) throw Object.assign(new Error("Нет сети. Изменение не отправлено."), {status: 0});
     if (profileContextLost) throw profileContextError();
     const headers = new Headers(options.headers);
@@ -470,7 +474,7 @@
       ...options,
       headers,
     });
-    if (workspace?.isDemo()) throw Object.assign(new Error("demo_mode_no_server_access"), {status: 0});
+    requireServerMode();
     const body = response.status === 204 ? null : await response.json().catch(() => null);
     if (profileContextLost) throw profileContextError();
     if (!response.ok) {
