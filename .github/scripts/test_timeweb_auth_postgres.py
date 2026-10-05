@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import pathlib
 import secrets
 import sys
@@ -36,6 +37,23 @@ class PostgresTests(unittest.TestCase):
             min_ram_mb=2048,
             min_disk_mb=20480,
         )
+
+    def test_recovery_inventory_is_read_only_and_excludes_provider_secrets(self) -> None:
+        client, ssh = Mock(), Mock()
+        client.request.side_effect = [
+            {"auto_backups_settings": {"is_enabled": False, "password": "private"}},
+            {"backups": [{"id": 9, "status": "done", "comment": "private", "url": "private"}]},
+        ]
+        ssh.run.side_effect = [json.dumps({"bypass_rls": False}), json.dumps({"docker": None})]
+        with patch.object(MODULE, "add_summary") as summary:
+            MODULE.report_recovery_inventory(
+                client, ssh, cluster_id=42,
+                endpoint=MODULE.DatabaseEndpoint("10.77.0.5", 5432), desired=self.desired,
+            )
+        self.assertTrue(all(call.args[0] == "GET" for call in client.request.call_args_list))
+        self.assertNotIn("private", str(summary.call_args_list))
+        self.assertIn('"is_enabled": false', str(summary.call_args_list))
+        self.assertIn("default_transaction_read_only=on", ssh.run.call_args_list[0].args[0])
 
     def test_ambiguous_database_creation_is_not_retried(self) -> None:
         for recovered in (None, {"id": 42}):

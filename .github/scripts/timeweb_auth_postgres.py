@@ -939,6 +939,60 @@ def run_schema_migration(
     ssh.run(command, input_text=migration_sql)
 
 
+def report_recovery_inventory(
+    client: TimewebClient,
+    ssh: EphemeralSsh,
+    *,
+    cluster_id: int,
+    endpoint: DatabaseEndpoint,
+    desired: DesiredDatabase,
+) -> None:
+    """Inspect existing recovery capabilities without exporting customer rows or changing backups."""
+    try:
+        settings = client.request("GET", f"/dbs/{cluster_id}/auto-backups")
+        backups = client.request("GET", f"/dbs/{cluster_id}/backups?limit=100&offset=0")
+    except (TimewebApiError, InfraError):
+        add_summary("- Recovery inventory unavailable; backup existence is unverified.")
+        return
+    safe_settings = {
+        key: value for key, value in (settings.get("auto_backups_settings") or {}).items()
+        if key in {"is_enabled", "copy_count", "interval", "day_of_week", "creation_start_at"}
+    }
+    safe_backups = [
+        {key: value for key, value in item.items()
+         if key in {"id", "status", "created_at", "size", "type", "progress"}}
+        for item in (backups.get("backups") or [])
+    ]
+    add_summary("- Recovery inventory (metadata only; not a restore proof): " + json.dumps({
+        "cluster_id": cluster_id, "schedule": safe_settings, "backups": safe_backups,
+    }, ensure_ascii=True))
+    command = (
+        f"set -a; . {shlex.quote(REMOTE_SECRET_PATH)}; set +a; "
+        'export PGPASSWORD="$OMNICIO_DB_ADMIN_PASSWORD"; '
+        'export PGCONNECT_TIMEOUT=10; '
+        'export PGOPTIONS="-c default_transaction_read_only=on -c statement_timeout=5000"; '
+        f"psql -h {shlex.quote(endpoint.host)} -p {endpoint.port} "
+        f"-U {shlex.quote(desired.admin_login)} -d {shlex.quote(desired.instance_name)} "
+        "-v ON_ERROR_STOP=1 -qAt"
+    )
+    inventory = ssh.run(command, input_text="""
+SELECT json_build_object(
+    'server_version', current_setting('server_version_num'),
+    'database_bytes', pg_database_size(current_database()),
+    'superuser', rolsuper, 'create_database', rolcreatedb,
+    'create_role', rolcreaterole, 'bypass_rls', rolbypassrls
+) FROM pg_roles WHERE rolname = current_user;
+""")
+    add_summary("- Database recovery capability: " + json.dumps(json.loads(inventory)))
+    tools = ssh.run(
+        "python3 -c 'import json,pathlib,shutil; "
+        "print(json.dumps({\"pg_dump\":shutil.which(\"pg_dump\"),"
+        "\"postgres_bins\":[p.name for p in pathlib.Path(\"/usr/lib/postgresql\").glob(\"*\")],"
+        "\"docker\":shutil.which(\"docker\")}))'"
+    )
+    add_summary("- Isolated recovery tools: " + json.dumps(json.loads(tools)))
+
+
 def wait_for_database_endpoint(
     client: TimewebClient,
     cluster_id: int,
@@ -1139,6 +1193,11 @@ def reconcile(
         ):
             raise InfraError(
                 "Managed PostgreSQL cluster is not attached to approved VPC"
+            )
+
+        if existing is not None:
+            report_recovery_inventory(
+                client, ssh, cluster_id=cluster_id, endpoint=endpoint, desired=desired,
             )
 
         write_runtime_env(
