@@ -395,6 +395,7 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
     lifespan=lifespan,
+    responses={409: {"description": "Profile context or other current-state conflict"}},
 )
 
 
@@ -674,6 +675,51 @@ async def _stream_session_current(
     return user is not None and user.id == user_id
 
 
+async def _usd_rub_market_events(
+    request: Request,
+    market: MarketService,
+    user_id: UUID,
+    session_token: str | None,
+) -> AsyncIterator[str]:
+    retry_delay = 5
+    yield "retry: 5000\n\n"
+    while not await request.is_disconnected():
+        if not await _stream_session_current(request, session_token, user_id):
+            yield _PROFILE_CHANGED_EVENT
+            break
+
+        payload: dict[str, object]
+        try:
+            snapshot = await asyncio.to_thread(market.usd_rub, user_id)
+        except BrokerNotConnected:
+            payload = {"state": "disconnected"}
+            event = "status"
+            delay = 15
+            retry_delay = 5
+        except TBankTokenRejected:
+            payload = {"state": "reconnect"}
+            event = "status"
+            delay = 30
+            retry_delay = 5
+        except (TBankUnavailable, BrokerConnectionError, ValueError):
+            payload = {"state": "unavailable"}
+            event = "status"
+            delay = retry_delay
+            retry_delay = min(retry_delay * 2, 30)
+        else:
+            payload = asdict(snapshot)
+            event = "quote"
+            delay = 5
+            retry_delay = 5
+
+        if not await _stream_session_current(request, session_token, user_id):
+            yield _PROFILE_CHANGED_EVENT
+            break
+        data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        yield f"event: {event}\ndata: {data}\n\n"
+        await asyncio.sleep(delay)
+
+
 @app.get("/api/market/usd-rub/stream")
 async def usd_rub_market_stream(
     request: Request,
@@ -682,50 +728,8 @@ async def usd_rub_market_stream(
     user = authenticated_user(request, session_token)
     _require_profile_context(user, request.query_params.get("profile_context"))
     market = market_service(request)
-
-    async def events() -> AsyncIterator[str]:
-        retry_delay = 5
-        yield "retry: 5000\n\n"
-        while True:
-            if await request.is_disconnected():
-                break
-            if not await _stream_session_current(request, session_token, user.id):
-                yield _PROFILE_CHANGED_EVENT
-                break
-
-            payload: dict[str, object]
-            try:
-                snapshot = await asyncio.to_thread(market.usd_rub, user.id)
-            except BrokerNotConnected:
-                payload = {"state": "disconnected"}
-                event = "status"
-                delay = 15
-                retry_delay = 5
-            except TBankTokenRejected:
-                payload = {"state": "reconnect"}
-                event = "status"
-                delay = 30
-                retry_delay = 5
-            except (TBankUnavailable, BrokerConnectionError, ValueError):
-                payload = {"state": "unavailable"}
-                event = "status"
-                delay = retry_delay
-                retry_delay = min(retry_delay * 2, 30)
-            else:
-                payload = asdict(snapshot)
-                event = "quote"
-                delay = 5
-                retry_delay = 5
-
-            if not await _stream_session_current(request, session_token, user.id):
-                yield _PROFILE_CHANGED_EVENT
-                break
-            data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-            yield f"event: {event}\ndata: {data}\n\n"
-            await asyncio.sleep(delay)
-
     return StreamingResponse(
-        events(),
+        _usd_rub_market_events(request, market, user.id, session_token),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-store",
