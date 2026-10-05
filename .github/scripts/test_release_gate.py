@@ -268,11 +268,23 @@ class SonarScopePolicyTests(unittest.TestCase):
             / ".sonarcloud.properties"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("sonar.exclusions=migrations/*.sql", config)
-        for forbidden in ("src/**", "web/**", "tests/**", "**/*.py", "**/*.js"):
-            self.assertNotIn(forbidden, config)
-        self.assertNotIn("sonar.issue.ignore", config)
-        self.assertNotIn("sonar.coverage.exclusions", config)
+        properties = {}
+        for line in config.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, value = line.split("=", 1)
+            self.assertNotIn(key, properties, "Duplicate Sonar property")
+            properties[key] = value
+
+        # Exact scope prevents broad exclusions, hidden rule/coverage suppressions,
+        # or classifying application/deployment sources as test code to fit a quota.
+        self.assertEqual(properties, {
+            "sonar.exclusions": "migrations/*.sql",
+            "sonar.sources": ".",
+            "sonar.tests": "tests,.github/scripts",
+            "sonar.test.inclusions": "tests/**,.github/scripts/test_*.py",
+        })
 
 
 class GitHubTransportTests(unittest.TestCase):
