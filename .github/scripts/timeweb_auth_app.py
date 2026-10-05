@@ -58,6 +58,7 @@ BRAND_RUNTIME_FILES = (
 BRAND_PUBLIC_MARK = "/assets/brand/omni-sentinel-core-color-1024.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
+JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
 
 
 def add_summary(line: str) -> None:
@@ -483,6 +484,9 @@ python3 -m venv "$RELEASE/.venv"
 install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
 install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
 install -m 0644 "$RELEASE/web/app.js" "$WEB_RELEASE/assets/app.js"
+install -m 0644 "$RELEASE/web/workspace.js" "$WEB_RELEASE/assets/workspace.js"
+install -m 0644 "$RELEASE/web/sw.js" "$WEB_RELEASE/sw.js"
+install -m 0644 "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
 install -m 0644 "$RELEASE/assets/brand/transparent/omni-sentinel-core-color-1024.png" "$WEB_RELEASE/assets/brand/omni-sentinel-core-color-1024.png"
 install -m 0644 "$RELEASE/assets/brand/web/apple-touch-icon-180.png" "$WEB_RELEASE/assets/brand/apple-touch-icon-180.png"
@@ -792,6 +796,22 @@ server {
         add_header Cache-Control "no-cache";
     }
 
+    location = /assets/workspace.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /sw.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+        add_header Service-Worker-Allowed "/";
+    }
+
+    location = /offline.html {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+    }
+
     location /assets/ {
         try_files $uri =404;
         add_header Cache-Control "public, max-age=86400";
@@ -1062,6 +1082,18 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         raise InfraError("Public application version marker is missing")
     if release_sha[:12] not in version:
         raise InfraError("Public application build does not match release")
+
+    runtime_assets = (
+        ("/assets/app.js", b"window.OmniWorkspace.init", JAVASCRIPT_CONTENT_TYPES),
+        ("/assets/workspace.js", b"window.OmniWorkspace", JAVASCRIPT_CONTENT_TYPES),
+        ("/assets/app.css", b"--sidebar-width", ("text/css",)),
+        ("/sw.js", b"omnicio-public-", JAVASCRIPT_CONTENT_TYPES),
+        ("/offline.html", b"<html", ("text/html",)),
+    )
+    for path, marker, content_types in runtime_assets:
+        body, content_type = fetch_public(f"{path}?build={release_sha[:12]}", context)
+        if content_type not in content_types or marker not in body:
+            raise InfraError(f"Public runtime asset verification failed: {path}")
 
 
 def verify_public(release_sha: str) -> None:

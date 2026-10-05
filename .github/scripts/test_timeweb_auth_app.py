@@ -644,7 +644,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("Реальное исполнение", page)
         self.assertIn("Watchtower", page)
         self.assertIn("Research", page)
-        self.assertIn("Поиск инструментов", page)
+        self.assertIn("Поиск активов", page)
         self.assertIn("Контроль рисков", page)
         self.assertIn("Подключения", page)
         for internal_name in ("Сова", "Охотник", "Страж", "Portfolio Intelligence R3", "Portfolio Balancing R4", "Portfolio Proposals R5", "Execution rehearsal R6"):
@@ -838,17 +838,25 @@ class AuthAppDeployTests(unittest.TestCase):
         for view in (
             "home",
             "portfolio",
+            "events",
+            "assets",
+            "strategy",
             "decisions",
-            "system",
-            "connections",
-            "profile",
+            "orders",
+            "payouts",
+            "goals",
+            "assistant",
             "settings",
-            "support",
         ):
             self.assertIn(f'data-view="{view}"', page)
             self.assertIn(f'data-view-panel="{view}"', page)
 
-        self.assertIn("Рабочее пространство", page)
+        for view in ("system", "connections", "profile", "notifications", "support"):
+            self.assertIn(f'data-go-view="{view}"', page)
+            self.assertIn(f'data-view-panel="{view}"', page)
+
+        self.assertIn("Основные разделы", page)
+        self.assertIn("Управление", page)
         self.assertIn("Профиль", page)
         self.assertIn("Поддержка", page)
         self.assertIn("T-Invest и API-токен", page)
@@ -935,8 +943,9 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(f'id="{element_id}"', page)
 
         self.assertIn("Обзор портфеля", page)
-        self.assertIn("Портфель — главное сейчас", page)
-        self.assertIn("Незаблокированные RUB", page)
+        self.assertIn("Всё важное. На одном экране.", page)
+        self.assertIn("Свободные рубли", page)
+        self.assertIn("Не равно торговому бюджету до резервов и издержек", page)
         self.assertIn("Требует внимания", page)
         self.assertIn("Официальные показатели Банка России", page)
         self.assertIn("Данные ЦБ", page)
@@ -1257,7 +1266,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.18.7"', project)
+        self.assertIn('version = "0.19.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
@@ -1269,6 +1278,9 @@ class AuthAppDeployTests(unittest.TestCase):
 
         self.assertIn("location = /assets/app.css", script)
         self.assertIn("location = /assets/app.js", script)
+        self.assertIn("location = /assets/workspace.js", script)
+        self.assertIn("location = /sw.js", script)
+        self.assertIn("location = /offline.html", script)
         self.assertIn("location = /version.js", script)
         self.assertIn("location = /manifest.webmanifest", script)
         self.assertGreaterEqual(script.count('add_header Cache-Control "no-cache";'), 5)
@@ -1325,6 +1337,14 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ),
             "/api/auth/config": (config, "application/json", 200),
         }
+        for path, body, content_type in (
+            ("/assets/app.js", b"window.OmniWorkspace.init", "text/javascript"),
+            ("/assets/workspace.js", b"window.OmniWorkspace", "application/javascript"),
+            ("/assets/app.css", b"--sidebar-width:240px", "text/css"),
+            ("/sw.js", b"omnicio-public-test", "text/javascript"),
+            ("/offline.html", b'<html lang="ru">Offline</html>', "text/html"),
+        ):
+            self.responses[f"{path}?build={self.sha[:12]}"] = (body, content_type, 200)
         for path, marker in MODULE.LEGAL_PAGES.items():
             self.responses[path] = (
                 f"{marker} Test Operator operator@example.com".encode(),
@@ -1365,6 +1385,8 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             (MODULE.WEB_MANIFEST_PATH, b"[]", "application/json", 200),
             (MODULE.WEB_MANIFEST_PATH, b"invalid", "application/json", 200),
             (MODULE.VERSION_PUBLIC_PATH, b"window.OMNICIO_RELEASE = {}", "text/javascript", 200),
+            (f"/assets/workspace.js?build={self.sha[:12]}", b"wrong asset", "text/javascript", 200),
+            (f"/sw.js?build={self.sha[:12]}", b"<html>fallback</html>", "text/html", 200),
             ("/api/auth/config", b"[]", "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": true}', "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": false}', "application/json", 200),
