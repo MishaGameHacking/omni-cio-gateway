@@ -138,6 +138,12 @@ const server = createServer((request, response) => {
 });
 
 const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
+const waitUntil = async (condition, attempts = 150) => {
+  const result = await condition();
+  if (result || attempts === 0) return result;
+  await delay(100);
+  return waitUntil(condition, attempts - 1);
+};
 
 const protocolClient = async (url) => {
   const socket = new WebSocket(url);
@@ -157,7 +163,7 @@ const protocolClient = async (url) => {
     else request.resolveRequest(message.result);
   });
   return {
-    send(method, params = {}, sessionId) {
+    send(method, params, sessionId) {
       return new Promise((resolveRequest, reject) => {
         const id = ++sequence;
         const timer = setTimeout(() => { pending.delete(id); reject(new Error("Protocol timed out: " + method)); }, 10000);
@@ -180,7 +186,7 @@ const run = async (url, width) => {
   let client;
   try {
     const portFile = join(profile, "DevToolsActivePort");
-    for (let attempt = 0; attempt < 150 && !existsSync(portFile) && !exited; attempt += 1) await delay(100);
+    await waitUntil(() => existsSync(portFile) || exited);
     assert.ok(existsSync(portFile), "Browser did not start: " + errors);
     const [port, endpoint] = readFileSync(portFile, "utf8").trim().split(/\r?\n/);
     client = await protocolClient(`ws://127.0.0.1:${port}${endpoint}`);
@@ -197,11 +203,7 @@ const run = async (url, width) => {
     await send("Emulation.setEmulatedMedia", {features: [{name: "prefers-color-scheme", value: "light"}, {name: "prefers-reduced-motion", value: "reduce"}]});
     const visit = async (address) => {
       await send("Page.navigate", {url: address});
-      let result;
-      for (let attempt = 0; attempt < 100 && !result; attempt += 1) {
-        await delay(100);
-        result = await evaluate("window.__smokeResult");
-      }
+      const result = await waitUntil(() => evaluate("window.__smokeResult"), 100);
       assert.ok(result, "Browser suite did not finish");
       assert.equal(result.passed, true, result.error);
       assert.equal(result.viewport, width, "The actual viewport must match the requested size");
@@ -219,17 +221,16 @@ const run = async (url, width) => {
     await evaluate("document.querySelector('#quick-theme').click()");
     await screenshot("home-dark");
     await evaluate("document.querySelector('#quick-theme').click()");
-    for (const view of ["strategy", "assets", "payouts", "assistant"]) {
+    await ["strategy", "assets", "payouts", "assistant"].reduce((previous, view) => previous.then(async () => {
       await evaluate(`document.querySelector('[data-view="${view}"]').click()`);
       await screenshot(view);
-    }
+    }), Promise.resolve());
     console.log(`Browser smoke ${width}: ${JSON.stringify(result)}`);
   } finally {
     if (client) {
       try { await client.send("Browser.close"); } finally { client.close(); }
     }
-    for (let attempt = 0; attempt < 20 && !exited; attempt += 1) await delay(100);
-    if (!exited) child.kill();
+    if (!await waitUntil(() => exited, 20)) child.kill();
     rmSync(profile, {recursive: true, force: true, maxRetries: 8, retryDelay: 250});
   }
 };
@@ -237,7 +238,7 @@ const run = async (url, width) => {
 server.listen(0, "127.0.0.1", async () => {
   try {
     const url = `http://127.0.0.1:${server.address().port}/`;
-    for (const width of [1440, 768, 390, 320]) await run(url, width);
+    await [1440, 768, 390, 320].reduce((previous, width) => previous.then(() => run(url, width)), Promise.resolve());
     assert.equal(writes, 0, "Demo must never call a write endpoint");
     assert.equal(brokerReads, 0, "Demo must never contact broker endpoints");
     console.log("Demo isolation: zero private broker requests and writes");

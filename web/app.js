@@ -459,7 +459,7 @@
 
   const api = async (path, options = {}) => {
     if (workspace?.isDemo()) throw Object.assign(new Error("demo_mode_no_server_access"), {status: 0});
-    if (!navigator.onLine && options.method && !["GET", "HEAD"].includes(options.method)) throw Object.assign(new Error("Нет сети. Изменение не отправлено."), {status: 0});
+    if (!navigator.onLine && !["GET", "HEAD"].includes(options.method || "GET")) throw Object.assign(new Error("Нет сети. Изменение не отправлено."), {status: 0});
     if (profileContextLost) throw profileContextError();
     const headers = new Headers(options.headers);
     headers.set("Content-Type", "application/json");
@@ -6670,7 +6670,7 @@
     if (event.key !== "Tab" || !document.body.classList.contains("drawer-open")) return;
     const focusable = [...appDrawer.querySelectorAll("button:not(:disabled), a[href]")].filter((item) => item.getClientRects().length);
     const first = focusable[0];
-    const last = focusable[focusable.length - 1];
+    const last = focusable.at(-1);
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   });

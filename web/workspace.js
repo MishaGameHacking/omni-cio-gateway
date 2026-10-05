@@ -138,7 +138,6 @@
     let eventFilter = "all";
     let events = [];
     let payouts = [];
-    let payoutsLoaded = false;
     let calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const favorites = new Set();
     const comparison = new Map();
@@ -189,7 +188,7 @@
         ".metric-strip strong", ".goal-value", ".event-card p", ".event-card h3",
         ".attention-list", ".goal-card p", ".instrument-detail", ".market-price-row",
       ];
-      all(selectors.join(",")).forEach((element) => element.setAttribute("data-private", ""));
+      all(selectors.join(",")).forEach((element) => { element.dataset.private = ""; });
     };
     $("#privacy-toggle").addEventListener("click", () => {
       const hidden = document.body.classList.toggle("privacy-mode");
@@ -233,7 +232,8 @@
         const mark = node("span", undefined, "event-icon");
         mark.append(icon(item.kind === "income" ? "calendar" : "events"));
         const body = node("div");
-        body.append(node("span", item.kind === "risk" ? "Требует внимания" : item.kind === "income" ? "Выплаты" : "Сервис", "card-label"), node("h3", item.title), node("p", item.detail));
+        const category = {risk: "Требует внимания", income: "Выплаты", system: "Сервис"}[item.kind] || "Сервис";
+        body.append(node("span", category, "card-label"), node("h3", item.title), node("p", item.detail));
         if (item.time) {
           const time = node("time", new Date(item.time).toLocaleString("ru-RU"));
           time.dateTime = item.time;
@@ -410,9 +410,11 @@
       return date.getFullYear() === calendarMonth.getFullYear() && date.getMonth() === calendarMonth.getMonth();
     });
     const payoutTotal = (items) => {
-      if (!items.length) return payoutsLoaded ? "0 ₽" : "Не подтверждено";
+      if (!items.length) return "Не подтверждено";
+      // Provider amounts can be per security; never label their sum as account income.
+      if (!demo) return "Не подтверждено";
       const amounts = items.map((item) => item.currency?.toUpperCase() === "RUB" ? decimalToKopecks(item.amount) : null);
-      if (amounts.some((value) => value === null)) return "Не подтверждено";
+      if (amounts.includes(null)) return "Не подтверждено";
       return money(Number(amounts.reduce((sum, value) => sum + value, 0n)) / 100);
     };
     const renderCalendar = () => {
@@ -436,7 +438,8 @@
           const items = selected.filter((item) => new Date(eventDate(item)).getDate() === day);
           control.classList.toggle("is-today", date.toDateString() === new Date().toDateString());
           control.classList.toggle("has-payout", items.length > 0);
-          control.setAttribute("aria-label", `${date.toLocaleDateString("ru-RU")}: ${items.length ? `${items.length} выплат` : "нет подтверждённых выплат"}`);
+          const countLabel = items.length ? String(items.length) + " выплат" : "нет подтверждённых выплат";
+          control.setAttribute("aria-label", `${date.toLocaleDateString("ru-RU")}: ${countLabel}`);
           if (items.length) control.append(node("small", `${items.length} выплат`));
           control.addEventListener("click", () => {
             const body = showDialog(date.toLocaleDateString("ru-RU", {day: "numeric", month: "long", year: "numeric"}));
@@ -445,8 +448,10 @@
               const row = node("div", undefined, "settings-card");
               row.append(node("h3", item.name || item.instrument_uid), node("p", ({coupon: "Купон", dividend: "Дивиденд", redemption: "Возврат номинала", amortization: "Амортизация"}[item.event_type] || "Событие облигации")));
               const amount = node("strong", item.currency?.toUpperCase() === "RUB" ? money(item.amount) : `${item.amount ?? "—"} ${item.currency || ""}`);
-              amount.setAttribute("data-private", "");
-              row.append(amount, node("p", `Статус: ${item.status === "announced" ? "объявлено" : item.status === "broker_confirmed" ? "подтверждено брокером" : "требует подтверждения"}. Дата выплаты не подтверждает зачисление денег.`, "field-hint"));
+              amount.dataset.private = "";
+              const state = {announced: "объявлено", scheduled: "запланировано", cancelled: "отменено", paid: "выплачено по данным источника", defaulted: "не исполнено", observed: "наблюдается"}[item.status] || "требует подтверждения";
+              row.append(amount, node("p", `Статус: ${state}. Дата выплаты не подтверждает зачисление денег.`, "field-hint"));
+              if (!demo) row.append(node("p", "Сумма события из источника может относиться к одной бумаге. Выплата именно по вашему счёту и право на неё отдельно не подтверждены.", "inline-note"));
               body.append(row);
             });
           });
@@ -621,14 +626,13 @@
         value: m(Number(item.price) * Number(item.quantity)), blocked: false, blocked_lots: "0",
         current_nkd: m(0),
       }));
-      const data = {refreshed_at: stamp, environment: "demo", account_name: "Демонстрационный портфель", cash: [m(125000)], blocked_cash: [], limits_loading_in_progress: false, freshness: {state: "fresh", coverage: "complete"}, portfolio: {total: m(1250000), expected_yield_percent: "3.2", daily_yield: m(2350), daily_yield_percent: ".188", positions, asset_totals: [{kind: "bonds", money: m(750000)}, {kind: "shares", money: m(250000)}, {kind: "funds", money: m(125000)}, {kind: "currencies", money: m(125000)}]}};
+      const data = {refreshed_at: stamp, environment: "demo", account_name: "Демонстрационный портфель", cash: [m(125000)], blocked_cash: [m(0)], limits_loading_in_progress: false, freshness: {state: "fresh", coverage: "complete"}, portfolio: {total: m(1250000), expected_yield_percent: "3.2", daily_yield: m(2350), daily_yield_percent: ".188", positions, asset_totals: [{kind: "bonds", money: m(750000)}, {kind: "shares", money: m(250000)}, {kind: "funds", money: m(125000)}, {kind: "currencies", money: m(125000)}]}};
       const history = Array.from({length: 90}, (_, i) => ({captured_at: new Date(Date.now() - (89-i) * 86400000).toISOString(), nav_rub: String(1120000 + i * 1400 + Math.round(Math.sin(i / 4) * 7200))}));
       history[history.length - 1].nav_rub = "1250000";
       snapshot = data;
       catalog = [...demoInstruments];
       events = [{kind: "income", title: "В примере ожидается купон", detail: "1 240 ₽ · Север Энерго. Объявленная выплата ещё не является свободными деньгами.", time: stamp, view: "payouts"}, {kind: "system", title: "Всё начинается с понятной картины", detail: "Изучите структуру, сравните инструменты и настройте пример стратегии. Данные вымышлены.", time: stamp, view: "strategy"}];
       payouts = [{instrument_uid: "СЕВЕР-01", name: "Север Энерго · выпуск 01", event_type: "coupon", expected_at: new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 15, 12).toISOString(), amount: "1240", currency: "RUB", status: "announced"}, {instrument_uid: "ГОРОД-02", name: "Город Инфра · выпуск 02", event_type: "coupon", expected_at: new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 27, 12).toISOString(), amount: "850", currency: "RUB", status: "announced"}];
-      payoutsLoaded = true;
       adapter.enterDemo(data, history);
       renderEvents();
       renderCalendar();
@@ -713,7 +717,7 @@
         events = (data?.analysis?.observations || []).map((item) => ({kind: item.priority <= 2 ? "risk" : "system", title: item.title, detail: item.detail, time: data.refreshed_at, view: "decisions"}));
         renderEvents();
       },
-      setPayouts: (items) => { payouts = items || []; payoutsLoaded = true; renderCalendar(); },
+      setPayouts: (items) => { payouts = items || []; renderCalendar(); },
       setCatalog: (items) => { catalog = items; },
       filterAssets, decorateAssets, toast,
       demoSearch: (query) => demoInstruments.filter((item) => `${item.name} ${item.ticker}`.toLocaleLowerCase("ru-RU").includes(query.toLocaleLowerCase("ru-RU"))),
