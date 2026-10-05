@@ -1,0 +1,47 @@
+name: UI candidate transfer (PR 750 only)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/ui-candidate-transfer.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-candidate-transfer-750
+  cancel-in-progress: false
+
+jobs:
+  source:
+    if: >-
+      github.repository == 'MishaGameHacking/omni-cio-gateway' &&
+      github.event.pull_request.number == 750 &&
+      github.event.pull_request.head.ref == 'feature/strategy-touch-controls' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.author_association == 'OWNER' &&
+      github.actor == 'MishaGameHacking'
+    name: Package exact baseline without running application code
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Read pinned source only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 882639d5254046ab90041c87be17361a07314a87
+          persist-credentials: false
+          clean: true
+      - name: Upload private source bundle for local verification
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ui-source-baseline-750
+          path: |
+            web/
+            tests/frontend-smoke.cjs
+            assets/brand/transparent/omni-sentinel-core-color-1024.png
+            pyproject.toml
+            uv.lock
+            AGENTS.md
+          if-no-files-found: error
+          retention-days: 1
