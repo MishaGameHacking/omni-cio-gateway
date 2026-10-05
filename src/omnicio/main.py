@@ -89,6 +89,7 @@ _TBANK_NOT_CONNECTED_DETAIL = "T-Invest is not connected"
 _PRIVATE_NO_STORE = "private, no-store"
 _PUBLIC_ID_PATTERN = r"^[0-9]{9}$"
 _PROFILE_CONTEXT_HEADER = "X-Omnicio-Profile"
+_PROFILE_CONTEXT_CONFLICT_DESCRIPTION = "Viewed profile is missing or differs from the session"
 _PROFILE_CHANGED_EVENT = 'event: status\ndata: {"state":"profile_context_changed"}\n\n'
 logger = logging.getLogger(__name__)
 
@@ -395,7 +396,6 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
     lifespan=lifespan,
-    responses={409: {"description": "Profile context or other current-state conflict"}},
 )
 
 
@@ -569,7 +569,10 @@ def vkid_callback(
     return response
 
 
-@app.get("/api/me")
+@app.get(
+    "/api/me",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def me(
     request: Request,
     response: Response,
@@ -594,7 +597,10 @@ def me(
     }
 
 
-@app.get("/api/me/activity")
+@app.get(
+    "/api/me/activity",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def account_activity(
     request: Request,
     limit: int = Query(default=20, ge=1, le=50),
@@ -605,7 +611,10 @@ def account_activity(
     return {"events": database.recent_activity(user.id, limit=limit)}
 
 
-@app.get("/api/system/recovery")
+@app.get(
+    "/api/system/recovery",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def system_recovery(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -617,6 +626,7 @@ def system_recovery(
 @app.get(
     "/api/market/cbr-indicators",
     responses={
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         401: {"description": "Authenticated session required"},
         503: {"description": "Bank of Russia indicators are temporarily unavailable"},
     },
@@ -720,7 +730,10 @@ async def _usd_rub_market_events(
         await asyncio.sleep(delay)
 
 
-@app.get("/api/market/usd-rub/stream")
+@app.get(
+    "/api/market/usd-rub/stream",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 async def usd_rub_market_stream(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -893,7 +906,10 @@ async def _instrument_market_events(
 
 @app.get(
     "/api/market/instruments/{instrument_uid}/stream",
-    responses={401: {"description": "Authenticated session required"}},
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 async def instrument_market_stream(
     instrument_uid: str,
@@ -959,7 +975,10 @@ def _balancing_policy_payload(
     }
 
 
-@app.get("/api/profile/investment")
+@app.get(
+    "/api/profile/investment",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def investment_profile(
     request: Request,
     response: Response,
@@ -1018,7 +1037,10 @@ def save_investment_profile(
     return {"profile": _profile_payload(profile)}
 
 
-@app.get("/api/profile/balancing")
+@app.get(
+    "/api/profile/balancing",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def balancing_policy(
     request: Request,
     response: Response,
@@ -1073,7 +1095,10 @@ def save_balancing_policy(
     return {"policy": _balancing_policy_payload(policy)}
 
 
-@app.get("/api/broker/tbank")
+@app.get(
+    "/api/broker/tbank",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def tbank_connection_status(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1195,7 +1220,10 @@ def _live_balancing_for_user(
 
 @app.get(
     "/api/portfolio/visualization",
-    responses={401: {"description": "Authenticated session required"}},
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def portfolio_visualization(
     request: Request,
@@ -1215,6 +1243,7 @@ def portfolio_visualization(
 @app.get(
     "/api/portfolio/instruments/{instrument_uid}/visualization",
     responses={
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         401: {"description": "Authenticated session required"},
         404: {"description": "Instrument is not present in the current account history"},
     },
@@ -1249,7 +1278,10 @@ def portfolio_instrument_visualization(
 
 @app.get(
     "/api/portfolio/balancing",
-    responses={401: {"description": "Authenticated session required"}},
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def portfolio_balancing(
     request: Request,
@@ -1262,7 +1294,10 @@ def portfolio_balancing(
     return payload
 
 
-@app.get("/api/portfolio/proposals")
+@app.get(
+    "/api/portfolio/proposals",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def portfolio_proposals(
     request: Request,
     response: Response,
@@ -1277,7 +1312,11 @@ def portfolio_proposals(
     }
 
 
-@app.post("/api/portfolio/proposals", status_code=status.HTTP_201_CREATED)
+@app.post(
+    "/api/portfolio/proposals",
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def create_portfolio_proposal(
     body: PortfolioProposalBody,
     request: Request,
@@ -1392,7 +1431,10 @@ def _proposal_material_is_current(
     )
 
 
-@app.post("/api/portfolio/proposals/{proposal_id}/decision")
+@app.post(
+    "/api/portfolio/proposals/{proposal_id}/decision",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def decide_portfolio_proposal(
     proposal_id: UUID,
     body: PortfolioProposalDecisionBody,
@@ -1567,7 +1609,10 @@ def _execution_error(exc: Exception) -> HTTPException:
     )
 
 
-@app.get("/api/portfolio/live-execution/mandate")
+@app.get(
+    "/api/portfolio/live-execution/mandate",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def portfolio_live_execution_mandate(
     request: Request,
     response: Response,
@@ -1589,7 +1634,10 @@ def portfolio_live_execution_mandate(
     }
 
 
-@app.put("/api/portfolio/live-execution/mandate")
+@app.put(
+    "/api/portfolio/live-execution/mandate",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def save_portfolio_live_execution_mandate(
     body: PortfolioLiveMandateBody,
     request: Request,
@@ -1674,7 +1722,11 @@ def save_portfolio_live_execution_mandate(
     }
 
 
-@app.delete("/api/portfolio/live-execution/mandate", status_code=204)
+@app.delete(
+    "/api/portfolio/live-execution/mandate",
+    status_code=204,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def revoke_portfolio_live_execution_mandate(
     request: Request,
     response: Response,
@@ -1687,7 +1739,10 @@ def revoke_portfolio_live_execution_mandate(
     return response
 
 
-@app.get("/api/portfolio/executions")
+@app.get(
+    "/api/portfolio/executions",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def portfolio_executions(
     request: Request,
     response: Response,
@@ -1710,7 +1765,10 @@ def portfolio_executions(
     }
 
 
-@app.get("/api/portfolio/executions/{run_id}")
+@app.get(
+    "/api/portfolio/executions/{run_id}",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def portfolio_execution(
     run_id: UUID,
     request: Request,
@@ -1742,7 +1800,11 @@ def portfolio_execution(
     }
 
 
-@app.post("/api/portfolio/executions", status_code=status.HTTP_201_CREATED)
+@app.post(
+    "/api/portfolio/executions",
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def create_portfolio_execution(
     body: PortfolioExecutionBody,
     request: Request,
@@ -1770,7 +1832,10 @@ def create_portfolio_execution(
     }
 
 
-@app.post("/api/portfolio/executions/{run_id}/advance")
+@app.post(
+    "/api/portfolio/executions/{run_id}/advance",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def advance_portfolio_execution(
     run_id: UUID,
     request: Request,
@@ -1791,7 +1856,10 @@ def advance_portfolio_execution(
     }
 
 
-@app.post("/api/portfolio/executions/{run_id}/cancel")
+@app.post(
+    "/api/portfolio/executions/{run_id}/cancel",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def cancel_portfolio_execution(
     run_id: UUID,
     request: Request,
@@ -1814,7 +1882,10 @@ def cancel_portfolio_execution(
 
 @app.get(
     "/api/portfolio/intelligence",
-    responses={401: {"description": "Authenticated session required"}},
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def portfolio_intelligence(
     request: Request,
@@ -1889,6 +1960,7 @@ def tbank_instrument_search(
 @app.post(
     "/api/broker/tbank/accounts",
     responses={
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         400: {"description": "Broker credential or terms acknowledgment is invalid"},
         401: {"description": "Authenticated session required"},
         503: {"description": "T-Invest API is temporarily unavailable"},
@@ -1988,7 +2060,11 @@ def connect_tbank(
     }
 
 
-@app.delete("/api/broker/tbank", status_code=204)
+@app.delete(
+    "/api/broker/tbank",
+    status_code=204,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def disconnect_tbank(
     request: Request,
     response: Response,
@@ -2014,7 +2090,11 @@ def disconnect_tbank(
     return response
 
 
-@app.post("/api/account/delete", status_code=204)
+@app.post(
+    "/api/account/delete",
+    status_code=204,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def delete_account(
     body: DeleteAccountBody,
     request: Request,
@@ -2069,7 +2149,11 @@ def delete_account(
     return response
 
 
-@app.post("/api/auth/logout", status_code=204)
+@app.post(
+    "/api/auth/logout",
+    status_code=204,
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def logout(
     request: Request,
     response: Response,
