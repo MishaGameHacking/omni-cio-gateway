@@ -135,15 +135,19 @@ def get_backups(client: Provider, cluster_id: int) -> list[dict[str, Any]]:
         rows.extend(batch)
         if len(batch) < 100:
             total = (response.get("meta") or {}).get("total")
-            if total is not None and (type(total) is not int or total != len(rows)):
-                raise RecoveryBlocked("Backup inventory total does not match the completed pages")
-            ids = [row.get("id") for row in rows]
-            if any(type(value) is not int or value <= 0 for value in ids):
-                raise RecoveryBlocked("Backup inventory contains an invalid identity")
-            if len(set(ids)) != len(ids):
-                raise RecoveryBlocked("Backup inventory contains duplicate identities")
+            validate_inventory(rows, total)
             return rows
     raise RecoveryBlocked("Backup inventory pagination limit exceeded")
+
+
+def validate_inventory(rows: list[dict[str, Any]], total: Any) -> None:
+    if total is not None and (type(total) is not int or total != len(rows)):
+        raise RecoveryBlocked("Backup inventory total does not match the completed pages")
+    ids = [row.get("id") for row in rows]
+    if any(type(value) is not int or value <= 0 for value in ids):
+        raise RecoveryBlocked("Backup inventory contains an invalid identity")
+    if len(set(ids)) != len(ids):
+        raise RecoveryBlocked("Backup inventory contains duplicate identities")
 
 
 def schedule_matches(schedule: dict[str, Any], policy: BackupPolicy, now: datetime) -> bool:
@@ -317,9 +321,7 @@ def weekly_ledger(state: dict[str, Any], policy: BackupPolicy) -> list[dict[str,
     for record in records:
         if not isinstance(record, dict) or type(record.get("id")) is not int or record["id"] <= 0:
             raise RecoveryBlocked("Invalid weekly ownership identity")
-        period = record.get("period")
-        if not isinstance(period, str):
-            raise RecoveryBlocked("Invalid weekly ownership period")
+        period = record.get("period", "")
         try:
             day = datetime.strptime(period, "%Y-%m-%d")
         except (TypeError, ValueError):

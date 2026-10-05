@@ -88,20 +88,20 @@ def recovery_status(*, now: datetime | None = None) -> dict[str, object]:
     if type(copies) is not int or not 1 <= copies <= 99:
         copies = None
     daily = payload.get("schedule_enabled") is True and payload.get("schedule_interval") == "day"
-    status = "unavailable"
     if inventory.status == "stale":
         status = "check_stale"
-    elif inventory.status == "fresh":
-        if backup.status == "unavailable":
-            status = "missing"
-        elif backup.status == "stale":
-            status = "backup_stale"
-        elif not daily or copies is None or copies < 7:
-            status = "schedule_attention"
-        elif weekly.status != "fresh":
-            status = "weekly_attention"
-        else:
-            status = "fresh"
+    elif inventory.status != "fresh":
+        status = "unavailable"
+    elif backup.status == "unavailable":
+        status = "missing"
+    elif backup.status == "stale":
+        status = "backup_stale"
+    elif not daily or copies is None or copies < 7:
+        status = "schedule_attention"
+    elif weekly.status != "fresh":
+        status = "weekly_attention"
+    else:
+        status = "fresh"
     return {
         "status": status,
         "checked_at": checked_at,

@@ -107,7 +107,9 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.provider.schedule["copy_count"], 7)
         self.assertEqual(self.provider.schedule["day_of_week"], 1)
         self.assertEqual(self.state["provider_status"], "ok")
-        self.assertEqual(self.state["latest_backup_id"], 2)
+        # Coarse provider/OS clock precision can give both completed copies the same time.
+        self.assertIn(self.state["latest_backup_id"], {1, 2})
+        self.assertEqual(self.state["weekly_owned"][0]["id"], 2)
 
     def test_lost_applied_responses_are_reconciled_without_repeating_mutations(self) -> None:
         self.provider.lose_response = {"PATCH", "POST"}
@@ -356,6 +358,16 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(recovery.weekly_period(datetime(2026, 10, 4, 21, 0, tzinfo=UTC)),
                          "2026-10-05")
         self.assertEqual(recovery.weekly_period(datetime(2027, 1, 1, tzinfo=UTC)), "2026-12-28")
+
+    def test_malformed_weekly_period_blocks_provider_mutations(self) -> None:
+        for period in (None, 42, "bad", "2026-10-06"):
+            with self.subTest(period=period):
+                self.seed_weekly_history()
+                self.state["weekly_owned"][0]["period"] = period
+                with self.assertRaises(recovery.RecoveryBlocked):
+                    self.run_controller()
+        self.assertEqual(self.mutations("POST"), [])
+        self.assertEqual(self.mutations("DELETE"), [])
 
 
 class MigrationGateTests(unittest.TestCase):
