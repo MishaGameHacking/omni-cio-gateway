@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot, BrokerNotConnected
-from omnicio.db import ActiveLiveExecutionError
+from omnicio.db import ActiveLiveExecutionError, BrokerConnectionConflict
 from omnicio.execution_service import ExecutionServiceError
 from omnicio.execution_store import ExecutionLedgerError
 from omnicio.main import app
@@ -655,6 +655,7 @@ def test_analysis_http_requires_a_session_before_touching_the_broker() -> None:
 def test_analysis_http_is_private_tenant_scoped_and_never_grants_execution() -> None:
     now = datetime.now(UTC)
     snapshot = BrokerAnalysisSnapshot(
+        account_id="account-1",
         account_name="Account",
         environment="prod",
         refreshed_at=now,
@@ -1396,6 +1397,35 @@ def test_broker_disconnect_race_is_a_safe_conflict() -> None:
     assert response.status_code == 409
     assert response.json()["detail"] == "active_live_execution_must_be_reconciled"
     ledger.return_value.revoke_live_mandate.assert_called_once_with("server-user")
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_broker_replacement_conflict_is_private_and_uses_session_user(active: bool) -> None:
+    with (
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.broker_service") as broker,
+        patch("omnicio.main.settings") as configuration,
+    ):
+        user.return_value.id = UUID(int=101)
+        configuration.return_value.terms_version = "test"
+        code = (
+            "active_live_execution_must_be_reconciled" if active else "broker_disconnect_required"
+        )
+        broker.return_value.connect.side_effect = (
+            ActiveLiveExecutionError(code) if active else BrokerConnectionConflict(code)
+        )
+        response = TestClient(app).put(
+            "/api/broker/tbank?user_id=attacker",
+            headers={"Origin": "https://omnicio.ru"},
+            json={
+                "credential": "synthetic-token-long-enough", "environment": "prod",
+                "account_id": "second-account", "accept_personal_terms": True,
+            },
+        )
+    assert response.status_code == 409
+    assert response.json()["detail"] == code
+    assert response.headers["cache-control"] == "private, no-store"
+    assert broker.return_value.connect.call_args.kwargs["user_id"] == UUID(int=101)
 
 
 def test_account_delete_race_is_a_safe_conflict() -> None:

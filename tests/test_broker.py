@@ -14,6 +14,7 @@ from cryptography.fernet import Fernet
 
 from omnicio.broker import (
     BrokerAccountNotAccessible,
+    BrokerConnectionError,
     BrokerNotConnected,
     BrokerSandboxRequired,
     BrokerService,
@@ -1587,6 +1588,33 @@ def test_broker_service_decrypts_saved_credential_only_for_read_calls() -> None:
     assert quote.source == "dealer"
     assert not hasattr(portfolio, "credential")
     assert credential.encode() not in database.saved_ciphertext
+
+
+@pytest.mark.parametrize("operation", ["portfolio", "analysis"])
+def test_broker_read_discards_result_after_connection_changes(operation: str) -> None:
+    database = FakeDatabase()
+    user_id = UUID(int=1)
+    broker = FakeTBank()
+    service = BrokerService(
+        database, credential_key=Fernet.generate_key().decode("ascii"), tbank=broker,
+    )
+    service.connect(
+        user_id=user_id, credential="t.fake-owner-credential-1234567890",
+        environment="prod", account_id="account-1", terms_version="2026-10-01-v2",
+    )
+    original = broker.get_positions
+
+    def disconnected(*args):
+        value = original(*args)
+        database.delete_tbank_connection(user_id)
+        return value
+
+    read = getattr(service, operation)
+    with (
+        patch.object(broker, "get_positions", side_effect=disconnected),
+        pytest.raises(BrokerConnectionError, match="connection changed"),
+    ):
+        read(user_id)
 
 
 def test_broker_service_keeps_two_users_strictly_isolated() -> None:

@@ -83,6 +83,7 @@ class BrokerConnectionStatus:
 
 @dataclass(frozen=True, slots=True)
 class BrokerPortfolioSnapshot:
+    account_id: str
     account_name: str
     environment: TBankEnvironment
     portfolio: TBankPortfolio
@@ -102,6 +103,7 @@ class AnalysisSource:
 
 @dataclass(frozen=True, slots=True)
 class BrokerAnalysisSnapshot:
+    account_id: str
     account_name: str
     environment: TBankEnvironment
     refreshed_at: datetime
@@ -224,7 +226,9 @@ class BrokerService:
             portfolio = portfolio_read.result()
             positions = positions_read.result()
 
+        self._require_current_connection(record)
         return BrokerPortfolioSnapshot(
+            account_id=record.account_id,
             account_name=record.account_name,
             environment=environment,
             portfolio=portfolio,
@@ -628,6 +632,7 @@ class BrokerService:
     def analysis(self, user_id: UUID) -> BrokerAnalysisSnapshot:
         bundle = self.observation_bundle(user_id)
         return BrokerAnalysisSnapshot(
+            account_id=bundle.account_id,
             account_name=bundle.account_name,
             environment=bundle.environment,
             refreshed_at=bundle.refreshed_at,
@@ -676,6 +681,7 @@ class BrokerService:
                 status=catalog_status,
             ),
         )
+        self._require_current_connection(record)
         return BrokerObservationBundle(
             account_id=record.account_id,
             account_name=record.account_name,
@@ -1096,6 +1102,10 @@ class BrokerService:
         environment = cast(TBankEnvironment, record.environment)
         credential = decrypt_secret(record.encrypted_credential, self.credential_key)
         return record, credential, environment
+
+    def _require_current_connection(self, expected: TBankConnectionRecord) -> None:
+        if self.database.tbank_connection(expected.user_id) != expected:
+            raise BrokerConnectionError("T-Invest connection changed during the read")
 
 
 def _status(record: TBankConnectionRecord) -> BrokerConnectionStatus:

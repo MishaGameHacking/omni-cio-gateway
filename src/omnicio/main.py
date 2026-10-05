@@ -27,7 +27,7 @@ from .broker import (
 )
 from .cbr import CBRClient, CBRUnavailable
 from .config import Settings, load_settings
-from .db import ActiveLiveExecutionError, Database, UserRecord
+from .db import ActiveLiveExecutionError, BrokerConnectionConflict, Database, UserRecord
 from .execution_service import ExecutionServiceError, PortfolioExecutionService
 from .execution_store import (
     ExecutionLedgerError,
@@ -1079,6 +1079,7 @@ def tbank_portfolio(
         ) from exc
 
     return {
+        "account_id": snapshot.account_id,
         "account_name": snapshot.account_name,
         "environment": snapshot.environment,
         "refreshed_at": snapshot.refreshed_at,
@@ -1894,6 +1895,7 @@ def tbank_accounts(
     responses={
         400: {"description": "Broker credential, account, or terms are invalid"},
         401: {"description": "Authenticated session required"},
+        409: {"description": "Disconnect the previous account or reconcile active execution"},
         503: {"description": "Broker connection storage or T-Invest API is unavailable"},
     },
 )
@@ -1917,6 +1919,12 @@ def connect_tbank(
             account_id=body.account_id,
             terms_version=settings(request).terms_version,
         )
+    except BrokerConnectionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ActiveLiveExecutionError as exc:
+        raise HTTPException(
+            status_code=409, detail="active_live_execution_must_be_reconciled",
+        ) from exc
     except TBankTokenRejected as exc:
         raise HTTPException(status_code=400, detail="T-Invest token rejected") from exc
     except BrokerAccountNotAccessible as exc:

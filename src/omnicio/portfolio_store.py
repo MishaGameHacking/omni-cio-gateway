@@ -13,7 +13,7 @@ from typing import Any, Literal, cast
 from uuid import UUID
 
 from .broker import BrokerObservationBundle
-from .db import Database
+from .db import Database, live_execution_lock_key
 from .intelligence import (
     EVIDENCE_RETRIEVAL_MAX_AGE,
     EvidenceDocument,
@@ -35,6 +35,51 @@ _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
 
 class SettingsVersionConflict(ValueError):
     """The user's draft was based on a different saved settings version."""
+
+
+class ObservationCancelled(ValueError):
+    """The observation lost its connected account or its running job."""
+
+
+def _require_observation_job(
+    cur: Any,
+    user_id: UUID,
+    job_run_id: UUID,
+    *,
+    account_id: str | None = None,
+    environment: str | None = None,
+    snapshot_id: UUID | None = None,
+) -> None:
+    # Cleanup and these short writes share one lock. Never hold it across broker I/O.
+    cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+    cur.execute(
+        """
+        SELECT c.account_id, c.environment
+        FROM job_runs AS j
+        JOIN users AS u ON u.id = j.user_id
+        JOIN tbank_connection AS c ON c.user_id = j.user_id
+        WHERE j.id = %s AND j.user_id = %s
+          AND j.job_type = 'portfolio_daily' AND j.status = 'running'
+          AND u.status = 'active'
+        """,
+        (job_run_id, user_id),
+    )
+    connection = cur.fetchone()
+    if connection is None or (
+        account_id is not None and connection["account_id"] != account_id
+    ) or (environment is not None and connection["environment"] != environment):
+        raise ObservationCancelled("observation_connection_changed")
+    if snapshot_id is not None:
+        cur.execute(
+            """
+            SELECT id FROM portfolio_snapshots
+            WHERE id = %s AND user_id = %s AND job_run_id = %s
+              AND account_id = %s AND environment = %s
+            """,
+            (snapshot_id, user_id, job_run_id, connection["account_id"], connection["environment"]),
+        )
+        if cur.fetchone() is None:
+            raise ObservationCancelled("observation_snapshot_changed")
 
 
 def _require_settings_version(expected: int, actual: int, *, unchanged: bool = False) -> None:
@@ -1444,6 +1489,17 @@ class PortfolioStore:
             conn.cursor() as cur,
         ):
             self._tenant(cur, user_id)
+            cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+            cur.execute(
+                """
+                SELECT c.user_id FROM tbank_connection AS c
+                JOIN users AS u ON u.id = c.user_id
+                WHERE c.user_id = %s AND u.status = 'active'
+                """,
+                (user_id,),
+            )
+            if cur.fetchone() is None:
+                return None
             cur.execute(
                 "SELECT pg_try_advisory_xact_lock(hashtextextended(%s, 0)) AS locked",
                 (f"daily-job:{user_id}:{job_type}:{scheduled_for.isoformat()}",),
@@ -1522,13 +1578,17 @@ class PortfolioStore:
         *,
         status: Literal["succeeded", "degraded", "failed"],
         details: dict[str, object],
-    ) -> None:
+    ) -> bool:
         with (
             self.database.pool.connection() as conn,
             conn.transaction(),
             conn.cursor() as cur,
         ):
             self._tenant(cur, user_id)
+            try:
+                _require_observation_job(cur, user_id, job_run_id)
+            except ObservationCancelled:
+                return False
             cur.execute(
                 """
                 UPDATE job_runs
@@ -1545,6 +1605,7 @@ class PortfolioStore:
             )
             if cur.fetchone() is None:
                 raise RuntimeError("daily job is no longer running")
+            return True
 
     def sync_state(self, user_id: UUID, account_id: str) -> BrokerSyncState | None:
         with (
@@ -1835,6 +1896,8 @@ class PortfolioStore:
         account: TBankAccount | None = None,
         user_info: TBankUserInfo | None = None,
     ) -> UUID:
+        if account is not None and account.id != bundle.account_id:
+            raise ObservationCancelled("observation_account_mismatch")
         evidence: dict[str, object] = {
             "analysis": asdict(bundle.analysis),
             "sources": [asdict(source) for source in bundle.sources],
@@ -1871,6 +1934,10 @@ class PortfolioStore:
             conn.cursor() as cur,
         ):
             self._tenant(cur, user_id)
+            _require_observation_job(
+                cur, user_id, job_run_id,
+                account_id=bundle.account_id, environment=bundle.environment,
+            )
             self._save_snapshot_catalog(
                 cur,
                 user_id,
@@ -1947,6 +2014,7 @@ class PortfolioStore:
         self,
         user_id: UUID,
         *,
+        job_run_id: UUID,
         snapshot_id: UUID,
         documents: tuple[EvidenceDocument, ...],
         assessments: tuple[InstrumentRiskAssessment, ...],
@@ -1963,6 +2031,7 @@ class PortfolioStore:
             conn.cursor() as cur,
         ):
             self._tenant(cur, user_id)
+            _require_observation_job(cur, user_id, job_run_id, snapshot_id=snapshot_id)
             for document in documents:
                 document_id, created = _source_document_id(
                     cur,
@@ -2022,6 +2091,7 @@ class PortfolioStore:
                     limits_loading_in_progress,
                     evidence
                 FROM portfolio_snapshots
+                JOIN tbank_connection USING (user_id, account_id, environment)
                 WHERE user_id = %s
                 ORDER BY captured_at DESC, created_at DESC
                 LIMIT 1
@@ -2187,6 +2257,7 @@ class PortfolioStore:
                 """
                 SELECT account_id, environment
                 FROM portfolio_snapshots
+                JOIN tbank_connection USING (user_id, account_id, environment)
                 WHERE user_id = %s
                 ORDER BY captured_at DESC, created_at DESC
                 LIMIT 1
@@ -2409,6 +2480,7 @@ class PortfolioStore:
                     limits_loading_in_progress,
                     evidence
                 FROM portfolio_snapshots
+                JOIN tbank_connection USING (user_id, account_id, environment)
                 WHERE user_id = %s
                 ORDER BY captured_at DESC, created_at DESC
                 LIMIT 1
@@ -2590,6 +2662,7 @@ class PortfolioStore:
                 """
                 SELECT id, captured_at, analysis_status
                 FROM portfolio_snapshots
+                JOIN tbank_connection USING (user_id, account_id, environment)
                 WHERE user_id = %s
                 ORDER BY captured_at DESC, created_at DESC
                 LIMIT 1
@@ -2797,7 +2870,9 @@ class PortfolioStore:
         self,
         user_id: UUID,
         *,
+        job_run_id: UUID,
         account_id: str,
+        environment: str,
         window_from: datetime,
         window_to: datetime,
         page: TBankOperationsPage,
@@ -2813,6 +2888,9 @@ class PortfolioStore:
             conn.cursor() as cur,
         ):
             self._tenant(cur, user_id)
+            _require_observation_job(
+                cur, user_id, job_run_id, account_id=account_id, environment=environment,
+            )
             for operation in page.items:
                 inserted += int(
                     _save_operation_observation(
@@ -2960,6 +3038,7 @@ def _require_current_proposal_sources(
         """
         SELECT id, account_id
         FROM portfolio_snapshots
+        JOIN tbank_connection USING (user_id, account_id, environment)
         WHERE user_id = %s
         ORDER BY captured_at DESC, created_at DESC
         LIMIT 1

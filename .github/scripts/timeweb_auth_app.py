@@ -642,8 +642,11 @@ EOF
 mv "$OBSERVER_TIMER.new" "$OBSERVER_TIMER"
 chmod 0644 "$OBSERVER_TIMER"
 
-ln -sfn "$RELEASE" "$APP_CURRENT"
 systemctl daemon-reload
+# Drain the old read-only worker before activating a new connection lifecycle.
+# An interrupted running job is recovered through its existing durable job state.
+systemctl stop omnicio-observer.timer omnicio-observer.service
+ln -sfn "$RELEASE" "$APP_CURRENT"
 systemctl enable omnicio-auth.service >/dev/null
 systemctl restart omnicio-auth.service
 

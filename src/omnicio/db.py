@@ -12,6 +12,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
+_SET_USER_CONTEXT_SQL = "SELECT set_config('omnicio.user_id', %s, true)"
 
 @dataclass(frozen=True, slots=True)
 class UserRecord:
@@ -42,6 +43,10 @@ class RegistrationCapacityError(RuntimeError):
 
 class ActiveLiveExecutionError(RuntimeError):
     """Raised when cleanup would race with an unfinished production execution."""
+
+
+class BrokerConnectionConflict(ValueError):
+    """A connected account must be explicitly disconnected before replacement."""
 
 
 def live_execution_lock_key(user_id: UUID) -> str:
@@ -435,7 +440,7 @@ class Database:
                 raise PermissionError("account is not active")
 
             cur.execute(
-                "SELECT set_config('omnicio.user_id', %s, true)",
+                _SET_USER_CONTEXT_SQL,
                 (str(user.id),),
             )
             cur.execute(
@@ -534,6 +539,36 @@ class Database:
         terms_version: str,
     ) -> TBankConnectionRecord:
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+            cur.execute(_SET_USER_CONTEXT_SQL, (str(user_id),))
+            cur.execute(
+                "SELECT id FROM users WHERE id = %s AND status = 'active' FOR UPDATE",
+                (user_id,),
+            )
+            if cur.fetchone() is None:
+                raise BrokerConnectionConflict("broker_account_unavailable")
+            cur.execute(
+                "SELECT account_id, environment FROM tbank_connection WHERE user_id = %s",
+                (user_id,),
+            )
+            current = cast(dict[str, Any] | None, cur.fetchone())
+            if current is not None and (
+                current["account_id"] != account_id or current["environment"] != environment
+            ):
+                raise BrokerConnectionConflict("broker_disconnect_required")
+            cur.execute(
+                """
+                SELECT 1 FROM portfolio_execution_runs
+                WHERE user_id = %s AND mode = 'live'
+                  AND status IN ('created', 'running', 'reconciling')
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            if cur.fetchone() is not None:
+                raise ActiveLiveExecutionError(
+                    "active live execution blocks credential replacement"
+                )
             cur.execute(
                 """
                 INSERT INTO tbank_connection (
@@ -612,7 +647,7 @@ class Database:
             # Derived broker facts are retained only while the integration is
             # connected. The user-owned investment profile remains independent.
             cur.execute(
-                "SELECT set_config('omnicio.user_id', %s, true)",
+                _SET_USER_CONTEXT_SQL,
                 (str(user_id),),
             )
             cur.execute(

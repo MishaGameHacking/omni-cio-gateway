@@ -2704,9 +2704,11 @@
   };
 
   const loadPortfolioVisualization = async ({force = false} = {}) => {
-    if (portfolioVisualizationInFlight || (portfolioVisualizationLoaded && !force)) {
+    if (!tbankIsConnected || portfolioVisualizationInFlight
+      || (portfolioVisualizationLoaded && !force)) {
       return;
     }
+    const generation = portfolioGeneration;
     portfolioVisualizationInFlight = true;
     if (!lastPortfolioVisualization) {
       setStateBadge(portfolioHistoryState, "Загружаем", "");
@@ -2717,8 +2719,11 @@
         "/api/portfolio/visualization?history_limit=365",
         {method: "GET"},
       );
+      if (generation !== portfolioGeneration || !tbankIsConnected) return;
+      if (payload.latest && !matchesConnectedAccount(payload.latest)) return;
       renderPortfolioVisualization(payload);
     } catch (error) {
+      if (generation !== portfolioGeneration) return;
       if (error.status === 401) {
         location.reload();
         return;
@@ -2736,7 +2741,7 @@
         );
       }
     } finally {
-      portfolioVisualizationInFlight = false;
+      if (generation === portfolioGeneration) portfolioVisualizationInFlight = false;
     }
   };
 
@@ -3271,6 +3276,8 @@
   const invalidatePortfolioRequest = () => {
     portfolioGeneration += 1;
     portfolioRequestInFlight = false;
+    portfolioVisualizationInFlight = false;
+    closeInstrumentDetail();
     clearPortfolioFreshnessTimer();
   };
 
@@ -3357,6 +3364,15 @@
     updateGuard(null);
   };
 
+  const matchesConnectedAccount = (snapshot) => {
+    if (snapshot.account_id === tbankAccountId
+      && snapshot.environment === connectedTbankEnvironment) return true;
+    renderTbankFailure();
+    if (typeof snapshot.account_id === "string" && snapshot.account_id
+      && ["prod", "sandbox"].includes(snapshot.environment)) void loadTbankStatus();
+    return false;
+  };
+
   const loadPortfolioData = async ({force = false} = {}) => {
     if (!tbankIsConnected) {
       renderDisconnectedPortfolio();
@@ -3383,6 +3399,7 @@
     try {
       const snapshot = await api("/api/broker/tbank/portfolio", {method: "GET"});
       if (generation !== portfolioGeneration || !tbankIsConnected) return;
+      if (!matchesConnectedAccount(snapshot)) return;
       renderPortfolio(snapshot);
       void loadPortfolioVisualization({force});
     } catch (error) {
@@ -3403,6 +3420,8 @@
 
   const resetAnalysis = () => {
     analysisGeneration += 1;
+    analysisInFlight = false;
+    analysisRefresh.disabled = false;
     lastAnalysisAt = 0;
     analysisContent.classList.add("hidden");
     [
@@ -3417,6 +3436,8 @@
     ].forEach((element) => element.replaceChildren());
     setStateBadge(intelligenceStatus, "Ожидает ежедневный снимок", "state-next");
     analysisStatus.textContent = "Обновите анализ после проверки подключения T-Invest.";
+    renderBalancing({status: "pending", reason: "Обновите данные выбранного счёта"});
+    renderProposalCreateOptions(null);
   };
 
   const renderAnalysisAllocations = (container, allocations) => {
@@ -5260,11 +5281,15 @@
   };
 
   const loadBalancing = async () => {
+    if (!tbankIsConnected) return;
+    const generation = portfolioGeneration;
     try {
       const payload = await api("/api/portfolio/balancing", {method: "GET"});
+      if (generation !== portfolioGeneration || !tbankIsConnected) return;
       renderBalancing(payload);
       renderProposalCreateOptions(payload);
     } catch (error) {
+      if (generation !== portfolioGeneration) return;
       if (error.status === 401) {
         location.reload();
         return;
@@ -5278,10 +5303,14 @@
   };
 
   const loadIntelligence = async () => {
+    if (!tbankIsConnected) return;
+    const generation = portfolioGeneration;
     try {
       const snapshot = await api("/api/portfolio/intelligence", {method: "GET"});
+      if (generation !== portfolioGeneration || !tbankIsConnected) return;
       renderIntelligence(snapshot);
     } catch (error) {
+      if (generation !== portfolioGeneration) return;
       if (error.status === 401) {
         location.reload();
         return;
@@ -5315,6 +5344,7 @@
     try {
       const snapshot = await api("/api/broker/tbank/analysis", {method: "GET"});
       if (generation === analysisGeneration && tbankIsConnected) {
+        if (!matchesConnectedAccount(snapshot)) return;
         renderAnalysis(snapshot);
       }
     } catch (error) {
@@ -5329,8 +5359,10 @@
           : "Анализ не получен. Данные не подтверждены; попробуйте обновить позже.";
       }
     } finally {
-      analysisInFlight = false;
-      analysisRefresh.disabled = false;
+      if (generation === analysisGeneration) {
+        analysisInFlight = false;
+        analysisRefresh.disabled = false;
+      }
     }
   };
 
@@ -5460,14 +5492,17 @@
   };
 
   const loadTbankStatus = async () => {
+    const generation = portfolioGeneration;
     showMessage(tbankMessage, "");
     try {
       const status = await api("/api/broker/tbank", {method: "GET"});
+      if (generation !== portfolioGeneration) return;
       renderTbankStatus(status);
       if (status.connected) {
         void loadPortfolioData();
       }
     } catch (error) {
+      if (generation !== portfolioGeneration) return;
       if (error.status === 401) {
         location.reload();
         return;
@@ -6304,6 +6339,10 @@
       tbankForm.classList.remove("hidden");
       if (error.status === 400) {
         showMessage(tbankMessage, "Не удалось подключить выбранный счёт. Проверьте токен.", true);
+      } else if (error.status === 409) {
+        showMessage(tbankMessage, error.message === "broker_disconnect_required"
+          ? "Сначала отключите текущий счёт кнопкой «Отключить T-Invest», затем подключите другой. Текущее подключение сохранено."
+          : "Подключение не изменено. Проверьте состояние счёта и незавершённые заявки.", true);
       } else if (error.status === 503) {
         showMessage(tbankMessage, "T-Invest API временно недоступен.", true);
       } else {
@@ -6316,7 +6355,7 @@
 
   tbankDisconnect.addEventListener("click", async () => {
     const confirmed = window.confirm(
-      "Отключить T-Invest и удалить сохранённый токен из OmniCIO?"
+      "Отключить T-Invest? Токен, сохранённая история портфеля и связанные расчёты будут удалены из OmniCIO. Настройки стратегии сохранятся. Активы и счёт у брокера останутся без изменений."
     );
     if (!confirmed) {
       return;

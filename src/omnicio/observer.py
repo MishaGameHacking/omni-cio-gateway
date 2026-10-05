@@ -18,7 +18,7 @@ from .broker import BrokerConnectionError, BrokerService
 from .config import load_settings
 from .db import Database
 from .intelligence import build_tbank_evidence
-from .portfolio_store import BrokerSyncState, PortfolioStore
+from .portfolio_store import BrokerSyncState, ObservationCancelled, PortfolioStore
 from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,12 @@ class UserObservationResult:
     snapshot_saved: bool
     history_pages: int
     history_items_inserted: int
+
+
+def _confirmed_job_result(result: UserObservationResult, persisted: bool) -> UserObservationResult:
+    if persisted:
+        return result
+    return UserObservationResult(result.user_id, "degraded", False, 0, 0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +245,7 @@ class PortfolioObserver:
             )
             evidence_documents, risk_assessments = self.store.save_evidence(
                 user_id,
+                job_run_id=job.id,
                 snapshot_id=snapshot_id,
                 documents=documents,
                 assessments=assessments,
@@ -267,7 +274,9 @@ class PortfolioObserver:
 
             history_result = self._sync_history(
                 user_id,
+                job_run_id=job.id,
                 account_id=bundle.account_id,
+                environment=bundle.environment,
                 account_opened_at=account.opened_at,
                 now=now,
             )
@@ -294,19 +303,25 @@ class PortfolioObserver:
             final_status: Literal["succeeded", "degraded"] = (
                 "degraded" if degraded else "succeeded"
             )
-            self.store.finish_job(
+            finished = self.store.finish_job(
                 user_id,
                 job.id,
                 status=final_status,
                 details=details,
             )
-            return UserObservationResult(
+            return _confirmed_job_result(UserObservationResult(
                 user_id=user_id,
                 status=final_status,
                 snapshot_saved=snapshot_saved,
                 history_pages=history_pages,
                 history_items_inserted=history_items_inserted,
+            ), finished)
+        except ObservationCancelled:
+            self.store.finish_job(
+                user_id, job.id, status="degraded",
+                details={**details, "stage_error": "ObservationCancelled"},
             )
+            return UserObservationResult(user_id, "degraded", False, 0, 0)
         except (
             BrokerConnectionError,
             TBankTokenRejected,
@@ -314,19 +329,19 @@ class PortfolioObserver:
             ValueError,
         ) as exc:
             details["stage_error"] = type(exc).__name__
-            self.store.finish_job(
+            finished = self.store.finish_job(
                 user_id,
                 job.id,
                 status="degraded",
                 details=details,
             )
-            return UserObservationResult(
+            return _confirmed_job_result(UserObservationResult(
                 user_id=user_id,
                 status="degraded",
                 snapshot_saved=snapshot_saved,
                 history_pages=history_pages,
                 history_items_inserted=history_items_inserted,
-            )
+            ), finished)
         except Exception as exc:
             details["stage_error"] = type(exc).__name__
             try:
@@ -348,7 +363,9 @@ class PortfolioObserver:
         self,
         user_id: UUID,
         *,
+        job_run_id: UUID,
         account_id: str,
+        environment: str,
         account_opened_at: datetime | None,
         now: datetime,
     ) -> tuple[int, int, str]:
@@ -376,7 +393,9 @@ class PortfolioObserver:
 
             inserted += self.store.save_history_page(
                 user_id,
+                job_run_id=job_run_id,
                 account_id=account_id,
+                environment=environment,
                 window_from=window_from,
                 window_to=window_to,
                 page=page,
