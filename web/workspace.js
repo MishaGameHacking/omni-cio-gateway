@@ -633,7 +633,7 @@
         value: m(Number(item.price) * Number(item.quantity)), blocked: false, blocked_lots: "0",
         current_nkd: m(0),
       }));
-      const data = {refreshed_at: stamp, environment: "demo", account_name: "Демонстрационный портфель", cash: [m(125000)], blocked_cash: [m(0)], limits_loading_in_progress: false, freshness: {state: "fresh", coverage: "complete"}, portfolio: {total: m(1250000), expected_yield_percent: "3.2", daily_yield: m(2350), daily_yield_percent: ".188", positions, asset_totals: [{kind: "bonds", money: m(750000)}, {kind: "shares", money: m(250000)}, {kind: "funds", money: m(125000)}, {kind: "currencies", money: m(125000)}]}};
+      const data = {refreshed_at: stamp, environment: "demo", account_name: "Демонстрационный портфель", cash: [m(125000)], blocked_cash: [m(0)], limits_loading_in_progress: false, freshness: {status: "fresh", observed_at: stamp, coverage: "complete"}, portfolio: {total: m(1250000), expected_yield_percent: "3.2", daily_yield: m(2350), daily_yield_percent: ".188", positions, asset_totals: [{kind: "bonds", money: m(750000)}, {kind: "shares", money: m(250000)}, {kind: "funds", money: m(125000)}, {kind: "currencies", money: m(125000)}]}};
       const history = Array.from({length: 90}, (_, i) => ({captured_at: new Date(Date.now() - (89-i) * 86400000).toISOString(), nav_rub: String(1120000 + i * 1400 + Math.round(Math.sin(i / 4) * 7200))}));
       history.at(-1).nav_rub = "1250000";
       snapshot = data;

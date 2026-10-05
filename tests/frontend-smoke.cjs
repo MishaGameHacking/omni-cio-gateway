@@ -5,7 +5,6 @@ const {join, resolve} = require("node:path");
 const {tmpdir} = require("node:os");
 const {spawn} = require("node:child_process");
 const assert = require("node:assert/strict");
-const {runInNewContext} = require("node:vm");
 
 const root = resolve(__dirname, "..");
 const web = join(root, "web");
@@ -33,24 +32,34 @@ const verifyPublicWorker = async () => {
     addEventListener: (name, action) => handlers.set(name, action),
     skipWaiting: async () => { activations += 1; },
   };
-  const caches = {open: async () => ({addAll: async (urls) => cached.push(...urls)})};
-  runInNewContext(readFileSync(join(web, "sw.js"), "utf8"), {self: worker, caches, URL});
-  handlers.get("install")({waitUntil: (task) => tasks.push(task)});
-  await Promise.all(tasks);
-  assert.ok(cached.includes("/offline.html?build=contract"), "The offline fallback must be public");
-  assert.ok(cached.every((path) => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js))\?build=contract$/.test(path)), "Only the public interface allowlist may be cached");
-  let intercepted = 0;
-  for (const [path, method] of [["/api/auth/me", "GET"], ["/api/broker/tbank/portfolio", "GET"], ["/api/auth/logout", "POST"], ["/health/ready", "GET"]]) {
-    handlers.get("fetch")({request: {url: origin + path, method, mode: "navigate"}, respondWith: () => { intercepted += 1; }});
+  const previousSelf = globalThis.self;
+  const previousCaches = globalThis.caches;
+  try {
+    globalThis.self = worker;
+    globalThis.caches = {open: async () => ({addAll: async (urls) => cached.push(...urls)})};
+    require("../web/sw.js");
+    handlers.get("install")({waitUntil: (task) => tasks.push(task)});
+    await Promise.all(tasks);
+    assert.ok(cached.includes("/offline.html?build=contract"), "The offline fallback must be public");
+    assert.ok(cached.every((path) => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js))\?build=contract$/.test(path)), "Only the public interface allowlist may be cached");
+    let intercepted = 0;
+    for (const [path, method] of [["/api/auth/me", "GET"], ["/api/broker/tbank/portfolio", "GET"], ["/api/auth/logout", "POST"], ["/health/ready", "GET"]]) {
+      handlers.get("fetch")({request: {url: origin + path, method, mode: "navigate"}, respondWith: () => { intercepted += 1; }});
+    }
+    assert.equal(intercepted, 0, "The worker must not intercept private requests, writes or health checks");
+    const message = {data: {type: "ACTIVATE_UPDATE"}, waitUntil: (task) => tasks.push(task)};
+    handlers.get("message")({...message, origin: "https://untrusted.example"});
+    assert.equal(activations, 0, "A foreign message cannot activate a worker");
+    handlers.get("message")({...message, origin});
+    await Promise.all(tasks);
+    assert.equal(activations, 1, "Same-origin explicit update is supported");
+    console.log("PWA contract: public cache only, private requests untouched, update origin verified");
+  } finally {
+    if (previousSelf === undefined) delete globalThis.self;
+    else globalThis.self = previousSelf;
+    if (previousCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = previousCaches;
   }
-  assert.equal(intercepted, 0, "The worker must not intercept private requests, writes or health checks");
-  const message = {data: {type: "ACTIVATE_UPDATE"}, waitUntil: (task) => tasks.push(task)};
-  handlers.get("message")({...message, origin: "https://untrusted.example"});
-  assert.equal(activations, 0, "A foreign message cannot activate a worker");
-  handlers.get("message")({...message, origin});
-  await Promise.all(tasks);
-  assert.equal(activations, 1, "Same-origin explicit update is supported");
-  console.log("PWA contract: public cache only, private requests untouched, update origin verified");
 };
 
 const suite = String.raw`

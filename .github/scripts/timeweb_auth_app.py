@@ -1082,6 +1082,18 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
     if release_sha[:12] not in version:
         raise InfraError("Public application build does not match release")
 
+    runtime_assets = (
+        ("/assets/app.js", b"window.OmniWorkspace.init", ("text/javascript", "application/javascript")),
+        ("/assets/workspace.js", b"window.OmniWorkspace", ("text/javascript", "application/javascript")),
+        ("/assets/app.css", b"--sidebar-width", ("text/css",)),
+        ("/sw.js", b"omnicio-public-", ("text/javascript", "application/javascript")),
+        ("/offline.html", b"<html", ("text/html",)),
+    )
+    for path, marker, content_types in runtime_assets:
+        body, content_type = fetch_public(f"{path}?build={release_sha[:12]}", context)
+        if content_type not in content_types or marker not in body:
+            raise InfraError(f"Public runtime asset verification failed: {path}")
+
 
 def verify_public(release_sha: str) -> None:
     context = ssl.create_default_context()
@@ -1254,4 +1266,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

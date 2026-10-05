@@ -1337,6 +1337,14 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ),
             "/api/auth/config": (config, "application/json", 200),
         }
+        for path, body, content_type in (
+            ("/assets/app.js", b"window.OmniWorkspace.init", "text/javascript"),
+            ("/assets/workspace.js", b"window.OmniWorkspace", "application/javascript"),
+            ("/assets/app.css", b"--sidebar-width:240px", "text/css"),
+            ("/sw.js", b"omnicio-public-test", "text/javascript"),
+            ("/offline.html", b'<html lang="ru">Offline</html>', "text/html"),
+        ):
+            self.responses[f"{path}?build={self.sha[:12]}"] = (body, content_type, 200)
         for path, marker in MODULE.LEGAL_PAGES.items():
             self.responses[path] = (
                 f"{marker} Test Operator operator@example.com".encode(),
@@ -1377,6 +1385,8 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             (MODULE.WEB_MANIFEST_PATH, b"[]", "application/json", 200),
             (MODULE.WEB_MANIFEST_PATH, b"invalid", "application/json", 200),
             (MODULE.VERSION_PUBLIC_PATH, b"window.OMNICIO_RELEASE = {}", "text/javascript", 200),
+            (f"/assets/workspace.js?build={self.sha[:12]}", b"wrong asset", "text/javascript", 200),
+            (f"/sw.js?build={self.sha[:12]}", b"<html>fallback</html>", "text/html", 200),
             ("/api/auth/config", b"[]", "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": true}', "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": false}', "application/json", 200),

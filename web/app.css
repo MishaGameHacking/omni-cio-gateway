@@ -4495,6 +4495,7 @@ body[data-theme="dark"] .sidebar {
 
 .workspace-scroll {
   min-width: 0;
+  width: 100%;
   max-width: 1264px;
   margin: 0 auto;
   padding: 32px 32px max(32px, env(safe-area-inset-bottom));
@@ -4616,6 +4617,12 @@ body[data-theme="dark"] .sidebar {
 .command-kpi-primary > strong {
   font-size: 36px;
   line-height: 44px;
+}
+
+.command-kpi > strong.value-unconfirmed {
+  font-size: 16px;
+  line-height: 24px;
+  letter-spacing: 0;
 }
 
 .command-kpi > small {

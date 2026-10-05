@@ -3295,6 +3295,7 @@
     homeFreeCash.textContent = unblockedRub === null
       ? "Не подтверждены"
       : formatMoney({currency: "RUB", value: String(unblockedRub)});
+    homeFreeCash.classList.toggle("value-unconfirmed", unblockedRub === null);
 
     renderAllocationRows(
       homeAllocation,
@@ -3351,6 +3352,7 @@
     if (state !== "fresh") {
       portfolioFreeCash.textContent = "Не подтверждены";
       homeFreeCash.textContent = "Не подтверждены";
+      homeFreeCash.classList.add("value-unconfirmed");
       setStateBadge(guardState, "Нужны свежие данные", "state-next");
     }
     if (!error && !expired && Number.isFinite(validUntil)) {
@@ -6646,6 +6648,7 @@
     overviewConnectionText.textContent = "Для своего портфеля перейдите ко входу и подключите счёт.";
     setStateBadge(homeHistoryState, "Демо", "state-next");
     setStateBadge(portfolioStateBadge, "Демо", "state-next");
+    for (const badge of [homePortfolioState, homePortfolioSummaryState, owlState]) setStateBadge(badge, "Демо", "state-next");
     portfolioDataNotice.textContent = "Все значения на этом экране вымышлены. Вход и доступ к брокеру не используются.";
     setHomeAttentionBucket("connection", [{severity: "info", title: "Демонстрационный режим", detail: "Познакомьтесь с интерфейсом без реальных сделок.", view: "assets"}]);
     for (const form of [tbankForm, tbankAccountForm, liveMandateForm, deleteAccountForm]) {
