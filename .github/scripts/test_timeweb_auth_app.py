@@ -483,7 +483,7 @@ class AuthAppDeployTests(unittest.TestCase):
         consent = (root / "web" / "legal" / "consent.html").read_text(encoding="utf-8")
         terms = (root / "web" / "legal" / "terms.html").read_text(encoding="utf-8")
 
-        for document, version in ((privacy, "2026-10-05-v7"), (consent, "2026-10-02-v6"), (terms, "2026-10-02-v6")):
+        for document, version in ((privacy, "2026-10-05-v8"), (consent, "2026-10-02-v6"), (terms, "2026-10-02-v6")):
             self.assertIn('content="noindex,nofollow"', document)
             self.assertIn(version, document)
             self.assertIn("__OMNICIO_OPERATOR_", document)
@@ -1234,7 +1234,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.18.4"', project)
+        self.assertIn('version = "0.18.5"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

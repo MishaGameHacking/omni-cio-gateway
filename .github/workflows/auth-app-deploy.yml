@@ -148,7 +148,7 @@ jobs:
       LEGACY_PROFILE_RESET_ENABLED: "false"
       LEGAL_OPERATOR_NAME: "КЛИМАЧЕВ МИХАИЛ КОНСТАНТИНОВИЧ"
       LEGAL_OPERATOR_EMAIL: "omnicioinfo@gmail.com"
-      LEGAL_PRIVACY_VERSION: "2026-10-05-v7"
+      LEGAL_PRIVACY_VERSION: "2026-10-05-v8"
       LEGAL_CONSENT_VERSION: "2026-10-02-v6"
       LEGAL_TERMS_VERSION: "2026-10-02-v6"
       SESSION_TTL_SECONDS: "34560000"
