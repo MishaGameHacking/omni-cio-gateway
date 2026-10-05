@@ -22,6 +22,10 @@ def evidence() -> dict[str, object]:
         "observed_at": (NOW - timedelta(minutes=1)).isoformat(),
         "latest_backup_at": (NOW - timedelta(hours=2)).isoformat(),
         "schedule_enabled": True, "schedule_interval": "day", "retention_copies": 7,
+        "weekly_retention_copies": 4, "weekly_available_copies": 1,
+        "latest_weekly_backup_at": (NOW - timedelta(hours=1)).isoformat(),
+        "weekly_period": "2026-10-05", "weekly_next_due_at": "2026-10-12T00:00:00+03:00",
+        "weekly_owned": [{"id": "private-canary"}], "weekly_create": "private-canary",
         "download_url": "private-canary", "database_password": "private-canary",
         "production_restore_verified": True,
     }
@@ -40,6 +44,16 @@ def evidence() -> dict[str, object]:
     ({"schedule_interval": "week"}, "schedule_attention"),
     ({"retention_copies": 6}, "schedule_attention"),
     ({"retention_copies": True}, "schedule_attention"),
+    ({"weekly_retention_copies": 3}, "weekly_attention"),
+    ({"weekly_available_copies": True}, "weekly_attention"),
+    ({"weekly_available_copies": 0}, "weekly_attention"),
+    ({"weekly_available_copies": 5}, "weekly_attention"),
+    ({"weekly_available_copies": "1"}, "weekly_attention"),
+    ({"latest_weekly_backup_at": None}, "weekly_attention"),
+    ({"latest_weekly_backup_at": (NOW + timedelta(seconds=1)).isoformat()}, "weekly_attention"),
+    ({"weekly_next_due_at": "2026-10-19T00:00:00+03:00"}, "weekly_attention"),
+    ({"weekly_next_due_at": "2026-10-12T00:00:00"}, "weekly_attention"),
+    ({"weekly_period": "2026-10-04"}, "weekly_attention"),
 ])
 def test_recovery_badge_requires_fresh_complete_evidence(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changes: dict[str, object], status: str,
@@ -53,6 +67,35 @@ def test_recovery_badge_requires_fresh_complete_evidence(
     assert "private-canary" not in str(result)
     if status in {"unavailable", "check_stale"}:
         assert result["daily_schedule"] is None
+        assert result["weekly"]["available_copies"] is None
+
+
+@pytest.mark.parametrize("copies", [1, 2, 4])
+def test_weekly_progress_reports_only_actual_confirmed_copies(copies: int) -> None:
+    with patch("omnicio.recovery._read_evidence", return_value=evidence() | {
+        "weekly_available_copies": copies,
+    }):
+        result = recovery_status(now=NOW)
+    assert result["status"] == "fresh"
+    assert result["weekly"]["available_copies"] == copies
+    assert result["weekly"]["retention_copies"] == 4
+    assert result["weekly"]["valid_until"] == datetime(2026, 10, 11, 21, tzinfo=UTC)
+
+
+def test_weekly_confirmation_expires_at_moscow_week_boundary() -> None:
+    boundary = datetime(2026, 10, 11, 21, tzinfo=UTC)
+    payload = evidence() | {
+        "observed_at": (boundary - timedelta(minutes=1)).isoformat(),
+        "latest_backup_at": (boundary - timedelta(hours=1)).isoformat(),
+    }
+    with patch("omnicio.recovery._read_evidence", return_value=payload):
+        before = recovery_status(now=boundary - timedelta(seconds=1))
+        after = recovery_status(now=boundary)
+    assert before["status"] == "fresh"
+    assert after["status"] == "weekly_attention"
+    assert after["weekly"]["status"] == "stale"
+    assert after["weekly"]["available_copies"] is None
+    assert after["daily_schedule"] is True
 
 
 @pytest.mark.parametrize("body", [None, "{", "[]", '{"schema_version": 2}', " " * 8193])

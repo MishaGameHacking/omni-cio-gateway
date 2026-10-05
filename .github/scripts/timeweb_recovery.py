@@ -8,13 +8,18 @@ import pathlib
 import time
 import tomllib
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Protocol
 
 REMOTE_STATUS_PATH = "/var/lib/omnicio-recovery/status.json"
 REMOTE_PYTHON = "python3 -"
 BOOTSTRAP_COMMENT = "Managed by OmniCIO: initial R0 recovery point v1"
+WEEKLY_PREFIX = "Managed by OmniCIO: weekly recovery point v1 "
+WEEKLY_RETIRE = "weekly_retire_attempted"
+WEEKLY_CREATE = "weekly_create"
+WEEKLY_OWNED = "weekly_owned"
+BACKUP_TIMEZONE = timezone(timedelta(hours=3))
 
 
 class RecoveryBlocked(RuntimeError):
@@ -36,6 +41,12 @@ class BackupPolicy:
     max_disk_kib: int
     max_monthly_rub: int
     rub_per_gib: int
+    weekly_copies: int
+
+    @property
+    def max_copies(self) -> int:
+        # Include both the bootstrap and one temporary copy during weekly rotation.
+        return self.copies + self.weekly_copies + 2
 
 
 def load_policy() -> BackupPolicy:
@@ -45,8 +56,8 @@ def load_policy() -> BackupPolicy:
     policy = BackupPolicy(**values)
     if any(type(value) is not int or value <= 0 for value in values.values()):
         raise RecoveryBlocked("Backup policy values must be positive integers")
-    if policy.copies != 7:
-        raise RecoveryBlocked("This release supports exactly seven daily copies")
+    if policy.copies != 7 or policy.weekly_copies != 4:
+        raise RecoveryBlocked("This release requires seven daily and four weekly copies")
     return policy
 
 
@@ -86,6 +97,11 @@ with temp.open('w', encoding='utf-8') as handle:
     os.fsync(handle.fileno())
 os.chmod(temp, 0o644)
 temp.replace(path)
+directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
 """)
 
 
@@ -121,6 +137,11 @@ def get_backups(client: Provider, cluster_id: int) -> list[dict[str, Any]]:
             total = (response.get("meta") or {}).get("total")
             if total is not None and (type(total) is not int or total != len(rows)):
                 raise RecoveryBlocked("Backup inventory total does not match the completed pages")
+            ids = [row.get("id") for row in rows]
+            if any(type(value) is not int or value <= 0 for value in ids):
+                raise RecoveryBlocked("Backup inventory contains an invalid identity")
+            if len(set(ids)) != len(ids):
+                raise RecoveryBlocked("Backup inventory contains duplicate identities")
             return rows
     raise RecoveryBlocked("Backup inventory pagination limit exceeded")
 
@@ -176,7 +197,9 @@ def reconcile_schedule(
     raise RecoveryBlocked("Daily backup schedule could not be confirmed; update was not repeated")
 
 
-def completed_backup(item: dict[str, Any], now: datetime) -> bool:
+def completed_backup(
+    item: dict[str, Any], now: datetime, *, max_age: timedelta | None = timedelta(hours=24),
+) -> bool:
     if item.get("status") != "done":
         return False
     if type(item.get("id")) is not int or item["id"] <= 0:
@@ -186,7 +209,8 @@ def completed_backup(item: dict[str, Any], now: datetime) -> bool:
         raise RecoveryBlocked("Completed backup has no valid size")
     if not math.isfinite(size) or size <= 0:
         raise RecoveryBlocked("Completed backup has no valid size")
-    return timedelta(0) <= now - timestamp(item.get("created_at")) < timedelta(hours=24)
+    age = now - timestamp(item.get("created_at"))
+    return age >= timedelta(0) and (max_age is None or age < max_age)
 
 
 def ensure_initial_copy(
@@ -232,11 +256,14 @@ def retirement_candidate(
     return initial["id"], latest["id"]
 
 
-def confirm_backup(client: Provider, cluster_id: int, backup_id: int) -> dict[str, Any]:
+def confirm_backup(
+    client: Provider, cluster_id: int, backup_id: int,
+    *, max_age: timedelta | None = timedelta(hours=24),
+) -> dict[str, Any]:
     detail = client.request("GET", f"/dbs/{cluster_id}/backups/{backup_id}").get("backup")
     if (
         not isinstance(detail, dict) or detail.get("id") != backup_id
-        or not completed_backup(detail, datetime.now(UTC))
+        or not completed_backup(detail, datetime.now(UTC), max_age=max_age)
     ):
         raise RecoveryBlocked("Backup identity or completion could not be re-confirmed")
     return detail
@@ -254,27 +281,176 @@ def retire_bootstrap(
         return
     initial_id, automatic_id = candidate
     confirm_backup(client, policy.cluster_id, automatic_id)
-    if state.get("retire_attempted") not in {None, initial_id}:
-        raise RecoveryBlocked("Initial copy retirement has a conflicting receipt")
-    if not state.get("retire_attempted"):
-        state["retire_attempted"] = initial_id
+    delete_with_receipt(client, ssh, state, policy, initial_id, "retire_attempted")
+
+
+def delete_with_receipt(
+    client: Provider, ssh: Remote, state: dict[str, Any], policy: BackupPolicy,
+    backup_id: int, receipt: str,
+) -> None:
+    """Callers prove ownership and a newer surviving copy before authorizing deletion."""
+    if state.get(receipt) not in {None, backup_id}:
+        raise RecoveryBlocked("Copy retirement has a conflicting receipt")
+    if not state.get(receipt):
+        state[receipt] = backup_id
         write_state(ssh, state)
-        mutate_once(client, "DELETE", f"/dbs/{policy.cluster_id}/backups/{initial_id}")
+        mutate_once(client, "DELETE", f"/dbs/{policy.cluster_id}/backups/{backup_id}")
     for _ in range(12):
         remaining = get_backups(client, policy.cluster_id)
-        if not any(item.get("id") == initial_id for item in remaining):
+        if not any(item.get("id") == backup_id for item in remaining):
             return
         time.sleep(5)
-    raise RecoveryBlocked("Initial copy retirement is unconfirmed; deletion was not repeated")
+    raise RecoveryBlocked("Copy retirement is unconfirmed; deletion was not repeated")
+
+
+def weekly_period(value: datetime) -> str:
+    local = value.astimezone(BACKUP_TIMEZONE).date()
+    return (local - timedelta(days=local.weekday())).isoformat()
+
+
+def weekly_ledger(state: dict[str, Any], policy: BackupPolicy) -> list[dict[str, Any]]:
+    records = state.get(WEEKLY_OWNED, [])
+    if not isinstance(records, list) or len(records) > policy.weekly_copies + 1:
+        raise RecoveryBlocked("Invalid weekly ownership ledger")
+    ids: set[int] = set()
+    periods: set[str] = set()
+    for record in records:
+        if not isinstance(record, dict) or type(record.get("id")) is not int or record["id"] <= 0:
+            raise RecoveryBlocked("Invalid weekly ownership identity")
+        period = record.get("period")
+        if not isinstance(period, str):
+            raise RecoveryBlocked("Invalid weekly ownership period")
+        try:
+            day = datetime.strptime(period, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            raise RecoveryBlocked("Invalid weekly ownership period") from None
+        if day.weekday() != 0 or day.date().isoformat() != period:
+            raise RecoveryBlocked("Weekly period must be a Monday")
+        if record["id"] in ids or period in periods:
+            raise RecoveryBlocked("Duplicate weekly ownership record")
+        ids.add(record["id"])
+        periods.add(period)
+    return records
+
+
+def verify_weekly_item(item: dict[str, Any], record: dict[str, Any]) -> None:
+    if (
+        item.get("id") != record["id"] or item.get("type") != "manual"
+        or item.get("comment") != WEEKLY_PREFIX + record["period"]
+        or not completed_backup(item, datetime.now(UTC), max_age=None)
+        or weekly_period(timestamp(item.get("created_at"))) != record["period"]
+    ):
+        raise RecoveryBlocked("Weekly copy identity, period or completion changed")
+
+
+def confirm_weekly_inventory(
+    client: Provider, state: dict[str, Any], policy: BackupPolicy,
+    backups: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    records = weekly_ledger(state, policy)
+    owned_ids = {record["id"] for record in records}
+    marked = [item for item in backups if str(item.get("comment", "")).startswith(WEEKLY_PREFIX)]
+    if {item["id"] for item in marked} != owned_ids:
+        raise RecoveryBlocked("Weekly copy inventory differs from durable ownership ledger")
+    result = []
+    for record in records:
+        item = confirm_backup(client, policy.cluster_id, record["id"], max_age=None)
+        verify_weekly_item(item, record)
+        result.append(item)
+    return sorted(result, key=lambda item: timestamp(item["created_at"]), reverse=True)
+
+
+def finish_weekly_create(
+    client: Provider, ssh: Remote, state: dict[str, Any], policy: BackupPolicy,
+) -> None:
+    attempt = state[WEEKLY_CREATE]
+    period = attempt["period"]
+    started = timestamp(attempt["attempted_at"])
+    for _ in range(30):
+        matching = [item for item in get_backups(client, policy.cluster_id)
+                    if item.get("comment") == WEEKLY_PREFIX + period]
+        if len(matching) > 1:
+            raise RecoveryBlocked("Weekly create has multiple candidates; refusing to adopt any")
+        if matching and matching[0].get("status") == "fail":
+            raise RecoveryBlocked("Weekly copy failed; create was not repeated")
+        if matching and matching[0].get("status") == "done":
+            item = confirm_backup(client, policy.cluster_id, matching[0]["id"], max_age=None)
+            record = {"id": item["id"], "period": period}
+            verify_weekly_item(item, record)
+            if timestamp(item["created_at"]) < started - timedelta(seconds=1):
+                raise RecoveryBlocked("Weekly candidate predates this create attempt")
+            records = weekly_ledger(state, policy)
+            state[WEEKLY_OWNED] = [*records, record]
+            attempt["confirmed_id"] = item["id"]
+            write_state(ssh, state)
+            return
+        time.sleep(10)
+    raise RecoveryBlocked("Weekly create is unconfirmed; it will not be repeated")
+
+
+def finish_weekly_retirement(
+    client: Provider, ssh: Remote, state: dict[str, Any], policy: BackupPolicy,
+) -> None:
+    target = state.get(WEEKLY_RETIRE)
+    if target is None:
+        return
+    records = weekly_ledger(state, policy)
+    if not any(record["id"] == target for record in records):
+        raise RecoveryBlocked("Weekly retirement has no ownership receipt")
+    # A receipt exists: only read to reconcile, never send DELETE a second time.
+    delete_with_receipt(client, ssh, state, policy, target, WEEKLY_RETIRE)
+    state[WEEKLY_OWNED] = [record for record in records if record["id"] != target]
+    del state[WEEKLY_RETIRE]
+    write_state(ssh, state)
+
+
+def reconcile_weekly(
+    client: Provider, ssh: Remote, state: dict[str, Any], policy: BackupPolicy,
+) -> list[dict[str, Any]]:
+    finish_weekly_retirement(client, ssh, state, policy)
+    attempt = state.get(WEEKLY_CREATE)
+    if attempt is not None and not isinstance(attempt, dict):
+        raise RecoveryBlocked("Invalid weekly create receipt")
+    if attempt is not None and not attempt.get("confirmed_id"):
+        finish_weekly_create(client, ssh, state, policy)
+    backups = get_backups(client, policy.cluster_id)
+    owned = confirm_weekly_inventory(client, state, policy, backups)
+    now = datetime.now(UTC)
+    period = weekly_period(now)
+    if not any(item["comment"] == WEEKLY_PREFIX + period for item in owned):
+        if attempt is not None and attempt.get("period") == period:
+            raise RecoveryBlocked("Confirmed weekly copy disappeared; create was not repeated")
+        if len(backups) >= policy.max_copies or len(owned) > policy.weekly_copies:
+            raise RecoveryBlocked("No reviewed capacity for another weekly copy")
+        state[WEEKLY_CREATE] = {"period": period, "attempted_at": now.isoformat()}
+        write_state(ssh, state)
+        mutate_once(client, "POST", f"/dbs/{policy.cluster_id}/backups", payload={
+            "comment": WEEKLY_PREFIX + period,
+        })
+        finish_weekly_create(client, ssh, state, policy)
+        backups = get_backups(client, policy.cluster_id)
+        owned = confirm_weekly_inventory(client, state, policy, backups)
+    if len(owned) > policy.weekly_copies:
+        # Newest copy and exact old ownership are reconfirmed before removing only the fifth.
+        confirm_backup(client, policy.cluster_id, owned[0]["id"], max_age=timedelta(days=7))
+        target = owned[-1]
+        detail = confirm_backup(client, policy.cluster_id, target["id"], max_age=None)
+        verify_weekly_item(detail, {"id": target["id"], "period": weekly_period(
+            timestamp(target["created_at"]))})
+        delete_with_receipt(client, ssh, state, policy, target["id"], WEEKLY_RETIRE)
+        finish_weekly_retirement(client, ssh, state, policy)
+        owned = confirm_weekly_inventory(
+            client, state, policy, get_backups(client, policy.cluster_id),
+        )
+    return owned
 
 
 def validate_budget(cluster: dict[str, Any], policy: BackupPolicy) -> None:
     disk_kib = (cluster.get("disk") or {}).get("size")
     if type(disk_kib) is not int or not 0 < disk_kib <= policy.max_disk_kib:
         raise RecoveryBlocked("Database disk exceeds the reviewed backup budget")
-    # Conservative allowance: seven full-disk daily copies plus one initial copy, at the
-    # published 6 RUB/GiB-month rate. This bounds configured capacity, not a provider invoice.
-    allowance = Decimal(disk_kib) / (1024 * 1024) * (policy.copies + 1) * policy.rub_per_gib
+    # A conservative capacity allowance, not a provider invoice or billing enforcement.
+    allowance = Decimal(disk_kib) / (1024 * 1024) * policy.max_copies * policy.rub_per_gib
     if allowance > policy.max_monthly_rub:
         raise RecoveryBlocked("Backup storage allowance exceeds the approved ceiling")
     if (cluster.get("disk_autoscaling") or {}).get("is_enabled") is not False:
@@ -297,8 +473,11 @@ def inspect_restore_capacity(client: Provider, ssh: Remote, cluster_id: int) -> 
                 "count": len(rows),
                 "items": [{k: row[k] for k in allowed if k in row} for row in rows[:20]],
             }
-        except (RuntimeError, OSError, ValueError):
-            report[name] = {"status": "unavailable"}
+        except (RuntimeError, OSError, ValueError) as exc:
+            report[name] = {"status": "unavailable", "reason": type(exc).__name__}
+            status = getattr(exc, "status_code", None)
+            if type(status) is int:
+                report[name]["http_status"] = status
     raw = ssh.run(REMOTE_PYTHON, input_text=RESTORE_CAPACITY_SCRIPT)
     host = json.loads(raw)
     if not isinstance(host, dict):
@@ -342,13 +521,14 @@ def ensure_recovery_point(client: Provider, ssh: Remote, cluster: dict[str, Any]
         validate_budget(cluster, policy)
         now = datetime.now(UTC)
         backups = get_backups(client, policy.cluster_id)
-        if len(backups) > policy.copies + 1:
+        if len(backups) > policy.max_copies:
             raise RecoveryBlocked("Backup inventory exceeds the reviewed storage allowance")
         reconcile_schedule(client, ssh, state, policy, now)
         backups = get_backups(client, policy.cluster_id)
         backups = ensure_initial_copy(client, ssh, state, policy, backups)
         now = datetime.now(UTC)
         retire_bootstrap(client, ssh, state, policy, backups, now)
+        weekly = reconcile_weekly(client, ssh, state, policy)
         # Re-read after every mutation; never certify the response to a create alone.
         backups = get_backups(client, policy.cluster_id)
         now = datetime.now(UTC)
@@ -360,15 +540,25 @@ def ensure_recovery_point(client: Provider, ssh: Remote, cluster: dict[str, Any]
         schedule = get_schedule(client, policy.cluster_id)
         if not schedule_matches(schedule, policy, now):
             raise RecoveryBlocked("Daily backup schedule changed during verification")
+        period = weekly_period(timestamp(weekly[0]["created_at"]))
+        next_week = datetime.strptime(period, "%Y-%m-%d").replace(tzinfo=BACKUP_TIMEZONE)
+        next_week += timedelta(days=7)
+        if weekly_period(now) != period:
+            raise RecoveryBlocked("Calendar week changed during verification; run again")
         state.update(
             provider_status="ok", observed_at=now.isoformat(),
             latest_backup_at=timestamp(detail["created_at"]).isoformat(),
             latest_backup_id=detail["id"], schedule_enabled=True,
             schedule_interval="day", retention_copies=policy.copies,
+            weekly_retention_copies=policy.weekly_copies, weekly_available_copies=len(weekly),
+            latest_weekly_backup_at=timestamp(weekly[0]["created_at"]).isoformat(),
+            weekly_period=period, weekly_next_due_at=next_week.isoformat(),
         )
         write_state(ssh, state)
         print(f"Recovery point verified: cluster={policy.cluster_id}, backup={detail['id']}, "
-              f"created_at={state['latest_backup_at']}, daily_copies={policy.copies}. "
+              f"created_at={state['latest_backup_at']}, daily_copies={policy.copies}, "
+              f"weekly_available={len(weekly)}/{policy.weekly_copies}, "
+              f"weekly_backup={weekly[0]['id']}. "
               "Production restore remains unverified.")
     except (RuntimeError, OSError, ValueError, TypeError, KeyError) as exc:
         state.update(provider_status="unavailable", observed_at=datetime.now(UTC).isoformat())

@@ -107,6 +107,8 @@
   const recoveryBackupAt = requiredElement("#recovery-backup-at");
   const recoveryObservedAt = requiredElement("#recovery-observed-at");
   const recoverySchedule = requiredElement("#recovery-schedule");
+  const recoveryWeekly = requiredElement("#recovery-weekly");
+  const recoveryWeeklyAt = requiredElement("#recovery-weekly-at");
   const recoveryRefresh = requiredElement("#recovery-refresh");
   const homePortfolioTotal = requiredElement("#home-portfolio-total");
   const homeDailyChange = requiredElement("#home-daily-change");
@@ -545,11 +547,12 @@
   };
 
   const RECOVERY_STATES = {
-    fresh: ["Копия создана", "Ежедневные резервные копии включены.", "state-ok"],
+    fresh: ["Копия создана", "Ежедневное копирование включено. Недельная копия за текущую неделю подтверждена.", "state-ok"],
     missing: ["Копия не найдена", "Наличие готовой резервной копии пока не подтверждено.", "state-error"],
     backup_stale: ["Копия устарела", "Последней подтверждённой копии больше суток. Требуется проверка сервиса.", "state-error"],
     check_stale: ["Проверка устарела", "Состояние резервных копий давно не проверялось. Показаны последние известные даты.", "state-next"],
     schedule_attention: ["Нужно внимание", "Копия есть, но ежедневное хранение семи копий не подтверждено.", "state-next"],
+    weekly_attention: ["Нужно внимание", "Свежая копия есть. Недельная история пока не подтверждена — требуется проверка сервиса.", "state-next"],
     unavailable: ["Нет подтверждения", "Не удалось подтвердить состояние резервных копий. Попробуйте обновить статус позже.", "state-next"],
   };
 
@@ -560,6 +563,7 @@
     recoveryRefresh.disabled = true;
     setStateBadge(recoveryState, "Проверяем", "");
     recoveryNote.textContent = "Проверяем состояние резервных копий…";
+    recoveryWeekly.textContent = "Проверяем…";
     try {
       const payload = await api("/api/system/recovery", {method: "GET"});
       if (generation !== recoveryGeneration) return;
@@ -571,8 +575,17 @@
       recoveryObservedAt.textContent = formatDateTime(payload.freshness?.observed_at);
       recoverySchedule.textContent = payload.daily_schedule === true
         ? `Ежедневно · копий для хранения: ${payload.retention_copies}` : "Не подтверждено";
+      recoveryWeeklyAt.textContent = formatDateTime(payload.weekly?.observed_at);
+      const weeklyCopies = payload.weekly?.available_copies;
+      const weeklyConfirmed = Number.isInteger(weeklyCopies) && weeklyCopies >= 1 && weeklyCopies <= 4
+        && payload.weekly?.retention_copies === 4 && payload.weekly?.status === "fresh";
+      const weeklyProgress = weeklyCopies < 4 ? " История пополняется по неделям." : "";
+      recoveryWeekly.textContent = weeklyConfirmed
+        ? `Создано ${weeklyCopies} из 4.${weeklyProgress}`
+        : "Не подтверждено";
       if (state === "fresh") {
-        const deadline = Math.min(Date.parse(payload.freshness?.valid_until), Date.parse(payload.backup?.valid_until));
+        const deadline = Math.min(Date.parse(payload.freshness?.valid_until),
+          Date.parse(payload.backup?.valid_until), Date.parse(payload.weekly?.valid_until));
         const remaining = deadline - Date.parse(payload.checked_at);
         if (Number.isFinite(remaining) && remaining > 0) {
           recoveryTimer = window.setTimeout(() => { void loadRecoveryStatus(); }, Math.min(remaining + 50, 2147483647));
@@ -585,6 +598,8 @@
       recoveryBackupAt.textContent = "—";
       recoveryObservedAt.textContent = "—";
       recoverySchedule.textContent = "Не подтверждено";
+      recoveryWeekly.textContent = "Не подтверждено";
+      recoveryWeeklyAt.textContent = "—";
     } finally {
       if (generation === recoveryGeneration) recoveryRefresh.disabled = false;
     }

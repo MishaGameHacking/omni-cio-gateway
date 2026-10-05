@@ -43,7 +43,11 @@ class Provider:
         if method == "PATCH" and path.endswith("/auto-backups"):
             self.schedule = copy.deepcopy(kwargs["payload"])
         elif method == "POST" and path.endswith("/backups"):
-            self.backups.append(backup())
+            next_id = max((item["id"] for item in self.backups), default=0) + 1
+            self.backups.append(backup(next_id) | {
+                "comment": kwargs["payload"]["comment"],
+                "created_at": datetime.now(UTC).isoformat(),
+            })
         elif method == "DELETE":
             target = int(path.rsplit("/", 1)[1])
             self.backups = [item for item in self.backups if item["id"] != target]
@@ -98,18 +102,18 @@ class RecoveryTests(unittest.TestCase):
         self.run_controller()
         self.run_controller()
         self.assertEqual(len(self.mutations("PATCH")), 1)
-        self.assertEqual(len(self.mutations("POST")), 1)
+        self.assertEqual(len(self.mutations("POST")), 2)
         self.assertEqual(self.mutations("DELETE"), [])
         self.assertEqual(self.provider.schedule["copy_count"], 7)
         self.assertEqual(self.provider.schedule["day_of_week"], 1)
         self.assertEqual(self.state["provider_status"], "ok")
-        self.assertEqual(self.state["latest_backup_id"], 1)
+        self.assertEqual(self.state["latest_backup_id"], 2)
 
     def test_lost_applied_responses_are_reconciled_without_repeating_mutations(self) -> None:
         self.provider.lose_response = {"PATCH", "POST"}
         self.run_controller()
         self.assertEqual(len(self.mutations("PATCH")), 1)
-        self.assertEqual(len(self.mutations("POST")), 1)
+        self.assertEqual(len(self.mutations("POST")), 2)
         self.assertEqual(self.state["provider_status"], "ok")
 
     def test_unconfirmed_mutation_is_not_repeated_after_process_restart(self) -> None:
@@ -144,7 +148,7 @@ class RecoveryTests(unittest.TestCase):
                 recovery.ensure_recovery_point(self.provider, self.remote, self.cluster | changes)
         self.assertEqual(self.mutations("PATCH"), [])
         self.assertEqual(self.mutations("POST"), [])
-        smaller_budget = recovery.BackupPolicy(CLUSTER_ID, 7, 20971520, 900, 6)
+        smaller_budget = recovery.BackupPolicy(CLUSTER_ID, 7, 20971520, 1500, 6, 4)
         with self.assertRaises(recovery.RecoveryBlocked):
             recovery.validate_budget(self.cluster, smaller_budget)
 
@@ -195,24 +199,26 @@ class RecoveryTests(unittest.TestCase):
         self.run_controller()
         self.provider.backups = [
             backup(1, age=2),
-            backup(2, kind="auto"),
-            backup(3) | {"comment": "operator"},
+            backup(3, kind="auto"),
+            backup(4) | {"comment": "operator"},
+            self.provider.backups[1],
         ]
         self.provider.lose_response = {"DELETE"}
         self.run_controller()
         self.run_controller()
         self.assertEqual(self.mutations("DELETE"), [f"/dbs/{CLUSTER_ID}/backups/1"])
-        self.assertEqual({item["id"] for item in self.provider.backups}, {2, 3})
+        self.assertEqual({item["id"] for item in self.provider.backups}, {2, 3, 4})
         calls = self.provider.calls
         self.assertLess(
-            calls.index(("GET", f"/dbs/{CLUSTER_ID}/backups/2")),
+            calls.index(("GET", f"/dbs/{CLUSTER_ID}/backups/3")),
             calls.index(("DELETE", f"/dbs/{CLUSTER_ID}/backups/1")),
         )
 
     def test_last_copy_wrong_detail_and_unconfirmed_delete_are_protected(self) -> None:
         self.run_controller()
         self.assertEqual(self.mutations("DELETE"), [])
-        self.provider.backups = [backup(1, age=2), backup(2, kind="auto")]
+        self.provider.backups = [backup(1, age=2), backup(3, kind="auto"),
+                                 self.provider.backups[1]]
         self.provider.wrong_detail = True
         with self.assertRaises(recovery.RecoveryBlocked):
             self.run_controller()
@@ -223,6 +229,133 @@ class RecoveryTests(unittest.TestCase):
             with self.assertRaises(recovery.RecoveryBlocked):
                 self.run_controller()
         self.assertEqual(len(self.mutations("DELETE")), 1)
+
+    def seed_weekly_history(self) -> list[int]:
+        now = datetime.now(UTC)
+        self.provider.schedule = {
+            "is_enabled": True, "interval": "day", "copy_count": 7,
+            "creation_start_at": now.isoformat(),
+        }
+        self.provider.backups = [backup(1, kind="auto")]
+        records = []
+        for age in range(1, 5):
+            created = now - timedelta(weeks=age)
+            period = recovery.weekly_period(created)
+            record = {"id": 10 + age, "period": period}
+            records.append(record)
+            self.provider.backups.append(backup(record["id"]) | {
+                "created_at": created.isoformat(),
+                "comment": recovery.WEEKLY_PREFIX + period,
+            })
+        self.state = {"schema_version": 1, "cluster_id": CLUSTER_ID, "weekly_owned": records}
+        return [record["id"] for record in records]
+
+    def test_weekly_rotation_keeps_four_and_never_deletes_unowned_or_daily_copy(self) -> None:
+        older_ids = self.seed_weekly_history()
+        self.provider.backups.append(backup(50) | {"comment": "operator"})
+        self.run_controller()
+        self.run_controller()
+        self.assertEqual(self.mutations("DELETE"), [f"/dbs/{CLUSTER_ID}/backups/{older_ids[-1]}"])
+        self.assertEqual(len(self.mutations("POST")), 1)
+        self.assertEqual({item["id"] for item in self.provider.backups}, {1, 11, 12, 13, 50, 51})
+        self.assertEqual(self.state["weekly_available_copies"], 4)
+        self.assertEqual(len(self.state["weekly_owned"]), 4)
+        self.assertNotIn("weekly_retire_attempted", self.state)
+
+    def test_weekly_failed_or_lost_create_cannot_multiply_paid_copies_after_restart(self) -> None:
+        self.seed_weekly_history()
+        self.provider.drop_request = {"POST"}
+        for _ in range(2):
+            with self.assertRaises(recovery.RecoveryBlocked):
+                self.run_controller()
+        self.assertEqual(len(self.mutations("POST")), 1)
+        self.assertEqual(self.mutations("DELETE"), [])
+        self.assertEqual(len(self.state["weekly_owned"]), 4)
+        self.assertEqual(self.state["provider_status"], "unavailable")
+
+    def test_weekly_lost_applied_create_and_delete_are_reconciled(self) -> None:
+        self.seed_weekly_history()
+        self.provider.lose_response = {"POST", "DELETE"}
+        self.run_controller()
+        self.run_controller()
+        self.assertEqual(len(self.mutations("POST")), 1)
+        self.assertEqual(len(self.mutations("DELETE")), 1)
+        self.assertEqual(self.state["weekly_available_copies"], 4)
+
+    def test_unknown_weekly_delete_does_not_delete_again_or_create_another_copy(self) -> None:
+        self.seed_weekly_history()
+        self.provider.drop_request = {"DELETE"}
+        for _ in range(2):
+            with self.assertRaises(recovery.RecoveryBlocked):
+                self.run_controller()
+        self.assertEqual(len(self.mutations("POST")), 1)
+        self.assertEqual(len(self.mutations("DELETE")), 1)
+        self.assertEqual(len(self.state["weekly_owned"]), 5)
+        target = self.state["weekly_retire_attempted"]
+        # Reconciliation may finish later; the next run observes absence, without a new DELETE.
+        self.provider.backups = [row for row in self.provider.backups if row["id"] != target]
+        self.run_controller()
+        self.assertEqual(len(self.mutations("DELETE")), 1)
+        self.assertEqual(self.state["weekly_available_copies"], 4)
+
+    def test_deleted_or_unowned_weekly_copy_blocks_mutations(self) -> None:
+        self.run_controller()
+        self.provider.calls.clear()
+        self.provider.backups = [row for row in self.provider.backups if row["id"] != 2]
+        with self.assertRaises(recovery.RecoveryBlocked):
+            self.run_controller()
+        self.assertEqual(self.mutations("POST"), [])
+        self.assertEqual(self.mutations("DELETE"), [])
+        self.state = {}
+        self.provider.backups.append(backup(99) | {
+            "created_at": datetime.now(UTC).isoformat(),
+            "comment": recovery.WEEKLY_PREFIX + recovery.weekly_period(datetime.now(UTC)),
+        })
+        with self.assertRaises(recovery.RecoveryBlocked):
+            self.run_controller()
+        self.assertEqual(self.mutations("POST"), [])
+        self.assertEqual(self.mutations("DELETE"), [])
+
+    def test_weekly_receipt_and_storage_ceiling_are_checked_before_create(self) -> None:
+        self.seed_weekly_history()
+        self.write.side_effect = OSError("durable receipt unavailable")
+        with self.assertRaises(OSError):
+            self.run_controller()
+        self.assertEqual(self.mutations("POST"), [])
+        self.write.side_effect = self.save
+        self.provider.backups.extend(backup(value) | {"comment": "operator"}
+                                     for value in range(20, 28))
+        with self.assertRaises(recovery.RecoveryBlocked):
+            self.run_controller()
+        self.assertEqual(self.mutations("POST"), [])
+
+    def test_new_weekly_copy_is_not_a_restore_proof_or_four_existing_copies(self) -> None:
+        self.run_controller()
+        self.assertEqual(self.state["weekly_available_copies"], 1)
+        self.assertEqual(self.state["weekly_retention_copies"], 4)
+        self.assertNotIn("production_restore_verified", self.state)
+        due = datetime.fromisoformat(self.state["weekly_next_due_at"])
+        self.assertEqual((due.weekday(), due.hour), (0, 0))
+        self.assertEqual(due.utcoffset(), timedelta(hours=3))
+
+    def test_duplicate_inventory_or_retagged_owned_copy_is_not_accepted(self) -> None:
+        self.seed_weekly_history()
+        self.provider.backups.append(copy.deepcopy(self.provider.backups[-1]))
+        with self.assertRaises(recovery.RecoveryBlocked):
+            self.run_controller()
+        self.provider.backups.pop()
+        self.provider.backups[-1]["comment"] = "operator now owns this"
+        with self.assertRaises(recovery.RecoveryBlocked):
+            self.run_controller()
+        self.assertEqual(self.mutations("POST"), [])
+        self.assertEqual(self.mutations("DELETE"), [])
+
+    def test_moscow_week_boundary_and_year_rollover_are_stable(self) -> None:
+        self.assertEqual(recovery.weekly_period(datetime(2026, 10, 4, 20, 59, tzinfo=UTC)),
+                         "2026-09-28")
+        self.assertEqual(recovery.weekly_period(datetime(2026, 10, 4, 21, 0, tzinfo=UTC)),
+                         "2026-10-05")
+        self.assertEqual(recovery.weekly_period(datetime(2027, 1, 1, tzinfo=UTC)), "2026-12-28")
 
 
 class MigrationGateTests(unittest.TestCase):

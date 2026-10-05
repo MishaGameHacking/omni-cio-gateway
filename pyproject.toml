@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omnicio-gateway"
-version = "0.18.4"
+version = "0.18.5"
 description = "OmniCIO Personal owner gateway and broker connectivity service"
 requires-python = ">=3.12,<3.14"
 dependencies = [
@@ -34,8 +34,9 @@ ipv4 = "194.87.151.244"
 [tool.omnicio.timeweb.backups]
 cluster_id = 4215095
 copies = 7
+weekly_copies = 4
 max_disk_kib = 20971520
-max_monthly_rub = 1000
+max_monthly_rub = 1600
 rub_per_gib = 6
 
 [tool.setuptools.packages.find]
