@@ -472,7 +472,7 @@ const renderPublicBody = (pathname, file) => {
   if (pathname === "/sw.js") body = body.toString().replaceAll("__OMNICIO_BUILD__", build);
   if (pathname === "/") {
     body = body.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version);
-    body = body.replace("<head>", '<head><script>window.__smokeErrors=[];addEventListener("error",e=>window.__smokeErrors.push(e.message));addEventListener("unhandledrejection",e=>window.__smokeErrors.push(String(e.reason)));</script>');
+    body = body.replace("<head>", '<head><script>window.__smokeDocumentUrl=location.href;window.__smokeErrors=[];addEventListener("error",e=>window.__smokeErrors.push(e.message));addEventListener("unhandledrejection",e=>window.__smokeErrors.push(String(e.reason)));</script>');
     body = body.replace('<script src="/assets/app.js?', '<script src="/smoke.js" defer></script><script src="/assets/app.js?');
   }
   return body;
@@ -531,9 +531,18 @@ const createSettingsFixture = (mode = "saved") => {
 
 const createStrategyFixture = (mode = "saved") => {
   const original = createSettingsFixture(mode);
-  const state = {...original.state, selection: null, delay: 0, failure: null, loadFailure: mode === "strategy-load-error"};
+  const state = {...original.state, selection: null, delay: 0, failure: null, loadFailure: mode === "strategy-load-error",
+    holdPrerequisites: mode === "strategy-prerequisite-delay", waitingPrerequisites: []};
+  state.releasePrerequisites = () => {
+    state.holdPrerequisites = false;
+    state.waitingPrerequisites.splice(0).forEach((release) => release());
+  };
   const json = (value, status = 200) => new Response(JSON.stringify(value), {status, headers: {"Content-Type": "application/json"}});
   return {state, request: async (path, options) => {
+    if (state.holdPrerequisites && options.method === "GET"
+      && ["/api/profile/investment", "/api/profile/balancing"].includes(path)) {
+      await new Promise((release) => state.waitingPrerequisites.push(release));
+    }
     if (path === "/api/strategy/catalog") return state.loadFailure ? json({detail: "synthetic_initial_failure"}, 503) : json(strategyCatalog);
     if (path !== "/api/profile/strategy") return original.request(path, options);
     if (options.method === "GET") return json({public_id: "000000123", selection: state.selection});
@@ -844,13 +853,16 @@ const run = async (url, width) => {
     await send("Page.enable");
     await send("Emulation.setDeviceMetricsOverride", {width, height: 1000, deviceScaleFactor: 1, mobile: width < 768});
     await send("Emulation.setEmulatedMedia", {features: [{name: "prefers-color-scheme", value: "light"}, {name: "prefers-reduced-motion", value: "reduce"}]});
-    const visit = async (address) => {
+    const navigatePage = async (address) => {
       navigationRequested = true;
       console.log("Browser fixture " + width + ": " + address);
       try { await send("Page.navigate", {url: address}); }
       finally { navigationRequested = false; }
       assert.equal(dialogError, null);
-      const result = await waitUntil(() => evaluate(`location.href === ${JSON.stringify(address)} && document.readyState === "complete" && window.__smokeResult`), 100);
+    };
+    const visit = async (address) => {
+      await navigatePage(address);
+      const result = await waitUntil(() => evaluate(`window.__smokeDocumentUrl === ${JSON.stringify(address)} && document.readyState === "complete" && window.__smokeResult`), 100);
       assert.ok(result, "Browser suite did not finish: " + JSON.stringify(await evaluate("({errors:window.__smokeErrors,url:location.href,text:document.body?.textContent.slice(0,600)})")));
       assert.equal(result.passed, true, result.error);
       assert.equal(result.viewport, width, "The actual viewport must match the requested size");
@@ -873,6 +885,26 @@ const run = async (url, width) => {
       await evaluate(`document.querySelector('[data-view="${view}"]').click()`);
       await screenshot(view);
     }), Promise.resolve());
+    // Hold both prerequisite responses: no race can turn an early starter edit
+    // into a baseline and then erase it with the subsequently loaded strategy.
+    const prerequisiteId = "prerequisites-" + width;
+    const prerequisite = createStrategyFixture("strategy-prerequisite-delay");
+    syntheticSessions.set(prerequisiteId, prerequisite);
+    const prerequisiteUrl = url + "?synthetic=1&catalog=1&session=" + prerequisiteId;
+    await navigatePage(prerequisiteUrl);
+    assert.equal(await waitUntil(() => prerequisite.state.waitingPrerequisites.length === 2), true);
+    await evaluate(`document.querySelector('[data-view="strategy"]').click()`);
+    assert.equal(await evaluate('document.querySelector(".strategy-layout").inert && document.querySelector(".strategy-live-settings").inert'), true, "Starter controls are blocked while prerequisite profile requests are pending");
+    const allocationBefore = await evaluate('window.__smokeWorkspace.readAllocation()');
+    const earlyPoint = await evaluate(`(() => { const e=document.querySelector('#target-shares'); e.scrollIntoView({block:'center',behavior:'instant'}); const r=e.getBoundingClientRect(); return {x:r.x+r.width*0.8,y:r.y+r.height/2}; })()`);
+    await send("Input.dispatchMouseEvent", {type: "mousePressed", button: "left", clickCount: 1, ...earlyPoint});
+    await send("Input.dispatchMouseEvent", {type: "mouseReleased", button: "left", clickCount: 1, ...earlyPoint});
+    assert.deepEqual(await evaluate('window.__smokeWorkspace.readAllocation()'), allocationBefore, "Native input cannot change a not-yet-loaded strategy");
+    assert.equal(prerequisite.state.requests.some((item) => item.method === "PUT"), false);
+    prerequisite.state.releasePrerequisites();
+    const initialized = await waitUntil(() => evaluate(`window.__smokeDocumentUrl === ${JSON.stringify(prerequisiteUrl)} && window.__smokeResult`));
+    assert.equal(initialized?.passed, true, initialized?.error);
+    assert.equal(await evaluate('document.querySelector("#profile-reserve-rub").value'), "123456789.12345678", "Fetched owner values survive initialization");
     const authenticated = await visit(url + "?synthetic=1&session=saved-" + width);
     await screenshot("strategy-authenticated");
     await verifyStrategyInput(send, evaluate);

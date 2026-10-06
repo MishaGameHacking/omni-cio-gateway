@@ -6,6 +6,7 @@ customer dump or provider credential is consumed by this drill.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import os
 import subprocess
@@ -520,7 +521,17 @@ def test_strategy_diagnostic_is_versioned_read_only_and_owner_bound(monkeypatch)
     from omnicio import main
     from omnicio.strategy import preset_document
 
-    client, user = _strategy_api(monkeypatch)
+    user = UserRecord(A, 123, "active", "user")
+    database = Mock(spec=Database)
+    database.has_legal_versions.return_value = True
+    auth = Mock()
+    auth.refresh_session.return_value = user
+    monkeypatch.setattr(main, "service", lambda request: auth)
+    monkeypatch.setattr(app.state, "database", database, raising=False)
+    client = TestClient(
+        app, cookies={"omnicio_session": "synthetic-session"},
+        headers={"X-Omnicio-Profile": "000000123"},
+    )
     document = preset_document("income")
     calls = []
 

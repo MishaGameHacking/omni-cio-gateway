@@ -6509,7 +6509,7 @@
           const sourceTitle = uiNode("h4", "Основания подхода"); body.append(sourceTitle);
           for (const sourceId of preset.source_ids) {
             const source = catalog.sources.find((item) => item.id === sourceId);
-            if (!source || !source.url.startsWith("https://")) continue;
+            if (!source?.url?.startsWith("https://")) continue;
             const link = uiNode("a", source.title); link.href = source.url; link.target = "_blank"; link.rel = "noopener noreferrer"; body.append(link);
           }
           body.append(uiNode("p", "Именные варианты — адаптации принципов, не оригинальные портфели авторов и не их рекомендации для РФ.", "field-hint"));
@@ -6736,6 +6736,7 @@
     };
     return {
       load, acceptExternal: edited,
+      prepare: () => { if (version === null) { showInitialLoad(); setButtonState(); } },
       hasPending: () => dirty || busy,
       isCurrentSaved: () => built && version > 0 && !dirty && !busy && !blocked,
       reset: () => {
@@ -6782,6 +6783,7 @@
     initializeNavigation();
     startCbrIndicators();
     void loadTbankStatus();
+    strategyLibrary?.prepare();
     void Promise.all([investmentEditor.load(), balancingEditor.load()]).then(() => strategyLibrary?.load());
     void loadLiveMandate().then(() => {
       void loadProposals();
