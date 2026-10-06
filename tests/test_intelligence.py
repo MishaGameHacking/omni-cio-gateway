@@ -28,7 +28,7 @@ def _bundle() -> BrokerObservationBundle:
         quantity="2",
         current_price=TBankMoney("RUB", "1000"),
         average_price=None,
-        expected_yield_percent="0",
+        expected_yield_amount="0",
         daily_yield=None,
         current_nkd=None,
         blocked=False,

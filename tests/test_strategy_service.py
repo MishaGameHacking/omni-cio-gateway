@@ -3,6 +3,7 @@
 from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from unittest.mock import Mock
 from uuid import UUID
 
@@ -21,8 +22,8 @@ from omnicio.broker import (
     BrokerService,
 )
 from omnicio.db import Database, UserRecord
-from omnicio.portfolio_store import PortfolioStore
-from omnicio.strategy_service import current_account_assessment
+from omnicio.portfolio_store import PortfolioStore, SettingsVersionConflict
+from omnicio.strategy_service import current_account_assessment, strategy_research
 from omnicio.tbank import TBankPortfolio, TBankPositions, TBankTokenRejected, TBankUnavailable
 
 A, B = UUID(int=501), UUID(int=502)
@@ -268,3 +269,116 @@ def test_relationship_producer_preserves_three_sources(runtime):
     assert mapping.mapping_source_url.endswith("/mapping")
     assert mapping.group_source_url.endswith("/group")
     assert _issuer_mappings(context, "synthetic-b") == ()
+
+
+def research_runtime(runtime, count=1):
+    from test_backtest import START, prices, research_document
+
+    _, store, broker, _, _ = runtime
+    store.current_strategy_draft.return_value = {"version": 4, "document": research_document()}
+    store.latest_balancing_context.return_value = {
+        "account_id": "synthetic-a",
+        "holdings": [],
+        "candidates": [
+            {
+                "instrument_uid": str(index),
+                "ticker": "TEST" + str(index),
+                "instrument_type": "share",
+                "currency": "RUB",
+                "lot": 1,
+                "sector": "synthetic",
+                "provider_retrieved_at": START,
+                "asset_uid": "asset-" + str(index),
+            }
+            for index in range(count)
+        ],
+    }
+    broker.candidate_fundamentals.return_value = ()
+    broker.candidate_daily_exchange_candles.side_effect = lambda owner, uid, **kw: (
+        prices(uid).candles
+    )
+    return store, broker
+
+
+def research_call(store, broker, **overrides):
+    from test_backtest import END, START
+
+    return strategy_research(
+        **{
+            "user_id": A,
+            "expected_version": 4,
+            "store": store,
+            "broker": broker,
+            "from_at": START,
+            "to_at": END,
+            "commission_bps": Decimal(10),
+            "slippage_bps": Decimal(5),
+            "initial_capital_rub": Decimal(10000),
+            **overrides,
+        }
+    )
+
+
+def test_research_uses_owner_provider_history_and_never_calls_trade_methods(runtime):
+    store, broker = research_runtime(runtime)
+    result = research_call(store, broker)
+    assert result["status"] == "computed", result["missing_requirements"]
+    assert result["basis"] == "unadjusted_price"
+    assert result["account_id"] == "synthetic-a"
+    assert result["execution_enabled"] is False
+    assert result["probability_of_profit"] is None
+    assert result["universe"]["historical_universe_verified"] is False
+    assert {call[0] for call in broker.mock_calls} == {
+        "status",
+        "candidate_daily_exchange_candles",
+        "candidate_fundamentals",
+    }
+    assert all(call.args[0] == A for call in broker.candidate_daily_exchange_candles.call_args_list)
+    store.latest_balancing_context.assert_called_once_with(A, candidate_limit=100)
+
+
+def test_research_bounds_provider_load_even_with_a_large_catalog(runtime):
+    store, broker = research_runtime(runtime, count=100)
+    result = research_call(store, broker)
+    assert result["universe"]["assets_read"] == 12
+    assert broker.candidate_daily_exchange_candles.call_count == 12
+    assert broker.candidate_fundamentals.call_count == 1
+    assert len(broker.candidate_fundamentals.call_args.args[1]) == 12
+
+
+@pytest.mark.parametrize("change", ["version", "document", "account"])
+def test_research_rechecks_exact_strategy_and_connection_after_provider_reads(runtime, change):
+    from test_backtest import prices
+
+    store, broker = research_runtime(runtime)
+
+    def read(owner, uid, **kw):
+        if change == "version":
+            store.current_strategy_draft.return_value["version"] = 5
+        elif change == "document":
+            store.current_strategy_draft.return_value["document"]["profile"]["reserve_rub"] = "3"
+        else:
+            broker.status.return_value = replace(broker.status.return_value, account_id="other")
+        return prices(uid).candles
+
+    broker.candidate_daily_exchange_candles.side_effect = read
+    with pytest.raises((SettingsVersionConflict, BrokerConnectionError)):
+        research_call(store, broker)
+
+
+def test_failed_history_read_is_missing_evidence_and_does_not_expose_provider_error(runtime):
+    store, broker = research_runtime(runtime)
+    broker.candidate_daily_exchange_candles.side_effect = TBankUnavailable("hidden-credential")
+    result = research_call(store, broker)
+    assert result["status"] == "insufficient_data"
+    assert result["metrics"] is None
+    assert result["provider_unavailable_assets"] == ["0"]
+    assert "hidden-credential" not in str(result)
+
+
+def test_invalid_research_window_is_rejected_before_any_network(runtime):
+    store, broker = research_runtime(runtime)
+    with pytest.raises(ValueError, match="research_window_invalid"):
+        research_call(store, broker, to_at=datetime.now(UTC) + timedelta(days=1))
+    broker.status.assert_not_called()
+    broker.candidate_daily_exchange_candles.assert_not_called()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import ipaddress
 import json
 import logging
@@ -18,6 +19,13 @@ from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, st
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from .assistant import (
+    AssistantBusy,
+    AssistantClient,
+    AssistantNotConfigured,
+    AssistantUnavailable,
+    portfolio_context,
+)
 from .balancing_service import build_live_balancing_payload
 from .broker import (
     BrokerAccountNotAccessible,
@@ -40,6 +48,7 @@ from .execution_store import (
 from .freshness import PORTFOLIO_MAX_AGE, describe_freshness
 from .intelligence import rating_source_references
 from .market import MarketService
+from .news import NewsClient, NewsUnavailable
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import (
     BalancingPolicyInput,
@@ -64,9 +73,9 @@ from .security import (
     format_public_id,
     generate_oauth_state,
     generate_pkce_verifier,
-    open_vkid_flow,
+    open_oauth_flow,
     pkce_challenge,
-    seal_vkid_flow,
+    seal_oauth_flow,
     session_digest,
 )
 from .service import (
@@ -76,15 +85,19 @@ from .service import (
     RegistrationCapacityReached,
     RegistrationClosed,
 )
-from .strategy import capital_feasibility, strategy_catalog, stress_diagnostics, validate_selection
-from .strategy_service import current_account_assessment
+from .strategy import strategy_catalog, validate_selection
+from .strategy_service import current_account_assessment, strategy_research
 from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
+from .tid import TIDClient, TIDRejected, TIDUnavailable
 from .vkid import VKIDClient, VKIDRejected, VKIDUnavailable
+from .workspace_store import WorkspaceNotFound, WorkspaceStore
 
 SESSION_COOKIE = "omnicio_session"
 VKID_FLOW_COOKIE = "omnicio_vkid_flow"
+TID_FLOW_COOKIE = "omnicio_tid_flow"
 CANONICAL_ORIGIN = "https://omnicio.ru"
 VKID_CALLBACK = f"{CANONICAL_ORIGIN}/api/auth/vkid/callback"
+TID_CALLBACK = f"{CANONICAL_ORIGIN}/api/auth/tid/callback"
 INVALID_VKID_CALLBACK = "VK ID callback payload is invalid"
 _TBANK_CREDENTIAL_REJECTED_DETAIL = "stored T-Invest credential was rejected"
 _UPDATED_LEGAL_CONSENT_DETAIL = "updated legal consent required"
@@ -108,6 +121,7 @@ class StartVKIDBody(StrictRequestBody):
     accept_personal_data: bool
     accept_terms: bool
     confirm_age_18: bool
+    link_current_account: bool = False
 
 
 class TBankCredentialBody(StrictRequestBody):
@@ -182,15 +196,44 @@ class StrategyAccountBody(StrictRequestBody):
     expected_version: int = Field(ge=1, le=2_147_483_647, strict=True)
 
 
-class StrategyFeasibilityBody(StrictRequestBody):
+class StrategyResearchBody(StrictRequestBody):
     expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
     expected_version: int = Field(ge=1, le=2_147_483_647, strict=True)
-    nav_rub: Decimal = Field(
+    from_at: datetime
+    to_at: datetime
+    commission_bps: Decimal = Field(ge=0, le=1000, allow_inf_nan=False)
+    slippage_bps: Decimal = Field(ge=0, le=1000, allow_inf_nan=False)
+    initial_capital_rub: Decimal = Field(
         gt=0, le=1_000_000_000_000, max_digits=24, decimal_places=8, allow_inf_nan=False,
     )
-    lot_cost_rub: Decimal = Field(
-        gt=0, le=1_000_000_000_000, max_digits=24, decimal_places=8, allow_inf_nan=False,
-    )
+
+
+class WorkspaceDocumentBody(StrictRequestBody):
+    document: dict[str, Any]
+
+
+class WorkspaceVersionBody(StrictRequestBody):
+    expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
+
+
+class WorkspaceSaveBody(WorkspaceDocumentBody, WorkspaceVersionBody):
+    pass
+
+
+class EventsReadBody(StrictRequestBody):
+    ids: list[str] = Field(min_length=1, max_length=100)
+    read: bool = True
+
+
+class AssistantHistoryItem(StrictRequestBody):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=16000)
+
+
+class AssistantMessageBody(StrictRequestBody):
+    message: str = Field(min_length=1, max_length=4000)
+    context: Literal["general", "portfolio"] = "general"
+    history: list[AssistantHistoryItem] = Field(default_factory=list, max_length=20)
 
 
 class PortfolioProposalBody(StrictRequestBody):
@@ -274,6 +317,10 @@ def market_service(request: Request) -> MarketService:
 
 def portfolio_store(request: Request) -> PortfolioStore:
     return cast(PortfolioStore, request.app.state.portfolio_store)
+
+
+def workspace_store(request: Request) -> WorkspaceStore:
+    return cast(WorkspaceStore, request.app.state.workspace_store)
 
 
 def execution_store(request: Request) -> ExecutionStore:
@@ -366,14 +413,12 @@ def validate_vkid_callback_values(values: dict[str, str], expected_state: str) -
     return code, device_id
 
 
-def auth_redirect(path: str) -> RedirectResponse:
+def auth_redirect(path: str, provider: str = "vkid") -> RedirectResponse:
     response = RedirectResponse(path, status_code=status.HTTP_303_SEE_OTHER)
+    response.headers["Referrer-Policy"] = "no-referrer"
     response.delete_cookie(
-        VKID_FLOW_COOKIE,
-        path="/api/auth/vkid",
-        secure=True,
-        httponly=True,
-        samesite="lax",
+        VKID_FLOW_COOKIE if provider == "vkid" else TID_FLOW_COOKIE,
+        path=f"/api/auth/{provider}", secure=True, httponly=True, samesite="lax",
     )
     return response
 
@@ -387,6 +432,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.database = database
     app.state.auth_service = AuthService(cfg, database)
     app.state.portfolio_store = PortfolioStore(database)
+    app.state.workspace_store = WorkspaceStore(database)
+    app.state.assistant_client = AssistantClient(
+        base_url=cfg.assistant_base_url, model=cfg.assistant_model,
+        api_key=cfg.assistant_api_key,
+    )
+    app.state.news_client = NewsClient()
+    app.state.tid_client = TIDClient(
+        client_id=cfg.tid_client_id, client_secret=cfg.tid_client_secret,
+        redirect_uri=TID_CALLBACK, pkce_enabled=cfg.tid_pkce_enabled,
+    )
     execution_ledger = ExecutionStore(database)
     app.state.execution_store = execution_ledger
     app.state.vkid_client = VKIDClient(
@@ -430,6 +485,13 @@ async def settings_conflict_response(
     request: Request, exc: SettingsVersionConflict,
 ) -> JSONResponse:
     return JSONResponse(status_code=409, content={"detail": "settings_version_conflict"})
+
+
+@app.exception_handler(WorkspaceNotFound)
+async def workspace_not_found_response(
+    request: Request, exc: WorkspaceNotFound,
+) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": "workspace_item_not_found"})
 
 
 @app.middleware("http")
@@ -485,114 +547,162 @@ def auth_config(request: Request) -> dict[str, object]:
     return {
         "mode": cfg.access_mode,
         "auth_provider": "vkid",
+        "auth_providers": ["tid", "vkid"],
         "registration_enabled": cfg.registration_enabled,
         "registration_max_users": cfg.registration_max_users,
-        "login_enabled": cfg.vkid_ready,
-        "legal_versions": {
-            "privacy_policy": cfg.privacy_version,
-            "personal_data_consent": cfg.consent_version,
-            "terms": cfg.terms_version,
-        },
+        "login_enabled": cfg.login_ready,
+        "vkid_enabled": cfg.vkid_ready,
+        "tid_enabled": cfg.tid_ready,
+        "tid_configured": bool(cfg.tid_client_id and cfg.tid_client_secret),
+        "legal_versions": service(request).legal_versions(),
     }
 
 
-@app.post(
-    "/api/auth/vkid/start",
-    responses={
-        400: {"description": "Legal or age confirmation is invalid"},
-        503: {"description": "VK ID login is not configured"},
-    },
-)
-def start_vkid(
-    body: StartVKIDBody,
-    request: Request,
-    response: Response,
+def _start_oauth(
+    provider: str, body: StartVKIDBody, request: Request, response: Response,
+    session_token: str | None,
 ) -> dict[str, str]:
     require_same_origin(request)
     cfg = settings(request)
-    if not cfg.vkid_ready:
-        raise HTTPException(status_code=503, detail="VK ID login is not configured")
+    ready = cfg.vkid_ready if provider == "vkid" else cfg.tid_ready
+    if not ready:
+        raise HTTPException(status_code=503, detail=f"{provider}_not_configured")
     if not (body.accept_privacy and body.accept_personal_data and body.accept_terms):
         raise HTTPException(status_code=400, detail="legal acknowledgments are required")
     if not body.confirm_age_18:
         raise HTTPException(status_code=400, detail="user must confirm age 18+")
-
-    state_value = generate_oauth_state()
-    verifier = generate_pkce_verifier()
-    flow = seal_vkid_flow(
-        state=state_value,
-        code_verifier=verifier,
+    user = authenticated_user(request, session_token) if body.link_current_account else None
+    state_value, verifier = generate_oauth_state(), generate_pkce_verifier()
+    flow = seal_oauth_flow(
+        state=state_value, code_verifier=verifier,
         legal_versions=service(request).legal_versions(),
-        crypto_key=cfg.vkid_flow_crypto_key,
+        crypto_key=cfg.vkid_flow_crypto_key, provider=provider,
+        link_user_id=str(user.id) if user else None,
+        link_session_digest=session_digest(session_token or "").hex() if user else None,
     )
     response.set_cookie(
-        VKID_FLOW_COOKIE,
-        flow,
-        max_age=cfg.vkid_flow_ttl_seconds,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        path="/api/auth/vkid",
+        VKID_FLOW_COOKIE if provider == "vkid" else TID_FLOW_COOKIE,
+        flow, max_age=cfg.vkid_flow_ttl_seconds, httponly=True, secure=True,
+        samesite="lax", path=f"/api/auth/{provider}",
     )
-    return {
-        "authorize_url": vkid_client(request).authorization_url(
-            state=state_value,
-            code_challenge=pkce_challenge(verifier),
+    client = (vkid_client(request) if provider == "vkid" else
+              cast(TIDClient, request.app.state.tid_client))
+    return {"authorize_url": client.authorization_url(
+        state=state_value, code_challenge=pkce_challenge(verifier),
+    )}
+
+
+@app.post("/api/auth/vkid/start")
+def start_vkid(
+    body: StartVKIDBody, request: Request, response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, str]:
+    return _start_oauth("vkid", body, request, response, session_token)
+
+
+@app.post("/api/auth/tid/start")
+def start_tid(
+    body: StartVKIDBody, request: Request, response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, str]:
+    return _start_oauth("tid", body, request, response, session_token)
+
+
+def _oauth_callback(
+    provider: str, request: Request, flow_cookie: str | None, session_token: str | None,
+) -> RedirectResponse:
+    cfg = settings(request)
+    provider_ready = cfg.vkid_ready if provider == "vkid" else cfg.tid_ready
+    if not provider_ready or not flow_cookie or len(flow_cookie) > 8192:
+        return auth_redirect("/?auth_error=flow", provider)
+    try:
+        flow = open_oauth_flow(
+            flow_cookie, crypto_key=cfg.vkid_flow_crypto_key,
+            ttl_seconds=cfg.vkid_flow_ttl_seconds, provider=provider,
         )
-    }
+        values = callback_values(request)
+        if provider == "vkid":
+            code, device_id = validate_vkid_callback_values(values, flow.state)
+        else:
+            if any(len(request.query_params.getlist(k)) != 1 for k in ("code", "state")):
+                raise TIDRejected("tid_callback_ambiguous")
+            code = values.get("code", "")
+            if (values.get("error") or not code or len(code) > 4096
+                    or not hmac.compare_digest(
+                        values.get("state", "").encode(), flow.state.encode(),
+                    )):
+                raise TIDRejected("tid_callback_invalid")
+            device_id = ""
+        linked_user = None
+        if flow.link_user_id is not None:
+            linked_user = authenticated_user(request, session_token)
+            if (str(linked_user.id) != flow.link_user_id
+                    or not hmac.compare_digest(
+                        session_digest(session_token or "").hex(), flow.link_session_digest or "",
+                    )):
+                raise PermissionError("oauth_link_session_changed")
+        database: Database = request.app.state.database
+        if not database.claim_oauth_flow(
+            session_digest(flow.state), provider, cfg.vkid_flow_ttl_seconds,
+        ):
+            raise SecurityValueError("oauth_state_already_used")
+        auth = service(request)
+        if provider == "vkid":
+            vk_identity = vkid_client(request).exchange_code(
+                code=code, device_id=device_id,
+                code_verifier=flow.code_verifier, expected_state=flow.state,
+            )
+            result = auth.complete_vkid_login(
+                vk_user_id=vk_identity.user_id, client_ip=client_ip(request),
+                accepted_legal_versions=flow.legal_versions,
+                link_user_id=linked_user.id if linked_user else None,
+                link_session_digest=(bytes.fromhex(flow.link_session_digest)
+                                     if flow.link_session_digest else None),
+            )
+        else:
+            tid: TIDClient = request.app.state.tid_client
+            tid_identity = tid.exchange_code(code=code, code_verifier=flow.code_verifier)
+            result = auth.complete_tid_login(
+                tid_subject=tid_identity.subject, client_ip=client_ip(request),
+                accepted_legal_versions=flow.legal_versions,
+                link_user_id=linked_user.id if linked_user else None,
+                link_session_digest=(bytes.fromhex(flow.link_session_digest)
+                                     if flow.link_session_digest else None),
+            )
+    except RegistrationClosed:
+        return auth_redirect("/?auth_error=registration", provider)
+    except RegistrationCapacityReached:
+        return auth_redirect("/?auth_error=capacity", provider)
+    except (SecurityValueError, VKIDRejected, TIDRejected):
+        return auth_redirect("/?auth_error=flow", provider)
+    except (VKIDUnavailable, TIDUnavailable, LoginUnavailable):
+        return auth_redirect("/?auth_error=provider", provider)
+    except (PermissionError, HTTPException):
+        return auth_redirect("/?auth_error=account", provider)
+    response = auth_redirect("/?auth=success", provider)
+    response.set_cookie(
+        SESSION_COOKIE, result.session_token, max_age=result.expires_in_seconds,
+        httponly=True, secure=True, samesite="lax", path="/",
+    )
+    return response
 
 
 @app.get("/api/auth/vkid/callback")
 def vkid_callback(
     request: Request,
     flow_cookie: str | None = Cookie(default=None, alias=VKID_FLOW_COOKIE),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> RedirectResponse:
-    cfg = settings(request)
-    if not cfg.vkid_ready or not flow_cookie:
-        return auth_redirect("/?auth_error=flow")
+    return _oauth_callback("vkid", request, flow_cookie, session_token)
 
-    try:
-        expected_state, verifier, legal_versions = open_vkid_flow(
-            flow_cookie,
-            crypto_key=cfg.vkid_flow_crypto_key,
-            ttl_seconds=cfg.vkid_flow_ttl_seconds,
-        )
-        values = callback_values(request)
-        code, device_id = validate_vkid_callback_values(values, expected_state)
 
-        identity = vkid_client(request).exchange_code(
-            code=code,
-            device_id=device_id,
-            code_verifier=verifier,
-            expected_state=expected_state,
-        )
-        result = service(request).complete_vkid_login(
-            vk_user_id=identity.user_id,
-            client_ip=client_ip(request),
-            accepted_legal_versions=legal_versions,
-        )
-    except RegistrationClosed:
-        return auth_redirect("/?auth_error=registration")
-    except RegistrationCapacityReached:
-        return auth_redirect("/?auth_error=capacity")
-    except (SecurityValueError, VKIDRejected):
-        return auth_redirect("/?auth_error=flow")
-    except (VKIDUnavailable, LoginUnavailable):
-        return auth_redirect("/?auth_error=provider")
-    except PermissionError:
-        return auth_redirect("/?auth_error=account")
-
-    response = auth_redirect("/?auth=success")
-    response.set_cookie(
-        SESSION_COOKIE,
-        result.session_token,
-        max_age=result.expires_in_seconds,
-        httponly=True,
-        secure=True,
-        samesite="strict",
-        path="/",
-    )
-    return response
+@app.get("/api/auth/tid/callback")
+def tid_callback(
+    request: Request,
+    flow_cookie: str | None = Cookie(default=None, alias=TID_FLOW_COOKIE),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> RedirectResponse:
+    return _oauth_callback("tid", request, flow_cookie, session_token)
 
 
 @app.get(
@@ -613,7 +723,7 @@ def me(
         max_age=settings(request).session_ttl_seconds,
         httponly=True,
         secure=True,
-        samesite="strict",
+        samesite="lax",
         path="/",
     )
     return {
@@ -621,6 +731,182 @@ def me(
         "status": user.status,
         "role": user.role,
     }
+
+
+@app.get("/api/auth/identities")
+def auth_identities(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    database: Database = request.app.state.database
+    cfg = settings(request)
+    return {
+        "providers": database.identity_providers(user.id),
+        "available_providers": {"tid": cfg.tid_ready, "vkid": cfg.vkid_ready},
+    }
+
+
+@app.get("/api/assistant/status")
+def assistant_status(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    authenticated_user(request, session_token)
+    assistant: AssistantClient = request.app.state.assistant_client
+    return assistant.status()
+
+
+@app.post("/api/assistant/messages")
+def assistant_message(
+    body: AssistantMessageBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    assistant: AssistantClient = request.app.state.assistant_client
+    snapshot = workspace_store(request).dashboard(user.id) if body.context == "portfolio" else None
+    evidence = portfolio_context(snapshot) if snapshot is not None else None
+    try:
+        result = assistant.chat(
+            message=body.message,
+            history=[item.model_dump() for item in body.history], context=evidence,
+        )
+    except AssistantNotConfigured as exc:
+        raise HTTPException(status_code=503, detail="assistant_not_configured") from exc
+    except AssistantBusy as exc:
+        raise HTTPException(
+            status_code=429, detail="assistant_busy", headers={"Retry-After": "10"},
+        ) from exc
+    except AssistantUnavailable as exc:
+        raise HTTPException(status_code=502, detail="assistant_unavailable") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="assistant_message_invalid") from exc
+    current = authenticated_user(request, session_token)
+    if current.id != user.id:
+        raise HTTPException(status_code=409, detail="profile_context_changed")
+    if snapshot is not None:
+        latest = broker_service(request).status(user.id)
+        previous = snapshot["connection"]
+        if (latest.connected != previous["connected"]
+                or latest.account_id != previous.get("account_id")
+                or latest.environment != previous.get("environment")):
+            raise HTTPException(status_code=409, detail="assistant_context_changed")
+    return result
+
+
+@app.get("/api/workspace")
+def get_workspace(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    return workspace_store(request).dashboard(user.id)
+
+
+@app.get("/api/preferences")
+def get_preferences(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    return workspace_store(request).preferences(user.id)
+
+
+def _workspace_editor(request: Request, session_token: str | None) -> UserRecord:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    _require_current_legal_consent(request, user)
+    return user
+
+
+@app.put("/api/preferences")
+def save_preferences(
+    body: WorkspaceSaveBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    try:
+        return workspace_store(request).save_preferences(
+            user.id, body.document, expected_version=body.expected_version,
+        )
+    except SettingsVersionConflict:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="workspace_document_invalid") from exc
+
+
+@app.get("/api/goals")
+def get_goals(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    return workspace_store(request).goals(user.id)
+
+
+@app.post("/api/goals", status_code=201)
+def create_goal(
+    body: WorkspaceDocumentBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    try:
+        return workspace_store(request).create_goal(user.id, body.document)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="goal_document_invalid") from exc
+
+
+@app.put("/api/goals/{goal_id}")
+def update_goal(
+    goal_id: UUID, body: WorkspaceSaveBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    try:
+        return workspace_store(request).update_goal(
+            user.id, goal_id, body.document, expected_version=body.expected_version,
+        )
+    except SettingsVersionConflict:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="goal_document_invalid") from exc
+
+
+@app.delete("/api/goals/{goal_id}")
+def delete_goal(
+    goal_id: UUID, body: WorkspaceVersionBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, bool]:
+    user = _workspace_editor(request, session_token)
+    return {"deleted": workspace_store(request).delete_goal(
+        user.id, goal_id, expected_version=body.expected_version,
+    )}
+
+
+@app.get("/api/events")
+def get_events(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=100),
+    unread_only: bool = Query(default=False),
+    category: Literal["all", "portfolio", "payments", "goals", "system"] = "all",
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    return workspace_store(request).events(
+        user.id, limit=limit, unread_only=unread_only, category=category,
+    )
+
+
+@app.post("/api/events/read")
+def mark_events_read(
+    body: EventsReadBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    try:
+        return workspace_store(request).mark_events_read(user.id, body.ids, read=body.read)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="event_ids_invalid") from exc
 
 
 @app.get(
@@ -647,6 +933,17 @@ def system_recovery(
 ) -> dict[str, object]:
     authenticated_user(request, session_token)
     return recovery_status()
+
+
+@app.get("/api/public/news")
+def public_news(request: Request) -> dict[str, Any]:
+    client: NewsClient = request.app.state.news_client
+    try:
+        return client.headlines()
+    except NewsUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="news_source_unavailable", headers={"Retry-After": "60"},
+        ) from exc
 
 
 @app.get(
@@ -811,7 +1108,7 @@ def instrument_market_snapshot(
     instrument_uid: str,
     request: Request,
     response: Response,
-    period: Literal["1d", "1w", "1m", "3m", "1y"] = Query(default="1m"),
+    period: Literal["1d", "1w", "1m", "3m", "1y", "all"] = Query(default="1m"),
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
@@ -843,6 +1140,9 @@ def instrument_market_snapshot(
             status_code=503,
             detail="instrument market data unavailable",
         ) from exc
+    current = authenticated_user(request, session_token)
+    if current.id != user.id:
+        raise HTTPException(status_code=409, detail="profile_context_changed")
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return asdict(snapshot)
 
@@ -1144,25 +1444,43 @@ def strategy_account_assessment(
 
 
 @app.post(
-    "/api/profile/strategy/feasibility",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    "/api/profile/strategy/research",
+    responses={
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: {"description": "Invalid research period or explicit cost assumptions"},
+        503: {"description": "Broker evidence unavailable"},
+    },
 )
-def strategy_feasibility(
-    body: StrategyFeasibilityBody, request: Request, response: Response,
+def research_strategy(
+    body: StrategyResearchBody, request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     user = _settings_editor_user(request, session_token, body.expected_public_id)
-    selection = portfolio_store(request).current_strategy_draft(user.id)
+    try:
+        payload = strategy_research(
+            user_id=user.id, expected_version=body.expected_version,
+            store=portfolio_store(request), broker=broker_service(request),
+            from_at=body.from_at, to_at=body.to_at,
+            commission_bps=body.commission_bps, slippage_bps=body.slippage_bps,
+            initial_capital_rub=body.initial_capital_rub,
+        )
+    except BrokerAssessmentBusy as exc:
+        raise HTTPException(status_code=429, detail="strategy_assessment_busy") from exc
+    except SettingsVersionConflict:
+        raise
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail=_TBANK_NOT_CONNECTED_DETAIL) from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(status_code=409, detail=_TBANK_CREDENTIAL_REJECTED_DETAIL) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="research_parameters_invalid") from exc
+    except (BrokerConnectionError, TBankUnavailable) as exc:
+        raise HTTPException(status_code=503, detail="strategy_research_unavailable") from exc
+    current = _settings_editor_user(request, session_token, body.expected_public_id)
+    if current.id != user.id:
+        raise HTTPException(status_code=409, detail="strategy_account_context_changed")
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    if selection is None:
-        return {"status": "draft_required", "public_id": format_public_id(user.public_id)}
-    if selection["version"] != body.expected_version:
-        raise SettingsVersionConflict("settings_version_conflict")
-    return {**capital_feasibility(selection["document"], nav_rub=body.nav_rub,
-                                 lot_cost_rub=body.lot_cost_rub),
-            "public_id": format_public_id(user.public_id),
-            "strategy_version": selection["version"],
-            "stress": stress_diagnostics(selection["document"], nav_rub=body.nav_rub)}
+    return {**payload, "public_id": format_public_id(user.public_id)}
 
 
 @app.put(

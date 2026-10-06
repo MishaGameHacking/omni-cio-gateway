@@ -8,10 +8,255 @@ import pytest
 
 from omnicio.portfolio import PortfolioAnalysis, SecurityExposure
 from omnicio.strategy import POLICY_KEYS, RATING_LEVELS, preset_document, strategy_catalog
-from omnicio.strategy_assessment import IssuerEvidence, assess_strategy_account, rating_notch
+from omnicio.strategy_assessment import (
+    FundConstituent,
+    IssuerEvidence,
+    StrategyCandidateFacts,
+    StrategyFact,
+    assess_strategy_account,
+    rating_notch,
+    select_strategy_candidates,
+)
 from omnicio.tbank import TBankInstrumentMetadata, TBankRating
 
 NOW = datetime(2026, 10, 6, 6, 0, tzinfo=UTC)
+FACT_SOURCE = "https://synthetic.example/statement"
+
+
+def selection_document(preset, kind="shares"):
+    data = document(preset)
+    data["allocation"] = dict.fromkeys(("shares", "bonds", "funds", "cash"), 0)
+    data["allocation"][kind] = 100
+    for name in (
+        "max_instrument_percent",
+        "max_issuer_percent",
+        "max_group_percent",
+        "max_sector_percent",
+        "max_share_percent",
+        "max_bond_percent",
+        "max_etf_percent",
+    ):
+        data["policy"][name] = "100"
+    data["rules"]["fund_wrapper_cap_percent"] = "100"
+    return data
+
+
+def candidate_facts(uid="a", kind="shares", **overrides):
+    values = {
+        "history_observations": 100,
+        "price_rub": Decimal(100),
+        "daily_volume_lots": Decimal(10000),
+        "volatility_percent": Decimal(12),
+        "max_drawdown_percent": Decimal(8),
+        "momentum_percent": Decimal(20),
+        "issuer_id": "issuer-" + uid,
+        "group_id": "group-" + uid,
+        "sector": uid,
+        "rating": "AAA",
+        "maturity_date": NOW + timedelta(days=300),
+        "perpetual": False,
+        "cashflow_yield_percent": Decimal(15),
+        "net_yield_percent": Decimal(17),
+        "key_rate_percent": Decimal(15),
+        "roe_percent": Decimal(25),
+        "debt_to_ebitda": Decimal(1),
+        "free_cashflow_yield_percent": Decimal(8),
+        "dividend_yield_percent": Decimal(6),
+        "payout_ratio_percent": Decimal(50),
+        "dividend_declared": True,
+        "expense_ratio_percent": Decimal("0.25"),
+        "index_tracking": True,
+        "growth_beta": Decimal("0.4"),
+        "inflation_beta": Decimal("-0.2"),
+        "factor_observations": Decimal(200),
+    }
+    values.update(overrides)
+    facts = {
+        key: StrategyFact(value, NOW - timedelta(days=1), FACT_SOURCE)
+        for key, value in values.items()
+        if value is not None
+    }
+    constituents = (
+        tuple(
+            FundConstituent(
+                "issuer" + str(index),
+                "sector" + str(index),
+                "group" + str(index),
+                Decimal("2.5"),
+                NOW - timedelta(days=1),
+                FACT_SOURCE,
+            )
+            for index in range(40)
+        )
+        if kind == "funds"
+        else ()
+    )
+    return StrategyCandidateFacts(uid, uid.upper(), kind, 1, "RUB", facts, constituents)
+
+
+@pytest.mark.parametrize(
+    "preset,kind",
+    [
+        ("balanced", "shares"),
+        ("conservative", "bonds"),
+        ("aggressive", "shares"),
+        ("income", "bonds"),
+        ("growth", "shares"),
+        ("buffett", "shares"),
+        ("bogle", "funds"),
+        ("dalio", "shares"),
+        ("ladder", "bonds"),
+        ("dividends", "shares"),
+    ],
+)
+def test_every_new_mandate_has_a_fact_consuming_selection(preset, kind):
+    result = select_strategy_candidates(
+        selection_document(preset, kind), [candidate_facts(kind=kind)], as_of=NOW
+    )
+    assert result["selected"], result["candidates"]
+    assert result["candidates"][0]["eligible"] is True
+    assert result["execution_enabled"] is False
+    assert result["probability_of_profit"] is None
+    assert result["selected"][0]["target_weight_percent"]
+
+
+@pytest.mark.parametrize(
+    "preset,kind,field,bad_value,reason",
+    [
+        ("conservative", "bonds", "rating", "A", "minimum_rating"),
+        ("aggressive", "shares", "momentum_percent", Decimal(-2), "momentum_not_positive"),
+        ("income", "bonds", "net_yield_percent", Decimal(10), "net_yield_floor"),
+        ("buffett", "shares", "roe_percent", Decimal(5), "return_on_equity_limit"),
+        ("bogle", "funds", "expense_ratio_percent", Decimal(3), "fund_expense_limit"),
+        ("dalio", "shares", "factor_observations", None, "missing:factor_observations"),
+        ("dividends", "shares", "dividend_declared", False, "missing:dividend_decision"),
+    ],
+)
+def test_each_distinct_method_rejects_evidence_that_breaks_its_actual_rule(
+    preset,
+    kind,
+    field,
+    bad_value,
+    reason,
+):
+    result = select_strategy_candidates(
+        selection_document(preset, kind),
+        [candidate_facts(kind=kind, **{field: bad_value})],
+        as_of=NOW,
+    )
+    assert not result["selected"]
+    assert reason in result["candidates"][0]["reasons"]
+    assert result["candidate_selection_ready"] is False
+
+
+def test_unavailable_fund_composition_is_never_guessed_from_the_fund_name():
+    fund = replace(candidate_facts(kind="funds"), constituents=())
+    result = select_strategy_candidates(selection_document("bogle", "funds"), [fund], as_of=NOW)
+    assert result["status"] == "insufficient_data"
+    assert "missing:fund_constituents" in result["missing_requirements"]
+
+
+def test_ladder_distributes_across_distinct_maturity_buckets():
+    data = selection_document("ladder", "bonds")
+    rows = [
+        candidate_facts("a", "bonds", maturity_date=NOW + timedelta(days=300)),
+        candidate_facts("b", "bonds", maturity_date=NOW + timedelta(days=700)),
+    ]
+    result = select_strategy_candidates(data, rows, as_of=NOW)
+    assert len({row["bucket"] for row in result["selected"]}) == 2
+    assert [Decimal(row["target_weight_percent"]) for row in result["selected"]] == [50, 50]
+
+
+def test_unknown_identity_is_a_partial_research_basket_not_full_personal_readiness():
+    row = candidate_facts(issuer_id=None)
+    result = select_strategy_candidates(selection_document("balanced"), [row], as_of=NOW)
+    assert result["selected"]
+    assert result["status"] == "partial"
+    assert result["candidate_selection_ready"] is False
+    assert "unverified:issuer" in result["missing_requirements"]
+
+
+def test_future_fact_cannot_make_a_candidate_eligible():
+    row = candidate_facts()
+    facts = dict(row.facts)
+    facts["roe_percent"] = replace(facts["roe_percent"], available_at=NOW + timedelta(days=1))
+    result = select_strategy_candidates(
+        selection_document("buffett"), [replace(row, facts=facts)], as_of=NOW
+    )
+    assert result["selected"] == []
+    assert "missing:roe_percent" in result["missing_requirements"]
+
+
+def test_concentration_cap_uses_aggregate_issuer_across_two_instruments():
+    data = selection_document("balanced")
+    data["policy"]["max_issuer_percent"] = "25"
+    rows = [candidate_facts("a", issuer_id="same"), candidate_facts("b", issuer_id="same")]
+    result = select_strategy_candidates(data, rows, as_of=NOW)
+    assert sum(Decimal(row["target_weight_percent"]) for row in result["selected"]) == 25
+    assert Decimal(result["cash_weight_percent"]) == 75
+    assert result["candidate_selection_ready"] is False
+
+
+@pytest.mark.parametrize(
+    "ratings,policy_key",
+    [(("BB+", "BB"), "max_below_grade_percent"), (("NR", "NR"), "max_unknown_percent")],
+)
+def test_credit_category_cap_applies_across_multiple_instruments_and_notches(ratings, policy_key):
+    data = selection_document("balanced", "bonds")
+    data["profile"]["allow_below_investment_grade"] = True
+    data["policy"][policy_key] = "25"
+    for notch in ratings:
+        data["rules"]["rating_caps"][notch] = "100"
+    result = select_strategy_candidates(
+        data,
+        [candidate_facts(str(index), "bonds", rating=notch) for index, notch in enumerate(ratings)],
+        as_of=NOW,
+    )
+    assert sum(Decimal(row["target_weight_percent"]) for row in result["selected"]) == 25
+    assert Decimal(result["cash_weight_percent"]) == 75
+    assert result["candidate_selection_ready"] is False
+
+
+def test_bogle_default_fund_wrapper_uses_underlying_company_caps():
+    result = select_strategy_candidates(
+        preset_document("bogle"), [candidate_facts(kind="funds")], as_of=NOW
+    )
+    assert Decimal(result["selected"][0]["target_weight_percent"]) == 70
+    assert result["candidate_selection_ready"] is False  # The bond sleeve has no evidence.
+
+
+def test_bogle_concentration_aggregates_multiple_securities_of_the_same_issuer():
+    fund = candidate_facts(kind="funds")
+    constituents = tuple(
+        replace(row, issuer_id="issuer0") if index < 5 else row
+        for index, row in enumerate(fund.constituents)
+    )
+    result = select_strategy_candidates(
+        selection_document("bogle", "funds"),
+        [replace(fund, constituents=constituents)],
+        as_of=NOW,
+    )
+    assert result["selected"] == []
+    assert "fund_constituent_limit" in result["candidates"][0]["reasons"]
+
+
+def test_dalio_balances_regime_budgets_instead_of_counting_more_assets_as_more_regimes():
+    rows = [
+        candidate_facts("a", growth_beta=Decimal(1), inflation_beta=Decimal(1)),
+        candidate_facts("b", growth_beta=Decimal(1), inflation_beta=Decimal(1)),
+        candidate_facts("c", growth_beta=Decimal(1), inflation_beta=Decimal(-1)),
+        candidate_facts("d", growth_beta=Decimal(-1), inflation_beta=Decimal(1)),
+        candidate_facts("e", growth_beta=Decimal(-1), inflation_beta=Decimal(-1)),
+    ]
+    result = select_strategy_candidates(selection_document("dalio"), rows, as_of=NOW)
+    by_bucket = {}
+    for row in result["selected"]:
+        by_bucket[row["bucket"]] = by_bucket.get(row["bucket"], Decimal(0)) + Decimal(
+            row["target_weight_percent"]
+        )
+    assert result["candidate_selection_ready"] is True
+    assert len(by_bucket) == 4
+    assert set(by_bucket.values()) == {Decimal(25)}
 
 
 def position(uid="bond-a", kind="bond", value="10000", sector="finance"):

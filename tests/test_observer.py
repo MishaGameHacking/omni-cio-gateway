@@ -715,3 +715,26 @@ def test_observer_treats_disconnected_job_as_degraded_without_recreating_it():
     assert not result.snapshot_saved
     assert store.saved_pages == []
     assert store.saved_evidence == 0
+
+
+@pytest.mark.parametrize("failure_in_storage", [False, True])
+def test_observer_does_not_log_provider_or_sql_exception_text(caplog, failure_in_storage):
+    store = FakeStore()
+    broker = FakeBroker()
+    observer = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS)
+    storage_patch = (
+        patch.object(store, "finish_job", side_effect=RuntimeError("sensitive-sql-value"))
+        if failure_in_storage else nullcontext()
+    )
+    with (
+        patch.object(
+            broker, "revalidate_account", side_effect=RuntimeError("sensitive-provider-value"),
+        ),
+        storage_patch,
+    ):
+        result = observer.run(now=datetime(2026, 10, 2, tzinfo=UTC))
+    assert result.failed == 1
+    assert "error_type=RuntimeError" in caplog.text
+    assert "sensitive-provider-value" not in caplog.text
+    assert "sensitive-sql-value" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)

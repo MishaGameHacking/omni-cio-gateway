@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import ssl
 import subprocess
 import sys
@@ -37,7 +38,7 @@ SITE_MARKER = 'name="omni-cio-white-site"'
 LEGAL_PAGES = {
     "/legal/privacy.html": "Политика обработки персональных данных",
     "/legal/consent.html": "Согласие на обработку персональных данных",
-    "/legal/terms.html": "Пользовательские правила OmniCIO Personal",
+    "/legal/terms.html": "Пользовательские правила OMNICIO",
 }
 LEGAL_OPERATOR_MARKERS = (
     "__OMNICIO_OPERATOR_NAME__",
@@ -48,17 +49,22 @@ PRODUCT_ENV = "/etc/omnicio/product.env"
 LEGACY_RESET_MARKER = "/etc/omnicio/legacy-profile-reset-v1.done"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
 BRAND_RUNTIME_FILES = (
-    "assets/brand/transparent/omni-sentinel-core-color-1024.png",
+    "assets/brand/web/omnicio-mark.svg",
     "assets/brand/web/apple-touch-icon-180.png",
     "assets/brand/web/favicon.ico",
     "assets/brand/web/pwa-icon-192.png",
     "assets/brand/web/pwa-icon-512.png",
     "assets/brand/web/pwa-maskable-512.png",
+    "assets/brand/web/earth-hero.png",
 )
-BRAND_PUBLIC_MARK = "/assets/brand/omni-sentinel-core-color-1024.png"
+BRAND_PUBLIC_MARK = "/assets/brand/pwa-icon-192.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
 JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
+OPTIONAL_INTEGRATION_KEYS = (
+    "TID_CLIENT_ID", "TID_CLIENT_SECRET", "TID_LOGIN_ENABLED", "TID_PKCE_ENABLED",
+    "ASSISTANT_BASE_URL", "ASSISTANT_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_ENABLED",
+)
 
 
 def add_summary(line: str) -> None:
@@ -106,6 +112,11 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         "AND to_regclass('public.sessions') IS NOT NULL "
         "AND to_regclass('public.legal_acceptances') IS NOT NULL "
         "AND to_regclass('public.vkid_identities') IS NOT NULL "
+        "AND to_regclass('public.tid_identities') IS NOT NULL "
+        "AND to_regclass('public.oauth_flow_claims') IS NOT NULL "
+        "AND to_regclass('public.workspace_preferences') IS NOT NULL "
+        "AND to_regclass('public.investment_goals') IS NOT NULL "
+        "AND to_regclass('public.workspace_events') IS NOT NULL "
         "AND to_regclass('public.tbank_connection') IS NOT NULL "
         "AND to_regclass('public.instrument_catalog') IS NOT NULL "
         "AND to_regclass('public.account_instrument_access') IS NOT NULL "
@@ -188,7 +199,7 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         ") "
         ") "
         "AND ( "
-        "SELECT count(*) = 15 "
+        "SELECT count(*) = 19 "
         "FROM pg_class AS c "
         "JOIN pg_namespace AS n ON n.oid = c.relnamespace "
         "WHERE n.nspname = 'public' "
@@ -208,7 +219,8 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         "'portfolio_execution_runs', "
         "'portfolio_execution_legs', "
         "'portfolio_execution_events', "
-        "'portfolio_live_execution_mandates' "
+        "'portfolio_live_execution_mandates', "
+        "'strategy_drafts', 'workspace_preferences', 'investment_goals', 'workspace_events' "
         "] "
         ") "
         "AND c.relrowsecurity "
@@ -260,7 +272,8 @@ def registration_occupancy(ssh: EphemeralSsh) -> tuple[int, int]:
 def _environment_value(value: str) -> str:
     if "\n" in value or "\r" in value:
         raise InfraError("Runtime environment value contains a newline")
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    escaped = (value.replace("\\", "\\\\").replace('"', '\\"')
+               .replace("$", "\\$").replace("`", "\\`"))
     return f'"{escaped}"'
 
 
@@ -448,6 +461,11 @@ def build_product_environment() -> str:
         "PORTFOLIO_LIVE_MAX_ORDER_RUB": str(portfolio_live_caps()[0]),
         "PORTFOLIO_LIVE_MAX_DAILY_RUB": str(portfolio_live_caps()[1]),
     }
+    # Missing workflow secrets must not erase an integration configured on the server.
+    values.update({
+        name: os.environ[name].strip() for name in OPTIONAL_INTEGRATION_KEYS
+        if os.environ.get(name, "").strip()
+    })
     return "".join(
         f"{name}={_environment_value(value)}\n"
         for name, value in values.items()
@@ -465,13 +483,29 @@ def product_environment_backup_paths(release_sha: str) -> tuple[str, str]:
 
 def write_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
     backup, state = product_environment_backup_paths(release_sha)
+    preserve_optional = "\n".join((
+        "import pathlib, sys",
+        "new, old = map(pathlib.Path, sys.argv[1:])",
+        "text = new.read_text(encoding='utf-8')",
+        "keys = {line.partition('=')[0] for line in text.splitlines()}",
+        f"allowed = {OPTIONAL_INTEGRATION_KEYS!r}",
+        "if old.exists():",
+        "    for line in old.read_text(encoding='utf-8').splitlines():",
+        "        key = line.partition('=')[0]",
+        "        if key in allowed and key not in keys:",
+        "            text += line + '\\n'",
+        "            keys.add(key)",
+        "new.write_text(text, encoding='utf-8')",
+    ))
     command = (
         "set -euo pipefail; umask 077; "
         f"tmp={PRODUCT_ENV}.tmp-{release_sha}; "
         f"if [ -f {PRODUCT_ENV} ]; then "
         f"cp -p {PRODUCT_ENV} {backup}; printf 'present\\n' > {state}; "
         f"else rm -f {backup}; printf 'absent\\n' > {state}; fi; "
-        'cat > "$tmp"; chmod 600 "$tmp"; '
+        'cat > "$tmp"; '
+        f'python3 -c {shlex.quote(preserve_optional)} "$tmp" {PRODUCT_ENV}; '
+        'chmod 600 "$tmp"; '
         f"mv -f \"$tmp\" {PRODUCT_ENV}"
     )
     ssh.run(command, input_text=build_product_environment())
@@ -591,7 +625,8 @@ install -m 0644 "$RELEASE/web/app.js" "$WEB_RELEASE/assets/app.js"
 install -m 0644 "$RELEASE/web/workspace.js" "$WEB_RELEASE/assets/workspace.js"
 install -m 0644 "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
-install -m 0644 "$RELEASE/assets/brand/transparent/omni-sentinel-core-color-1024.png" "$WEB_RELEASE/assets/brand/omni-sentinel-core-color-1024.png"
+install -m 0644 "$RELEASE/assets/brand/web/omnicio-mark.svg" "$WEB_RELEASE/assets/brand/omnicio-mark.svg"
+install -m 0644 "$RELEASE/assets/brand/web/earth-hero.png" "$WEB_RELEASE/assets/brand/earth-hero.png"
 install -m 0644 "$RELEASE/assets/brand/web/apple-touch-icon-180.png" "$WEB_RELEASE/assets/brand/apple-touch-icon-180.png"
 install -m 0644 "$RELEASE/assets/brand/web/favicon.ico" "$WEB_RELEASE/assets/brand/favicon.ico"
 install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-192.png" "$WEB_RELEASE/assets/brand/pwa-icon-192.png"
@@ -867,6 +902,94 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_connect_timeout 5s;
         proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+
+    location = /api/auth/tid/start {
+        limit_req zone=omnicio_auth_start burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+
+    location = /api/auth/tid/callback {
+        limit_req zone=omnicio_auth_callback burst=10 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+
+    location = /api/assistant/messages {
+        client_max_body_size 128k;
+        limit_req zone=omnicio_auth_start burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+
+    location = /api/preferences {
+        client_max_body_size 64k;
+        limit_req zone=omnicio_api burst=60 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+    }
+
+    location = /api/profile/strategy/research {
+        client_max_body_size 16k;
+        limit_req zone=omnicio_auth_start burst=5 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 180s;
+        proxy_send_timeout 30s;
+    }
+
+    location ~ ^/api/market/instruments/[^/]+$ {
+        client_max_body_size 16k;
+        limit_req zone=omnicio_api burst=60 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 120s;
         proxy_send_timeout 30s;
     }
 
@@ -1193,9 +1316,9 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         raise InfraError("Public application build does not match release")
 
     runtime_assets = (
-        ("/assets/app.js", b"window.OmniWorkspace.init", JAVASCRIPT_CONTENT_TYPES),
-        ("/assets/workspace.js", b"window.OmniWorkspace", JAVASCRIPT_CONTENT_TYPES),
-        ("/assets/app.css", b"--sidebar-width", ("text/css",)),
+        ("/assets/app.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
+        ("/assets/workspace.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
+        ("/assets/app.css", b"--sidebar", ("text/css",)),
         ("/sw.js", b"omnicio-public-", JAVASCRIPT_CONTENT_TYPES),
         ("/offline.html", b"<html", ("text/html",)),
     )

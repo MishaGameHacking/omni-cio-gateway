@@ -173,7 +173,7 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     reason="ephemeral PostgreSQL is required for migration integration coverage",
 )
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0013_strategy_assessment_admission.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0015_tid_identity.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:

@@ -226,7 +226,7 @@ class TBankPortfolioPosition:
     quantity: str
     current_price: TBankMoney | None
     average_price: TBankMoney | None
-    expected_yield_percent: str
+    expected_yield_amount: str | None
     daily_yield: TBankMoney | None
     blocked: bool
     current_nkd: TBankMoney | None = None
@@ -683,6 +683,7 @@ def _validate_exchange_candle_window(
         "CANDLE_INTERVAL_HOUR": (timedelta(hours=1), timedelta(days=93)),
         "CANDLE_INTERVAL_4_HOUR": (timedelta(hours=4), timedelta(days=93)),
         "CANDLE_INTERVAL_DAY": (timedelta(days=1), timedelta(days=366 * 6)),
+        "CANDLE_INTERVAL_MONTH": (timedelta(days=28), timedelta(days=366 * 10)),
     }.get(interval)
     if bounds is None:
         raise ValueError("unsupported candle interval")
@@ -964,6 +965,36 @@ class TBankInvestClient:
             _bond_rating(raw)
             for raw in _optional_list(raw_instrument, "ratings")
         )
+
+    def first_daily_candle(
+        self, token: str, environment: TBankEnvironment, instrument_uid: str,
+    ) -> datetime | None:
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
+        body: dict[str, object] = {"idType": "INSTRUMENT_ID_TYPE_UID", "id": instrument}
+        payload = self._post(
+            token=token, environment=environment, service="InstrumentsService",
+            method="GetInstrumentBy", body=body,
+        )
+        item = _required_object(payload.get("instrument"), "instrument history metadata")
+        if item.get("uid") != instrument:
+            raise TBankUnavailable("instrument history identity mismatch")
+        first = _optional_provider_timestamp(item.get("first1dayCandleDate"))
+        if first is not None:
+            return first
+        method = {
+            "share": "ShareBy", "bond": "BondBy", "etf": "EtfBy",
+            "currency": "CurrencyBy", "futures": "FutureBy", "option": "OptionBy",
+        }.get(str(item.get("instrumentType", "")))
+        if method is None:
+            return None
+        payload = self._post(
+            token=token, environment=environment, service="InstrumentsService",
+            method=method, body=body,
+        )
+        item = _required_object(payload.get("instrument"), "instrument history metadata")
+        if item.get("uid") != instrument:
+            raise TBankUnavailable("instrument history identity mismatch")
+        return _optional_provider_timestamp(item.get("first1dayCandleDate"))
 
     def get_exchange_candles(
         self,
@@ -1811,7 +1842,7 @@ class TBankInvestClient:
                     quantity=_quotation(position.get("quantity")) or "0",
                     current_price=_money(position.get("currentPrice")),
                     average_price=_money(position.get("averagePositionPrice")),
-                    expected_yield_percent=_quotation(position.get("expectedYield")) or "0",
+                    expected_yield_amount=_quotation(position.get("expectedYield")),
                     daily_yield=_money(position.get("dailyYield")),
                     blocked=blocked_raw,
                     current_nkd=_money(position.get("currentNkd")),

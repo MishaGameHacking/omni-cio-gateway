@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import secrets
+from dataclasses import dataclass
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -85,18 +86,35 @@ def pkce_challenge(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
-def seal_vkid_flow(
+@dataclass(frozen=True, slots=True)
+class OAuthFlow:
+    state: str
+    code_verifier: str
+    legal_versions: dict[str, str]
+    link_user_id: str | None = None
+    link_session_digest: str | None = None
+
+
+def seal_oauth_flow(
     *,
     state: str,
     code_verifier: str,
     legal_versions: dict[str, str],
     crypto_key: str,
+    provider: str = "vkid",
+    link_user_id: str | None = None,
+    link_session_digest: str | None = None,
 ) -> str:
+    if provider not in {"vkid", "tid"}:
+        raise SecurityValueError("invalid OAuth provider")
     payload = json.dumps(
         {
             "state": state,
             "code_verifier": code_verifier,
             "legal_versions": legal_versions,
+            "provider": provider,
+            "link_user_id": link_user_id,
+            "link_session_digest": link_session_digest,
         },
         separators=(",", ":"),
         sort_keys=True,
@@ -104,15 +122,16 @@ def seal_vkid_flow(
     try:
         return Fernet(crypto_key.encode("ascii")).encrypt(payload).decode("ascii")
     except ValueError as exc:
-        raise SecurityValueError("invalid VK ID flow encryption key") from exc
+        raise SecurityValueError("invalid OAuth flow encryption key") from exc
 
 
-def open_vkid_flow(
+def open_oauth_flow(
     token: str,
     *,
     crypto_key: str,
     ttl_seconds: int,
-) -> tuple[str, str, dict[str, str]]:
+    provider: str = "vkid",
+) -> OAuthFlow:
     try:
         raw = Fernet(crypto_key.encode("ascii")).decrypt(
             token.encode("ascii"),
@@ -120,10 +139,12 @@ def open_vkid_flow(
         )
         payload = json.loads(raw)
     except (InvalidToken, ValueError) as exc:
-        raise SecurityValueError("invalid or expired VK ID flow") from exc
+        raise SecurityValueError("invalid or expired OAuth flow") from exc
 
     if not isinstance(payload, dict):
-        raise SecurityValueError("invalid VK ID flow payload")
+        raise SecurityValueError("invalid OAuth flow payload")
+    if provider not in {"vkid", "tid"} or payload.get("provider") != provider:
+        raise SecurityValueError("OAuth provider mismatch")
     state = payload.get("state")
     verifier = payload.get("code_verifier")
     versions = payload.get("legal_versions")
@@ -136,4 +157,14 @@ def open_vkid_flow(
         for key, value in versions.items()
     ):
         raise SecurityValueError("VK ID flow legal versions are invalid")
-    return state, verifier, versions
+    link_user = payload.get("link_user_id")
+    link_session = payload.get("link_session_digest")
+    if (link_user is None) != (link_session is None):
+        raise SecurityValueError("OAuth link context is incomplete")
+    if link_user is not None and (
+        not isinstance(link_user, str) or len(link_user) != 36
+        or not isinstance(link_session, str) or len(link_session) != 64
+        or any(c not in "0123456789abcdef" for c in link_session)
+    ):
+        raise SecurityValueError("OAuth link context is invalid")
+    return OAuthFlow(state, verifier, versions, link_user, link_session)

@@ -60,7 +60,7 @@ def position(
         quantity=quantity,
         current_price=money(price),
         average_price=None,
-        expected_yield_percent="0",
+        expected_yield_amount="0",
         daily_yield=None,
         blocked=False,
     )
@@ -327,7 +327,7 @@ def test_instrument_market_http_rejects_unsupported_period() -> None:
     with patch("omnicio.main.authenticated_user") as user:
         user.return_value.id = "server-user"
         response = TestClient(app).get(
-            "/api/market/instruments/uid-1?period=all",
+            "/api/market/instruments/uid-1?period=decade",
         )
 
     assert response.status_code == 422

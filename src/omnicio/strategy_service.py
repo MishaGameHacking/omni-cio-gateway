@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
+from .backtest import (
+    MAX_RESEARCH_ASSETS,
+    MAX_RESEARCH_DAYS,
+    ResearchAsset,
+    ResearchCosts,
+    history_candidate,
+    run_strategy_backtest,
+)
 from .broker import (
     STRATEGY_RATING_READ_LIMIT,
     BrokerConnectionError,
@@ -17,7 +26,15 @@ from .broker import (
 from .freshness import PORTFOLIO_MAX_AGE, describe_freshness
 from .portfolio_store import PortfolioStore, SettingsVersionConflict
 from .strategy import document_hash, normalize_document
-from .strategy_assessment import IssuerEvidence, assess_strategy_account
+from .strategy_assessment import (
+    IssuerEvidence,
+    StrategyCandidateFacts,
+    StrategyFact,
+    assess_strategy_account,
+    rating_notch,
+    select_strategy_candidates,
+)
+from .tbank import TBankHistoricCandle, TBankUnavailable
 
 
 def _identity_time(row: Mapping[str, Any], prefix: str, now: datetime) -> datetime | None:
@@ -134,4 +151,262 @@ def current_account_assessment(
                 coverage="complete" if bundle.analysis.status == "observed" else "partial",
             )
         ),
+    }
+
+
+def _research_rows(context: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Bound the inspected universe, interleaving classes instead of taking only bonds."""
+    unique: dict[str, dict[str, Any]] = {}
+    for name in ("holdings", "candidates"):
+        rows = context.get(name)
+        if not isinstance(rows, (list, tuple)):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            uid = row.get("instrument_uid")
+            if isinstance(uid, str) and uid:
+                unique[uid] = {**unique.get(uid, {}), **row}
+    classes = [
+        [row for row in unique.values() if row.get("instrument_type") == kind]
+        for kind in ("share", "bond", "etf")
+    ]
+    result: list[dict[str, Any]] = []
+    for index in range(MAX_RESEARCH_ASSETS):
+        for rows in classes:
+            if index < len(rows) and len(result) < MAX_RESEARCH_ASSETS:
+                result.append(rows[index])
+    return result
+
+
+def _row_candidate(row: Mapping[str, Any], now: datetime) -> StrategyCandidateFacts:
+    source = "https://developer.tbank.ru/invest/services/instruments/methods"
+    facts = {}
+    retrieved = row.get("provider_retrieved_at")
+    # Retrieval is a conservative availability bound. Do not substitute fiscal
+    # period end or a maturity date for when a fact became available.
+    if isinstance(retrieved, datetime) and retrieved.tzinfo is not None and retrieved <= now:
+        for name in ("sector", "maturity_date", "perpetual", "floating_coupon"):
+            value = row.get(name)
+            if isinstance(value, (str, bool, datetime, int, Decimal)):
+                facts[name] = StrategyFact(value, retrieved, source)
+    mapping = _issuer_mapping(row, now)
+    if mapping is not None:
+        facts["issuer_id"] = StrategyFact(
+            mapping.issuer_id, mapping.verified_at, mapping.source_url
+        )
+        if mapping.group_id:
+            facts["group_id"] = StrategyFact(
+                mapping.group_id, mapping.verified_at, mapping.group_source_url
+            )
+    lot = row.get("lot")
+    return StrategyCandidateFacts(
+        instrument_uid=str(row.get("instrument_uid") or ""),
+        ticker=str(row.get("ticker") or ""),
+        asset_class={"share": "shares", "bond": "bonds", "etf": "funds"}.get(
+            str(row.get("instrument_type")), "unknown"
+        ),
+        lot_size=lot if type(lot) is int else 0,
+        currency=str(row.get("currency") or ""),
+        facts=facts,
+    )
+
+
+def _research_price_bars(
+    row: Mapping[str, Any],
+    bars: tuple[TBankHistoricCandle, ...],
+) -> tuple[TBankHistoricCandle, ...]:
+    if row.get("instrument_type") != "bond":
+        return bars
+    if (
+        str(row.get("nominal_currency") or "").upper() != "RUB"
+        or row.get("amortization") is not False
+    ):
+        # A changing/foreign nominal cannot be retrospectively replaced by today's nominal.
+        return ()
+    try:
+        nominal = Decimal(str(row.get("nominal_value")))
+    except InvalidOperation:
+        return ()
+    if not nominal.is_finite() or nominal <= 0:
+        return ()
+    result = []
+    for bar in bars:
+        values = {}
+        for name in ("open", "high", "low", "close"):
+            raw = getattr(bar, name)
+            values[name] = str(Decimal(raw) * nominal / 100) if raw is not None else None
+        result.append(
+            replace(
+                bar,
+                open=values["open"],
+                high=values["high"],
+                low=values["low"],
+                close=str(Decimal(bar.close) * nominal / 100),
+            )
+        )
+    return tuple(result)
+
+
+def _research_fundamentals(
+    user_id: UUID,
+    rows: list[dict[str, Any]],
+    broker: BrokerService,
+    now: datetime,
+) -> dict[str, dict[str, StrategyFact]]:
+    ids = tuple(dict.fromkeys(str(row.get("asset_uid")) for row in rows if row.get("asset_uid")))
+    if not ids:
+        return {}
+    try:
+        values = broker.candidate_fundamentals(user_id, ids)
+    except TBankUnavailable:
+        return {}
+    source = "https://developer.tbank.ru/invest/api/instruments-service-get-asset-fundamentals"
+    result = {}
+    for item in values:
+        facts = {}
+        for key, raw in (
+            ("roe_percent", item.roe),
+            ("debt_to_ebitda", item.total_debt_to_ebitda_mrq),
+            ("free_cash_flow_ttm", item.free_cash_flow_ttm),
+            ("net_income_ttm", item.net_income_ttm),
+        ):
+            if raw is not None:
+                number = Decimal(raw)
+                if number.is_finite():
+                    facts[key] = StrategyFact(number, now, source)
+        # The provider does not expose publication time in this DTO. These facts
+        # may support today's screen, never selection inside an earlier backtest.
+        result[item.asset_uid] = facts
+    return result
+
+
+def strategy_research(
+    *,
+    user_id: UUID,
+    expected_version: int,
+    store: PortfolioStore,
+    broker: BrokerService,
+    from_at: datetime,
+    to_at: datetime,
+    commission_bps: Decimal,
+    slippage_bps: Decimal,
+    initial_capital_rub: Decimal,
+) -> dict[str, Any]:
+    """At most 12 candle reads, 8 rating reads and one batched fundamentals read.
+
+    Browser input specifies only the research window and explicit hypothetical
+    costs/capital. The authenticated connection and durable catalog choose assets.
+    A connection/draft change at any point prevents release of the collected data.
+    """
+    now = datetime.now(UTC)
+    if (
+        from_at.tzinfo is None
+        or to_at.tzinfo is None
+        or not from_at < to_at <= now
+        or to_at - from_at > timedelta(days=MAX_RESEARCH_DAYS)
+        or to_at - from_at < timedelta(days=90)
+    ):
+        raise ValueError("research_window_invalid")
+    if (
+        not initial_capital_rub.is_finite()
+        or not 0 < initial_capital_rub <= Decimal("1e12")
+        or any(
+            not value.is_finite() or not 0 <= value <= 1000
+            for value in (commission_bps, slippage_bps)
+        )
+    ):
+        raise ValueError("research_parameters_invalid")
+    selection = store.current_strategy_draft(user_id)
+    if selection is None:
+        return {"status": "draft_required", "execution_enabled": False}
+    if selection["version"] != expected_version:
+        raise SettingsVersionConflict("settings_version_conflict")
+    document = normalize_document(selection["document"])
+    fingerprint = document_hash(document)
+    connection = broker.status(user_id)
+    if not connection.connected:
+        raise BrokerNotConnected("T-Invest is not connected")
+    context = store.latest_balancing_context(user_id, candidate_limit=100)
+    if context is None:
+        return {
+            "status": "snapshot_required",
+            "execution_enabled": False,
+            "missing_requirements": ["account_instrument_catalog"],
+        }
+    if context.get("account_id") != connection.account_id:
+        raise BrokerConnectionError("strategy_account_changed")
+    rows = _research_rows(context)
+    fundamentals = _research_fundamentals(user_id, rows, broker, now)
+    assets = []
+    unavailable = []
+    ratings_read = 0
+    for row in rows:
+        candidate = _row_candidate(row, now)
+        facts = {**candidate.facts, **fundamentals.get(str(row.get("asset_uid")), {})}
+        if candidate.asset_class == "bonds" and ratings_read < STRATEGY_RATING_READ_LIMIT:
+            ratings_read += 1
+            try:
+                ratings = broker.candidate_bond_ratings(user_id, candidate.instrument_uid)
+            except TBankUnavailable:
+                ratings = ()
+            notches = [rating_notch(item, now) for item in ratings]
+            if ratings and all(notch is not None for notch in notches):
+                from .strategy import RATING_LEVELS
+
+                notch = max((n for n in notches if n is not None), key=RATING_LEVELS.index)
+                facts["rating"] = StrategyFact(
+                    notch,
+                    max(item.rating_date for item in ratings),
+                    "https://developer.tbank.ru/invest/api/instruments-service-bond-by",
+                )
+        candidate = replace(candidate, facts=facts)
+        try:
+            bars = broker.candidate_daily_exchange_candles(
+                user_id,
+                candidate.instrument_uid,
+                from_at=from_at,
+                to_at=to_at,
+            )
+        except TBankUnavailable:
+            bars = ()
+            unavailable.append(candidate.instrument_uid)
+        bars = _research_price_bars(row, bars)
+        assets.append(ResearchAsset(candidate, bars))
+    payload = run_strategy_backtest(
+        document,
+        assets,
+        from_at=from_at,
+        to_at=to_at,
+        initial_capital_rub=initial_capital_rub,
+        costs=ResearchCosts(commission_bps, slippage_bps),
+        now=now,
+    )
+    if to_at >= now - timedelta(days=4):
+        payload["current_selection"] = select_strategy_candidates(
+            document,
+            [history_candidate(asset.candidate, asset.candles, as_of=now) for asset in assets],
+            as_of=now,
+        )
+    latest = store.current_strategy_draft(user_id)
+    if (
+        latest is None
+        or latest["version"] != expected_version
+        or document_hash(normalize_document(latest["document"])) != fingerprint
+    ):
+        raise SettingsVersionConflict("settings_version_conflict")
+    if broker.status(user_id) != connection:
+        raise BrokerConnectionError("strategy_account_changed")
+    return {
+        **payload,
+        "strategy_version": expected_version,
+        "account_id": connection.account_id,
+        "environment": connection.environment,
+        "provider_unavailable_assets": unavailable,
+        "universe": {
+            "scope": "current_account_catalog",
+            "assets_read": len(assets),
+            "maximum_assets": MAX_RESEARCH_ASSETS,
+            "historical_universe_verified": False,
+        },
     }

@@ -16,6 +16,7 @@ from starlette.requests import Request
 from omnicio.db import Database, UserRecord
 from omnicio.main import CANONICAL_ORIGIN, app, client_ip, require_same_origin
 from omnicio.security import (
+    OAuthFlow,
     SecurityValueError,
     client_ip_digest,
     decrypt_secret,
@@ -23,10 +24,10 @@ from omnicio.security import (
     format_public_id,
     generate_oauth_state,
     generate_pkce_verifier,
-    open_vkid_flow,
+    open_oauth_flow,
     parse_public_id,
     pkce_challenge,
-    seal_vkid_flow,
+    seal_oauth_flow,
 )
 
 
@@ -88,21 +89,21 @@ def test_vkid_flow_round_trip_and_tamper_rejection() -> None:
         "personal_data_consent": "2026-10-02-v3",
         "terms": "2026-10-02-v3",
     }
-    token = seal_vkid_flow(
+    token = seal_oauth_flow(
         state=state,
         code_verifier=verifier,
         legal_versions=versions,
         crypto_key=key,
     )
 
-    assert open_vkid_flow(
+    assert open_oauth_flow(
         token,
         crypto_key=key,
         ttl_seconds=600,
-    ) == (state, verifier, versions)
+    ) == OAuthFlow(state, verifier, versions)
 
     with pytest.raises(SecurityValueError):
-        open_vkid_flow(
+        open_oauth_flow(
             token[:-1] + ("A" if token[-1] != "A" else "B"),
             crypto_key=key,
             ttl_seconds=600,

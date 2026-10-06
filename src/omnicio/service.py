@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import UUID
 
 from .config import Settings, positive_numeric_id
 from .db import (
@@ -65,11 +66,41 @@ class AuthService:
         vk_user_id: str,
         client_ip: str,
         accepted_legal_versions: dict[str, str],
+        link_user_id: UUID | None = None,
+        link_session_digest: bytes | None = None,
     ) -> LoginSucceeded:
         if not self.settings.vkid_ready:
             raise LoginUnavailable("VK ID login is not enabled")
         if not positive_numeric_id(vk_user_id):
             raise LoginUnavailable("VK ID subject is invalid")
+        return self._complete_provider_login(
+            provider="vkid", subject=vk_user_id, client_ip=client_ip,
+            accepted_legal_versions=accepted_legal_versions, link_user_id=link_user_id,
+            link_session_digest=link_session_digest,
+        )
+
+    def complete_tid_login(
+        self, *, tid_subject: str, client_ip: str,
+        accepted_legal_versions: dict[str, str], link_user_id: UUID | None = None,
+        link_session_digest: bytes | None = None,
+    ) -> LoginSucceeded:
+        if not self.settings.tid_ready:
+            raise LoginUnavailable("T-ID login is not enabled")
+        if not 1 <= len(tid_subject) <= 128 or any(
+            ord(char) < 33 or ord(char) > 126 for char in tid_subject
+        ):
+            raise LoginUnavailable("T-ID subject is invalid")
+        return self._complete_provider_login(
+            provider="tid", subject=tid_subject, client_ip=client_ip,
+            accepted_legal_versions=accepted_legal_versions, link_user_id=link_user_id,
+            link_session_digest=link_session_digest,
+        )
+
+    def _complete_provider_login(
+        self, *, provider: str, subject: str, client_ip: str,
+        accepted_legal_versions: dict[str, str], link_user_id: UUID | None,
+        link_session_digest: bytes | None,
+    ) -> LoginSucceeded:
         if accepted_legal_versions != self.legal_versions():
             raise LoginUnavailable("legal document versions changed")
 
@@ -78,14 +109,19 @@ class AuthService:
         ip_hash = client_ip_digest(client_ip, self.settings.ip_key)
 
         try:
-            user, created = self.database.complete_vkid_login(
-                vk_user_id=vk_user_id,
+            complete = (self.database.complete_vkid_login if provider == "vkid"
+                        else self.database.complete_tid_login)
+            identity = {"vk_user_id": subject} if provider == "vkid" else {"tid_subject": subject}
+            user, created = complete(
+                **identity,
                 client_ip_hash=ip_hash,
                 session_token_digest=token_hash,
                 session_ttl_seconds=self.settings.session_ttl_seconds,
                 legal_versions=accepted_legal_versions,
                 registration_enabled=self.settings.registration_enabled,
                 registration_max_users=self.settings.registration_max_users,
+                link_user_id=link_user_id,
+                link_session_digest=link_session_digest,
             )
         except RegistrationClosedError as exc:
             raise RegistrationClosed(str(exc)) from exc
@@ -99,7 +135,7 @@ class AuthService:
         )
 
     def refresh_session(self, token: str) -> UserRecord | None:
-        if not token or not self.settings.vkid_ready:
+        if not token or not self.settings.login_ready:
             return None
         return self.database.refresh_session_digest(
             session_digest(token),

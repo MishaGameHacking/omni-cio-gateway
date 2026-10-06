@@ -5,7 +5,7 @@ import json
 import ssl
 import urllib.error
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 from uuid import UUID
@@ -896,6 +896,7 @@ def test_tbank_reads_portfolio_and_positions() -> None:
     )
     assert portfolio.positions[0].ticker == "TEST"
     assert portfolio.positions[0].quantity == "10"
+    assert portfolio.positions[0].expected_yield_amount == "11.11"
     assert portfolio.positions[0].current_nkd == TBankMoney(currency="RUB", value="12.5")
     assert portfolio.positions[0].blocked_lots == "2"
     assert positions.money == (TBankMoney(currency="RUB", value="25000.5"),)
@@ -908,6 +909,37 @@ def test_tbank_reads_portfolio_and_positions() -> None:
         "currency": "RUB",
     }
     assert positions_request.full_url.endswith("OperationsService/GetPositions")
+
+
+@pytest.mark.parametrize(
+    ("position_fields", "expected_amount"),
+    [
+        ({}, None),
+        ({"expectedYield": None}, None),
+        ({"expectedYield": {"units": "0", "nano": 0}}, "0"),
+        ({"expectedYield": {"units": "-12", "nano": -500000000}}, "-12.5"),
+    ],
+)
+def test_position_yield_is_nullable_money_not_percent(
+    position_fields: dict[str, object], expected_amount: str | None
+) -> None:
+    response = FakeResponse(
+        {
+            "totalAmountPortfolio": {"currency": "rub", "units": "1000", "nano": 0},
+            "expectedYield": {"units": "5", "nano": 0},
+            "positions": [{"instrumentUid": "position-1", **position_fields}],
+        }
+    )
+    with patch("urllib.request.urlopen", return_value=response):
+        portfolio = TBankInvestClient().get_portfolio(
+            "t.fake-owner-credential-1234567890", "prod", "account-1"
+        )
+
+    assert portfolio.expected_yield_percent == "5"
+    assert portfolio.positions[0].expected_yield_amount == expected_amount
+    position_document = asdict(portfolio.positions[0])
+    assert position_document["expected_yield_amount"] == expected_amount
+    assert "expected_yield_percent" not in position_document
 
 
 def test_metadata_adapter_preserves_unknown_qualification_and_all_status_records() -> None:
@@ -1773,7 +1805,7 @@ def test_analysis_metadata_outage_is_partial_and_calls_are_bounded_by_kind() -> 
             quantity="1",
             current_price=TBankMoney("RUB", "1"),
             average_price=None,
-            expected_yield_percent="0",
+            expected_yield_amount="0",
             daily_yield=None,
             blocked=False,
         )

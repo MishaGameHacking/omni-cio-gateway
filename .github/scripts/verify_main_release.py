@@ -16,6 +16,8 @@ from urllib.parse import parse_qs, urlsplit
 
 REPOSITORY = "MishaGameHacking/omni-cio-gateway"
 FOUNDATION_PATH = ".github/workflows/auth-foundation-ci.yml"
+APPLICATION_PATH = ".github/workflows/auth-app-deploy.yml"
+APPLICATION_TEST_JOB = "Test auth deployer"
 SONAR_PROJECT = "MishaGameHacking_omni-cio-gateway"
 MAX_RESPONSE_BYTES = 2_000_000
 
@@ -82,8 +84,9 @@ class GitHubClient:
 
     def collect(self, path: str, key: str) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
+        separator = "&" if "?" in path else "?"
         for page in range(1, 11):
-            data = self.get(f"{path}&per_page=100&page={page}")
+            data = self.get(f"{path}{separator}per_page=100&page={page}")
             batch = data.get(key)
             if not isinstance(batch, list) or not all(isinstance(item, dict) for item in batch):
                 raise ReleaseBlocked("GitHub verification list is malformed")
@@ -180,17 +183,67 @@ def require_sonar(checks: list[dict[str, Any]], sha: str) -> None:
     require_clean_sonar_output(check)
 
 
-def require_foundation(runs: list[dict[str, Any]], sha: str) -> None:
+def latest_push_run(
+    runs: list[dict[str, Any]], sha: str, path: str, label: str,
+) -> dict[str, Any]:
     candidates = [
         run for run in runs
         if run.get("head_sha") == sha
         and run.get("head_branch") == "main"
         and run.get("event") == "push"
-        and run.get("path") == FOUNDATION_PATH
+        and run.get("path") == path
         and isinstance(run.get("repository"), dict)
         and run["repository"].get("full_name") == REPOSITORY
     ]
-    require_success(latest(candidates, "main foundation CI"), "Main foundation CI")
+    latest(candidates, label)  # Validate every candidate's run identity before ordering.
+    if any(type(run.get("run_attempt")) is not int or run["run_attempt"] < 1
+           for run in candidates):
+        raise ReleaseBlocked("GitHub workflow attempt identity is malformed")
+    return max(candidates, key=lambda run: (run["id"], run["run_attempt"]))
+
+
+def require_foundation(runs: list[dict[str, Any]], sha: str) -> None:
+    run = latest_push_run(runs, sha, FOUNDATION_PATH, "main foundation CI")
+    require_success(run, "Main foundation CI")
+
+
+def require_application_tests(client: GitHubClient, sha: str) -> None:
+    """A downstream deployment can never replace the exact push's tests.
+
+    Only the tests job is required: waiting for the whole deployment workflow
+    would couple this gate to its own deploy job. The attempt-scoped endpoint
+    prevents a previous green attempt from hiding a rerun's failure or pending job.
+    """
+    path = f"/actions/workflows/auth-app-deploy.yml/runs?event=push&head_sha={sha}"
+    label = "main auth application push tests"
+    run = latest_push_run(client.collect(path, "workflow_runs"), sha, APPLICATION_PATH, label)
+    jobs = client.collect(
+        f"/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs", "jobs",
+    )
+    candidates = [
+        job for job in jobs
+        if job.get("name") == APPLICATION_TEST_JOB
+        and job.get("run_id") == run["id"]
+        and job.get("head_sha") == sha
+        and job.get("head_branch") == "main"
+    ]
+    if len(candidates) > 1:
+        raise ReleaseBlocked("Main auth application test job is ambiguous")
+    if not candidates and run.get("status") == "completed":
+        raise ReleaseBlocked("Main auth application push is missing its tests job")
+    job = latest(candidates, label)
+    # This field is optional in the documented job DTO; the endpoint itself
+    # selects the attempt. If supplied, contradictory attribution is rejected.
+    if "run_attempt" in job and (
+        type(job["run_attempt"]) is not int or job["run_attempt"] != run["run_attempt"]
+    ):
+        raise ReleaseBlocked("Main auth application test attempt does not match")
+    require_success(job, "Main auth application push tests")
+    current = latest_push_run(
+        client.collect(path, "workflow_runs"), sha, APPLICATION_PATH, label,
+    )
+    if (current["id"], current["run_attempt"]) != (run["id"], run["run_attempt"]):
+        raise PendingChecks("Main auth application push attempt changed during verification")
 
 
 def require_current_main(client: GitHubClient, sha: str) -> None:
@@ -209,6 +262,7 @@ def verify(client: GitHubClient, sha: str) -> None:
         "workflow_runs",
     )
     require_foundation(runs, sha)
+    require_application_tests(client, sha)
     require_current_main(client, sha)
 
 

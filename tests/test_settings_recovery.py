@@ -519,9 +519,11 @@ def _exercise_strategy_drafts(store: PortfolioStore, db: Database) -> None:
     assert db.recent_activity(A) == activity
 
 
-def test_strategy_diagnostic_is_versioned_read_only_and_owner_bound(monkeypatch) -> None:
+def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -> None:
+    from test_backtest import END, START, prices, research_document
+
     from omnicio import main
-    from omnicio.strategy import preset_document
+    from omnicio.broker import BrokerConnectionStatus, BrokerService
 
     user = UserRecord(A, 123, "active", "user")
     database = Mock(spec=Database)
@@ -534,47 +536,107 @@ def test_strategy_diagnostic_is_versioned_read_only_and_owner_bound(monkeypatch)
         app, cookies={"omnicio_session": "synthetic-session"},
         headers={"X-Omnicio-Profile": "000000123"},
     )
-    document = preset_document("income")
-    calls = []
-
-    class Store:
-        def current_strategy_draft(self, user_id):
-            calls.append(user_id)
-            return {"version": 4, "document": document}
-
-    monkeypatch.setattr(main, "portfolio_store", lambda request: Store())
+    document = research_document()
+    before = copy.deepcopy(document)
+    store = Mock(spec=PortfolioStore)
+    store.current_strategy_draft.return_value = {"version": 4, "document": document}
+    store.latest_balancing_context.return_value = {
+        "account_id": "synthetic-a", "holdings": [],
+        "candidates": [{
+            "instrument_uid": "a", "ticker": "TEST", "instrument_type": "share",
+            "currency": "RUB", "lot": 1, "sector": "synthetic",
+            "provider_retrieved_at": START, "asset_uid": "asset-a",
+        }],
+    }
+    broker = Mock(spec=BrokerService)
+    broker.status.return_value = BrokerConnectionStatus(
+        connected=True, environment="prod", account_id="synthetic-a",
+    )
+    broker.candidate_fundamentals.return_value = ()
+    broker.candidate_daily_exchange_candles.return_value = prices("a").candles
+    research = Mock(wraps=main.strategy_research)
+    monkeypatch.setattr(main, "portfolio_store", lambda request: store)
+    monkeypatch.setattr(main, "broker_service", lambda request: broker)
+    monkeypatch.setattr(main, "strategy_research", research)
     body = {
         "expected_public_id": "000000123", "expected_version": 4,
-        "nav_rub": "20000", "lot_cost_rub": "1000.01",
+        "from_at": START.isoformat(), "to_at": END.isoformat(),
+        "commission_bps": "10", "slippage_bps": "5", "initial_capital_rub": "20000",
     }
     response = client.post(
-        "/api/profile/strategy/feasibility", headers={"Origin": "https://omnicio.ru"},
+        "/api/profile/strategy/research", headers={"Origin": "https://omnicio.ru"},
         json=body,
     )
     assert response.status_code == 200
     assert response.json()["public_id"] == "000000123"
     assert response.json()["strategy_version"] == 4
-    assert response.json()["lots_per_issuer"] == 0
-    assert response.json()["stress"]["probability_of_profit"] is None
+    assert response.json()["status"] == "computed"
+    assert response.json()["probability_of_profit"] is None
+    assert response.json()["execution_enabled"] is False
     assert response.headers["Cache-Control"] == "private, no-store"
-    assert calls == [user.id]
-    before = copy.deepcopy(document)
+    research.assert_called_once_with(
+        user_id=user.id, expected_version=4, store=store, broker=broker,
+        from_at=START, to_at=END, commission_bps=Decimal("10"),
+        slippage_bps=Decimal("5"), initial_capital_rub=Decimal("20000"),
+    )
+    broker.candidate_daily_exchange_candles.assert_called_once_with(
+        user.id, "a", from_at=START, to_at=END,
+    )
     response = client.post(
-        "/api/profile/strategy/feasibility", headers={"Origin": "https://omnicio.ru"},
+        "/api/profile/strategy/research", headers={"Origin": "https://omnicio.ru"},
         json={**body, "expected_version": 3},
     )
     assert response.status_code == 409
+    assert response.json()["detail"] == "settings_version_conflict"
+    assert broker.candidate_daily_exchange_candles.call_count == 1
     assert document == before
     for headers, payload, expected_status in (
         ({"Origin": "https://evil.example"}, body, 403),
         ({"Origin": "https://omnicio.ru"}, {**body, "expected_public_id": "000000999"}, 409),
         ({"Origin": "https://omnicio.ru"}, {**body, "user_id": str(B)}, 422),
-        ({"Origin": "https://omnicio.ru"}, {**body, "nav_rub": "NaN"}, 422),
+        ({"Origin": "https://omnicio.ru"}, {**body, "initial_capital_rub": "NaN"}, 422),
+        ({"Origin": "https://omnicio.ru"}, {**body, "commission_bps": "-1"}, 422),
+        ({"Origin": "https://omnicio.ru"}, {**body, "from_at": END.isoformat()}, 422),
     ):
-        count = len(calls)
-        rejected = client.post("/api/profile/strategy/feasibility", headers=headers, json=payload)
+        rejected = client.post("/api/profile/strategy/research", headers=headers, json=payload)
         assert rejected.status_code == expected_status
-        assert len(calls) == count
+        assert broker.candidate_daily_exchange_candles.call_count == 1
+
+    auth.refresh_session.return_value = UserRecord(B, 999, "active", "user")
+    switched = client.post(
+        "/api/profile/strategy/research", headers={"Origin": "https://omnicio.ru"}, json=body,
+    )
+    assert switched.status_code == 409
+    assert broker.candidate_daily_exchange_candles.call_count == 1
+
+    for revoked_context, expected_status in (("session", 401), ("consent", 409)):
+        auth.refresh_session.return_value = user
+        database.has_legal_versions.return_value = True
+
+        def provider_read(owner, uid, *, context=revoked_context, **kwargs):
+            if context == "session":
+                auth.refresh_session.return_value = None
+            else:
+                database.has_legal_versions.return_value = False
+            return prices(uid).candles
+
+        broker.candidate_daily_exchange_candles.side_effect = provider_read
+        count = broker.candidate_daily_exchange_candles.call_count
+        revoked = client.post(
+            "/api/profile/strategy/research", headers={"Origin": "https://omnicio.ru"}, json=body,
+        )
+        assert revoked.status_code == expected_status
+        assert broker.candidate_daily_exchange_candles.call_count == count + 1
+        assert "equity_curve" not in revoked.json()
+        assert "metrics" not in revoked.json()
+
+    assert document == before
+    assert {call[0] for call in store.mock_calls} == {
+        "current_strategy_draft", "latest_balancing_context",
+    }
+    assert {call[0] for call in broker.mock_calls} == {
+        "status", "candidate_fundamentals", "candidate_daily_exchange_candles",
+    }
 
 
 

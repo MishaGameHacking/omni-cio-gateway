@@ -10,7 +10,7 @@ from __future__ import annotations
 import calendar
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
@@ -18,7 +18,13 @@ from urllib.parse import urlsplit
 
 from .freshness import PORTFOLIO_MAX_AGE
 from .portfolio import PortfolioAnalysis, SecurityExposure
-from .strategy import ALLOCATION_KEYS, RATING_LEVELS, document_hash, normalize_document
+from .strategy import (
+    ALLOCATION_KEYS,
+    RATING_LEVELS,
+    document_hash,
+    normalize_document,
+    strategy_rule_set,
+)
 from .tbank import TBankInstrumentMetadata, TBankRating
 
 _ZERO = Decimal("0")
@@ -51,6 +57,8 @@ _METHOD_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "income": ("Объявленные купоны и дивиденды с датами, отдельно от возврата номинала.",),
     "growth": ("Сопоставимая история полной доходности и подтверждённые расходы.",),
     "balanced": ("Оценка совместных потерь акций и облигаций на сопоставимых данных.",),
+    "conservative": ("Подтверждённый высокий рейтинг, срок погашения и история риска.",),
+    "aggressive": ("Положительная динамика на прошлом периоде и достаточный объём торгов.",),
     "near_goal": ("Дата потребности в деньгах и договорные сроки возврата капитала.",),
     "ladder": ("Договорные даты погашений и стоимость каждого доступного лота.",),
     "floating": ("Формула купона, лаг пересмотра, ограничения и сценарий будущей ставки.",),
@@ -166,7 +174,7 @@ def _allocation_rows(
     nav: Decimal,
     complete: bool,
 ) -> list[dict[str, Any]]:
-    rows = []
+    rows: list[dict[str, Any]] = []
     for key in ALLOCATION_KEYS:
         target = nav * Decimal(data["allocation"][key]) / _HUNDRED
         actual = totals[key]
@@ -717,6 +725,7 @@ def assess_strategy_account(
     mappings: Sequence[IssuerEvidence] = (),
     ratings: Mapping[str, Sequence[TBankRating]] | None = None,
     now: datetime | None = None,
+    candidates: Sequence[StrategyCandidateFacts] = (),
 ) -> dict[str, Any]:
     """Assess current exposures; never turn an unknown into a feasible purchase."""
     observed = now or datetime.now(UTC)
@@ -779,11 +788,13 @@ def assess_strategy_account(
     checks.extend(_term_checks(data, analysis.securities, by_uid, observed))
     checks.extend(_dependent_checks(data, nav))
     requirements = _METHOD_REQUIREMENTS[data["base_preset_id"]]
+    selection = select_strategy_candidates(data, candidates, as_of=observed)
     return {
         "status": "assessed",
         "stage": "account_constraints",
         "execution_enabled": False,
-        "candidate_selection_ready": False,
+        "candidate_selection_ready": selection["candidate_selection_ready"],
+        "selection": selection,
         "proposed_trades": [],
         "strategy_hash": document_hash(data),
         "base_preset_id": data["base_preset_id"],
@@ -796,7 +807,633 @@ def assess_strategy_account(
         "ratings": rating_rows,
         "method_requirements": list(requirements),
         "probability_of_profit": None,
+        "probability_reason": "Лимиты и подбор по фактам не оценивают вероятность будущей прибыли.",
         "scope": "Проверка выбранной рабочей стратегии на фактическом составе счёта. "
         "Это не полный подбор покупок: неизвестные условия показаны отдельно. "
         "Подтверждённые ограничения и брокерские поручения не изменены.",
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class StrategyFact:
+    """A scalar observation with its availability time, not merely period end."""
+
+    value: Decimal | int | str | bool | datetime
+    available_at: datetime
+    source_url: str
+
+
+@dataclass(frozen=True, slots=True)
+class FundConstituent:
+    issuer_id: str
+    sector: str
+    group_id: str
+    weight_percent: Decimal
+    available_at: datetime
+    source_url: str
+
+
+@dataclass(frozen=True, slots=True)
+class StrategyCandidateFacts:
+    """Read-only research evidence; never an executable broker order."""
+
+    instrument_uid: str
+    ticker: str
+    asset_class: str
+    lot_size: int
+    currency: str
+    facts: Mapping[str, StrategyFact] = field(default_factory=dict)
+    constituents: tuple[FundConstituent, ...] = ()
+
+
+def _known_fact(candidate: StrategyCandidateFacts, key: str, as_of: datetime) -> object:
+    fact = candidate.facts.get(key)
+    if (
+        fact is None
+        or fact.available_at.tzinfo is None
+        or fact.available_at > as_of
+        or not _source_url(fact.source_url)
+    ):
+        return None
+    return fact.value
+
+
+def _numeric_fact(
+    candidate: StrategyCandidateFacts,
+    key: str,
+    as_of: datetime,
+) -> Decimal | None:
+    raw = _known_fact(candidate, key, as_of)
+    if isinstance(raw, bool) or not isinstance(raw, (Decimal, int, str)):
+        return None
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        return None
+    return value if value.is_finite() and abs(value) <= Decimal("1e15") else None
+
+
+def _constituents_known(candidate: StrategyCandidateFacts, as_of: datetime) -> bool:
+    rows = candidate.constituents
+    return (
+        bool(rows)
+        and all(
+            row.issuer_id
+            and row.sector
+            and row.group_id
+            and row.weight_percent.is_finite()
+            and 0 < row.weight_percent <= 100
+            and row.available_at.tzinfo is not None
+            and row.available_at <= as_of
+            and _source_url(row.source_url)
+            for row in rows
+        )
+        and sum((row.weight_percent for row in rows), _ZERO) == 100
+    )
+
+
+def _bond_criteria(
+    candidate: StrategyCandidateFacts,
+    data: Mapping[str, Any],
+    as_of: datetime,
+    rules: Mapping[str, Any],
+) -> tuple[list[str], int | None]:
+    reasons: list[str] = []
+    maturity = _known_fact(candidate, "maturity_date", as_of)
+    months: int | None = None
+    if not isinstance(maturity, datetime) or maturity.tzinfo is None:
+        reasons.append("missing:maturity_date")
+    else:
+        months = (maturity.year - as_of.year) * 12 + maturity.month - as_of.month
+        limits = [
+            _amount(data[section][key])
+            for section, key in (
+                ("profile", "horizon_months"),
+                ("policy", "max_term_months"),
+            )
+        ]
+        if any(limit is None for limit in limits):
+            reasons.append("missing:maturity_limit")
+        elif maturity <= as_of or any(
+            Decimal(str((maturity - as_of).total_seconds())) / 86400
+            > (_calendar_days(limit, as_of) or _ZERO)
+            for limit in limits
+            if limit is not None
+        ):
+            reasons.append("maturity_limit")
+    notch = _known_fact(candidate, "rating", as_of)
+    if not isinstance(notch, str) or notch not in RATING_LEVELS:
+        notch = "NR"
+    if Decimal(data["rules"]["rating_caps"][notch]) == 0:
+        reasons.append("missing:rating" if notch == "NR" else "rating_excluded")
+    credit_key = "max_unknown_percent" if notch == "NR" else "max_below_grade_percent"
+    credit_category = notch == "NR" or notch in RATING_LEVELS[10:24]
+    if credit_category:
+        credit_cap = _amount(data["policy"][credit_key])
+        if credit_cap is None:
+            reasons.append("missing:" + credit_key)
+        elif credit_cap == 0:
+            reasons.append(credit_key + "_excluded")
+    if notch in RATING_LEVELS[10:24] and not data["profile"]["allow_below_investment_grade"]:
+        reasons.append("below_grade_not_allowed")
+    minimum = rules.get("minimum_rating")
+    if minimum and RATING_LEVELS.index(notch) > RATING_LEVELS.index(minimum):
+        reasons.append("minimum_rating")
+    if _known_fact(candidate, "perpetual", as_of) is not False:
+        reasons.append("missing:finite_bond_term")
+    return reasons, months
+
+
+def _required_numbers(
+    candidate: StrategyCandidateFacts,
+    as_of: datetime,
+    keys: tuple[str, ...],
+) -> tuple[dict[str, Decimal], list[str]]:
+    values, missing = {}, []
+    for key in keys:
+        value = _numeric_fact(candidate, key, as_of)
+        if value is None:
+            missing.append("missing:" + key)
+        values[key] = _ZERO if value is None else value
+    return values, missing
+
+
+def _training_values(
+    candidate: StrategyCandidateFacts,
+    data: Mapping[str, Any],
+    as_of: datetime,
+) -> tuple[dict[str, Decimal], list[str]]:
+    values, reasons = _required_numbers(
+        candidate,
+        as_of,
+        (
+            "history_observations",
+            "volatility_percent",
+            "max_drawdown_percent",
+            "momentum_percent",
+            "price_rub",
+            "daily_volume_lots",
+        ),
+    )
+    if values["history_observations"] < 60:
+        reasons.append("insufficient_training_history")
+    if values["price_rub"] <= 0 or values["daily_volume_lots"] <= 0:
+        reasons.append("price_or_liquidity_missing")
+    if values["volatility_percent"] < 0 or values["max_drawdown_percent"] < 0:
+        reasons.append("invalid_risk_metric")
+    drawdown_cap = _amount(data["profile"]["max_drawdown_percent"])
+    if drawdown_cap is not None and values["max_drawdown_percent"] > drawdown_cap:
+        reasons.append("historical_drawdown_limit")
+    return values, reasons
+
+
+def _cashflow_score(
+    candidate: StrategyCandidateFacts,
+    as_of: datetime,
+    rules: Mapping[str, Any],
+) -> tuple[Decimal, list[str], str]:
+    values, reasons = _required_numbers(candidate, as_of, ("cashflow_yield_percent",))
+    score = values["cashflow_yield_percent"]
+    if score <= 0:
+        reasons.append("positive_documented_cashflow_required")
+    if rules["ranking"] == "floating_cashflow" and candidate.asset_class == "bonds":
+        if _known_fact(candidate, "floating_coupon", as_of) is not True:
+            reasons.append("floating_coupon_required")
+        if _known_fact(candidate, "coupon_formula_verified", as_of) is not True:
+            reasons.append("missing:coupon_formula")
+    return score, reasons, ""
+
+
+def _quality_value_score(
+    candidate: StrategyCandidateFacts,
+    as_of: datetime,
+    rules: Mapping[str, Any],
+) -> tuple[Decimal, list[str], str] | None:
+    if candidate.asset_class != "shares":
+        return None
+    values, reasons = _required_numbers(
+        candidate,
+        as_of,
+        ("roe_percent", "debt_to_ebitda", "free_cashflow_yield_percent"),
+    )
+    roe, debt, cashflow = (
+        values[key]
+        for key in (
+            "roe_percent",
+            "debt_to_ebitda",
+            "free_cashflow_yield_percent",
+        )
+    )
+    if roe < Decimal(rules["minimum_roe_percent"]):
+        reasons.append("return_on_equity_limit")
+    if debt < 0 or debt > Decimal(rules["maximum_debt_to_ebitda"]):
+        reasons.append("debt_limit")
+    if cashflow < Decimal(rules["minimum_fcf_yield_percent"]):
+        reasons.append("cashflow_value_limit")
+    score = max(_ZERO, cashflow) * max(_ZERO, roe) / (1 + max(_ZERO, debt))
+    return score, reasons, ""
+
+
+def _index_cost_score(
+    candidate: StrategyCandidateFacts,
+    as_of: datetime,
+    rules: Mapping[str, Any],
+) -> tuple[Decimal, list[str], str] | None:
+    if candidate.asset_class != "funds":
+        return None
+    values, reasons = _required_numbers(candidate, as_of, ("expense_ratio_percent",))
+    expense = values["expense_ratio_percent"]
+    if _known_fact(candidate, "index_tracking", as_of) is not True:
+        reasons.append("missing:index_tracking")
+    if not _constituents_known(candidate, as_of):
+        reasons.append("missing:fund_constituents")
+    else:
+        if len({row.issuer_id for row in candidate.constituents}) < rules["minimum_constituents"]:
+            reasons.append("fund_too_concentrated")
+        dimensions, _ = _candidate_dimensions(candidate, as_of)
+        if max(dimensions["issuer"].values()) * 100 > Decimal(rules["maximum_constituent_percent"]):
+            reasons.append("fund_constituent_limit")
+    if expense < 0 or expense > Decimal(rules["maximum_expense_percent"]):
+        reasons.append("fund_expense_limit")
+    return 1 / (Decimal("0.01") + max(_ZERO, expense)), reasons, ""
+
+
+def _regime_risk_score(
+    candidate: StrategyCandidateFacts,
+    as_of: datetime,
+    rules: Mapping[str, Any],
+) -> tuple[Decimal, list[str], str]:
+    values, reasons = _required_numbers(
+        candidate,
+        as_of,
+        (
+            "growth_beta",
+            "inflation_beta",
+            "factor_observations",
+            "volatility_percent",
+        ),
+    )
+    growth, inflation = values["growth_beta"], values["inflation_beta"]
+    if values["factor_observations"] < rules["minimum_factor_observations"]:
+        reasons.append("insufficient_factor_history")
+    if growth == 0 or inflation == 0:
+        reasons.append("factor_exposure_not_identified")
+    bucket = ("growth+" if growth > 0 else "growth-") + (
+        "/inflation+" if inflation > 0 else "/inflation-"
+    )
+    return 1 / (1 + max(_ZERO, values["volatility_percent"])), reasons, bucket
+
+
+def _covered_dividends_score(
+    candidate: StrategyCandidateFacts,
+    as_of: datetime,
+    rules: Mapping[str, Any],
+) -> tuple[Decimal, list[str], str] | None:
+    if candidate.asset_class != "shares":
+        return None
+    values, reasons = _required_numbers(
+        candidate,
+        as_of,
+        (
+            "dividend_yield_percent",
+            "payout_ratio_percent",
+            "debt_to_ebitda",
+            "free_cashflow_yield_percent",
+        ),
+    )
+    score, payout, debt = (
+        values[key]
+        for key in (
+            "dividend_yield_percent",
+            "payout_ratio_percent",
+            "debt_to_ebitda",
+        )
+    )
+    if _known_fact(candidate, "dividend_declared", as_of) is not True:
+        reasons.append("missing:dividend_decision")
+    if values["free_cashflow_yield_percent"] <= 0:
+        reasons.append("dividends_not_cashflow_covered")
+    if not 0 <= payout <= Decimal(rules["maximum_payout_percent"]):
+        reasons.append("payout_limit")
+    if not 0 <= debt <= Decimal(rules["maximum_debt_to_ebitda"]):
+        reasons.append("debt_limit")
+    if score <= 0:
+        reasons.append("positive_dividend_required")
+    return score, reasons, ""
+
+
+_FACT_SCORERS = {
+    "documented_cashflow": _cashflow_score,
+    "floating_cashflow": _cashflow_score,
+    "quality_value": _quality_value_score,
+    "index_cost": _index_cost_score,
+    "regime_risk": _regime_risk_score,
+    "covered_dividends": _covered_dividends_score,
+}
+
+
+def _yield_floor_reasons(
+    candidate: StrategyCandidateFacts,
+    data: Mapping[str, Any],
+    as_of: datetime,
+) -> list[str]:
+    if data["rules"]["yield_floor"] != "key_rate":
+        return []
+    values, reasons = _required_numbers(candidate, as_of, ("net_yield_percent", "key_rate_percent"))
+    if values["net_yield_percent"] < (
+        values["key_rate_percent"] + Decimal(data["rules"]["yield_margin_pp"])
+    ):
+        reasons.append("net_yield_floor")
+    return reasons
+
+
+def _price_mandate_score(
+    mode: str,
+    values: Mapping[str, Decimal],
+    rules: Mapping[str, Any],
+) -> tuple[Decimal, list[str]]:
+    volatility, momentum = values["volatility_percent"], values["momentum_percent"]
+    score = 1 / (1 + max(_ZERO, volatility))
+    reasons = []
+    if mode == "short_quality" and volatility > Decimal(rules["maximum_volatility_percent"]):
+        reasons.append("historical_volatility_limit")
+    elif mode == "positive_momentum":
+        if momentum <= Decimal(rules["minimum_momentum_percent"]):
+            reasons.append("momentum_not_positive")
+        score = max(_ZERO, momentum)
+    elif mode == "risk_adjusted_momentum":
+        score = (100 + max(Decimal("-99"), momentum)) / (1 + max(_ZERO, volatility))
+    return score, reasons
+
+
+def _method_score(
+    candidate: StrategyCandidateFacts,
+    data: Mapping[str, Any],
+    as_of: datetime,
+) -> tuple[Decimal | None, list[str], str]:
+    rules = strategy_rule_set(data["base_preset_id"])
+    mode = rules["ranking"]
+    values, reasons = _training_values(candidate, data, as_of)
+    score, price_reasons = _price_mandate_score(mode, values, rules)
+    reasons.extend(price_reasons)
+    bucket = ""
+    if candidate.asset_class == "bonds":
+        bond_reasons, months = _bond_criteria(candidate, data, as_of, rules)
+        reasons.extend(bond_reasons)
+        if mode in {"maturity_ladder", "short_quality"} and months is not None:
+            bucket = str(max(0, months) // int(rules.get("rung_months", 12)))
+            score /= 1 + max(0, months)
+    scorer = _FACT_SCORERS.get(mode)
+    if scorer is not None:
+        details = scorer(candidate, as_of, rules)
+        if details is not None:
+            score, method_reasons, bucket = details
+            reasons.extend(method_reasons)
+    reasons.extend(_yield_floor_reasons(candidate, data, as_of))
+    return (None if reasons else score), sorted(set(reasons)), bucket
+
+
+def _candidate_dimensions(
+    candidate: StrategyCandidateFacts,
+    as_of: datetime,
+) -> tuple[dict[str, dict[str, Decimal]], list[str]]:
+    dimensions: dict[str, dict[str, Decimal]] = {name: {} for name in ("issuer", "sector", "group")}
+    missing = []
+    if candidate.asset_class == "funds":
+        if not _constituents_known(candidate, as_of):
+            return dimensions, ["fund_lookthrough"]
+        for row in candidate.constituents:
+            for name, key in (
+                ("issuer", row.issuer_id),
+                ("sector", row.sector),
+                ("group", row.group_id),
+            ):
+                dimensions[name][key] = dimensions[name].get(key, _ZERO) + row.weight_percent / 100
+    else:
+        for name in dimensions:
+            raw = _known_fact(candidate, name + "_id" if name != "sector" else name, as_of)
+            if isinstance(raw, str) and raw:
+                dimensions[name][raw] = Decimal(1)
+            else:
+                missing.append(name)
+    return dimensions, missing
+
+
+_RankedCandidate = tuple[StrategyCandidateFacts, Decimal, str]
+_ExposureLedger = dict[str, dict[str, Decimal]]
+
+
+def _rank_candidates(
+    data: Mapping[str, Any],
+    candidates: Sequence[StrategyCandidateFacts],
+    as_of: datetime,
+) -> tuple[list[dict[str, Any]], list[_RankedCandidate]]:
+    rows, eligible = [], []
+    for candidate in candidates:
+        reasons = []
+        if candidate.asset_class not in ALLOCATION_KEYS[:3]:
+            reasons.append("unsupported_asset_class")
+        elif (
+            candidate.asset_class in data["excluded"]
+            or data["allocation"][candidate.asset_class] == 0
+        ):
+            reasons.append("asset_class_excluded")
+        if candidate.currency.upper() != "RUB":
+            reasons.append("non_ruble_series")
+        if type(candidate.lot_size) is not int or candidate.lot_size <= 0:
+            reasons.append("lot_size_missing")
+        score, evidence_reasons, bucket = _method_score(candidate, data, as_of)
+        reasons = sorted(set(reasons + evidence_reasons))
+        rows.append(
+            {
+                "instrument_uid": candidate.instrument_uid,
+                "ticker": candidate.ticker,
+                "asset_class": candidate.asset_class,
+                "eligible": not reasons,
+                "reasons": reasons,
+                "score": _text(score) if not reasons else None,
+                "bucket": bucket,
+                "facts": {
+                    key: {
+                        "value": str(fact.value),
+                        "available_at": fact.available_at.isoformat(),
+                        "source_url": fact.source_url,
+                    }
+                    for key, fact in candidate.facts.items()
+                    if _known_fact(candidate, key, as_of) is not None
+                },
+            }
+        )
+        if not reasons and score is not None:
+            eligible.append((candidate, score, bucket))
+    return rows, eligible
+
+
+def _candidate_exposure_limits(
+    candidate: StrategyCandidateFacts,
+    data: Mapping[str, Any],
+    as_of: datetime,
+    missing: set[str],
+) -> list[tuple[str, str, Decimal, Decimal]]:
+    dimensions, unknown = _candidate_dimensions(candidate, as_of)
+    missing.update("unverified:" + key for key in unknown)
+    limits: list[tuple[str, str, Decimal, Decimal]] = []
+    for name, entries in dimensions.items():
+        cap = _amount(data["policy"]["max_" + name + "_percent"])
+        if cap is None:
+            missing.add("policy.max_" + name + "_percent")
+        else:
+            limits.extend((name, key, exposure, cap) for key, exposure in entries.items())
+    if candidate.asset_class == "bonds":
+        fact = _known_fact(candidate, "rating", as_of)
+        notch = fact if isinstance(fact, str) and fact in RATING_LEVELS else "NR"
+        limits.append(("rating", notch, Decimal(1), Decimal(data["rules"]["rating_caps"][notch])))
+        if notch == "NR" or notch in RATING_LEVELS[10:24]:
+            credit_key = "max_unknown_percent" if notch == "NR" else "max_below_grade_percent"
+            cap = _amount(data["policy"][credit_key]) or _ZERO
+            limits.append(("credit", credit_key, Decimal(1), cap))
+    return limits
+
+
+def _bounded_candidate_weight(
+    candidate: StrategyCandidateFacts,
+    weight: Decimal,
+    data: Mapping[str, Any],
+    as_of: datetime,
+    used: _ExposureLedger,
+    missing: set[str],
+) -> Decimal:
+    cap = _amount(data["policy"]["max_instrument_percent"])
+    if cap is None:
+        missing.add("policy.max_instrument_percent")
+        return _ZERO
+    weight = min(weight, cap)
+    if candidate.asset_class == "funds":
+        weight = min(weight, Decimal(data["rules"]["fund_wrapper_cap_percent"]))
+    limits = _candidate_exposure_limits(candidate, data, as_of, missing)
+    for name, key, exposure, cap in limits:
+        weight = min(weight, max(_ZERO, cap - used[name][key]) / exposure)
+    for name, key, exposure, _ in limits:
+        used[name][key] += weight * exposure
+    return weight
+
+
+def _ranked_weight(
+    ranked: _RankedCandidate,
+    matching: Sequence[_RankedCandidate],
+    budget: Decimal,
+    mode: str,
+) -> Decimal:
+    _, score, bucket = ranked
+    if mode in {"maturity_ladder", "regime_risk"}:
+        buckets = {item[2] for item in matching}
+        peers = [item for item in matching if item[2] == bucket]
+        if mode == "maturity_ladder":
+            return budget / len(buckets) / len(peers)
+        regime_score = sum((item[1] for item in peers), _ZERO)
+        return budget / len(buckets) * score / regime_score
+    score_sum = sum((item[1] for item in matching), _ZERO)
+    return budget * (score / score_sum if score_sum else Decimal(1) / len(matching))
+
+
+def _select_asset_class(
+    data: Mapping[str, Any],
+    eligible: Sequence[_RankedCandidate],
+    kind: str,
+    as_of: datetime,
+    used: _ExposureLedger,
+    missing: set[str],
+) -> list[dict[str, Any]]:
+    target = Decimal(data["allocation"][kind])
+    if not target:
+        return []
+    class_cap = _amount(data["policy"][_CLASS_CAP[kind]])
+    if class_cap is None:
+        missing.add("policy." + _CLASS_CAP[kind])
+        return []
+    matching = sorted(
+        (item for item in eligible if item[0].asset_class == kind),
+        key=lambda item: (-item[1], item[0].instrument_uid),
+    )
+    if not matching:
+        missing.add("eligible_" + kind)
+        return []
+    if target > class_cap:
+        missing.add("target_above_class_cap:" + kind)
+    mode = strategy_rule_set(data["base_preset_id"])["ranking"]
+    selected, allocated = [], _ZERO
+    for ranked in matching:
+        candidate, _, bucket = ranked
+        proposed = _ranked_weight(ranked, matching, min(target, class_cap), mode)
+        weight = _bounded_candidate_weight(candidate, proposed, data, as_of, used, missing)
+        if weight <= 0:
+            continue
+        allocated += weight
+        selected.append(
+            {
+                "instrument_uid": candidate.instrument_uid,
+                "ticker": candidate.ticker,
+                "asset_class": kind,
+                "target_weight_percent": _text(weight),
+                "reason": mode,
+                "bucket": bucket,
+            }
+        )
+    if allocated + Decimal("0.000001") < target:
+        missing.add("unfilled_target:" + kind)
+    return selected
+
+
+def select_strategy_candidates(
+    document: object,
+    candidates: Sequence[StrategyCandidateFacts],
+    *,
+    as_of: datetime,
+) -> dict[str, Any]:
+    """Screen dated facts, rank by the mandate and allocate bounded research weights.
+
+    Missing look-through or identities are exposed: a conditional research basket
+    is useful, but it does not certify a complete personal investment selection.
+    """
+    data = normalize_document(document)
+    if as_of.tzinfo is None or len(candidates) > 100:
+        raise ValueError("strategy_candidate_input_invalid")
+    ids = [row.instrument_uid for row in candidates]
+    if any(not uid for uid in ids) or len(ids) != len(set(ids)):
+        raise ValueError("strategy_duplicate_candidate")
+    rows, eligible = _rank_candidates(data, candidates, as_of)
+    missing: set[str] = set()
+    mode = strategy_rule_set(data["base_preset_id"])["ranking"]
+    if mode == "regime_risk" and len({bucket for _, _, bucket in eligible}) < 4:
+        missing.add("four_economic_regimes")
+    used: _ExposureLedger = {
+        name: defaultdict(Decimal) for name in ("issuer", "sector", "group", "rating", "credit")
+    }
+    selected = []
+    for kind in ALLOCATION_KEYS[:3]:
+        selected.extend(_select_asset_class(data, eligible, kind, as_of, used, missing))
+    missing.update(
+        reason
+        for row in rows
+        if "eligible_" + row["asset_class"] in missing
+        for reason in row["reasons"]
+        if reason.startswith("missing:")
+    )
+    total = sum((Decimal(item["target_weight_percent"]) for item in selected), _ZERO)
+    ready = bool(selected) and not missing
+    return {
+        "status": "ready" if ready else "partial" if selected else "insufficient_data",
+        "candidate_selection_ready": ready,
+        "execution_enabled": False,
+        "method": mode,
+        "base_preset_id": data["base_preset_id"],
+        "as_of": as_of.isoformat(),
+        "candidates": rows,
+        "selected": selected,
+        "cash_weight_percent": _text(100 - total),
+        "missing_requirements": sorted(missing),
+        "probability_of_profit": None,
+        "probability_reason": "Лимиты и подбор по фактам не оценивают вероятность будущей прибыли.",
+        "scope": "Условный подбор по доступным на указанную дату фактам. Незаполненные доли "
+        "остаются деньгами. Это исследовательская корзина, не торговое поручение.",
     }

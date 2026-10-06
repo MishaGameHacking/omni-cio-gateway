@@ -274,6 +274,12 @@ class BrokerService:
             to_at=to_at,
         )
 
+    def market_history_start(self, user_id: UUID, instrument_uid: str) -> datetime | None:
+        record, credential, environment = self._connected_credential(user_id)
+        first = self.tbank.first_daily_candle(credential, environment, instrument_uid)
+        self._require_current_connection(record)
+        return first
+
     def market_exchange_candles(
         self,
         user_id: UUID,
@@ -283,8 +289,8 @@ class BrokerService:
         to_at: datetime,
         interval: str,
     ) -> tuple[TBankHistoricCandle, ...]:
-        _record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.get_exchange_candles(
+        record, credential, environment = self._connected_credential(user_id)
+        candles = self.tbank.get_exchange_candles(
             credential,
             environment,
             instrument_uid,
@@ -292,6 +298,8 @@ class BrokerService:
             to_at=to_at,
             interval=interval,
         )
+        self._require_current_connection(record)
+        return candles
 
     def market_trading_status(
         self,

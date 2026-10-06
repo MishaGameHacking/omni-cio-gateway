@@ -1,4 +1,5 @@
 """Exact catalog/draft contracts and scenario mathematics, without market claims."""
+
 from copy import deepcopy
 from decimal import Decimal
 
@@ -8,14 +9,12 @@ from omnicio.strategy import (
     ALLOCATION_KEYS,
     CATALOG_VERSION,
     RATING_LEVELS,
-    capital_feasibility,
     document_hash,
     expected_shortfall,
     normalize_document,
     preset_document,
     strategy_catalog,
     validate_selection,
-    wilson_interval,
 )
 
 
@@ -46,6 +45,44 @@ def test_catalog_cannot_be_mutated_by_consumer_and_has_distinct_templates():
     assert "invalid.test" not in strategy_catalog()["sources"][0]["url"]
 
 
+def test_catalog_matches_the_ten_requested_mandates_without_invented_results():
+    catalog = strategy_catalog()
+    assert [item["title"] for item in catalog["presets"]] == [
+        "Сбалансированная",
+        "Консервативная",
+        "Агрессивная",
+        "Доходная",
+        "Накопление",
+        "Стратегия Баффета",
+        "Стратегия Богла",
+        "Стратегия Далио",
+        "Лестница облигаций",
+        "Дивидендная",
+    ]
+    assert "sample_illustration" not in catalog
+    assert len({item["selection_rules"]["ranking"] for item in catalog["presets"]}) == 10
+
+
+@pytest.mark.parametrize("legacy", ["near_goal", "floating"])
+def test_saved_legacy_mandate_keeps_its_exact_parameters_and_identity(legacy):
+    from omnicio.strategy import strategy_rule_set
+
+    saved = preset_document("income")
+    saved.update(base_preset_id=legacy, catalog_version="2026-10-06.1", customized=True)
+    saved["allocation"] = {"shares": 0, "bonds": 80, "funds": 10, "cash": 10}
+    saved["profile"]["reserve_rub"] = "41234.12345678"
+    before = deepcopy(saved)
+    assert normalize_document(saved) == before
+    assert validate_selection(saved, intent="edit") == before
+    assert document_hash(normalize_document(saved)) == document_hash(before)
+    assert strategy_rule_set(legacy)["ranking"] != "positive_momentum"
+    with pytest.raises(ValueError, match="preset_unknown"):
+        validate_selection(saved, intent="select")
+    saved["catalog_version"] = CATALOG_VERSION
+    with pytest.raises(ValueError, match="preset_unknown"):
+        normalize_document(saved)
+
+
 def test_edit_always_creates_personal_copy_and_does_not_rewrite_template():
     document = preset_document("balanced")
     document["profile"]["reserve_rub"] = "12345.12345678"
@@ -70,8 +107,10 @@ def test_select_keeps_personal_facts_but_cannot_forge_original_strategy():
         validate_selection(document, intent="select")
 
 
-@pytest.mark.parametrize("value", [True, 1.2, "NaN", "Infinity", "1e3", "-1", "", "1,2",
-    "1.123456789", "1000000000001", {}, []])
+@pytest.mark.parametrize(
+    "value",
+    [True, 1.2, "NaN", "Infinity", "1e3", "-1", "", "1,2", "1.123456789", "1000000000001", {}, []],
+)
 def test_untrusted_money_rejected(value):
     document = preset_document("balanced")
     document["profile"]["reserve_rub"] = value
@@ -79,14 +118,17 @@ def test_untrusted_money_rejected(value):
         normalize_document(document)
 
 
-@pytest.mark.parametrize("path,value", [
-    (("profile", "max_drawdown_percent"), "2.12345"),
-    (("profile", "horizon_months"), "0"),
-    (("profile", "horizon_months"), "1.1"),
-    (("profile", "allow_below_investment_grade"), "true"),
-    (("policy", "max_sector_percent"), "101"),
-    (("rules", "yield_floor"), "guaranteed"),
-])
+@pytest.mark.parametrize(
+    "path,value",
+    [
+        (("profile", "max_drawdown_percent"), "2.12345"),
+        (("profile", "horizon_months"), "0"),
+        (("profile", "horizon_months"), "1.1"),
+        (("profile", "allow_below_investment_grade"), "true"),
+        (("policy", "max_sector_percent"), "101"),
+        (("rules", "yield_floor"), "guaranteed"),
+    ],
+)
 def test_invalid_parameters_are_not_clamped(path, value):
     document = preset_document("balanced")
     document[path[0]][path[1]] = value
@@ -107,14 +149,17 @@ def test_unknown_zero_precision_and_catalog_version():
         normalize_document(document)
 
 
-@pytest.mark.parametrize("mutation", [
-    lambda d: d["allocation"].update(shares=31),
-    lambda d: d["allocation"].update(shares=True),
-    lambda d: d.update(locked=["shares", "shares"]),
-    lambda d: d.update(excluded=["shares"]),
-    lambda d: d.update(user_id="another-person"),
-    lambda d: d["rules"]["rating_caps"].update(AAA=None),
-])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda d: d["allocation"].update(shares=31),
+        lambda d: d["allocation"].update(shares=True),
+        lambda d: d.update(locked=["shares", "shares"]),
+        lambda d: d.update(excluded=["shares"]),
+        lambda d: d.update(user_id="another-person"),
+        lambda d: d["rules"]["rating_caps"].update(AAA=None),
+    ],
+)
 def test_sum_flags_owner_injection_and_incomplete_rules_rejected(mutation):
     document = preset_document("balanced")
     mutation(document)
@@ -139,68 +184,22 @@ def test_cvar_uses_fractional_boundary_not_average_of_whole_tail():
     assert expected_shortfall([Decimal("-5")], [Decimal(1)]) == Decimal("-5")
 
 
-@pytest.mark.parametrize("losses,probabilities,confidence", [
-    ([], [], "0.95"), (["1"], ["0.5"], "0.95"),
-    (["1", "2"], ["-1", "2"], "0.95"),
-    (["NaN"], ["1"], "0.95"), (["1"], ["1"], "1"),
-])
+@pytest.mark.parametrize(
+    "losses,probabilities,confidence",
+    [
+        ([], [], "0.95"),
+        (["1"], ["0.5"], "0.95"),
+        (["1", "2"], ["-1", "2"], "0.95"),
+        (["NaN"], ["1"], "0.95"),
+        (["1"], ["1"], "1"),
+    ],
+)
 def test_cvar_requires_a_valid_explicit_distribution(losses, probabilities, confidence):
     loss_values = list(map(Decimal, losses))
     weights = list(map(Decimal, probabilities))
     alpha = Decimal(confidence)
     with pytest.raises(ValueError):
         expected_shortfall(loss_values, weights, alpha)
-
-
-def test_sample_interval_is_not_a_profit_guarantee():
-    lower, upper = wilson_interval(100, 100)
-    assert 0.963 < lower < 0.964
-    assert upper == 1
-    lower, upper = wilson_interval(0, 100)
-    assert lower == 0
-    assert 0.036 < upper < 0.037
-    with pytest.raises(ValueError):
-        wilson_interval(True, 100)
-    with pytest.raises(ValueError):
-        wilson_interval(0, 0)
-
-
-@pytest.mark.parametrize("capital", ["1000", "3000", "20000", "100000", "1000000"])
-def test_integer_lot_diagnostic_respects_cap_and_exposes_small_capital(capital):
-    result = capital_feasibility(preset_document("income"), nav_rub=Decimal(capital),
-        lot_cost_rub=Decimal("1000.01"))
-    assert result["lots_per_issuer"] * Decimal("1000.01") <= Decimal(result["issuer_budget_rub"])
-    assert result["minimum_issuers_if_all_bonds_corporate"] == 14
-    assert Decimal(result["minimum_nav_for_one_lot"]) == Decimal("20000.2")
-    expected_status = "lot_blocked" if Decimal(capital) < Decimal("20000.2") else "feasible"
-    assert result["status"] == expected_status
-
-
-def test_zero_issuer_limit_and_unknown_do_not_become_permission():
-    document = preset_document("income")
-    document["policy"]["max_issuer_percent"] = "0"
-    result = capital_feasibility(document, nav_rub=Decimal("100000"), lot_cost_rub=Decimal("1000"))
-    assert result["status"] == "lot_blocked"
-    assert result["minimum_nav_for_one_lot"] is None
-    document["policy"]["max_issuer_percent"] = None
-    assert capital_feasibility(document, nav_rub=Decimal("100000"),
-        lot_cost_rub=Decimal("1000"))["status"] == "unknown"
-
-
-@pytest.mark.parametrize("preset", strategy_catalog()["presets"], ids=lambda p: p["id"])
-def test_stress_results_are_exact_scaled_hypotheses_not_market_probabilities(preset):
-    from omnicio.strategy import stress_diagnostics
-
-    small = stress_diagnostics(preset["document"], nav_rub=Decimal("1000"))
-    large = stress_diagnostics(preset["document"], nav_rub=Decimal("100000"))
-    assert len(small["scenarios"]) == 5
-    assert sum(map(Decimal, small["test_weights"])) == 1
-    assert small["probability_of_profit"] is None
-    for a, b in zip(small["scenarios"], large["scenarios"], strict=True):
-        assert Decimal(a["change_rub"]) * 100 == Decimal(b["change_rub"])
-    assert Decimal(small["worst_test_loss_rub"]) * 100 == Decimal(large["worst_test_loss_rub"])
-    assert Decimal(small["test_tail_loss_rub"]) >= 0
-    assert "не история рынка" in small["scope"]
 
 
 def test_precision_check_does_not_round_away_small_nonzero_digits():
