@@ -85,37 +85,3 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: '"%OMNICIO_PYTHON%" .github/scripts/report_sonar_annotations.py'
-
-  incident_capture:
-    name: Capture released source and anonymous delivery evidence
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.author_association == 'OWNER' &&
-      github.head_ref == 'fix/graphite-layout-release-validation'
-    permissions:
-      contents: read
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: 5457ecbd9c3ded56200f410d034d081e58ffb628
-          persist-credentials: false
-          clean: true
-      - name: Archive fixed reviewed baseline only
-        shell: cmd
-        run: |
-          mkdir artifacts\incident
-          git archive --format=zip --output=artifacts/incident/baseline.zip HEAD
-          if errorlevel 1 exit /b 1
-      - name: Read anonymous public files without cookies or credentials
-        shell: cmd
-        run: >-
-          node.exe -e "const fs=require('node:fs'); (async()=>{const facts=[];for(const [name,path] of [['index.html','/'],['version.js','/version.js'],['app.css','/assets/app.css'],['app.js','/assets/app.js'],['workspace.js','/assets/workspace.js'],['sw.js','/sw.js'],['manifest.webmanifest','/manifest.webmanifest'],['market.json','/api/public/market-reference']]){try{const r=await fetch('https://omnicio.ru'+path,{redirect:'error',signal:AbortSignal.timeout(15000),headers:{'Cache-Control':'no-cache'}});const b=Buffer.from(await r.arrayBuffer());if(b.length>3000000)throw new Error('size_limit');fs.writeFileSync('artifacts/incident/live-'+name,b);facts.push({path,status:r.status,type:r.headers.get('content-type'),cache:r.headers.get('cache-control'),bytes:b.length});}catch(e){facts.push({path,error:e.message});}}fs.writeFileSync('artifacts/incident/delivery.json',JSON.stringify(facts,null,2));})().catch(e=>{console.error(e.message);process.exit(1);});"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: graphite-incident-baseline
-          path: artifacts/incident/*
-          retention-days: 3
-          if-no-files-found: error
