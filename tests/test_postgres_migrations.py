@@ -184,7 +184,9 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             ).read_text(encoding="utf-8")
         )
 
-        admin.execute((ROOT / "migrations" / "0012_strategy_drafts.sql").read_text(encoding="utf-8"))
+        admin.execute(
+            (ROOT / "migrations" / "0012_strategy_drafts.sql").read_text(encoding="utf-8")
+        )
 
         table_names = {
             row[0]

@@ -5706,9 +5706,9 @@
     if (Math.abs(exponent) > 24) return null;
     const digits = match[1] + (match[2] || "");
     const point = match[1].length + exponent;
-    const expanded = point <= 0 ? "0." + "0".repeat(-point) + digits
-      : point >= digits.length ? digits + "0".repeat(point - digits.length)
-        : digits.slice(0, point) + "." + digits.slice(point);
+    let expanded = digits.slice(0, point) + "." + digits.slice(point);
+    if (point <= 0) expanded = "0." + "0".repeat(-point) + digits;
+    if (point >= digits.length) expanded = digits + "0".repeat(point - digits.length);
     return expanded.replace(/^0+(?=\d)/, "");
   };
   const scaledInteger = (value, scale) => {
@@ -5718,16 +5718,21 @@
     if (fraction.length > scale) return null;
     return BigInt(whole) * (10n ** BigInt(scale)) + BigInt(fraction.padEnd(scale, "0") || "0");
   };
+  const trimFractionZeros = (value) => {
+    let end = value.length;
+    while (end > 0 && value[end - 1] === "0") end -= 1;
+    return value.slice(0, end);
+  };
   const decimalString = (value, scale) => {
     const factor = 10n ** BigInt(scale);
-    const fraction = String(value % factor).padStart(scale, "0").replace(/0+$/, "");
+    const fraction = trimFractionZeros(String(value % factor).padStart(scale, "0"));
     return fraction ? `${value / factor}.${fraction}` : String(value / factor);
   };
   const exactLabel = (value, unit = "") => {
     const normalized = plainDecimal(value);
     if (normalized === null) return "Не задано";
     const [whole, fraction] = normalized.split(".");
-    return whole.replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0")
+    return BigInt(whole).toLocaleString("ru-RU")
       + (fraction ? "," + fraction : "") + (unit ? " " + unit : "");
   };
   const adjustExactInput = (input, direction, increment) => {
@@ -5737,7 +5742,10 @@
     const scale = Math.max(...parts.map((part) => (part.split(".")[1] || "").length));
     const [current, step, minimum, maximum] = parts.map((part) => scaledInteger(part, scale));
     const next = current + step * BigInt(direction);
-    input.value = decimalString(next < minimum ? minimum : next > maximum ? maximum : next, scale);
+    let bounded = next;
+    if (bounded < minimum) bounded = minimum;
+    if (bounded > maximum) bounded = maximum;
+    input.value = decimalString(bounded, scale);
     input.dispatchEvent(new Event("input", {bubbles: true}));
   };
 
@@ -5772,8 +5780,10 @@
       const output = uiNode("output", undefined, "setting-value");
       output.setAttribute("for", input.id);
       output.tabIndex = -1;
-      const steps = unit === "₽" ? ["0.00000001", "0.0001", "0.01", "1", "1000", "10000", "100000", "1000000", "100000000", "1000000000000"]
-        : unit === "%" ? ["0.0001", "0.1", "1", "5", "10"] : ["1", "5", "12", "30", "100"];
+      const steps = {
+        "₽": ["0.00000001", "0.0001", "0.01", "1", "1000", "10000", "100000", "1000000", "100000000", "1000000000000"],
+        "%": ["0.0001", "0.1", "1", "5", "10"],
+      }[unit] || ["1", "5", "12", "30", "100"];
       const increment = uiNode("select");
       increment.setAttribute("aria-label", `Шаг изменения: ${title}`);
       steps.forEach((value) => {
@@ -5810,7 +5820,7 @@
       const controlsHelp = uiNode("span", "Как менять", "setting-control-help");
       tools.append(controlsHelp);
       workspace.attachHelp(controlsHelp, `Как настроить: ${title}`, () => ({
-        summary: "Кнопки −/+ меняют число на выбранный шаг. Быстрое значение заменяет число целиком. Ни одно из этих действий само не сохраняет настройки.",
+        summary: "Кнопки −/+ меняют число на выбранный шаг. Быстрое значение заменяет число целиком. Рабочий черновик сохраняется автоматически после загрузки; подтверждённые условия и сделки сами не меняются.",
         current: `Шаг сейчас: ${exactLabel(increment.value, unit)}. Допустимое значение: от ${exactLabel(input.min, unit)} до ${exactLabel(input.max, unit)}.`,
         sections: [
           ["Кнопки − и +", `Одно нажатие вычитает или прибавляет ${exactLabel(increment.value, unit)}. Например, при шаге 1 переход с 20 на 21 — одно нажатие. На границе диапазона число останавливается. Это меняет настройку «${title}», а не деньги на счёте.`],
@@ -5818,7 +5828,7 @@
           ["Ползунок и быстрые значения", "Если есть ползунок, он задаёт число в пределах диапазона. Кнопка с готовым числом подставляет именно это число, а не прибавляет его. Готовые значения — примеры для ввода, не рекомендации."],
           ["Точный ввод", "Открывает обычное поле с клавиатурой как дополнительный способ. Можно не пользоваться им: кнопки и выбор шага остаются доступны. В процентах переход с 10% на 11% — прибавление одного процентного пункта, не одного процента от 10."],
           ["Не знаю", "Убирает число только из открытой формы. Сохранённая версия не удаляется. Пока обязательное значение неизвестно, форма не позволит подтвердить всю группу настроек. Выберите число позже, когда сможете его обосновать."],
-          ["Когда будет запись", "Изменения сначала остаются на экране. Кнопка проверки показывает все значения; отдельное подтверждение разрешает сохранение. Отмена проверки ничего не записывает. В автономном примере даже подтверждение меняет только память страницы."],
+          ["Когда будет запись", "Черновик меняется сразу и сохраняется автоматически. Статус над вкладками показывает результат записи. Проверка и отдельное подтверждение нужны для применения профиля или лимитов; отмена не применяет их. В автономном примере копия относится только к этому браузеру."],
         ],
       }));
       const chips = uiNode("div", undefined, "setting-choices");
@@ -5890,18 +5900,18 @@
       const helpHolder = uiNode("div", undefined, "setting-toggle-help");
       label.after(helpHolder);
       helpHolder.append(uiNode("span", "Повышенный кредитный риск · по умолчанию выключено"));
-      workspace.attachHelp(helpHolder, "Справка: бумаги ниже инвестиционного уровня", () => ({...{"summary": "Отдельное разрешение рассматривать бумаги с более низкой оценкой способности заёмщика платить. По умолчанию выключено. Одного включения недостаточно, чтобы бумага прошла расчёт.", "sections": [["Что означает", "Ниже инвестиционного уровня — категория более высокого кредитного риска по используемой шкале рейтинга. Переключатель записывает ваше разрешение учитывать такую категорию, а не ваше согласие купить конкретную бумагу."], ["Что меняется при настройке", "Выключено — для этой категории применяется нулевой лимит, даже если в лимитах распределения введён больший процент. Включено — используется выбранный лимит категории, но остаются все проверки данных, доступности и риска."], ["Пример на условных суммах", "В лимитах выбрано 5%, но переключатель выключен: новые покупки этой категории не допускаются. После включения 5% становится только верхним пределом. Текущий расчёт всё равно не допускает кандидата с неподходящим состоянием риска."], ["Важно знать", "Кредитный рейтинг не гарантирует выплаты и может меняться. Эта кнопка не включает торговлю, не снимает ограничения брокера и не продаёт старые позиции. Разрешение — не обещание, что появятся доступные варианты."]]}, current: checkbox.checked ? "Включено в открытой форме. Сохранение требует отдельного подтверждения." : "Выключено в открытой форме. Разрешение не выдано."}));
+      workspace.attachHelp(helpHolder, "Справка: бумаги ниже инвестиционного уровня", () => ({"summary": "Отдельное разрешение рассматривать бумаги с более низкой оценкой способности заёмщика платить. По умолчанию выключено. Одного включения недостаточно, чтобы бумага прошла расчёт.", "sections": [["Что означает", "Ниже инвестиционного уровня — категория более высокого кредитного риска по используемой шкале рейтинга. Переключатель записывает ваше разрешение учитывать такую категорию, а не ваше согласие купить конкретную бумагу."], ["Что меняется при настройке", "Выключено — для этой категории применяется нулевой лимит, даже если в лимитах распределения введён больший процент. Включено — используется выбранный лимит категории, но остаются все проверки данных, доступности и риска."], ["Пример на условных суммах", "В лимитах выбрано 5%, но переключатель выключен: новые покупки этой категории не допускаются. После включения 5% становится только верхним пределом. Текущий расчёт всё равно не допускает кандидата с неподходящим состоянием риска."], ["Важно знать", "Кредитный рейтинг не гарантирует выплаты и может меняться. Эта кнопка не включает торговлю, не снимает ограничения брокера и не продаёт старые позиции. Разрешение — не обещание, что появятся доступные варианты."]], current: checkbox.checked ? "Включено в открытой форме. Сохранение требует отдельного подтверждения." : "Выключено в открытой форме. Разрешение не выдано."}));
     }
     const actionsHelp = uiNode("div", "Загрузка, проверка и сохранение", "setting-toggle-help");
     form.append(actionsHelp);
     workspace.attachHelp(actionsHelp, "Справка: работа с версиями настроек", {
-      summary: "Загрузка читает последнюю сохранённую версию. Проверка показывает ваши изменения. Только отдельное подтверждение разрешает запись. Это три разных действия.",
+      summary: "Рабочий черновик сохраняется автоматически. Загрузка в этой форме читает подтверждённый профиль или лимиты. Проверка показывает изменения, а отдельное подтверждение применяет их к расчётам. Это разные состояния.",
       sections: [
         ["Загрузить сохранённую версию", "Читает настройки этого аккаунта и заполняет форму. Если вы уже меняли числа, сначала появится вопрос о замене несохранённого черновика. При отказе ваши изменения останутся; при подтверждении успешная загрузка заменит их. Это не отмена сделок."],
         ["Проверить и сохранить", "Открывает окно с точными значениями. Изменённые числа показаны рядом с предыдущими. Нажатие ещё ничего не записывает. Неизвестное обязательное значение нужно сначала уточнить."],
         ["Подтверждение в окне", "Галочка означает, что вы проверили показанные настройки. Затем кнопка «Сохранить новую версию» отправляет именно их. Нажатие на справку или отмену не означает согласия и не отправляет запись."],
-        ["Пример", "Вы поменяли резерв с 30 000 ₽ на 40 000 ₽. До подтверждения сохранённым остаётся 30 000 ₽. Отмена окна оставляет 40 000 ₽ только в черновике. Загрузка после вашего разрешения вернёт последнюю сохранённую сумму."],
-        ["Ошибки и границы", "Дождитесь сообщения об успешном сохранении. При ошибке значения остаются на экране, но запись не подтверждена. Если версия изменилась в другой вкладке, сначала сравните данные заново. В автономном примере всё хранится только до закрытия или перезагрузки страницы; реальный аккаунт не меняется."],
+        ["Пример", "Вы поменяли резерв с 30 000 ₽ на 40 000 ₽. До подтверждения в расчётах остаётся 30 000 ₽. Отмена окна оставляет 40 000 ₽ в рабочем черновике, который сохраняется отдельно. Загрузка после вашего разрешения вернёт последнюю сохранённую сумму."],
+        ["Ошибки и границы", "Дождитесь сообщения об успешном сохранении. При ошибке значения остаются на экране, но запись не подтверждена. Если версия изменилась в другой вкладке, сначала сравните данные заново. В автономном примере реальный аккаунт не меняется. Возможность восстановления демонстрационной копии зависит от хранилища браузера."],
       ],
     });
     const interfaceState = {
@@ -6115,7 +6125,10 @@
       const before = JSON.parse(baseline);
       inputs.forEach((input, index) => {
         const {title, unit} = controlTitles.get(input) || {title: input.id, unit: ""};
-        const display = (value) => input.type === "checkbox" ? (value ? "Разрешено" : "Выключено") : exactLabel(value, unit);
+        const display = (value) => {
+          if (input.type !== "checkbox") return exactLabel(value, unit);
+          return value ? "Разрешено" : "Выключено";
+        };
         const current = input.type === "checkbox" ? input.checked : input.value;
         const row = uiNode("div", undefined, "settings-review-row");
         const term = uiNode("dt", title);
@@ -6181,16 +6194,21 @@
     form.addEventListener("input", (event) => {
       if (!inputs.includes(event.target)) return;
       invalidateReview();
-      if (!busy && !conflicted) status.textContent = dirty()
-        ? "Есть несохранённые изменения. Они остаются в этой вкладке до её закрытия."
-        : version === 0 ? "Стартовый пример · ещё не сохранён. Проверьте допущения." : "Значения соответствуют сохранённой версии";
+      if (busy || conflicted) return;
+      if (dirty()) {
+        status.textContent = "Рабочие изменения отличаются от подтверждённых параметров. Статус автосохранения — над вкладками стратегии.";
+        return;
+      }
+      status.textContent = version === 0 ? "Стартовый пример · ещё не сохранён. Проверьте допущения." : "Значения соответствуют сохранённой версии";
     });
     form.addEventListener("submit", saveDraft);
     reload.addEventListener("click", () => { void load({confirmDiscard: true}); });
     reset();
     const fieldNames = Object.keys(payload());
-    const readDraft = () => Object.fromEntries(inputs.map((input, index) => [fieldNames[index],
-      input.type === "checkbox" ? input.checked : input.value === "" ? null : input.value]));
+    const readDraft = () => Object.fromEntries(inputs.map((input, index) => {
+      const value = input.type === "checkbox" ? input.checked : input.value;
+      return [fieldNames[index], value === "" ? null : value];
+    }));
     const writeDraft = (draft) => {
       if (version === null || busy) return;
       invalidateReview();
@@ -6247,13 +6265,21 @@
   const createStrategyLibrary = () => {
     const host = requiredElement('[data-view-panel="strategy"]');
     const sectionNames = ["Подход", "Доли", "Капитал", "Лимиты", "Проверка"];
-    const clone = (value) => JSON.parse(JSON.stringify(value));
+    const clone = (value) => structuredClone(value);
+    const pendingRequests = new Set();
+    const request = async (path, options) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      pendingRequests.add(controller);
+      try { return await api(path, {...options, signal: controller.signal}); }
+      finally { clearTimeout(timeout); pendingRequests.delete(controller); }
+    };
     const canonical = (value) => {
       if (Array.isArray(value)) return value.map(canonical);
-      if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+      if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort((a, b) => a.localeCompare(b)).map((key) => [key, canonical(value[key])]));
       if (typeof value === "string" && /^\d+(?:\.\d*)?$/.test(value)) {
         const [whole, fraction = ""] = value.split(".");
-        const trimmed = fraction.replace(/0+$/, "");
+        const trimmed = trimFractionZeros(fraction);
         return whole.replace(/^0+(?=\d)/, "") + (trimmed ? "." + trimmed : "");
       }
       return value;
@@ -6262,6 +6288,33 @@
     let catalog = null;
     let documentState = null;
     let customCopy = null;
+    let unacknowledged = null;
+    let loading = false;
+    let loadNotice;
+    let loadMessage;
+    let loadRetry;
+    const initialControls = [...host.querySelectorAll(":scope > .strategy-layout, :scope > .strategy-live-settings, :scope > .strategy-jump")];
+    const showInitialLoad = (failed = false) => {
+      if (built) return;
+      if (!loadNotice) {
+        loadNotice = uiNode("div", undefined, "inline-note strategy-load-status");
+        loadMessage = uiNode("p"); loadMessage.setAttribute("role", "status");
+        loadRetry = uiNode("button", "Повторить загрузку", "button button-secondary");
+        loadRetry.type = "button";
+        loadRetry.addEventListener("click", () => {
+          void Promise.all([investmentEditor.load(), balancingEditor.load()]).then(() => load());
+        });
+        loadNotice.append(loadMessage, loadRetry);
+        host.querySelector(".page-heading").after(loadNotice);
+      }
+      loadNotice.hidden = false;
+      loadRetry.hidden = !failed;
+      loadRetry.disabled = loading;
+      loadMessage.textContent = failed
+        ? "Не удалось загрузить вашу стратегию. Настройки ниже недоступны: их сохранение не подтверждено. Сохранённые значения не заменены."
+        : "Загружаем вашу стратегию. Пока загрузка не завершена, изменения и автосохранение недоступны.";
+      initialControls.forEach((element) => { element.inert = true; });
+    };
     let version = null;
     let generation = 0;
     let revision = 0;
@@ -6283,6 +6336,12 @@
     let yieldFloor;
     let yieldMargin;
     let wrapperCap;
+    let diagnosticResult;
+    let diagnosticRevision = 0;
+    const clearDiagnostic = () => {
+      diagnosticRevision += 1;
+      diagnosticResult?.replaceChildren();
+    };
     let built = false;
     const notify = (message) => { if (saveStatus) saveStatus.textContent = message; };
     const setButtonState = () => {
@@ -6328,17 +6387,19 @@
       const sent = clone(documentState);
       const expected = version;
       const sentIntent = intent;
+      unacknowledged = {document: sent, version: expected, revision: sentRevision};
       busy = true;
       notify("Сохраняем черновик в аккаунте…");
       setButtonState();
       try {
-        const payload = await api("/api/profile/strategy", {method: "PUT", body: JSON.stringify({
+        const payload = await request("/api/profile/strategy", {method: "PUT", keepalive: true, body: JSON.stringify({
           expected_public_id: currentProfileId, expected_version: expected, intent: sentIntent, document: sent,
         })});
         if (epoch !== generation) return;
         const record = checkRecord(payload);
         if (!record || !equal(record.document, sent)) throw new Error("strategy_save_mismatch");
         version = record.version;
+        unacknowledged = null;
         customCopy = record.custom_document || null;
         if (sentRevision === revision) {
           dirty = false;
@@ -6370,6 +6431,7 @@
       if (!documentState || version === null || workspace.isDemo()) return;
       const next = snapshot();
       if (equal(next, documentState)) return;
+      clearDiagnostic();
       next.customized = true;
       documentState = next;
       intent = "edit";
@@ -6386,6 +6448,7 @@
       input.value = text;
     };
     const renderDocument = () => {
+      clearDiagnostic();
       investmentEditor.writeDraft(documentState.profile);
       balancingEditor.writeDraft(documentState.policy);
       workspace.writeAllocation(documentState);
@@ -6446,7 +6509,7 @@
           const sourceTitle = uiNode("h4", "Основания подхода"); body.append(sourceTitle);
           for (const sourceId of preset.source_ids) {
             const source = catalog.sources.find((item) => item.id === sourceId);
-            if (!source || !/^https:\/\//.test(source.url)) continue;
+            if (!source || !source.url.startsWith("https://")) continue;
             const link = uiNode("a", source.title); link.href = source.url; link.target = "_blank"; link.rel = "noopener noreferrer"; body.append(link);
           }
           body.append(uiNode("p", "Именные варианты — адаптации принципов, не оригинальные портфели авторов и не их рекомендации для РФ.", "field-hint"));
@@ -6475,6 +6538,8 @@
     const build = () => {
       if (built) return;
       built = true;
+      if (loadNotice) loadNotice.hidden = true;
+      initialControls.forEach((element) => { element.inert = false; });
       host.classList.add("strategy-compact");
       const heading = host.querySelector(".page-heading");
       heading.querySelector("h2").textContent = "Моя стратегия";
@@ -6485,7 +6550,7 @@
       const navigation = uiNode("div", undefined, "strategy-tabs"); navigation.setAttribute("role", "tablist"); navigation.setAttribute("aria-label", "Настройки стратегии");
       const toolbar = uiNode("div", undefined, "strategy-savebar");
       currentTitle = uiNode("strong"); saveStatus = uiNode("span", "Проверяем сохранённую версию…"); saveStatus.setAttribute("role", "status");
-      retry = uiNode("button", "Проверить сохранение", "button button-secondary"); retry.type = "button"; retry.hidden = true; retry.addEventListener("click", () => { void reconcile(); });
+      retry = uiNode("button", "Проверить сохранение", "button button-secondary"); retry.type = "button"; retry.hidden = true; retry.addEventListener("click", () => { if (version === null) void load(); else void reconcile(); });
       reload = uiNode("button", "Загрузить версию", "button button-secondary"); reload.type = "button"; reload.addEventListener("click", () => {
         if (busy || (dirty && !window.confirm("Заменить изменения на экране последней сохранённой копией?"))) return;
         dirty = false; version = null; void load();
@@ -6550,23 +6615,27 @@
       const capital = uiNode("select"); capital.setAttribute("aria-label", "Условный капитал, рубли");
       for (const value of [1000, 3000, 10000, 50000, 100000, 1000000]) { const option = uiNode("option", new Intl.NumberFormat("ru-RU").format(value) + " ₽"); option.value = String(value); capital.append(option); }
       capital.value = "100000";
+      capital.addEventListener("change", clearDiagnostic);
       const amountLabel = uiNode("label", "Капитал примера", "strategy-rule-row"); amountLabel.append(capital);
       const calculate = uiNode("button", "Проверить пример", "button button-secondary"); calculate.type = "button";
       const result = uiNode("div"); result.setAttribute("role", "status");
+      diagnosticResult = result;
       calculate.addEventListener("click", async () => {
         if (!version || busy || dirty || blocked) { result.textContent = "Сначала выберите подход или измените параметр и дождитесь автосохранения черновика."; return; }
         const epoch = generation; const currentRevision = revision; const expected = version;
+        const calculationRevision = ++diagnosticRevision;
         calculate.disabled = true; result.textContent = "Считаем условный пример…";
         try {
-          const data = await api("/api/profile/strategy/feasibility", {method: "POST", body: JSON.stringify({expected_version: expected, nav_rub: capital.value, lot_cost_rub: "1000.01"})});
-          if (epoch !== generation || currentRevision !== revision || version !== expected) return;
+          const data = await request("/api/profile/strategy/feasibility", {method: "POST", body: JSON.stringify({expected_public_id: currentProfileId, expected_version: expected, nav_rub: capital.value, lot_cost_rub: "1000.01"})});
+          if (epoch !== generation || currentRevision !== revision || version !== expected || calculationRevision !== diagnosticRevision) return;
+          if (data?.strategy_version !== expected || data?.public_id !== currentProfileId) throw new Error("strategy_diagnostic_mismatch");
           result.replaceChildren(uiNode("p", `Условный лот с расходами: 1 000,01 ₽. Предел одной компании: ${data.issuer_budget_rub ?? "не задан"} ₽. Помещается лотов: ${data.lots_per_issuer ?? "неизвестно"}.`));
           if (data.stress) {
             for (const row of data.stress.scenarios) result.append(uiNode("p", `${row.title}: ${row.portfolio_change_percent}% (${row.change_rub} ₽).`, "field-hint"));
             result.append(uiNode("p", data.stress.scope, "field-hint"));
           }
           result.append(uiNode("p", data.note || "Не хватает заданного предела компании.", "field-hint"));
-        } catch { if (epoch === generation) result.textContent = "Расчёт не подтверждён. Проверьте соединение и версию черновика."; }
+        } catch { if (epoch === generation && currentRevision === revision && calculationRevision === diagnosticRevision) result.textContent = "Расчёт не подтверждён. Проверьте соединение и версию черновика."; }
         finally { calculate.disabled = false; }
       });
       diagnostic.append(amountLabel, calculate, result);
@@ -6580,8 +6649,19 @@
       tab(0);
       renderCards();
     };
+    const preserveEditor = (name, editor, initial, record, firstLoad) => {
+      const values = editor.readDraft();
+      const changed = editor.isDirty() && (firstLoad || !equal(values, initial));
+      if ((!record && editor.savedVersion() > 0) || changed) {
+        documentState[name] = values;
+        documentState.customized = true;
+      }
+      return changed;
+    };
     const load = async () => {
-      if (busy || dirty || !currentProfileId || workspace.isDemo() || version !== null) return;
+      if (loading || busy || dirty || !currentProfileId || workspace.isDemo() || version !== null) return;
+      loading = true;
+      showInitialLoad();
       const epoch = ++generation;
       const owner = currentProfileId;
       const firstLoad = documentState === null;
@@ -6589,29 +6669,24 @@
       const initialPolicy = balancingEditor.readDraft();
       const initialAllocation = workspace.readAllocation();
       try {
-        const data = await api("/api/strategy/catalog", {method: "GET"});
+        const data = await request("/api/strategy/catalog", {method: "GET"});
         if (epoch !== generation || currentProfileId !== owner) return;
         if (!data || data.presets?.length !== 10 || !data.version) throw new Error("strategy_catalog_invalid");
         catalog = data;
-        const payload = await api("/api/profile/strategy", {method: "GET"});
+        const payload = await request("/api/profile/strategy", {method: "GET"});
         if (epoch !== generation || currentProfileId !== owner) return;
         const record = checkRecord(payload);
         if (!investmentEditor.isReady() || !balancingEditor.isReady()) throw new Error("strategy_unverified_profile");
         documentState = record?.document || clone(catalog.presets.find((item) => item.id === catalog.default_id).document);
-        let preserveEdits = false;
-        for (const [name, editor, initial] of [["profile", investmentEditor, initialProfile], ["policy", balancingEditor, initialPolicy]]) {
-          const changed = editor.isDirty() && (firstLoad || !equal(editor.readDraft(), initial));
-          if ((!record && editor.savedVersion() > 0) || changed || (!record && editor.isDirty() && editor.savedVersion() > 0)) {
-            documentState[name] = editor.readDraft(); documentState.customized = true;
-          }
-          preserveEdits ||= changed;
-        }
+        const profileChanged = preserveEditor("profile", investmentEditor, initialProfile, record, firstLoad);
+        const policyChanged = preserveEditor("policy", balancingEditor, initialPolicy, record, firstLoad);
+        let preserveEdits = profileChanged || policyChanged;
         const allocation = workspace.readAllocation();
         if (!equal(allocation, initialAllocation)) {
           Object.assign(documentState, allocation, {customized: true}); preserveEdits = true;
         }
         customCopy = record?.custom_document || null;
-        version = record?.version ?? 0; blocked = false; dirty = preserveEdits;
+        version = record?.version ?? 0; unacknowledged = null; blocked = false; dirty = preserveEdits;
         build(); renderDocument(); renderCards();
         notify(record ? "Черновик загружен из аккаунта" : "Исходный черновик · ещё не сохранён. Неизвестные личные суммы не подставлены.");
         if (record && !preserveEdits) workspace.markAllocationSaved();
@@ -6620,20 +6695,37 @@
         if (epoch !== generation) return;
         blocked = true;
         notify("Не удалось проверить сохранённый черновик. Ранее подтверждённые параметры не заменены.");
+        loading = false;
+        showInitialLoad(true);
         setButtonState();
+      } finally {
+        if (epoch === generation) loading = false;
       }
     };
     const reconcile = async () => {
       if (busy || !currentProfileId || !catalog) return;
       const epoch = generation;
       try {
-        const payload = await api("/api/profile/strategy", {method: "GET"});
+        const payload = await request("/api/profile/strategy", {method: "GET"});
         if (epoch !== generation) return;
         const record = checkRecord(payload);
-        if (record && equal(record.document, documentState)) {
-          version = record.version; customCopy = record.custom_document; dirty = false; blocked = false;
-          workspace.markAllocationSaved();
-          notify("Сохранение черновика подтверждено сервером");
+        const currentMatches = record && equal(record.document, documentState);
+        const sentMatches = record && unacknowledged
+          && record.version === unacknowledged.version + 1
+          && equal(record.document, unacknowledged.document);
+        if (currentMatches || sentMatches) {
+          version = record.version; customCopy = record.custom_document;
+          unacknowledged = null; blocked = false;
+          if (currentMatches) {
+            dirty = false;
+            workspace.markAllocationSaved();
+            notify("Сохранение черновика подтверждено сервером");
+          } else {
+            // The server acknowledged the earlier snapshot. Keep newer edits
+            // visible and send them against that version, never discard them.
+            dirty = true;
+            schedule(true);
+          }
         } else if ((record?.version ?? 0) === version) {
           blocked = false; schedule(true);
         } else {
@@ -6647,8 +6739,10 @@
       hasPending: () => dirty || busy,
       isCurrentSaved: () => built && version > 0 && !dirty && !busy && !blocked,
       reset: () => {
-        clearTimers(); generation += 1; version = null; dirty = false; busy = false; blocked = false;
-        documentState = null; customCopy = null; revision = 0;
+        clearTimers(); clearDiagnostic(); generation += 1;
+        pendingRequests.forEach((controller) => controller.abort()); version = null; dirty = false; busy = false; blocked = false;
+        documentState = null; customCopy = null; unacknowledged = null; revision = 0; loading = false;
+        if (loadNotice) loadNotice.hidden = true;
         ratingInputs.forEach((input) => { input.value = "0"; });
         if (yieldFloor) yieldFloor.checked = false;
         if (yieldMargin) yieldMargin.value = "0";

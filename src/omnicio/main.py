@@ -176,9 +176,14 @@ class StrategyDraftBody(StrictRequestBody):
 
 
 class StrategyFeasibilityBody(StrictRequestBody):
+    expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
     expected_version: int = Field(ge=1, le=2_147_483_647, strict=True)
-    nav_rub: Decimal = Field(gt=0, le=1_000_000_000_000, max_digits=24, decimal_places=8, allow_inf_nan=False)
-    lot_cost_rub: Decimal = Field(gt=0, le=1_000_000_000_000, max_digits=24, decimal_places=8, allow_inf_nan=False)
+    nav_rub: Decimal = Field(
+        gt=0, le=1_000_000_000_000, max_digits=24, decimal_places=8, allow_inf_nan=False,
+    )
+    lot_cost_rub: Decimal = Field(
+        gt=0, le=1_000_000_000_000, max_digits=24, decimal_places=8, allow_inf_nan=False,
+    )
 
 
 class PortfolioProposalBody(StrictRequestBody):
@@ -1032,7 +1037,10 @@ def get_strategy_catalog(response: Response) -> dict[str, Any]:
     return strategy_catalog()
 
 
-@app.get("/api/profile/strategy")
+@app.get(
+    "/api/profile/strategy",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def get_strategy_draft(
     request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1043,7 +1051,13 @@ def get_strategy_draft(
             "selection": portfolio_store(request).current_strategy_draft(user.id)}
 
 
-@app.put("/api/profile/strategy")
+@app.put(
+    "/api/profile/strategy",
+    responses={
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: {"description": "Invalid strategy document or preset selection"},
+    },
+)
 def save_strategy_draft(
     body: StrategyDraftBody, request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1061,21 +1075,24 @@ def save_strategy_draft(
             "applied_to_confirmed_policy": False, "broker_execution_enabled": False}
 
 
-@app.post("/api/profile/strategy/feasibility")
+@app.post(
+    "/api/profile/strategy/feasibility",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
 def strategy_feasibility(
     body: StrategyFeasibilityBody, request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
-    user = authenticated_user(request, session_token)
-    require_same_origin(request)
+    user = _settings_editor_user(request, session_token, body.expected_public_id)
     selection = portfolio_store(request).current_strategy_draft(user.id)
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     if selection is None:
-        return {"status": "draft_required"}
+        return {"status": "draft_required", "public_id": format_public_id(user.public_id)}
     if selection["version"] != body.expected_version:
         raise SettingsVersionConflict("settings_version_conflict")
     return {**capital_feasibility(selection["document"], nav_rub=body.nav_rub,
                                  lot_cost_rub=body.lot_cost_rub),
+            "public_id": format_public_id(user.public_id),
             "strategy_version": selection["version"],
             "stress": stress_diagnostics(selection["document"], nav_rub=body.nav_rub)}
 
@@ -1160,7 +1177,10 @@ def save_balancing_policy(
         expected_version=body.expected_version,
     )
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return {"public_id": format_public_id(user.public_id), "policy": _balancing_policy_payload(policy)}
+    return {
+        "public_id": format_public_id(user.public_id),
+        "policy": _balancing_policy_payload(policy),
+    }
 
 
 @app.get(

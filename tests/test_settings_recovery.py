@@ -227,8 +227,10 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
                 r[0]
                 for r in admin.execute("SELECT user_id FROM investment_profile_versions").fetchall()
             } == {A}
-            assert {r[0] for r in admin.execute("SELECT user_id FROM strategy_drafts").fetchall()} == {A}
-            assert admin.execute("UPDATE strategy_drafts SET version=99 WHERE user_id=%s", (B,)).rowcount == 0
+            assert {r[0] for r in admin.execute("SELECT user_id FROM "
+                "strategy_drafts").fetchall()} == {A}
+            assert admin.execute("UPDATE strategy_drafts SET version=99 WHERE "
+                "user_id=%s", (B,)).rowcount == 0
             updated = admin.execute(
                 "UPDATE investment_profile_versions SET reserve_rub = 0 WHERE user_id = %s",
                 (B,),
@@ -512,3 +514,51 @@ def _exercise_strategy_drafts(store: PortfolioStore, db: Database) -> None:
     assert store.current_profile(A) == a_profile
     assert store.current_balancing_policy(A) == a_policy
     assert db.recent_activity(A) == activity
+
+
+def test_strategy_diagnostic_is_versioned_read_only_and_owner_bound(monkeypatch) -> None:
+    from omnicio import main
+    from omnicio.strategy import preset_document
+
+    client, user = _strategy_api(monkeypatch)
+    document = preset_document("income")
+    calls = []
+
+    class Store:
+        def current_strategy_draft(self, user_id):
+            calls.append(user_id)
+            return {"version": 4, "document": document}
+
+    monkeypatch.setattr(main, "portfolio_store", lambda request: Store())
+    body = {
+        "expected_public_id": "000000123", "expected_version": 4,
+        "nav_rub": "20000", "lot_cost_rub": "1000.01",
+    }
+    response = client.post(
+        "/api/profile/strategy/feasibility", headers={"Origin": "https://omnicio.ru"},
+        json=body,
+    )
+    assert response.status_code == 200
+    assert response.json()["public_id"] == "000000123"
+    assert response.json()["strategy_version"] == 4
+    assert response.json()["lots_per_issuer"] == 0
+    assert response.json()["stress"]["probability_of_profit"] is None
+    assert response.headers["Cache-Control"] == "private, no-store"
+    assert calls == [user.id]
+    before = copy.deepcopy(document)
+    response = client.post(
+        "/api/profile/strategy/feasibility", headers={"Origin": "https://omnicio.ru"},
+        json={**body, "expected_version": 3},
+    )
+    assert response.status_code == 409
+    assert document == before
+    for headers, payload, expected_status in (
+        ({"Origin": "https://evil.example"}, body, 403),
+        ({"Origin": "https://omnicio.ru"}, {**body, "expected_public_id": "000000999"}, 409),
+        ({"Origin": "https://omnicio.ru"}, {**body, "user_id": str(B)}, 422),
+        ({"Origin": "https://omnicio.ru"}, {**body, "nav_rub": "NaN"}, 422),
+    ):
+        count = len(calls)
+        rejected = client.post("/api/profile/strategy/feasibility", headers=headers, json=payload)
+        assert rejected.status_code == expected_status
+        assert len(calls) == count

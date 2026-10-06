@@ -70,7 +70,8 @@ def test_select_keeps_personal_facts_but_cannot_forge_original_strategy():
         validate_selection(document, intent="select")
 
 
-@pytest.mark.parametrize("value", [True, 1.2, "NaN", "Infinity", "1e3", "-1", "", "1,2", "1.123456789", "1000000000001", {}, []])
+@pytest.mark.parametrize("value", [True, 1.2, "NaN", "Infinity", "1e3", "-1", "", "1,2",
+    "1.123456789", "1000000000001", {}, []])
 def test_untrusted_money_rejected(value):
     document = preset_document("balanced")
     document["profile"]["reserve_rub"] = value
@@ -144,8 +145,11 @@ def test_cvar_uses_fractional_boundary_not_average_of_whole_tail():
     (["NaN"], ["1"], "0.95"), (["1"], ["1"], "1"),
 ])
 def test_cvar_requires_a_valid_explicit_distribution(losses, probabilities, confidence):
+    loss_values = list(map(Decimal, losses))
+    weights = list(map(Decimal, probabilities))
+    alpha = Decimal(confidence)
     with pytest.raises(ValueError):
-        expected_shortfall(list(map(Decimal, losses)), list(map(Decimal, probabilities)), Decimal(confidence))
+        expected_shortfall(loss_values, weights, alpha)
 
 
 def test_sample_interval_is_not_a_profit_guarantee():
@@ -163,11 +167,13 @@ def test_sample_interval_is_not_a_profit_guarantee():
 
 @pytest.mark.parametrize("capital", ["1000", "3000", "20000", "100000", "1000000"])
 def test_integer_lot_diagnostic_respects_cap_and_exposes_small_capital(capital):
-    result = capital_feasibility(preset_document("income"), nav_rub=Decimal(capital), lot_cost_rub=Decimal("1000.01"))
+    result = capital_feasibility(preset_document("income"), nav_rub=Decimal(capital),
+        lot_cost_rub=Decimal("1000.01"))
     assert result["lots_per_issuer"] * Decimal("1000.01") <= Decimal(result["issuer_budget_rub"])
     assert result["minimum_issuers_if_all_bonds_corporate"] == 14
     assert Decimal(result["minimum_nav_for_one_lot"]) == Decimal("20000.2")
-    assert result["status"] == ("lot_blocked" if Decimal(capital) < Decimal("20000.2") else "feasible")
+    expected_status = "lot_blocked" if Decimal(capital) < Decimal("20000.2") else "feasible"
+    assert result["status"] == expected_status
 
 
 def test_zero_issuer_limit_and_unknown_do_not_become_permission():
@@ -177,7 +183,8 @@ def test_zero_issuer_limit_and_unknown_do_not_become_permission():
     assert result["status"] == "lot_blocked"
     assert result["minimum_nav_for_one_lot"] is None
     document["policy"]["max_issuer_percent"] = None
-    assert capital_feasibility(document, nav_rub=Decimal("100000"), lot_cost_rub=Decimal("1000"))["status"] == "unknown"
+    assert capital_feasibility(document, nav_rub=Decimal("100000"),
+        lot_cost_rub=Decimal("1000"))["status"] == "unknown"
 
 
 @pytest.mark.parametrize("preset", strategy_catalog()["presets"], ids=lambda p: p["id"])

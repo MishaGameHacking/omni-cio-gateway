@@ -55,37 +55,51 @@ SOURCES = (
 )
 # Values below describe different mandates. They have NOT been optimized against
 # market history. Precision is constrained by the existing financial contracts.
+_CATEGORY_BASE = "Базовые"
+_CATEGORY_GOAL = "По задачам"
+_CATEGORY_INVESTOR = "Именные"
 _SPECS = (
-    ("income", "Доход", "Базовые", (10, 70, 10, 10), 60, 20, 60, 5,
+    ("income", "Доход", _CATEGORY_BASE, (10, 70, 10, 10), 60, 20, 60, 5,
      "cashflow", "Планирование поступлений с контролем сроков и источников выплат.",
-     "Высокий купон сам по себе не делает выпуск подходящим. Погашение не считается доходом.", "vanguard"),
-    ("growth", "Накопление", "Базовые", (55, 25, 10, 10), 120, 35, 120, 5,
+     "Высокий купон сам по себе не делает выпуск подходящим. Погашение не "
+         "считается доходом.", "vanguard"),
+    ("growth", "Накопление", _CATEGORY_BASE, (55, 25, 10, 10), 120, 35, 120, 5,
      "growth", "Длинный срок, пополнения и ограничение лишних перестроек.",
      "Большая доля акций может привести к сильному и длительному снижению стоимости.", "vanguard"),
-    ("balanced", "Сочетание", "Базовые", (30, 50, 10, 10), 84, 25, 84, 5,
+    ("balanced", "Сочетание", _CATEGORY_BASE, (30, 50, 10, 10), 84, 25, 84, 5,
      "balanced", "Соединяет рост капитала и облигационную часть без выбора одной цели за вас.",
-     "Акции и облигации могут дешеветь одновременно; название не означает защиту капитала.", "vanguard"),
-    ("near_goal", "Ближайшая цель", "По задачам", (0, 60, 0, 40), 12, 10, 12, 3,
-     "liability", "Условия для цели с известным сроком: короткий горизонт и больше свободных денег.",
-     "Даже короткая облигация может не погаситься. Резерв и предстоящие снятия уточняются отдельно.", "cvar"),
-    ("ladder", "Лестница погашений", "По задачам", (0, 85, 0, 15), 60, 15, 60, 4,
-     "ladder", "Подход к распределению погашений по срокам. Подбор самих выпусков ещё требует календаря.",
-     "При малой сумме не каждая ступень достижима. Неизвестные будущие ставки не угадываются.", "cvar"),
-    ("floating", "Переменная ставка", "По задачам", (0, 80, 10, 10), 36, 15, 36, 4,
+     "Акции и облигации могут дешеветь одновременно; название не означает "
+         "защиту капитала.", "vanguard"),
+    ("near_goal", "Ближайшая цель", _CATEGORY_GOAL, (0, 60, 0, 40), 12, 10, 12, 3,
+     "liability", "Условия для цели с известным сроком: короткий горизонт и больше "
+         "свободных денег.",
+     "Даже короткая облигация может не погаситься. Резерв и предстоящие "
+         "снятия уточняются отдельно.", "cvar"),
+    ("ladder", "Лестница погашений", _CATEGORY_GOAL, (0, 85, 0, 15), 60, 15, 60, 4,
+     "ladder", "Подход к распределению погашений по срокам. Подбор самих выпусков "
+         "ещё требует календаря.",
+     "При малой сумме не каждая ступень достижима. Неизвестные будущие "
+         "ставки не угадываются.", "cvar"),
+    ("floating", "Переменная ставка", _CATEGORY_GOAL, (0, 80, 10, 10), 36, 15, 36, 4,
      "floating", "Отдельный подход к бумагам с пересматриваемым купоном.",
-     "Нужны формула купона, лаг, надбавка и ограничения. Старый купон не обещает будущую доходность.", "cvar"),
-    ("dividends", "Дивиденды и качество", "По задачам", (60, 20, 10, 10), 120, 35, 60, 5,
+     "Нужны формула купона, лаг, надбавка и ограничения. Старый купон не "
+         "обещает будущую доходность.", "cvar"),
+    ("dividends", "Дивиденды и качество", _CATEGORY_GOAL, (60, 20, 10, 10), 120, 35, 60, 5,
      "dividends", "Для изучения бизнеса с выплатами, источников денег и долговой нагрузки.",
-     "Дивиденды могут отменить. Без отчётности и решения о выплате персональный подбор не готов.", "buffett1989"),
-    ("buffett", "Уоррен Баффетт · качество", "Именные", (70, 10, 10, 10), 120, 40, 36, 5,
+     "Дивиденды могут отменить. Без отчётности и решения о выплате "
+         "персональный подбор не готов.", "buffett1989"),
+    ("buffett", "Уоррен Баффетт · качество", _CATEGORY_INVESTOR, (70, 10, 10, 10), 120, 40, 36, 5,
      "quality_value", "Адаптация принципов: качество бизнеса, понятность и дисциплина цены.",
-     "Это не портфель Berkshire и не оригинальная рекомендация Баффетта для рынка РФ. Нужна оценка бизнеса.", "buffett1989"),
-    ("bogle", "Джон Богл · широкий рынок", "Именные", (0, 20, 70, 10), 120, 35, 60, 5,
+     "Это не портфель Berkshire и не оригинальная рекомендация Баффетта "
+         "для рынка РФ. Нужна оценка бизнеса.", "buffett1989"),
+    ("bogle", "Джон Богл · широкий рынок", _CATEGORY_INVESTOR, (0, 20, 70, 10), 120, 35, 60, 5,
      "index_cost", "Адаптация принципов широкого покрытия рынка и контроля расходов фондов.",
-     "Фонд может быть концентрированным. Лимиты компаний проверяются по его составу, не названию.", "vanguard"),
-    ("dalio", "Рэй Далио · баланс рисков", "Именные", (20, 50, 20, 10), 120, 25, 120, 5,
+     "Фонд может быть концентрированным. Лимиты компаний проверяются по "
+         "его составу, не названию.", "vanguard"),
+    ("dalio", "Рэй Далио · баланс рисков", _CATEGORY_INVESTOR, (20, 50, 20, 10), 120, 25, 120, 5,
      "regime_risk", "Адаптация идеи проверки разных сочетаний роста экономики и инфляции.",
-     "Не копия All Weather. Без чувствительности инструментов к факторам баланс риска не подтверждён.", "allweather"),
+     "Не копия All Weather. Без чувствительности инструментов к факторам "
+         "баланс риска не подтверждён.", "allweather"),
 )
 
 
@@ -117,7 +131,8 @@ def _number(value: object, maximum: str = "100", places: int = 4) -> str | None:
 
 
 def _template(spec: tuple[Any, ...]) -> dict[str, Any]:
-    ident, title, category, allocation, horizon, drawdown, term, issuer, method, text, risk, source = spec
+    (ident, title, category, allocation, horizon, drawdown, term, issuer,
+     method, text, risk, source) = spec
     caps = dict.fromkeys(RATING_LEVELS, "0")
     for grade in RATING_LEVELS[:7]:
         caps[grade] = "100"  # Ceilings, not required weights and not probabilities.
@@ -135,20 +150,24 @@ def _template(spec: tuple[Any, ...]) -> dict[str, Any]:
                     "liquidity_horizon_days": "5", "allow_below_investment_grade": False},
         "policy": dict(zip(POLICY_KEYS, values, strict=True)),
         "rules": {"rating_caps": caps, "yield_floor": "key_rate" if ident == "income" else "none",
-                  "yield_margin_pp": "0", "fund_wrapper_cap_percent": "70" if ident == "bogle" else "20"},
+                  "yield_margin_pp": "0",
+                      "fund_wrapper_cap_percent": "70" if ident == "bogle" else "20"},
     }
     return {"id": ident, "title": title, "category": category, "method": method,
             "description": text, "risk": risk, "source_ids": [source], "document": document,
             "calibration": "not_calibrated", "probability_of_profit": None,
-            "parameter_basis": "Явные исходные условия модели; не оптимум, найденный на истории рынка."}
+            "parameter_basis": "Явные исходные условия модели; не оптимум, найденный на истории "
+                "рынка."}
 
 
 def strategy_catalog() -> dict[str, Any]:
-    return {"version": CATALOG_VERSION, "default_id": "balanced", "sources": copy.deepcopy(list(SOURCES)),
+    return {"version": CATALOG_VERSION, "default_id": "balanced",
+        "sources": copy.deepcopy(list(SOURCES)),
             "presets": [_template(spec) for spec in _SPECS], "rating_levels": list(RATING_LEVELS),
             "sample_illustration": {"successes": 100, "trials": 100,
                                     "wilson_lower_95": wilson_interval(100, 100)[0],
-                                    "scope": "Условные независимые испытания, не рыночная история и не прогноз"},
+                                    "scope": "Условные независимые испытания, не рыночная "
+                                        "история и не прогноз"},
             "note": "10 редактируемых подходов. Доходность и вероятность успеха не гарантируются. "
                     "Сохранение черновика не меняет подтверждённые условия и не создаёт сделок."}
 
@@ -166,6 +185,66 @@ def _exact_keys(value: object, keys: Sequence[str]) -> dict[str, Any]:
     return value
 
 
+def _allocation_flags(data: dict[str, Any]) -> dict[str, Any]:
+    allocation = _exact_keys(data["allocation"], ALLOCATION_KEYS)
+    if any(type(v) is not int or not 0 <= v <= 100 for v in allocation.values()):
+        raise ValueError("strategy_allocation_invalid")
+    if sum(allocation.values()) != 100:
+        raise ValueError("strategy_allocation_total")
+    result: dict[str, Any] = {"allocation": dict(allocation)}
+    for name in ("locked", "excluded"):
+        items = data[name]
+        if (not isinstance(items, list) or len(items) > 4
+                or any(not isinstance(k, str) or k not in ALLOCATION_KEYS for k in items)
+                or len(set(items)) != len(items)):
+            raise ValueError("strategy_allocation_flags")
+        result[name] = sorted(items)
+    if any(allocation[key] != 0 for key in result["excluded"]):
+        raise ValueError("strategy_excluded_weight")
+    if set(result["excluded"]) & set(result["locked"]):
+        raise ValueError("strategy_excluded_lock")
+    return result
+
+
+def _profile_values(value: object) -> dict[str, Any]:
+    profile = _exact_keys(value, (*PROFILE_LIMITS, "allow_below_investment_grade"))
+    if type(profile["allow_below_investment_grade"]) is not bool:
+        raise ValueError("strategy_permission_invalid")
+    result = dict(profile)
+    for key, (maximum, places) in PROFILE_LIMITS.items():
+        result[key] = _number(profile[key], maximum, places)
+    if result["horizon_months"] == "0":
+        raise ValueError("strategy_horizon_invalid")
+    return result
+
+
+def _policy_values(value: object) -> dict[str, Any]:
+    policy = _exact_keys(value, POLICY_KEYS)
+    result = {}
+    limits = {"max_term_months": ("1200", 0), "min_replace_benefit_rub": ("1000000000000", 8)}
+    for key in POLICY_KEYS:
+        maximum, places = limits.get(key, ("100", 4))
+        result[key] = _number(policy[key], maximum, places)
+    return result
+
+
+def _rule_values(value: object) -> dict[str, Any]:
+    rules = _exact_keys(value, ("rating_caps", "yield_floor", "yield_margin_pp",
+                                "fund_wrapper_cap_percent"))
+    caps = _exact_keys(rules["rating_caps"], RATING_LEVELS)
+    result = dict(rules)
+    result["rating_caps"] = {key: _number(val) for key, val in caps.items()}
+    if any(v is None for v in result["rating_caps"].values()):
+        raise ValueError("strategy_rating_cap_missing")
+    if rules["yield_floor"] not in ("none", "key_rate"):
+        raise ValueError("strategy_yield_mode")
+    for key in ("yield_margin_pp", "fund_wrapper_cap_percent"):
+        result[key] = _number(rules[key])
+        if result[key] is None:
+            raise ValueError("strategy_rule_missing")
+    return result
+
+
 def normalize_document(value: object) -> dict[str, Any]:
     """Validate untrusted draft without inferring consent or filling missing facts."""
     data = _exact_keys(value, ("base_preset_id", "catalog_version", "customized", "allocation",
@@ -175,48 +254,12 @@ def normalize_document(value: object) -> dict[str, Any]:
     preset_document(data["base_preset_id"])
     if type(data["customized"]) is not bool:
         raise ValueError("strategy_mode_invalid")
-    result = copy.deepcopy(data)
-    allocation = _exact_keys(data["allocation"], ALLOCATION_KEYS)
-    if any(type(v) is not int or not 0 <= v <= 100 for v in allocation.values()):
-        raise ValueError("strategy_allocation_invalid")
-    if sum(allocation.values()) != 100:
-        raise ValueError("strategy_allocation_total")
-    for name in ("locked", "excluded"):
-        items = data[name]
-        if (not isinstance(items, list) or len(items) > 4
-                or any(not isinstance(k, str) or k not in ALLOCATION_KEYS for k in items)
-                or len(set(items)) != len(items)):
-            raise ValueError("strategy_allocation_flags")
-        result[name] = sorted(items)
-    if any(allocation[key] != 0 for key in data["excluded"]):
-        raise ValueError("strategy_excluded_weight")
-    if set(data["excluded"]) & set(data["locked"]):
-        raise ValueError("strategy_excluded_lock")
-    profile = _exact_keys(data["profile"], (*PROFILE_LIMITS, "allow_below_investment_grade"))
-    if type(profile["allow_below_investment_grade"]) is not bool:
-        raise ValueError("strategy_permission_invalid")
-    for key, (maximum, places) in PROFILE_LIMITS.items():
-        result["profile"][key] = _number(profile[key], maximum, places)
-    if result["profile"]["horizon_months"] == "0":
-        raise ValueError("strategy_horizon_invalid")
-    policy = _exact_keys(data["policy"], POLICY_KEYS)
-    for key in POLICY_KEYS:
-        maximum, places = ("1200", 0) if key == "max_term_months" else (
-            ("1000000000000", 8) if key == "min_replace_benefit_rub" else ("100", 4))
-        result["policy"][key] = _number(policy[key], maximum, places)
-    rules = _exact_keys(data["rules"], ("rating_caps", "yield_floor", "yield_margin_pp",
-                                       "fund_wrapper_cap_percent"))
-    caps = _exact_keys(rules["rating_caps"], RATING_LEVELS)
-    result["rules"]["rating_caps"] = {key: _number(val) for key, val in caps.items()}
-    if any(v is None for v in result["rules"]["rating_caps"].values()):
-        raise ValueError("strategy_rating_cap_missing")
-    if rules["yield_floor"] not in ("none", "key_rate"):
-        raise ValueError("strategy_yield_mode")
-    for key in ("yield_margin_pp", "fund_wrapper_cap_percent"):
-        result["rules"][key] = _number(rules[key])
-        if result["rules"][key] is None:
-            raise ValueError("strategy_rule_missing")
-    return result
+    return {
+        "base_preset_id": data["base_preset_id"], "catalog_version": CATALOG_VERSION,
+        "customized": data["customized"], **_allocation_flags(data),
+        "profile": _profile_values(data["profile"]), "policy": _policy_values(data["policy"]),
+        "rules": _rule_values(data["rules"]),
+    }
 
 
 def validate_selection(document: object, *, intent: str) -> dict[str, Any]:
@@ -261,7 +304,9 @@ def expected_shortfall(losses: Sequence[Decimal], probabilities: Sequence[Decima
     return weighted / tail
 
 
-def wilson_interval(successes: int, trials: int, z: float = 1.959963984540054) -> tuple[float, float]:
+def wilson_interval(
+    successes: int, trials: int, z: float = 1.959963984540054,
+) -> tuple[float, float]:
     """Conditional sample interval; independence is an assumption, not market evidence."""
     if (type(successes) is not int or type(trials) is not int or trials <= 0
             or not 0 <= successes <= trials or not math.isfinite(z) or z <= 0):
@@ -298,7 +343,8 @@ def stress_diagnostics(document: object, *, nav_rub: Decimal) -> dict[str, Any]:
         )
         loss = -nav_rub * change / Decimal("100")
         losses.append(loss)
-        rows.append({"title": title, "class_changes_percent": dict(zip(ALLOCATION_KEYS, changes, strict=True)),
+        rows.append({"title": title, "class_changes_percent": dict(zip(ALLOCATION_KEYS,
+            changes, strict=True)),
                      "portfolio_change_percent": str(change), "change_rub": str(-loss)})
     # Five equal stress-test weights are exactly representable. They are not
     # estimates of market frequencies; no probability of profit is inferred.
@@ -306,12 +352,15 @@ def stress_diagnostics(document: object, *, nav_rub: Decimal) -> dict[str, Any]:
     return {"scenarios": rows, "test_weights": [str(weight) for weight in weights],
             "tail_level": "0.95", "test_tail_loss_rub": str(expected_shortfall(losses, weights)),
             "worst_test_loss_rub": str(max(losses)), "probability_of_profit": None,
-            "scope": "Условные изменения цен, не история рынка. Веса относятся только к набору тестов. "
+            "scope": "Условные изменения цен, не история рынка. Веса относятся только к "
+                "набору тестов. "
                      "Не учтены будущие выплаты, налоги, инфляция, дефолты и сделки. "
                      "Фонды здесь — отдельная условная корзина без раскрытия состава."}
 
 
-def capital_feasibility(document: object, *, nav_rub: Decimal, lot_cost_rub: Decimal) -> dict[str, Any]:
+def capital_feasibility(
+    document: object, *, nav_rub: Decimal, lot_cost_rub: Decimal,
+) -> dict[str, Any]:
     """An exact toy-lot diagnostic, not a security selection or a forecast."""
     data = normalize_document(document)
     if (not nav_rub.is_finite() or not lot_cost_rub.is_finite()

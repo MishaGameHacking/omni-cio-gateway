@@ -6012,10 +6012,7 @@ hr {
   box-shadow: var(--shadow);
   font-size: 13px;
   line-height: 20px;
-}
-
-/* One HelpButton: brief hover/hold, detailed readable card on explicit tap. */
-.help-popover {
+  /* Brief hover/hold and expanded tap share one popup. */
   box-sizing: border-box;
   overflow-wrap: anywhere;
   overscroll-behavior: contain;

@@ -230,6 +230,20 @@ window.addEventListener("load", () => setTimeout(async () => {
   const set = (element, value) => { element.value=value; element.dispatchEvent(new Event("input", {bubbles:true})); };
   try {
     check(window.__smokeErrors.length === 0, "No boot errors: " + window.__smokeErrors.join(", "));
+    if (new URLSearchParams(location.search).get("fixture") === "strategy-load-error") {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const retry = document.querySelector(".strategy-load-status button");
+        if (retry && !retry.hidden && !retry.disabled) break;
+        await new Promise((resolveWait) => setTimeout(resolveWait, 30));
+      }
+      navigate("strategy");
+      check(one(".strategy-load-status")?.textContent.includes("Не удалось загрузить"), "Initial library failure is visible");
+      check(one(".strategy-layout").inert && one(".strategy-live-settings").inert, "Controls cannot accept unsavable edits before initial library verification");
+      check(!one(".strategy-catalog"), "Failure does not pretend the default template loaded");
+      check(window.__smokeRequests.every((item) => item.method !== "PUT"), "Failed initial load never writes");
+      window.__smokeResult = {passed: true, checks: results.length, viewport: innerWidth};
+      return;
+    }
     if (new URLSearchParams(location.search).has("catalog")) {
       for (let attempt = 0; attempt < 100 && !document.querySelector(".strategy-catalog"); attempt += 1) await new Promise(resolve => setTimeout(resolve, 50));
       navigate("strategy");
@@ -251,28 +265,30 @@ window.addEventListener("load", () => setTimeout(async () => {
       const form = one("#investment-profile-form");
       const input = one("#profile-reserve-rub");
       const field = input.closest(".touch-setting");
-      const writes = () => window.__smokeRequests.filter((request) => request.method === "PUT");
+      const writes = () => window.__smokeRequests.filter((request) => request.method === "PUT" && request.path !== "/api/profile/strategy");
       const help = one("#workspace-help");
       if (["load-error", "wrong-owner"].includes(mode)) {
         await waitFor(() => one("#investment-profile-message").classList.contains("error"));
         check(input.disabled && input.value === "", "Failed/foreign load cannot initialize editable defaults: " + mode);
         check(one("#investment-profile-save").disabled, "Unverified owner/version cannot save");
       } else {
-        await waitFor(() => !input.disabled);
+        await waitFor(() => !input.disabled && document.querySelectorAll("[data-choose-strategy]").length === 10);
+        click('[data-strategy-tab="2"]');
         check(one("#settings-profile-id").textContent === "000000123", "Synthetic authenticated tenant loaded");
         check(document.querySelectorAll("#investment-profile-form .step-button").length === 10, "Every profile number has step controls");
         check(document.querySelectorAll("#balancing-policy-form .step-button").length === 34, "Every policy number has step controls");
         check([...form.querySelectorAll('input[type="number"]')].every((item) => item.hidden), "No keyboard is required for the initial form");
         check(writes().length === 0, "Loading, defaults and grouping never save automatically");
         if (mode === "empty") {
-          check(input.value === "100000", "Null record creates an explicitly unconfirmed starter draft");
-          check(one("#investment-profile-draft-status").textContent.includes("не сохранён"), "Starter status is not saved-success");
+          check(input.value === "", "Unknown personal reserve is never invented by a template");
+          check(one(".strategy-savebar [role=status]").textContent.includes("не сохранён"), "Starter status is not saved-success");
           check(!one("#profile-allow-below-grade").checked, "High-risk permission remains opt-in");
           field.querySelector('[aria-label^="Не знаю:"]').click();
           check(input.value === "", "Unknown is not zero");
           form.requestSubmit();
           check(!one("#workspace-dialog").open && one("#investment-profile-message").classList.contains("error"), "Unknown blocks confirmation and stays visible");
           field.querySelector('[data-quick-value="100000"]').click();
+          one("#profile-withdrawal-rub").closest(".touch-setting").querySelector('[data-quick-value="0"]').click();
         } else {
           check(input.value === "123456789.12345678", "Saved eight-place amount wins over defaults without rounding");
           check(one("#balance-max-instrument").value === "12.3456", "Saved four-place policy percentage stays exact");
@@ -289,6 +305,8 @@ window.addEventListener("load", () => setTimeout(async () => {
         const settingsInputs = [...document.querySelectorAll('.touch-setting input[type="number"]')];
         const valuesBeforeHelp = settingsInputs.map((item) => item.value);
         for (const setting of settingsInputs) {
+          const tabPanel = setting.closest('[role="tabpanel"]');
+          if (tabPanel) click('[aria-controls="' + tabPanel.id + '"]');
           const panel = setting.closest("details");
           const wasOpen = panel?.open;
           if (panel) panel.open = true;
@@ -306,12 +324,14 @@ window.addEventListener("load", () => setTimeout(async () => {
           if (panel) panel.open = wasOpen;
         }
         check(JSON.stringify(settingsInputs.map((item) => item.value)) === JSON.stringify(valuesBeforeHelp), "Reading all explanations changes no settings");
+        click('[data-strategy-tab="3"]');
         const bandHelp = one("#balance-no-trade-band").closest(".touch-setting").querySelector(".setting-label .help-trigger");
         bandHelp.closest("details").open = true;
         bandHelp.click();
         check(help.textContent.includes("не отклонение") && help.textContent.includes("строго"), "Replacement threshold is not mislabelled as allocation drift");
         help.querySelector("button").click();
-        check(writes().length === 0, "Changing the draft and reading all help never PUTs");
+        check(writes().length === 0, "Draft edits and help never apply confirmed profile/policy");
+        click('[data-strategy-tab="2"]');
         one("#investment-profile-save").click();
         check(one("#workspace-dialog").open && one(".settings-review"), "Readable review opens before saving");
         check(!one("#dialog-content").textContent.includes("expected_public_id"), "Internal API keys are not exposed as review labels");
@@ -509,12 +529,12 @@ const createSettingsFixture = (mode = "saved") => {
   return {state, request};
 };
 
-const createStrategyFixture = () => {
-  const original = createSettingsFixture("saved");
-  const state = {...original.state, selection: null, delay: 0, failure: null};
+const createStrategyFixture = (mode = "saved") => {
+  const original = createSettingsFixture(mode);
+  const state = {...original.state, selection: null, delay: 0, failure: null, loadFailure: mode === "strategy-load-error"};
   const json = (value, status = 200) => new Response(JSON.stringify(value), {status, headers: {"Content-Type": "application/json"}});
   return {state, request: async (path, options) => {
-    if (path === "/api/strategy/catalog") return json(strategyCatalog);
+    if (path === "/api/strategy/catalog") return state.loadFailure ? json({detail: "synthetic_initial_failure"}, 503) : json(strategyCatalog);
     if (path !== "/api/profile/strategy") return original.request(path, options);
     if (options.method === "GET") return json({public_id: "000000123", selection: state.selection});
     const payload = JSON.parse(options.body);
@@ -547,7 +567,7 @@ const server = createServer(async (request, response) => {
     response.setHeader("Content-Type", "application/json");
     if (synthetic) {
       const identity = referrer.searchParams.get("session") || "default";
-      if (!syntheticSessions.has(identity)) syntheticSessions.set(identity, referrer.searchParams.has("catalog") ? createStrategyFixture() : createSettingsFixture(referrer.searchParams.get("fixture") || "saved"));
+      if (!syntheticSessions.has(identity)) syntheticSessions.set(identity, createStrategyFixture(referrer.searchParams.get("fixture") || "saved"));
       const fixture = syntheticSessions.get(identity);
       const chunks = []; for await (const chunk of request) chunks.push(chunk);
       const result = await fixture.request(pathname, {method: request.method, headers: request.headers, body: chunks.length ? Buffer.concat(chunks).toString() : null});
@@ -580,6 +600,7 @@ const waitUntil = async (condition, attempts = 150) => {
 const protocolClient = async (url) => {
   const socket = new WebSocket(url);
   const pending = new Map();
+  const listeners = new Set();
   let sequence = 0;
   await new Promise((resolveOpen, reject) => {
     socket.addEventListener("open", resolveOpen, {once: true});
@@ -587,6 +608,7 @@ const protocolClient = async (url) => {
   });
   socket.addEventListener("message", ({data}) => {
     const message = JSON.parse(data);
+    if (message.method) listeners.forEach((listener) => listener(message));
     const request = pending.get(message.id);
     if (!request) return;
     pending.delete(message.id);
@@ -603,6 +625,7 @@ const protocolClient = async (url) => {
         socket.send(JSON.stringify({id, method, params, sessionId}));
       });
     },
+    onEvent: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
     close: () => socket.close(),
   };
 };
@@ -661,7 +684,7 @@ const verifyStrategyInput = async (send, evaluate) => {
     await send("Input.dispatchKeyEvent", {type: "keyUp", key: name, code, windowsVirtualKeyCode: value});
   };
   const locate = async (selector) => {
-    await evaluate(`(() => { const e=document.querySelector(${JSON.stringify(selector)}); const d=e.closest("details"); if(d) d.open=true; e.scrollIntoView({block:"center",behavior:"instant"}); })()`);
+    await evaluate(`(() => { const e=document.querySelector(${JSON.stringify(selector)}); const panel=e.closest('[role="tabpanel"]'); if(panel)document.querySelector('[aria-controls="'+panel.id+'"]').click(); const d=e.closest("details"); if(d) d.open=true; e.scrollIntoView({block:"center",behavior:"instant"}); })()`);
     await delay(80);
     return evaluate(`(() => { const e=document.querySelector(${JSON.stringify(selector)}); const r=e.getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()`);
   };
@@ -671,7 +694,7 @@ const verifyStrategyInput = async (send, evaluate) => {
     await send("Input.dispatchMouseEvent", {type: "mousePressed", button: "left", clickCount: 1, ...point});
     await send("Input.dispatchMouseEvent", {type: "mouseReleased", button: "left", clickCount: 1, ...point});
   };
-  const count = await evaluate('window.__smokeRequests.filter(r=>r.method==="PUT").length');
+  const count = await evaluate('window.__smokeRequests.filter(r=>r.method==="PUT" && r.path!=="/api/profile/strategy").length');
   const stepSelector = '.touch-setting:has(#profile-reserve-rub) select';
   await locate(stepSelector);
   await evaluate(`document.querySelector(${JSON.stringify(stepSelector)}).focus({preventScroll:true})`);
@@ -718,7 +741,7 @@ const verifyStrategyInput = async (send, evaluate) => {
     const geometry = await evaluate(`(() => { const e=document.querySelector(${JSON.stringify(selector)}); const b=e.querySelector('.step-button').getBoundingClientRect(); return {width:b.width,height:b.height,overflow:document.documentElement.scrollWidth>innerWidth+1}; })()`);
     assert.ok(geometry.width >= 44 && geometry.height >= 44 && !geometry.overflow, id + " usable touch targets and no overflow");
   }
-  assert.equal(await evaluate('window.__smokeRequests.filter(r=>r.method==="PUT").length'), count, "Native control changes cause no unreviewed writes");
+  assert.equal(await evaluate('window.__smokeRequests.filter(r=>r.method==="PUT" && r.path!=="/api/profile/strategy").length'), count, "Native changes never apply confirmed profile/policy without review");
 };
 
 
@@ -762,6 +785,16 @@ const verifyStrategyLibrary = async (send, evaluate, fixture) => {
   await click('.strategy-savebar button:nth-last-child(2)');
   assert.equal(await waitUntil(() => evaluate('document.querySelector(".strategy-savebar [role=status]").textContent.includes("подтверждено сервером")')), true);
   assert.equal(fixture.state.selection.version, lostVersion, "Lost acknowledgement reconciliation does not duplicate the write");
+  fixture.state.delay = 600; fixture.state.failure = "lost_ack";
+  await click(plus); await delay(650); await click(plus);
+  assert.equal(await waitUntil(() => evaluate('!document.querySelector(".strategy-savebar button:nth-last-child(2)").hidden')), true);
+  fixture.state.delay = 0;
+  const acknowledgedVersion = fixture.state.selection.version;
+  const newestAmount = await evaluate('document.querySelector("#profile-reserve-rub").value');
+  assert.notEqual(fixture.state.selection.document.profile.reserve_rub, newestAmount, "The newer local edit is not the lost-ACK snapshot");
+  await click('.strategy-savebar button:nth-last-child(2)'); await saved();
+  assert.equal(fixture.state.selection.version, acknowledgedVersion + 1, "Newer edit is saved only after the earlier exact snapshot is reconciled");
+  assert.equal(fixture.state.selection.document.profile.reserve_rub, newestAmount, "Lost acknowledgement cannot strand newer edits");
   fixture.state.selection.version += 1; // Another device, not a client overwrite.
   const foreign = structuredClone(fixture.state.selection.document);
   await click(plus);
@@ -798,12 +831,26 @@ const run = async (url, width) => {
       assert.ok(!result.exceptionDetails, JSON.stringify(result.exceptionDetails));
       return result.result.value;
     };
+    let navigationRequested = false;
+    let dialogError = null;
+    let unloadWarnings = 0;
+    client.onEvent((message) => {
+      if (message.method !== "Page.javascriptDialogOpening" || message.sessionId !== sessionId) return;
+      const expected = navigationRequested && message.params.type === "beforeunload";
+      if (!expected) dialogError = new Error("Unexpected native dialog: " + message.params.type);
+      else unloadWarnings += 1;
+      void send("Page.handleJavaScriptDialog", {accept: expected}).catch((error) => { dialogError = error; });
+    });
     await send("Page.enable");
     await send("Emulation.setDeviceMetricsOverride", {width, height: 1000, deviceScaleFactor: 1, mobile: width < 768});
     await send("Emulation.setEmulatedMedia", {features: [{name: "prefers-color-scheme", value: "light"}, {name: "prefers-reduced-motion", value: "reduce"}]});
     const visit = async (address) => {
-      await send("Page.navigate", {url: address});
-      const result = await waitUntil(() => evaluate("window.__smokeResult"), 100);
+      navigationRequested = true;
+      console.log("Browser fixture " + width + ": " + address);
+      try { await send("Page.navigate", {url: address}); }
+      finally { navigationRequested = false; }
+      assert.equal(dialogError, null);
+      const result = await waitUntil(() => evaluate(`location.href === ${JSON.stringify(address)} && document.readyState === "complete" && window.__smokeResult`), 100);
       assert.ok(result, "Browser suite did not finish: " + JSON.stringify(await evaluate("({errors:window.__smokeErrors,url:location.href,text:document.body?.textContent.slice(0,600)})")));
       assert.equal(result.passed, true, result.error);
       assert.equal(result.viewport, width, "The actual viewport must match the requested size");
@@ -834,6 +881,15 @@ const run = async (url, width) => {
       const outcome = await visit(url + `?synthetic=1&fixture=${fixture}&session=${fixture}-${width}`);
       console.log(`Settings ${fixture} ${width}: ${JSON.stringify(outcome)}`);
     }
+    const failedIdentity = "strategy-load-error-" + width;
+    await visit(url + "?synthetic=1&fixture=strategy-load-error&session=" + failedIdentity);
+    syntheticSessions.get(failedIdentity).state.loadFailure = false;
+    const retryPoint = await evaluate(`(() => { const e=document.querySelector('.strategy-load-status button'); e.scrollIntoView({block:'center',behavior:'instant'}); const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+    await send("Input.dispatchMouseEvent", {type: "mousePressed", button: "left", clickCount: 1, ...retryPoint});
+    await send("Input.dispatchMouseEvent", {type: "mouseReleased", button: "left", clickCount: 1, ...retryPoint});
+    assert.equal(await waitUntil(() => evaluate('document.querySelectorAll("[data-choose-strategy]").length === 10')), true, "Initial failed load can be retried inside Strategy");
+    assert.equal(await evaluate('document.querySelector(".strategy-load-status").hidden'), true);
+    assert.equal(syntheticSessions.get(failedIdentity).state.requests.some((item) => item.method === "PUT"), false, "Retry does not save defaults");
     const catalogIdentity = "catalog-" + width;
     await visit(url + "?synthetic=1&catalog=1&session=" + catalogIdentity);
     await verifyStrategyLibrary(send, evaluate, syntheticSessions.get(catalogIdentity));
@@ -851,7 +907,9 @@ const run = async (url, width) => {
     assert.deepEqual(calendarDays, ["10"], "Record dates are not payment dates, and actual payment dates supersede estimates");
     const cacheNames = await evaluate("navigator.serviceWorker.ready.then(() => caches.keys())");
     assert.ok(cacheNames.includes("omnicio-public-" + build), "The installed worker cache must use the rendered release build");
-    console.log(`Browser smoke ${width}: ${JSON.stringify(result)}`);
+    assert.equal(dialogError, null);
+    assert.ok(unloadWarnings > 0, "Native unsaved-draft exit protection remains active");
+    console.log(`Browser smoke ${width}: ${JSON.stringify(result)}; native exit warnings: ${unloadWarnings}`);
   } finally {
     if (client) {
       try { await client.send("Browser.close"); } finally { client.close(); }
