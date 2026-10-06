@@ -743,6 +743,12 @@
     drawerClose.focus();
   };
 
+  const refreshVisiblePortfolioHistory = (view) => {
+    if (["home", "portfolio"].includes(view) && lastPortfolioVisualization) {
+      renderPortfolioHistory(lastPortfolioVisualization.history || []);
+    }
+  };
+
   const renderView = (view, {scroll = true} = {}) => {
     if (!VIEW_TITLES[view]) {
       return;
@@ -768,7 +774,7 @@
     });
 
     appBack.classList.toggle("hidden", view === "home" && navigationDepth === 0);
-    if (["home", "portfolio"].includes(view) && lastPortfolioVisualization) renderPortfolioHistory(lastPortfolioVisualization.history || []);
+    refreshVisiblePortfolioHistory(view);
 
     if (view !== "portfolio") {
       stopInstrumentMarketStream();
@@ -1548,7 +1554,7 @@
     svg.append(label);
   };
 
-  const chartAxes = (svg, box, minimum, maximum, first, last, unit, plotBottom) => {
+  const chartAxes = (svg, box, {minimum, maximum, first, last, unit, plotBottom, calendarDates = false}) => {
     const compact = (value) => new Intl.NumberFormat("ru-RU", {
       maximumFractionDigits: Math.abs(value) < 100 ? 4 : 2, notation: "compact",
     }).format(value);
@@ -1558,8 +1564,9 @@
       svg.append(chartNode("line", {x1: box.left, y1: y, x2: box.width - box.right, y2: y, class: "portfolio-chart-grid"}));
       chartText(svg, compact(maximum - (maximum - minimum) * index / 3), box.left - 8, y + 4, "end");
     }
-    const timeOptions = last - first < 36 * 3600000
-      ? {hour: "2-digit", minute: "2-digit"} : {day: "2-digit", month: "short"};
+    let timeOptions = {day: "2-digit", month: "short"};
+    if (calendarDates) timeOptions.timeZone = "UTC";
+    else if (last - first < 36 * 3600000) timeOptions = {hour: "2-digit", minute: "2-digit"};
     const shortDate = (value) => new Intl.DateTimeFormat("ru-RU", timeOptions).format(new Date(value));
     chartText(svg, shortDate(first), box.left, box.height - 6);
     chartText(svg, shortDate(last), box.width - box.right, box.height - 6, "end");
@@ -1578,7 +1585,8 @@
       const point = points[index];
       if (!point) return;
       range.value = String(index);
-      output.textContent = `${formatDateTime(point.time)} · ${chartDecimalText(point.raw, unit)}`;
+      const dateLabel = point.calendarDate ? formatCalendarDate(point.calendarDate) : formatDateTime(point.time);
+      output.textContent = `${dateLabel} · ${chartDecimalText(point.raw, unit)}`;
       range.setAttribute("aria-valuetext", output.textContent);
       svg.querySelector(".chart-selected-marker")?.remove();
       svg.append(chartNode("line", {x1: x(point.time), x2: x(point.time), y1: 22, y2: Number(svg.viewBox.baseVal.height) - 30, class: "chart-selected-marker"}));
@@ -1606,31 +1614,76 @@
     const body = uiNode("tbody");
     for (const point of points) {
       const item = uiNode("tr");
-      item.append(uiNode("td", formatDateTime(point.time)), uiNode("td", chartDecimalText(point.raw, unit)));
+      const dateLabel = point.calendarDate ? formatCalendarDate(point.calendarDate) : formatDateTime(point.time);
+      item.append(uiNode("td", dateLabel), uiNode("td", chartDecimalText(point.raw, unit)));
       body.append(item);
     }
     table.append(body); details.append(table); wrapper.append(details);
     svg.after(wrapper);
   };
 
-  const renderSeriesChart = (svg, points, {
-    valueKey = "value", timeKey = "captured_at", minimumPoints = 2,
-    zeroLine = false, unit = "₽", step = false, maxGapMs = 7 * 86400000,
-  } = {}) => {
-    clearDataChart(svg);
+  const seriesPoint = (item, {valueKey, timeKey, calendarDates}) => {
+    const raw = item?.[valueKey];
+    const value = finiteMarketNumber(raw);
+    const rawTime = item?.[timeKey];
+    if (value === null || typeof rawTime !== "string") return null;
+    const coordinate = calendarDates ? `${rawTime}T00:00:00Z` : rawTime;
+    const time = new Date(coordinate).getTime();
+    if (!Number.isFinite(time)) return null;
+    // Calendar facts have no local time zone. UTC is only their plot coordinate.
+    if (calendarDates && (!/^\d{4}-\d{2}-\d{2}$/.test(rawTime)
+        || new Date(time).toISOString().slice(0, 10) !== rawTime)) return null;
+    return {time, value, raw, calendarDate: calendarDates ? rawTime : null};
+  };
+
+  const seriesSegments = (points, options) => {
     const clean = [];
     let segment = 0;
-    // Missing and invalid observations break the line instead of becoming zero.
-    for (const item of (Array.isArray(points) ? points : []).slice(0, 3000)) {
-      const raw = item?.[valueKey];
-      const value = finiteMarketNumber(raw);
-      const rawTime = item?.[timeKey];
-      const time = typeof rawTime === "string" ? new Date(rawTime).getTime() : NaN;
-      if (value === null || !Number.isFinite(time)) { segment += 1; continue; }
+    const observations = Array.isArray(points) ? points.slice(0, 3000) : [];
+    for (const item of observations) {
+      const point = seriesPoint(item, options);
+      // Invalid or absent observations break the line, never become zero.
+      if (!point) { segment += 1; continue; }
       const previous = clean.at(-1);
-      if (previous && (time <= previous.time || time - previous.time > maxGapMs)) segment += 1;
-      clean.push({time, value, raw, segment});
+      if (previous && (point.time <= previous.time || point.time - previous.time > options.maxGapMs)) segment += 1;
+      clean.push({...point, segment});
     }
+    return clean;
+  };
+
+  const seriesPath = (group, x, y, step) => group.map((point, index) => {
+    const horizontal = x(point.time).toFixed(2);
+    const vertical = y(point.value).toFixed(2);
+    if (index === 0) return `M ${horizontal} ${vertical}`;
+    if (step) return `H ${horizontal} V ${vertical}`;
+    return `L ${horizontal} ${vertical}`;
+  }).join(" ");
+
+  const drawSeriesSegments = (svg, clean, {x, y, step, zeroLine, plotBottom}) => {
+    const groups = new Map();
+    for (const item of clean) {
+      if (!groups.has(item.segment)) groups.set(item.segment, []);
+      groups.get(item.segment).push(item);
+    }
+    for (const group of groups.values()) {
+      const path = seriesPath(group, x, y, step);
+      if (!zeroLine && group.length > 1) svg.append(chartNode("path", {
+        d: `${path} L ${x(group.at(-1).time)} ${plotBottom} L ${x(group[0].time)} ${plotBottom} Z`, class: "portfolio-chart-area",
+      }));
+      svg.append(chartNode("path", {d: path, class: "portfolio-chart-line", fill: "none"}));
+      const endpoints = group.length > 1 ? [group[0], group.at(-1)] : [group[0]];
+      for (const point of endpoints) {
+        svg.append(chartNode("circle", {cx: x(point.time), cy: y(point.value), r: 3, class: "portfolio-chart-point"}));
+      }
+    }
+  };
+
+  const renderSeriesChart = (svg, points, {
+    valueKey = "value", timeKey = "captured_at", minimumPoints = 2,
+    zeroLine = false, unit = "₽", step = false, maxGapMs = 7 * 86400000, calendarDates = false,
+  } = {}) => {
+    clearDataChart(svg);
+    const clean = seriesSegments(points, {valueKey, timeKey, calendarDates, maxGapMs});
     if (clean.length < minimumPoints) return false;
     const box = chartDimensions(svg);
     const lowTime = Math.min(...clean.map((item) => item.time));
@@ -1641,21 +1694,25 @@
     const plotBottom = box.height - box.bottom;
     const x = (time) => box.left + (time - lowTime) / Math.max(highTime - lowTime, 1) * (box.width - box.left - box.right);
     const y = (value) => box.top + (maximum - value) / (maximum - minimum) * (plotBottom - box.top);
-    chartAxes(svg, box, minimum, maximum, lowTime, highTime, unit, plotBottom);
-    const groups = new Map();
-    for (const item of clean) { if (!groups.has(item.segment)) groups.set(item.segment, []); groups.get(item.segment).push(item); }
-    for (const group of groups.values()) {
-      const path = group.map((item, index) => `${index === 0 ? "M" : step ? "H" : "L"} ${x(item.time).toFixed(2)}${index !== 0 && step ? " V" : ""} ${y(item.value).toFixed(2)}`).join(" ");
-      if (!zeroLine && group.length > 1) svg.append(chartNode("path", {
-        d: `${path} L ${x(group.at(-1).time)} ${plotBottom} L ${x(group[0].time)} ${plotBottom} Z`, class: "portfolio-chart-area",
-      }));
-      svg.append(chartNode("path", {d: path, class: "portfolio-chart-line", fill: "none"}));
-      for (const point of [group[0], ...(group.length > 1 ? [group.at(-1)] : [])]) {
-        svg.append(chartNode("circle", {cx: x(point.time), cy: y(point.value), r: 3, class: "portfolio-chart-point"}));
-      }
-    }
+    chartAxes(svg, box, {minimum, maximum, first: lowTime, last: highTime, unit, plotBottom, calendarDates});
+    drawSeriesSegments(svg, clean, {x, y, step, zeroLine, plotBottom});
     addChartInspector(svg, clean, x, unit, {interactive: svg.id !== "instrument-market-chart"});
     return true;
+  };
+
+  const renderReferenceHistory = (chart, series, currency) => {
+    clearDataChart(chart);
+    if (!Array.isArray(series?.points)) {
+      return "История ЦБ сейчас недоступна. График не заменён примером. Повторите получение позже.";
+    }
+    const shown = renderSeriesChart(chart, series.points, {
+      timeKey: "effective_date", calendarDates: true, unit: `₽ / ${currency}`,
+      step: true, maxGapMs: 10 * 86400000,
+    });
+    if (!shown) return "Источник не вернул достаточно наблюдений для линии. Значения не дорисованы.";
+    const stale = series.freshness === "cached"
+      ? " Обновление источника не удалось: показана сохранённая версия." : "";
+    return `Официальный курс за 1 ${currency}. Ступени — даты действия курса; это не биржевые сделки. Получено: ${formatDateTime(series.fetched_at)}.${stale}`;
   };
 
   const initializePublicReference = () => {
@@ -1673,16 +1730,9 @@
     let timer = null;
     let payload = null;
     const render = (data) => {
-      clearDataChart(chart);
       indicators.replaceChildren();
       const series = data.history;
-      if (series && Array.isArray(series.points)) {
-        const points = series.points.map((item) => ({time: item.effective_date + "T00:00:00+03:00", value: item.value}));
-        const shown = renderSeriesChart(chart, points, {timeKey: "time", unit: `₽ / ${data.currency}`, step: true, maxGapMs: 10 * 86400000});
-        note.textContent = shown
-          ? `Официальный курс за 1 ${data.currency}. Ступени — даты действия курса; это не биржевые сделки. Получено: ${formatDateTime(series.fetched_at)}.${series.freshness === "cached" ? " Обновление источника не удалось: показана сохранённая версия." : ""}`
-          : "Источник не вернул достаточно наблюдений для линии. Значения не дорисованы.";
-      } else note.textContent = "История ЦБ сейчас недоступна. График не заменён примером. Повторите получение позже.";
+      note.textContent = renderReferenceHistory(chart, series, data.currency);
       const values = data.indicators;
       for (const [key, title, unit] of [["key_rate", "Ключевая ставка", "%"], ["usd_rub", "Доллар · ЦБ", "₽"], ["eur_rub", "Евро · ЦБ", "₽"]]) {
         const item = values?.[key];
@@ -1720,7 +1770,9 @@
           || data.currency !== selectedCurrency || data.period !== selectedPeriod
           || !["available", "partial", "unavailable"].includes(data.status)) throw new Error("reference_contract");
         payload = data; render(data);
-      } catch (error) {
+      } catch {
+        // Fetch, timeout and invalid-provider responses share this safe recovery
+        // state. Upstream details must not appear as financial observations.
         if (expected !== revision || !active) return;
         status.textContent = "Не удалось обновить";
         note.textContent = payload
@@ -1775,26 +1827,14 @@
     if (numeric === null) {
       return "—";
     }
-    const formatted = new Intl.NumberFormat("ru-RU", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 9,
-    }).format(numeric);
-    if (instrumentMarketQuoteUnit === "point") {
-      return `${formatted} п.`;
-    }
-    if (instrumentMarketCurrency) {
-      return formatMoney({
-        currency: instrumentMarketCurrency,
-        value: String(value),
-      });
-    }
-    return formatted;
+    const unit = instrumentMarketQuoteUnit === "point" ? "п." : instrumentMarketCurrency;
+    return chartDecimalText(value, unit === "RUB" ? "₽" : unit);
   };
 
   const cleanMarketCandles = (candles) => (Array.isArray(candles) ? candles : [])
     .map((candle) => ({
       ...candle,
-      timestamp: typeof candle?.time === "string" ? new Date(candle.time).getTime() : NaN,
+      timestamp: typeof candle?.time === "string" ? new Date(candle.time).getTime() : Number.NaN,
       openValue: finiteMarketNumber(candle?.open),
       highValue: finiteMarketNumber(candle?.high),
       lowValue: finiteMarketNumber(candle?.low),
@@ -1828,7 +1868,7 @@
     const step = plotWidth / clean.length;
     const bodyWidth = Math.max(.6, Math.min(12, step * .62));
     const unit = instrumentMarketQuoteUnit === "point" ? "п." : instrumentMarketCurrency || "цена";
-    chartAxes(svg, box, minimum, maximum, clean[0].timestamp, clean.at(-1).timestamp, unit, plotBottom);
+    chartAxes(svg, box, {minimum, maximum, first: clean[0].timestamp, last: clean.at(-1).timestamp, unit, plotBottom});
     const volumes = clean.map((item) => finiteMarketNumber(item.volume_lots));
     const maximumVolume = Math.max(0, ...volumes.filter((value) => value !== null && value >= 0));
     chartText(svg, "Объём, лоты · от 0", box.left, plotBottom + 24);
@@ -1987,7 +2027,7 @@
           instrumentMarketChart,
           candles.map((item) => ({
             time: item.time,
-            value: item.closeValue,
+            value: item.close,
           })),
           {
             timeKey: "time",

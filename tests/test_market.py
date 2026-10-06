@@ -553,14 +553,18 @@ def test_public_history_preserves_exact_units_and_does_not_fill_missing_days() -
     (_history_row("05.10.2026", "80", "0"), "R01235"),
     (_history_row("05.10.2026", "NaN"), "R01235"),
     (_history_row("05.10.2026", "1e-99999999"), "R01235"),
+    (_history_row("05.10.2026", "８０"), "R01235"),
+    (_history_row("05.10.2026", "80", "١"), "R01235"),
     (_history_row("05.10.2026", "80") + _history_row("05.10.2026", "81"), "R01235"),
     (_history_row("05.10.2026", "80"), "R01239"),
     ("<!DOCTYPE x><Record/>", "R01235"),
 ])
 def test_public_history_rejects_unknown_conflicting_or_future_facts(rows: str, code: str) -> None:
     response = FakeXmlResponse(_history_xml(rows=rows, code=code))
+    client = CBRClient()
+    target = date(2026, 10, 6)
     with patch("urllib.request.urlopen", return_value=response), pytest.raises(CBRUnavailable):
-        CBRClient()._fetch_reference_history("USD", "1m", date(2026, 10, 6))
+        client._fetch_reference_history("USD", "1m", target)
 
 
 def test_public_history_empty_is_empty_and_old_cache_keeps_original_timestamp() -> None:

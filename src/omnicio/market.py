@@ -111,6 +111,7 @@ _MARKET_PERIODS: dict[str, tuple[timedelta, str]] = {
     "1y": (timedelta(days=365), "CANDLE_INTERVAL_DAY"),
 }
 
+_CBR_SOURCE = "Bank of Russia"
 _PROVIDER_CLOCK_SKEW_TOLERANCE = timedelta(seconds=5)
 
 
@@ -130,7 +131,7 @@ class MarketService:
     def cbr_indicators(self) -> CBRIndicatorSnapshot:
         indicators = self.cbr.latest_indicators()
         return CBRIndicatorSnapshot(
-            source="Bank of Russia",
+            source=_CBR_SOURCE,
             fetched_at=indicators.fetched_at.isoformat(),
             freshness=indicators.freshness,
             key_rate=CBRIndicator(
@@ -161,7 +162,7 @@ class MarketService:
             raise CBRUnavailable("Public reference refresh is busy")
         try:
             result: dict[str, object] = {
-                "source": "Bank of Russia", "source_url": "https://www.cbr.ru/development/SXML/",
+                "source": _CBR_SOURCE, "source_url": "https://www.cbr.ru/development/SXML/",
                 "currency": currency, "period": period, "unit": "RUB per currency unit",
                 "indicators": None, "history": None, "status": "unavailable",
                 "exchange_quotes": "broker_connection_required",
@@ -357,7 +358,7 @@ def _instrument_live_state(
 
 def _reference_rate(rate: CBRRate) -> MarketReferenceRate:
     return MarketReferenceRate(
-        source="Bank of Russia",
+        source=_CBR_SOURCE,
         value=rate.value,
         currency=rate.currency,
         effective_date=rate.effective_date.isoformat(),
