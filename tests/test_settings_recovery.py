@@ -10,6 +10,7 @@ import copy
 import hashlib
 import os
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -325,6 +326,7 @@ def test_dump_restore_preserves_settings_and_tenant_isolation(
             ):
                 _exercise_settings(store, db)
                 _exercise_strategy_drafts(store, db)
+                _exercise_strategy_admission(store, db)
             with psycopg.connect(source_dsn, autocommit=True) as admin:
                 admin.execute(
                     sql.SQL(
@@ -573,3 +575,48 @@ def test_strategy_diagnostic_is_versioned_read_only_and_owner_bound(monkeypatch)
         rejected = client.post("/api/profile/strategy/feasibility", headers=headers, json=payload)
         assert rejected.status_code == expected_status
         assert len(calls) == count
+
+
+
+def _exercise_strategy_admission(store: PortfolioStore, db: Database) -> None:
+    """Distinct worker processes share admission; cooldown survives pool restart."""
+    before = store.current_strategy_draft(A)
+    child = (
+        "import os; from uuid import UUID; from omnicio.db import Database; "
+        "db=Database(os.environ['SYNTHETIC_SLOT_DSN']); db.open(); "
+        "slot=db.strategy_assessment_slot(UUID(os.environ['SYNTHETIC_SLOT_OWNER'])); "
+        "print(slot.__enter__()); slot.__exit__(None,None,None); db.close()"
+    )
+    def another_worker(owner):
+        result = subprocess.run(
+            [sys.executable, "-c", child], check=True, capture_output=True, text=True, timeout=20,
+            env={**os.environ, "SYNTHETIC_SLOT_DSN": db.pool.conninfo,
+                 "SYNTHETIC_SLOT_OWNER": str(owner)},
+        )
+        return result.stdout.strip() == "True"
+
+    def expire(owner):
+        with db.pool.connection() as conn, conn.transaction():
+            conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+            conn.execute("UPDATE strategy_drafts SET next_assessment_at = "
+                         "clock_timestamp() - interval '1 second' WHERE user_id=%s", (owner,))
+
+    with db.strategy_assessment_slot(A) as admitted:
+        assert admitted is True
+        expire(A)  # Even after cooldown expires, the in-flight session still excludes A.
+        assert another_worker(A) is False
+        assert another_worker(B) is True
+    assert another_worker(A) is True
+    assert another_worker(A) is False  # Previous process exited; cooldown persists in the database.
+    expire(A)
+    with (pytest.raises(RuntimeError, match="synthetic cancellation"),
+          db.strategy_assessment_slot(A) as admitted):
+        assert admitted is True
+        raise RuntimeError("synthetic cancellation")
+    expire(A)
+    assert another_worker(A) is True  # Failure released the session lock.
+    assert store.current_strategy_draft(A) == before  # No strategy version/amount changes.
+    with db.pool.connection() as conn, conn.transaction():
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(B),))
+        assert conn.execute("UPDATE strategy_drafts SET next_assessment_at='-infinity' "
+                            "WHERE user_id=%s RETURNING user_id", (A,)).fetchone() is None

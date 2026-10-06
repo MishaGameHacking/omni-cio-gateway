@@ -529,11 +529,21 @@ const createSettingsFixture = (mode = "saved") => {
   return {state, request};
 };
 
+const accountFixture = (selection) => {
+  const result = spawnSync(process.env.OMNICIO_PYTHON || "python", ["-c",
+    "import json,sys; from datetime import UTC,datetime; from omnicio.portfolio import PortfolioAnalysis,SecurityExposure; from omnicio.strategy_assessment import assess_strategy_account; selection=json.load(sys.stdin); p=SecurityExposure('synthetic-bond','SYN','Synthetic bond','bond','finance','RU',False,False,'10000',None); a=PortfolioAnalysis('observed','100000.01','90000.01','10000','80000.01',1,1,'100',(),(),(p,),()); result=assess_strategy_account(selection['document'],analysis=a,captured_at=datetime.now(UTC)); result.update(public_id='000000123',strategy_version=selection['version']); print(json.dumps(result))"],
+    {cwd: root, env: {...process.env, PYTHONPATH: join(root, "src")},
+      input: JSON.stringify(selection), encoding: "utf8", maxBuffer: 2 * 1024 * 1024});
+  assert.equal(result.status, 0, "Account fixture uses the canonical calculation: " + result.stderr);
+  return JSON.parse(result.stdout);
+};
+
 const createStrategyFixture = (mode = "saved") => {
   const original = createSettingsFixture(mode);
   const state = {...original.state, selection: null, delay: 0, failure: null, loadFailure: mode === "strategy-load-error",
     holdPrerequisites: mode === "strategy-prerequisite-delay", waitingPrerequisites: [],
-    holdStrategyReads: false, waitingStrategyReads: [], catalogOverride: null};
+    holdStrategyReads: false, waitingStrategyReads: [], catalogOverride: null,
+    accountReads: [], holdAssessment: false, waitingAssessments: [], accountFailure: false};
   state.releasePrerequisites = () => {
     state.holdPrerequisites = false;
     state.waitingPrerequisites.splice(0).forEach((release) => release());
@@ -553,6 +563,17 @@ const createStrategyFixture = (mode = "saved") => {
       await new Promise((release) => state.waitingPrerequisites.push(release));
     }
     if (path === "/api/strategy/catalog") return state.loadFailure ? json({detail: "synthetic_initial_failure"}, 503) : json(state.catalogOverride || strategyCatalog);
+    if (path === "/api/profile/strategy/account-assessment") {
+      const payload = JSON.parse(options.body);
+      state.accountReads.push(payload);
+      assert.deepEqual(Object.keys(payload).sort(), ["expected_public_id", "expected_version"]);
+      assert.equal(payload.expected_public_id, "000000123");
+      if (payload.expected_version !== state.selection?.version) return json({detail: "settings_version_conflict"}, 409);
+      const selected = structuredClone(state.selection);
+      if (state.holdAssessment) await new Promise((release) => state.waitingAssessments.push(release));
+      if (state.accountFailure) return json({detail: "synthetic_upstream_unavailable"}, 503);
+      return json(accountFixture(selected));
+    }
     if (path !== "/api/profile/strategy") return original.request(path, options);
     if (options.method === "GET") return json({public_id: "000000123", selection: state.selection});
     const payload = JSON.parse(options.body);
@@ -576,7 +597,7 @@ const server = createServer(async (request, response) => {
   if (pathname.startsWith("/api/")) {
     const referrer = new URL(request.headers.referer || "http://127.0.0.1");
     const synthetic = referrer.searchParams.has("synthetic");
-    if (request.method !== "GET") {
+    if (request.method !== "GET" && !(synthetic && pathname === "/api/profile/strategy/account-assessment")) {
       if (synthetic && pathname.startsWith("/api/profile/strategy")) strategyWrites += 1;
       else if (synthetic) syntheticWrites += 1;
       else writes += 1;
@@ -854,6 +875,63 @@ const verifyStrategyLibrary = async (send, evaluate, fixture) => {
   console.log("Strategy catalog/autosave: template selection, custom restore, exact money, slow save, lost acknowledgement and conflict verified");
 };
 
+const verifyAccountAssessment = async (send, evaluate, fixture) => {
+  const click = async (selector) => {
+    const point = await evaluate(`(() => { const e=document.querySelector(${JSON.stringify(selector)}); if(!e||e.disabled)throw Error('Missing/disabled '+${JSON.stringify(selector)}); e.scrollIntoView({block:'center',behavior:'instant'}); const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+    await send("Input.dispatchMouseEvent", {type: "mousePressed", button: "left", clickCount: 1, ...point});
+    await send("Input.dispatchMouseEvent", {type: "mouseReleased", button: "left", clickCount: 1, ...point});
+  };
+  const result = () => evaluate('document.querySelector("#strategy-account-result").textContent');
+  const saved = async () => assert.equal(await waitUntil(() => evaluate('document.querySelector(".strategy-savebar [role=status]").textContent.includes("сохранён в аккаунте")')), true);
+  await click('[data-strategy-tab="0"]');
+  assert.equal(await waitUntil(() => evaluate('!document.querySelector("[data-choose-strategy=income]").disabled')), true);
+  await click('[data-choose-strategy="income"]'); await saved();
+  await click('[data-strategy-tab="4"]');
+  const originalVersion = fixture.state.selection.version;
+  const originalWrites = fixture.state.requests.length;
+  await click('#strategy-check-account');
+  assert.equal(await waitUntil(async () => (await result()).includes("Стоимость счёта")), true);
+  assert.equal((await result()).replace(/\s/g, "").includes("100000,01₽"), true, "Sourced fixture amount keeps cents, not illustrative NAV");
+  assert.equal(fixture.state.selection.version, originalVersion, "Assessment does not save settings");
+  assert.equal(fixture.state.requests.length, originalWrites, "Read-only calculation cannot create a write");
+  assert.equal(fixture.state.accountReads.length, 1);
+  fixture.state.accountFailure = true;
+  await click('#strategy-check-account');
+  assert.equal(await waitUntil(async () => (await result()).includes("Не удалось подтвердить")), true);
+  assert.equal((await result()).includes("Стоимость счёта"), false, "An error does not leave a previous result looking current");
+  fixture.state.accountFailure = false;
+  fixture.state.holdAssessment = true;
+  await click('#strategy-check-account');
+  assert.equal(await waitUntil(() => fixture.state.waitingAssessments.length === 1), true);
+  assert.equal(await evaluate('document.querySelector("#strategy-check-account").disabled'), true, "Duplicate account read is disabled");
+  await click('[data-strategy-tab="2"]');
+  await evaluate('document.querySelector(".touch-setting:has(#profile-reserve-rub)").closest("details").open=true');
+  await click('.touch-setting:has(#profile-reserve-rub) [data-step-direction="1"]');
+  await saved();
+  fixture.state.holdAssessment = false;
+  fixture.state.waitingAssessments.splice(0).forEach((release) => release());
+  await click('[data-strategy-tab="4"]');
+  assert.equal(await waitUntil(() => evaluate('!document.querySelector("#strategy-check-account").disabled')), true);
+  assert.equal((await result()).includes("Стоимость счёта"), false, "Late old-strategy reply is discarded");
+  await click('#strategy-check-account');
+  assert.equal(await waitUntil(async () => (await result()).includes("Стоимость счёта")), true);
+  assert.equal(fixture.state.accountReads.at(-1).expected_version, fixture.state.selection.version);
+  fixture.state.holdAssessment = true;
+  await click('#strategy-check-account');
+  assert.equal(await waitUntil(() => fixture.state.waitingAssessments.length === 1), true);
+  await click('[data-strategy-reload]');
+  assert.equal(await waitUntil(() => evaluate('document.querySelector(".strategy-savebar [role=status]").textContent.includes("загружен из аккаунта")')), true);
+  fixture.state.holdAssessment = false;
+  fixture.state.waitingAssessments.splice(0).forEach((release) => release());
+  assert.equal(await waitUntil(() => evaluate('!document.querySelector("#strategy-check-account").disabled')), true, "Reload during account read always restores the control");
+  assert.equal((await result()).includes("Стоимость счёта"), false, "Reload never promotes stale response");
+  await click('#strategy-check-account');
+  assert.equal(await waitUntil(async () => (await result()).includes("Стоимость счёта")), true);
+
+  assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'), true, "Account assessment fits the viewport");
+  console.log("Strategy real-account consumer: exact values, no client capital, no writes, failure/retry and late-reply invalidation verified");
+};
+
 const run = async (url, width) => {
   const profile = mkdtempSync(join(tmpdir(), "omnicio-browser-test-"));
   const child = spawn(executable, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], {stdio: ["ignore", "ignore", "pipe"]});
@@ -964,6 +1042,11 @@ const run = async (url, width) => {
     await verifyStrategyLibrary(send, evaluate, syntheticSessions.get(catalogIdentity));
     await evaluate(`document.querySelector('[data-strategy-tab="0"]').click()`);
     await screenshot("strategy-catalog");
+    const accountIdentity = "strategy-account-" + width;
+    await visit(url + "?synthetic=1&catalog=1&session=" + accountIdentity);
+    assert.equal(await waitUntil(() => evaluate('document.querySelectorAll("[data-choose-strategy]").length === 10')), true);
+    await verifyAccountAssessment(send, evaluate, syntheticSessions.get(accountIdentity));
+    await screenshot("strategy-account-assessment");
     const calendarDays = await evaluate(`(() => {
       const now = new Date();
       const stamp = (day) => new Date(now.getFullYear(), now.getMonth(), day, 12).toISOString();

@@ -97,6 +97,67 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("vkid_identities", ready.commands[0])
         self.assertIn("column_name = 'role'", ready.commands[0])
 
+    def test_runtime_gate_matches_application_database_readiness(self) -> None:
+        database_path = SCRIPT_DIR.parent.parent / "src" / "omnicio" / "db.py"
+        tree = ast.parse(database_path.read_text(encoding="utf-8"))
+        healthcheck = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "healthcheck"
+        )
+        queries = [
+            node.value for node in ast.walk(healthcheck)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+            and node.value.lstrip().startswith("SELECT")
+        ]
+        self.assertEqual(len(queries), 1)
+        predicate = queries[0].strip().removeprefix("SELECT").removesuffix("AS ready")
+        expected = f"SELECT CASE WHEN {predicate} THEN 'ready' ELSE 'missing' END"
+        ssh = FakeSsh(True)
+        self.assertTrue(MODULE.runtime_is_ready(ssh))
+        match = re.search(r'-Atqc "(.*?)" 2>/dev/null', ssh.commands[0], flags=re.S)
+        self.assertIsNotNone(match)
+        actual = match.group(1) if match else ""
+        self.assertEqual(" ".join(actual.split()), " ".join(expected.split()))
+        self.assertIn("column_name = 'next_assessment_at'", actual)
+        self.assertIn("c.relforcerowsecurity", actual)
+
+    def test_missing_runtime_schema_does_not_activate_or_rollback_release(self) -> None:
+        from contextlib import ExitStack
+        from unittest.mock import MagicMock
+
+        client = MagicMock()
+        client.get_vpc_services.return_value = [{"name": "database"}]
+        monitored = (
+            "validate_product_environment", "validate_legal_documents",
+            "find_managed_server", "find_vpc", "public_ipv4", "build_release_archive",
+            "EphemeralSsh", "upload_release", "write_product_environment",
+            "deploy_remote", "rollback_remote", "retire_legacy_profile",
+            "commit_product_environment", "add_summary", "set_output",
+        )
+        with ExitStack() as stack:
+            mocks = {
+                name: stack.enter_context(patch.object(MODULE, name))
+                for name in monitored
+            }
+            mocks["find_managed_server"].return_value = {"id": 1}
+            mocks["find_vpc"].return_value = {"id": "test-vpc"}
+            mocks["public_ipv4"].return_value = "192.0.2.1"
+            mocks["build_release_archive"].return_value = "test-archive"
+            mocks["EphemeralSsh"].return_value.__enter__.return_value = FakeSsh(False)
+            result = MODULE.reconcile(
+                client, server_name="test-server", server_comment="test-only",
+                release_sha="a" * 40, repository_root=SCRIPT_DIR.parent.parent,
+                cluster_name="database", vpc_name="test-vpc", location="test",
+                availability_zone="test",
+            )
+            self.assertEqual(result, 0)
+            mocks["set_output"].assert_called_once_with("status", "pending_database")
+            for name in (
+                "upload_release", "write_product_environment", "deploy_remote",
+                "rollback_remote", "retire_legacy_profile", "commit_product_environment",
+            ):
+                mocks[name].assert_not_called()
+
     def test_registration_occupancy_parses_privacy_safe_counts(self) -> None:
         class OccupancySsh:
             def run(self, command: str, *, input_text: str | None = None) -> str:
@@ -1270,7 +1331,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.19.3"', project)
+        self.assertIn('version = "0.19.4"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)

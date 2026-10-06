@@ -2592,6 +2592,14 @@ class PortfolioStore:
                     COALESCE(i.group_id::text, '') AS group_id,
                     COALESCE(i.country_code, '') AS issuer_country_code,
                     COALESCE(i.source_url, '') AS issuer_source_url,
+                    i.verified_at AS issuer_verified_at,
+                    i.effective_at AS issuer_effective_at,
+                    COALESCE(m.source_url, '') AS mapping_source_url,
+                    COALESCE(g.source_url, '') AS group_source_url,
+                    m.verified_at AS mapping_verified_at,
+                    m.effective_at AS mapping_effective_at,
+                    g.verified_at AS group_verified_at,
+                    g.effective_at AS group_effective_at,
                     COALESCE(r.state, 'data_missing') AS risk_state,
                     COALESCE(r.rating_status, 'data_missing') AS rating_status
                 FROM portfolio_snapshot_positions AS p
@@ -2606,6 +2614,7 @@ class PortfolioStore:
                  AND m.instrument_uid = c.instrument_uid
                 LEFT JOIN issuers AS i
                   ON i.id = m.issuer_id
+                LEFT JOIN issuer_groups AS g ON g.id = i.group_id
                 LEFT JOIN portfolio_risk_assessments AS r
                   ON r.snapshot_id = p.snapshot_id
                  AND r.user_id = p.user_id

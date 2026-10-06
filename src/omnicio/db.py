@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from threading import BoundedSemaphore
 from typing import Any, cast
 from uuid import UUID
 
+from psycopg import Error as DatabaseError
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
@@ -59,6 +63,9 @@ class Database:
     """Thin persistence adapter for authentication state."""
 
     def __init__(self, database_url: str) -> None:
+        # Reserve at least six of the eight shared connections for ordinary and
+        # nested reads. Cross-process per-owner exclusion remains in PostgreSQL.
+        self._strategy_read_slots = BoundedSemaphore(2)
         self.pool = ConnectionPool(
             conninfo=database_url,
             min_size=1,
@@ -72,6 +79,65 @@ class Database:
 
     def close(self) -> None:
         self.pool.close()
+
+    @contextmanager
+    def strategy_assessment_slot(self, user_id: UUID) -> Iterator[bool]:
+        """Bound shared-pool lock holders before acquiring a database connection."""
+        if not self._strategy_read_slots.acquire(blocking=False):
+            yield False
+            return
+        try:
+            with self._strategy_assessment_owner_slot(user_id) as admitted:
+                yield admitted
+        finally:
+            self._strategy_read_slots.release()
+
+    @contextmanager
+    def _strategy_assessment_owner_slot(self, user_id: UUID) -> Iterator[bool]:
+        """Serialize account reads across processes, with a durable start cooldown.
+
+        A dedicated session lock spans the network work; no transaction or
+        financial-execution lock does. Closing a failed connection discards its
+        session locks instead of returning a locked connection to the pool.
+        """
+        name = f"strategy-account-assessment:{user_id}"
+        with self.pool.connection() as conn:
+            locked = False
+            try:
+                with conn.transaction(), conn.cursor() as cur:
+                    cur.execute(_SET_USER_CONTEXT_SQL, (str(user_id),))
+                    cur.execute(
+                        "SELECT pg_try_advisory_lock(hashtextextended(%s, 0)) AS locked",
+                        (name,),
+                    )
+                    row = cur.fetchone()
+                    locked = row is not None and bool(cast(dict[str, Any], row)["locked"])
+                    admitted = False
+                    if locked:
+                        cur.execute(
+                            "UPDATE strategy_drafts SET next_assessment_at = "
+                            "clock_timestamp() + interval '10 seconds' "
+                            "WHERE user_id = %s AND next_assessment_at <= clock_timestamp() "
+                            "RETURNING user_id", (user_id,),
+                        )
+                        admitted = cur.fetchone() is not None
+                yield admitted
+            finally:
+                if locked:
+                    try:
+                        with conn.transaction(), conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT pg_advisory_unlock(hashtextextended(%s, 0)) AS unlocked",
+                                (name,),
+                            )
+                            row = cur.fetchone()
+                            if row is None or not cast(dict[str, Any], row)["unlocked"]:
+                                raise RuntimeError("strategy_assessment_lock_not_released")
+                    except (DatabaseError, RuntimeError):
+                        # Cleanup, not error suppression: closing is necessary to
+                        # release a session lock if the database operation failed.
+                        conn.close()
+                        raise
 
     def healthcheck(self) -> bool:
         with self.pool.connection() as conn, conn.cursor() as cur:
@@ -101,6 +167,11 @@ class Database:
                     AND to_regclass('public.portfolio_risk_assessments') IS NOT NULL
                     AND to_regclass('public.balancing_policy_versions') IS NOT NULL
                     AND to_regclass('public.strategy_drafts') IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'strategy_drafts'
+                          AND column_name = 'next_assessment_at'
+                    )
                     AND to_regclass('public.portfolio_proposals') IS NOT NULL
                     AND to_regclass('public.portfolio_proposal_actions') IS NOT NULL
                     AND to_regclass('public.portfolio_execution_runs') IS NOT NULL

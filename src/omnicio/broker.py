@@ -50,10 +50,15 @@ from .tbank import (
 # T-Invest documents 200 unary requests/minute for InstrumentsService.
 # 0.31s keeps evidence reads below that ceiling with a small scheduling margin.
 INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS = 0.31
+STRATEGY_RATING_READ_LIMIT = 8
 
 
 class BrokerConnectionError(RuntimeError):
     """Base owner broker connection error."""
+
+
+class BrokerAssessmentBusy(BrokerConnectionError):
+    """A bounded strategy read is already running or was just requested."""
 
 
 class BrokerAccountNotAccessible(BrokerConnectionError):
@@ -697,6 +702,38 @@ class BrokerService:
             ),
             sources=sources,
         )
+
+    def strategy_observation(
+        self, user_id: UUID,
+    ) -> tuple[BrokerObservationBundle, dict[str, tuple[TBankRating, ...]]]:
+        """One bounded read per owner; other owners cannot observe its results."""
+        with self.database.strategy_assessment_slot(user_id) as admitted:
+            if not admitted:
+                raise BrokerAssessmentBusy("strategy_assessment_busy")
+            return self._strategy_observation(user_id)
+
+    def _strategy_observation(
+        self, user_id: UUID,
+    ) -> tuple[BrokerObservationBundle, dict[str, tuple[TBankRating, ...]]]:
+        record, credential, environment = self._connected_credential(user_id)
+        bundle = self.observation_bundle(user_id)
+        self._require_current_connection(record)
+        ratings: dict[str, tuple[TBankRating, ...]] = {}
+        started = time.monotonic()
+        ids = sorted({item.uid for item in bundle.analysis.securities
+                      if item.instrument_type == "bond"})
+        for uid in ids[:STRATEGY_RATING_READ_LIMIT]:
+            if time.monotonic() - started >= 8:
+                break
+            self._require_current_connection(record)
+            try:
+                ratings[uid] = cast(tuple[TBankRating, ...], self._paced_evidence_read(
+                    self.tbank.get_bond_ratings, credential, environment, uid,
+                ))
+            except TBankUnavailable:
+                ratings[uid] = ()
+        self._require_current_connection(record)
+        return bundle, ratings
 
     def _read_catalog(
         self,

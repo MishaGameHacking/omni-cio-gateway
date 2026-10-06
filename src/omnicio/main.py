@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .balancing_service import build_live_balancing_payload
 from .broker import (
     BrokerAccountNotAccessible,
+    BrokerAssessmentBusy,
     BrokerConnectionError,
     BrokerNotConnected,
     BrokerService,
@@ -76,6 +77,7 @@ from .service import (
     RegistrationClosed,
 )
 from .strategy import capital_feasibility, strategy_catalog, stress_diagnostics, validate_selection
+from .strategy_service import current_account_assessment
 from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
 from .vkid import VKIDClient, VKIDRejected, VKIDUnavailable
 
@@ -173,6 +175,11 @@ class StrategyDraftBody(StrictRequestBody):
     expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
     intent: Literal["select", "edit"]
     document: dict[str, Any]
+
+
+class StrategyAccountBody(StrictRequestBody):
+    expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
+    expected_version: int = Field(ge=1, le=2_147_483_647, strict=True)
 
 
 class StrategyFeasibilityBody(StrictRequestBody):
@@ -1073,6 +1080,46 @@ def save_strategy_draft(
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {"public_id": format_public_id(user.public_id), "selection": saved,
             "applied_to_confirmed_policy": False, "broker_execution_enabled": False}
+
+
+@app.post(
+    "/api/profile/strategy/account-assessment",
+    responses={
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        429: {"description": "An account assessment is already running or cooling down"},
+        503: {"description": "Account evidence is unavailable or not coherent"},
+    },
+)
+def strategy_account_assessment(
+    body: StrategyAccountBody, request: Request, response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _settings_editor_user(request, session_token, body.expected_public_id)
+    try:
+        payload = current_account_assessment(
+            user_id=user.id, expected_version=body.expected_version,
+            store=portfolio_store(request), broker=broker_service(request),
+        )
+    except SettingsVersionConflict:
+        raise
+    except BrokerAssessmentBusy as exc:
+        raise HTTPException(
+            status_code=429, detail="strategy_assessment_busy", headers={"Retry-After": "10"},
+        ) from exc
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail=_TBANK_NOT_CONNECTED_DETAIL) from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(status_code=409, detail=_TBANK_CREDENTIAL_REJECTED_DETAIL) from exc
+    except (BrokerConnectionError, TBankUnavailable, ValueError) as exc:
+        raise HTTPException(
+            status_code=503, detail="strategy_account_evidence_unavailable",
+        ) from exc
+    # Revocation or logout during upstream I/O must prevent release of the response.
+    current = _settings_editor_user(request, session_token, body.expected_public_id)
+    if current.id != user.id:
+        raise HTTPException(status_code=409, detail="strategy_account_context_changed")
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
+    return {**payload, "public_id": format_public_id(user.public_id)}
 
 
 @app.post(

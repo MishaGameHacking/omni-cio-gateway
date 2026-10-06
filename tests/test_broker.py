@@ -4,6 +4,7 @@ import io
 import json
 import ssl
 import urllib.error
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
@@ -1956,3 +1957,98 @@ def test_tbank_fundamentals_reject_non_finite_provider_values() -> None:
             "prod",
             ("asset-1",),
         )
+
+
+def _strategy_broker():
+    database = FakeDatabase()
+    user_id = UUID(int=1)
+    broker = FakeTBank()
+    service = BrokerService(
+        database, credential_key=Fernet.generate_key().decode("ascii"), tbank=broker,
+    )
+    service.connect(
+        user_id=user_id, credential="t.fake-owner-credential-1234567890",
+        environment="prod", account_id="account-1", terms_version="2026-10-01-v2",
+    )
+    @contextmanager
+    def slot(owner):
+        assert owner == user_id
+        yield True
+    database.strategy_assessment_slot = slot
+    return service, database, broker, user_id
+
+
+def test_strategy_rating_reads_are_bounded_and_connection_checked(monkeypatch):
+    from test_strategy_assessment import position, snapshot
+
+    from omnicio.broker import BrokerObservationBundle
+
+    service, _, tbank, owner = _strategy_broker()
+    analysis = snapshot(*(position(uid=f"bond-{i:02d}", value="1000") for i in range(20)),
+                        nav="110000", cash="90000")
+    bundle = Mock(spec=BrokerObservationBundle)
+    bundle.analysis = analysis
+    monkeypatch.setattr(service, "observation_bundle", lambda user: bundle)
+    calls = []
+    def read(credential, environment, uid):
+        calls.append(uid)
+        assert credential == "t.fake-owner-credential-1234567890"
+        assert environment == "prod"
+        return ()
+    monkeypatch.setattr(tbank, "get_bond_ratings", read, raising=False)
+    monkeypatch.setattr(service, "_paced_evidence_read", lambda fn, *args: fn(*args))
+    observed, ratings = service.strategy_observation(owner)
+    assert observed is bundle
+    assert len(calls) == 8
+    assert list(ratings) == calls == sorted(calls)
+    assert all(values == () for values in ratings.values())
+
+
+@pytest.mark.parametrize("mutation", ["credential", "account", "delete"])
+def test_strategy_rating_read_discards_changed_connection(monkeypatch, mutation):
+    from test_strategy_assessment import position, snapshot
+
+    from omnicio.broker import BrokerObservationBundle
+
+    service, database, tbank, owner = _strategy_broker()
+    bundle = Mock(spec=BrokerObservationBundle)
+    bundle.analysis = snapshot(position())
+    monkeypatch.setattr(service, "observation_bundle", lambda user: bundle)
+    def read(*args):
+        if mutation == "delete":
+            database.delete_tbank_connection(owner)
+        elif mutation == "account":
+            database.record = replace(database.record, account_id="new-account")
+        else:
+            database.record = replace(database.record, encrypted_credential=b"new-encrypted")
+        return ()
+    monkeypatch.setattr(tbank, "get_bond_ratings", read, raising=False)
+    monkeypatch.setattr(service, "_paced_evidence_read", lambda fn, *args: fn(*args))
+    with pytest.raises(BrokerConnectionError):
+        service.strategy_observation(owner)
+
+
+def test_strategy_read_uses_shared_admission_and_releases_on_error(monkeypatch):
+    from omnicio.broker import BrokerAssessmentBusy
+
+    service, database, _, owner = _strategy_broker()
+    state = {"admitted": False, "released": False}
+    @contextmanager
+    def slot(user):
+        assert user == owner
+        try:
+            yield state["admitted"]
+        finally:
+            state["released"] = True
+    database.strategy_assessment_slot = slot
+    read = Mock(side_effect=TBankUnavailable("synthetic failure"))
+    monkeypatch.setattr(service, "_strategy_observation", read)
+    with pytest.raises(BrokerAssessmentBusy):
+        service.strategy_observation(owner)
+    read.assert_not_called()
+    assert state["released"] is True
+    state.update(admitted=True, released=False)
+    with pytest.raises(TBankUnavailable):
+        service.strategy_observation(owner)
+    assert state["released"] is True
+    read.assert_called_once_with(owner)
