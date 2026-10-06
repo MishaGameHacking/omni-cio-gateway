@@ -73,7 +73,7 @@ const suite = String.raw`
 window.__smokeRequests = [];
 const observedFetch = window.fetch;
 window.fetch = (path, options = {}) => {
-  window.__smokeRequests.push({path, method: options.method || "GET", body: options.body ? JSON.parse(options.body) : null});
+  window.__smokeRequests.push({path: new URL(path, location.origin).pathname, method: options.method || "GET", body: options.body ? JSON.parse(options.body) : null});
   return observedFetch(path, options);
 };
 window.__confirmAnswers = [];
