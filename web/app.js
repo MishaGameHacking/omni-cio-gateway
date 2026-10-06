@@ -6347,10 +6347,11 @@
     const setButtonState = () => {
       if (!built) return;
       host.querySelectorAll("[data-choose-strategy]").forEach((button) => { button.disabled = dirty || busy || blocked || version === null; });
-      restore.disabled = !customCopy || dirty || busy || blocked;
+      restore.disabled = !customCopy || dirty || busy || blocked || version === null || loading;
       retry.hidden = !blocked;
-      reload.disabled = busy;
-      panels.forEach((panel) => { panel.inert = version === null; });
+      reload.disabled = busy || loading;
+      retry.disabled = busy || loading;
+      panels.forEach((panel) => { panel.inert = version === null || loading; });
       host.dataset.strategyCustomized = String(Boolean(documentState?.customized));
       if (!documentState) currentTitle.textContent = "Стратегия: проверяем аккаунт";
       if (documentState) {
@@ -6661,6 +6662,8 @@
     const load = async () => {
       if (loading || busy || dirty || !currentProfileId || workspace.isDemo() || version !== null) return;
       loading = true;
+      setButtonState();
+      notify("Загружаем сохранённую стратегию…");
       showInitialLoad();
       const epoch = ++generation;
       const owner = currentProfileId;
@@ -6699,7 +6702,7 @@
         showInitialLoad(true);
         setButtonState();
       } finally {
-        if (epoch === generation) loading = false;
+        if (epoch === generation) { loading = false; setButtonState(); }
       }
     };
     const reconcile = async () => {

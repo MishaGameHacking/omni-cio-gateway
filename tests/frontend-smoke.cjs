@@ -532,13 +532,22 @@ const createSettingsFixture = (mode = "saved") => {
 const createStrategyFixture = (mode = "saved") => {
   const original = createSettingsFixture(mode);
   const state = {...original.state, selection: null, delay: 0, failure: null, loadFailure: mode === "strategy-load-error",
-    holdPrerequisites: mode === "strategy-prerequisite-delay", waitingPrerequisites: []};
+    holdPrerequisites: mode === "strategy-prerequisite-delay", waitingPrerequisites: [],
+    holdStrategyReads: false, waitingStrategyReads: []};
   state.releasePrerequisites = () => {
     state.holdPrerequisites = false;
     state.waitingPrerequisites.splice(0).forEach((release) => release());
   };
+  state.releaseStrategyReads = () => {
+    state.holdStrategyReads = false;
+    state.waitingStrategyReads.splice(0).forEach((release) => release());
+  };
   const json = (value, status = 200) => new Response(JSON.stringify(value), {status, headers: {"Content-Type": "application/json"}});
   return {state, request: async (path, options) => {
+    if (state.holdStrategyReads && options.method === "GET"
+      && ["/api/strategy/catalog", "/api/profile/strategy"].includes(path)) {
+      await new Promise((release) => state.waitingStrategyReads.push(release));
+    }
     if (state.holdPrerequisites && options.method === "GET"
       && ["/api/profile/investment", "/api/profile/balancing"].includes(path)) {
       await new Promise((release) => state.waitingPrerequisites.push(release));
@@ -804,6 +813,20 @@ const verifyStrategyLibrary = async (send, evaluate, fixture) => {
   await click('.strategy-savebar button:nth-last-child(2)'); await saved();
   assert.equal(fixture.state.selection.version, acknowledgedVersion + 1, "Newer edit is saved only after the earlier exact snapshot is reconciled");
   assert.equal(fixture.state.selection.document.profile.reserve_rub, newestAmount, "Lost acknowledgement cannot strand newer edits");
+  // Reloading an initialized editor must be just as protected as its first load.
+  fixture.state.holdStrategyReads = true;
+  const beforeReload = await evaluate('document.querySelector("#profile-reserve-rub").value');
+  const beforeReloadVersion = fixture.state.selection.version;
+  await click('.strategy-savebar button:last-child');
+  assert.equal(await waitUntil(() => fixture.state.waitingStrategyReads.length === 1), true);
+  assert.equal(await evaluate('[...document.querySelectorAll(".strategy-tab-panel")].every(p=>p.inert)'), true, "All existing panels become inert before asynchronous reload");
+  assert.equal(await evaluate('document.querySelector(".strategy-savebar button:last-child").disabled'), true, "Reload cannot be launched twice");
+  await click(plus);
+  assert.equal(await evaluate('document.querySelector("#profile-reserve-rub").value'), beforeReload, "A native click cannot make a subsequently discarded edit while reloading");
+  fixture.state.releaseStrategyReads();
+  assert.equal(await waitUntil(() => evaluate('document.querySelector(".strategy-savebar [role=status]").textContent.includes("загружен из аккаунта")')), true);
+  assert.equal(await evaluate('[...document.querySelectorAll(".strategy-tab-panel")].every(p=>!p.inert)'), true, "Controls unlock only after owner data arrives");
+  assert.equal(fixture.state.selection.version, beforeReloadVersion, "Reload and blocked click never save defaults or mutate strategy");
   fixture.state.selection.version += 1; // Another device, not a client overwrite.
   const foreign = structuredClone(fixture.state.selection.document);
   await click(plus);
