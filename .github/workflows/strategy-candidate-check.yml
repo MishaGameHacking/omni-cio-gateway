@@ -31,8 +31,11 @@ jobs:
           clean: true
       - name: Bootstrap pinned Python
         shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
+      - name: Select bootstrapped interpreter for the following step
+        shell: cmd
         run: |
-          call .github\scripts\bootstrap_self_hosted_python.cmd
+          "%OMNICIO_PYTHON%" --version
           if errorlevel 1 exit /b 1
           for %%I in ("%OMNICIO_PYTHON%") do echo %%~dpI>>"%GITHUB_PATH%"
       - name: Verify two-file repair and publish immutable source objects only
@@ -84,11 +87,9 @@ jobs:
 
           check_refs()
           commit = request('/git/commits/' + expected)
-          assert [row['sha'] for row in commit['parents']] == ['cb042f63909a28d324046491e0daf17323598018']
+          assert [row['sha'] for row in commit['parents']] == ['f28e6a4f13d8470ebbdd71871f8efb2c35c7b8b5']
           source = subprocess.check_output(['git', 'show', base + ':src/omnicio/db.py'])
           assert gitsha(source) == '63cd1dff725788d8e615934c5977f4afed1e4486'
-          # Read the immutable transport as data only. Correct the known single
-          # transcription byte, then require the independently computed digest.
           digest = '6f3c4e60dfb3987a7d1f8634dae1a47fa3dac76b'
           record = request('/git/blobs/' + digest)
           transport = base64.b64decode(record['content'])
