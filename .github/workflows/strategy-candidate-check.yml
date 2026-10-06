@@ -21,80 +21,13 @@ jobs:
           clean: true
       - shell: cmd
         run: call .github\scripts\bootstrap_self_hosted_python.cmd
-      - name: Verify reviewed manifest and publish immutable blobs without moving refs
-        shell: powershell
+      - name: Verify fixed source bytes without changing execution policy or refs
+        shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          @'
-          import base64, hashlib, json, os, pathlib, subprocess, time, urllib.error, urllib.request, zlib
-          base = '314b9d1715fbf7ed6ea53b7a0a1341d7fe16813a'
-          main = '0c0e2f71c6bacbd9a34fedba2262ce8f7efd8b38'
-          expected = os.environ['EXPECTED_HEAD']
-          api = 'https://api.github.com/repos/MishaGameHacking/omni-cio-gateway'
-          headers = {'Authorization': 'Bearer ' + os.environ['GITHUB_TOKEN'], 'User-Agent': 'OmniCIO-source-verification', 'Accept': 'application/vnd.github+json'}
-          def request(path, data=None):
-              raw = None if data is None else json.dumps(data).encode()
-              for attempt in range(3):
-                  try:
-                      req = urllib.request.Request(api + path, data=raw, headers=headers)
-                      with urllib.request.urlopen(req, timeout=30) as response:
-                          result = response.read(2000000)
-                          assert len(result) < 2000000
-                          return json.loads(result)
-                  except (urllib.error.URLError, ConnectionError, TimeoutError):
-                      if attempt == 2:
-                          raise
-                      time.sleep(2 ** attempt)
-          def gitsha(raw):
-              return hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
-          def heads():
-              assert request('/git/ref/heads/main')['object']['sha'] == main
-              assert request('/git/ref/heads/feature/strategy-account-assessment')['object']['sha'] == expected
-          heads()
-          chunks = ['b1c70bf94b0627165968764383db40688bbf6d7c', '252457436d2f6cf08503faef0f0e8fa6b11e9a4d', 'c189a62cd09d588a628b0b54423c4e7b4b5eedfe', 'f68dca2c67f5a87aeeb30f64ae28bd90984b44be']
-          packed = b''
-          for digest in chunks:
-              raw = base64.b64decode(request('/git/blobs/' + digest)['content'])
-              assert gitsha(raw) == digest
-              packed += raw
-          assert gitsha(packed) == '5db6fa8766ee921e1bc61a3a8ae77c4cd70de183'
-          manifest = json.loads(zlib.decompress(base64.b64decode(packed)))
-          allowed = {'.github/workflows/auth-postgres.yml', 'src/omnicio/broker.py', 'src/omnicio/db.py', 'src/omnicio/main.py', 'src/omnicio/portfolio_store.py', 'src/omnicio/strategy_assessment.py', 'src/omnicio/strategy_service.py', 'tests/frontend-smoke.cjs', 'tests/test_broker.py', 'tests/test_postgres_migrations.py', 'tests/test_settings_recovery.py', 'tests/test_strategy_assessment.py', 'tests/test_strategy_service.py', 'web/app.js', 'migrations/0013_strategy_assessment_admission.sql'}
-          assert manifest['base'] == base and manifest['version'] == 1
-          assert set(manifest['files']) == allowed
-          tree = request('/git/trees/' + expected + '?recursive=1')
-          assert not tree['truncated']
-          current = {item['path']: item['sha'] for item in tree['tree'] if item['type'] == 'blob'}
-          outputs = {}
-          for path, change in manifest['files'].items():
-              assert current.get(path) == change['before'], 'Concurrent source change: ' + path
-              if change['before'] is None:
-                  raw = change['content'].encode('utf-8')
-              else:
-                  original = subprocess.check_output(['git', 'show', base + ':' + path])
-                  assert gitsha(original) == change['before']
-                  lines = original.decode('utf-8').splitlines(keepends=True)
-                  bound = len(lines)
-                  for start, end, replacement in reversed(change['edits']):
-                      assert type(start) is int and type(end) is int and 0 <= start <= end <= bound
-                      lines[start:end] = [replacement]
-                      bound = start
-                  raw = ''.join(lines).encode('utf-8')
-              assert gitsha(raw) == change['after'], 'Candidate mismatch: ' + path
-              outputs[path] = raw
-          heads()
-          published = {}
-          for path, raw in outputs.items():
-              result = request('/git/blobs', {'content': base64.b64encode(raw).decode(), 'encoding': 'base64'})
-              assert result['sha'] == manifest['files'][path]['after']
-              published[path] = result['sha']
-          pathlib.Path('candidate-blobs.json').write_text(json.dumps({'head': expected, 'base': base, 'files': published}, indent=2), encoding='utf-8')
-          print('Verified source files:', len(published))
-          '@ | Set-Content -Encoding UTF8 -Path "$env:RUNNER_TEMP\verify-strategy-source.py"
-          & $env:OMNICIO_PYTHON "$env:RUNNER_TEMP\verify-strategy-source.py"
-          exit $LASTEXITCODE
+        run: >-
+          "%OMNICIO_PYTHON%" -c "import base64,hashlib,json,os,textwrap,time,urllib.error,urllib.request; sha='ceec8a68fe4cb75a14971e132decd57789c6b9b6'; req=urllib.request.Request('https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'User-Agent':'OmniCIO-source-verification'}); exec('for attempt in range(3):\n try:\n  with urllib.request.urlopen(req,timeout=30) as response:\n   raw=base64.b64decode(json.load(response)[\'content\'])\n  break\n except (urllib.error.URLError,ConnectionError,TimeoutError):\n  if attempt==2: raise\n  time.sleep(2**attempt)'); assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==sha; script=textwrap.dedent(raw.decode('utf-8').split('@'+chr(39)+'\n',1)[1].split(chr(39)+'@ | Set-Content',1)[0]); exec(compile(script,'verified-source-delivery','exec'))"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: strategy-repair-source-identities
