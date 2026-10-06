@@ -188,7 +188,8 @@ jobs:
             --migration migrations/0008_balancing_policy.sql ^
             --migration migrations/0009_portfolio_proposals.sql ^
             --migration migrations/0010_portfolio_execution.sql ^
-            --migration migrations/0011_portfolio_live_execution.sql
+            --migration migrations/0011_portfolio_live_execution.sql ^
+            --migration migrations/0012_strategy_drafts.sql
 
       - name: Confirm database readiness
         if: steps.postgres.outputs.status == 'database_ready'

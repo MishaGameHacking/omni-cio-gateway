@@ -20,6 +20,7 @@ from .intelligence import (
     InstrumentRiskAssessment,
 )
 from .portfolio import SecurityExposure
+from .strategy import document_hash, normalize_document
 from .tbank import (
     TBankAccount,
     TBankInstrumentMetadata,
@@ -730,6 +731,69 @@ class PortfolioStore:
             for user_id in candidates
             if self.database.has_legal_versions(user_id, legal_versions)
         )
+
+    def current_strategy_draft(self, user_id: UUID) -> dict[str, Any] | None:
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(
+                "SELECT version, document, custom_document, fingerprint, updated_at "
+                "FROM strategy_drafts WHERE user_id = %s", (user_id,),
+            )
+            row = cast(dict[str, Any] | None, cur.fetchone())
+            return dict(row) if row is not None else None
+
+    def save_strategy_draft(
+        self, user_id: UUID, document: dict[str, Any], *, expected_version: int,
+    ) -> dict[str, Any]:
+        # Same authority/version boundary as existing profile editors. A saved
+        # working copy never changes a mandate, confirmed policy or broker state.
+        document = normalize_document(document)
+        fingerprint = document_hash(document)
+        with (
+            self.database.pool.connection() as conn,
+            conn.transaction(),
+            conn.cursor() as cur,
+        ):
+            self._tenant(cur, user_id)
+            cur.execute(_ADVISORY_LOCK_SQL, (f"strategy-draft:{user_id}",))
+            cur.execute(
+                "SELECT version, document, custom_document, fingerprint, updated_at "
+                "FROM strategy_drafts WHERE user_id = %s FOR UPDATE", (user_id,),
+            )
+            row = cast(dict[str, Any] | None, cur.fetchone())
+            actual = int(row["version"]) if row else 0
+            unchanged = bool(row and row["fingerprint"] == fingerprint)
+            _require_settings_version(expected_version, actual, unchanged=unchanged)
+            if unchanged and row is not None:
+                return dict(row)
+            if actual == 2_147_483_647:
+                raise SettingsVersionConflict("settings_version_conflict")
+            custom = row["custom_document"] if row else None
+            if document["customized"]:
+                custom = document
+            serialized_custom = (
+                json.dumps(custom, ensure_ascii=False) if custom is not None else None
+            )
+            cur.execute(
+                "INSERT INTO strategy_drafts (user_id, version, document, "
+                    "custom_document, fingerprint) "
+                "VALUES (%s, %s, %s::jsonb, %s::jsonb, %s) "
+                "ON CONFLICT (user_id) DO UPDATE SET version = EXCLUDED.version, "
+                "document = EXCLUDED.document, custom_document = EXCLUDED.custom_document, "
+                "fingerprint = EXCLUDED.fingerprint, "
+                "updated_at = now() RETURNING version, document, custom_document, "
+                    "fingerprint, updated_at",
+                (user_id, actual + 1, json.dumps(document, ensure_ascii=False),
+                 serialized_custom, fingerprint),
+            )
+            saved = cur.fetchone()
+            if saved is None:
+                raise RuntimeError("strategy draft save returned no row")
+            return dict(cast(dict[str, Any], saved))
 
     def current_profile(self, user_id: UUID) -> InvestmentProfileRecord | None:
         with (

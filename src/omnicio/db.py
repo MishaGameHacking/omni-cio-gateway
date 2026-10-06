@@ -100,6 +100,7 @@ class Database:
                     AND to_regclass('public.payout_events') IS NOT NULL
                     AND to_regclass('public.portfolio_risk_assessments') IS NOT NULL
                     AND to_regclass('public.balancing_policy_versions') IS NOT NULL
+                    AND to_regclass('public.strategy_drafts') IS NOT NULL
                     AND to_regclass('public.portfolio_proposals') IS NOT NULL
                     AND to_regclass('public.portfolio_proposal_actions') IS NOT NULL
                     AND to_regclass('public.portfolio_execution_runs') IS NOT NULL

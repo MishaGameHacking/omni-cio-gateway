@@ -1194,7 +1194,11 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('aria-describedby="tbank-token-help"', page)
         self.assertIn("Вместе с планируемыми снятиями", page)
         self.assertIn("0 не даёт нового объёма по этому лимиту", page)
-        self.assertIn("не определяет их автоматически", page)
+        self.assertIn("не подставляет скрытые проценты", page)
+        self.assertIn(
+            "Налог и стресс-поправки — выбранные вами допущения, не установленные факты.",
+            page,
+        )
 
         self.assertIn("validateFormWithMessage", script)
         self.assertIn('form.querySelector(":invalid")', script)
@@ -1266,7 +1270,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "0.19.2"', project)
+        self.assertIn('version = "0.19.3"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
