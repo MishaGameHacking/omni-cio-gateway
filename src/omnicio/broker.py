@@ -50,10 +50,15 @@ from .tbank import (
 # T-Invest documents 200 unary requests/minute for InstrumentsService.
 # 0.31s keeps evidence reads below that ceiling with a small scheduling margin.
 INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS = 0.31
+STRATEGY_RATING_READ_LIMIT = 8
 
 
 class BrokerConnectionError(RuntimeError):
     """Base owner broker connection error."""
+
+
+class BrokerAssessmentBusy(BrokerConnectionError):
+    """A bounded strategy read is already running or was just requested."""
 
 
 class BrokerAccountNotAccessible(BrokerConnectionError):
@@ -148,6 +153,9 @@ class BrokerService:
         self.tbank = tbank
         self._instrument_evidence_lock = threading.Lock()
         self._next_instrument_evidence_at = 0.0
+        self._strategy_read_lock = threading.Lock()
+        self._strategy_reads: dict[UUID, float] = {}
+        self._strategy_inflight: set[UUID] = set()
 
     def preview_accounts(
         self,
@@ -697,6 +705,48 @@ class BrokerService:
             ),
             sources=sources,
         )
+
+    def strategy_observation(
+        self, user_id: UUID,
+    ) -> tuple[BrokerObservationBundle, dict[str, tuple[TBankRating, ...]]]:
+        """One bounded read per owner; other owners cannot observe its results."""
+        with self._strategy_read_lock:
+            now = time.monotonic()
+            self._strategy_reads = {
+                owner: when for owner, when in self._strategy_reads.items() if now - when < 10
+            }
+            if user_id in self._strategy_inflight or user_id in self._strategy_reads:
+                raise BrokerAssessmentBusy("strategy_assessment_busy")
+            self._strategy_reads[user_id] = now
+            self._strategy_inflight.add(user_id)
+        try:
+            return self._strategy_observation(user_id)
+        finally:
+            with self._strategy_read_lock:
+                self._strategy_inflight.discard(user_id)
+
+    def _strategy_observation(
+        self, user_id: UUID,
+    ) -> tuple[BrokerObservationBundle, dict[str, tuple[TBankRating, ...]]]:
+        record, credential, environment = self._connected_credential(user_id)
+        bundle = self.observation_bundle(user_id)
+        self._require_current_connection(record)
+        ratings: dict[str, tuple[TBankRating, ...]] = {}
+        started = time.monotonic()
+        ids = sorted({item.uid for item in bundle.analysis.securities
+                      if item.instrument_type == "bond"})
+        for uid in ids[:STRATEGY_RATING_READ_LIMIT]:
+            if time.monotonic() - started >= 8:
+                break
+            self._require_current_connection(record)
+            try:
+                ratings[uid] = cast(tuple[TBankRating, ...], self._paced_evidence_read(
+                    self.tbank.get_bond_ratings, credential, environment, uid,
+                ))
+            except TBankUnavailable:
+                ratings[uid] = ()
+        self._require_current_connection(record)
+        return bundle, ratings
 
     def _read_catalog(
         self,

@@ -6267,9 +6267,9 @@
     const sectionNames = ["Подход", "Доли", "Капитал", "Лимиты", "Проверка"];
     const clone = (value) => structuredClone(value);
     const pendingRequests = new Set();
-    const request = async (path, options) => {
+    const request = async (path, options, timeoutMs = 15000) => {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
       pendingRequests.add(controller);
       try { return await api(path, {...options, signal: controller.signal}); }
       finally { clearTimeout(timeout); pendingRequests.delete(controller); }
@@ -6337,10 +6337,14 @@
     let yieldMargin;
     let wrapperCap;
     let diagnosticResult;
+    let accountResult;
+    let accountBusy = false;
+    let accountRequested = false;
     let diagnosticRevision = 0;
     const clearDiagnostic = () => {
       diagnosticRevision += 1;
       diagnosticResult?.replaceChildren();
+      if (accountResult && accountRequested) accountResult.textContent = "Настройки изменились. Проверка счёта требует обновления.";
     };
     let built = false;
     const notify = (message) => { if (saveStatus) saveStatus.textContent = message; };
@@ -6536,6 +6540,88 @@
       row.append(name, selectBox); parent.append(row);
       return selectBox;
     };
+    const exactAmount = (value) => {
+      if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?$/.test(value)) return "неизвестно";
+      const [whole, fraction = ""] = value.split(".");
+      const grouped = BigInt(whole).toLocaleString("ru-RU");
+      return grouped + (fraction ? "," + fraction : "") + " ₽";
+    };
+    const renderAccountAssessment = (data) => {
+      const names = {shares: "Акции", bonds: "Облигации", funds: "Фонды", cash: "Рубли"};
+      accountResult.replaceChildren(
+        uiNode("p", `Стоимость счёта: ${exactAmount(data.nav_rub)}. Получено у брокера: ${formatDateTime(data.captured_at)}.`, "inline-note"),
+        uiNode("p", `Для расчёта распределения: ${exactAmount(data.cash?.allocation_capacity_rub)}. Это не разрешение на покупку и не сумма после будущих комиссий.`, "field-hint")
+      );
+      const allocation = uiNode("div", undefined, "strategy-account-allocation");
+      for (const row of data.allocation) {
+        allocation.append(uiNode("p", `${names[row.key] || row.key}: сейчас ${exactAmount(row.current_rub)}, цель ${row.target_percent}% (${exactAmount(row.target_rub)}).${row.complete ? "" : " Покрытие неполное."}`));
+      }
+      accountResult.append(allocation);
+      const titles = {evaluated: "Проверено", blocked: "Есть ограничение", unknown: "Не хватает данных", inapplicable: "В этой проверке не применяется"};
+      const summary = uiNode("p", `Проверено правил: ${data.checks.filter((item) => item.state === "evaluated").length}. Ограничений: ${data.checks.filter((item) => item.state === "blocked").length}.`, "field-hint");
+      accountResult.append(summary);
+      for (const state of ["blocked", "unknown", "evaluated", "inapplicable"]) {
+        const checks = data.checks.filter((item) => item.state === state);
+        if (!checks.length) continue;
+        const group = uiNode("details", undefined, "settings-disclosure");
+        group.append(uiNode("summary", titles[state] + " · " + checks.length));
+        for (const check of checks) {
+          const line = uiNode("p");
+          line.append(uiNode("strong", check.title + ". "), document.createTextNode(check.detail));
+          if (check.limit !== null && check.limit !== undefined) line.append(document.createTextNode(" Выбрано: " + String(check.limit) + "."));
+          group.append(line);
+        }
+        accountResult.append(group);
+      }
+      const methods = uiNode("details", undefined, "settings-disclosure");
+      methods.append(uiNode("summary", "Что ещё нужно для подбора активов"));
+      for (const item of data.method_requirements) methods.append(uiNode("p", item));
+      methods.append(uiNode("p", data.scope));
+      accountResult.append(methods);
+    };
+    const calculateAccount = async (button) => {
+      if (accountBusy || !version || busy || dirty || blocked || loading || workspace.isDemo()) {
+        if (!accountBusy) accountResult.textContent = "Дождитесь сохранения выбранной стратегии. Реальный счёт не подменяется условной суммой.";
+        return;
+      }
+      const epoch = generation; const currentRevision = revision; const expected = version;
+      const calculationRevision = ++diagnosticRevision;
+      const owner = currentProfileId;
+      accountBusy = true; accountRequested = true; button.disabled = true;
+      accountResult.textContent = "Получаем ваши позиции и деньги у Т-Банка. Проверяем сохранённые ограничения…";
+      try {
+        const data = await request("/api/profile/strategy/account-assessment", {method: "POST", body: JSON.stringify({expected_public_id: owner, expected_version: expected})}, 45000);
+        if (epoch !== generation || currentRevision !== revision || version !== expected || calculationRevision !== diagnosticRevision || owner !== currentProfileId) return;
+        if (data?.public_id !== owner || data?.strategy_version !== expected || data?.status !== "assessed"
+          || !Array.isArray(data.allocation) || !Array.isArray(data.checks) || !Array.isArray(data.method_requirements)
+          || data.execution_enabled !== false || data.candidate_selection_ready !== false) throw new Error("strategy_account_mismatch");
+        renderAccountAssessment(data);
+      } catch (error) {
+        if (epoch === generation && currentRevision === revision && calculationRevision === diagnosticRevision) {
+          accountResult.textContent = error.status === 409
+            ? "Проверьте подключение Т-Банка и актуальную версию стратегии. Ваши настройки не изменены."
+            : "Не удалось подтвердить данные счёта. Значения не заменены нулями или примером. Можно повторить проверку.";
+        }
+      } finally {
+        if (epoch === generation) { accountBusy = false; button.disabled = false; }
+      }
+    };
+    const buildAccountAssessment = (parent) => {
+      const panel = uiNode("section", undefined, "strategy-diagnostic");
+      const title = uiNode("h4", "Мой счёт и моя стратегия");
+      const button = uiNode("button", "Проверить мой счёт", "button button-primary");
+      button.type = "button"; button.id = "strategy-check-account";
+      accountResult = uiNode("div"); accountResult.id = "strategy-account-result";
+      accountResult.setAttribute("role", "status");
+      button.addEventListener("click", () => { void calculateAccount(button); });
+      panel.append(title, uiNode("p", "Позиции, стоимость и рубли — из вашего подключённого счёта. Сравнение использует сохранённую версию стратегии, а не капитал примера. Эта проверка сравнивает текущий состав; полный подбор новых покупок ещё не подключён.", "field-hint"), button, accountResult);
+      help(title, "Проверка моего счёта", "Сравнивает ваши текущие позиции с выбранными долями и пределами. Денег не переводит и заявок не отправляет.", [
+        ["Что проверяется", "Целевые доли, денежный остаток после резерва и снятий, известные доли компаний, секторов и рейтингов, сроки погашения. Неизвестный параметр не объявляется пройденным."],
+        ["Почему может не хватать данных", "Для полного подбора нужны сведения о связанных компаниях, составе фондов, доступности покупки и расходах. Система не придумывает их из названия бумаги."],
+        ["После изменения", "Прежняя проверка убирается, потому что она относилась к другой версии ваших правил. Повторная проверка читает новые сохранённые настройки."]
+      ]);
+      parent.append(panel);
+    };
     const build = () => {
       if (built) return;
       built = true;
@@ -6611,6 +6697,7 @@
       const checkCard = uiNode("article", undefined, "settings-card");
       checkCard.append(uiNode("h3", "Что уже проверено, а что неизвестно"), uiNode("p", "Сумма целевых долей — 100%. Черновик сохраняется отдельно от подтверждённых параметров. Ни один подход не имеет доказанной вероятности прибыли 99,9%.", "inline-note"), uiNode("p", "Предыдущие подтверждённые профиль и лимиты остаются действующими. Чтобы применить их изменения, откройте «Капитал» или «Лимиты» и проверьте точные значения перед подтверждением."));
       help(checkCard.querySelector("h3"), "Границы проверки", "Работоспособность кнопок и сохранения — не подтверждение доходности стратегии.", [["Проверяемые расчёты", "Стоимость лотов, сумма долей, пределы концентрации и результаты явно заданных стрессов можно воспроизвести."], ["Чего пока нет", "Нет проверенной истории всех нужных активов и откалиброванных вероятностей. Именные принципы не становятся оригинальными стратегиями авторов от смены названия."], ["Почему не 99,9%", "Даже много удачных сценариев внутри модели не исключают неизвестные рынку события. Доверительный уровень расчёта — не обещанная вероятность прибыли."]]);
+      buildAccountAssessment(checkCard);
       const diagnostic = uiNode("div", undefined, "strategy-diagnostic");
       diagnostic.append(uiNode("h4", "Проверить на условной сумме"), uiNode("p", "Это проверка лота и заданных изменений цен, а не прогноз по вашему счёту.", "field-hint"));
       const capital = uiNode("select"); capital.setAttribute("aria-label", "Условный капитал, рубли");
@@ -6746,6 +6833,7 @@
         clearTimers(); clearDiagnostic(); generation += 1;
         pendingRequests.forEach((controller) => controller.abort()); version = null; dirty = false; busy = false; blocked = false;
         documentState = null; customCopy = null; unacknowledged = null; revision = 0; loading = false;
+        accountBusy = false; accountRequested = false; accountResult?.replaceChildren();
         if (loadNotice) loadNotice.hidden = true;
         ratingInputs.forEach((input) => { input.value = "0"; });
         if (yieldFloor) yieldFloor.checked = false;
