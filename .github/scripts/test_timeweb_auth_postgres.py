@@ -174,29 +174,23 @@ class PostgresTests(unittest.TestCase):
             MODULE.REMOTE_SECRET_BOOTSTRAP,
         )
 
-    def test_workflow_applies_portfolio_observer_migration_after_existing_schema(self) -> None:
+    def test_workflow_passes_every_migration_in_one_ordered_command(self) -> None:
         root = MODULE_PATH.parents[2]
         workflow = (root / ".github/workflows/auth-postgres.yml").read_text(encoding="utf-8")
-
         migrations = [
-            "migrations/0001_phone_auth.sql",
-            "migrations/0002_tbank_connection.sql",
-            "migrations/0003_vkid_owner_identity.sql",
-            "migrations/0004_user_role.sql",
-            "migrations/0005_drop_phone_auth.sql",
-            "migrations/0006_portfolio_observer.sql",
-            "migrations/0007_portfolio_evidence.sql",
-            "migrations/0008_balancing_policy.sql",
-            "migrations/0009_portfolio_proposals.sql",
-            "migrations/0010_portfolio_execution.sql",
+            path.relative_to(root).as_posix()
+            for path in sorted((root / "migrations").glob("*.sql"))
         ]
-        positions = [workflow.index(path) for path in migrations]
-        self.assertEqual(positions, sorted(positions))
-        self.assertEqual(workflow.count("--migration migrations/0006_portfolio_observer.sql"), 1)
-        self.assertEqual(workflow.count("--migration migrations/0007_portfolio_evidence.sql"), 1)
-        self.assertEqual(workflow.count("--migration migrations/0008_balancing_policy.sql"), 1)
-        self.assertEqual(workflow.count("--migration migrations/0009_portfolio_proposals.sql"), 1)
-        self.assertEqual(workflow.count("--migration migrations/0010_portfolio_execution.sql"), 1)
+        self.assertTrue(migrations)
+        lines = [line.strip() for line in workflow.splitlines()]
+        first = lines.index(f"--migration {migrations[0]} ^")
+        expected = [f"--migration {path} ^" for path in migrations[:-1]]
+        expected.append(f"--migration {migrations[-1]}")
+        self.assertEqual(lines[first:first + len(migrations)], expected)
+        self.assertTrue(lines[first - 1].endswith(" ^"))
+        for path in migrations:
+            with self.subTest(migration=path):
+                self.assertEqual(workflow.count(f"--migration {path}"), 1)
 
     def test_parser_accepts_multiple_migrations(self) -> None:
         old = sys.argv
