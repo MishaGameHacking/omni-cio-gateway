@@ -37,7 +37,7 @@ jobs:
         shell: cmd
         run: call .github\scripts\bootstrap_self_hosted_python.cmd
       - name: Verify fixed source manifest and publish immutable blobs only
-        shell: ${{ env.OMNICIO_PYTHON }} {0}
+        shell: .venv-ci\Scripts\python.exe {0}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
