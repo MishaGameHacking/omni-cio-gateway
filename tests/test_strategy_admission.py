@@ -108,7 +108,8 @@ def test_admission_capacity_is_released_on_body_error(monkeypatch, failure):
         database.strategy_assessment_slot(UUID(int=101)) as second,
         database.strategy_assessment_slot(UUID(int=102)) as overflow,
     ):
-        assert first and second
+        assert first
+        assert second
         assert not overflow
 
 
