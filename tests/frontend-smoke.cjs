@@ -121,6 +121,7 @@ const makeFixture = mode => {
     heldWorkspace: [],
     holdGoals: false,
     heldGoals: [],
+    failGoals: false,
     goalDeleteNoContent: false,
     goalWriteConsentAfterCommit: false,
     goalPutConsentAfterCommit: false,
@@ -580,6 +581,7 @@ const displayContracts = () => {
   ui.setLocale("en");
   assert.equal(ui.format("1234.56"), "1,234.56", "Locale setting has a real consumer");
   goalVersionContracts(ui);
+  chartAxisContracts(ui);
   console.log("PASS display contracts: unknown values, source escaping, privacy, real-series requirements and locale");
 };
 function goalVersionContracts(ui) {
@@ -612,6 +614,24 @@ function goalVersionContracts(ui) {
   deleted.clear();
   assert.equal(ui.mergeGoals(stale, [], deleted)[0].version, 2, "A new session has no version or deletion authority from the previous session");
   console.log("PASS goal version contracts: monotonic records, immutable reads, empty lists and session tombstones");
+}
+function chartAxisContracts(ui) {
+  const rows = [{
+    captured_at: day(2),
+    nav_rub: "80.12"
+  }, {
+    captured_at: stamp,
+    nav_rub: "80.16"
+  }];
+  const markup = ui.chart(rows);
+  const labels = [...markup.matchAll(/<span class="chart-axis"[^>]*>([^<]+)<\/span>/g)].map(match => match[1]);
+  assert.equal(labels.length, 5, "Full charts have three value labels and two date labels");
+  assert.equal(new Set(labels.slice(0, 3)).size, 3, "A narrow nonzero range retains three distinguishable value ticks");
+  assert.equal(/<text\b/.test(markup), false, "Axis text cannot be stretched by the SVG viewBox");
+  assert.equal(ui.chart(rows, {
+    compact: true
+  }).includes('class="chart-axis"'), false, "Compact charts retain their unlabelled layout");
+  console.log("PASS chart axes: native labels, narrow-range precision and compact layout");
 }
 const cssRule = (css, selector) => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -717,6 +737,122 @@ const workerContract = async () => {
     delete globalThis.caches;
   }
 };
+function captureBrowserLayout() {
+  const visibleApp = !document.querySelector("#app-shell").hidden;
+  const modal = Boolean(document.querySelector("dialog[open]"));
+  const drawer = document.querySelector("#app-sidebar").dataset.open === "true";
+  const nav = document.querySelector(visibleApp ? "#mobile-nav" : ".public-mobile-nav");
+  const viewport = {
+    width: innerWidth,
+    height: innerHeight,
+    visualWidth: visualViewport.width,
+    visualHeight: visualViewport.height,
+    offsetLeft: visualViewport.offsetLeft,
+    offsetTop: visualViewport.offsetTop,
+    scale: visualViewport.scale,
+    scrollX,
+    scrollY
+  };
+  const links = [...nav.querySelectorAll("a")].map(link => {
+    const rect = link.getBoundingClientRect().toJSON();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return {
+      route: link.getAttribute("href"),
+      rect,
+      x,
+      y,
+      hit: link.contains(hit),
+      topElement: hit?.id || hit?.className?.baseVal || hit?.className || hit?.tagName || null
+    };
+  });
+  const navStyle = getComputedStyle(nav);
+  const navigation = {
+    required: innerWidth <= 960 && !modal && !drawer,
+    modal,
+    drawer,
+    rect: nav.getBoundingClientRect().toJSON(),
+    style: {
+      display: navStyle.display,
+      position: navStyle.position,
+      visibility: navStyle.visibility,
+      opacity: navStyle.opacity,
+      zIndex: navStyle.zIndex
+    },
+    inert: nav.inert,
+    links
+  };
+  const charts = [...document.querySelectorAll('.view:not([hidden]) .chart-plot')].map(plot => {
+    const svg = plot.querySelector("svg");
+    const axes = [...plot.querySelectorAll(".chart-axis")].map(axis => {
+      const style = getComputedStyle(axis);
+      return {
+        text: axis.textContent,
+        html: axis.namespaceURI === "http://www.w3.org/1999/xhtml",
+        rect: axis.getBoundingClientRect().toJSON(),
+        fontSize: Number.parseFloat(style.fontSize),
+        transform: style.transform
+      };
+    });
+    return {
+      compact: plot.classList.contains("chart-compact"),
+      rect: plot.getBoundingClientRect().toJSON(),
+      svg: svg.getBoundingClientRect().toJSON(),
+      svgText: svg.querySelectorAll("text").length,
+      axes
+    };
+  });
+  return {
+    width: innerWidth,
+    scroll: document.documentElement.scrollWidth,
+    body: document.body.scrollWidth,
+    errors: window.__browserErrors,
+    csp: window.__cspViolations,
+    viewport,
+    navigation,
+    charts
+  };
+}
+function assertMobileNavigation(data, label) {
+  const nav = data.navigation;
+  if (!nav.required) return;
+  const viewport = data.viewport;
+  const bottom = viewport.offsetTop + viewport.visualHeight;
+  const right = viewport.offsetLeft + viewport.visualWidth;
+  assert.equal(nav.links.length, 4, label + ": four navigation links remain available");
+  assert.equal(nav.inert, false, label + ": closed drawer cannot leave the navigation inert");
+  assert.ok(Math.abs(nav.rect.bottom - bottom) <= 2, label + ": navigation follows the visible viewport bottom " + JSON.stringify({
+    rect: nav.rect,
+    viewport
+  }));
+  for (const link of nav.links) {
+    assert.ok(link.rect.width > 0 && link.rect.height > 0, label + ": navigation link has a visible box " + link.route);
+    assert.ok(link.x >= viewport.offsetLeft && link.x <= right && link.y >= viewport.offsetTop && link.y <= bottom, label + ": navigation center is visible " + link.route);
+    assert.equal(link.hit, true, label + ": navigation center receives interaction " + JSON.stringify(link));
+  }
+}
+function assertChartLayout(charts, label) {
+  for (const chart of charts) {
+    assert.equal(chart.svgText, 0, label + ": SVG geometry cannot scale axis text");
+    assert.equal(chart.axes.length, chart.compact ? 0 : 5, label + ": chart axis count");
+    if (chart.compact) continue;
+    for (const axis of chart.axes) {
+      assert.equal(axis.html, true, label + ": native HTML axis");
+      assert.ok(axis.fontSize >= 11 && axis.rect.height >= 11, label + ": readable axis type size");
+      assert.equal(axis.transform, "none", label + ": axes cannot scale their glyphs");
+    }
+    const ticks = chart.axes.slice(0, 3);
+    assert.equal(new Set(ticks.map(axis => axis.text)).size, 3, label + ": value ticks remain distinguishable");
+    for (const [index, axis] of ticks.entries()) {
+      const center = axis.rect.top + axis.rect.height / 2;
+      const expected = chart.svg.top + chart.svg.height * index / 2;
+      assert.ok(Math.abs(center - expected) <= 1.5, label + ": value tick aligns with its grid line");
+      assert.ok(axis.rect.left >= chart.svg.right && axis.rect.right <= chart.rect.right + 1, label + ": value axis stays outside the plot and inside its card");
+    }
+    for (const axis of chart.axes.slice(3)) assert.ok(axis.rect.top >= chart.svg.bottom && axis.rect.left >= chart.svg.left - 1 && axis.rect.right <= chart.svg.right + 1, label + ": date axis stays below its own plot");
+  }
+}
 const protocolClient = async url => {
   const socket = new WebSocket(url);
   const pending = new Map();
@@ -828,23 +964,44 @@ const runBrowser = async base => {
       return result.ready;
     }, label || expression);
     const fieldValue = (form, name, value) => evaluate(`(() => {const input=document.querySelector(${JSON.stringify(form)}).elements[${JSON.stringify(name)}];input.value=${JSON.stringify(value)};input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    const layoutMetrics = [];
+    const recordLayout = async label => {
+      const data = await evaluate(`(${captureBrowserLayout.toString()})()`);
+      layoutMetrics.push({
+        label,
+        ...data
+      });
+      writeFileSync(join(artifacts, "layout-metrics.json"), JSON.stringify(layoutMetrics, null, 2));
+      return data;
+    };
+    const settleLayout = () => evaluate(`(async () => {
+      const finite = document.getAnimations().filter(animation => animation.playState === 'running' && Number.isFinite(animation.effect?.getComputedTiming().iterations));
+      await Promise.allSettled(finite.map(animation => animation.finished));
+      await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+    })()`);
     const checkLayout = async label => {
-      const data = await evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth,body:document.body.scrollWidth,errors:window.__browserErrors,csp:window.__cspViolations})');
+      await settleLayout();
+      const data = await recordLayout(label);
       assert.ok(data.scroll <= data.width + 1 && data.body <= data.width + 1, `${label}: horizontal overflow ${JSON.stringify(data)}`);
       assert.deepEqual(data.errors, [], label + ": runtime errors");
       assert.deepEqual(data.csp, [], label + ": production Content Security Policy");
+      assertMobileNavigation(data, label);
+      assertChartLayout(data.charts, label);
     };
-    const screenshot = async name => {
-      await evaluate(`(async () => {
-        const finite = document.getAnimations().filter(animation => animation.playState === 'running' && Number.isFinite(animation.effect?.getComputedTiming().iterations));
-        await Promise.allSettled(finite.map(animation => animation.finished));
-        await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
-      })()`);
+    const screenshot = async (name, {
+      validate = true
+    } = {}) => {
+      if (validate) {
+        await checkLayout(name);
+      } else {
+        await settleLayout();
+        await recordLayout(name);
+      }
       const opacity = await evaluate(`(() => {
         const view = document.querySelector('.view:not([hidden])');
         return view?.getClientRects().length ? Number(getComputedStyle(view).opacity) : 1;
       })()`);
-      assert.equal(opacity, 1, "A settled page must retain full opacity: " + name);
+      if (validate) assert.equal(opacity, 1, "A settled page must retain full opacity: " + name);
       const result = await send("Page.captureScreenshot", {
         format: "png",
         captureBeyondViewport: false
@@ -860,7 +1017,9 @@ const runBrowser = async base => {
         requests
       };
       writeFileSync(join(artifacts, "failure-state.json"), JSON.stringify(debug, null, 2));
-      await screenshot("failure-state.png");
+      await screenshot("failure-state.png", {
+        validate: false
+      });
       console.error(JSON.stringify({
         failure: error.message,
         url: documentState.url,
@@ -1384,6 +1543,9 @@ async function serveTestGoals({
   response,
   fixture
 }) {
+  if (fixture.failGoals) return sendJSON(response, {
+    detail: "read_source_unavailable"
+  }, 503);
   const result = {
     items: clone(fixture.goals)
   };
@@ -1586,6 +1748,11 @@ async function exerciseViewport({
     windowsVirtualKeyCode: 36
   });
   assert.notEqual(await evaluate('document.querySelector("#view-asset .chart-readout").textContent'), before, "Keyboard chart inspection changes the selected real observation");
+  await exerciseChartPointer({
+    send,
+    evaluate,
+    expectedEnd: before
+  });
   await checkLayout(`asset ${round}/${width}`);
   await screenshot(`asset-${round}-${width}.png`);
   await click('#view-asset [data-watch]');
@@ -1682,6 +1849,24 @@ async function exerciseViewport({
   console.log(`PASS round ${round}, ${width}px: layout, navigation, search, real charts, strategies, goals, events, settings, session isolation`);
 }
 const completedResourceCount = path => `performance.getEntriesByType("resource").filter(entry=>new URL(entry.name).pathname===${JSON.stringify(path)}).length`;
+async function exerciseChartPointer({
+  send,
+  evaluate,
+  expectedEnd
+}) {
+  const point = await evaluate('(() => {const rect=document.querySelector("#view-asset .chart-svg").getBoundingClientRect();return {x:rect.right-1,y:rect.top+rect.height/2};})()');
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    ...point
+  });
+  assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout").textContent'), expectedEnd, "Pointer coordinates use the real SVG plot after axes move outside it");
+  await send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Home",
+    code: "Home",
+    windowsVirtualKeyCode: 36
+  });
+}
 function configureGoalCases(fixture, round, width) {
   fixture.goalDeleteNoContent = round === 2;
   fixture.goalWriteConsentAfterCommit = round === 2 && width === 390;
@@ -1711,10 +1896,35 @@ async function reconcileGoalConsentError({
   await wait('document.querySelector("#goal-form").dataset.uncertain==="true"', "Post-commit legal change requires goal read-back");
   assert.equal(await evaluate('document.querySelector("#goal-form [type=submit]").disabled'), true, "A 409 legal update after commit cannot enable a duplicate " + method);
   const writes = fixture.requests.filter(item => item.path.startsWith("/api/goals") && item.method === method).length;
+  if (method === "PUT") await assertGoalReadbackFailure({
+    fixture,
+    click,
+    wait,
+    evaluate
+  });
+  fixture.holdGoals = true;
   await click('#goal-form [data-action="goal-reconcile"]');
+  await until(() => fixture.heldGoals.length > 0, "Server goal read remains withheld during reconciliation");
+  assert.equal(await evaluate('document.querySelector("#workspace-dialog").open'), true, "The dialog cannot close before its server read completes");
+  assert.equal(await evaluate('document.querySelector("#goal-form [type=submit]").disabled'), true, "A pending read-back cannot enable another write");
+  fixture.holdGoals = false;
+  fixture.heldGoals.splice(0).forEach(read => read.release());
   await wait('!document.querySelector("#workspace-dialog").open && document.querySelector("#view-goals .goal-card")', "Saved goal recovered only through the server list");
   assert.equal(fixture.requests.filter(item => item.path.startsWith("/api/goals") && item.method === method).length, writes, "Goal reconciliation cannot repeat the unacknowledged " + method);
   fixture.goalWriteConsentAfterCommit = false;
+}
+async function assertGoalReadbackFailure({
+  fixture,
+  click,
+  wait,
+  evaluate
+}) {
+  fixture.failGoals = true;
+  await click('#goal-form [data-action="goal-reconcile"]');
+  await wait('document.querySelector("#goal-form [data-goal-readback-status]").textContent.length>0 && !document.querySelector("#goal-form [data-action=goal-reconcile]").disabled', "A failed server read exposes its error and a read-only retry");
+  assert.equal(await evaluate('document.querySelector("#workspace-dialog").open'), true, "A failed read-back keeps the unresolved dialog open");
+  assert.equal(await evaluate('document.querySelector("#goal-form [type=submit]").disabled'), true, "A failed read-back cannot enable a duplicate write");
+  fixture.failGoals = false;
 }
 async function exerciseGoalCRUD(options) {
   const {

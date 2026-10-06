@@ -849,12 +849,13 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             {"tid_enabled": True, "login_enabled": False},
         )
         for changed in invalid:
+            encoded = json.dumps(dict(base, **changed)).encode()
             with (
                 self.subTest(changed=changed),
                 patch.object(MODULE, "vkid_configuration_ready", return_value=False),
                 self.assertRaises(MODULE.InfraError),
             ):
-                MODULE.verify_public_config(json.dumps(dict(base, **changed)).encode())
+                MODULE.verify_public_config(encoded)
 
     def test_invalid_public_release_is_rejected(self) -> None:
         cases = [

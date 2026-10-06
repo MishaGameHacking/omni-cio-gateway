@@ -142,9 +142,9 @@
     const width = 480;
     const height = 180;
     const left = 1;
-    const top = 12;
-    const bottom = compact ? 173 : 157;
-    const right = compact ? 479 : 429;
+    const top = compact ? 12 : 0;
+    const bottom = compact ? 173 : height;
+    const right = width - 1;
     const values = points.map(point => point.value);
     let low = Math.min(...values);
     let high = Math.max(...values);
@@ -169,9 +169,9 @@
     const grid = [0, .5, 1].map(part => {
       const value = high - (high - low) * part;
       const position = y(value);
-      return `<line class="chart-grid" x1="${left}" x2="${right}" y1="${position}" y2="${position}"/>${compact ? "" : renderChartChartAxis(position, value)}`;
+      return `<line class="chart-grid" x1="${left}" x2="${right}" y1="${position}" y2="${position}"/>`;
     }).join("");
-    return `<div class="chart-block${tone === "purple" ? " chart-purple" : ""}"><svg class="chart-svg" data-chart="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" tabindex="0" role="group" aria-label="${escape(label)}. Используйте стрелки для просмотра значений.">${grid}<path class="chart-area" d="${path} L${right} ${bottom} L${left} ${bottom} Z"/><path class="chart-path" d="${path}"/><g class="chart-hover" visibility="hidden"><line class="chart-cursor" y1="${top}" y2="${bottom}"/><circle class="chart-point" r="4"/></g>${compact ? "" : renderChartChartAxis2(left, points, right)}</svg><div class="chart-readout" aria-live="off"><span>${escape(date(points.at(-1).time, true))}</span><strong>${escape(money(points.at(-1).value, 2, currency, personal))}</strong></div></div>`;
+    return `<div class="chart-block${tone === "purple" ? " chart-purple" : ""}"><div class="chart-plot${compact ? " chart-compact" : ""}"><svg class="chart-svg" data-chart="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" tabindex="0" role="group" aria-label="${escape(label)}. Используйте стрелки для просмотра значений.">${grid}<path class="chart-area" d="${path} L${right} ${bottom} L${left} ${bottom} Z"/><path class="chart-path" d="${path}"/><g class="chart-hover" visibility="hidden"><line class="chart-cursor" y1="${top}" y2="${bottom}"/><circle class="chart-point" r="4"/></g></svg>${compact ? "" : renderChartAxes(points, low, high)}</div><div class="chart-readout" aria-live="off"><span>${escape(date(points.at(-1).time, true))}</span><strong>${escape(money(points.at(-1).value, 2, currency, personal))}</strong></div></div>`;
   };
   const bindCharts = (container = document) => {
     for (const svg of container.querySelectorAll("svg[data-chart]")) {
@@ -182,7 +182,7 @@
       const hover = svg.querySelector(".chart-hover");
       const cursor = hover.querySelector("line");
       const point = hover.querySelector("circle");
-      const readout = svg.parentElement.querySelector(".chart-readout");
+      const readout = svg.closest(".chart-block").querySelector(".chart-readout");
       const show = index => {
         selected = Math.max(0, Math.min(data.points.length - 1, index));
         const current = data.points[selected];
@@ -324,11 +324,14 @@
   function renderPeriodsPeriodButton(key, scope, selected, label) {
     return `<button class="period-button" data-period="${key}" data-period-scope="${escape(scope)}" aria-pressed="${key === selected}">${label}</button>`;
   }
-  function renderChartChartAxis(position, value) {
-    return `<text class="chart-axis" x="438" y="${position + 3}">${escape(format(value, 0))}</text>`;
+  function renderChartAxes(points, low, high) {
+    const step = (high - low) / 2;
+    const digits = Math.max(0, Math.min(20, 1 - Math.floor(Math.log10(step))));
+    const ticks = [high, high - step, low].map(value => renderChartAxis(format(value, digits))).join("");
+    return `<div class="chart-value-axis">${ticks}</div><div class="chart-time-axis">${renderChartAxis(date(points[0].time))}${renderChartAxis(date(points.at(-1).time))}</div>`;
   }
-  function renderChartChartAxis2(left, points, right) {
-    return `<text class="chart-axis" x="${left}" y="176">${escape(date(points[0].time))}</text><text class="chart-axis" x="${right}" y="176" text-anchor="end">${escape(date(points.at(-1).time))}</text>`;
+  function renderChartAxis(value) {
+    return `<span class="chart-axis" title="${escape(value)}">${escape(value)}</span>`;
   }
   function renderAllocationLegendDot(index, item) {
     return `<li><i class="legend-dot" data-color="${index % colors.length}"></i><span>${escape(item.label)}</span><strong>${escape(percent(item.nav_percent))}</strong></li>`;

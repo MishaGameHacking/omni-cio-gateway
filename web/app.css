@@ -1212,7 +1212,7 @@ button .icon {
 .summary-card .chart-block {
   margin-top:auto
 }
-.summary-card .chart-svg {
+.summary-card .chart-plot {
   height:100px
 }
 .metric-stack {
@@ -1241,7 +1241,7 @@ button .icon {
   line-height:1.6;
   margin:7px 0 0
 }
-.metric-card .chart-svg {
+.metric-card .chart-plot {
   height:36px
 }
 .metric-card .chart-readout {
@@ -1683,9 +1683,23 @@ button .icon {
   min-width:0;
   position:relative
 }
+.chart-plot {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) max-content;
+  grid-template-rows:minmax(0,1fr) auto;
+  gap:8px;
+  height:180px;
+  padding-top:7px
+}
+.chart-compact {
+  display:block;
+  padding:0
+}
 .chart-svg {
   width:100%;
-  height:180px;
+  height:100%;
+  min-width:0;
+  min-height:0;
   overflow:visible;
   touch-action:pan-y;
   display:block
@@ -1708,8 +1722,28 @@ button .icon {
   opacity:.08
 }
 .chart-axis {
-  fill:var(--subtle);
-  font-size:9px
+  color:var(--subtle);
+  font-size:11px;
+  line-height:1.3;
+  white-space:nowrap
+}
+.chart-value-axis {
+  display:grid;
+  grid-template-rows:0 minmax(0,1fr) 0;
+  align-items:center
+}
+.chart-time-axis {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  min-width:0
+}
+.chart-time-axis .chart-axis {
+  overflow:hidden;
+  text-overflow:ellipsis
+}
+.chart-time-axis .chart-axis:last-child {
+  text-align:right
 }
 .chart-cursor {
   stroke:var(--blue-light);
@@ -2461,7 +2495,7 @@ button .icon {
   font-size:33px;
   margin:19px 0 7px
 }
-.asset-chart-card .chart-svg {
+.asset-chart-card .chart-plot {
   height:295px
 }
 .asset-chart-card .periods {
@@ -2875,7 +2909,7 @@ dialog::backdrop {
   .summary-card {
     min-height:290px
   }
-  .summary-card .chart-svg {
+  .summary-card .chart-plot {
     height:126px
   }
   .dashboard-bottom .card {
@@ -3057,7 +3091,7 @@ dialog::backdrop {
     width:22px;
     height:25px
   }
-  .summary-card .chart-svg {
+  .summary-card .chart-plot {
     height:118px
   }
   .strategy-layout {
@@ -3165,7 +3199,7 @@ dialog::backdrop {
   .summary-card {
     min-height:236px
   }
-  .summary-card .chart-svg {
+  .summary-card .chart-plot {
     height:110px
   }
   .allocation-content {
@@ -3812,7 +3846,7 @@ dialog::backdrop {
   .summary-card .main-value {
     font-size:31px
   }
-  .summary-card .chart-svg {
+  .summary-card .chart-plot {
     height:112px
   }
   .summary-card .chart-readout {
@@ -4106,7 +4140,7 @@ dialog::backdrop {
   .asset-chart-card {
     padding:18px 15px
   }
-  .asset-chart-card .chart-svg {
+  .asset-chart-card .chart-plot {
     height:250px
   }
   .asset-chart-card .main-value {

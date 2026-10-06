@@ -2046,7 +2046,7 @@
         form.dataset.uncertain = "true";
         message.innerHTML = `${esc(humanError(error))}<p>Результат сохранения не подтверждён. Проверьте список целей перед повтором.</p><div class="form-actions">${button("Проверить список", "goal-reconcile", {
           small: true
-        })}</div>`;
+        })}</div><p data-goal-readback-status></p>`;
       }
     }
   };
@@ -2088,6 +2088,35 @@
       force: true
     });
     if (generation === state.generation) renderGoalConsumers();
+  };
+  const reconcileGoals = async control => {
+    if (!requireUser() || control.disabled) return;
+    const generation = state.generation;
+    const dialog = $("#workspace-dialog");
+    const status = control.closest("output")?.querySelector("[data-goal-readback-status]");
+    const label = control.textContent;
+    control.disabled = true;
+    control.textContent = "Проверяем…";
+    showMessage(status, "");
+    try {
+      const payload = await loadResource("goals", "/api/goals", {
+        force: true
+      });
+      if (generation !== state.generation || !control.isConnected || !dialog.open) return;
+      if (!payload) {
+        const error = state.errors.goals;
+        showMessage(status, error ? humanError(error) : "Проверка списка не завершена. Повторите чтение.", true);
+        return;
+      }
+      renderGoalConsumers();
+      dialog.close();
+      navigate("goals");
+    } finally {
+      if (generation === state.generation && control.isConnected) {
+        control.disabled = false;
+        control.textContent = label;
+      }
+    }
   };
   const writeGoalDocument = (form, document) => {
     const id = form.dataset.goalId;
@@ -2154,7 +2183,7 @@
     control.disabled = !error.definite;
     if (!error.definite) message.innerHTML = `${esc(humanError(error))}<div class="form-actions">${button("Проверить список", "goal-reconcile", {
       small: true
-    })}</div>`;
+    })}</div><p data-goal-readback-status></p>`;
   };
   const renderEvents = () => {
     const data = state.data.events;
@@ -3009,11 +3038,7 @@
     })}</div>`),
     legal: () => openDialog("Документы", '<ul class="source-list"><li><a href="/legal/terms.html" target="_blank" rel="noopener">Условия использования</a></li><li><a href="/legal/privacy.html" target="_blank" rel="noopener">Политика конфиденциальности</a></li><li><a href="/legal/consent.html" target="_blank" rel="noopener">Обработка персональных данных</a></li></ul>'),
     "goal-create": () => openGoal(),
-    "goal-reconcile": async () => {
-      $("#workspace-dialog").close();
-      navigate("goals");
-      await loadForView("goals", {}, true);
-    },
+    "goal-reconcile": reconcileGoals,
     "events-read-all": () => markEvents((state.data.events?.items || []).filter(item => !item.read_at).map(item => item.id)),
     "strategy-custom": customizeStrategy,
     "strategy-catalog": () => {
