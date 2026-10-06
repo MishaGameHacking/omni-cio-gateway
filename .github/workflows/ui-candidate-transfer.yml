@@ -22,23 +22,27 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.author_association == 'OWNER' &&
       github.actor == 'MishaGameHacking'
-    name: Export pinned candidate without running application code
+    name: Stage existing locked wheels without executing them
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
-      - name: Read exact candidate only
+      - name: Read exact accepted dependency lock
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 7c7350f4836fe1a1b49554f3889cc6afda6ff9d8
+          ref: 0ae04f3c5f8b31cc52fb08e21364655d5540754b
           persist-credentials: false
           clean: true
-      - name: Archive tracked source without git credentials
+      - name: Bootstrap pinned test Python
         shell: cmd
-        run: git archive --format=zip --output=candidate-source.zip HEAD
-      - name: Upload private integration source
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
+      - name: Download hash-verified Linux wheels for offline tests
+        shell: cmd
+        run: >-
+          "%OMNICIO_PYTHON%" -m pip download --only-binary=:all: --no-deps --require-hashes --platform manylinux_2_28_x86_64 --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 --python-version 3.13 --implementation cp --abi cp313 --dest locked-wheels -r requirements-dev.txt
+      - name: Upload private verification dependencies
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: strategy-source-7c7350f
-          path: candidate-source.zip
+          name: strategy-locked-linux-wheels
+          path: locked-wheels/*.whl
           if-no-files-found: error
           retention-days: 1
