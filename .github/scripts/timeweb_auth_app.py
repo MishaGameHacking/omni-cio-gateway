@@ -62,6 +62,7 @@ BRAND_PUBLIC_MARK = "/assets/brand/pwa-icon-192.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
 JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
+PNG_CONTENT_TYPE = "image/png"
 OPTIONAL_INTEGRATION_KEYS = (
     "TID_CLIENT_ID", "TID_CLIENT_SECRET", "TID_LOGIN_ENABLED", "TID_PKCE_ENABLED",
     "ASSISTANT_BASE_URL", "ASSISTANT_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_ENABLED",
@@ -1326,7 +1327,7 @@ def verify_public_config(body: bytes) -> None:
 
 def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
     brand, content_type = fetch_public(BRAND_PUBLIC_MARK, context)
-    if content_type != "image/png" or not brand:
+    if content_type != PNG_CONTENT_TYPE or not brand:
         raise InfraError("Public approved brand mark verification failed")
 
     manifest_body, _ = fetch_public(WEB_MANIFEST_PATH, context)
@@ -1345,8 +1346,8 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         ("/assets/app.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/workspace.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/app.css", b"--sidebar", ("text/css",)),
-        ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", ("image/png",)),
-        ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", ("image/png",)),
+        ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", (PNG_CONTENT_TYPE,)),
+        ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", (PNG_CONTENT_TYPE,)),
         ("/sw.js", b"omnicio-public-", JAVASCRIPT_CONTENT_TYPES),
         ("/offline.html", b"<html", ("text/html",)),
     )
