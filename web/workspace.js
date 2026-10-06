@@ -362,6 +362,7 @@
         ".positions-mobile", ".position-card", ".analysis-sources", ".analysis-observation",
         ".metric-strip strong", ".goal-value", ".event-card p", ".event-card h3",
         ".attention-list", ".goal-card p", ".instrument-detail", ".market-price-row",
+        ".chart-inspector[data-private]", "#home-portfolio-history-chart", "#portfolio-history-chart", "#portfolio-drawdown-chart",
       ];
       all(selectors.join(",")).forEach((element) => { element.dataset.private = ""; });
     };
@@ -549,7 +550,7 @@
         flags.replaceChildren(state);
         const actions = node("div", undefined, "asset-actions");
         actions.append(button("Подробнее", () => {
-          if (demo) showDemoInstrument(item);
+          if (demo) toast("Для данных инструмента нужен вход и подключение собственного счёта.");
           else { adapter.navigate("portfolio"); adapter.openInstrument(item.uid); }
         }));
         const favorite = button(favorites.has(item.uid) ? "★ В избранном" : "☆ В избранное", () => {
@@ -773,8 +774,8 @@
       for (let i = 1; i <= 5; i += 1) progress.append(node("span", "", i <= step ? "active" : ""));
       body.append(progress);
       const steps = [
-        ["Личный аккаунт", demo ? "Сейчас открыт демонстрационный режим. Для своего портфеля нужен вход через VK ID." : "Вы вошли через VK ID. Подключение брокера и согласие на торговые действия проверяются отдельно.", "profile"],
-        ["Выберите, с чего начать", "Изучите демо с вымышленными данными или подключите собственный счёт.", "connections"],
+        ["Личный аккаунт", demo ? "Сейчас открыт обзор без аккаунта. Для своего портфеля нужен вход через VK ID." : "Вы вошли через VK ID. Подключение брокера и согласие на торговые действия проверяются отдельно.", "profile"],
+        ["Выберите, с чего начать", "Посмотрите официальные справочные данные без входа или подключите собственный счёт после авторизации.", "connections"],
         ["Подключите T-Invest", "Создайте токен только для чтения и введите его в разделе подключений. Сервер проверит токен и покажет ваши счета.", "connections"],
         ["Расскажите о предпочтениях", "Укажите резерв, срок и допустимые колебания. Если пока не знаете, пропустите: доступ к аналитике сохранится.", "strategy"],
         ["Ваш первый обзор", "Откройте портфель: проверьте стоимость, состав и время данных. Уведомления можно настроить позже.", "portfolio"],
@@ -792,53 +793,17 @@
     };
     $("#open-onboarding").addEventListener("click", () => onboarding());
 
-    const demoInstruments = [
-      {uid: "demo-bond-1", ticker: "СЕВЕР-01", name: "Север Энерго · выпуск 01", instrument_type: "bond", lot: 1, price: "1000", quantity: "650"},
-      {uid: "demo-bond-2", ticker: "ГОРОД-02", name: "Город Инфра · выпуск 02", instrument_type: "bond", lot: 1, price: "1000", quantity: "100"},
-      {uid: "demo-share-1", ticker: "ВЕКТОР", name: "Вектор Технологии", instrument_type: "share", lot: 10, price: "250", quantity: "1000"},
-      {uid: "demo-fund-1", ticker: "БАЛАНС", name: "Фонд «Баланс»", instrument_type: "etf", lot: 1, price: "125", quantity: "1000"},
-    ];
-    const showDemoInstrument = (item) => {
-      const body = showDialog(item.name);
-      body.append(node("span", "Вымышленный инструмент · демо", "state-badge state-next"), node("h3", item.ticker));
-      const facts = node("dl", undefined, "info-list");
-      for (const [label, value] of [["Класс", {bond: "Облигация", share: "Акция", etf: "Фонд"}[item.instrument_type]], ["Цена в примере", money(item.price)], ["Лот", `${item.lot} бумаг`], ["Доступность", "Не проверена — инструмент вымышленный"]]) {
-        const row = node("div");
-        row.append(node("dt", label), node("dd", value));
-        facts.append(row);
-      }
-      body.append(facts, node("p", "Демонстрация структуры карточки. Доходность, рейтинг и право на покупку здесь не утверждаются.", "inline-note"), button("Открыть стратегию", () => { dialog.close(); adapter.navigate("strategy"); }));
-    };
     const startDemo = () => {
       if (sessionStarted) return;
       demo = true;
       document.body.classList.add("is-demo");
       $("#demo-banner").classList.remove("hidden");
-      const stamp = new Date().toISOString();
-      const m = (value) => ({currency: "RUB", value: String(value)});
-      const positions = demoInstruments.map((item) => ({
-        instrument_uid: item.uid, figi: item.uid, ticker: item.ticker, name: item.name,
-        instrument_type: item.instrument_type, quantity: item.quantity, quantity_lots: String(Number(item.quantity) / item.lot),
-        lot: item.lot, current_price: m(item.price), average_position_price: m(Number(item.price) * .97),
-        expected_yield_percent: "3.2", average_price: m(Number(item.price) * .97),
-        value: m(Number(item.price) * Number(item.quantity)), blocked: false, blocked_lots: "0",
-        current_nkd: m(0),
-      }));
-      const data = {refreshed_at: stamp, environment: "demo", account_name: "Демонстрационный портфель", cash: [m(125000)], blocked_cash: [m(0)], limits_loading_in_progress: false, freshness: {status: "fresh", observed_at: stamp, coverage: "complete"}, portfolio: {total: m(1250000), expected_yield_percent: "3.2", daily_yield: m(2350), daily_yield_percent: ".188", positions, asset_totals: [{kind: "bonds", money: m(750000)}, {kind: "shares", money: m(250000)}, {kind: "funds", money: m(125000)}, {kind: "currencies", money: m(125000)}]}};
-      const history = Array.from({length: 90}, (_, i) => ({captured_at: new Date(Date.now() - (89-i) * 86400000).toISOString(), nav_rub: String(1120000 + i * 1400 + Math.round(Math.sin(i / 4) * 7200))}));
-      history.at(-1).nav_rub = "1250000";
-      snapshot = data;
-      catalog = [...demoInstruments];
-      events = [{kind: "income", title: "В примере ожидается купон", detail: "1 240 ₽ · Север Энерго. Объявленная выплата ещё не является свободными деньгами.", time: stamp, view: "payouts"}, {kind: "system", title: "Всё начинается с понятной картины", detail: "Изучите структуру, сравните инструменты и настройте пример стратегии. Данные вымышлены.", time: stamp, view: "strategy"}];
-      payouts = [{instrument_uid: "СЕВЕР-01", name: "Север Энерго · выпуск 01", event_type: "coupon", expected_at: new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 15, 12).toISOString(), amount: "1240", currency: "RUB", status: "announced"}, {instrument_uid: "ГОРОД-02", name: "Город Инфра · выпуск 02", event_type: "coupon", expected_at: new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 27, 12).toISOString(), amount: "850", currency: "RUB", status: "announced"}];
-      adapter.enterDemo(data, history);
-      renderEvents();
-      renderCalendar();
-      adapter.renderAssets(catalog);
-      markPrivate();
+      snapshot = null; catalog = []; events = []; payouts = [];
+      adapter.enterDemo();
+      renderEvents(); renderCalendar(); adapter.renderAssets([]); markPrivate();
     };
     $("#start-demo").addEventListener("click", startDemo);
-    $("#exit-demo").addEventListener("click", () => location.assign("/"));
+    $("#exit-demo").addEventListener("click", () => location.assign("/?login"));
 
     const exportPortfolio = () => {
       if (!snapshot) { toast("Для экспорта сначала нужен снимок портфеля."); return; }
@@ -905,6 +870,15 @@
 
     renderAllocation();
     const help = initHelp();
+    help.attach("#public-reference-title", "Официальные данные Банка России", {
+      summary: "Показывает опубликованные ЦБ курсы и ключевую ставку. Курс ЦБ — не цена покупки валюты на бирже или у брокера.",
+      sections: [
+        ["Что меняет выбор", "Валюта и период меняют только отображаемый график. Они не меняют настройки счёта и не создают сделок."],
+        ["Откуда значения", "Каждая точка — значение, опубликованное Банком России, с датой действия. Промежутки без наблюдений не заполняются выдуманными ценами."],
+        ["Как читать", "Нажмите точку или передвиньте ползунок под графиком: рядом появятся точное значение и дата. Таблица раскрывает все полученные наблюдения."],
+        ["Когда источник недоступен", "Показана ошибка или предыдущий ответ с исходными датами. Повторное открытие не превращает старый курс в новый. Личные деньги без входа не загружаются."],
+      ],
+    });
     const allocationExplanations = {"shares": ["Желаемая часть черновика, отведённая акциям. Это не фактическая доля на счёте. Изменение не покупает акции. В каталоге подходов оно сохраняет рабочий черновик отдельно от подтверждённых условий.", "Акция — доля участия в компании. Её рыночная цена может расти или падать; выплаты владельцам зависят от решений и результатов компании. Эта строка показывает, какую долю вы хотите отвести прямым вложениям в акции в примере.", "При большей доле акций в черновике уменьшаются другие свободные доли. Если когда-либо действительно собрать такой портфель, большая его часть будет зависеть от цен акций. Сам ползунок не рассчитывает будущий доход и не обещает его рост."], "bonds": ["Желаемая часть черновика, отведённая облигациям. Это не сумма уже купленных облигаций и не обещание фиксированного результата. Реальные бумаги на счёте не меняются.", "Облигация — бумага с обязательствами заёмщика по выплатам. Условия отличаются: важны срок, цена и способность заёмщика платить. Эта строка задаёт желаемую долю облигаций только в верхнем черновике.", "Большая доля оставляет меньше места другим свободным классам. Если реализовать такой состав отдельными действиями, больше капитала будет связано с облигациями и их рисками. Это не гарантирует стабильные выплаты или отсутствие падения цены."], "funds": ["Желаемая часть черновика, отведённая фондам. Фонд — общий набор вложений, в котором вы можете купить долю. Этот процент не раскрывает состав фондов и ничего не покупает.", "Фонд может держать акции, облигации или другие активы по своим правилам. Здесь вы задаёте желаемую долю паёв фондов как отдельного класса, а не отдельные доли всех компаний внутри них.", "Больше фондов в черновике — меньше места другим свободным классам. Реальный результат зависел бы от состава выбранных фондов. Разные фонды могут пересекаться по одним компаниям; само наличие нескольких фондов не означает независимые риски."], "cash": ["Желаемая часть капитала, которую в этом черновике вы оставляете деньгами. Это процент, а не рублёвый резерв ниже. Деньги не переводятся и не блокируются.", "Эта доля показывает незанятую ценными бумагами часть примерного распределения. Например, 10% — десятая часть капитала. Она не является вкладом или обещанием дохода на свободный остаток.", "Увеличите денежную долю — уменьшатся другие свободные доли. Уменьшите — в черновике можно отвести больше ценным бумагам. Это только схема распределения: ваш действительный денежный остаток от неё не меняется."]};
     keys.forEach((key, index) => {
       const control = $(`[data-allocation-key="${key}"]`);
@@ -1085,10 +1059,7 @@
 
     return {
       isDemo: () => demo,
-      openDemoInstrument: (uid) => {
-        const item = demoInstruments.find((entry) => entry.uid === uid);
-        if (item) showDemoInstrument(item);
-      },
+      openDemoInstrument: () => toast("Для данных инструмента нужен вход и подключение собственного счёта."),
       markAllocationSaved: () => { allocationExported = JSON.stringify(allocation); },
       readAllocation: () => ({allocation: Object.fromEntries(keys.map((key, i) => [key, allocation[i]])),
         locked: [...locked].map((i) => keys[i]).sort((a, b) => a.localeCompare(b)), excluded: [...excluded].map((i) => keys[i]).sort((a, b) => a.localeCompare(b))}),
@@ -1114,7 +1085,7 @@
       attachHelp: help.attach,
       openDialog: showDialog,
       closeDialog: () => dialog.close(),
-      demoSearch: (query) => demoInstruments.filter((item) => `${item.name} ${item.ticker}`.toLocaleLowerCase("ru-RU").includes(query.toLocaleLowerCase("ru-RU"))),
+      demoSearch: () => [],
       onView: (view) => {
         help.close(false, view);
         if (dialog.open) dialog.close();

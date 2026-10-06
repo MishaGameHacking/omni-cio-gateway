@@ -708,7 +708,7 @@
     const resolved = resolveTheme(preference);
     document.body.dataset.theme = resolved;
     if (themeMeta) {
-      themeMeta.content = resolved === "dark" ? "#07111f" : "#f4f7fb";
+      themeMeta.content = resolved === "dark" ? "#090b10" : "#f4f6fa";
     }
     themeButtons.forEach((button) => {
       button.setAttribute("aria-pressed", String(button.dataset.themeOption === preference));
@@ -743,6 +743,12 @@
     drawerClose.focus();
   };
 
+  const refreshVisiblePortfolioHistory = (view) => {
+    if (["home", "portfolio"].includes(view) && lastPortfolioVisualization) {
+      renderPortfolioHistory(lastPortfolioVisualization.history || []);
+    }
+  };
+
   const renderView = (view, {scroll = true} = {}) => {
     if (!VIEW_TITLES[view]) {
       return;
@@ -768,6 +774,7 @@
     });
 
     appBack.classList.toggle("hidden", view === "home" && navigationDepth === 0);
+    refreshVisiblePortfolioHistory(view);
 
     if (view !== "portfolio") {
       stopInstrumentMarketStream();
@@ -1350,12 +1357,27 @@
       .sort((left, right) => numericValue(right.money.value) - numericValue(left.money.value));
     const visible = Number.isInteger(limit) && limit > 0 ? ordered.slice(0, limit) : ordered;
 
+    const complete = (totals || []).every((item) => finiteMarketNumber(item.money?.value) !== null
+      && finiteMarketNumber(item.money.value) >= 0 && item.money.currency === positive[0].money.currency);
+    if (complete) {
+      const colors = {shares: "var(--chart-shares)", bonds: "var(--chart-bonds)", funds: "var(--chart-funds)", currencies: "var(--chart-cash)"};
+      const ring = uiNode("div", undefined, "allocation-ring");
+      ring.setAttribute("aria-hidden", "true");
+      let angle = 0;
+      const stops = ordered.map((item) => {
+        const start = angle; angle += numericValue(item.money.value) / sum * 360;
+        return `${colors[item.kind] || "var(--chart-other)"} ${start}deg ${angle}deg`;
+      });
+      ring.style.background = `conic-gradient(${stops.join(",")})`;
+      ring.append(uiNode("span", "Состав")); container.append(ring);
+    } else container.append(uiNode("p", "Распределение предварительное: есть неизвестные, отрицательные или несопоставимые значения. Круговая диаграмма не строится.", "field-hint"));
     visible.forEach((item) => {
       const value = numericValue(item.money.value);
       const share = Math.max(0, Math.min(100, (value / sum) * 100));
 
       const row = document.createElement("div");
       row.className = "allocation-row";
+      row.dataset.assetKind = String(item.kind);
 
       const label = document.createElement("div");
       label.className = "allocation-label";
@@ -1459,7 +1481,7 @@
   const setChartFacts = (container, history) => {
     const values = history
       .map((item) => ({
-        value: Number(item.nav_rub),
+        value: finiteMarketNumber(item.nav_rub),
         capturedAt: item.captured_at,
       }))
       .filter((item) => Number.isFinite(item.value));
@@ -1496,120 +1518,308 @@
     return node;
   };
 
-  const renderSeriesChart = (
-    svg,
-    points,
-    {
-      valueKey = "value",
-      timeKey = "captured_at",
-      minimumPoints = 2,
-      zeroLine = false,
-    } = {},
-  ) => {
+  // Geometry is approximate pixels; inspected values retain the source decimal text.
+  const finiteMarketNumber = (value) => {
+    if ((typeof value !== "string" && typeof value !== "number")
+        || (typeof value === "string" && !value.trim())) return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  };
+
+  const chartDecimalText = (value, unit = "₽") => {
+    const text = String(value ?? "");
+    if (!/^-?\d+(?:\.\d+)?$/.test(text)) return "Нет значения";
+    const negative = text.startsWith("-");
+    const [whole, fraction = ""] = text.replace(/^-/, "").split(".");
+    return `${negative ? "−" : ""}${BigInt(whole).toLocaleString("ru-RU")}${fraction ? "," + fraction : ""}${unit ? " " + unit : ""}`;
+  };
+
+  const clearDataChart = (svg) => {
     svg.replaceChildren();
-    const clean = (points || [])
-      .map((item) => ({
-        time: new Date(item?.[timeKey]).getTime(),
-        value: Number(item?.[valueKey]),
-      }))
-      .filter((item) => Number.isFinite(item.time) && Number.isFinite(item.value));
-    if (clean.length < minimumPoints) {
-      return false;
-    }
+    if (svg.nextElementSibling?.dataset.chartOwner === svg.id) svg.nextElementSibling.remove();
+    svg.onpointermove = null;
+    svg.onclick = null;
+  };
 
-    const viewBox = String(svg.getAttribute("viewBox") || "0 0 900 260")
-      .split(/\s+/u)
-      .map(Number);
-    const width = Number.isFinite(viewBox[2]) ? viewBox[2] : 900;
-    const height = Number.isFinite(viewBox[3]) ? viewBox[3] : 260;
-    const padX = 24;
-    const padY = 20;
-    const times = clean.map((item) => item.time);
-    const values = clean.map((item) => item.value);
-    const minTime = Math.min(...times);
-    const maxTime = Math.max(...times);
-    let minValue = Math.min(...values);
-    let maxValue = Math.max(...values);
-    if (zeroLine) {
-      minValue = Math.min(minValue, 0);
-      maxValue = Math.max(maxValue, 0);
-    }
-    if (minValue === maxValue) {
-      const padding = Math.max(Math.abs(minValue) * 0.02, 1);
-      minValue -= padding;
-      maxValue += padding;
-    }
-    const timeSpan = Math.max(maxTime - minTime, 1);
-    const valueSpan = Math.max(maxValue - minValue, 1);
+  const chartDimensions = (svg) => {
+    const width = Math.max(280, Math.round(svg.getBoundingClientRect().width || 720));
+    const height = svg.id === "instrument-market-chart" ? 320 : 240;
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    return {width, height, left: 62, right: 18, top: 26, bottom: 30};
+  };
 
-    const x = (time) => padX + ((time - minTime) / timeSpan) * (width - padX * 2);
-    const y = (value) => (
-      padY + ((maxValue - value) / valueSpan) * (height - padY * 2)
-    );
+  const chartText = (svg, text, x, y, anchor = "start") => {
+    const label = chartNode("text", {x, y, "text-anchor": anchor, class: "chart-axis-label"});
+    label.textContent = text;
+    svg.append(label);
+  };
 
+  const chartAxes = (svg, box, {minimum, maximum, first, last, unit, plotBottom, calendarDates = false}) => {
+    const compact = (value) => new Intl.NumberFormat("ru-RU", {
+      maximumFractionDigits: Math.abs(value) < 100 ? 4 : 2, notation: "compact",
+    }).format(value);
+    chartText(svg, unit, box.left, 14);
     for (let index = 0; index < 4; index += 1) {
-      const lineY = padY + ((height - padY * 2) * index) / 3;
-      const grid = chartNode("line", {
-        x1: padX,
-        y1: lineY,
-        x2: width - padX,
-        y2: lineY,
-        class: "portfolio-chart-grid",
-      });
-      svg.append(grid);
+      const y = box.top + (plotBottom - box.top) * index / 3;
+      svg.append(chartNode("line", {x1: box.left, y1: y, x2: box.width - box.right, y2: y, class: "portfolio-chart-grid"}));
+      chartText(svg, compact(maximum - (maximum - minimum) * index / 3), box.left - 8, y + 4, "end");
     }
-    if (zeroLine && minValue < 0 && maxValue > 0) {
-      svg.append(chartNode("line", {
-        x1: padX,
-        y1: y(0),
-        x2: width - padX,
-        y2: y(0),
-        class: "portfolio-chart-zero",
-      }));
-    }
+    let timeOptions = {day: "2-digit", month: "short"};
+    if (calendarDates) timeOptions.timeZone = "UTC";
+    else if (last - first < 36 * 3600000) timeOptions = {hour: "2-digit", minute: "2-digit"};
+    const shortDate = (value) => new Intl.DateTimeFormat("ru-RU", timeOptions).format(new Date(value));
+    chartText(svg, shortDate(first), box.left, box.height - 6);
+    chartText(svg, shortDate(last), box.width - box.right, box.height - 6, "end");
+  };
 
-    const path = clean
-      .map((item, index) => (
-        `${index === 0 ? "M" : "L"} ${x(item.time).toFixed(2)} ${y(item.value).toFixed(2)}`
-      ))
-      .join(" ");
-    if (!zeroLine) {
-      const firstPoint = clean[0];
-      const lastPoint = clean[clean.length - 1];
-      svg.append(chartNode("path", {
-        d: `${path} L ${x(lastPoint.time).toFixed(2)} ${(height - padY).toFixed(2)} L ${x(firstPoint.time).toFixed(2)} ${(height - padY).toFixed(2)} Z`,
-        class: "portfolio-chart-area",
-      }));
+  const addChartInspector = (svg, points, x, unit, {interactive = true} = {}) => {
+    const wrapper = uiNode("div", undefined, "chart-inspector");
+    wrapper.dataset.chartOwner = svg.id;
+    if (svg.id !== "public-reference-chart") wrapper.dataset.private = "";
+    const output = uiNode("output", "Выберите точку для точного значения", "chart-selected-value");
+    const range = uiNode("input");
+    range.type = "range"; range.min = "0"; range.max = String(points.length - 1);
+    range.value = String(points.length - 1); range.step = "1";
+    range.setAttribute("aria-label", "Точка графика: дата и точное значение");
+    const selectPoint = (index) => {
+      const point = points[index];
+      if (!point) return;
+      range.value = String(index);
+      const dateLabel = point.calendarDate ? formatCalendarDate(point.calendarDate) : formatDateTime(point.time);
+      output.textContent = `${dateLabel} · ${chartDecimalText(point.raw, unit)}`;
+      range.setAttribute("aria-valuetext", output.textContent);
+      svg.querySelector(".chart-selected-marker")?.remove();
+      svg.append(chartNode("line", {x1: x(point.time), x2: x(point.time), y1: 22, y2: Number(svg.viewBox.baseVal.height) - 30, class: "chart-selected-marker"}));
+    };
+    if (interactive) {
+      range.addEventListener("input", () => selectPoint(Number(range.value)));
+      const inspect = (event) => {
+        const rect = svg.getBoundingClientRect();
+        if (!rect.width) return;
+        const value = (event.clientX - rect.left) * svg.viewBox.baseVal.width / rect.width;
+        let chosen = 0;
+        points.forEach((point, index) => { if (Math.abs(x(point.time) - value) < Math.abs(x(points[chosen].time) - value)) chosen = index; });
+        selectPoint(chosen);
+      };
+      svg.onpointermove = (event) => { if (event.pointerType === "mouse") inspect(event); };
+      svg.onclick = inspect;
+      wrapper.append(output, range);
     }
-    svg.append(chartNode("path", {
-      d: path,
-      class: "portfolio-chart-line",
-      fill: "none",
-    }));
+    const details = uiNode("details", undefined, "chart-data-table");
+    details.append(uiNode("summary", `Точные значения · ${points.length}`));
+    const table = uiNode("table");
+    const head = uiNode("thead"); const row = uiNode("tr");
+    for (const title of ["Дата источника", `Значение, ${unit}`]) { const cell = uiNode("th", title); cell.scope = "col"; row.append(cell); }
+    head.append(row); table.append(head);
+    const body = uiNode("tbody");
+    for (const point of points) {
+      const item = uiNode("tr");
+      const dateLabel = point.calendarDate ? formatCalendarDate(point.calendarDate) : formatDateTime(point.time);
+      item.append(uiNode("td", dateLabel), uiNode("td", chartDecimalText(point.raw, unit)));
+      body.append(item);
+    }
+    table.append(body); details.append(table); wrapper.append(details);
+    svg.after(wrapper);
+  };
 
-    const first = clean[0];
-    const last = clean[clean.length - 1];
-    [first, last].forEach((item) => {
-      svg.append(chartNode("circle", {
-        cx: x(item.time),
-        cy: y(item.value),
-        r: 4,
-        class: "portfolio-chart-point",
+  const seriesPoint = (item, {valueKey, timeKey, calendarDates}) => {
+    const raw = item?.[valueKey];
+    const value = finiteMarketNumber(raw);
+    const rawTime = item?.[timeKey];
+    if (value === null || typeof rawTime !== "string") return null;
+    const coordinate = calendarDates ? `${rawTime}T00:00:00Z` : rawTime;
+    const time = new Date(coordinate).getTime();
+    if (!Number.isFinite(time)) return null;
+    // Calendar facts have no local time zone. UTC is only their plot coordinate.
+    if (calendarDates && (!/^\d{4}-\d{2}-\d{2}$/.test(rawTime)
+        || new Date(time).toISOString().slice(0, 10) !== rawTime)) return null;
+    return {time, value, raw, calendarDate: calendarDates ? rawTime : null};
+  };
+
+  const seriesSegments = (points, options) => {
+    const clean = [];
+    let segment = 0;
+    const observations = Array.isArray(points) ? points.slice(0, 3000) : [];
+    for (const item of observations) {
+      const point = seriesPoint(item, options);
+      // Invalid or absent observations break the line, never become zero.
+      if (!point) { segment += 1; continue; }
+      const previous = clean.at(-1);
+      if (previous && (point.time <= previous.time || point.time - previous.time > options.maxGapMs)) segment += 1;
+      clean.push({...point, segment});
+    }
+    return clean;
+  };
+
+  const seriesPath = (group, x, y, step) => group.map((point, index) => {
+    const horizontal = x(point.time).toFixed(2);
+    const vertical = y(point.value).toFixed(2);
+    if (index === 0) return `M ${horizontal} ${vertical}`;
+    if (step) return `H ${horizontal} V ${vertical}`;
+    return `L ${horizontal} ${vertical}`;
+  }).join(" ");
+
+  const drawSeriesSegments = (svg, clean, {x, y, step, zeroLine, plotBottom}) => {
+    const groups = new Map();
+    for (const item of clean) {
+      if (!groups.has(item.segment)) groups.set(item.segment, []);
+      groups.get(item.segment).push(item);
+    }
+    for (const group of groups.values()) {
+      const path = seriesPath(group, x, y, step);
+      if (!zeroLine && group.length > 1) svg.append(chartNode("path", {
+        d: `${path} L ${x(group.at(-1).time)} ${plotBottom} L ${x(group[0].time)} ${plotBottom} Z`, class: "portfolio-chart-area",
       }));
-    });
+      svg.append(chartNode("path", {d: path, class: "portfolio-chart-line", fill: "none"}));
+      const endpoints = group.length > 1 ? [group[0], group.at(-1)] : [group[0]];
+      for (const point of endpoints) {
+        svg.append(chartNode("circle", {cx: x(point.time), cy: y(point.value), r: 3, class: "portfolio-chart-point"}));
+      }
+    }
+  };
+
+  const renderSeriesChart = (svg, points, {
+    valueKey = "value", timeKey = "captured_at", minimumPoints = 2,
+    zeroLine = false, unit = "₽", step = false, maxGapMs = 7 * 86400000, calendarDates = false,
+  } = {}) => {
+    clearDataChart(svg);
+    const clean = seriesSegments(points, {valueKey, timeKey, calendarDates, maxGapMs});
+    if (clean.length < minimumPoints) return false;
+    const box = chartDimensions(svg);
+    const lowTime = Math.min(...clean.map((item) => item.time));
+    const highTime = Math.max(...clean.map((item) => item.time));
+    let minimum = Math.min(...clean.map((item) => item.value), ...(zeroLine ? [0] : []));
+    let maximum = Math.max(...clean.map((item) => item.value), ...(zeroLine ? [0] : []));
+    if (minimum === maximum) { const pad = Math.max(Math.abs(minimum) * .01, .01); minimum -= pad; maximum += pad; }
+    const plotBottom = box.height - box.bottom;
+    const x = (time) => box.left + (time - lowTime) / Math.max(highTime - lowTime, 1) * (box.width - box.left - box.right);
+    const y = (value) => box.top + (maximum - value) / (maximum - minimum) * (plotBottom - box.top);
+    chartAxes(svg, box, {minimum, maximum, first: lowTime, last: highTime, unit, plotBottom, calendarDates});
+    drawSeriesSegments(svg, clean, {x, y, step, zeroLine, plotBottom});
+    addChartInspector(svg, clean, x, unit, {interactive: svg.id !== "instrument-market-chart"});
     return true;
   };
 
-  const finiteMarketNumber = (value) => {
-    if (
-      value === null
-      || value === undefined
-      || (typeof value === "string" && !value.trim())
-    ) {
-      return null;
+  const renderReferenceHistory = (chart, series, currency) => {
+    clearDataChart(chart);
+    if (!Array.isArray(series?.points)) {
+      return "История ЦБ сейчас недоступна. График не заменён примером. Повторите получение позже.";
     }
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : null;
+    const shown = renderSeriesChart(chart, series.points, {
+      timeKey: "effective_date", calendarDates: true, unit: `₽ / ${currency}`,
+      step: true, maxGapMs: 10 * 86400000,
+    });
+    if (!shown) return "Источник не вернул достаточно наблюдений для линии. Значения не дорисованы.";
+    const stale = series.freshness === "cached"
+      ? " Обновление источника не удалось: показана сохранённая версия." : "";
+    return `Официальный курс за 1 ${currency}. Ступени — даты действия курса; это не биржевые сделки. Получено: ${formatDateTime(series.fetched_at)}.${stale}`;
+  };
+
+  const initializePublicReference = () => {
+    const card = requiredElement("#public-reference-card");
+    const chart = requiredElement("#public-reference-chart");
+    const status = requiredElement("#public-reference-status");
+    const note = requiredElement("#public-reference-note");
+    const currency = requiredElement("#public-reference-currency");
+    const period = requiredElement("#public-reference-period");
+    const refresh = requiredElement("#public-reference-refresh");
+    const indicators = requiredElement("#public-reference-indicators");
+    let controller = null;
+    let revision = 0;
+    let active = false;
+    let timer = null;
+    let payload = null;
+    const render = (data) => {
+      indicators.replaceChildren();
+      const series = data.history;
+      note.textContent = renderReferenceHistory(chart, series, data.currency);
+      const values = data.indicators;
+      for (const [key, title, unit] of [["key_rate", "Ключевая ставка", "%"], ["usd_rub", "Доллар · ЦБ", "₽"], ["eur_rub", "Евро · ЦБ", "₽"]]) {
+        const item = values?.[key];
+        const tile = uiNode("div", undefined, "public-reference-tile");
+        tile.append(uiNode("span", title), uiNode("strong", item ? chartDecimalText(item.value, unit) : "Нет данных"),
+          uiNode("small", item ? `Дата действия: ${item.effective_date}` : "Источник не ответил"));
+        indicators.append(tile);
+      }
+      const cached = series?.freshness === "cached" || values?.freshness === "cached";
+      const label = data.status === "available" && !cached ? "Данные источника" : "Неполные или сохранённые данные";
+      status.textContent = data.status === "unavailable" ? "Источник недоступен" : label;
+      card.dataset.state = data.status;
+    };
+    const cancel = () => {
+      revision += 1; controller?.abort(); controller = null;
+      clearTimeout(timer); timer = null; refresh.disabled = false;
+    };
+    const load = async () => {
+      if (!active || document.hidden || controller) return;
+      clearTimeout(timer);
+      const expected = ++revision;
+      const selectedCurrency = currency.value; const selectedPeriod = period.value;
+      controller = new AbortController();
+      const requestController = controller;
+      const deadline = setTimeout(() => requestController.abort(), 22000);
+      refresh.disabled = true; status.textContent = "Получаем данные ЦБ…";
+      try {
+        const response = await fetch(`/api/public/market-reference?currency=${encodeURIComponent(selectedCurrency)}&period=${encodeURIComponent(selectedPeriod)}`, {
+          credentials: "omit", cache: "no-store", signal: requestController.signal, headers: {Accept: "application/json"},
+        });
+        if (!response.ok) throw new Error("reference_unavailable");
+        const data = await response.json();
+        if (expected !== revision || !active) return;
+        if (data.personal_data !== false || data.source !== "Bank of Russia"
+          || data.currency !== selectedCurrency || data.period !== selectedPeriod
+          || !["available", "partial", "unavailable"].includes(data.status)) throw new Error("reference_contract");
+        payload = data; render(data);
+      } catch {
+        // Fetch, timeout and invalid-provider responses share this safe recovery
+        // state. Upstream details must not appear as financial observations.
+        if (expected !== revision || !active) return;
+        status.textContent = "Не удалось обновить";
+        note.textContent = payload
+          ? "Показан предыдущий ответ ЦБ с исходными датами. Новые значения не получены."
+          : "Источник недоступен. Данные не заменены нулём или примером. Нажмите «Обновить».";
+      } finally {
+        clearTimeout(deadline);
+        if (expected === revision) {
+          controller = null; refresh.disabled = false;
+          if (active && !document.hidden) timer = setTimeout(() => { void load(); }, 5 * 60 * 1000);
+        }
+      }
+    };
+    const change = () => { cancel(); payload = null; clearDataChart(chart); indicators.replaceChildren(); void load(); };
+    currency.addEventListener("change", change); period.addEventListener("change", change);
+    refresh.addEventListener("click", () => { void load(); });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) cancel(); else if (active) void load();
+    });
+    const showLogin = () => {
+      authCard.dataset.surface = "login";
+      requiredElement("#login-title").focus({preventScroll: true});
+    };
+    requiredElement("#public-login").addEventListener("click", showLogin);
+    requiredElement("#public-back").addEventListener("click", () => {
+      authCard.dataset.surface = "public";
+      requiredElement("#auth-title").focus({preventScroll: true});
+    });
+    requiredElement("#public-theme").addEventListener("click", () => {
+      const next = document.body.dataset.theme === "dark" ? "light" : "dark";
+      saveTheme(next); applyTheme(next);
+    });
+    return {
+      start: () => {
+        active = true;
+        const params = new URLSearchParams(location.search);
+        if (params.has("login") || params.has("auth_error")) authCard.dataset.surface = "login";
+        void load();
+      },
+      stop: () => { active = false; cancel(); payload = null; clearDataChart(chart); indicators.replaceChildren(); },
+      enter: () => {
+        requiredElement("#home-public-reference").append(card);
+        active = true;
+        if (payload) render(payload); else void load();
+      },
+      redraw: () => { if (active && payload && card.getClientRects().length) render(payload); },
+    };
   };
 
   const marketPriceText = (value) => {
@@ -1617,26 +1827,14 @@
     if (numeric === null) {
       return "—";
     }
-    const formatted = new Intl.NumberFormat("ru-RU", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 9,
-    }).format(numeric);
-    if (instrumentMarketQuoteUnit === "point") {
-      return `${formatted} п.`;
-    }
-    if (instrumentMarketCurrency) {
-      return formatMoney({
-        currency: instrumentMarketCurrency,
-        value: String(value),
-      });
-    }
-    return formatted;
+    const unit = instrumentMarketQuoteUnit === "point" ? "п." : instrumentMarketCurrency;
+    return chartDecimalText(value, unit === "RUB" ? "₽" : unit);
   };
 
   const cleanMarketCandles = (candles) => (Array.isArray(candles) ? candles : [])
     .map((candle) => ({
       ...candle,
-      timestamp: new Date(candle?.time).getTime(),
+      timestamp: typeof candle?.time === "string" ? new Date(candle.time).getTime() : Number.NaN,
       openValue: finiteMarketNumber(candle?.open),
       highValue: finiteMarketNumber(candle?.high),
       lowValue: finiteMarketNumber(candle?.low),
@@ -1657,70 +1855,38 @@
     .sort((left, right) => left.timestamp - right.timestamp);
 
   const renderMarketCandles = (svg, candles) => {
-    svg.replaceChildren();
+    clearDataChart(svg);
     const clean = cleanMarketCandles(candles);
-    if (!clean.length) {
-      return false;
-    }
-
-    const viewBox = String(svg.getAttribute("viewBox") || "0 0 900 320")
-      .split(/\s+/u)
-      .map(Number);
-    const width = Number.isFinite(viewBox[2]) ? viewBox[2] : 900;
-    const height = Number.isFinite(viewBox[3]) ? viewBox[3] : 320;
-    const padX = 30;
-    const padY = 22;
-    const plotWidth = width - padX * 2;
-    const plotHeight = height - padY * 2;
-    let minValue = Math.min(...clean.map((item) => item.lowValue));
-    let maxValue = Math.max(...clean.map((item) => item.highValue));
-    if (minValue === maxValue) {
-      const padding = Math.max(Math.abs(minValue) * 0.01, 1);
-      minValue -= padding;
-      maxValue += padding;
-    }
-    const valueSpan = maxValue - minValue;
-    const y = (value) => padY + ((maxValue - value) / valueSpan) * plotHeight;
+    if (!clean.length) return false;
+    const box = chartDimensions(svg);
+    const plotBottom = box.height - 102;
+    const plotWidth = box.width - box.left - box.right;
+    let minimum = Math.min(...clean.map((item) => item.lowValue));
+    let maximum = Math.max(...clean.map((item) => item.highValue));
+    if (minimum === maximum) { const pad = Math.max(Math.abs(minimum) * .01, .01); minimum -= pad; maximum += pad; }
+    const y = (value) => box.top + (maximum - value) / (maximum - minimum) * (plotBottom - box.top);
     const step = plotWidth / clean.length;
-    const bodyWidth = Math.max(1.5, Math.min(12, step * 0.62));
-
-    for (let index = 0; index < 4; index += 1) {
-      const lineY = padY + (plotHeight * index) / 3;
-      svg.append(chartNode("line", {
-        x1: padX,
-        y1: lineY,
-        x2: width - padX,
-        y2: lineY,
-        class: "portfolio-chart-grid",
-      }));
-    }
-
+    const bodyWidth = Math.max(.6, Math.min(12, step * .62));
+    const unit = instrumentMarketQuoteUnit === "point" ? "п." : instrumentMarketCurrency || "цена";
+    chartAxes(svg, box, {minimum, maximum, first: clean[0].timestamp, last: clean.at(-1).timestamp, unit, plotBottom});
+    const volumes = clean.map((item) => finiteMarketNumber(item.volume_lots));
+    const maximumVolume = Math.max(0, ...volumes.filter((value) => value !== null && value >= 0));
+    chartText(svg, "Объём, лоты · от 0", box.left, plotBottom + 24);
     clean.forEach((candle, index) => {
-      const x = padX + step * (index + 0.5);
+      const x = box.left + step * (index + .5);
       let direction = "market-candle-flat";
-      if (candle.closeValue > candle.openValue) {
-        direction = "market-candle-up";
-      } else if (candle.closeValue < candle.openValue) {
-        direction = "market-candle-down";
-      }
+      if (candle.closeValue > candle.openValue) direction = "market-candle-up";
+      else if (candle.closeValue < candle.openValue) direction = "market-candle-down";
       const incomplete = candle.is_complete === false ? " market-candle-incomplete" : "";
-      svg.append(chartNode("line", {
-        x1: x,
-        y1: y(candle.highValue),
-        x2: x,
-        y2: y(candle.lowValue),
-        class: `market-candle-wick ${direction}${incomplete}`,
-      }));
-      const bodyTop = Math.min(y(candle.openValue), y(candle.closeValue));
-      const bodyHeight = Math.max(1.5, Math.abs(y(candle.openValue) - y(candle.closeValue)));
-      svg.append(chartNode("rect", {
-        x: x - bodyWidth / 2,
-        y: bodyTop,
-        width: bodyWidth,
-        height: bodyHeight,
-        rx: Math.min(1.5, bodyWidth / 4),
-        class: `market-candle-body ${direction}${incomplete}`,
-      }));
+      svg.append(chartNode("line", {x1: x, y1: y(candle.highValue), x2: x, y2: y(candle.lowValue), class: `market-candle-wick ${direction}${incomplete}`}));
+      svg.append(chartNode("rect", {x: x - bodyWidth / 2, y: Math.min(y(candle.openValue), y(candle.closeValue)), width: bodyWidth,
+        height: Math.max(1, Math.abs(y(candle.openValue) - y(candle.closeValue))), rx: 1, class: `market-candle-body ${direction}${incomplete}`}));
+      const volume = volumes[index];
+      if (maximumVolume > 0 && volume !== null && volume >= 0) {
+        const height = 38 * volume / maximumVolume;
+        svg.append(chartNode("rect", {x: x - bodyWidth / 2, y: box.height - box.bottom - height, width: bodyWidth, height,
+          class: `market-volume-bar ${direction}`, "data-volume-lots": candle.volume_lots}));
+      }
     });
     return true;
   };
@@ -1757,7 +1923,7 @@
   const resetInstrumentMarket = (message = "Выберите инструмент для рыночного графика.") => {
     instrumentMarketGeneration += 1;
     instrumentMarketPayload = null;
-    instrumentMarketChart.replaceChildren();
+    clearDataChart(instrumentMarketChart);
     instrumentMarketScrubber.min = "0";
     instrumentMarketScrubber.max = "0";
     instrumentMarketScrubber.value = "0";
@@ -1838,7 +2004,7 @@
     return [
       `Свечей: ${candles.length}.`,
       completionNote,
-      "Время свечи и время загрузки — разные значения.",
+      "Время свечи и время загрузки — разные значения. Свечи расположены последовательно; пропущенные интервалы не дорисовываются. Объём — в лотах.",
     ].join(" ");
   };
 
@@ -1861,16 +2027,17 @@
           instrumentMarketChart,
           candles.map((item) => ({
             time: item.time,
-            value: item.closeValue,
+            value: item.close,
           })),
           {
             timeKey: "time",
             valueKey: "value",
             minimumPoints: 2,
+            unit: instrumentMarketQuoteUnit === "point" ? "п." : instrumentMarketCurrency || "цена",
           },
         );
     if (!rendered) {
-      instrumentMarketChart.replaceChildren();
+      clearDataChart(instrumentMarketChart);
     }
     const incompleteCount = candles.filter((candle) => candle.is_complete === false).length;
     instrumentMarketSource.textContent = [
@@ -1912,8 +2079,8 @@
 
   const instrumentMarketInspectionX = (candles, index, width) => {
     if (instrumentMarketMode === "candles") {
-      const padX = 30;
-      const plotWidth = width - padX * 2;
+      const padX = 62;
+      const plotWidth = width - padX - 18;
       return padX + (plotWidth / candles.length) * (index + 0.5);
     }
 
@@ -1923,8 +2090,8 @@
     if (!first || !last || !candle) {
       return null;
     }
-    const padX = 24;
-    const plotWidth = width - padX * 2;
+    const padX = 62;
+    const plotWidth = width - padX - 18;
     const timeSpan = Math.max(last.timestamp - first.timestamp, 1);
     return padX + ((candle.timestamp - first.timestamp) / timeSpan) * plotWidth;
   };
@@ -2314,15 +2481,15 @@
     let peak = null;
     return (history || [])
       .map((item) => {
-        const value = Number(item.nav_rub);
-        if (!Number.isFinite(value) || value < 0) {
+        const value = finiteMarketNumber(item.nav_rub);
+        if (value === null || !Number.isFinite(value) || value < 0) {
           return null;
         }
         peak = peak === null ? value : Math.max(peak, value);
         const drawdown = peak > 0 ? ((value / peak) - 1) * 100 : 0;
         return {
           captured_at: item.captured_at,
-          drawdown_percent: drawdown,
+          drawdown_percent: drawdown.toFixed(4),
         };
       })
       .filter(Boolean);
@@ -2335,9 +2502,8 @@
     const chartPoints = points
       .map((item) => ({
         captured_at: item.captured_at,
-        value: Number(item.nav_rub),
-      }))
-      .filter((item) => Number.isFinite(item.value));
+        value: item.nav_rub,
+      }));
     const enough = renderSeriesChart(
       portfolioHistoryChart,
       chartPoints,
@@ -2347,9 +2513,8 @@
     const homeChartPoints = homePoints
       .map((item) => ({
         captured_at: item.captured_at,
-        value: Number(item.nav_rub),
-      }))
-      .filter((item) => Number.isFinite(item.value));
+        value: item.nav_rub,
+      }));
     const homeEnough = renderSeriesChart(
       homeHistoryChart,
       homeChartPoints,
@@ -2398,10 +2563,11 @@
         valueKey: "drawdown_percent",
         minimumPoints: 5,
         zeroLine: true,
+        unit: "%",
       },
     );
     if (!drawdownReady) {
-      portfolioDrawdownChart.replaceChildren();
+      clearDataChart(portfolioDrawdownChart);
       setStateBadge(portfolioDrawdownState, "Недостаточно истории", "state-next");
       portfolioDrawdownNote.textContent = (
         "Для drawdown нужно минимум пять подтверждённых снимков одного счёта."
@@ -2413,7 +2579,7 @@
       setStateBadge(portfolioDrawdownState, "История подтверждена", "state-ok");
       portfolioDrawdownNote.textContent = (
         `Максимальная наблюдавшаяся просадка: ${formatPercent(minimum)}. `
-        + "Расчёт только по сохранённым NAV snapshot."
+        + "Снижение стоимости от её максимума по сохранённым снимкам. Пополнения и выводы не исключены; это не чистая доходность инвестиций."
       );
     }
   };
@@ -2760,9 +2926,9 @@
   const resetPortfolioVisualization = (message = "История портфеля пока недоступна.") => {
     portfolioVisualizationLoaded = false;
     lastPortfolioVisualization = null;
-    portfolioHistoryChart.replaceChildren();
-    homeHistoryChart.replaceChildren();
-    portfolioDrawdownChart.replaceChildren();
+    clearDataChart(portfolioHistoryChart);
+    clearDataChart(homeHistoryChart);
+    clearDataChart(portfolioDrawdownChart);
     setChartFacts(portfolioHistoryFacts, []);
     setChartFacts(homeHistoryFacts, []);
     setStateBadge(portfolioHistoryState, "Нет истории", "state-next");
@@ -3084,6 +3250,7 @@
     instrumentMarketCurrency = "";
     instrumentMarketQuoteUnit = "money";
     resetInstrumentMarket();
+    clearDataChart(instrumentHistoryChart);
     instrumentDetail.classList.add("hidden");
     instrumentDetailLoading.classList.add("hidden");
     instrumentDetailContent.classList.add("hidden");
@@ -6859,6 +7026,7 @@
 
   const showProfile = (profile) => {
     if (profileContextLost || workspace?.isDemo()) return;
+    publicReference.stop();
     workspace?.setSession();
     if (currentProfileId && currentProfileId !== profile.public_id) {
       pauseProfileContext();
@@ -6895,6 +7063,7 @@
     settingsEditors.forEach((editor) => editor.reset());
     profilePanel.classList.add("hidden");
     authCard.classList.remove("hidden");
+    publicReference.start();
   };
 
   const showCallbackResult = () => {
@@ -7647,7 +7816,7 @@
     }
   });
 
-  const enterDemoWorkspace = (data, historyPoints) => {
+  const enterDemoWorkspace = () => {
     stopCbrIndicators();
     window.clearInterval(owlTimer);
     invalidatePortfolioRequest();
@@ -7657,30 +7826,23 @@
     currentProfileId = "";
     tbankIsConnected = false;
     portfolioVisualizationLoaded = true;
-    for (const element of [profileId, drawerProfileId, profilePageId, supportProfileId, settingsProfileId]) element.textContent = "Демо";
+    for (const element of [profileId, drawerProfileId, profilePageId, supportProfileId, settingsProfileId]) element.textContent = "Гость";
     initializeNavigation();
-    renderPortfolio(data);
-    renderPortfolioVisualization({history: historyPoints, latest: null});
-    clearPortfolioFreshnessTimer();
-    homeHistoryNote.textContent = "Вымышленная история за 90 дней. Демонстрация интерфейса, не результат инвестиций.";
-    portfolioHistoryNote.textContent = homeHistoryNote.textContent;
-    portfolioRefreshed.textContent = "Демонстрационные данные";
-    homeSnapshotTime.textContent = "Вымышленный портфель · без подключения";
-    topConnectionText.textContent = "Демонстрация";
-    overviewAccount.textContent = "Посмотрите, как устроен OmniCIO";
-    overviewConnectionText.textContent = "Для своего портфеля перейдите ко входу и подключите счёт.";
-    setStateBadge(homeHistoryState, "Демо", "state-next");
-    setStateBadge(portfolioStateBadge, "Демо", "state-next");
-    for (const badge of [homePortfolioState, homePortfolioSummaryState, owlState]) setStateBadge(badge, "Демо", "state-next");
-    portfolioDataNotice.textContent = "Все значения на этом экране вымышлены. Вход и доступ к брокеру не используются.";
-    setHomeAttentionBucket("connection", [{severity: "info", title: "Демонстрационный режим", detail: "Познакомьтесь с интерфейсом без реальных сделок.", view: "assets"}]);
+    resetPortfolioVisualization("Войдите и подключите свой счёт: чужая или вымышленная история не используется.");
+    homeSnapshotTime.textContent = "Личный счёт не подключён";
+    topConnectionText.textContent = "Без аккаунта";
+    overviewAccount.textContent = "Открытый обзор OmniCIO";
+    overviewConnectionText.textContent = "Официальные справочные данные доступны без входа. Для портфеля нужен ваш счёт.";
+    for (const badge of [homePortfolioState, homePortfolioSummaryState, owlState, portfolioStateBadge]) setStateBadge(badge, "Нужен вход", "state-next");
+    portfolioDataNotice.textContent = "Данные портфеля недоступны без входа и подключения. Нулевой или примерный баланс не подставляется.";
     for (const form of [tbankForm, tbankAccountForm, liveMandateForm, deleteAccountForm]) {
       form.querySelectorAll("input,select,button").forEach((control) => { control.disabled = true; });
     }
     for (const control of [portfolioRefresh, analysisRefresh, tbankDisconnect, logoutButton, deleteAccountStart, executionRefresh]) control.disabled = true;
-    showMessage(tbankMessage, "В демо подключение счёта недоступно. Перейдите ко входу для своего аккаунта.");
-    showMessage(executionMessage, "Деморежим: заявки брокеру не отправляются.");
-    showMessage(analysisStatus, "Деморежим: персональный анализ не запрашивается. Изучите каталог, структуру портфеля и черновик стратегии.");
+    showMessage(tbankMessage, "Для подключения своего счёта сначала войдите через VK ID.");
+    showMessage(executionMessage, "Без аккаунта заявки недоступны и не отправляются.");
+    showMessage(analysisStatus, "Для персонального анализа нужен вход и подключение собственного счёта.");
+    publicReference.enter();
   };
 
   workspace = window.OmniWorkspace.init({
@@ -7721,6 +7883,17 @@
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   });
 
+  const publicReference = initializePublicReference();
+  let chartResizeTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(chartResizeTimer);
+    chartResizeTimer = setTimeout(() => {
+      publicReference.redraw();
+      if (profileContextLost) return;
+      if (lastPortfolioVisualization) renderPortfolioHistory(lastPortfolioVisualization.history || []);
+      if (instrumentMarketPayload && currentView === "portfolio") renderInstrumentMarketChart(instrumentMarketPayload);
+    }, 180);
+  });
   renderReleaseInfo();
   applyTheme(storedTheme());
   refreshInstallState();

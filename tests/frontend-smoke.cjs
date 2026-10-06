@@ -379,17 +379,60 @@ window.addEventListener("load", () => setTimeout(async () => {
       window.__smokeResult = {passed: true, checks: results.length, viewport: innerWidth, mode};
       return;
     }
-    check(!one("#auth-card").classList.contains("hidden"), "Anonymous login page visible");
+    check(!one("#auth-card").classList.contains("hidden"), "Anonymous introduction visible");
+    click("#public-login");
     click('[data-auth-mode="register"]');
     check(one("#login-title").textContent.includes("Создать"), "Registration view");
     if (new URLSearchParams(location.search).has("login")) {
       window.__smokeResult = {passed: true, checks: results.length, viewport: innerWidth};
       return;
     }
+    click("#public-back");
+    for (let attempt = 0; attempt < 100 && !one("#public-reference-status").textContent.includes("источника"); attempt += 1) await new Promise(resolve => setTimeout(resolve, 30));
+    check(one("#auth-card").dataset.surface === "public", "Public introduction is the default, not a compulsory login wall");
+    check(Boolean(one("#public-reference-chart .portfolio-chart-line")), "The public chart uses the controlled official-source fixture");
+    check(one("#public-reference-card").textContent.includes("12,34567"), "Exact source decimals are retained in the accessible table");
+    check(!document.querySelector(".auth-illustration"), "No fake portfolio in the public introduction");
+    const originalCurrency = one("#public-reference-currency").value;
+    one("#public-reference-currency").value = "EUR";
+    one("#public-reference-currency").dispatchEvent(new Event("change", {bubbles: true}));
+    for (let attempt = 0; attempt < 100 && !one("#public-reference-note").textContent.includes("1 EUR"); attempt += 1) await new Promise(resolve => setTimeout(resolve, 30));
+    check(one("#public-reference-note").textContent.includes("1 EUR"), "A currency control fetches and labels its own source series");
+    one("#public-reference-currency").value = originalCurrency;
+    one("#public-reference-currency").dispatchEvent(new Event("change", {bubbles: true}));
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.id = "source-contract-chart"; document.body.append(svg);
+    const points = [{captured_at:"2026-10-01T00:00:00Z",value:"0"},{captured_at:"2026-10-02T00:00:00Z",value:null},{captured_at:"2026-10-03T00:00:00Z",value:"12.34567"}];
+    check(window.__chartTest.renderSeriesChart(svg, points), "A confirmed zero is a valid source observation");
+    check(svg.querySelectorAll(".portfolio-chart-line").length === 2, "A missing observation breaks the line, it is neither zero nor interpolation");
+    check(svg.nextElementSibling.querySelectorAll("tbody tr").length === 2, "Only two source observations appear in the table");
+    check(svg.nextElementSibling.textContent.includes("12,34567"), "Inspector does not round the source decimal into another value");
+    check(!window.__chartTest.renderSeriesChart(svg, [{captured_at:"2026-10-01",value:null},{captured_at:"2026-10-02",value:false}]), "Unknown and boolean inputs cannot draw financial points");
+    check(!svg.nextElementSibling?.dataset.chartOwner, "Clearing the chart also removes previous private inspector values");
+    window.__chartTest.renderMarketCandles(svg, [
+      {time:"2026-10-01T10:00:00Z",open:"10",high:"12",low:"9",close:"11",volume_lots:50,is_complete:true},
+      {time:"2026-10-01T11:00:00Z",open:"11",high:"12",low:"8",close:"9",volume_lots:100,is_complete:false},
+    ]);
+    check(svg.querySelectorAll(".market-volume-bar").length === 2, "Each volume bar comes from a source candle");
+    check(svg.querySelector(".market-candle-incomplete"), "An unfinished candle is marked rather than presented as a completed price");
+    check(svg.querySelectorAll(".chart-axis-label").length >= 7, "Price, dates and volume units are visibly labelled");
+    window.__chartTest.clearDataChart(svg); svg.remove();
+    const exactClose = "1234567890.123456789";
+    window.__chartTest.renderInstrumentMarketChart({candles: [
+      {time:"2026-10-01T10:00:00Z",open:exactClose,high:exactClose,low:exactClose,close:exactClose,volume_lots:50,is_complete:true},
+      {time:"2026-10-01T11:00:00Z",open:exactClose,high:exactClose,low:exactClose,close:exactClose,volume_lots:100,is_complete:true},
+    ]});
+    const inspectedClose = one("#instrument-market-chart").nextElementSibling.textContent.replace(/\s/g, "");
+    check(inspectedClose.includes("1234567890,123456789"), "Instrument line inspection preserves all provider decimal digits");
+    one("#instrument-market-scrubber").dispatchEvent(new Event("input", {bubbles: true}));
+    check(one("#instrument-market-tooltip").textContent.replace(/\s/g, "").includes("1234567890,123456789"), "OHLC tooltip preserves the same source precision");
+    window.__chartTest.resetInstrumentMarket();
+    check(!one("#instrument-market-chart").nextElementSibling?.dataset.chartOwner, "Instrument reset removes exact private source values");
     click("#start-demo");
-    check(!one("#profile-panel").classList.contains("hidden"), "Demo workspace opened");
-    check(one("#home-portfolio-total").textContent.replace(/\s/g, "").includes("1250000"), "Demo capital rendered");
-    check(!one("#demo-banner").classList.contains("hidden"), "Permanent demo label");
+    check(!one("#profile-panel").classList.contains("hidden"), "Public workspace opened");
+    check(!one("#home-portfolio-total").textContent.replace(/\s/g, "").includes("1250000"), "A guest never receives a fictitious capital");
+    check(!one("#demo-banner").classList.contains("hidden") && one("#demo-banner").textContent.includes("без вымышленного"), "Permanent anonymous scope label");
+    check(one("#home-public-reference #public-reference-card"), "The existing public source component follows the overview without a second data engine");
     if (innerWidth < 1200) {
       check(one("#app-drawer").inert, "Closed drawer is not keyboard reachable");
       click("#app-menu-toggle");
@@ -413,18 +456,7 @@ window.addEventListener("load", () => setTimeout(async () => {
     check([...document.querySelectorAll("[data-target-number]")].reduce((sum, item) => sum + Number(item.value), 0) === 100, "Allowed classes still total 100%");
     click("#reset-allocation");
     navigate("assets");
-    check(document.querySelectorAll(".hunter-result").length===4, "Synthetic catalog");
-    click('[data-asset-filter="bond"]');
-    check(document.querySelectorAll(".hunter-result").length===2, "Bond filter");
-    const assetActions=[...document.querySelectorAll(".asset-actions")];
-    assetActions[0].querySelectorAll("button")[1].click();
-    click('[data-asset-filter="favorites"]');
-    check(document.querySelectorAll(".hunter-result").length===1, "Favorite filter");
-    click('[data-asset-filter="all"]');
-    [...document.querySelectorAll(".asset-actions")].slice(0,2).forEach(row=>row.querySelectorAll("button")[2].click());
-    click("#compare-assets");
-    check(one("#workspace-dialog").open && document.querySelectorAll("#dialog-content td").length===8, "Two-instrument comparison");
-    click("#dialog-close");
+    check(document.querySelectorAll(".hunter-result").length === 0, "Guest catalog does not invent tradable instruments");
     navigate("goals");
     click("#create-goal");
     const form=one("#dialog-content form");
@@ -433,10 +465,7 @@ window.addEventListener("load", () => setTimeout(async () => {
     check(!one("#workspace-dialog").open && one(".goal-card"), "Goal scenario created");
     check(one(".goal-card").textContent.includes("Тестовая цель"), "Goal title preserved");
     navigate("payouts");
-    check(document.querySelectorAll(".calendar-day.has-payout").length===2, "Payout calendar renders dates");
-    click(".calendar-day.has-payout");
-    check(one("#workspace-dialog").open, "Payout details");
-    click("#dialog-close");
+    check(document.querySelectorAll(".calendar-day.has-payout").length === 0, "Guest calendar does not invent personal payouts");
     navigate("assistant");
     click("[data-prompt]");
     one("#assistant-form").requestSubmit();
@@ -469,6 +498,7 @@ let brokerReads = 0;
 const types = {".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".webmanifest": "application/manifest+json", ".png": "image/png"};
 const renderPublicBody = (pathname, file) => {
   let body = readFileSync(file);
+  if (pathname === "/assets/app.js") body = body.toString().replace("  renderReleaseInfo();", "  window.__chartTest={renderSeriesChart,renderMarketCandles,renderInstrumentMarketChart,resetInstrumentMarket,clearDataChart};\n  renderReleaseInfo();");
   if (pathname === "/sw.js") body = body.toString().replaceAll("__OMNICIO_BUILD__", build);
   if (pathname === "/") {
     body = body.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version);
@@ -604,6 +634,14 @@ const server = createServer(async (request, response) => {
     }
     if (!synthetic && pathname.startsWith("/api/broker/")) brokerReads += 1;
     response.setHeader("Content-Type", "application/json");
+    if (pathname === "/api/public/market-reference") {
+      const params = new URL(request.url, "http://127.0.0.1").searchParams;
+      const currency = params.get("currency"); const period = params.get("period");
+      response.end(JSON.stringify({source:"Bank of Russia",currency,period,status:"available",personal_data:false,
+        indicators:{freshness:"fresh",key_rate:{value:"14",effective_date:"2026-10-01"},usd_rub:{value:"12.34567",effective_date:"2026-10-01"},eur_rub:{value:"91.2345",effective_date:"2026-10-01"}},
+        history:{currency,period,fetched_at:"2026-10-06T10:00:00Z",freshness:"received",points:[{effective_date:"2026-10-01",value:"12.34567"},{effective_date:"2026-10-02",value:"12.34"},{effective_date:"2026-10-05",value:"12.4"}]}}));
+      return;
+    }
     if (synthetic) {
       const identity = referrer.searchParams.get("session") || "default";
       if (!syntheticSessions.has(identity)) syntheticSessions.set(identity, createStrategyFixture(referrer.searchParams.get("fixture") || "saved"));
@@ -990,6 +1028,27 @@ const run = async (url, width) => {
     await visit(url + "?login");
     await screenshot("registration");
     const result = await visit(url);
+    // Date-only CBR facts must not move to yesterday in a different device zone.
+    for (const timezoneId of ["UTC", "America/Los_Angeles", "Pacific/Kiritimati"]) {
+      await send("Emulation.setTimezoneOverride", {timezoneId});
+      const dates = await evaluate(`(() => {
+        const svg = document.querySelector('#public-reference-chart');
+        window.__chartTest.renderSeriesChart(svg, [
+          {effective_date:'2026-10-01', value:'12.34567'},
+          {effective_date:'2026-10-02', value:'12.4'},
+        ], {timeKey:'effective_date',calendarDates:true,step:true});
+        const inspector = svg.nextElementSibling;
+        inspector.querySelector('input').value = '0';
+        inspector.querySelector('input').dispatchEvent(new Event('input'));
+        return {first: inspector.querySelector('tbody td').textContent,
+          selected: inspector.querySelector('output').textContent,
+          axis: [...svg.querySelectorAll('.chart-axis-label')].slice(-2).map(e=>e.textContent)};
+      })()`);
+      assert.equal(dates.first, "01 октября 2026 г.", "CBR calendar date is independent of " + timezoneId);
+      assert.ok(dates.selected.startsWith(dates.first), "Selected date and source table agree");
+      assert.deepEqual(dates.axis, ["01 окт.", "02 окт."], "Date-only axes never become clock-time labels");
+    }
+    await send("Emulation.setTimezoneOverride", {timezoneId: ""});
     await verifyHelpInput(send, evaluate);
     await evaluate("document.querySelector('#smoke-result').remove()");
     await screenshot("home-light");

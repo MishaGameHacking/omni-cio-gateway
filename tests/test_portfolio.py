@@ -1541,3 +1541,21 @@ def test_intelligence_http_pending_never_implies_execution() -> None:
     assert payload["risks"] == []
     assert payload["payouts"] == []
     assert payload["sources"] == []
+
+
+def test_anonymous_reference_is_broker_independent_and_validates_fixed_query() -> None:
+    with (patch("omnicio.main.authenticated_user") as user,
+          patch("omnicio.main.market_service") as market):
+        market.return_value.public_reference.return_value = {
+            "source": "Bank of Russia", "history": None, "indicators": None,
+            "status": "unavailable", "personal_data": False,
+        }
+        client = TestClient(app)
+        response = client.get("/api/public/market-reference?currency=USD&period=1m")
+        rejected = client.get("/api/public/market-reference?currency=account-token&period=all")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["history"] is None
+    assert rejected.status_code == 422
+    user.assert_not_called()
+    market.return_value.public_reference.assert_called_once_with("USD", "1m")

@@ -7,7 +7,7 @@
     content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
   >
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f4f7fb">
+  <meta name="theme-color" content="#f4f6fa">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -88,7 +88,7 @@
   </svg>
   <a class="skip-link" href="#view-title">К содержимому</a>
   <main class="shell">
-    <section class="auth-card" id="auth-card" aria-labelledby="auth-title">
+    <section class="auth-card" id="auth-card" data-surface="public" aria-labelledby="auth-title">
       <header class="auth-header">
         <a class="brand" href="/" aria-label="OmniCIO Personal">
           <img
@@ -105,6 +105,7 @@
             <span>Personal</span>
           </span>
         </a>
+        <div class="public-header-actions"><button id="public-theme" class="icon-button" type="button" aria-label="Сменить светлую и ночную тему"><svg class="ui-icon" aria-hidden="true"><use href="#icon-moon"></use></svg></button><button id="public-login" class="button button-primary" type="button">Войти</button></div>
         <span class="release-chip" aria-label="Версия приложения">
           v<span data-app-version>__OMNICIO_VERSION__</span>
         </span>
@@ -122,12 +123,13 @@
             decoding="async"
           >
           <p class="eyebrow" id="access-eyebrow">Персональный кабинет</p>
-          <h1 id="auth-title">Понятный портфель.<br>Спокойные решения.</h1>
+          <h1 id="auth-title" tabindex="-1">Ваш капитал.<br><span>Понятная картина.</span></h1>
           <p class="lead" id="access-lead">
             Вход через VK ID, отдельный пользовательский профиль и защищённое
             подключение собственного брокерского счёта T-Invest.
           </p>
-          <div class="auth-illustration" aria-hidden="true"><div class="auth-preview-head"><span>Ваш капитал</span><span class="preview-label">ДЕМО</span></div><strong>1 250 000 <small>₽</small></strong><div class="auth-chart"><svg viewBox="0 0 400 100"><path d="M0 90 35 83 65 87 105 60 140 68 175 42 215 48 250 27 290 35 330 13 365 20 400 4"/></svg></div><div class="auth-preview-foot"><span>Полная картина</span><span>Каждое решение — ваше</span></div></div>
+          <div class="public-globe" aria-hidden="true"><div class="globe-orbit orbit-one"></div><div class="globe-orbit orbit-two"></div><div class="globe-core"><img src="/assets/brand/omni-sentinel-core-color-1024.png" width="120" height="120" alt=""></div><span class="globe-label globe-label-one">Источники</span><span class="globe-label globe-label-two">Портфель</span><span class="globe-label globe-label-three">Стратегия</span></div>
+          <div class="public-intro-copy"><p>Состав счёта, данные об активах и ваши настройки — в одном пространстве. Каждый показатель сопровождается источником и датой.</p><div class="public-hero-actions"><button id="start-demo" type="button" class="button button-primary">Открыть без аккаунта <svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow"></use></svg></button><a href="#public-explore" class="button button-secondary">Посмотреть данные ЦБ</a></div><p class="field-hint">Без входа доступны официальные справочные данные и знакомство с интерфейсом. Ваш портфель — только после входа и подключения своего счёта.</p></div>
           <div class="trust-list" aria-label="Ключевые свойства">
             <span>Вход: VK ID</span>
             <span id="access-scope">Регистрация: лимит 2</span>
@@ -135,9 +137,9 @@
           </div>
         </section>
 
-        <section class="auth-form-card" aria-labelledby="login-title">
+        <section class="auth-form-card" aria-labelledby="login-title"><button id="public-back" type="button" class="button button-secondary">← О системе</button>
           <fieldset class="auth-tabs" aria-label="Вход или регистрация"><button type="button" data-auth-mode="login" aria-pressed="true">Вход</button><button type="button" data-auth-mode="register" aria-pressed="false">Регистрация</button></fieldset>
-          <h2 id="login-title">С возвращением</h2>
+          <h2 id="login-title" tabindex="-1">С возвращением</h2>
           <p class="muted">
             Продолжите через VK ID. Пароль остаётся у VK, а ваш портфель доступен только вам.
           </p>
@@ -183,18 +185,24 @@
 
           <output id="auth-message" class="message" aria-live="polite"></output>
 
-          <div class="auth-demo">
-            <span>Сначала познакомимся?</span>
-            <button id="start-demo" type="button" class="button button-secondary">Посмотреть демо <svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow"></use></svg></button>
-            <small>Без регистрации и реальных сделок</small>
-          </div>
-
           <footer class="auth-meta">
             <span>OmniCIO Personal</span>
             <span>v<span data-app-version>__OMNICIO_VERSION__</span> · сборка <span data-app-build>__OMNICIO_BUILD__</span></span>
           </footer>
         </section>
       </div>
+      <section id="public-explore" class="public-explore" aria-labelledby="public-explore-title">
+        <div class="page-heading"><div><p class="eyebrow">Открытые данные · без аккаунта</p><h2 id="public-explore-title">Сначала факты. Потом решения.</h2></div></div>
+        <article id="public-reference-card" class="command-card public-reference-card">
+          <header class="card-header"><div><p class="card-label">Банк России</p><h3 id="public-reference-title">Официальные курсы и ставка</h3></div><output class="state-badge" id="public-reference-status">Данные ещё не запрошены</output></header>
+          <div id="public-reference-indicators" class="public-reference-indicators"></div>
+          <div class="chart-toolbar"><label>Валюта<select id="public-reference-currency"><option value="USD">Доллар США</option><option value="EUR">Евро</option><option value="CNY">Китайский юань</option></select></label><label>Период<select id="public-reference-period"><option value="1m">Месяц</option><option value="3m">3 месяца</option><option value="1y">Год</option></select></label><button class="button button-secondary" id="public-reference-refresh" type="button">Обновить</button></div>
+          <svg id="public-reference-chart" class="portfolio-line-chart" viewBox="0 0 720 240" role="img" aria-label="История официального курса ЦБ: точные значения доступны под графиком"></svg>
+          <output class="field-hint" id="public-reference-note">Получаем только подтверждённые значения. Официальный курс не является биржевой котировкой.</output>
+          <details class="source-disclosure"><summary>Откуда данные и что доступно без входа</summary><p>Курсы и ключевая ставка — из официального API Банка России. Дата действия может отличаться от даты получения. Нет ответа источника — нет новых значений.</p><p>Биржевые котировки и данные личного счёта доступны через подключение T-Invest в своём кабинете. Общая публичная трансляция MOEX здесь не включена: право распространения требует отдельного договора.</p><a href="https://www.cbr.ru/development/SXML/" target="_blank" rel="noopener noreferrer">Банк России · описание источника ↗</a></details>
+        </article>
+        <div class="public-features"><article><svg class="ui-icon" aria-hidden="true"><use href="#icon-portfolio"></use></svg><h3>Видеть целиком</h3><p>Стоимость, состав, доли и сохранённая история вашего счёта.</p></article><article><svg class="ui-icon" aria-hidden="true"><use href="#icon-strategy"></use></svg><h3>Настроить под себя</h3><p>Десять редактируемых подходов, личная копия и подробная помощь.</p></article><article><svg class="ui-icon" aria-hidden="true"><use href="#icon-shield"></use></svg><h3>Понимать ограничения</h3><p>Проверка стратегии относительно счёта. Недостающие данные отмечены явно.</p></article></div>
+      </section>
     </section>
 
     <section class="auth-card profile-context-card hidden" id="profile-context-panel" aria-labelledby="profile-context-title">
@@ -231,7 +239,7 @@
           </button>
         </div>
 
-        <nav class="app-nav" aria-label="Основные разделы"><div class="nav-group"><span class="nav-group-label">Обзор</span><button class="nav-item" type="button" data-view="home"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg></span><span>Главная</span></button><button class="nav-item" type="button" data-view="portfolio"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-portfolio"></use></svg></span><span>Портфель</span></button><button class="nav-item" type="button" data-view="events"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-events"></use></svg></span><span>События</span></button><button class="nav-item" type="button" data-view="assets"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-search"></use></svg></span><span>Поиск активов</span></button></div><div class="nav-group"><span class="nav-group-label">Управление</span><button class="nav-item" type="button" data-view="strategy"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-strategy"></use></svg></span><span>Стратегия</span></button><button class="nav-item" type="button" data-view="decisions"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-decisions"></use></svg></span><span>Решения</span></button><button class="nav-item" type="button" data-view="orders"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-orders"></use></svg></span><span>Сделки</span></button><button class="nav-item" type="button" data-view="payouts"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-calendar"></use></svg></span><span>Выплаты</span></button><button class="nav-item" type="button" data-view="goals"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-goals"></use></svg></span><span>Цели</span></button></div><div class="nav-group"><span class="nav-group-label">Помощь</span><button class="nav-item" type="button" data-view="assistant"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-assistant"></use></svg></span><span>Ассистент</span></button><button class="nav-item" type="button" data-view="settings"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg></span><span>Профиль и сервис</span></button></div></nav>
+<nav class="app-nav" aria-label="Основные разделы"><div class="nav-group"><span class="nav-group-label">Обзор</span><button class="nav-item" type="button" data-view="home"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-home"></use></svg></span><span>Главная</span></button><button class="nav-item" type="button" data-view="portfolio"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-portfolio"></use></svg></span><span>Портфель</span></button><button class="nav-item" type="button" data-view="assets"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-search"></use></svg></span><span>Поиск активов</span></button><button class="nav-item" type="button" data-view="events"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-events"></use></svg></span><span>События</span></button></div><div class="nav-group"><span class="nav-group-label">Мои правила</span><button class="nav-item" type="button" data-view="strategy"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-strategy"></use></svg></span><span>Стратегия</span></button><button class="nav-item" type="button" data-view="decisions"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-decisions"></use></svg></span><span>Решения</span></button><button class="nav-item" type="button" data-view="goals"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-goals"></use></svg></span><span>Цели</span></button></div><div class="nav-group"><span class="nav-group-label">Движение средств</span><button class="nav-item" type="button" data-view="payouts"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-calendar"></use></svg></span><span>Выплаты</span></button><button class="nav-item" type="button" data-view="orders"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-orders"></use></svg></span><span>Сделки</span></button></div><div class="nav-group"><span class="nav-group-label">Сервис</span><button class="nav-item" type="button" data-view="assistant"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-assistant"></use></svg></span><span>Ассистент</span></button><button class="nav-item" type="button" data-view="settings"><span class="nav-icon"><svg class="ui-icon" aria-hidden="true"><use href="#icon-settings"></use></svg></span><span>Профиль и сервис</span></button></div></nav>
 
         <div class="sidebar-footer"><button class="sidebar-assistant" type="button" data-go-view="assistant"><svg class="ui-icon" aria-hidden="true"><use href="#icon-assistant"></use></svg><span>Разобраться вместе<small>Ассистент OmniCIO</small></span><svg class="ui-icon" aria-hidden="true"><use href="#icon-arrow"></use></svg></button>
           <span>OmniCIO Personal</span>
@@ -280,8 +288,8 @@
           </div>
         </header>
 
-        <div class="workspace-scroll"><div id="demo-banner" class="workspace-banner hidden"><span><strong>Демонстрационный портфель</strong> · вымышленные данные, без подключения к брокеру</span><button id="exit-demo" class="button button-secondary" type="button">Перейти ко входу</button></div><output id="network-banner" class="workspace-banner hidden" aria-live="polite">Нет сети. Показаны последние данные. Финансовые действия недоступны.</output><div id="update-banner" class="workspace-banner hidden"><span>Доступна новая версия OmniCIO</span><button id="apply-update" class="button button-secondary" type="button">Обновить приложение</button></div>
-          <section class="view-panel" data-view-panel="home">
+        <div class="workspace-scroll"><div id="demo-banner" class="workspace-banner hidden"><span><strong>Открытый обзор</strong> · без аккаунта и без вымышленного портфеля</span><button id="exit-demo" class="button button-secondary" type="button">Перейти ко входу</button></div><output id="network-banner" class="workspace-banner hidden" aria-live="polite">Нет сети. Показаны последние данные. Финансовые действия недоступны.</output><div id="update-banner" class="workspace-banner hidden"><span>Доступна новая версия OmniCIO</span><button id="apply-update" class="button button-secondary" type="button">Обновить приложение</button></div>
+          <section class="view-panel" data-view-panel="home"><div id="home-public-reference"></div>
             <section
               class="market-strip quiet-market"
               id="cbr-market-strip"
@@ -368,7 +376,7 @@
               </article>
             </section>
 
-            <article class="command-card command-history-card" aria-labelledby="home-history-title">
+            <div class="dashboard-core"><article class="command-card command-history-card" aria-labelledby="home-history-title">
               <header class="command-card-header">
                 <div>
                   <p class="card-label">История капитала</p>
@@ -437,6 +445,7 @@
               </article>
             </section>
 
+            </div>
             <section class="command-lower-grid">
               <article class="connection-card command-connection-card" id="home-connection-card">
                 <div class="connection-summary">
