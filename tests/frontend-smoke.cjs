@@ -4,6 +4,9 @@
 const assert = require("node:assert/strict");
 const vm = require("node:vm");
 const {
+  createHash
+} = require("node:crypto");
+const {
   createServer
 } = require("node:http");
 const {
@@ -582,6 +585,7 @@ const displayContracts = () => {
   assert.equal(ui.format("1234.56"), "1,234.56", "Locale setting has a real consumer");
   goalVersionContracts(ui);
   chartAxisContracts(ui);
+  viewportSizeContracts();
   console.log("PASS display contracts: unknown values, source escaping, privacy, real-series requirements and locale");
 };
 function goalVersionContracts(ui) {
@@ -738,6 +742,18 @@ const workerContract = async () => {
   }
 };
 function captureBrowserLayout() {
+  const elementGeometry = element => {
+    const parent = element.offsetParent;
+    return {
+      rect: element.getBoundingClientRect().toJSON(),
+      offsetParent: parent ? {
+        tag: parent.tagName,
+        id: parent.id,
+        className: parent.className,
+        rect: parent.getBoundingClientRect().toJSON()
+      } : null
+    };
+  };
   const visibleApp = !document.querySelector("#app-shell").hidden;
   const modal = Boolean(document.querySelector("dialog[open]"));
   const drawer = document.querySelector("#app-sidebar").dataset.open === "true";
@@ -745,6 +761,9 @@ function captureBrowserLayout() {
   const viewport = {
     width: innerWidth,
     height: innerHeight,
+    clientWidth: document.documentElement.clientWidth,
+    clientHeight: document.documentElement.clientHeight,
+    devicePixelRatio,
     visualWidth: visualViewport.width,
     visualHeight: visualViewport.height,
     offsetLeft: visualViewport.offsetLeft,
@@ -803,6 +822,28 @@ function captureBrowserLayout() {
       axes
     };
   });
+  const tables = [...document.querySelectorAll('.view:not([hidden]) .table-scroll')].map(container => {
+    const style = getComputedStyle(container);
+    const table = container.querySelector("table");
+    const hiddenHeaders = [...container.querySelectorAll("th .sr-only")].map(header => {
+      return {
+        text: header.textContent,
+        ...elementGeometry(header),
+        position: getComputedStyle(header).position,
+        contained: container.contains(header.offsetParent)
+      };
+    });
+    return {
+      ...elementGeometry(container),
+      clientWidth: container.clientWidth,
+      scrollWidth: container.scrollWidth,
+      scrollLeft: container.scrollLeft,
+      position: style.position,
+      overflowX: style.overflowX,
+      table: elementGeometry(table),
+      hiddenHeaders
+    };
+  });
   return {
     width: innerWidth,
     scroll: document.documentElement.scrollWidth,
@@ -811,8 +852,99 @@ function captureBrowserLayout() {
     csp: window.__cspViolations,
     viewport,
     navigation,
-    charts
+    charts,
+    tables
   };
+}
+function assertViewportSize(data, label) {
+  const expected = data.expectedViewport;
+  const viewport = data.viewport;
+  assert.ok(Math.abs(viewport.width - expected.width) <= 1, label + ": layout width matches the requested CSS viewport " + JSON.stringify({
+    expected,
+    viewport
+  }));
+  assert.ok(Math.abs(viewport.height - expected.height) <= 1, label + ": layout height matches the requested CSS viewport " + JSON.stringify({
+    expected,
+    viewport
+  }));
+  const scrollbarWidth = viewport.width - viewport.clientWidth;
+  const scrollbarHeight = viewport.height - viewport.clientHeight;
+  const effectiveWidth = viewport.visualWidth * viewport.scale;
+  const effectiveHeight = viewport.visualHeight * viewport.scale;
+  assert.ok(Math.abs(effectiveWidth - (expected.width - scrollbarWidth)) <= 1, label + ": visual and layout widths agree after the native scrollbar");
+  assert.ok(Math.abs(effectiveHeight - (expected.height - scrollbarHeight)) <= 1, label + ": visual and layout heights agree after the native scrollbar");
+  assert.ok(data.scroll <= viewport.clientWidth + 1 && data.body <= viewport.clientWidth + 1, label + ": document content cannot expand the viewport " + JSON.stringify({
+    scroll: data.scroll,
+    body: data.body,
+    viewport
+  }));
+}
+function viewportSizeContracts() {
+  const desktop = {
+    expectedViewport: {
+      width: 1440,
+      height: 900
+    },
+    viewport: {
+      width: 1440,
+      height: 900,
+      clientWidth: 1425,
+      clientHeight: 900,
+      visualWidth: 1425,
+      visualHeight: 900,
+      scale: 1,
+      devicePixelRatio: 1
+    },
+    scroll: 1425,
+    body: 1425
+  };
+  assertViewportSize(desktop, "Native desktop scrollbar");
+  assertViewportSize({
+    ...desktop,
+    viewport: {
+      ...desktop.viewport,
+      devicePixelRatio: 2
+    }
+  }, "Device pixels do not change CSS viewport dimensions");
+  assertViewportSize({
+    ...desktop,
+    viewport: {
+      ...desktop.viewport,
+      visualWidth: 712.5,
+      visualHeight: 450,
+      scale: 2
+    }
+  }, "Visual viewport scale remains explicit");
+  const expanded = {
+    expectedViewport: {
+      width: 320,
+      height: 900
+    },
+    viewport: {
+      width: 341,
+      height: 960,
+      clientWidth: 341,
+      clientHeight: 960,
+      visualWidth: 320,
+      visualHeight: 900,
+      scale: 1,
+      devicePixelRatio: 1
+    },
+    scroll: 341,
+    body: 320
+  };
+  assert.throws(() => assertViewportSize(expanded, "Observed mobile expansion"), /layout width matches the requested CSS viewport/, "A self-consistent expanded layout cannot pass a requested-width check");
+  assert.throws(() => assertViewportSize({
+    ...desktop,
+    scroll: 1440
+  }, "Content overflow behind a native scrollbar"), /document content cannot expand the viewport/);
+  console.log("PASS viewport contracts: requested CSS dimensions, native scrollbars, DPR and mobile expansion detection");
+}
+function assertTableClipping(tables, label) {
+  for (const table of tables) {
+    for (const header of table.hiddenHeaders) assert.equal(header.contained, true, label + ": hidden table headers belong to their scrolling container " + JSON.stringify(header));
+    if (table.scrollWidth > table.clientWidth + 1) assert.ok(["auto", "scroll"].includes(table.overflowX), label + ": wide table content remains locally scrollable");
+  }
 }
 function assertMobileNavigation(data, label) {
   const nav = data.navigation;
@@ -852,6 +984,50 @@ function assertChartLayout(charts, label) {
     }
     for (const axis of chart.axes.slice(3)) assert.ok(axis.rect.top >= chart.svg.bottom && axis.rect.left >= chart.svg.left - 1 && axis.rect.right <= chart.svg.right + 1, label + ": date axis stays below its own plot");
   }
+}
+const screenshotEvidenceNames = new Set(["portfolio-2-320.png", "market-2-320.png", "strategies-2-390.png", "strategies-custom-2-390.png", "auth-2-390.png", "auth-2-320.png", "failure-state.png"]);
+let screenshotEvidenceCharacters = 0;
+let screenshotEvidenceSequence = 0;
+function logScreenshotEvidence(name, png) {
+  if (!screenshotEvidenceNames.has(name)) return;
+  const encoded = png.toString("base64");
+  screenshotEvidenceSequence += 1;
+  const metadata = {
+    capture: screenshotEvidenceSequence,
+    file: name,
+    sha256: createHash("sha256").update(png).digest("hex"),
+    bytes: png.length,
+    encoding: "base64",
+    encoded_characters: encoded.length,
+    chunks: Math.ceil(encoded.length / 4096),
+    chunk_size: 4096
+  };
+  if (encoded.length > 1024 * 1024 || screenshotEvidenceCharacters + encoded.length > 3 * 1024 * 1024) {
+    console.log(JSON.stringify({
+      event: "OMNICIO_PNG_SKIPPED",
+      ...metadata,
+      reason: "encoded_size_limit"
+    }));
+    return;
+  }
+  screenshotEvidenceCharacters += encoded.length;
+  console.log(JSON.stringify({
+    event: "OMNICIO_PNG_BEGIN",
+    ...metadata
+  }));
+  for (let offset = 0; offset < encoded.length; offset += 4096) {
+    console.log(JSON.stringify({
+      event: "OMNICIO_PNG_CHUNK",
+      capture: metadata.capture,
+      file: name,
+      index: offset / 4096,
+      data: encoded.slice(offset, offset + 4096)
+    }));
+  }
+  console.log(JSON.stringify({
+    event: "OMNICIO_PNG_END",
+    ...metadata
+  }));
 }
 const protocolClient = async url => {
   const socket = new WebSocket(url);
@@ -937,6 +1113,17 @@ const runBrowser = async base => {
       flatten: true
     });
     const send = (method, params = {}) => client.send(method, params, sessionId);
+    let requestedViewport = null;
+    const configureViewport = async width => {
+      const params = {
+        width,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: width < 680
+      };
+      await send("Emulation.setDeviceMetricsOverride", params);
+      requestedViewport = params;
+    };
     await send("Page.enable");
     await send("Runtime.enable");
     await send("Page.addScriptToEvaluateOnNewDocument", {
@@ -967,6 +1154,9 @@ const runBrowser = async base => {
     const layoutMetrics = [];
     const recordLayout = async label => {
       const data = await evaluate(`(${captureBrowserLayout.toString()})()`);
+      data.expectedViewport = {
+        ...requestedViewport
+      };
       layoutMetrics.push({
         label,
         ...data
@@ -982,11 +1172,12 @@ const runBrowser = async base => {
     const checkLayout = async label => {
       await settleLayout();
       const data = await recordLayout(label);
-      assert.ok(data.scroll <= data.width + 1 && data.body <= data.width + 1, `${label}: horizontal overflow ${JSON.stringify(data)}`);
+      assertViewportSize(data, label);
       assert.deepEqual(data.errors, [], label + ": runtime errors");
       assert.deepEqual(data.csp, [], label + ": production Content Security Policy");
       assertMobileNavigation(data, label);
       assertChartLayout(data.charts, label);
+      assertTableClipping(data.tables, label);
     };
     const screenshot = async (name, {
       validate = true
@@ -1006,7 +1197,9 @@ const runBrowser = async base => {
         format: "png",
         captureBeyondViewport: false
       });
-      writeFileSync(join(artifacts, name), Buffer.from(result.data, "base64"));
+      const png = Buffer.from(result.data, "base64");
+      writeFileSync(join(artifacts, name), png);
+      logScreenshotEvidence(name, png);
     };
     captureFailure = async error => {
       const documentState = await evaluate('({url:location.href,ready:document.readyState,errors:window.__browserErrors,csp:window.__cspViolations,bodyText:document.body?.innerText,bodyHTML:document.body?.innerHTML})');
@@ -1034,6 +1227,7 @@ const runBrowser = async base => {
       for (const width of widths) {
         await exerciseViewport({
           send,
+          configureViewport,
           width,
           round,
           base,
@@ -1060,6 +1254,8 @@ const runBrowser = async base => {
     await click('#sidebar-nav [data-route="strategies"]');
     await wait('document.querySelector(".strategy-option")', "Catalog during saved-draft failure");
     await click('[data-select-strategy="balanced"]');
+    await click('#strategy-tab-custom');
+    assert.equal(await evaluate('document.querySelector("[data-action=strategy-apply-custom]").disabled'), true, "A failed saved-draft load cannot enable custom strategy application");
     await delay(750);
     assert.equal(failure.requests.filter(item => !["GET", "HEAD"].includes(item.method)).length, 0, "Unknown saved settings cannot be overwritten by selecting a preset");
     console.log("PASS failure states: no defaults saved over failed loads");
@@ -1646,7 +1842,7 @@ async function serveTestAuthLogout({
   response.statusCode = 204;
   return response.end();
 }
-async function exerciseViewport({
+async function exerciseGuestViewport({
   send,
   width,
   round,
@@ -1655,15 +1851,8 @@ async function exerciseViewport({
   checkLayout,
   screenshot,
   click,
-  evaluate,
-  fieldValue
+  evaluate
 }) {
-  await send("Emulation.setDeviceMetricsOverride", {
-    width,
-    height: 900,
-    deviceScaleFactor: 1,
-    mobile: width < 680
-  });
   const guestKey = `guest-${round}-${width}`;
   fixtures.set(guestKey, makeFixture("guest"));
   if (width === 320) fixtures.get(guestKey).vkidEnabled = false;
@@ -1678,6 +1867,13 @@ async function exerciseViewport({
   assert.equal(await evaluate('document.querySelectorAll("#sidebar-nav a").length'), 10);
   assert.equal(await evaluate('document.querySelectorAll("#mobile-nav a").length'), 4);
   await checkLayout(`tour ${round}/${width}`);
+  if (width === 390) {
+    await click('#sidebar-nav [data-route="strategies"]');
+    await wait('document.querySelector("#strategy-tab-custom")', "Tour strategy catalog");
+    await click('#strategy-tab-custom');
+    assert.equal(await evaluate('document.querySelector("[data-action=strategy-apply-custom]").disabled'), true, "Tour can browse custom strategy information without enabling a writer");
+    await click('#sidebar-nav [data-route="home"]');
+  }
   assert.equal(fixtures.get(guestKey).requests.filter(item => item.path.startsWith("/api/broker/") || !["GET", "HEAD"].includes(item.method)).length, 0, "Tour cannot read private broker data or mutate anything");
   if (round === 2) {
     await click('#tour-notice [data-action="login"]');
@@ -1693,6 +1889,32 @@ async function exerciseViewport({
     assert.ok((await evaluate("location.href")).startsWith(base), "Untrusted provider URL cannot navigate the page");
     await click('#auth-dialog [data-close-dialog]');
   }
+}
+async function exerciseViewport({
+  send,
+  configureViewport,
+  width,
+  round,
+  base,
+  wait,
+  checkLayout,
+  screenshot,
+  click,
+  evaluate,
+  fieldValue
+}) {
+  await configureViewport(width);
+  await exerciseGuestViewport({
+    send,
+    width,
+    round,
+    base,
+    wait,
+    checkLayout,
+    screenshot,
+    click,
+    evaluate
+  });
   const key = `signed-${round}-${width}`;
   fixtures.set(key, makeFixture("signed"));
   const fixture = fixtures.get(key);
@@ -1760,6 +1982,13 @@ async function exerciseViewport({
   await wait('document.querySelector("#view-asset [data-watch]").getAttribute("aria-pressed")==="true"', "Saved favorite");
   await click('#sidebar-nav [data-route="strategies"]');
   await wait('document.querySelector("#strategy-form")', "Strategy form");
+  await exerciseStrategyTabs({
+    fixture,
+    click,
+    evaluate,
+    send,
+    wait
+  });
   fixture.mutationDelay = 150;
   await click('[data-select-strategy="conservative"]');
   await until(() => fixture.selection.document.base_preset_id === "conservative", "Persist strategy selection");
@@ -1771,6 +2000,15 @@ async function exerciseViewport({
   await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Saved custom parameters");
   assert.equal(fixture.selection.document.customized, true);
   await screenshot(`strategies-${round}-${width}.png`);
+  await exerciseCustomStrategyRestore({
+    fixture,
+    click,
+    fieldValue,
+    evaluate,
+    wait
+  });
+  if (width === 390) await screenshot(`strategies-custom-${round}-${width}.png`);
+  await click('#strategy-tab-catalog');
   assert.equal(fixture.maxActiveWrites, 1, "Versioned autosave uses a single in-flight mutation");
   configureGoalCases(fixture, round, width);
   await exerciseGoalCRUD({
@@ -1849,6 +2087,122 @@ async function exerciseViewport({
   console.log(`PASS round ${round}, ${width}px: layout, navigation, search, real charts, strategies, goals, events, settings, session isolation`);
 }
 const completedResourceCount = path => `performance.getEntriesByType("resource").filter(entry=>new URL(entry.name).pathname===${JSON.stringify(path)}).length`;
+const strategyWrites = fixture => fixture.requests.filter(item => item.path === "/api/profile/strategy" && !["GET", "HEAD"].includes(item.method)).length;
+async function assertStrategyPane(evaluate, pane, focused = false) {
+  const state = await evaluate(`(() => ({
+    focused:document.activeElement.id,
+    tabs:[...document.querySelectorAll('.strategy-catalog [role="tab"]')].map(tab => {
+      const panel=document.getElementById(tab.getAttribute('aria-controls'));
+      return {id:tab.id,selected:tab.getAttribute('aria-selected')==='true',tabIndex:tab.tabIndex,panel:panel?.id,role:panel?.getAttribute('role'),labelledBy:panel?.getAttribute('aria-labelledby'),hidden:panel?.hidden};
+    }),
+    visibleOptions:[...document.querySelectorAll('.strategy-option')].filter(option=>option.getClientRects().length).length,
+    editor:Boolean(document.querySelector('#strategy-form')?.getClientRects().length)
+  }))()`);
+  assert.equal(state.tabs.length, 2, "The strategy source control exposes two tabs");
+  for (const tab of state.tabs) {
+    const selected = tab.id === "strategy-tab-" + pane;
+    assert.equal(tab.selected, selected, "The selected tab follows the viewed panel");
+    assert.equal(tab.tabIndex, selected ? 0 : -1, "Only the selected source tab belongs to the Tab sequence");
+    assert.equal(tab.role, "tabpanel", "Each source tab controls a real panel");
+    assert.equal(tab.labelledBy, tab.id, "Each panel is named by its controlling tab");
+    assert.equal(tab.hidden, !selected, "Inactive source panels are hidden");
+  }
+  assert.equal(state.visibleOptions, pane === "catalog" ? 10 : 0, "The ten preset choices belong only to the catalog panel");
+  assert.equal(state.editor, true, "Browsing sources preserves the current strategy editor");
+  if (focused) assert.equal(state.focused, "strategy-tab-" + pane, "Keyboard tab selection preserves focus on the selected tab");
+}
+async function exerciseStrategyTabs({
+  fixture,
+  click,
+  evaluate,
+  send,
+  wait
+}) {
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved" && !document.querySelector("[data-action=strategy-apply-custom]").disabled', "Saved strategy and personal conditions before tab navigation");
+  const version = fixture.selection.version;
+  const document = clone(fixture.selection.document);
+  const writes = strategyWrites(fixture);
+  await assertStrategyPane(evaluate, "catalog");
+  const point = await evaluate(`(() => {
+    const tab=document.querySelector('#strategy-tab-custom');
+    tab.scrollIntoView({block:'center',behavior:'instant'});
+    const rect=tab.getBoundingClientRect();
+    return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+  })()`);
+  await send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    button: "left",
+    clickCount: 1,
+    ...point
+  });
+  await send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    button: "left",
+    clickCount: 1,
+    ...point
+  });
+  await assertStrategyPane(evaluate, "custom", true);
+  for (const [key, code, expected] of [["Home", 36, "catalog"], ["End", 35, "custom"], ["ArrowLeft", 37, "catalog"], ["ArrowRight", 39, "custom"]]) {
+    await send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key,
+      code: key,
+      windowsVirtualKeyCode: code
+    });
+    await assertStrategyPane(evaluate, expected, true);
+  }
+  await click('#strategy-tab-catalog');
+  await click('#strategy-tab-catalog');
+  await delay(700);
+  assert.equal(fixture.selection.version, version, "Mouse, keyboard and repeated tab activation cannot change the saved strategy version");
+  assert.deepEqual(fixture.selection.document, document, "Source navigation preserves all strategy parameters");
+  assert.equal(strategyWrites(fixture), writes, "Tab navigation cannot issue strategy POST/PUT requests");
+  await click('#strategy-tab-custom');
+  assert.equal(await evaluate('document.querySelector("[data-action=strategy-apply-custom]").textContent'), "Создать из текущей");
+  await click('[data-action="strategy-apply-custom"]');
+  assert.equal(await evaluate('document.querySelector("[data-action=strategy-apply-custom]").disabled'), true, "Explicit creation disables another application while its write is pending");
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Explicit custom creation acknowledged");
+  assert.deepEqual(fixture.selection.document, {
+    ...document,
+    customized: true
+  }, "Creating a custom strategy preserves the current exact parameters");
+  assert.deepEqual(fixture.selection.custom_document, fixture.selection.document, "Creation persists the personal copy through the existing API");
+  assert.equal(strategyWrites(fixture), writes + 1, "Only the explicit Create action writes");
+  await assertStrategyPane(evaluate, "custom");
+  await click('#strategy-tab-catalog');
+}
+async function exerciseCustomStrategyRestore({
+  fixture,
+  click,
+  fieldValue,
+  evaluate,
+  wait
+}) {
+  await fieldValue('#strategy-form', 'strategy.profile.reserve_rub', '');
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Explicit unknown personal amount acknowledged");
+  assert.equal(fixture.selection.document.profile.reserve_rub, null, "Clearing a personal amount is an explicit unknown value");
+  const saved = clone(fixture.selection.custom_document);
+  await click('[data-select-strategy="aggressive"]');
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Alternate preset acknowledged");
+  assert.equal(fixture.selection.document.base_preset_id, "aggressive");
+  assert.equal(fixture.selection.document.profile.reserve_rub, null, "Preset selection cannot restore a stale legacy amount over explicit null");
+  assert.deepEqual(fixture.selection.custom_document, saved, "Selecting a preset preserves the last saved personal copy");
+  const version = fixture.selection.version;
+  const writes = strategyWrites(fixture);
+  await click('#strategy-tab-custom');
+  assert.equal(await evaluate('document.querySelector("[data-action=strategy-apply-custom]").textContent'), "Применить мою настройку");
+  await click('[data-action="strategy-apply-custom"]');
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Restored personal strategy acknowledged");
+  assert.deepEqual(fixture.selection.document, saved, "Apply restores the saved custom parameters while preserving current explicit personal values");
+  assert.equal(fixture.selection.version, version + 1);
+  assert.equal(strategyWrites(fixture), writes + 1, "Restoration issues one explicit versioned mutation");
+  await assertStrategyPane(evaluate, "custom");
+  assert.equal(await evaluate('document.querySelector("[data-action=strategy-apply-custom]").disabled'), true, "An identical active custom strategy is a no-op");
+  assert.equal(await evaluate('document.querySelector("[data-action=strategy-apply-custom]").textContent'), "Уже применяется");
+  await evaluate('document.querySelector("[data-action=strategy-apply-custom]").click()');
+  await delay(700);
+  assert.equal(strategyWrites(fixture), writes + 1, "An already applied custom strategy cannot create an unchanged-version write");
+}
 async function exerciseChartPointer({
   send,
   evaluate,

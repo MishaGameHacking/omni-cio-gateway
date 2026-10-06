@@ -45,6 +45,7 @@
     portfolioPeriod: "1y",
     assetPeriod: "1m",
     assetTab: "chart",
+    strategyPane: "catalog",
     asset: null,
     assetFilter: "all",
     sort: "name",
@@ -352,6 +353,7 @@
     state.formBaselines = {};
     state.chat = [];
     state.asset = null;
+    state.strategyPane = "catalog";
     state.searchResults = [];
     state.prefs = {
       server: null,
@@ -866,8 +868,8 @@
     const headers = [["name", "Название"], ["price", "Цена"], ["change", "Изменение"], ["share", "Доля"]];
     return `<div class="table-scroll"><table class="asset-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${compact ? "" : '<th class="hide-on-mobile" scope="col">Стоимость</th><th scope="col"><span class="sr-only">Избранное</span></th>'}</tr></thead><tbody>${(compact ? rows.slice(0, 5) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div>`;
   };
-  const selectedPreset = () => {
-    const id = state.strategy.draft?.base_preset_id;
+  const selectedPreset = (document = state.strategy.draft) => {
+    const id = document?.base_preset_id;
     const catalog = state.data.catalog;
     const current = catalog?.presets?.find(item => item.id === id);
     if (current) return current;
@@ -878,6 +880,11 @@
     } : undefined;
   };
   const strategyTitle = () => state.strategy.draft?.customized ? "Моя настройка" : selectedPreset()?.title || "Выберите стратегию";
+  const strategyEditorTitle = () => {
+    const title = selectedPreset()?.title || "Сохранённые условия";
+    if (state.strategy.draft?.customized) return "Моя настройка · основа: " + title;
+    return "Готовая стратегия · " + title;
+  };
   const homeStrategy = () => {
     const document = state.strategy.draft;
     const horizon = number(document?.profile?.horizon_months);
@@ -1275,9 +1282,9 @@
     const research = $('#research-form [type="submit"]');
     if (research) research.disabled = unavailable || state.loading.has("research");
     const title = $(".strategy-heading h2");
-    if (title) title.textContent = strategyTitle();
+    if (title) title.textContent = strategyEditorTitle();
     for (const option of $$("[data-select-strategy]")) option.setAttribute("aria-pressed", String(!slot.draft?.customized && option.dataset.selectStrategy === slot.draft?.base_preset_id));
-    for (const tab of $$('[data-action="strategy-catalog"],[data-action="strategy-custom"]')) tab.setAttribute("aria-selected", String(tab.dataset.action === "strategy-custom" ? Boolean(slot.draft?.customized) : !slot.draft?.customized));
+    updateCustomStrategyControls();
   };
   const updateSaveStatus = kind => {
     const slot = state[kind];
@@ -1517,8 +1524,10 @@
   const saveErrorHTML = kind => `<div class="notice error" data-save-error="${kind}"${state[kind].error ? "" : " hidden"}></div>`;
   const preservePersonal = document => {
     const current = state.strategy.draft;
-    for (const key of ["reserve_rub", "planned_withdrawal_rub"]) document.profile[key] = current?.profile?.[key] ?? state.data.investmentProfile?.profile?.[key] ?? null;
-    document.policy.securities_tax_rate_percent = current?.policy?.securities_tax_rate_percent ?? state.data.balancingPolicy?.policy?.securities_tax_rate_percent ?? null;
+    const profile = current ? current.profile : state.data.investmentProfile?.profile;
+    const policy = current ? current.policy : state.data.balancingPolicy?.policy;
+    for (const key of ["reserve_rub", "planned_withdrawal_rub"]) document.profile[key] = profile?.[key] ?? null;
+    document.policy.securities_tax_rate_percent = policy?.securities_tax_rate_percent ?? null;
     return document;
   };
   const chooseStrategy = id => {
@@ -1548,12 +1557,9 @@
   };
   const customizeStrategy = () => {
     if (!requireUser()) return;
+    if (customStrategyStatus().disabled) return;
     const slot = state.strategy;
     const custom = slot.server?.custom_document || slot.draft;
-    if (!custom) {
-      toast("Сначала выберите один из готовых подходов.");
-      return;
-    }
     slot.draft = preservePersonal(clone(custom));
     slot.draft.customized = true;
     slot.intent = "edit";
@@ -1564,6 +1570,72 @@
     slot.research = null;
     renderStrategies();
     scheduleSave("strategy");
+  };
+  const setStrategyPane = pane => {
+    if (!["catalog", "custom"].includes(pane)) return;
+    state.strategyPane = pane;
+    for (const value of ["catalog", "custom"]) {
+      const selected = value === pane;
+      const tab = $("#strategy-tab-" + value);
+      const panel = $("#strategy-panel-" + value);
+      if (tab) {
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+      }
+      if (panel) panel.hidden = !selected;
+    }
+  };
+  const customStrategyStatus = () => {
+    const slot = state.strategy;
+    const saved = slot.server?.custom_document;
+    const label = saved ? "Применить мою настройку" : "Создать из текущей";
+    const blocked = detail => ({
+      label,
+      detail,
+      disabled: true
+    });
+    if (!state.user || state.tour || state.locked) return blocked("Войдите в личный аккаунт, чтобы сохранять и применять свою настройку.");
+    const resources = ["strategy", "investmentProfile", "balancingPolicy"];
+    if (resources.some(key => state.loading.has(key))) return blocked("Получаем сохранённую стратегию и личные условия…");
+    if (resources.some(key => state.errors[key]) || !Object.hasOwn(state.data, "strategy")) return blocked("Сохранённые условия не загружены. Повторите загрузку перед применением настройки.");
+    if (slot.error) return blocked("Применение остановлено: " + humanError(slot.error));
+    if (slot.busy || slot.dirty) return blocked("Дождитесь подтверждения текущих изменений перед применением другой настройки.");
+    if (!slot.draft) return blocked("Сначала выберите готовую стратегию: из неё можно создать личную настройку.");
+    if (!saved) return {
+      label,
+      disabled: false,
+      detail: "Отдельная личная настройка ещё не сохранена. Создайте её из текущей стратегии, затем измените параметры в редакторе."
+    };
+    const base = selectedPreset(saved)?.title || "сохранённые условия";
+    const current = preservePersonal(clone(saved));
+    current.customized = true;
+    if (same(current, slot.draft)) return {
+      label: "Уже применяется",
+      disabled: true,
+      detail: "Сохранённая личная настройка уже применяется. Основа: «" + base + "». Её параметры доступны в редакторе."
+    };
+    return {
+      label,
+      disabled: false,
+      detail: "Личная настройка сохранена на сервере. Основа: «" + base + "». Применение сделает её текущей стратегией и сохранит ваши актуальные личные суммы."
+    };
+  };
+  const updateCustomStrategyControls = () => {
+    const status = customStrategyStatus();
+    const text = $("#strategy-custom-status");
+    const control = $('[data-action="strategy-apply-custom"]');
+    if (text) text.textContent = status.detail;
+    if (control) {
+      control.disabled = status.disabled;
+      control.textContent = status.label;
+    }
+  };
+  const strategyTabsHTML = () => {
+    const tabs = [["catalog", "Готовые стратегии"], ["custom", "Моя настройка"]];
+    return '<div class="tab-bar" role="tablist" aria-label="Источник стратегии">' + tabs.map(([key, label]) => {
+      const selected = state.strategyPane === key;
+      return `<button type="button" id="strategy-tab-${key}" class="tab-button" role="tab" data-action="strategy-${key}" aria-controls="strategy-panel-${key}" aria-selected="${selected}" tabindex="${selected ? 0 : -1}">${label}</button>`;
+    }).join("") + "</div>";
   };
   const policyFields = [["max_instrument_percent", "Один инструмент", "%", 100, "Максимальная доля одного инструмента. Превышение отмечается в проверке состава; это не предел убытка."], ["max_sector_percent", "Один сектор", "%", 100, "Ограничение концентрации в одном секторе. Нужны данные о секторе каждого инструмента."], ["max_issuer_percent", "Один эмитент", "%", 100, "Суммарная доля бумаг одного эмитента. Малый лимит требует большего числа доступных инструментов."], ["max_group_percent", "Одна группа компаний", "%", 100, "Доля связанных эмитентов. Без подтверждённых связей полная проверка невозможна."], ["max_share_percent", "Акции — предел", "%", 100, "Верхняя граница доли акций. Целевые доли задаются отдельно в распределении."], ["max_bond_percent", "Облигации — предел", "%", 100, "Верхняя граница доли облигаций. Кредитный и процентный риски сохраняются."], ["max_etf_percent", "Фонды — предел", "%", 100, "Верхняя граница доли фондов. Состав фонда проверяется отдельно при наличии данных."], ["max_below_grade_percent", "Ниже инвест. уровня", "%", 100, "Максимальная доля бумаг ниже выбранного рейтингового уровня. Рейтинг не является вероятностью прибыли."], ["max_unknown_percent", "Неизвестные данные", "%", 100, "Допустимая доля инструментов с неполной классификацией. Неизвестное не означает безопасное."], ["max_term_months", "Срок инструментов", "мес.", 1200, "Предельный срок до погашения в условиях модели. Для проверки нужна дата погашения."], ["turnover_budget_percent", "Оборот портфеля", "%", 100, "Предел оборота в расчётном предложении. Сам по себе не включает исполнение сделок."], ["max_daily_turnover_participation_percent", "Участие в обороте", "%", 100, "Ограничение доли заявки в наблюдаемом дневном обороте. Требует данных ликвидности."], ["securities_tax_rate_percent", "Личная налоговая ставка", "%", 100, "Укажите ставку, применимую к вашей ситуации. Неизвестная ставка остаётся пустой и не заменяется предположением."], ["uncertainty_haircut_percent", "Запас на неопределённость", "%", 100, "Заданный запас в модели, а не статистически доказанная вероятность или гарантия."], ["credit_loss_haircut_percent", "Запас на кредитный риск", "%", 100, "Пользовательский параметр допустимого сценария потерь. Без данных эмитента это не прогноз дефолта."], ["no_trade_band_percent", "Порог отклонения долей", "%", 100, "Небольшие отклонения можно не перестраивать. Увеличение порога уменьшает частоту расчётной ребалансировки."], ["min_replace_benefit_rub", "Минимальный эффект замены", "₽", 1000000000000, "Минимальный расчётный эффект после заданных затрат. Сохранение значения не создаёт сделки."]];
   const strategyField = (section, key, title, unit, max, helpText, value) => {
@@ -1578,7 +1650,7 @@
     catalog
   }) => {
     let editor;
-    if (!document) editor = `<section class="card">${state.errors.strategy ? dataError("strategy") : empty("Выберите свой подход", "Изучите описание и выберите стратегию. Личные суммы не подставляются из шаблона; их задаёте вы.", renderStrategiesValue(), "Войти", "strategies", true)}<p class="notice">Расчёты проверяют условия на данных, доступных системе. Ни одна стратегия не гарантирует сохранность капитала или прибыль.</p></section>`;else editor = `<div class="strategy-editor"><section class="card"><div class="strategy-heading"><h2>${esc(strategyTitle())}</h2><span class="save-status" data-save-status="strategy"></span></div><p class="strategy-note section-gap">${esc(preset?.description || "Ваши сохранённые параметры стратегии")}</p>${saveErrorHTML("strategy")}<form id="strategy-form"><div class="allocation-sliders">${[["shares", "Акции"], ["bonds", "Облигации"], ["funds", "Фонды"], ["cash", "Деньги"]].map(([key, label], index) => renderStrategiesRangeRow(key, index, label, document)).join("")}</div><p class="data-footnote">Сумма долей всегда 100%. Изменение одной доли пропорционально перераспределяет остальные незакреплённые доли.</p><details><summary class="details-summary">Закрепить или исключить классы</summary><div class="allocation-flags">${[["shares", "Акции"], ["bonds", "Облигации"], ["funds", "Фонды"], ["cash", "Деньги"]].map(([key, label]) => renderStrategiesAllocationFlagRow(label, key, document)).join("")}</div></details><h3 class="panel-title section-gap">Ваши условия</h3><div class="field-grid">${strategyField("profile", "reserve_rub", "Резерв вне инвестиций", "₽", 1000000000000, "Личная сумма, которую следует сохранить доступной. Укажите реальное значение; пустое поле означает неизвестные условия.", document.profile.reserve_rub)}${strategyField("profile", "planned_withdrawal_rub", "Планируемый вывод", "₽", 1000000000000, "Запланированная потребность в деньгах. При смене готовой стратегии эта сумма сохраняется.", document.profile.planned_withdrawal_rub)}${strategyField("profile", "horizon_months", "Инвестиционный горизонт", "мес.", 1200, "Срок вашей цели. Более длинный срок не исключает убытки и потребность в резерве.", document.profile.horizon_months)}${strategyField("profile", "max_drawdown_percent", "Допустимая просадка", "%", 100, "Ваша готовность к временному снижению капитала. Это условие модели, а не гарантированный предел потерь.", document.profile.max_drawdown_percent)}${strategyField("profile", "liquidity_horizon_days", "Срок доступности денег", "дней", 36500, "За сколько дней вам могут понадобиться деньги. Фактическая ликвидность инструментов проверяется отдельно.", document.profile.liquidity_horizon_days)}</div><label class="check-field section-gap"><input type="checkbox" name="strategy.profile.allow_below_investment_grade"${document.profile.allow_below_investment_grade ? " checked" : ""}><span>Рассматривать бумаги ниже инвестиционного рейтинга. Это повышенный кредитный риск.</span></label><details><summary class="details-summary">Ограничения портфеля</summary><div class="field-grid">${policyFields.map(([key, title, unit, max, detail]) => strategyField("policy", key, title, unit, max, detail, document.policy[key])).join("")}</div></details><details><summary class="details-summary">Рейтинги и условия доходности</summary><p class="fine-print">Доли по рейтинговым категориям — верхние границы. Рейтинговый уровень не равен вероятности успеха.</p><div class="field-grid">${select("strategy.rules.yield_floor", "Условие доходности", [["none", "Не задавать"], ["key_rate", "От ключевой ставки"]], document.rules.yield_floor, "Порог применяется только при наличии сопоставимых данных о доходности инструмента и ключевой ставке.")}${strategyField("rules", "yield_margin_pp", "Надбавка к ставке", "п.п.", 100, "Заданная надбавка к официальной ключевой ставке для фильтра условий. Это не обещание доходности.", document.rules.yield_margin_pp)}${strategyField("rules", "fund_wrapper_cap_percent", "Доля одного фонда", "%", 100, "Дополнительный предел для отдельного фонда. Не отменяет проверки его состава.", document.rules.fund_wrapper_cap_percent)}${(catalog.rating_levels || []).map(grade => field({
+    if (!document) editor = `<section class="card">${state.errors.strategy ? dataError("strategy") : empty("Выберите свой подход", "Изучите описание и выберите стратегию. Личные суммы не подставляются из шаблона; их задаёте вы.", renderStrategiesValue(), "Войти", "strategies", true)}<p class="notice">Расчёты проверяют условия на данных, доступных системе. Ни одна стратегия не гарантирует сохранность капитала или прибыль.</p></section>`;else editor = `<div class="strategy-editor"><section class="card"><div class="strategy-heading"><h2>${esc(strategyEditorTitle())}</h2><span class="save-status" data-save-status="strategy"></span></div><p class="strategy-note section-gap">${esc(preset?.description || "Ваши сохранённые параметры стратегии")}</p>${saveErrorHTML("strategy")}<form id="strategy-form"><div class="allocation-sliders">${[["shares", "Акции"], ["bonds", "Облигации"], ["funds", "Фонды"], ["cash", "Деньги"]].map(([key, label], index) => renderStrategiesRangeRow(key, index, label, document)).join("")}</div><p class="data-footnote">Сумма долей всегда 100%. Изменение одной доли пропорционально перераспределяет остальные незакреплённые доли.</p><details><summary class="details-summary">Закрепить или исключить классы</summary><div class="allocation-flags">${[["shares", "Акции"], ["bonds", "Облигации"], ["funds", "Фонды"], ["cash", "Деньги"]].map(([key, label]) => renderStrategiesAllocationFlagRow(label, key, document)).join("")}</div></details><h3 class="panel-title section-gap">Ваши условия</h3><div class="field-grid">${strategyField("profile", "reserve_rub", "Резерв вне инвестиций", "₽", 1000000000000, "Личная сумма, которую следует сохранить доступной. Укажите реальное значение; пустое поле означает неизвестные условия.", document.profile.reserve_rub)}${strategyField("profile", "planned_withdrawal_rub", "Планируемый вывод", "₽", 1000000000000, "Запланированная потребность в деньгах. При смене готовой стратегии эта сумма сохраняется.", document.profile.planned_withdrawal_rub)}${strategyField("profile", "horizon_months", "Инвестиционный горизонт", "мес.", 1200, "Срок вашей цели. Более длинный срок не исключает убытки и потребность в резерве.", document.profile.horizon_months)}${strategyField("profile", "max_drawdown_percent", "Допустимая просадка", "%", 100, "Ваша готовность к временному снижению капитала. Это условие модели, а не гарантированный предел потерь.", document.profile.max_drawdown_percent)}${strategyField("profile", "liquidity_horizon_days", "Срок доступности денег", "дней", 36500, "За сколько дней вам могут понадобиться деньги. Фактическая ликвидность инструментов проверяется отдельно.", document.profile.liquidity_horizon_days)}</div><label class="check-field section-gap"><input type="checkbox" name="strategy.profile.allow_below_investment_grade"${document.profile.allow_below_investment_grade ? " checked" : ""}><span>Рассматривать бумаги ниже инвестиционного рейтинга. Это повышенный кредитный риск.</span></label><details><summary class="details-summary">Ограничения портфеля</summary><div class="field-grid">${policyFields.map(([key, title, unit, max, detail]) => strategyField("policy", key, title, unit, max, detail, document.policy[key])).join("")}</div></details><details><summary class="details-summary">Рейтинги и условия доходности</summary><p class="fine-print">Доли по рейтинговым категориям — верхние границы. Рейтинговый уровень не равен вероятности успеха.</p><div class="field-grid">${select("strategy.rules.yield_floor", "Условие доходности", [["none", "Не задавать"], ["key_rate", "От ключевой ставки"]], document.rules.yield_floor, "Порог применяется только при наличии сопоставимых данных о доходности инструмента и ключевой ставке.")}${strategyField("rules", "yield_margin_pp", "Надбавка к ставке", "п.п.", 100, "Заданная надбавка к официальной ключевой ставке для фильтра условий. Это не обещание доходности.", document.rules.yield_margin_pp)}${strategyField("rules", "fund_wrapper_cap_percent", "Доля одного фонда", "%", 100, "Дополнительный предел для отдельного фонда. Не отменяет проверки его состава.", document.rules.fund_wrapper_cap_percent)}${(catalog.rating_levels || []).map(grade => field({
       name: renderStrategiesFragment(grade),
       label: renderStrategiesFragment2(grade),
       type: "number",
@@ -1603,10 +1675,10 @@
       $("#view-strategies").innerHTML = `${heading("Стратегии", "Выбор подхода и личные ограничения")}${state.errors.catalog ? dataError("catalog") : U.loading("Получаем каталог стратегий…")}`;
       return;
     }
-    const list = `<aside class="card strategy-catalog"><h2>Выбор стратегии</h2><div class="tab-bar" role="tablist" aria-label="Источник стратегии"><button class="tab-button" role="tab" data-action="strategy-catalog" aria-selected="${!document?.customized}">Готовые стратегии</button><button class="tab-button" role="tab" data-action="strategy-custom" aria-selected="${Boolean(document?.customized)}">Моя настройка</button></div>${catalog.presets.map(item => {
+    const list = `<aside class="card strategy-catalog"><h2>Выбор стратегии</h2>${strategyTabsHTML()}<div id="strategy-panel-catalog" role="tabpanel" aria-labelledby="strategy-tab-catalog" tabindex="0"${state.strategyPane === "catalog" ? "" : " hidden"}>${catalog.presets.map(item => {
       const [symbol] = strategyIcons[item.id] || ["strategies"];
       return renderStrategiesStrategyOption(item, document, symbol);
-    }).join("")}</aside>`;
+    }).join("")}</div><div id="strategy-panel-custom" role="tabpanel" aria-labelledby="strategy-tab-custom" tabindex="0"${state.strategyPane === "custom" ? "" : " hidden"}><output id="strategy-custom-status" class="fine-print"></output><div class="form-actions"><button type="button" class="button secondary" data-action="strategy-apply-custom" disabled>Создать из текущей</button></div></div></aside>`;
     const editor = strategyEditorHTML({
       document,
       preset,
@@ -3040,13 +3112,9 @@
     "goal-create": () => openGoal(),
     "goal-reconcile": reconcileGoals,
     "events-read-all": () => markEvents((state.data.events?.items || []).filter(item => !item.read_at).map(item => item.id)),
-    "strategy-custom": customizeStrategy,
-    "strategy-catalog": () => {
-      $(".strategy-catalog")?.scrollIntoView({
-        block: "start",
-        behavior: "smooth"
-      });
-    },
+    "strategy-custom": () => setStrategyPane("custom"),
+    "strategy-catalog": () => setStrategyPane("catalog"),
+    "strategy-apply-custom": customizeStrategy,
     "assess-strategy": assessStrategy,
     "strategy-reload": () => reloadVersioned("strategy"),
     "strategy-discard": () => {

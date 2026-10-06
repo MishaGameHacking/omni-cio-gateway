@@ -1479,6 +1479,7 @@ button .icon {
   max-width:270px
 }
 .table-scroll {
+  position:relative;
   overflow-x:auto;
   max-width:100%;
   scrollbar-width:thin
@@ -2750,13 +2751,13 @@ dialog::backdrop {
   color:#a4bbce;
   text-align:center;
   line-height:1.75;
-  margin:22px 0 0
+  margin:22px 0 56px
 }
 .auth-scenery {
   position:absolute;
   inset:0;
   z-index:0;
-  background:linear-gradient(0deg,#11384b70,transparent 30%);
+  background:linear-gradient(0deg,#09162466,transparent 220px),url('/assets/brand/auth-mountains.png') center bottom/100% auto no-repeat;
   opacity:.8
 }
 .session-dialog {

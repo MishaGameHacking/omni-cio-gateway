@@ -665,11 +665,18 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_reference_assets_are_shipped_without_legacy_brand(self) -> None:
         root = SCRIPT_DIR.parent.parent
-        shipped = {str(path.relative_to(root)).replace("\\", "/")
-                   for path in MODULE.iter_release_files(root)}
+        encoded = MODULE.build_release_archive(root)
+        with tarfile.open(fileobj=io.BytesIO(base64.b64decode(encoded)), mode="r:gz") as archive:
+            shipped = set(archive.getnames())
         for asset in MODULE.BRAND_RUNTIME_FILES:
             self.assertIn(asset, shipped)
         self.assertIn("assets/brand/web/earth-hero.png", shipped)
+        self.assertIn("assets/brand/web/auth-mountains.png", shipped)
+        for name in ("earth-hero.png", "auth-mountains.png"):
+            self.assertIn(
+                f'install -m 0644 "$RELEASE/assets/brand/web/{name}" '
+                f'"$WEB_RELEASE/assets/brand/{name}"', MODULE.REMOTE_DEPLOY_SCRIPT,
+            )
         self.assertFalse(any("omni-sentinel" in name for name in shipped))
         manifest = json.loads((root / "web" / "manifest.webmanifest").read_text())
         self.assertEqual(manifest["name"], "OMNICIO")
@@ -790,6 +797,8 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ("/assets/app.js", b"window.OmniUI", "text/javascript"),
             ("/assets/workspace.js", b"window.OmniUI", "application/javascript"),
             ("/assets/app.css", b"--sidebar:240px", "text/css"),
+            ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", "image/png"),
+            ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", "image/png"),
             ("/sw.js", b"omnicio-public-test " + self.sha[:12].encode(), "text/javascript"),
             (
                 "/offline.html",
@@ -868,6 +877,11 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             (MODULE.WEB_MANIFEST_PATH, b"invalid", "application/json", 200),
             (MODULE.VERSION_PUBLIC_PATH, b"window.OMNICIO_RELEASE = {}", "text/javascript", 200),
             (f"/assets/workspace.js?build={self.sha[:12]}", b"wrong asset", "text/javascript", 200),
+            (f"/assets/brand/earth-hero.png?build={self.sha[:12]}", b"missing", "image/png", 200),
+            (
+                f"/assets/brand/auth-mountains.png?build={self.sha[:12]}",
+                b"<html>fallback</html>", "text/html", 200,
+            ),
             (f"/sw.js?build={self.sha[:12]}", b"<html>fallback</html>", "text/html", 200),
             (
                 f"/sw.js?build={self.sha[:12]}",

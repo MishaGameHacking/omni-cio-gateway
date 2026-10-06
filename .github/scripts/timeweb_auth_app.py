@@ -56,6 +56,7 @@ BRAND_RUNTIME_FILES = (
     "assets/brand/web/pwa-icon-512.png",
     "assets/brand/web/pwa-maskable-512.png",
     "assets/brand/web/earth-hero.png",
+    "assets/brand/web/auth-mountains.png",
 )
 BRAND_PUBLIC_MARK = "/assets/brand/pwa-icon-192.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
@@ -642,6 +643,7 @@ install -m 0644 "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
 install -m 0644 "$RELEASE/assets/brand/web/omnicio-mark.svg" "$WEB_RELEASE/assets/brand/omnicio-mark.svg"
 install -m 0644 "$RELEASE/assets/brand/web/earth-hero.png" "$WEB_RELEASE/assets/brand/earth-hero.png"
+install -m 0644 "$RELEASE/assets/brand/web/auth-mountains.png" "$WEB_RELEASE/assets/brand/auth-mountains.png"
 install -m 0644 "$RELEASE/assets/brand/web/apple-touch-icon-180.png" "$WEB_RELEASE/assets/brand/apple-touch-icon-180.png"
 install -m 0644 "$RELEASE/assets/brand/web/favicon.ico" "$WEB_RELEASE/assets/brand/favicon.ico"
 install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-192.png" "$WEB_RELEASE/assets/brand/pwa-icon-192.png"
@@ -1343,6 +1345,8 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         ("/assets/app.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/workspace.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/app.css", b"--sidebar", ("text/css",)),
+        ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", ("image/png",)),
+        ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", ("image/png",)),
         ("/sw.js", b"omnicio-public-", JAVASCRIPT_CONTENT_TYPES),
         ("/offline.html", b"<html", ("text/html",)),
     )
