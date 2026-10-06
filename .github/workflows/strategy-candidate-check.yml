@@ -46,6 +46,7 @@ jobs:
           import json
           import os
           import pathlib
+          import re
           import subprocess
           import time
           import urllib.error
@@ -83,8 +84,18 @@ jobs:
 
           check_refs()
           commit = request('/git/commits/' + expected)
-          assert [row['sha'] for row in commit['parents']] == [base]
-          packed = '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'
+          assert [row['sha'] for row in commit['parents']] == ['cb042f63909a28d324046491e0daf17323598018']
+          source = subprocess.check_output(['git', 'show', base + ':src/omnicio/db.py'])
+          assert gitsha(source) == '63cd1dff725788d8e615934c5977f4afed1e4486'
+          # Read the immutable transport as data only. Correct the known single
+          # transcription byte, then require the independently computed digest.
+          digest = '6f3c4e60dfb3987a7d1f8634dae1a47fa3dac76b'
+          record = request('/git/blobs/' + digest)
+          transport = base64.b64decode(record['content'])
+          assert gitsha(transport) == digest
+          matches = re.findall(r"packed = '([^']+)'", transport.decode('utf-8'))
+          assert len(matches) == 1 and matches[0].count('8Vqc76rkd') == 1
+          packed = matches[0].replace('8Vqc76rkd', '8Vqc76vkd')
           raw_manifest = zlib.decompress(base64.b64decode(packed))
           assert hashlib.sha256(raw_manifest).hexdigest() == '1770a7185dd7fef5b34abea1b733f8a2c7c7c87a6b093ede0968be0cd545a1e4'
           manifest = json.loads(raw_manifest)
