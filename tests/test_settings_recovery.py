@@ -220,12 +220,15 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
         assert decrypt_secret(bytes(encrypted), key) == "synthetic-broker-token"
         admin.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
         assert admin.execute("SELECT * FROM investment_profile_versions").fetchall() == []
+        assert admin.execute("SELECT * FROM strategy_drafts").fetchall() == []
         with admin.transaction():
             admin.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(A),))
             assert {
                 r[0]
                 for r in admin.execute("SELECT user_id FROM investment_profile_versions").fetchall()
             } == {A}
+            assert {r[0] for r in admin.execute("SELECT user_id FROM strategy_drafts").fetchall()} == {A}
+            assert admin.execute("UPDATE strategy_drafts SET version=99 WHERE user_id=%s", (B,)).rowcount == 0
             updated = admin.execute(
                 "UPDATE investment_profile_versions SET reserve_rub = 0 WHERE user_id = %s",
                 (B,),
@@ -246,6 +249,8 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
         assert db.healthcheck()
         assert store.current_profile(B).reserve_rub == Decimal("7.25")
         assert store.current_profile(A).version == 2
+        assert store.current_strategy_draft(A)["version"] == 4
+        assert store.current_strategy_draft(B)["document"]["profile"]["reserve_rub"] == "7.01"
         # Restored sequences and transactional writes must work too.
         revised = store.save_profile(A, expected_version=2, **PROFILE)
         assert revised.version == 3
@@ -316,6 +321,7 @@ def test_dump_restore_preserves_settings_and_tenant_isolation(
                 store,
             ):
                 _exercise_settings(store, db)
+                _exercise_strategy_drafts(store, db)
             with psycopg.connect(source_dsn, autocommit=True) as admin:
                 admin.execute(
                     sql.SQL(
@@ -389,3 +395,120 @@ def test_dump_restore_preserves_settings_and_tenant_isolation(
                     sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
                 )
             control.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+def test_strategy_draft_api_requires_owner_origin_version_and_keeps_authority_separate() -> None:
+    from omnicio.strategy import preset_document
+
+    database = Mock(spec=Database)
+    database.has_legal_versions.return_value = True
+    store = Mock(spec=PortfolioStore)
+    document = preset_document("balanced")
+    request_body = {"expected_public_id": "000000901", "expected_version": 0,
+                    "intent": "select", "document": document}
+    headers = {"Origin": "https://omnicio.ru", "X-Omnicio-Profile": "000000901"}
+    with (
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.portfolio_store", return_value=store),
+        patch.object(app.state, "database", database, create=True),
+    ):
+        auth.return_value.refresh_session.side_effect = lambda token: {
+            "a": UserRecord(A, 901, "active", "user"),
+            "b": UserRecord(B, 902, "active", "user"),
+        }.get(token)
+        client = TestClient(app, cookies={"omnicio_session": "a"})
+        catalog = client.get("/api/strategy/catalog")
+        assert catalog.status_code == 200
+        assert len(catalog.json()["presets"]) == 10
+        store.current_strategy_draft.return_value = None
+        loaded = client.get("/api/profile/strategy", headers=headers)
+        assert loaded.status_code == 200
+        assert loaded.json() == {"public_id": "000000901", "selection": None}
+        store.save_strategy_draft.assert_not_called()
+        for bad in (-1, True, "0", 1.2):
+            response = client.put("/api/profile/strategy", headers=headers,
+                                  json={**request_body, "expected_version": bad})
+            assert response.status_code == 422
+        hostile = client.put("/api/profile/strategy", json=request_body,
+                             headers={**headers, "Origin": "https://other.invalid"})
+        assert hostile.status_code == 403
+        other = TestClient(app, cookies={"omnicio_session": "b"}).put(
+            "/api/profile/strategy", json=request_body,
+            headers={**headers, "X-Omnicio-Profile": "000000902"},
+        )
+        assert other.status_code == 409
+        anonymous = TestClient(app).put("/api/profile/strategy", headers=headers, json=request_body)
+        assert anonymous.status_code == 401
+        store.save_strategy_draft.assert_not_called()
+        saved = {"version": 1, "document": document, "custom_document": None,
+                 "updated_at": datetime.now(UTC), "fingerprint": "a" * 64}
+        store.save_strategy_draft.return_value = saved
+        response = client.put("/api/profile/strategy?user_id=" + str(B),
+                              headers=headers, json=request_body)
+        assert response.status_code == 200
+        assert response.json()["public_id"] == "000000901"
+        assert response.json()["applied_to_confirmed_policy"] is False
+        assert response.json()["broker_execution_enabled"] is False
+        assert response.headers["cache-control"] == "private, no-store"
+        assert store.save_strategy_draft.call_args.args[0] == A
+        assert store.save_strategy_draft.call_args.kwargs["expected_version"] == 0
+        store.save_profile.assert_not_called()
+        store.save_balancing_policy.assert_not_called()
+        edited = preset_document("balanced")
+        edited["policy"]["max_issuer_percent"] = "4.1234"
+        response = client.put("/api/profile/strategy", headers=headers,
+                              json={**request_body, "intent": "edit", "document": edited})
+        assert response.status_code == 200
+        assert store.save_strategy_draft.call_args.args[1]["customized"] is True
+        before = store.save_strategy_draft.call_count
+        response = client.put("/api/profile/strategy", headers=headers,
+                              json={**request_body, "document": edited})
+        assert response.status_code == 422
+        assert store.save_strategy_draft.call_count == before
+        store.save_strategy_draft.side_effect = SettingsVersionConflict("settings_version_conflict")
+        response = client.put("/api/profile/strategy", headers=headers, json=request_body)
+        assert response.status_code == 409
+        assert response.headers["cache-control"] == "private, no-store"
+
+
+def _exercise_strategy_drafts(store: PortfolioStore, db: Database) -> None:
+    from omnicio.strategy import preset_document
+
+    a_profile = store.current_profile(A)
+    a_policy = store.current_balancing_policy(A)
+    activity = db.recent_activity(A)
+    assert store.current_strategy_draft(A) is None
+    document = preset_document("income")
+    first = store.save_strategy_draft(A, document, expected_version=0)
+    assert first["version"] == 1
+    assert store.save_strategy_draft(A, document, expected_version=0) == first
+    document["customized"] = True
+    document["profile"]["reserve_rub"] = "100.12345678"
+    personal = store.save_strategy_draft(A, document, expected_version=1)
+    assert personal["version"] == 2
+    assert personal["custom_document"] == personal["document"]
+    b_document = preset_document("balanced")
+    b_document["customized"] = True
+    b_document["profile"]["reserve_rub"] = "7.01"
+    store.save_strategy_draft(B, b_document, expected_version=0)
+    preset = store.save_strategy_draft(A, preset_document("bogle"), expected_version=2)
+    assert preset["version"] == 3
+    assert preset["custom_document"] == personal["document"]
+
+    def concurrent_write(amount: str) -> str:
+        candidate = preset_document("bogle")
+        candidate["customized"] = True
+        candidate["profile"]["reserve_rub"] = amount
+        try:
+            store.save_strategy_draft(A, candidate, expected_version=3)
+            return "saved"
+        except SettingsVersionConflict:
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as threads:
+        assert sorted(threads.map(concurrent_write, ("1000", "2000"))) == ["conflict", "saved"]
+    assert store.current_strategy_draft(A)["version"] == 4
+    assert store.current_strategy_draft(B)["document"]["profile"]["reserve_rub"] == "7.01"
+    assert store.current_profile(A) == a_profile
+    assert store.current_balancing_policy(A) == a_policy
+    assert db.recent_activity(A) == activity

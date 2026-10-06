@@ -172,7 +172,7 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     reason="ephemeral PostgreSQL is required for migration integration coverage",
 )
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0011_portfolio_live_execution.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0012_strategy_drafts.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
@@ -183,6 +183,8 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 ROOT / "migrations" / "0011_portfolio_live_execution.sql"
             ).read_text(encoding="utf-8")
         )
+
+        admin.execute((ROOT / "migrations" / "0012_strategy_drafts.sql").read_text(encoding="utf-8"))
 
         table_names = {
             row[0]
@@ -215,6 +217,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "portfolio_execution_legs",
             "portfolio_execution_events",
             "portfolio_live_execution_mandates",
+            "strategy_drafts",
         } <= table_names
 
         protected = {
@@ -241,13 +244,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                           'portfolio_execution_runs',
                           'portfolio_execution_legs',
                           'portfolio_execution_events',
-                          'portfolio_live_execution_mandates'
+                          'portfolio_live_execution_mandates',
+                          'strategy_drafts'
                       ]
                   )
                 """
             ).fetchall()
         }
-        assert len(protected) == 15
+        assert len(protected) == 16
         assert all(rls and forced for rls, forced in protected.values())
 
         catalog_columns = {

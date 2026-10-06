@@ -80,12 +80,20 @@
     popover.hidden = true;
     popover.style.maxHeight = "calc(100dvh - 32px)";
     popover.style.overflowY = "auto";
-    const description = node("p");
+    const heading = node("h3", undefined, "help-title");
+    heading.id = "workspace-help-title";
+    const header = node("div", undefined, "help-header");
+    const description = node("p", undefined, "help-summary");
     description.id = "workspace-help-text";
+    const details = node("div", undefined, "help-details");
+    details.tabIndex = 0;
+    details.setAttribute("aria-label", "Подробное объяснение. Можно прокручивать.");
+    const pinHint = node("p", "Нажмите значок i, чтобы закрепить справку и прочитать пример.", "help-pin-hint");
     const dismiss = button("Закрыть справку", () => close(true));
     dismiss.hidden = true;
     dismiss.classList.add("hidden");
-    popover.append(description, dismiss);
+    header.append(heading, dismiss);
+    popover.append(header, description, pinHint, details);
     document.body.append(popover);
     let active = null;
     let pinned = false;
@@ -144,8 +152,31 @@
       clearTimeout(leaveTimer);
       unbind();
       active = trigger;
+      // A native modal makes body siblings inert. Keep this one help engine in its top layer.
+      const host = trigger.closest("dialog[open]") || document.body;
+      if (popover.parentElement !== host) host.append(popover);
       pinned = pin;
-      description.textContent = text;
+      // Rich copy is resolved at opening, so the value and state cannot go stale between visits.
+      const content = typeof text === "function" ? text() : text;
+      const rich = typeof content === "object" && content !== null;
+      const sections = rich && Array.isArray(content.sections) ? content.sections : [];
+      heading.textContent = trigger.getAttribute("aria-label").replace(/^Справка: /, "");
+      description.textContent = rich ? content.summary : content;
+      details.replaceChildren();
+      const addSection = (title, body) => {
+        const section = node("section", undefined, "help-section");
+        section.append(node("h4", title), node("p", body));
+        details.append(section);
+      };
+      if (pin && rich) {
+        if (content.current) addSection("Выбрано сейчас", content.current);
+        sections.forEach(([title, body]) => addSection(title, body));
+      }
+      details.hidden = !pin || !rich;
+      pinHint.hidden = pin || !rich;
+      popover.classList.toggle("help-expanded", pin && rich);
+      popover.scrollTop = 0;
+      popover.setAttribute("aria-labelledby", heading.id);
       trigger.setAttribute("aria-describedby", description.id);
       popover.setAttribute("role", pin ? "dialog" : "tooltip");
       popover.setAttribute("aria-label", trigger.getAttribute("aria-label"));
@@ -198,10 +229,12 @@
         if (event.detail === 0) dismiss.focus({preventScroll: true});
       }
     };
-    const attach = (selector, title, text) => {
-      const target = $(selector);
+    const attach = (targetOrSelector, title, text) => {
+      const target = typeof targetOrSelector === "string" ? $(targetOrSelector) : targetOrSelector;
       if (!target) return;
-      const trigger = node("button", "?", "help-trigger");
+      if (target.querySelector(":scope > .help-trigger")) return;
+      const trigger = node("button", undefined, "help-trigger");
+      trigger.append(icon("info"));
       trigger.type = "button";
       trigger.setAttribute("aria-label", title);
       target.append(trigger);
@@ -225,7 +258,10 @@
         scheduleClose();
       });
       trigger.addEventListener("pointerdown", (event) => beginGesture(event, trigger, text));
-      trigger.addEventListener("click", (event) => pinOrClose(event, trigger, text));
+      trigger.addEventListener("click", (event) => {
+        event.stopPropagation();
+        pinOrClose(event, trigger, text);
+      });
       trigger.addEventListener("contextmenu", (event) => {
         if ((gesture?.trigger === trigger && gesture.held) || suppressedClick?.trigger === trigger) event.preventDefault();
       });
@@ -259,7 +295,7 @@
     document.addEventListener("visibilitychange", () => { if (document.hidden) close(); });
     window.addEventListener("pagehide", () => close());
     window.addEventListener("resize", () => close());
-    return {close};
+    return {close, attach};
   };
 
   window.OmniWorkspace = {init(adapter) {
@@ -300,6 +336,7 @@
       toastTimer = setTimeout(() => target.classList.add("hidden"), 5000);
     };
     const showDialog = (title) => {
+      help.close(false);
       if (!dialog.open) previousFocus = document.activeElement;
       $("#dialog-title").textContent = title;
       dialogBody.replaceChildren();
@@ -307,7 +344,11 @@
       return dialogBody;
     };
     $("#dialog-close").addEventListener("click", () => dialog.close());
-    dialog.addEventListener("close", () => previousFocus?.focus());
+    dialog.addEventListener("close", () => {
+      help.close(false);
+      if (previousFocus?.isConnected && !previousFocus.closest(".hidden, [hidden], [inert]")
+          && previousFocus.getClientRects().length) previousFocus.focus({preventScroll: true});
+    });
     dialog.addEventListener("click", (event) => {
       if (event.target !== dialog) return;
       const rect = dialog.getBoundingClientRect();
@@ -403,12 +444,21 @@
         const range = $(`[data-target-range="${key}"]`);
         const input = $(`[data-target-number="${key}"]`);
         range.value = String(allocation[i]);
+        range.style.setProperty("--range-progress", `${allocation[i]}%`);
         input.value = String(allocation[i]);
         range.disabled = locked.has(i) || excluded.has(i);
         input.disabled = locked.has(i) || excluded.has(i);
         $(`[data-lock="${key}"]`).disabled = excluded.has(i);
         $(`[data-allow="${key}"]`).checked = !excluded.has(i);
-        $(`[data-lock="${key}"]`).setAttribute("aria-pressed", String(locked.has(i)));
+        const lock = $(`[data-lock="${key}"]`);
+        lock.setAttribute("aria-pressed", String(locked.has(i)));
+        lock.setAttribute("aria-label", `${locked.has(i) ? "Разблокировать" : "Закрепить"} долю: ${labels[i]}`);
+        const lockText = lock.querySelector(".allocation-lock-text");
+        if (lockText) lockText.textContent = locked.has(i) ? "Закреплено" : "Свободно";
+        range.setAttribute("aria-valuetext", `${allocation[i]} процентов. ${excluded.has(i) ? "Класс выключен" : locked.has(i) ? "Доля закреплена" : "Остаток распределяется автоматически"}`);
+        all(`[data-allocation-step="${key}"]`).forEach((step) => {
+          step.disabled = input.disabled || (step.dataset.direction === "-1" ? allocation[i] === 0 : allocation[i] === 100);
+        });
         const row = node("div", undefined, "legend-row");
         const dot = node("i");
         dot.style.backgroundColor = colors[i];
@@ -424,12 +474,14 @@
           if (!Number.isFinite(value)) return;
           allocation = redistribute(allocation, new Set([...locked, ...excluded]), index, value);
           renderAllocation();
+          document.dispatchEvent(new Event("strategy:allocation"));
           $("#allocation-status").textContent = "Распределено 100%. Черновик изменён; сделки и сохранённые лимиты не менялись.";
         });
       }
       $(`[data-lock="${key}"]`).addEventListener("click", () => {
         if (locked.has(index)) locked.delete(index); else locked.add(index);
         renderAllocation();
+        document.dispatchEvent(new Event("strategy:allocation"));
       });
       $(`[data-allow="${key}"]`).addEventListener("change", (event) => {
         if (event.target.checked) excluded.delete(index);
@@ -441,6 +493,7 @@
           excluded.add(index);
         }
         renderAllocation();
+        document.dispatchEvent(new Event("strategy:allocation"));
         $("#allocation-status").textContent = "Разрешённые классы изменены только в черновике. Сумма долей — 100%.";
       });
     });
@@ -455,7 +508,8 @@
       locked.clear();
       excluded.clear();
       renderAllocation();
-      $("#allocation-status").textContent = "Начальные доли восстановлены. Серверные параметры не изменялись.";
+      document.dispatchEvent(new Event("strategy:allocation"));
+      $("#allocation-status").textContent = "Начальные доли восстановлены в черновике. Подтверждённые параметры не изменялись.";
     });
     $("#review-allocation").addEventListener("click", () => {
       const body = showDialog("Изменения в черновике");
@@ -848,6 +902,177 @@
 
     renderAllocation();
     const help = initHelp();
+    const allocationExplanations = {"shares": ["Желаемая часть черновика, отведённая акциям. Это не фактическая доля на счёте. Изменение не покупает акции. В каталоге подходов оно сохраняет рабочий черновик отдельно от подтверждённых условий.", "Акция — доля участия в компании. Её рыночная цена может расти или падать; выплаты владельцам зависят от решений и результатов компании. Эта строка показывает, какую долю вы хотите отвести прямым вложениям в акции в примере.", "При большей доле акций в черновике уменьшаются другие свободные доли. Если когда-либо действительно собрать такой портфель, большая его часть будет зависеть от цен акций. Сам ползунок не рассчитывает будущий доход и не обещает его рост."], "bonds": ["Желаемая часть черновика, отведённая облигациям. Это не сумма уже купленных облигаций и не обещание фиксированного результата. Реальные бумаги на счёте не меняются.", "Облигация — бумага с обязательствами заёмщика по выплатам. Условия отличаются: важны срок, цена и способность заёмщика платить. Эта строка задаёт желаемую долю облигаций только в верхнем черновике.", "Большая доля оставляет меньше места другим свободным классам. Если реализовать такой состав отдельными действиями, больше капитала будет связано с облигациями и их рисками. Это не гарантирует стабильные выплаты или отсутствие падения цены."], "funds": ["Желаемая часть черновика, отведённая фондам. Фонд — общий набор вложений, в котором вы можете купить долю. Этот процент не раскрывает состав фондов и ничего не покупает.", "Фонд может держать акции, облигации или другие активы по своим правилам. Здесь вы задаёте желаемую долю паёв фондов как отдельного класса, а не отдельные доли всех компаний внутри них.", "Больше фондов в черновике — меньше места другим свободным классам. Реальный результат зависел бы от состава выбранных фондов. Разные фонды могут пересекаться по одним компаниям; само наличие нескольких фондов не означает независимые риски."], "cash": ["Желаемая часть капитала, которую в этом черновике вы оставляете деньгами. Это процент, а не рублёвый резерв ниже. Деньги не переводятся и не блокируются.", "Эта доля показывает незанятую ценными бумагами часть примерного распределения. Например, 10% — десятая часть капитала. Она не является вкладом или обещанием дохода на свободный остаток.", "Увеличите денежную долю — уменьшатся другие свободные доли. Уменьшите — в черновике можно отвести больше ценным бумагам. Это только схема распределения: ваш действительный денежный остаток от неё не меняется."]};
+    keys.forEach((key, index) => {
+      const control = $(`[data-allocation-key="${key}"]`);
+      const heading = control.querySelector(".allocation-control-head");
+      const number = $(`[data-target-number="${key}"]`);
+      number.readOnly = true;
+      number.inputMode = "none";
+      number.setAttribute("aria-label", `Доля ${labels[index]}, изменяется ползунком и кнопками`);
+      const allowance = $(`[data-allow="${key}"]`);
+      allowance.setAttribute("role", "switch");
+      allowance.closest("label").classList.add("toggle-row");
+      const lock = $(`[data-lock="${key}"]`);
+      lock.append(node("span", "Свободно", "allocation-lock-text"));
+      const range = $(`[data-target-range="${key}"]`);
+      const row = node("div", undefined, "allocation-adjustment");
+      range.before(row);
+      const step = (direction) => {
+        const item = button(direction < 0 ? "−" : "+", () => {
+          if (number.disabled) return;
+          number.value = String(Math.max(0, Math.min(100, allocation[index] + direction)));
+          number.dispatchEvent(new Event("input", {bubbles: true}));
+        });
+        item.className = "step-button";
+        item.dataset.allocationStep = key;
+        item.dataset.direction = String(direction);
+        item.setAttribute("aria-label", `${direction < 0 ? "Уменьшить" : "Увеличить"} долю ${labels[index]} на 1 процентный пункт`);
+        return item;
+      };
+      row.append(step(-1), range, step(1));
+      help.attach(heading, `Справка: доля ${labels[index]}`, () => ({
+        summary: allocationExplanations[key][0],
+        current: `${allocation[index]}% в черновике. Из условных 100 000 ₽ это ${money(allocation[index] * 1000)}. Это пример, не сумма вашего портфеля.`,
+        sections: [
+          ["Что означает", allocationExplanations[key][1]],
+          ["Если увеличить или уменьшить", allocationExplanations[key][2]],
+          ["Как работают доли", "Всего всегда 100%. Когда вы меняете одну долю, остаток распределяется между разрешёнными долями без замка, пропорционально прежним значениям. Например, увеличение с 20% до 30% забирает 10 процентных пунктов из других свободных долей."],
+          ["Как изменить", "Кнопки −/+ меняют на один процентный пункт. Ползунок задаёт долю напрямую. Если доля выключена или закреплена замком, сначала измените соответствующий переключатель. Если все остальные доли закреплены, свободного остатка для изменения нет."],
+          ["Что не изменится", "Реальные активы, рублёвый резерв и сохранённые верхние лимиты не меняются. Этот блок пока не передаёт целевые доли серверному расчёту. Доступны просмотр различий и скачивание черновика, но не его применение к реальному счёту."],
+        ],
+      }));
+      const tools = node("div", undefined, "allocation-tools");
+      const allowedHelp = node("span", "Разрешение класса");
+      const lockHelp = node("span", "Как работает замок");
+      help.attach(allowedHelp, `Справка: разрешение ${labels[index]}`, () => ({
+        summary: "Разрешает использовать этот класс в верхнем черновике долей. Выключение ставит его долю в ноль; имеющиеся бумаги на брокерском счёте не продаются.",
+        current: excluded.has(index) ? `${labels[index]} выключены в черновике, доля 0%.` : `${labels[index]} разрешены в черновике, доля ${allocation[index]}%.`,
+        sections: [
+          ["Что делает включение", "Позволяет снова менять долю этого класса. Ранее убранный процент не восстанавливается сам: задайте нужную долю ползунком или кнопками. Это не включает серверный подбор и не разрешает брокеру покупки."],
+          ["Что делает выключение", "Убирает долю из черновика и распределяет освободившееся между остальными разрешёнными долями без замка. Если доля была закреплена, при её выключении этот замок снимается."],
+          ["Пример", "В черновике акции занимают 20%. Выключите их — станет 0%, а эти 20 процентных пунктов перейдут в другие доступные доли. Акции, которые уже куплены у брокера, останутся на счёте."],
+          ["Когда действие не получится", "Нужно оставить хотя бы один другой разрешённый класс без замка. Иначе некуда распределить остаток до 100%. Сначала освободите нужную долю. Выключение в этом блоке не заменяет нулевой верхний лимит в сохранённых настройках."],
+        ],
+      }));
+      help.attach(lockHelp, `Справка: замок ${labels[index]}`, () => ({
+        summary: "Закрепляет выбранный процент в черновике, чтобы он не менялся при настройке других долей. Это замок числа, а не денег или бумаг на счёте.",
+        current: locked.has(index) ? `Доля ${allocation[index]}% закреплена.` : `Доля ${allocation[index]}% не закреплена и может участвовать в перераспределении.`,
+        sections: [
+          ["Когда замок закрыт", "Эта доля не участвует в распределении остатка и её ползунок недоступен. Остальные разрешённые доли без замка делят оставшийся процент."],
+          ["Когда замок открыт", "Доля снова может изменяться: и напрямую, и при настройке соседних долей. Снятие замка само по себе не меняет текущий процент."],
+          ["Пример", "Закрепили денежный резерв 10%. На остальные классы остаётся 90%. При изменении доли акций эти 10% не затрагиваются. Если закрепить все доли, перераспределять будет нечего."],
+          ["Границы действия", "Замок действует только в открытом черновике. Выключение класса убирает его долю и снимает её замок. Кнопка возврата начальных долей сбрасывает все замки. Денежный резерв у брокера и торговые поручения это не меняет."],
+        ],
+      }));
+      tools.append(allowedHelp, lockHelp);
+      control.append(tools);
+    });
+    const presetDescriptions = {
+      income: "Больше облигаций в примере; выплаты не гарантированы.",
+      growth: "Больше акций в примере; стоимость может сильнее колебаться.",
+      balanced: "Сочетание классов в примере, а не оценка вашего риск-профиля.",
+    };
+    all("[data-preset]").forEach((item) => {
+      const description = node("small", presetDescriptions[item.dataset.preset]);
+      item.append(description);
+      const presetContainer = node("div", undefined, "preset-with-help");
+      item.before(presetContainer);
+      presetContainer.append(item);
+      const presetValues = {income: [10, 70, 10, 10], growth: [55, 25, 10, 10], balanced: [30, 50, 10, 10]}[item.dataset.preset];
+      const presetTitle = {income: "Доход", growth: "Накопление", balanced: "Сочетание"}[item.dataset.preset];
+      help.attach(presetContainer, `Справка: пример «${presetTitle}»`, {
+        summary: `Подставляет пример долей: акции ${presetValues[0]}%, облигации ${presetValues[1]}%, фонды ${presetValues[2]}%, деньги ${presetValues[3]}%. Это начальная схема для редактирования, не готовая рекомендация.`,
+        sections: [
+          ["Что изменится", "Заменятся только четыре доли в верхнем черновике. Название описывает идею примера, но не определяет вашу цель, подходящие бумаги, доходность или риск. Каждую долю можно изменить."],
+          ["На условном капитале 100 000 ₽", `Акции — ${money(presetValues[0] * 1000)}, облигации — ${money(presetValues[1] * 1000)}, фонды — ${money(presetValues[2] * 1000)}, деньги — ${money(presetValues[3] * 1000)}. Это иллюстрация процентов, а не поручение распределить ваши деньги.`],
+          ["Когда пример не применится", "Если какие-либо классы выключены или закреплены, кнопка не снимает эти ограничения за вас. Сначала осознанно разрешите классы и снимите замки, либо изменяйте доли по одной."],
+          ["Чего название не обещает", "«Доход» не гарантирует выплаты, «Накопление» — рост капитала, «Сочетание» — защиту от убытков. Рублёвый резерв, верхние лимиты, сохранённый профиль и реальные активы этой кнопкой не меняются."],
+        ],
+      });
+      item.setAttribute("aria-pressed", "false");
+      item.addEventListener("click", () => {
+        if (locked.size || excluded.size) return;
+        all("[data-preset]").forEach((preset) => preset.setAttribute("aria-pressed", String(preset === item)));
+      });
+    });
+    all("[data-target-range], [data-target-number], [data-allow]").forEach((item) => {
+      item.addEventListener("input", () => all("[data-preset]").forEach((preset) => preset.setAttribute("aria-pressed", "false")));
+    });
+    $("#reset-allocation").addEventListener("click", () => all("[data-preset]").forEach((preset) => preset.setAttribute("aria-pressed", "false")));
+    const presetHelp = node("div", "Примеры для старта", "setting-toggle-help");
+    $(".strategy-preset-group").before(presetHelp);
+    help.attach(presetHelp, "Справка: примеры распределения", {"summary": "Три кнопки дают разные начальные схемы распределения. Они меняют только черновик четырёх долей. Название подхода не обещает доход и не выбирает финансовые условия за вас.", "sections": [["Доход", "Пример: 10% акции, 70% облигации, 10% фонды, 10% деньги. Большая доля облигаций в примере не гарантирует выплаты или сохранность средств."], ["Накопление", "Пример: 55% акции, 25% облигации, 10% фонды, 10% деньги. Большая доля акций не означает, что капитал обязательно вырастет."], ["Сочетание", "Пример: 30% акции, 50% облигации, 10% фонды, 10% деньги. Это ещё одна схема, а не вычисленный для вас баланс риска и дохода."], ["Как применяются", "Нужно разрешить все классы и снять замки; иначе пример не заменяет ваши ограничения. Кнопки не записывают серверный профиль. Для каждого примера рядом есть отдельная справка с точным составом."]]});
+    // Time selectors reuse the existing, device-local notification draft contract.
+    for (const [id, title, text] of [
+      ["digest-time", "Время обзора", {"summary": "Время, в которое вы хотели бы получать обзор. Пока оно только входит в скачиваемый черновик расписания: эта настройка не запускает отправку уведомлений.", "sections": [["Как читать", "Часы и минуты выбираются отдельно. 20:30 означает половину девятого вечера в выбранном часовом поясе, а не обязательно в текущем поясе телефона."], ["Что меняет выбор", "Меняется записанное пожелание о времени обзора. Ни число активов, ни доли, ни расчёт дохода от этого не меняются. Смена времени не создаёт ещё один обзор."], ["Пример", "Было 20:30, выбрали 19 часов и 00 минут — в черновике станет 19:00. Это не подтверждение, что сообщение уже запланировано сервером."], ["Ограничение текущей версии", "Серверная доставка по этому расписанию пока не подключена. Разрешения браузера, сеть и тихий режим устройства нельзя обойти выбором времени."]]}],
+      ["quiet-start", "Начало тихих часов", {"summary": "Начало интервала, когда вы не хотите получать обычные уведомления. Сейчас это пожелание в черновике, а не включённый на сервере запрет доставки.", "sections": [["Как работает интервал", "Начало 22:00 и конец 09:00 означают ночь через полночь. Используется выбранный часовой пояс. Выбирайте разные времена начала и конца: одинаковое время в текущем интерфейсе не объясняет однозначно длительность."], ["Если изменить", "Более раннее начало при том же конце означает более длинный ночной интервал в таком примере. Более позднее — более короткий. Это не меняет настройки звука телефона."], ["Пример", "22:00–09:00 — пожелание не беспокоить ночью. 21:00–09:00 начинает этот интервал на час раньше."], ["Что не произойдёт", "Торги, позиции, выплаты и наблюдение за портфелем этой настройкой не останавливаются. Фактическая серверная доставка по черновику сейчас не включена."]]}],
+      ["quiet-end", "Окончание тихих часов", {"summary": "Время окончания желаемого тихого интервала. Оно не включает звук телефона, не назначает утреннюю сделку и пока не управляет реальной доставкой сообщений.", "sections": [["Что означает", "В паре с началом задаёт интервал без обычных уведомлений в вашем черновике. Время относится к выбранному часовому поясу."], ["Если изменить", "При начале 22:00 конец в 10:00 делает ночной интервал на час длиннее, чем конец в 09:00. Конец в 08:00 — на час короче."], ["Пример", "22:00–09:00 — одна настройка; 22:00–10:00 — другая. Выбор не означает гарантированную отправку всех сообщений ровно в 10:00."], ["Ограничение текущей версии", "Расписание только редактируется и скачивается. Будущая доставка потребует отдельного подключения; настройки устройства и разрешения браузера сохраняют силу."]]}],
+    ]) {
+      const input = $("#" + id);
+      const row = node("span", undefined, "time-choice");
+      const hours = node("select");
+      const minutes = node("select");
+      for (const [select, size, label] of [[hours, 24, "часы"], [minutes, 60, "минуты"]]) {
+        select.setAttribute("aria-label", `${title}: ${label}`);
+        for (let value = 0; value < size; value += 1) {
+          const option = node("option", String(value).padStart(2, "0"));
+          option.value = String(value).padStart(2, "0");
+          select.append(option);
+        }
+        select.addEventListener("change", () => {
+          input.value = `${hours.value}:${minutes.value}`;
+          input.dispatchEvent(new Event("input", {bubbles: true}));
+        });
+      }
+      const sync = () => {
+        [hours.value, minutes.value] = input.value.split(":");
+        hours.disabled = input.disabled;
+        minutes.disabled = input.disabled;
+      };
+      input.hidden = true;
+      input.after(row);
+      row.append(hours, node("span", ":"), minutes);
+      const holder = node("span", undefined, "time-choice-help");
+      row.after(holder);
+      help.attach(holder, `Справка: ${title}`, () => ({...text, current: `${input.value}, часовой пояс ${$("#digest-zone").selectedOptions[0].textContent}. Только черновик расписания.`}));
+      input.addEventListener("input", sync);
+      sync();
+    }
+    for (const [selector, title, text] of [
+      ["#notify-security", "События безопасности", {"summary": "Включает пожелание получать сообщения о безопасности в черновик настроек. Выключение не отключает защиту аккаунта и не разрешает опасные действия.", "sections": [["Включено и выключено", "Включено — вы отмечаете этот тип сообщений как нужный. Выключено — убираете его из черновика. Это не отключатель серверных проверок и не разрешение входа другим людям."], ["Пример", "Сообщение о проблеме доступа относится к безопасности. Это не совет покупать или продавать активы."], ["На что влияет сейчас", "Меняется только скачиваемое пожелание о сообщениях. Серверная доставка по нему ещё не подключена. Сами активы и деньги не меняются."]]}],
+      ["#notify-income", "Выплаты", {"summary": "Добавляет в черновик желание получать сообщения о выплатах по активам. Сообщение об ожидаемой выплате не означает, что деньги уже появились на счёте.", "sections": [["Что различать", "Дата в календаре и объявленная сумма — не то же самое, что подтверждённое зачисление брокером. Расходовать ожидаемую выплату как свободные деньги нельзя только на основании сообщения."], ["Включено и выключено", "Включение отмечает категорию в черновике, выключение убирает её. Право на купон или дивиденд и график выплат от переключателя не зависят."], ["Пример", "В календаре указан купон на завтра. Это будущая ожидаемая выплата, а не уже доступная сумма."], ["На что влияет сейчас", "Меняется только локальный черновик уведомлений. Доставку сообщений на телефон эта версия не включает; финансовых действий нет."]]}],
+      ["#notify-night", "Важные события ночью", {"summary": "Отдельное пожелание получать важные сообщения даже в выбранные тихие часы. Это не разрешение обходить режим «Не беспокоить» телефона.", "sections": [["Включено и выключено", "Включено — в черновике отмечено исключение для важных событий. Выключено — такого исключения нет. Значок не гарантирует, что приложение сможет издать звук или показать сообщение ночью."], ["Пример", "Тихие часы 22:00–09:00. Вы можете отметить пожелание получать важное ночью, но система телефона всё равно может заблокировать звук или показ."], ["На что влияет сейчас", "Только на черновик расписания. Серверной доставки по нему пока нет. Торги, защита и состав портфеля не меняются."]]}],
+      ["#notify-amounts", "Суммы в уведомлениях", {"summary": "Пожелание показывать финансовые суммы в сообщениях. Это может сделать их видимыми постороннему на экране телефона. По умолчанию выключено.", "sections": [["Когда выключено", "Предпочтение — получать сообщение без финансовых сумм. Сами данные портфеля в аккаунте не удаляются."], ["Когда включено", "В черновике вы разрешаете показывать суммы в будущих уведомлениях. Человек рядом может увидеть их на экране блокировки, если устройство показывает содержимое сообщений."], ["Пример", "Нейтральный текст «Есть обновление по портфелю» не раскрывает размер выплаты. Текст с суммой выплаты раскрывает больше личной информации."], ["На что влияет сейчас", "Только на скачиваемые настройки. Доставка ещё не подключена. Это не меняет доступ к аккаунту, не публикует портфель и не даёт брокеру торговые права."]]}],
+    ]) {
+      const input = $(selector);
+      input.setAttribute("role", "switch");
+      const holder = node("div", undefined, "setting-toggle-help");
+      input.closest("label").after(holder);
+      holder.append(node("span", title));
+      help.attach(holder, `Справка: ${title}`, () => ({...text, current: input.checked ? "Включено в черновике. Это не подтверждение включённой доставки." : "Выключено в черновике."}));
+    }
+
+    const actionHelp = (selector, title, content) => {
+      const element = $(selector);
+      if (!element) return;
+      const holder = node("div", title, "setting-toggle-help");
+      element.after(holder);
+      help.attach(holder, `Справка: ${title}`, content);
+    };
+    actionHelp("#review-allocation", "Просмотр и скачивание долей", {"summary": "Кнопка открывает сравнение начального примера с вашим черновиком. Сам просмотр ничего не сохраняет и не пересобирает реальный портфель.", "sections": [["Что показывает таблица", "Для каждого класса видны начальный процент и выбранный вами процент. Это сравнение двух черновых схем, а не состава вашего счёта до и после сделки."], ["Продолжить редактирование", "Закрывает окно и оставляет выбранные доли на странице. Ничего не отправляется брокеру."], ["Скачать черновик", "Создаёт файл с выбранными долями и разрешёнными классами. Он нужен для переноса или проверки. Скачивание не применяет стратегию в аккаунте и не меняет серверные лимиты."], ["Пример", "В начале акции 20%, теперь 30%. В окне будет 20% → 30%. Это не означает, что на счёте куплено ещё 10% акций."]]});
+    actionHelp("#reset-allocation", "Возврат начальных долей", {"summary": "Возвращает верхний черновик к начальному примеру и снимает его замки и исключения. Сохранённый профиль капитала и лимиты ниже не сбрасываются.", "sections": [["Что восстановится", "Акции 20%, облигации 60%, фонды 10%, деньги 10%. Все классы снова разрешены в черновике, все замки открыты."], ["Что будет потеряно", "Ваше текущее распределение в этом блоке заменится начальным. Это не загрузка последней версии из аккаунта и не отмена реальных сделок."], ["Пример", "Были акции 40% и закреплённый резерв 15%. После возврата станет 20% акций и 10% денег, замок будет снят."], ["На что не влияет", "Бумаги и деньги у брокера, рублёвый резерв, планируемые снятия и сохранённые лимиты не меняются."]]});
+    actionHelp("#digest-zone", "Часовой пояс расписания", {"summary": "Уточняет, к какому местному времени относятся часы обзора и тихий интервал. Пока это часть черновика; часовой пояс телефона или брокера не меняется.", "sections": [["Как выбрать", "Выберите из списка понятный вам город или регион. Europe/Moscow — московское время, Asia/Yekaterinburg — время Екатеринбурга."], ["Что меняет выбор", "Цифры часов остаются теми же, но интерпретируются в другом поясе. Это не меняет даты сделок или выплат на стороне брокера."], ["Пример", "20:30 в Москве и 20:30 в Екатеринбурге относятся к разным моментам. Поэтому проверяйте пояс вместе со временем."], ["Граница функции", "Скачивание расписания не создаёт серверное напоминание. Реальная доставка пока не подключена."]]});
+    actionHelp("#notifications-form button[type=\"submit\"]", "Скачивание настроек сообщений", {"summary": "Скачивает файл с выбранными категориями, временем и тихими часами. Это экспорт черновика, а не включение уведомлений на сервере.", "sections": [["Что попадёт в файл", "Время обзора, выбранный часовой пояс, начало и конец тихих часов, состояния переключателей сообщений."], ["Чего не происходит", "Кнопка не запрашивает разрешение браузера на уведомления и не проверяет доставку на телефон. Текущая версия не применяет скачанное расписание сервером."], ["Что значит результат", "Файл на устройстве — подтверждение экспорта, а не обещание получить обзор в выбранное время. Портфель и торговые настройки не меняются."]]});
+    const strategyGuide = node("div", "Как связаны три блока", "setting-toggle-help");
+    $(".strategy-jump").after(strategyGuide);
+    help.attach(strategyGuide, "Справка: три блока стратегии", {"summary": "Доли показывают желаемую схему. Профиль задаёт денежные и временные условия. Лимиты ограничивают расчёт. Это разные настройки, они не подменяют друг друга.", "sections": [["1 · Распределение", "Проценты акций, облигаций, фондов и денег должны дать 100%. В каталоге подходов доли входят в сохраняемый рабочий черновик. В деморежиме они остаются примером. Можно посмотреть различия и скачать копию."], ["2 · Капитал и риск", "Отдельные настройки: рублёвый резерв, снятия, срок планирования, отношение к падению, срок выхода и разрешение более высокого кредитного риска. Фактическое применение каждого поля описано в его справке."], ["3 · Лимиты", "Максимальные доли, срок облигаций, объём перестройки и допущения. Например, цель акций 20% и предел акций 40% — не противоречие: одно означает желание, другое — потолок. Верхние пределы не нужно складывать до 100%."], ["Заполнение не означает проверку", "Счётчик 3/3 сообщает лишь, что три поля имеют значения. Он не подтверждает их разумность, сохранение или безопасность портфеля. Числа в стартовом примере не являются вашими личными данными."], ["Когда меняется счёт", "Изменение настроек само по себе не совершает сделок. В автономном примере нет доступа к реальному аккаунту: даже подтверждённое сохранение существует только до перезагрузки страницы."], ["Как читать помощь", "Наведите мышь или удержите i для короткой справки. Обычное нажатие закрепляет подробный текст с примером. Его можно прокручивать; «Закрыть справку» или Escape возвращают к настройке."]]});
+    all("[data-strategy-section]").forEach((item) => item.addEventListener("click", () => {
+      const target = $("#" + item.dataset.strategySection);
+      target.scrollIntoView({block: "start", behavior: "instant"});
+      target.focus({preventScroll: true});
+    }));
+    renderAllocation();
     renderCalendar();
     renderEvents();
     renderGoals();
@@ -861,6 +1086,19 @@
         const item = demoInstruments.find((entry) => entry.uid === uid);
         if (item) showDemoInstrument(item);
       },
+      markAllocationSaved: () => { allocationExported = JSON.stringify(allocation); },
+      readAllocation: () => ({allocation: Object.fromEntries(keys.map((key, i) => [key, allocation[i]])),
+        locked: [...locked].map((i) => keys[i]).sort(), excluded: [...excluded].map((i) => keys[i]).sort()}),
+      writeAllocation: (draft) => {
+        const next = keys.map((key) => draft.allocation[key]);
+        if (next.some((value) => !Number.isInteger(value) || value < 0 || value > 100)
+          || next.reduce((sum, value) => sum + value, 0) !== 100) throw new Error("Invalid allocation draft");
+        allocation = next; locked.clear(); excluded.clear();
+        for (const key of draft.locked) locked.add(keys.indexOf(key));
+        for (const key of draft.excluded) excluded.add(keys.indexOf(key));
+        renderAllocation();
+        $("#allocation-status").textContent = "Распределено 100%. Целевые доли входят в сохраняемый черновик; сделки не создаются.";
+      },
       setSession: () => { sessionStarted = true; $("#start-demo").disabled = true; },
       setSnapshot: (data) => { snapshot = data; markPrivate(); },
       setAnalysis: (data) => {
@@ -870,9 +1108,13 @@
       setPayouts: (items) => { payouts = items || []; renderCalendar(); },
       setCatalog: (items) => { catalog = items; },
       filterAssets, decorateAssets, toast,
+      attachHelp: help.attach,
+      openDialog: showDialog,
+      closeDialog: () => dialog.close(),
       demoSearch: (query) => demoInstruments.filter((item) => `${item.name} ${item.ticker}`.toLocaleLowerCase("ru-RU").includes(query.toLocaleLowerCase("ru-RU"))),
       onView: (view) => {
         help.close(false, view);
+        if (dialog.open) dialog.close();
         if (view === "goals") renderGoals();
         if (view === "events") renderEvents();
         if (view === "payouts") renderCalendar();
