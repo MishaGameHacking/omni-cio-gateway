@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
+from threading import BoundedSemaphore
 from typing import Any, cast
 from uuid import UUID
 
@@ -62,6 +63,9 @@ class Database:
     """Thin persistence adapter for authentication state."""
 
     def __init__(self, database_url: str) -> None:
+        # Reserve at least six of the eight shared connections for ordinary and
+        # nested reads. Cross-process per-owner exclusion remains in PostgreSQL.
+        self._strategy_read_slots = BoundedSemaphore(2)
         self.pool = ConnectionPool(
             conninfo=database_url,
             min_size=1,
@@ -78,6 +82,18 @@ class Database:
 
     @contextmanager
     def strategy_assessment_slot(self, user_id: UUID) -> Iterator[bool]:
+        """Bound shared-pool lock holders before acquiring a database connection."""
+        if not self._strategy_read_slots.acquire(blocking=False):
+            yield False
+            return
+        try:
+            with self._strategy_assessment_owner_slot(user_id) as admitted:
+                yield admitted
+        finally:
+            self._strategy_read_slots.release()
+
+    @contextmanager
+    def _strategy_assessment_owner_slot(self, user_id: UUID) -> Iterator[bool]:
         """Serialize account reads across processes, with a durable start cooldown.
 
         A dedicated session lock spans the network work; no transaction or
