@@ -208,3 +208,29 @@ def test_precision_check_does_not_round_away_small_nonzero_digits():
     doc["profile"]["reserve_rub"] = "10.000000000000000000000000000000001"
     with pytest.raises(ValueError, match="precision"):
         normalize_document(doc)
+
+
+def test_new_catalog_edition_preserves_readable_saved_documents(monkeypatch):
+    from omnicio import strategy
+
+    saved = preset_document("income")
+    saved["profile"]["reserve_rub"] = "123456789.12345678"
+    custom = validate_selection(saved, intent="edit")
+    before = deepcopy(custom)
+    original_hash = document_hash(custom)
+    monkeypatch.setattr(strategy, "CATALOG_VERSION", "2026-10-07.1")
+    catalog = strategy_catalog()
+    assert before["catalog_version"] in catalog["compatible_document_versions"]
+    assert catalog["version"] in catalog["compatible_document_versions"]
+    assert normalize_document(custom) == before
+    assert document_hash(normalize_document(custom)) == original_hash
+    assert validate_selection(custom, intent="edit") == before
+    assert custom == before
+    # A new selection uses the current template, without rewriting the saved copy.
+    assert preset_document("income")["catalog_version"] == catalog["version"]
+    with pytest.raises(ValueError, match="preset_mismatch"):
+        validate_selection(before, intent="select")
+    malformed = deepcopy(before)
+    malformed["policy"]["invented_permission"] = True
+    with pytest.raises(ValueError, match="fields_invalid"):
+        normalize_document(malformed)

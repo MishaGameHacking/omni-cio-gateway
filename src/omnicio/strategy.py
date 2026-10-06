@@ -14,6 +14,15 @@ from decimal import ROUND_FLOOR, Decimal, InvalidOperation
 from typing import Any, cast
 
 CATALOG_VERSION = "2026-10-06.1"
+# Catalog editions are not schema versions. Retain every released edition whose
+# exact document schema remains readable; changing that schema requires migration.
+_RELEASED_DOCUMENT_EDITIONS = ("2026-10-06.1",)
+
+
+def compatible_document_versions() -> tuple[str, ...]:
+    return tuple(dict.fromkeys((*_RELEASED_DOCUMENT_EDITIONS, CATALOG_VERSION)))
+
+
 ALLOCATION_KEYS = ("shares", "bonds", "funds", "cash")
 RATING_LEVELS = (
     "AAA", "AA+", "AA", "AA-", "A+", "A", "A-", "BBB+", "BBB", "BBB-",
@@ -162,6 +171,7 @@ def _template(spec: tuple[Any, ...]) -> dict[str, Any]:
 
 def strategy_catalog() -> dict[str, Any]:
     return {"version": CATALOG_VERSION, "default_id": "balanced",
+        "compatible_document_versions": list(compatible_document_versions()),
         "sources": copy.deepcopy(list(SOURCES)),
             "presets": [_template(spec) for spec in _SPECS], "rating_levels": list(RATING_LEVELS),
             "sample_illustration": {"successes": 100, "trials": 100,
@@ -249,13 +259,13 @@ def normalize_document(value: object) -> dict[str, Any]:
     """Validate untrusted draft without inferring consent or filling missing facts."""
     data = _exact_keys(value, ("base_preset_id", "catalog_version", "customized", "allocation",
                                "locked", "excluded", "profile", "policy", "rules"))
-    if data["catalog_version"] != CATALOG_VERSION:
+    if data["catalog_version"] not in compatible_document_versions():
         raise ValueError("strategy_catalog_changed")
     preset_document(data["base_preset_id"])
     if type(data["customized"]) is not bool:
         raise ValueError("strategy_mode_invalid")
     return {
-        "base_preset_id": data["base_preset_id"], "catalog_version": CATALOG_VERSION,
+        "base_preset_id": data["base_preset_id"], "catalog_version": data["catalog_version"],
         "customized": data["customized"], **_allocation_flags(data),
         "profile": _profile_values(data["profile"]), "policy": _policy_values(data["policy"]),
         "rules": _rule_values(data["rules"]),

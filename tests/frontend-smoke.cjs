@@ -533,7 +533,7 @@ const createStrategyFixture = (mode = "saved") => {
   const original = createSettingsFixture(mode);
   const state = {...original.state, selection: null, delay: 0, failure: null, loadFailure: mode === "strategy-load-error",
     holdPrerequisites: mode === "strategy-prerequisite-delay", waitingPrerequisites: [],
-    holdStrategyReads: false, waitingStrategyReads: []};
+    holdStrategyReads: false, waitingStrategyReads: [], catalogOverride: null};
   state.releasePrerequisites = () => {
     state.holdPrerequisites = false;
     state.waitingPrerequisites.splice(0).forEach((release) => release());
@@ -552,7 +552,7 @@ const createStrategyFixture = (mode = "saved") => {
       && ["/api/profile/investment", "/api/profile/balancing"].includes(path)) {
       await new Promise((release) => state.waitingPrerequisites.push(release));
     }
-    if (path === "/api/strategy/catalog") return state.loadFailure ? json({detail: "synthetic_initial_failure"}, 503) : json(strategyCatalog);
+    if (path === "/api/strategy/catalog") return state.loadFailure ? json({detail: "synthetic_initial_failure"}, 503) : json(state.catalogOverride || strategyCatalog);
     if (path !== "/api/profile/strategy") return original.request(path, options);
     if (options.method === "GET") return json({public_id: "000000123", selection: state.selection});
     const payload = JSON.parse(options.body);
@@ -827,6 +827,20 @@ const verifyStrategyLibrary = async (send, evaluate, fixture) => {
   assert.equal(await waitUntil(() => evaluate('document.querySelector(".strategy-savebar [role=status]").textContent.includes("загружен из аккаунта")')), true);
   assert.equal(await evaluate('[...document.querySelectorAll(".strategy-tab-panel")].every(p=>!p.inert)'), true, "Controls unlock only after owner data arrives");
   assert.equal(fixture.state.selection.version, beforeReloadVersion, "Reload and blocked click never save defaults or mutate strategy");
+  // A later catalog with the same supported document schema must not lock out
+  // an earlier saved strategy or silently replace its provenance and parameters.
+  const preservedDocument = structuredClone(fixture.state.selection.document);
+  const preservedCustom = structuredClone(fixture.state.selection.custom_document);
+  fixture.state.catalogOverride = structuredClone(strategyCatalog);
+  fixture.state.catalogOverride.version = "2026-10-07.1";
+  fixture.state.catalogOverride.compatible_document_versions = [strategyCatalog.version, "2026-10-07.1"];
+  for (const preset of fixture.state.catalogOverride.presets) preset.document.catalog_version = "2026-10-07.1";
+  await click('.strategy-savebar button:last-child');
+  assert.equal(await waitUntil(() => evaluate('document.querySelector(".strategy-savebar [role=status]").textContent.includes("загружен из аккаунта")')), true);
+  assert.deepEqual(fixture.state.selection.document, preservedDocument, "Catalog upgrades never silently rewrite an existing strategy");
+  assert.deepEqual(fixture.state.selection.custom_document, preservedCustom, "Catalog upgrades preserve the separate custom copy");
+  await click(plus); await saved();
+  assert.equal(fixture.state.selection.document.catalog_version, preservedDocument.catalog_version, "Earlier compatible documents remain editable and retain provenance");
   fixture.state.selection.version += 1; // Another device, not a client overwrite.
   const foreign = structuredClone(fixture.state.selection.document);
   await click(plus);

@@ -6376,7 +6376,7 @@
       if (payload?.public_id !== currentProfileId) throw new Error("strategy_owner_changed");
       const record = payload.selection;
       if (record !== null && (!record || !Number.isSafeInteger(record.version) || record.version < 1
-        || record.document?.catalog_version !== catalog.version
+        || !(catalog.compatible_document_versions || [catalog.version]).includes(record.document?.catalog_version)
         || !catalog.presets.some((item) => item.id === record.document.base_preset_id))) throw new Error("strategy_record_invalid");
       return record;
     };
