@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 concurrency:
   group: ui-candidate-transfer-750
@@ -22,12 +23,9 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.author_association == 'OWNER' &&
       github.actor == 'MishaGameHacking'
-    name: Verify reviewed candidate and publish immutable source blobs
+    name: Read fixed candidate quality evidence only
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 12
-    permissions:
-      contents: write
-      pull-requests: read
+    timeout-minutes: 5
     steps:
       - name: Read accepted source only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -38,28 +36,16 @@ jobs:
       - name: Bootstrap existing pinned Python
         shell: cmd
         run: call .github\scripts\bootstrap_self_hosted_python.cmd
-      - name: Execute verified Python transport without PowerShell scripts
+      - name: Read quality annotations for actual candidate
         shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         run: >-
-          "%OMNICIO_PYTHON%" -c "import base64,hashlib,json,os,textwrap,urllib.request; request=urllib.request.Request('https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/git/blobs/dbaca61e97f4e575ec8a50ef8f481e46329d3b26',headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'User-Agent':'OmniCIO-reviewed-source-transport'}); response=urllib.request.urlopen(request,timeout=30); data=json.loads(response.read(200000)); response.close(); raw=base64.b64decode(data['content']); assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()=='dbaca61e97f4e575ec8a50ef8f481e46329d3b26'; script=textwrap.dedent(raw.decode().split(chr(36)+'script = @'+chr(39)+'\n',1)[1].split(chr(39)+'@',1)[0]); exec(compile(script,'verified-strategy-transfer','exec'))"
-      - name: Candidate syntax without write token
-        shell: cmd
-        run: |
-          node --check web\app.js
-          if errorlevel 1 exit /b 1
-          node --check web\workspace.js
-          if errorlevel 1 exit /b 1
-          node --check tests\frontend-smoke.cjs
-          if errorlevel 1 exit /b 1
-          "%OMNICIO_PYTHON%" -m py_compile src\omnicio\strategy.py src\omnicio\main.py src\omnicio\portfolio_store.py
-      - name: Preserve private mapping
-        if: always()
+          "%OMNICIO_PYTHON%" -c "import json,os,pathlib,urllib.request; base='https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/check-runs/112095224340'; headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'User-Agent':'OmniCIO-quality-evidence'}; response=urllib.request.urlopen(urllib.request.Request(base,headers=headers),timeout=30); check=json.load(response); response.close(); assert check['head_sha']=='2fef19ccf3fc2eaf21c7c97d7194eb950a5d2221' and check['app']['id']==12526; response=urllib.request.urlopen(urllib.request.Request(base+'/annotations?per_page=100',headers=headers),timeout=30); rows=json.load(response); response.close(); assert len(rows)==check['output']['annotations_count']; pathlib.Path('quality-annotations.json').write_text(json.dumps(rows,ensure_ascii=False,indent=2),encoding='utf-8'); print('Read annotations:',len(rows))"
+      - name: Preserve private quality evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: strategy-candidate-blobs-750
-          path: candidate-blobs.json
-          if-no-files-found: warn
+          name: strategy-quality-750
+          path: quality-annotations.json
+          if-no-files-found: error
           retention-days: 1
