@@ -37,102 +37,12 @@ jobs:
         shell: cmd
         run: call .github\scripts\bootstrap_self_hosted_python.cmd
       - name: Verify fixed source manifest and publish immutable blobs only
-        shell: .venv-ci\Scripts\python.exe {0}
+        shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          import base64
-          import hashlib
-          import json
-          import os
-          import pathlib
-          import subprocess
-          import urllib.request
-          import zlib
-
-          base = '0c0e2f71c6bacbd9a34fedba2262ce8f7efd8b38'
-          expected = os.environ['EXPECTED_HEAD']
-          api = 'https://api.github.com/repos/MishaGameHacking/omni-cio-gateway'
-          headers = {'Authorization': 'Bearer ' + os.environ['GITHUB_TOKEN'],
-                     'User-Agent': 'OmniCIO-reviewed-source-delivery',
-                     'Accept': 'application/vnd.github+json'}
-          def request(path, data=None):
-              payload = None if data is None else json.dumps(data).encode()
-              req = urllib.request.Request(api + path, data=payload, headers=headers,
-                                           method='GET' if data is None else 'POST')
-              with urllib.request.urlopen(req, timeout=30) as response:
-                  raw = response.read(2000000)
-                  assert len(raw) < 2000000
-                  return json.loads(raw)
-          def gitsha(raw):
-              return hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
-          assert request('/git/ref/heads/main')['object']['sha'] == base
-          assert request('/git/ref/heads/feature/strategy-account-assessment')['object']['sha'] == expected
-          tree_sha = request('/git/commits/' + expected)['tree']['sha']
-          tree = request('/git/trees/' + tree_sha + '?recursive=1')
-          assert not tree['truncated']
-          current = {row['path']: row['sha'] for row in tree['tree'] if row['type'] == 'blob'}
-          parts = [
-              'cb1f48413323a562fddfe62405758e78fceb4da8',
-              '58391b94dc899720f16982bab875cf4b6df2dbc9',
-              '3a0458a1e226778a339aecac539bcbf033983f15',
-              '1dbab86198a1517c5af56cdd98474809669cf37a',
-              '5d34b75c159e2cb8ee96ec1837676b8ea5f1ec0d',
-              'ae46584dbf17ac8b28d1477c90de817742f6546d',
-              '05b16bd6f028f13d918e9b20fde5912d71f8f99d',
-              '7ca2a68ef07af359d03f4ea9f10c86ded5697ae9',
-              '0d021e22ae71cd84b719d905ac881dec50997de9',
-              '685539367a208a9aa11a16b9cd13075a970b8c1f',
-              'd1362e2e8c7b04c2acf61300a27c35a4ed68d6ac',
-              '46a47022971b433165f178fdf7f3641169b10acc',
-              'd0a2eee912c4946fc5bc1b92b6e6da65542129ce',
-              '9fe4e83e5a1dd5d74c121f615b62120c46f6f4fb',
-              'e59b63c1ee3de14a817602deb71b69aeda16facb',
-              'bf46dbb638555344bd94eff39e7ea7119854af88',
-          ]
-          packed = b''
-          for digest in parts:
-              row = request('/git/blobs/' + digest)
-              raw = base64.b64decode(row['content'])
-              assert gitsha(raw) == digest
-              packed += raw
-          assert gitsha(packed) == '805e5a33a370edf3cd937637dc5f5b3320fcbee3'
-          manifest = json.loads(zlib.decompress(packed))
-          allowed = {'src/omnicio/strategy_assessment.py', 'src/omnicio/strategy_service.py',
-                     'src/omnicio/broker.py', 'src/omnicio/main.py', 'src/omnicio/portfolio_store.py',
-                     'tests/test_strategy_assessment.py', 'tests/test_strategy_service.py',
-                     'tests/test_broker.py', 'tests/frontend-smoke.cjs', 'web/app.js',
-                     'pyproject.toml', 'uv.lock', '.github/scripts/test_timeweb_auth_app.py'}
-          assert manifest['base'] == base and manifest['version'] == 1
-          assert set(manifest['files']) == allowed
-          outputs = {}
-          for path, change in manifest['files'].items():
-              assert current.get(path) == change['before'], 'Concurrent source change: ' + path
-              if change['before'] is None:
-                  raw = change['content'].encode('utf-8')
-              else:
-                  original = subprocess.check_output(['git', 'show', base + ':' + path])
-                  assert gitsha(original) == change['before']
-                  lines = original.decode('utf-8').splitlines(keepends=True)
-                  bound = len(lines)
-                  for start, end, replacement in reversed(change['edits']):
-                      assert type(start) is int and type(end) is int and 0 <= start <= end <= bound
-                      lines[start:end] = [replacement]
-                      bound = start
-                  raw = ''.join(lines).encode('utf-8')
-              assert gitsha(raw) == change['after'], 'Candidate digest mismatch: ' + path
-              outputs[path] = raw
-          assert request('/git/ref/heads/main')['object']['sha'] == base
-          assert request('/git/ref/heads/feature/strategy-account-assessment')['object']['sha'] == expected
-          published = {}
-          for path, raw in outputs.items():
-              result = request('/git/blobs', {'content': base64.b64encode(raw).decode(), 'encoding': 'base64'})
-              assert result['sha'] == manifest['files'][path]['after']
-              published[path] = result['sha']
-          pathlib.Path('candidate-blobs.json').write_text(
-              json.dumps({'base': base, 'head': expected, 'files': published}, indent=2), encoding='utf-8')
-          print('Verified immutable source files:', len(published))
+        run: >-
+          "%OMNICIO_PYTHON%" -c "import base64,hashlib,json,os,textwrap,urllib.request; sha='ac268b2b6ba9aff77524886416454b4839ea55da'; req=urllib.request.Request('https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'User-Agent':'OmniCIO-reviewed-source-delivery'}); response=urllib.request.urlopen(req,timeout=30); raw=base64.b64decode(json.load(response)['content']); response.close(); assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==sha; script=textwrap.dedent(raw.decode('utf-8').split('        run: |\n',1)[1].split('      - name: Preserve verified source identities',1)[0]); exec(compile(script,'verified-source-delivery','exec'))"
       - name: Preserve verified source identities
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
