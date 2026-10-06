@@ -1,0 +1,45 @@
+name: Strategy candidate verification
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/strategy-candidate-check.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: strategy-candidate-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: >-
+      github.repository == 'MishaGameHacking/omni-cio-gateway' &&
+      github.event.pull_request.head.ref == 'feature/strategy-account-assessment' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.author_association == 'OWNER'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact released baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 0c0e2f71c6bacbd9a34fedba2262ce8f7efd8b38
+          persist-credentials: false
+          clean: true
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
+      - name: Capture tracked source bytes without credentials
+        shell: cmd
+        run: >-
+          "%OMNICIO_PYTHON%" -c "import subprocess,zipfile; base='0c0e2f71c6bacbd9a34fedba2262ce8f7efd8b38'; paths=subprocess.check_output(['git','ls-tree','-r','--name-only',base],text=True).splitlines(); allowed=[p for p in paths if p.startswith(('src/','web/','tests/','migrations/','.github/scripts/','.github/workflows/')) or p in ('AGENTS.md','pyproject.toml','uv.lock','requirements-runtime.txt','requirements-dev.txt','.sonarcloud.properties')]; archive=zipfile.ZipFile('strategy-current-source.zip','w',zipfile.ZIP_DEFLATED); [archive.writestr(p,subprocess.check_output(['git','show',base+':'+p])) for p in allowed]; archive.close(); print('Exact tracked files:',len(allowed))"
+      - name: Private review artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: strategy-current-source
+          path: strategy-current-source.zip
+          retention-days: 1
+          if-no-files-found: error
