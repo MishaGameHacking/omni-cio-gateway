@@ -1,0 +1,44 @@
+name: UI candidate transfer (PR 750 only)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/ui-candidate-transfer.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-candidate-transfer-750
+  cancel-in-progress: false
+
+jobs:
+  source:
+    if: >-
+      github.repository == 'MishaGameHacking/omni-cio-gateway' &&
+      github.event.pull_request.number == 750 &&
+      github.event.pull_request.head.ref == 'feature/strategy-touch-controls' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.author_association == 'OWNER' &&
+      github.actor == 'MishaGameHacking'
+    name: Export pinned candidate without running application code
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Read exact candidate only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 7c7350f4836fe1a1b49554f3889cc6afda6ff9d8
+          persist-credentials: false
+          clean: true
+      - name: Archive tracked source without git credentials
+        shell: cmd
+        run: git archive --format=zip --output=candidate-source.zip HEAD
+      - name: Upload private integration source
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: strategy-source-7c7350f
+          path: candidate-source.zip
+          if-no-files-found: error
+          retention-days: 1
