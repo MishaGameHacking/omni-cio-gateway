@@ -244,7 +244,7 @@ def test_native_manual_refresh_is_not_daily_success_and_cooldown_is_durable(
     state = store.refresh_status(ident)
     assert state["status"] == "succeeded"
     assert state["snapshot_saved"] is True
-    assert state["observed_at"] == now.isoformat()
+    assert datetime.fromisoformat(state["observed_at"]) == now
     assert state["history_status"] == "complete"
     assert state["can_refresh"] is False
     assert store.request_refresh(ident, LEGAL_VERSIONS)["reason"] == "refresh_cooldown"

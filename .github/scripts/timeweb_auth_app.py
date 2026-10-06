@@ -1309,10 +1309,17 @@ def verify_public_config(body: bytes) -> None:
         raise InfraError("Public registration capacity does not match deployment config")
     if payload.get("auth_provider") != "vkid":
         raise InfraError("Public auth provider is not VK ID")
+    if payload.get("auth_providers") != ["tid", "vkid"]:
+        raise InfraError("Public auth providers do not match the release contract")
 
-    expected_login = vkid_configuration_ready()
-    if payload.get("login_enabled") is not expected_login:
+    expected_vkid = vkid_configuration_ready()
+    if payload.get("vkid_enabled") is not expected_vkid:
         raise InfraError("Public VK ID readiness does not match deployment config")
+    tid_ready = payload.get("tid_enabled")
+    if not isinstance(tid_ready, bool):
+        raise InfraError("Public T-ID readiness is not a boolean")
+    if payload.get("login_enabled") is not (expected_vkid or tid_ready):
+        raise InfraError("Public login readiness does not match available providers")
 
 
 def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:

@@ -190,6 +190,24 @@ def _discontinuities(bars: Sequence[TBankHistoricCandle]) -> list[str]:
     return sorted(reasons)
 
 
+def _cashflow_reasons(events: Sequence[HistoricalCashflow]) -> list[str]:
+    reasons = []
+    for event in events:
+        if (
+            event.entitlement_at.tzinfo is None
+            or event.paid_at.tzinfo is None
+            or event.paid_at < event.entitlement_at
+            or not event.amount_per_unit_rub.is_finite()
+            or event.amount_per_unit_rub < 0
+            or not event.source_url.startswith("https://")
+        ):
+            reasons.append("invalid_distribution_event")
+    keys = [(event.entitlement_at, event.paid_at, event.source_url) for event in events]
+    if len(keys) != len(set(keys)):
+        reasons.append("duplicate_distribution_event")
+    return reasons
+
+
 def _asset_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> list[str]:
     reasons = []
     if asset.basis not in {"unadjusted_price", "verified_total_return"}:
@@ -209,19 +227,7 @@ def _asset_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> 
         reasons.append("cashflows_require_verified_basis")
     if asset.basis == "verified_total_return" and asset.candidate.asset_class == "bonds":
         reasons.append("bond_principal_and_accrual_history_required")
-    for event in asset.cashflows:
-        if (
-            event.entitlement_at.tzinfo is None
-            or event.paid_at.tzinfo is None
-            or event.paid_at < event.entitlement_at
-            or not event.amount_per_unit_rub.is_finite()
-            or event.amount_per_unit_rub < 0
-            or not event.source_url.startswith("https://")
-        ):
-            reasons.append("invalid_distribution_event")
-    keys = [(event.entitlement_at, event.paid_at, event.source_url) for event in asset.cashflows]
-    if len(keys) != len(set(keys)):
-        reasons.append("duplicate_distribution_event")
+    reasons.extend(_cashflow_reasons(asset.cashflows))
     return sorted(set(reasons))
 
 

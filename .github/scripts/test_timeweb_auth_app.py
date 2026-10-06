@@ -771,7 +771,10 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             "registration_enabled": False,
             "registration_max_users": 1,
             "auth_provider": "vkid",
+            "auth_providers": ["tid", "vkid"],
             "login_enabled": False,
+            "vkid_enabled": False,
+            "tid_enabled": False,
         }).encode()
         self.responses = {
             "/": (root, "text/html", 200),
@@ -823,6 +826,35 @@ class PublicReleaseVerificationTests(unittest.TestCase):
 
     def test_matching_release_checks_every_public_surface(self) -> None:
         self.assertEqual(self.verify(), set(self.responses))
+
+    def test_public_login_readiness_is_independent_for_each_provider(self) -> None:
+        base = json.loads(self.responses["/api/auth/config"][0])
+        for vkid, tid in ((False, False), (False, True), (True, False), (True, True)):
+            config = dict(base, vkid_enabled=vkid, tid_enabled=tid, login_enabled=vkid or tid)
+            with (
+                self.subTest(vkid=vkid, tid=tid),
+                patch.object(MODULE, "vkid_configuration_ready", return_value=vkid),
+            ):
+                MODULE.verify_public_config(json.dumps(config).encode())
+
+    def test_public_login_contract_rejects_missing_or_inconsistent_readiness(self) -> None:
+        base = json.loads(self.responses["/api/auth/config"][0])
+        invalid = (
+            {"auth_providers": ["vkid"]},
+            {"vkid_enabled": None},
+            {"vkid_enabled": True},
+            {"tid_enabled": "false"},
+            {"tid_enabled": None},
+            {"login_enabled": True},
+            {"tid_enabled": True, "login_enabled": False},
+        )
+        for changed in invalid:
+            with (
+                self.subTest(changed=changed),
+                patch.object(MODULE, "vkid_configuration_ready", return_value=False),
+                self.assertRaises(MODULE.InfraError),
+            ):
+                MODULE.verify_public_config(json.dumps(dict(base, **changed)).encode())
 
     def test_invalid_public_release_is_rejected(self) -> None:
         cases = [

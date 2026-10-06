@@ -138,6 +138,7 @@ def test_assistant_transport_sends_only_bounded_chat_and_never_executes_model_to
             {"done": True, "message": {"role": "assistant", "content": "x" * 16001}}
         ).encode(),
     ],
+    ids=("invalid_json", "oversized_body", "incomplete", "tool_role", "empty", "oversized_reply"),
 )
 def test_assistant_rejects_incomplete_or_unbounded_provider_result(payload: bytes) -> None:
     client = configured()

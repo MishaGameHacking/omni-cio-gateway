@@ -51,7 +51,8 @@ def test_news_keeps_real_dates_sorts_deduplicates_and_canonicalizes_source_https
     assert newest["published_at"] == "2026-10-06T11:00:00+00:00"
     assert newest["url"] == "https://www.cbr.ru/press/event/2?id=1"
     assert older["url"] == "https://www.cbr.ru/press/event/1"
-    assert newest["id"] != older["id"] and len(newest["id"]) == 64
+    assert newest["id"] != older["id"]
+    assert len(newest["id"]) == 64
     assert payload["fetched_at"] == NOW.isoformat()
     assert payload["freshness"] == "fresh"
 
@@ -90,7 +91,10 @@ def test_news_forbids_dtd_and_entities_in_every_supported_xml_encoding(encoding:
         parse_news(document, fetched_at=NOW)
 
 
-@pytest.mark.parametrize("payload", [b"x" * 512001, b"<rss>", b"<html/>", b"<rss><channel/></rss>"])
+@pytest.mark.parametrize(
+    "payload", [b"x" * 512001, b"<rss>", b"<html/>", b"<rss><channel/></rss>"],
+    ids=("oversized", "malformed", "wrong_root", "empty"),
+)
 def test_news_malformed_empty_and_oversized_feed_fails_without_invented_headlines(
     payload: bytes,
 ) -> None:

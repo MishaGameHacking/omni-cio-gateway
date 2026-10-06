@@ -924,6 +924,18 @@ def _bond_maturity(
     return reasons, months
 
 
+def _credit_category_reasons(notch: str, data: Mapping[str, Any]) -> list[str]:
+    if notch != "NR" and notch not in RATING_LEVELS[10:24]:
+        return []
+    key = "max_unknown_percent" if notch == "NR" else "max_below_grade_percent"
+    cap = _amount(data["policy"][key])
+    if cap is None:
+        return [_MISSING_PREFIX + key]
+    if cap == 0:
+        return [key + "_excluded"]
+    return []
+
+
 def _bond_criteria(
     candidate: StrategyCandidateFacts,
     data: Mapping[str, Any],
@@ -936,14 +948,7 @@ def _bond_criteria(
         notch = "NR"
     if Decimal(data["rules"]["rating_caps"][notch]) == 0:
         reasons.append("missing:rating" if notch == "NR" else "rating_excluded")
-    credit_key = "max_unknown_percent" if notch == "NR" else "max_below_grade_percent"
-    credit_category = notch == "NR" or notch in RATING_LEVELS[10:24]
-    if credit_category:
-        credit_cap = _amount(data["policy"][credit_key])
-        if credit_cap is None:
-            reasons.append(_MISSING_PREFIX + credit_key)
-        elif credit_cap == 0:
-            reasons.append(credit_key + "_excluded")
+    reasons.extend(_credit_category_reasons(notch, data))
     if notch in RATING_LEVELS[10:24] and not data["profile"]["allow_below_investment_grade"]:
         reasons.append("below_grade_not_allowed")
     minimum = rules.get("minimum_rating")
@@ -1431,8 +1436,14 @@ def select_strategy_candidates(
     )
     total = sum((Decimal(item["target_weight_percent"]) for item in selected), _ZERO)
     ready = bool(selected) and not missing
+    if ready:
+        status = "ready"
+    elif selected:
+        status = "partial"
+    else:
+        status = "insufficient_data"
     return {
-        "status": "ready" if ready else "partial" if selected else "insufficient_data",
+        "status": status,
         "candidate_selection_ready": ready,
         "execution_enabled": False,
         "method": mode,

@@ -111,6 +111,13 @@
       return time >= cutoff && time <= now;
     });
   };
+  const mergeGoals = (incoming, current, deletedIds) => {
+    const known = new Map(current.map(goal => [goal.id, goal]));
+    return incoming.filter(goal => !deletedIds.has(goal.id)).map(goal => {
+      const previous = known.get(goal.id);
+      return previous?.version > goal.version ? previous : goal;
+    });
+  };
   const chart = (rows, {
     timeKey = "captured_at",
     valueKey = "nav_rub",
@@ -263,6 +270,7 @@
   };
   const clearCharts = () => pendingCharts.clear();
   window.OmniUI = Object.freeze({
+    mergeGoals,
     escape,
     number,
     format,

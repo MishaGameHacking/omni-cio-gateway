@@ -18,6 +18,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 CATEGORIES = ("portfolio", "payments", "goals", "system")
+_MOSCOW_TIMEZONE = "Europe/Moscow"
 DEFAULT_PREFERENCES: dict[str, Any] = {
     "display_name": "",
     "locale": "ru",
@@ -29,7 +30,7 @@ DEFAULT_PREFERENCES: dict[str, Any] = {
         "enabled": False,
         "start": "22:00",
         "end": "08:00",
-        "timezone": "Europe/Moscow",
+        "timezone": _MOSCOW_TIMEZONE,
     },
     "digest_frequency": "off",
 }
@@ -371,7 +372,7 @@ def _accumulate_cashflow(
     else:
         key = _INCOME[kind]
         values[key] += payment
-        month = at.astimezone(ZoneInfo("Europe/Moscow")).strftime("%Y-%m")
+        month = at.astimezone(ZoneInfo(_MOSCOW_TIMEZONE)).strftime("%Y-%m")
         monthly = months.setdefault(month, dict.fromkeys(_INCOME_FIELDS, _ZERO))
         monthly[key] += payment
 
@@ -521,7 +522,7 @@ def _income_goal_amount(
 ) -> tuple[Decimal | None, datetime | None, str | None]:
     if watermark is None or watermark > now:
         return None, None, "history_incomplete"
-    begin = datetime.combine(_date(goal["start_date"]), time.min, ZoneInfo("Europe/Moscow"))
+    begin = datetime.combine(_date(goal["start_date"]), time.min, ZoneInfo(_MOSCOW_TIMEZONE))
     if begin >= watermark:
         return None, None, "goal_period_not_observed"
     flow = cashflow_summary(

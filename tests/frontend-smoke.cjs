@@ -95,6 +95,7 @@ const makeFixture = mode => {
       updated_at: stamp
     },
     goals: [],
+    goalSequence: 0,
     events: [{
       id: "synthetic-event-1",
       category: "system",
@@ -118,6 +119,14 @@ const makeFixture = mode => {
     maxActiveWrites: 0,
     holdWorkspace: false,
     heldWorkspace: [],
+    holdGoals: false,
+    heldGoals: [],
+    goalDeleteNoContent: false,
+    goalWriteConsentAfterCommit: false,
+    goalPutConsentAfterCommit: false,
+    holdGoalWriteAck: false,
+    heldGoalWrites: [],
+    lateGoalAck: null,
     refreshQueued: false,
     refreshPollsRemaining: 0,
     refreshStatus: {
@@ -570,8 +579,40 @@ const displayContracts = () => {
   ui.setPrivacy(false);
   ui.setLocale("en");
   assert.equal(ui.format("1234.56"), "1,234.56", "Locale setting has a real consumer");
+  goalVersionContracts(ui);
   console.log("PASS display contracts: unknown values, source escaping, privacy, real-series requirements and locale");
 };
+function goalVersionContracts(ui) {
+  const known = [{
+    id: "goal-a",
+    version: 3,
+    title: "Актуальная версия"
+  }];
+  const stale = [{
+    id: "goal-a",
+    version: 2,
+    title: "Старый снимок"
+  }];
+  const deleted = new Set();
+  const merged = ui.mergeGoals(stale, known, deleted);
+  assert.equal(merged[0].version, 3, "Concurrent workspace and goal reads cannot lower a known record version");
+  assert.equal(merged[0].title, "Актуальная версия", "The newer server document remains authoritative");
+  assert.equal(stale[0].version, 2, "Reconciliation does not mutate an earlier server response");
+  assert.equal(ui.mergeGoals([{
+    id: "goal-a",
+    version: 4
+  }], known, deleted)[0].version, 4, "A higher server version replaces the previous document");
+  assert.equal(ui.mergeGoals([], known, deleted).length, 0, "An empty server list is an authoritative empty list");
+  deleted.add("goal-a");
+  assert.equal(ui.mergeGoals(stale, known, deleted).length, 0, "An acknowledged deletion cannot be restored by a delayed list");
+  assert.equal(ui.mergeGoals([{
+    id: "goal-b",
+    version: 1
+  }], known, deleted)[0].id, "goal-b", "A tombstone cannot hide another goal");
+  deleted.clear();
+  assert.equal(ui.mergeGoals(stale, [], deleted)[0].version, 2, "A new session has no version or deletion authority from the previous session");
+  console.log("PASS goal version contracts: monotonic records, immutable reads, empty lists and session tombstones");
+}
 const cssRule = (css, selector) => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = new RegExp(escaped + "\\s*\\{([^{}]*)\\}").exec(css);
@@ -1343,17 +1384,23 @@ async function serveTestGoals({
   response,
   fixture
 }) {
-  return sendJSON(response, {
-    items: fixture.goals
-  });
+  const result = {
+    items: clone(fixture.goals)
+  };
+  if (fixture.holdGoals) await new Promise(release => fixture.heldGoals.push({
+    release,
+    items: result.items
+  }));
+  return sendJSON(response, result);
 }
 async function serveTestGoals2({
   fixture,
   body,
   response
 }) {
+  fixture.goalSequence += 1;
   const goal = {
-    id: `synthetic-goal-${fixture.goals.length + 1}`,
+    id: `synthetic-goal-${fixture.goalSequence}`,
     version: 1,
     ...body.document,
     created_at: stamp,
@@ -1367,7 +1414,10 @@ async function serveTestGoals2({
     }
   };
   fixture.goals.push(goal);
-  return sendJSON(response, goal);
+  if (fixture.goalWriteConsentAfterCommit) return sendJSON(response, {
+    detail: "updated_legal_consent_required"
+  }, 409);
+  return sendJSON(response, goal, 201);
 }
 async function serveTestGoals3({
   path,
@@ -1383,6 +1433,10 @@ async function serveTestGoals3({
   }, 409);
   if (method === "DELETE") {
     fixture.goals = fixture.goals.filter(goal => goal.id !== id);
+    if (fixture.goalDeleteNoContent) {
+      response.statusCode = 204;
+      return response.end();
+    }
     return sendJSON(response, {
       deleted: true
     });
@@ -1390,7 +1444,15 @@ async function serveTestGoals3({
   Object.assign(current, body.document, {
     version: current.version + 1
   });
-  return sendJSON(response, current);
+  const saved = clone(current);
+  if (fixture.holdGoalWriteAck) await new Promise(release => fixture.heldGoalWrites.push({
+    release,
+    goal: saved
+  }));
+  if (fixture.goalWriteConsentAfterCommit) return sendJSON(response, {
+    detail: "updated_legal_consent_required"
+  }, 409);
+  return sendJSON(response, saved);
 }
 async function serveTestEvents({
   method,
@@ -1543,24 +1605,14 @@ async function exerciseViewport({
   assert.equal(fixture.selection.document.customized, true);
   await screenshot(`strategies-${round}-${width}.png`);
   assert.equal(fixture.maxActiveWrites, 1, "Versioned autosave uses a single in-flight mutation");
-  await click('#sidebar-nav [data-route="goals"]');
-  await click('#view-goals [data-action="goal-create"]');
-  await fieldValue("#goal-form", "title", "Тестовая цель");
-  await fieldValue("#goal-form", "target_amount_rub", "1000");
-  await fieldValue("#goal-form", "progress_source", "manual");
-  await fieldValue("#goal-form", "manual_amount_rub", "100");
-  await click('#goal-form [type="submit"]');
-  await until(() => fixture.goals.length === 1, "Create goal on server");
-  await wait('!document.querySelector("#workspace-dialog").open', "Goal saved");
-  assert.equal(fixture.goals[0].manual_amount_rub, "100");
-  await click('#view-goals [data-goal-edit]');
-  await fieldValue("#goal-form", "title", "Изменённая тестовая цель");
-  await click('#goal-form [type="submit"]');
-  await until(() => fixture.goals[0].version === 2, "Versioned goal update");
-  await wait('!document.querySelector("#workspace-dialog").open', "Goal updated");
-  await click('#view-goals [data-goal-delete]');
-  await click('[data-goal-delete-confirm]');
-  await until(() => fixture.goals.length === 0, "Goal deletion");
+  configureGoalCases(fixture, round, width);
+  await exerciseGoalCRUD({
+    fixture,
+    click,
+    fieldValue,
+    wait,
+    evaluate
+  });
   await click('#sidebar-nav [data-route="events"]');
   await click('#view-events [data-action="events-read-all"]');
   await until(() => fixture.events.every(item => item.read_at), "Durable read receipts");
@@ -1628,6 +1680,184 @@ async function exerciseViewport({
   assert.ok(browserStorage.local.every(key => key === "omnicio-theme"), "Only a display theme may enter localStorage");
   assert.deepEqual(await evaluate("window.__browserErrors"), [], "No browser errors after workflows");
   console.log(`PASS round ${round}, ${width}px: layout, navigation, search, real charts, strategies, goals, events, settings, session isolation`);
+}
+const completedResourceCount = path => `performance.getEntriesByType("resource").filter(entry=>new URL(entry.name).pathname===${JSON.stringify(path)}).length`;
+function configureGoalCases(fixture, round, width) {
+  fixture.goalDeleteNoContent = round === 2;
+  fixture.goalWriteConsentAfterCommit = round === 2 && width === 390;
+  fixture.goalPutConsentAfterCommit = round === 2 && width === 320;
+  if (round !== 1) return;
+  if (width === 390) fixture.lateGoalAck = "newer_version";
+  if (width === 320) fixture.lateGoalAck = "deleted";
+}
+async function assertDeletedGoalAfterRead({
+  release,
+  path,
+  wait,
+  evaluate
+}) {
+  const before = await evaluate(completedResourceCount(path));
+  release();
+  await wait(`${completedResourceCount(path)}>${before}`, "Delayed goal read completed in the browser");
+  assert.equal(await evaluate('document.querySelectorAll("#view-goals .goal-card").length'), 0, "A read started before the confirmed deletion cannot resurrect a goal");
+}
+async function reconcileGoalConsentError({
+  fixture,
+  click,
+  wait,
+  evaluate,
+  method = "POST"
+}) {
+  await wait('document.querySelector("#goal-form").dataset.uncertain==="true"', "Post-commit legal change requires goal read-back");
+  assert.equal(await evaluate('document.querySelector("#goal-form [type=submit]").disabled'), true, "A 409 legal update after commit cannot enable a duplicate " + method);
+  const writes = fixture.requests.filter(item => item.path.startsWith("/api/goals") && item.method === method).length;
+  await click('#goal-form [data-action="goal-reconcile"]');
+  await wait('!document.querySelector("#workspace-dialog").open && document.querySelector("#view-goals .goal-card")', "Saved goal recovered only through the server list");
+  assert.equal(fixture.requests.filter(item => item.path.startsWith("/api/goals") && item.method === method).length, writes, "Goal reconciliation cannot repeat the unacknowledged " + method);
+  fixture.goalWriteConsentAfterCommit = false;
+}
+async function exerciseGoalCRUD(options) {
+  const {
+    fixture,
+    click,
+    fieldValue,
+    wait
+  } = options;
+  await click('#sidebar-nav [data-route="goals"]');
+  await click('#view-goals [data-action="goal-create"]');
+  await fieldValue("#goal-form", "title", "Тестовая цель");
+  await fieldValue("#goal-form", "target_amount_rub", "1000");
+  await fieldValue("#goal-form", "progress_source", "manual");
+  await fieldValue("#goal-form", "manual_amount_rub", "100");
+  await click('#goal-form [type="submit"]');
+  await until(() => fixture.goals.length === 1, "Create goal on server");
+  if (fixture.goalWriteConsentAfterCommit) await reconcileGoalConsentError(options);
+  await wait('!document.querySelector("#workspace-dialog").open', "Goal saved");
+  assert.equal(fixture.goals[0].manual_amount_rub, "100");
+  if (fixture.lateGoalAck) {
+    await exerciseLateGoalAcknowledgement(options);
+  } else if (fixture.goalPutConsentAfterCommit) {
+    await exerciseGoalPutConsent(options);
+  } else {
+    await exerciseGoalReadRace(options);
+  }
+}
+async function exerciseGoalReadRace({
+  fixture,
+  click,
+  fieldValue,
+  wait,
+  evaluate
+}) {
+  fixture.holdGoals = true;
+  fixture.holdWorkspace = true;
+  await click('#view-goals [data-action="refresh"]');
+  await until(() => fixture.heldGoals.length > 0 && fixture.heldWorkspace.length > 0, "Older goal and workspace reads remain in flight");
+  await click('#view-goals [data-goal-edit]');
+  assert.equal(await evaluate('document.querySelector("#goal-form").dataset.goalVersion'), "1", "Only the server-confirmed goal supplies the next edit version");
+  await fieldValue("#goal-form", "title", "Изменённая тестовая цель");
+  await click('#goal-form [type="submit"]');
+  await until(() => fixture.goals[0].version === 2, "Versioned goal update");
+  await wait('!document.querySelector("#workspace-dialog").open', "Goal updated");
+  await until(() => fixture.heldGoals.some(read => read.items[0]?.version === 2), "Post-update list remains delayed");
+  assert.equal(await evaluate('document.querySelector("#view-goals .goal-card h2").textContent'), "Изменённая тестовая цель", "The UI accepts the acknowledged goal before its dialog closes");
+  await click('#view-goals [data-goal-delete]');
+  assert.equal(await evaluate('document.querySelector("[data-goal-delete-confirm]").dataset.version'), "2", "Deletion uses the newly acknowledged version without waiting for a GET");
+  await click('[data-goal-delete-confirm]');
+  await until(() => fixture.goals.length === 0, "Goal deletion");
+  await wait('!document.querySelector("#workspace-dialog").open', "Goal deletion acknowledged");
+  await until(() => fixture.heldGoals.some(read => read.items.length === 0), "Post-deletion list remains delayed");
+  assert.equal(await evaluate('document.querySelectorAll("#view-goals .goal-card").length'), 0, "The confirmed deletion removes the card before its list reload");
+  fixture.holdGoals = false;
+  fixture.holdWorkspace = false;
+  for (const read of fixture.heldGoals.splice(0).reverse()) await assertDeletedGoalAfterRead({
+    release: read.release,
+    path: "/api/goals",
+    wait,
+    evaluate
+  });
+  for (const release of fixture.heldWorkspace.splice(0)) await assertDeletedGoalAfterRead({
+    release,
+    path: "/api/workspace",
+    wait,
+    evaluate
+  });
+}
+async function confirmTestGoalDeletion({
+  fixture,
+  click,
+  wait,
+  evaluate
+}, version) {
+  await click('#view-goals [data-goal-delete]');
+  assert.equal(await evaluate('document.querySelector("[data-goal-delete-confirm]").dataset.version'), String(version), "Deletion uses the latest acknowledged goal version");
+  await click('[data-goal-delete-confirm]');
+  await until(() => fixture.goals.length === 0, "Goal deletion");
+  await wait('!document.querySelector("#workspace-dialog").open', "Goal deletion acknowledged");
+  assert.equal(await evaluate('document.querySelectorAll("#view-goals .goal-card").length'), 0, "Confirmed deletion removes the visible goal");
+}
+async function exerciseGoalPutConsent(options) {
+  const {
+    fixture,
+    click,
+    fieldValue,
+    wait,
+    evaluate
+  } = options;
+  fixture.goalWriteConsentAfterCommit = true;
+  await click('#view-goals [data-goal-edit]');
+  await fieldValue("#goal-form", "title", "Цель после обновления согласия");
+  await click('#goal-form [type="submit"]');
+  await until(() => fixture.goals[0].version === 2, "PUT committed before the legal recheck");
+  await reconcileGoalConsentError({
+    ...options,
+    method: "PUT"
+  });
+  assert.equal(await evaluate('document.querySelector("#view-goals .goal-card h2").textContent'), "Цель после обновления согласия", "Read-back supplies the committed document after a legal 409");
+  await wait('!document.querySelector("#workspace-dialog").open', "Read-back completed");
+  await confirmTestGoalDeletion(options, 2);
+}
+async function exerciseLateGoalAcknowledgement(options) {
+  const {
+    fixture,
+    click,
+    fieldValue,
+    wait,
+    evaluate
+  } = options;
+  fixture.holdGoalWriteAck = true;
+  await click('#view-goals [data-goal-edit]');
+  await fieldValue("#goal-form", "title", "Задержанное подтверждение");
+  await click('#goal-form [type="submit"]');
+  await until(() => fixture.heldGoalWrites.length === 1, "The server committed version 2 but its ACK is withheld");
+  const acknowledgement = fixture.heldGoalWrites.shift();
+  assert.equal(acknowledgement.goal.version, 2);
+  await click('#goal-form [data-close-dialog]');
+  fixture.goals[0].version = 3;
+  fixture.goals[0].title = "Более новая версия цели";
+  await click('#view-goals [data-action="refresh"]');
+  await wait('document.querySelector("#view-goals .goal-card h2").textContent==="Более новая версия цели"', "A newer server version is known before the delayed ACK");
+  if (fixture.lateGoalAck === "deleted") await confirmTestGoalDeletion(options, 3);
+  fixture.holdGoals = true;
+  fixture.holdGoalWriteAck = false;
+  const path = "/api/goals/" + acknowledgement.goal.id;
+  const before = await evaluate(completedResourceCount(path));
+  acknowledgement.release();
+  await wait(`${completedResourceCount(path)}>${before}`, "The older write ACK arrived in the browser");
+  await until(() => fixture.heldGoals.length > 0, "The ACK read-back cannot repair the tested UI state yet");
+  if (fixture.lateGoalAck === "newer_version") {
+    assert.equal(await evaluate('document.querySelector("#view-goals .goal-card h2").textContent'), "Более новая версия цели", "A delayed version-2 ACK cannot replace known version 3 before read-back");
+    await confirmTestGoalDeletion(options, 3);
+    await until(() => fixture.heldGoals.some(read => read.items.length === 0), "Deletion read-back remains withheld");
+  }
+  assert.equal(await evaluate('document.querySelectorAll("#view-goals .goal-card").length'), 0, "An older write ACK cannot restore a confirmed deletion");
+  fixture.holdGoals = false;
+  for (const read of fixture.heldGoals.splice(0).reverse()) await assertDeletedGoalAfterRead({
+    release: read.release,
+    path: "/api/goals",
+    wait,
+    evaluate
+  });
 }
 async function exerciseInterruptedSave({
   fixture,

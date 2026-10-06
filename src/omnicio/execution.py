@@ -63,5 +63,3 @@ def run_status_for_legs(
     if any(status == "reconciling" for status in statuses):
         return "reconciling"
     return "running"
-
-

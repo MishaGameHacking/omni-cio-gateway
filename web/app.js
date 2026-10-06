@@ -40,6 +40,7 @@
     loading: new Set(),
     requests: new Set(),
     resourceVersions: new Map(),
+    deletedGoalIds: new Set(),
     homePeriod: "1m",
     portfolioPeriod: "1y",
     assetPeriod: "1m",
@@ -272,7 +273,7 @@
       invalid_server_response: "Получен неполный ответ сервера. Повторите загрузку.",
       tour_requires_login: "Для этого действия войдите в личный аккаунт.",
       profile_context_changed: "Сессия изменилась. Подтвердите текущий аккаунт.",
-      settings_version_conflict: "Данные изменились в другой вкладке. Загрузите сохранённую версию перед следующей правкой.",
+      settings_version_conflict: "Сохранённая версия изменилась. Загрузите актуальные данные перед следующей правкой.",
       strategy_assessment_busy: "Расчёт уже выполняется. Подождите и повторите через несколько секунд.",
       strategy_account_evidence_unavailable: "Не удалось получить согласованные данные счёта. Обновите подключение и повторите расчёт.",
       assistant_not_configured: "ИИ-провайдер ещё не подключён.",
@@ -327,6 +328,7 @@
     for (const controller of state.requests) controller.abort();
     state.requests.clear();
     state.resourceVersions.clear();
+    state.deletedGoalIds.clear();
     state.loading.clear();
     clearTimeout(state.prefs.timer);
     clearTimeout(state.strategy.timer);
@@ -513,13 +515,14 @@
     const sequence = (state.resourceVersions.get(name) || 0) + 1;
     state.resourceVersions.set(name, sequence);
     const generation = state.generation;
+    const goalsSequence = state.resourceVersions.get("goals") || 0;
     state.loading.add(name);
     delete state.errors[name];
     try {
       const payload = await api(path, options);
       if (generation !== state.generation || state.resourceVersions.get(name) !== sequence) return null;
-      state.data[name] = payload;
-      adoptLoadedResource(name, payload);
+      state.data[name] = name === "goals" ? mergeGoalList(payload) : payload;
+      adoptLoadedResource(name, payload, goalsSequence);
       return payload;
     } catch (error) {
       if (generation === state.generation && state.resourceVersions.get(name) === sequence && !isCancelled(error)) state.errors[name] = error;
@@ -528,15 +531,15 @@
       if (generation === state.generation && state.resourceVersions.get(name) === sequence) state.loading.delete(name);
     }
   };
-  const adoptWorkspace = payload => {
+  const adoptWorkspace = (payload, goalsSequence) => {
     if (payload.preferences) adoptPreferences(payload.preferences);
-    if (payload.goals) state.data.goals = payload.goals;
+    if (payload.goals && goalsSequence === (state.resourceVersions.get("goals") || 0)) state.data.goals = mergeGoalList(payload.goals);
     if (payload.events) state.data.events = payload.events;
     if (payload.connection) state.data.connection = payload.connection;
     $("#workspace-freshness").textContent = payload.overview?.observed_at ? `T-Invest · ${date(payload.overview.observed_at, true)} МСК · Стоимость по последнему наблюдению` : renderAdoptWorkspaceValue(payload);
   };
-  const adoptLoadedResource = (name, payload) => {
-    if (name === "workspace") adoptWorkspace(payload);
+  const adoptLoadedResource = (name, payload, goalsSequence) => {
+    if (name === "workspace") adoptWorkspace(payload, goalsSequence);
     if (name === "preferences") adoptPreferences(payload);
     if (name === "strategy") adoptStrategy(payload);
   };
@@ -2033,16 +2036,58 @@
     form.elements.manual_amount_rub.required = manual;
     $("#goal-source-note").textContent = manual ? "Вы явно задаёте накопленную сумму. Её можно обновить в любое время." : renderUpdateGoalFieldsValue(kind);
   };
+  const goalWriteNeedsReadback = error => (error.code || error.message) === "updated_legal_consent_required" || !error.definite && (!error.status || error.status >= 500);
   const reportGoalSaveError = (form, error) => {
     if (!isCancelled(error)) {
-      showMessage($("#goal-message"), humanError(error), true);
-      if (!error.status || error.status >= 500) {
+      const message = form.querySelector("#goal-message");
+      if (!message) return;
+      showMessage(message, humanError(error), true);
+      if (goalWriteNeedsReadback(error)) {
         form.dataset.uncertain = "true";
-        $("#goal-message").innerHTML = `Результат сохранения не подтверждён. Проверьте список целей перед повтором.<div class="form-actions">${button("Проверить список", "goal-reconcile", {
+        message.innerHTML = `${esc(humanError(error))}<p>Результат сохранения не подтверждён. Проверьте список целей перед повтором.</p><div class="form-actions">${button("Проверить список", "goal-reconcile", {
           small: true
         })}</div>`;
       }
     }
+  };
+  const mergeGoalList = payload => {
+    if (!Array.isArray(payload?.items)) throw Object.assign(new Error("invalid_server_response"), {
+      status: 502
+    });
+    return {
+      ...payload,
+      items: U.mergeGoals(payload.items, state.data.goals?.items || [], state.deletedGoalIds)
+    };
+  };
+  const replaceGoalList = items => {
+    state.resourceVersions.set("goals", (state.resourceVersions.get("goals") || 0) + 1);
+    state.loading.delete("goals");
+    delete state.errors.goals;
+    state.data.goals = mergeGoalList({
+      items
+    });
+  };
+  const acceptSavedGoal = (saved, form) => {
+    const id = form.dataset.goalId;
+    if (typeof saved?.id !== "string" || !saved.id || id && saved.id !== id || !Number.isInteger(saved.version) || saved.version <= Number(form.dataset.goalVersion)) throw Object.assign(new Error("invalid_server_response"), {
+      status: 502
+    });
+    if (state.deletedGoalIds.has(saved.id)) return false;
+    const current = state.data.goals?.items || [];
+    if (current.some(goal => goal.id === saved.id && goal.version > saved.version)) return false;
+    const items = current.map(goal => goal.id === saved.id ? saved : goal);
+    if (!current.some(goal => goal.id === saved.id)) items.push(saved);
+    replaceGoalList(items);
+    return true;
+  };
+  const renderGoalConsumers = () => {
+    if (["goals", "home"].includes(state.view)) renderCurrent();
+  };
+  const refreshGoalList = async generation => {
+    await loadResource("goals", "/api/goals", {
+      force: true
+    });
+    if (generation === state.generation) renderGoalConsumers();
   };
   const writeGoalDocument = (form, document) => {
     const id = form.dataset.goalId;
@@ -2081,15 +2126,13 @@
     form.dataset.busy = "true";
     const generation = state.generation;
     try {
-      await writeGoalDocument(form, document);
+      const saved = await writeGoalDocument(form, document);
       if (generation !== state.generation) return;
-      $("#workspace-dialog").close();
-      await loadResource("goals", "/api/goals", {
-        force: true
-      });
-      if (generation !== state.generation) return;
-      toast("Цель сохранена на сервере.");
-      if (["goals", "home"].includes(state.view)) renderCurrent();
+      const accepted = acceptSavedGoal(saved, form);
+      renderGoalConsumers();
+      if (form.isConnected) $("#workspace-dialog").close();
+      if (accepted) toast("Цель сохранена на сервере.");
+      await refreshGoalList(generation);
     } catch (error) {
       reportGoalSaveError(form, error);
     } finally {
@@ -2102,6 +2145,16 @@
     const goal = state.data.goals?.items?.find(item => item.id === id);
     if (!goal) return;
     openDialog("Удалить цель?", `<p class="help-copy">Цель «${esc(goal.title)}» будет удалена из вашего аккаунта. Данные брокерского счёта это действие не изменяет.</p><div class="form-actions"><button class="button danger" data-goal-delete-confirm="${esc(goal.id)}" data-version="${goal.version}">Удалить цель</button><button class="button secondary" data-close-dialog>Отмена</button></div><output id="goal-delete-message" class="form-message"></output>`);
+  };
+  const reportGoalDeleteError = (control, error) => {
+    if (!control.isConnected || isCancelled(error)) return;
+    const message = $("#goal-delete-message");
+    if (!message) return;
+    showMessage(message, humanError(error), true);
+    control.disabled = !error.definite;
+    if (!error.definite) message.innerHTML = `${esc(humanError(error))}<div class="form-actions">${button("Проверить список", "goal-reconcile", {
+      small: true
+    })}</div>`;
   };
   const renderEvents = () => {
     const data = state.data.events;
@@ -4247,24 +4300,27 @@
   }) {
     event.preventDefault();
     control.disabled = true;
+    const generation = state.generation;
+    const id = control.dataset.goalDeleteConfirm;
     try {
-      await api(`/api/goals/${safeSegment(control.dataset.goalDeleteConfirm)}`, {
+      const result = await api(`/api/goals/${safeSegment(id)}`, {
         method: "DELETE",
         body: {
           expected_version: Number(control.dataset.version)
         }
       });
-      $("#workspace-dialog").close();
-      await loadResource("goals", "/api/goals", {
-        force: true
+      if (generation !== state.generation) return;
+      if (result !== null && result?.deleted !== true) throw Object.assign(new Error("invalid_server_response"), {
+        status: 502
       });
-      renderCurrent();
+      state.deletedGoalIds.add(id);
+      replaceGoalList((state.data.goals?.items || []).filter(goal => goal.id !== id));
+      renderGoalConsumers();
+      if (control.isConnected) $("#workspace-dialog").close();
       toast("Цель удалена.");
+      await refreshGoalList(generation);
     } catch (error) {
-      if (!isCancelled(error)) {
-        showMessage($("#goal-delete-message"), humanError(error), true);
-        control.disabled = false;
-      }
+      if (generation === state.generation) reportGoalDeleteError(control, error);
     }
   }
   async function handleClickStrategy({
