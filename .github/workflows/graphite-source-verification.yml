@@ -6,28 +6,31 @@ on:
     paths: [.github/workflows/graphite-source-verification.yml]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   source:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 3
+    timeout-minutes: 8
     steps:
-      - name: Read immutable accepted source only
+      - name: Read fixed delivery candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 89ed9342a63512b22b4d84a01a0274bc415d9516
+          fetch-depth: 0
           persist-credentials: false
           clean: true
-      - name: Export tracked source without runner state
+      - name: Bootstrap pinned Python
         shell: cmd
-        run: |
-          git archive --format=zip --output=graphite-baseline.zip 89ed9342a63512b22b4d84a01a0274bc415d9516
-          if errorlevel 1 exit /b 1
-      - name: Preserve exact baseline
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
+      - name: Verify source manifest and publish immutable blobs only
+        shell: cmd
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: '"%OMNICIO_PYTHON%" .github\scripts\graphite_source_delivery.py'
+      - name: Preserve verified identities
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: graphite-baseline-89ed9342
-          path: graphite-baseline.zip
+          name: graphite-candidate-blobs
+          path: graphite-candidate-blobs.json
           if-no-files-found: error
           retention-days: 1
