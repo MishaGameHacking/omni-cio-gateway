@@ -1194,7 +1194,11 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('aria-describedby="tbank-token-help"', page)
         self.assertIn("Вместе с планируемыми снятиями", page)
         self.assertIn("0 не даёт нового объёма по этому лимиту", page)
-        self.assertIn("не определяет их автоматически", page)
+        self.assertIn("не подставляет скрытые проценты", page)
+        self.assertIn(
+            "Налог и стресс-поправки — выбранные вами допущения, не установленные факты.",
+            page,
+        )
 
         self.assertIn("validateFormWithMessage", script)
         self.assertIn('form.querySelector(":invalid")', script)
