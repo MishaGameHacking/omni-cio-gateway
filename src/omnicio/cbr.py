@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from html import unescape
@@ -54,6 +55,29 @@ class CBRIndicators:
     freshness: str
 
 
+# Fixed public reference series, not exchange prices or a broker fallback.
+_HISTORY_CURRENCIES = {"USD": "R01235", "EUR": "R01239", "CNY": "R01375"}
+_HISTORY_PERIODS = {"1m": 31, "3m": 93, "1y": 365}
+
+
+@dataclass(frozen=True, slots=True)
+class CBRHistoryPoint:
+    effective_date: str
+    value: str
+
+
+@dataclass(frozen=True, slots=True)
+class CBRHistory:
+    currency: str
+    period: str
+    from_date: str
+    to_date: str
+    fetched_at: str
+    source_url: str
+    freshness: str
+    points: tuple[CBRHistoryPoint, ...]
+
+
 class CBRClient:
     def __init__(
         self,
@@ -74,6 +98,10 @@ class CBRClient:
         self._indicator_cached: CBRIndicators | None = None
         self._indicator_expires_at = 0.0
         self._indicator_retry_after = 0.0
+        self._history_lock = threading.Lock()
+        self._history_cache: dict[tuple[str, str], CBRHistory] = {}
+        self._history_expires: dict[tuple[str, str], float] = {}
+        self._history_retry: dict[tuple[str, str], float] = {}
 
     def usd_rub_rate(self, effective_on: date | None = None) -> CBRRate:
         target = effective_on or datetime.now(_MOSCOW).date()
@@ -144,6 +172,67 @@ class CBRClient:
             self._indicator_expires_at = now + self.indicator_cache_seconds
             self._indicator_retry_after = 0.0
             return indicators
+
+    def reference_history(self, currency: str, period: str) -> CBRHistory:
+        """Read at most nine fixed cache keys, without account data or arbitrary URLs."""
+        if currency not in _HISTORY_CURRENCIES or period not in _HISTORY_PERIODS:
+            raise ValueError("unsupported reference history")
+        key = (currency, period)
+        target = datetime.now(_MOSCOW).date()
+        now = time.monotonic()
+        cached = self._history_cache.get(key)
+        if (cached is not None and cached.to_date == target.isoformat()
+                and now < self._history_expires.get(key, 0)):
+            return cached
+        if now < self._history_retry.get(key, 0):
+            if cached is not None:
+                return replace(cached, freshness="cached")
+            raise CBRUnavailable("Bank of Russia history retry is pending")
+        if not self._history_lock.acquire(blocking=False):
+            if cached is not None:
+                return replace(cached, freshness="cached")
+            raise CBRUnavailable("Bank of Russia history refresh is in progress")
+        try:
+            # Recheck after acquisition: another thread may have just completed.
+            cached = self._history_cache.get(key)
+            now = time.monotonic()
+            if (cached is not None and cached.to_date == target.isoformat()
+                    and now < self._history_expires.get(key, 0)):
+                return cached
+            try:
+                result = self._fetch_reference_history(currency, period, target)
+            except CBRUnavailable:
+                self._history_retry[key] = time.monotonic() + self.failure_retry_seconds
+                if cached is not None:
+                    return replace(cached, freshness="cached")
+                raise
+            self._history_cache[key] = result
+            self._history_expires[key] = time.monotonic() + self.cache_seconds
+            self._history_retry[key] = 0
+            return result
+        finally:
+            self._history_lock.release()
+
+    def _fetch_reference_history(self, currency: str, period: str, target: date) -> CBRHistory:
+        start = target - timedelta(days=_HISTORY_PERIODS[period])
+        code = _HISTORY_CURRENCIES[currency]
+        url = ("https://www.cbr.ru/scripts/XML_dynamic.asp"
+               f"?date_req1={start.strftime('%d/%m/%Y')}"
+               f"&date_req2={target.strftime('%d/%m/%Y')}&VAL_NM_RQ={code}")
+        request = urllib.request.Request(url, headers={
+            "Accept": _CBR_XML_ACCEPT, "User-Agent": _CBR_USER_AGENT,
+        })
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                payload = response.read(_MAX_PUBLIC_RESPONSE_BYTES + 1)
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise CBRUnavailable("Bank of Russia history unavailable") from exc
+        points = _parse_reference_history(payload, code=code, start=start, end=target)
+        return CBRHistory(
+            currency=currency, period=period, from_date=start.isoformat(),
+            to_date=target.isoformat(), fetched_at=datetime.now(UTC).isoformat(),
+            source_url=url, freshness="received", points=points,
+        )
 
     def _cached_rate(
         self,
@@ -518,3 +607,42 @@ def _parse_effective_date(value: str) -> date:
         return datetime.strptime(value, "%d.%m.%Y").date()
     except ValueError as exc:
         raise CBRUnavailable("Bank of Russia returned invalid rate date") from exc
+
+
+def _parse_reference_history(
+    payload: bytes, *, code: str, start: date, end: date,
+) -> tuple[CBRHistoryPoint, ...]:
+    """Preserve effective dates and per-unit Decimal values, never fill missing days."""
+    if (len(payload) > _MAX_PUBLIC_RESPONSE_BYTES
+            or b"<!DOCTYPE" in payload.upper() or b"<!ENTITY" in payload.upper()):
+        raise CBRUnavailable("Bank of Russia history payload is invalid")
+    try:
+        root = ET.fromstring(payload)
+    except ET.ParseError as exc:
+        raise CBRUnavailable("Bank of Russia history XML is invalid") from exc
+    if root.tag != "ValCurs" or root.attrib.get("ID") != code or len(root) > 370:
+        raise CBRUnavailable("Bank of Russia history identity is invalid")
+    values: dict[date, str] = {}
+    for record in root:
+        if record.tag != "Record" or record.attrib.get("Id") != code:
+            raise CBRUnavailable("Bank of Russia history record is invalid")
+        try:
+            effective = datetime.strptime(record.attrib["Date"], "%d.%m.%Y").date()
+            nominal_text = (record.findtext("Nominal") or "").strip()
+            value_text = (record.findtext("Value") or "").strip()
+            if (not re.fullmatch(r"[0-9]{1,9}", nominal_text)
+                    or not re.fullmatch(r"[0-9]{1,12}(?:[.,][0-9]{1,9})?", value_text)):
+                raise ValueError("invalid source decimal representation")
+            nominal = Decimal(nominal_text)
+            value = Decimal(value_text.replace(",", "."))
+        except (KeyError, ValueError, InvalidOperation) as exc:
+            raise CBRUnavailable("Bank of Russia history value is invalid") from exc
+        if (not start <= effective <= end or not nominal.is_finite() or nominal <= 0
+                or nominal != nominal.to_integral_value() or not value.is_finite()
+                or value <= 0 or value > 1000000000 or nominal > 1000000000):
+            raise CBRUnavailable("Bank of Russia history bounds are invalid")
+        per_unit = format((value / nominal).normalize(), "f")
+        if effective in values and values[effective] != per_unit:
+            raise CBRUnavailable("Bank of Russia history has conflicting records")
+        values[effective] = per_unit
+    return tuple(CBRHistoryPoint(day.isoformat(), values[day]) for day in sorted(values))

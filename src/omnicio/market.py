@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import threading
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
@@ -124,6 +125,7 @@ class MarketService:
         self.broker = broker
         self.cbr = cbr
         self.live_after_seconds = live_after_seconds
+        self._public_admission = threading.BoundedSemaphore(2)
 
     def cbr_indicators(self) -> CBRIndicatorSnapshot:
         indicators = self.cbr.latest_indicators()
@@ -150,6 +152,38 @@ class MarketService:
                 effective_date=indicators.eur_rub.effective_date.isoformat(),
             ),
         )
+
+    def public_reference(self, currency: str, period: str) -> dict[str, object]:
+        """Anonymous reference data only: never access BrokerService or tenant storage."""
+        if currency not in {"USD", "EUR", "CNY"} or period not in {"1m", "3m", "1y"}:
+            raise ValueError("unsupported public reference request")
+        if not self._public_admission.acquire(blocking=False):
+            raise CBRUnavailable("Public reference refresh is busy")
+        try:
+            result: dict[str, object] = {
+                "source": "Bank of Russia", "source_url": "https://www.cbr.ru/development/SXML/",
+                "currency": currency, "period": period, "unit": "RUB per currency unit",
+                "indicators": None, "history": None, "status": "unavailable",
+                "exchange_quotes": "broker_connection_required",
+                "public_exchange_distribution": "agreement_not_configured",
+                "personal_data": False,
+                "history_error": None, "indicators_error": None,
+            }
+            try:
+                result["history"] = asdict(self.cbr.reference_history(currency, period))
+            except CBRUnavailable:
+                result["history_error"] = "source_unavailable"
+            try:
+                result["indicators"] = asdict(self.cbr_indicators())
+            except CBRUnavailable:
+                result["indicators_error"] = "source_unavailable"
+            if result["history"] is not None and result["indicators"] is not None:
+                result["status"] = "available"
+            elif result["history"] is not None or result["indicators"] is not None:
+                result["status"] = "partial"
+            return result
+        finally:
+            self._public_admission.release()
 
     def usd_rub(self, user_id: UUID) -> UsdRubSnapshot:
         quote = self.broker.usd_rub_quote(user_id)

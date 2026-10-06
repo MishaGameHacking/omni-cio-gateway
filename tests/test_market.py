@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import UUID
 
 import pytest
 
 from omnicio.cbr import (
     CBRClient,
+    CBRHistory,
+    CBRHistoryPoint,
     CBRIndicators,
     CBRKeyRate,
     CBRRate,
@@ -520,3 +522,87 @@ def test_market_service_rejects_unknown_instrument_period_before_provider_read()
             "uid-1",
             period="all",
         )
+
+
+def _history_xml(*, rows: str, code: str = "R01235") -> bytes:
+    return f'<ValCurs ID="{code}">{rows}</ValCurs>'.encode()
+
+
+def _history_row(day: str, value: str, nominal: str = "1") -> str:
+    return (f'<Record Date="{day}" Id="R01235"><Nominal>{nominal}</Nominal>'
+            f'<Value>{value}</Value></Record>')
+
+
+def test_public_history_preserves_exact_units_and_does_not_fill_missing_days() -> None:
+    client = CBRClient()
+    payload = _history_xml(rows=_history_row("02.10.2026", "123,4567", "10")
+                           + _history_row("05.10.2026", "12,3401"))
+    with patch("urllib.request.urlopen", return_value=FakeXmlResponse(payload)) as request:
+        result = client._fetch_reference_history("USD", "1m", date(2026, 10, 6))
+    assert result.points == (CBRHistoryPoint("2026-10-02", "12.34567"),
+                             CBRHistoryPoint("2026-10-05", "12.3401"))
+    assert result.currency == "USD"
+    assert result.freshness == "received"
+    assert result.to_date == "2026-10-06"
+    assert "VAL_NM_RQ=R01235" in request.call_args.args[0].full_url
+    assert not request.call_args.args[0].has_header("Authorization")
+
+
+@pytest.mark.parametrize("rows,code", [
+    (_history_row("07.10.2026", "80"), "R01235"),
+    (_history_row("05.10.2026", "80", "0"), "R01235"),
+    (_history_row("05.10.2026", "NaN"), "R01235"),
+    (_history_row("05.10.2026", "1e-99999999"), "R01235"),
+    (_history_row("05.10.2026", "80") + _history_row("05.10.2026", "81"), "R01235"),
+    (_history_row("05.10.2026", "80"), "R01239"),
+    ("<!DOCTYPE x><Record/>", "R01235"),
+])
+def test_public_history_rejects_unknown_conflicting_or_future_facts(rows: str, code: str) -> None:
+    response = FakeXmlResponse(_history_xml(rows=rows, code=code))
+    with patch("urllib.request.urlopen", return_value=response), pytest.raises(CBRUnavailable):
+        CBRClient()._fetch_reference_history("USD", "1m", date(2026, 10, 6))
+
+
+def test_public_history_empty_is_empty_and_old_cache_keeps_original_timestamp() -> None:
+    client = CBRClient(cache_seconds=0)
+    with patch("urllib.request.urlopen", return_value=FakeXmlResponse(_history_xml(rows=""))):
+        empty = client._fetch_reference_history("USD", "1m", date(2026, 10, 6))
+    assert empty.points == ()
+    with patch.object(
+        client, "_fetch_reference_history", side_effect=[empty, CBRUnavailable("offline")],
+    ) as fetch:
+        first = client.reference_history("USD", "1m")
+        old = client.reference_history("USD", "1m")
+        again = client.reference_history("USD", "1m")
+    assert old.fetched_at == first.fetched_at == again.fetched_at
+    assert old.freshness == again.freshness == "cached"
+    assert fetch.call_count == 2
+    with patch.object(client, "_fetch_reference_history") as fetch:
+        with pytest.raises(ValueError):
+            client.reference_history("https://127.0.0.1/", "1m")
+        fetch.assert_not_called()
+
+
+def test_public_reference_never_reads_broker_and_releases_admission_after_failure() -> None:
+    broker = Mock()
+    cbr = Mock(spec=CBRClient)
+    cbr.reference_history.side_effect = CBRUnavailable("offline")
+    cbr.latest_indicators.side_effect = CBRUnavailable("offline")
+    service = MarketService(broker=broker, cbr=cbr)
+    for _ in range(3):
+        result = service.public_reference("USD", "1m")
+        assert result["status"] == "unavailable"
+        assert result["history"] is None
+        assert result["indicators"] is None
+        assert result["personal_data"] is False
+    assert not broker.mock_calls
+    cbr.reference_history.side_effect = None
+    cbr.reference_history.return_value = CBRHistory(
+        "USD", "1m", "2026-09-05", "2026-10-06", "2026-10-06T10:00:00+00:00",
+        "https://www.cbr.ru/scripts/XML_dynamic.asp", "received", (),
+    )
+    partial = service.public_reference("USD", "1m")
+    assert partial["status"] == "partial"
+    assert partial["history"] is not None
+    assert partial["indicators"] is None
+    assert not broker.mock_calls

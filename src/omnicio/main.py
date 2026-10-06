@@ -650,6 +650,27 @@ def system_recovery(
 
 
 @app.get(
+    "/api/public/market-reference",
+    responses={503: {"description": "Public reference refresh is busy"}},
+)
+def public_market_reference(
+    request: Request,
+    response: Response,
+    currency: Literal["USD", "EUR", "CNY"] = Query(default="USD"),
+    period: Literal["1m", "3m", "1y"] = Query(default="1m"),
+) -> dict[str, object]:
+    # Deliberately no session/broker access. Browser caching cannot turn a failed
+    # refresh into an apparently new quote; the source adapter owns bounded cache.
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return market_service(request).public_reference(currency, period)
+    except CBRUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="public_reference_busy", headers={"Retry-After": "30"},
+        ) from exc
+
+
+@app.get(
     "/api/market/cbr-indicators",
     responses={
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
