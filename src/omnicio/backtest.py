@@ -332,6 +332,67 @@ def _nav(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _RebalanceSession:
+    previous: datetime
+    opening: datetime
+    previous_nav: Decimal
+
+
+def _apply_rebalance(
+    state: _Simulation,
+    assets: Sequence[ResearchAsset],
+    panel: Mapping[str, Mapping[datetime, TBankHistoricCandle]],
+    weights: Mapping[str, Decimal],
+    document: Mapping[str, Any],
+    costs: ResearchCosts,
+    session: _RebalanceSession,
+) -> None:
+    """Size from the previous close, then sell before buying at this session's open."""
+    participation = Decimal(document["policy"]["max_daily_turnover_participation_percent"]) / 100
+    turnover_fraction = Decimal(document["policy"]["turnover_budget_percent"]) / 100
+    cash_target = max(_ZERO, 1 - sum(weights.values(), _ZERO) / 100)
+    reserve = sum(
+        (
+            _decimal(document["profile"][key])
+            for key in ("reserve_rub", "planned_withdrawal_rub")
+            if document["profile"][key] is not None
+        ),
+        _ZERO,
+    )
+    turnover = session.previous_nav * turnover_fraction
+    targets = {}
+    for asset in assets:
+        uid = asset.candidate.instrument_uid
+        target = _ZERO if state.risk_stopped else session.previous_nav * weights[uid] / 100
+        price = _decimal(panel[uid][session.previous].close) * asset.candidate.lot_size
+        targets[uid] = int(target / price) - state.lots[uid]
+        days = document["profile"]["liquidity_horizon_days"]
+        if days is not None:
+            exit_capacity = int(
+                panel[uid][session.previous].volume_lots * participation * Decimal(days)
+            )
+            targets[uid] = min(targets[uid], exit_capacity - state.lots[uid])
+    minimum_cash = max(reserve, session.previous_nav * cash_target)
+    for side in (-1, 1):
+        for asset in assets:
+            uid = asset.candidate.instrument_uid
+            delta = targets[uid]
+            if (delta > 0) != (side > 0) or delta == 0:
+                continue
+            turnover -= _order(
+                state,
+                uid,
+                delta,
+                opening=_decimal(panel[uid][session.opening].open),
+                lot=asset.candidate.lot_size,
+                remaining_turnover=turnover,
+                minimum_cash=minimum_cash,
+                volume_limit=int(panel[uid][session.previous].volume_lots * participation),
+                costs=costs,
+            )
+
+
 def _simulate(
     assets: Sequence[ResearchAsset],
     panel: Mapping[str, Mapping[datetime, TBankHistoricCandle]],
@@ -354,17 +415,6 @@ def _simulate(
         }
     )
     previous_nav = peak = capital
-    participation = Decimal(document["policy"]["max_daily_turnover_participation_percent"]) / 100
-    turnover_fraction = Decimal(document["policy"]["turnover_budget_percent"]) / 100
-    cash_target = max(_ZERO, 1 - sum(weights.values(), _ZERO) / 100)
-    reserve = sum(
-        (
-            _decimal(document["profile"][key])
-            for key in ("reserve_rub", "planned_withdrawal_rub")
-            if document["profile"][key] is not None
-        ),
-        _ZERO,
-    )
     limit = document["profile"]["max_drawdown_percent"]
     for index, when in enumerate(times[1:]):
         previous = times[index]
@@ -376,37 +426,15 @@ def _simulate(
             rebalance_sessions is not None and index % rebalance_sessions == 0
         )
         if rebalance or state.risk_stopped:
-            turnover = previous_nav * turnover_fraction
-            targets = {}
-            for asset in assets:
-                uid = asset.candidate.instrument_uid
-                target = _ZERO if state.risk_stopped else previous_nav * weights[uid] / 100
-                price = _decimal(panel[uid][previous].close) * asset.candidate.lot_size
-                targets[uid] = int(target / price) - state.lots[uid]
-                days = document["profile"]["liquidity_horizon_days"]
-                if days is not None:
-                    exit_capacity = int(
-                        panel[uid][previous].volume_lots * participation * Decimal(days)
-                    )
-                    targets[uid] = min(targets[uid], exit_capacity - state.lots[uid])
-            minimum_cash = max(reserve, previous_nav * cash_target)
-            for side in (-1, 1):
-                for asset in assets:
-                    uid = asset.candidate.instrument_uid
-                    delta = targets[uid]
-                    if (delta > 0) != (side > 0) or delta == 0:
-                        continue
-                    turnover -= _order(
-                        state,
-                        uid,
-                        delta,
-                        opening=_decimal(panel[uid][when].open),
-                        lot=asset.candidate.lot_size,
-                        remaining_turnover=turnover,
-                        minimum_cash=minimum_cash,
-                        volume_limit=int(panel[uid][previous].volume_lots * participation),
-                        costs=costs,
-                    )
+            _apply_rebalance(
+                state,
+                assets,
+                panel,
+                weights,
+                document,
+                costs,
+                _RebalanceSession(previous, when, previous_nav),
+            )
         closing_time = when + _DAY
         # Same-day distributions cannot fund orders already filled at the open.
         _distributions(state, assets, start=times[1], through=closing_time, inclusive=False)

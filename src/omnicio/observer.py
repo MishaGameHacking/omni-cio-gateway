@@ -153,7 +153,7 @@ class PortfolioObserver:
                 user_id = futures[future]
                 try:
                     result = future.result()
-                except Exception as exc:  # noqa: BLE001 - job boundary records safe class only
+                except Exception as exc:
                     logger.exception(
                         "portfolio observer failed user=%s error_type=%s",
                         user_id,
@@ -212,7 +212,7 @@ class PortfolioObserver:
         now = now.astimezone(UTC)
         details: dict[str, object] = {
             "job": job.job_type,
-            "scheduled_for": job.scheduled_for.isoformat(),
+            "scheduled_for": job.scheduled_for.isoformat() if job.scheduled_for else None,
             "snapshot_saved": False,
             "history_pages": 0,
             "history_new_observations": 0,
@@ -249,7 +249,7 @@ class PortfolioObserver:
         details["stage_error"] = type(exc).__name__
         try:
             self.store.finish_job(job.user_id, job.id, status="failed", details=details)
-        except Exception as finish_exc:  # noqa: BLE001 - retain original infrastructure failure
+        except Exception as finish_exc:
             # Provider/SQL exceptions may carry credentials; never attach a traceback.
             logger.exception(
                 "portfolio observer could not persist failure user=%s error_type=%s",
@@ -444,7 +444,7 @@ class PortfolioRefreshCoordinator:
         while not self._stopping.is_set():
             try:
                 self.run_pending()
-            except Exception as exc:  # noqa: BLE001 - persistent worker boundary, safe class only
+            except Exception as exc:
                 logger.exception("portfolio refresh worker error_type=%s",
                                  type(exc).__name__, exc_info=None)
             self._wake.wait(timeout=2)

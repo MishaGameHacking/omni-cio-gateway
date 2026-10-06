@@ -14,7 +14,8 @@ from html import unescape
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-_SOURCE_URL = "https://www.cbr.ru/rss/eventrss"
+_SOURCE_HOST = "www.cbr.ru"
+_SOURCE_URL = f"https://{_SOURCE_HOST}/rss/eventrss"
 _MAX_BYTES = 512_000
 
 
@@ -44,7 +45,7 @@ def parse_news(raw: bytes, *, fetched_at: datetime) -> dict[str, Any]:
             parsed = urlsplit(link)
             published = parsedate_to_datetime(item.findtext("pubDate", ""))
             if (parsed.scheme not in {"https", "http"}
-                    or parsed.hostname not in {"cbr.ru", "www.cbr.ru"}
+                    or parsed.hostname not in {"cbr.ru", _SOURCE_HOST}
                     or parsed.username is not None or parsed.password is not None
                     or parsed.port is not None or not title or len(title) > 500
                     or published.tzinfo is None or published > fetched_at):
@@ -52,7 +53,7 @@ def parse_news(raw: bytes, *, fetched_at: datetime) -> dict[str, Any]:
         except (ValueError, TypeError, IndexError):
             continue
         # The source links sometimes use HTTP; the canonical public site has TLS.
-        url = urlunsplit(("https", "www.cbr.ru", parsed.path, parsed.query, ""))
+        url = urlunsplit(("https", _SOURCE_HOST, parsed.path, parsed.query, ""))
         identity = hashlib.sha256(url.encode()).hexdigest()
         if identity in seen:
             continue
@@ -86,7 +87,7 @@ class NewsClient:
             return self._fallback()
         try:
             try:
-                with closing(http.client.HTTPSConnection("www.cbr.ru", timeout=6)) as conn:
+                with closing(http.client.HTTPSConnection(_SOURCE_HOST, timeout=6)) as conn:
                     conn.request("GET", "/rss/eventrss", headers={
                         "Accept": "application/rss+xml,application/xml,text/xml",
                         "User-Agent": "OMNICIO/1.0 (+https://omnicio.ru)",

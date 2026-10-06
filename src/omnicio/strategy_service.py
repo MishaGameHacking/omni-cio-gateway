@@ -25,7 +25,7 @@ from .broker import (
 )
 from .freshness import PORTFOLIO_MAX_AGE, describe_freshness
 from .portfolio_store import PortfolioStore, SettingsVersionConflict
-from .strategy import document_hash, normalize_document
+from .strategy import RATING_LEVELS, document_hash, normalize_document
 from .strategy_assessment import (
     IssuerEvidence,
     StrategyCandidateFacts,
@@ -287,6 +287,89 @@ def _research_fundamentals(
     return result
 
 
+def _validate_research_request(
+    from_at: datetime,
+    to_at: datetime,
+    initial_capital_rub: Decimal,
+    costs: ResearchCosts,
+    now: datetime,
+) -> None:
+    if (
+        from_at.tzinfo is None
+        or to_at.tzinfo is None
+        or not from_at < to_at <= now
+        or to_at - from_at > timedelta(days=MAX_RESEARCH_DAYS)
+        or to_at - from_at < timedelta(days=90)
+    ):
+        raise ValueError("research_window_invalid")
+    if (
+        not initial_capital_rub.is_finite()
+        or not 0 < initial_capital_rub <= Decimal("1e12")
+        or any(
+            not value.is_finite() or not 0 <= value <= 1000
+            for value in (costs.commission_bps, costs.slippage_bps)
+        )
+    ):
+        raise ValueError("research_parameters_invalid")
+
+
+def _research_rating(
+    user_id: UUID,
+    instrument_uid: str,
+    broker: BrokerService,
+    now: datetime,
+) -> StrategyFact | None:
+    try:
+        ratings = broker.candidate_bond_ratings(user_id, instrument_uid)
+    except TBankUnavailable:
+        return None
+    notches = [rating_notch(item, now) for item in ratings]
+    if not ratings or any(notch is None for notch in notches):
+        return None
+    notch = max((n for n in notches if n is not None), key=RATING_LEVELS.index)
+    return StrategyFact(
+        notch,
+        max(item.rating_date for item in ratings),
+        "https://developer.tbank.ru/invest/api/instruments-service-bond-by",
+    )
+
+
+def _research_assets(
+    user_id: UUID,
+    rows: list[dict[str, Any]],
+    broker: BrokerService,
+    from_at: datetime,
+    to_at: datetime,
+    now: datetime,
+) -> tuple[list[ResearchAsset], list[str]]:
+    fundamentals = _research_fundamentals(user_id, rows, broker, now)
+    assets = []
+    unavailable = []
+    ratings_read = 0
+    for row in rows:
+        candidate = _row_candidate(row, now)
+        facts = {**candidate.facts, **fundamentals.get(str(row.get("asset_uid")), {})}
+        if candidate.asset_class == "bonds" and ratings_read < STRATEGY_RATING_READ_LIMIT:
+            ratings_read += 1
+            rating = _research_rating(user_id, candidate.instrument_uid, broker, now)
+            if rating is not None:
+                facts["rating"] = rating
+        candidate = replace(candidate, facts=facts)
+        try:
+            bars = broker.candidate_daily_exchange_candles(
+                user_id,
+                candidate.instrument_uid,
+                from_at=from_at,
+                to_at=to_at,
+            )
+        except TBankUnavailable:
+            bars = ()
+            unavailable.append(candidate.instrument_uid)
+        bars = _research_price_bars(row, bars)
+        assets.append(ResearchAsset(candidate, bars))
+    return assets, unavailable
+
+
 def strategy_research(
     *,
     user_id: UUID,
@@ -306,23 +389,8 @@ def strategy_research(
     A connection/draft change at any point prevents release of the collected data.
     """
     now = datetime.now(UTC)
-    if (
-        from_at.tzinfo is None
-        or to_at.tzinfo is None
-        or not from_at < to_at <= now
-        or to_at - from_at > timedelta(days=MAX_RESEARCH_DAYS)
-        or to_at - from_at < timedelta(days=90)
-    ):
-        raise ValueError("research_window_invalid")
-    if (
-        not initial_capital_rub.is_finite()
-        or not 0 < initial_capital_rub <= Decimal("1e12")
-        or any(
-            not value.is_finite() or not 0 <= value <= 1000
-            for value in (commission_bps, slippage_bps)
-        )
-    ):
-        raise ValueError("research_parameters_invalid")
+    costs = ResearchCosts(commission_bps, slippage_bps)
+    _validate_research_request(from_at, to_at, initial_capital_rub, costs, now)
     selection = store.current_strategy_draft(user_id)
     if selection is None:
         return {"status": "draft_required", "execution_enabled": False}
@@ -343,49 +411,14 @@ def strategy_research(
     if context.get("account_id") != connection.account_id:
         raise BrokerConnectionError("strategy_account_changed")
     rows = _research_rows(context)
-    fundamentals = _research_fundamentals(user_id, rows, broker, now)
-    assets = []
-    unavailable = []
-    ratings_read = 0
-    for row in rows:
-        candidate = _row_candidate(row, now)
-        facts = {**candidate.facts, **fundamentals.get(str(row.get("asset_uid")), {})}
-        if candidate.asset_class == "bonds" and ratings_read < STRATEGY_RATING_READ_LIMIT:
-            ratings_read += 1
-            try:
-                ratings = broker.candidate_bond_ratings(user_id, candidate.instrument_uid)
-            except TBankUnavailable:
-                ratings = ()
-            notches = [rating_notch(item, now) for item in ratings]
-            if ratings and all(notch is not None for notch in notches):
-                from .strategy import RATING_LEVELS
-
-                notch = max((n for n in notches if n is not None), key=RATING_LEVELS.index)
-                facts["rating"] = StrategyFact(
-                    notch,
-                    max(item.rating_date for item in ratings),
-                    "https://developer.tbank.ru/invest/api/instruments-service-bond-by",
-                )
-        candidate = replace(candidate, facts=facts)
-        try:
-            bars = broker.candidate_daily_exchange_candles(
-                user_id,
-                candidate.instrument_uid,
-                from_at=from_at,
-                to_at=to_at,
-            )
-        except TBankUnavailable:
-            bars = ()
-            unavailable.append(candidate.instrument_uid)
-        bars = _research_price_bars(row, bars)
-        assets.append(ResearchAsset(candidate, bars))
+    assets, unavailable = _research_assets(user_id, rows, broker, from_at, to_at, now)
     payload = run_strategy_backtest(
         document,
         assets,
         from_at=from_at,
         to_at=to_at,
         initial_capital_rub=initial_capital_rub,
-        costs=ResearchCosts(commission_bps, slippage_bps),
+        costs=costs,
         now=now,
     )
     if to_at >= now - timedelta(days=4):

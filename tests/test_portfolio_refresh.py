@@ -25,7 +25,7 @@ NOW = datetime(2026, 10, 6, 10, tzinfo=UTC)
 
 
 def manual_job(owner: UUID = USER_ID) -> JobRunRecord:
-    return JobRunRecord(uuid4(), owner, "portfolio_refresh", NOW.date(), "running", 1, NOW, None)
+    return JobRunRecord(uuid4(), owner, "portfolio_refresh", None, "running", 1, NOW, None)
 
 
 class RefreshStore(FakeStore):
@@ -66,6 +66,7 @@ def test_refresh_reuses_full_read_only_observation_and_keeps_daily_identity_sepa
     status, details = store.finished[0]
     assert status == "succeeded"
     assert details["job"] == "portfolio_refresh"
+    assert details["scheduled_for"] is None
     assert details["history_status"] == "complete"
     assert details["history_pages"] == 2
     assert not coordinator.run_pending()

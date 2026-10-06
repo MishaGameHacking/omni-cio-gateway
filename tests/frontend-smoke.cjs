@@ -84,6 +84,8 @@ const makeFixture = mode => {
   preset.policy.securities_tax_rate_percent = "13";
   return {
     mode,
+    tidEnabled: true,
+    vkidEnabled: true,
     user: "000000123",
     prefs: defaultPreferences(),
     selection: {
@@ -570,6 +572,45 @@ const displayContracts = () => {
   assert.equal(ui.format("1234.56"), "1,234.56", "Locale setting has a real consumer");
   console.log("PASS display contracts: unknown values, source escaping, privacy, real-series requirements and locale");
 };
+const cssRule = (css, selector) => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(escaped + "\\s*\\{([^{}]*)\\}").exec(css);
+  assert.ok(match, "Style rule exists: " + selector);
+  return Object.fromEntries([...match[1].matchAll(/([a-z-]+)\s*:\s*([^;\n}]+)/g)].map(item => [item[1], item[2].trim()]));
+};
+const relativeLuminance = color => {
+  let hex = color.replace("#", "");
+  if (hex.length === 3) hex = [...hex].map(digit => digit + digit).join("");
+  const linear = [0, 2, 4].map(index => {
+    const channel = Number.parseInt(hex.slice(index, index + 2), 16) / 255;
+    return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4;
+  });
+  return .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2];
+};
+const assertTextContrast = (foreground, background, label) => {
+  const values = [relativeLuminance(foreground), relativeLuminance(background)];
+  const ratio = (Math.max(...values) + .05) / (Math.min(...values) + .05);
+  assert.ok(ratio >= 4.5, label + ": normal text contrast " + ratio.toFixed(2) + ":1 must reach 4.5:1");
+};
+const styleContracts = () => {
+  const css = readFileSync(join(root, "web", "app.css"), "utf8");
+  const declared = new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map(item => item[1]));
+  for (const reference of css.matchAll(/var\((--[\w-]+)(,)?/g)) assert.ok(declared.has(reference[1]) || reference[2], "CSS custom property must exist or have a fallback: " + reference[1]);
+  for (const selector of [":root", ":root[data-theme=light]"]) {
+    const palette = cssRule(css, selector);
+    for (const text of ["--text", "--muted", "--subtle", "--blue-light", "--green", "--red", "--purple", "--gold"]) {
+      for (const surface of ["--bg", "--panel", "--panel-deep", "--panel-hover"]) assertTextContrast(palette[text], palette[surface], selector + " " + text + " on " + surface);
+    }
+    assertTextContrast("#ffffff", palette["--blue"], selector + " selected controls");
+  }
+  for (const selector of [".button.primary", ".button.primary:hover", ".vk-provider", ".vk-provider:hover", ".strategy-option .strategy-icon"]) {
+    const rule = cssRule(css, selector);
+    for (const background of rule.background.match(/#[a-f0-9]{6}\b/gi) || []) assertTextContrast("#ffffff", background, selector);
+  }
+  const avatar = cssRule(css, ".avatar");
+  for (const background of avatar.background.match(/#[a-f0-9]{6}\b/gi)) assertTextContrast(avatar.color, background, "Profile avatar text");
+  console.log("PASS style contracts: declared tokens and normal-text contrast in both themes");
+};
 const workerContract = async () => {
   const handlers = new Map();
   const tasks = [];
@@ -753,6 +794,16 @@ const runBrowser = async base => {
       assert.deepEqual(data.csp, [], label + ": production Content Security Policy");
     };
     const screenshot = async name => {
+      await evaluate(`(async () => {
+        const finite = document.getAnimations().filter(animation => animation.playState === 'running' && Number.isFinite(animation.effect?.getComputedTiming().iterations));
+        await Promise.allSettled(finite.map(animation => animation.finished));
+        await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+      })()`);
+      const opacity = await evaluate(`(() => {
+        const view = document.querySelector('.view:not([hidden])');
+        return view?.getClientRects().length ? Number(getComputedStyle(view).opacity) : 1;
+      })()`);
+      assert.equal(opacity, 1, "A settled page must retain full opacity: " + name);
       const result = await send("Page.captureScreenshot", {
         format: "png",
         captureBeyondViewport: false
@@ -839,6 +890,7 @@ const runBrowser = async base => {
 (async () => {
   try {
     displayContracts();
+    styleContracts();
     await workerContract();
     await new Promise(done => server.listen(0, "127.0.0.1", done));
     await runBrowser(`http://127.0.0.1:${server.address().port}/`);
@@ -851,12 +903,14 @@ const runBrowser = async base => {
   }
 })();
 async function serveTestAuthConfig({
-  response
+  response,
+  fixture
 }) {
   return sendJSON(response, {
-    login_enabled: true,
-    tid_enabled: true,
-    tid_configured: true,
+    login_enabled: fixture.tidEnabled || fixture.vkidEnabled,
+    vkid_enabled: fixture.vkidEnabled,
+    tid_enabled: fixture.tidEnabled,
+    tid_configured: fixture.tidEnabled,
     auth_provider: "vkid",
     registration_enabled: false
   });
@@ -1387,6 +1441,8 @@ async function exerciseViewport({
     mobile: width < 680
   });
   const guestKey = `guest-${round}-${width}`;
+  fixtures.set(guestKey, makeFixture("guest"));
+  if (width === 320) fixtures.get(guestKey).vkidEnabled = false;
   await send("Page.navigate", {
     url: `${base}?case=${guestKey}`
   });
@@ -1405,6 +1461,8 @@ async function exerciseViewport({
     await screenshot(`auth-${round}-${width}.png`);
     assert.equal(await evaluate('document.querySelectorAll("#auth-form input[required]").length'), 4, "Both OAuth providers require the four consent choices");
     assert.equal(await evaluate('document.querySelectorAll("#auth-form input[type=password],#auth-form input[type=email]").length'), 0, "Authentication cannot present an unsupported password flow");
+    assert.equal(await evaluate('document.querySelector("#vkid-login").disabled'), !fixtures.get(guestKey).vkidEnabled, "VK ID uses its own server availability, independently of T-ID");
+    assert.equal(await evaluate('document.querySelector("#tid-login").disabled'), !fixtures.get(guestKey).tidEnabled, "T-ID uses its own server availability");
     await evaluate('for(const input of document.querySelectorAll("#auth-form input"))input.checked=true');
     await click("#tid-login");
     await wait('document.querySelector("#auth-message").textContent.includes("не прошёл проверку")', "OAuth redirect allowlist");
@@ -1524,6 +1582,13 @@ async function exerciseViewport({
   await until(() => fixture.prefs.document.theme === "light", "Server theme setting");
   await wait('document.documentElement.dataset.theme==="light"', "Applied light theme");
   await checkLayout(`settings-light ${round}/${width}`);
+  if (width === 390) await exerciseInterruptedSave({
+    fixture,
+    click,
+    fieldValue,
+    wait,
+    evaluate
+  });
   if (width === 390) await exerciseRefreshRecovery({
     fixture,
     click,
@@ -1563,6 +1628,31 @@ async function exerciseViewport({
   assert.ok(browserStorage.local.every(key => key === "omnicio-theme"), "Only a display theme may enter localStorage");
   assert.deepEqual(await evaluate("window.__browserErrors"), [], "No browser errors after workflows");
   console.log(`PASS round ${round}, ${width}px: layout, navigation, search, real charts, strategies, goals, events, settings, session isolation`);
+}
+async function exerciseInterruptedSave({
+  fixture,
+  click,
+  fieldValue,
+  wait,
+  evaluate
+}) {
+  await wait('document.querySelector("#preferences-form [data-save-status=prefs]").dataset.state==="saved"', "Initial settings acknowledged");
+  fixture.mutationDelay = 800;
+  await fieldValue("#preferences-form", "locale", "en");
+  await click('#preferences-form [type="submit"]');
+  await until(() => fixture.activeWrites === 1, "Preference write in flight before pagehide");
+  await evaluate('window.dispatchEvent(new PageTransitionEvent("pagehide",{persisted:true}))');
+  await wait('document.querySelector("#preferences-form [data-save-status=prefs]").dataset.state==="error"', "Interrupted write remains explicitly unconfirmed");
+  await until(() => fixture.activeWrites === 0 && fixture.prefs.document.locale === "en", "Server completed the interrupted write");
+  const persistedVersion = fixture.prefs.version;
+  await evaluate('window.dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}))');
+  await click('#preferences-form [data-action="prefs-retry"]');
+  await wait('document.querySelector("#preferences-form [data-save-status=prefs]").dataset.state==="saved"', "Interrupted write reconciled from the server");
+  assert.equal(fixture.prefs.version, persistedVersion, "Read-back cannot repeat a mutation whose response was interrupted");
+  fixture.mutationDelay = 150;
+  await fieldValue("#preferences-form", "locale", "ru");
+  await click('#preferences-form [type="submit"]');
+  await wait('document.querySelector("#preferences-form [data-save-status=prefs]").dataset.state==="saved"', "Restore the selected number format");
 }
 async function exerciseProfileDraft({
   fixture,

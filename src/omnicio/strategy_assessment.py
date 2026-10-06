@@ -37,6 +37,7 @@ _CLASS_CAP = {
 }
 _RATING_MAX_AGE = timedelta(days=366)
 _IDENTITY_MAX_AGE = timedelta(days=30)
+_MISSING_PREFIX = "missing:"
 _State = Literal["evaluated", "blocked", "unknown", "inapplicable"]
 
 
@@ -940,7 +941,7 @@ def _bond_criteria(
     if credit_category:
         credit_cap = _amount(data["policy"][credit_key])
         if credit_cap is None:
-            reasons.append("missing:" + credit_key)
+            reasons.append(_MISSING_PREFIX + credit_key)
         elif credit_cap == 0:
             reasons.append(credit_key + "_excluded")
     if notch in RATING_LEVELS[10:24] and not data["profile"]["allow_below_investment_grade"]:
@@ -962,7 +963,7 @@ def _required_numbers(
     for key in keys:
         value = _numeric_fact(candidate, key, as_of)
         if value is None:
-            missing.append("missing:" + key)
+            missing.append(_MISSING_PREFIX + key)
         values[key] = _ZERO if value is None else value
     return values, missing
 
@@ -1207,7 +1208,6 @@ def _candidate_dimensions(
     as_of: datetime,
 ) -> tuple[dict[str, dict[str, Decimal]], list[str]]:
     dimensions: dict[str, dict[str, Decimal]] = {name: {} for name in ("issuer", "sector", "group")}
-    missing = []
     if candidate.asset_class == "funds":
         if not _constituents_known(candidate, as_of):
             return dimensions, ["fund_lookthrough"]
@@ -1218,13 +1218,14 @@ def _candidate_dimensions(
                 ("group", row.group_id),
             ):
                 dimensions[name][key] = dimensions[name].get(key, _ZERO) + row.weight_percent / 100
-    else:
-        for name in dimensions:
-            raw = _known_fact(candidate, name + "_id" if name != "sector" else name, as_of)
-            if isinstance(raw, str) and raw:
-                dimensions[name][raw] = Decimal(1)
-            else:
-                missing.append(name)
+        return dimensions, []
+    missing = []
+    for name, key in (("issuer", "issuer_id"), ("sector", "sector"), ("group", "group_id")):
+        raw = _known_fact(candidate, key, as_of)
+        if isinstance(raw, str) and raw:
+            dimensions[name][raw] = Decimal(1)
+        else:
+            missing.append(name)
     return dimensions, missing
 
 
@@ -1426,7 +1427,7 @@ def select_strategy_candidates(
         for row in rows
         if "eligible_" + row["asset_class"] in missing
         for reason in row["reasons"]
-        if reason.startswith("missing:")
+        if reason.startswith(_MISSING_PREFIX)
     )
     total = sum((Decimal(item["target_weight_percent"]) for item in selected), _ZERO)
     ready = bool(selected) and not missing

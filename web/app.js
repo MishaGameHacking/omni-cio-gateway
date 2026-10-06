@@ -183,6 +183,21 @@
     });
     return payload;
   };
+  const apiTransportError = (error, {
+    timedOut,
+    method,
+    generation
+  }) => {
+    if (timedOut) return Object.assign(new Error("request_timeout"), {
+      status: 0,
+      uncertain: method !== "GET"
+    });
+    if (error?.name === "AbortError" && method !== "GET" && generation === state.generation) return Object.assign(new Error("request_interrupted"), {
+      status: 0,
+      uncertain: true
+    });
+    return error;
+  };
   const api = async (path, {
     method = "GET",
     body,
@@ -227,20 +242,33 @@
       });
       return await readApiResponse(response, context);
     } catch (error) {
-      if (timedOut) throw Object.assign(new Error("request_timeout"), {
-        status: 0,
-        uncertain: method !== "GET"
+      throw apiTransportError(error, {
+        timedOut,
+        method,
+        generation: context.generation
       });
-      throw error;
     } finally {
       clearTimeout(timer);
       state.requests.delete(controller);
     }
   };
+  const recoveryErrorReason = code => {
+    const suffix = String(code || "").replace(/^(live|sandbox)_/, "");
+    const reasons = {
+      cancel_ambiguous: "Ответ брокера на отмену не получен. Обновите состояние заявки; отмена пока не подтверждена.",
+      order_not_found_yet: "Брокер пока не вернул заявку по её сохранённому номеру. Повторите сверку позднее.",
+      cancel_order_not_found: "Брокер не подтвердил заявку при отмене. Обновите её состояние; успешная отмена не подтверждена.",
+      reconcile_unavailable: "Состояние у брокера временно недоступно. Дождитесь восстановления связи и повторите сверку.",
+      account_mismatch: "Подключён другой счёт. Для сверки требуется счёт, к которому относится запись."
+    };
+    if (["request_id_mismatch", "instrument_mismatch", "lot_count_mismatch", "direction_mismatch", "order_type_mismatch"].includes(suffix)) return "Ответ брокера не совпадает с сохранённой заявкой. Автоматическое подтверждение остановлено; проверьте заявку у брокера.";
+    return reasons[suffix] || null;
+  };
   const humanError = error => {
     const reasons = {
       offline_write_not_sent: "Нет сети. Изменение не отправлено. Подключитесь к интернету и повторите.",
       request_timeout: "Сервер не успел ответить. Проверьте сохранённое состояние перед повтором.",
+      request_interrupted: "Отправка прервана. Проверьте сохранённое состояние перед повтором: сервер мог уже принять изменение.",
       invalid_server_response: "Получен неполный ответ сервера. Повторите загрузку.",
       tour_requires_login: "Для этого действия войдите в личный аккаунт.",
       profile_context_changed: "Сессия изменилась. Подтвердите текущий аккаунт.",
@@ -254,10 +282,12 @@
       "T-Invest token rejected": "API-токен не прошёл проверку. Проверьте значение и выбранную среду.",
       "legal acknowledgments are required": "Подтвердите ознакомление с документами.",
       updated_legal_consent_required: "Условия сервиса обновились. Войдите повторно и подтвердите актуальные документы.",
-      goal_allocation_exceeded: "Сумма долей активных целей превышает 100%. Уменьшите долю этой цели."
+      goal_allocation_exceeded: "Сумма долей активных целей превышает 100%. Уменьшите долю этой цели.",
+      active_live_execution_must_be_reconciled: "Есть незавершённое исполнение. Откройте Настройки → Ранее начатые исполнения и сверьте заявку перед отключением или удалением аккаунта."
     };
     const fallback = error?.status === 422 ? "Проверьте поля и допустимые значения. Сервер не принял изменение." : renderHumanErrorValue3(error);
-    return reasons[error?.code || error?.message] || fallback;
+    const code = error?.code || error?.message;
+    return reasons[code] || recoveryErrorReason(code) || fallback;
   };
   const isCancelled = error => error?.name === "AbortError" || error?.message === "profile_context_changed";
   const toast = (message, isError = false) => {
@@ -383,7 +413,7 @@
     $("#mobile-nav").innerHTML = [["home", "Главная"], ["market", "Рынок"], ["assistant", "ИИ"], ["strategies", "Стратегии"]].map(([key, title]) => `<a href="#${key}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
   };
   const openDrawer = () => {
-    state.drawerReturn = document.activeElement;
+    state.drawerReturn = $("#app-menu-toggle");
     $("#app-sidebar").inert = false;
     $("#app-sidebar").dataset.open = "true";
     $("#drawer-backdrop").hidden = false;
@@ -1185,7 +1215,7 @@
     review_required: "Требуется дополнительная проверка данных."
   })[value] || "Оценка требует проверки исходных данных.";
   const validRecord = record => record && Number.isInteger(record.version) && record.version >= 0 && record.document && typeof record.document === "object";
-  const editablePreferenceForms = ["preferences-form", "profile-form"];
+  const editablePreferenceForms = new Set(["preferences-form", "profile-form"]);
   const hasFormDrafts = () => Object.keys(state.formDrafts).length > 0;
   const formValues = form => Object.fromEntries(Array.from(form.elements).filter(input => input.name).map(input => [input.name, input.type === "checkbox" ? input.checked : input.value]));
   const restoreEditableForm = formId => {
@@ -1202,7 +1232,7 @@
   };
   const captureFormDraft = input => {
     const form = input.closest("form");
-    if (!form || !editablePreferenceForms.includes(form.id) || !state.prefs.server) return false;
+    if (!form || !editablePreferenceForms.has(form.id) || !state.prefs.server) return false;
     const values = formValues(form);
     if (same(values, state.formBaselines[form.id])) delete state.formDrafts[form.id];else state.formDrafts[form.id] = values;
     updateSaveStatus("prefs");
@@ -1432,7 +1462,9 @@
       const generation = state.generation;
       const payload = await api(kind === "strategy" ? "/api/profile/strategy" : "/api/preferences");
       if (generation !== state.generation) return;
-      if (kind === "prefs" && !validRecord(payload)) throw Object.assign(new Error("invalid_server_response"), {status: 502});
+      if (kind === "prefs" && !validRecord(payload)) throw Object.assign(new Error("invalid_server_response"), {
+        status: 502
+      });
       slot.dirty = false;
       slot.error = null;
       slot.revision += 1;
@@ -2223,7 +2255,8 @@
     }[leg.action] || "Действие не определено";
     return `<article class="recovery-leg"><h3>${esc(action)} · ${esc(executionStatus(leg.status))}</h3>${infoRows([["Инструмент", leg.instrument_uid], ["Запрошено лотов", format(leg.lots_requested, 0)], ["Исполнено лотов", format(leg.lots_executed, 0)], ["ID запроса", leg.request_id || "Не получен"], ["ID заявки брокера", leg.provider_order_id || "Не подтверждён"], ["Статус брокера", leg.provider_status || "Не получен"], ["Последняя сверка", leg.last_checked_at ? date(leg.last_checked_at, true) + " МСК" : "Ещё не выполнена"]])}</article>`;
   };
-  const recoveryDetailsHTML = execution => `${infoRows([["Состояние", executionStatus(execution.status)], ["Среда", executionMode(execution.mode)], ["Счёт", execution.account_id], ["ID исполнения", execution.id], ["Обновлено", date(execution.updated_at, true) + " МСК"]])}${execution.error_code ? '<p class="notice error">Ранее получена ошибка. Сверьте состояние заявки перед следующим действием.</p>' : ""}<div class="recovery-legs">${(execution.legs || []).map(executionLegHTML).join("")}</div>${recoveryButtons(execution)}<div id="recovery-confirmation"></div><output id="recovery-message" class="form-message"></output><p class="fine-print section-gap">Отмена относится к ближайшему незавершённому шагу. Запрошенная отмена подтверждается состоянием брокера; фактически исполненные лоты остаются исполненными.</p>`;
+  const storedExecutionErrorHTML = code => `<p class="notice error">${esc(recoveryErrorReason(code) || "Ранее получена ошибка. Сверьте состояние заявки перед следующим действием.")}</p>`;
+  const recoveryDetailsHTML = execution => `${infoRows([["Состояние", executionStatus(execution.status)], ["Среда", executionMode(execution.mode)], ["Счёт", execution.account_id], ["ID исполнения", execution.id], ["Обновлено", date(execution.updated_at, true) + " МСК"]])}${execution.error_code ? storedExecutionErrorHTML(execution.error_code) : ""}<div class="recovery-legs">${(execution.legs || []).map(executionLegHTML).join("")}</div>${recoveryButtons(execution)}<div id="recovery-confirmation"></div><output id="recovery-message" class="form-message"></output><p class="fine-print section-gap">Отмена относится к ближайшему незавершённому шагу. Запрошенная отмена подтверждается состоянием брокера; фактически исполненные лоты остаются исполненными.</p>`;
   const recoveryStatusButton = () => button("Обновить статус", "recovery-detail-reload", {
     small: true
   });
@@ -2484,7 +2517,7 @@
   };
   const renderAuthConfig = () => {
     const config = state.config;
-    const vkEnabled = Boolean(config?.login_enabled);
+    const vkEnabled = Boolean(config?.vkid_enabled);
     const tidEnabled = Boolean(config?.tid_enabled);
     $("#tid-login").disabled = !tidEnabled;
     $("#vkid-login").disabled = !vkEnabled;
@@ -2815,7 +2848,7 @@
     const maximum = BigInt(Math.trunc(Number(input.max || "1000000000000"))) * 100000000n;
     const minimum = BigInt(input.min || "0") * 100000000n;
     const bounded = adjusted < minimum ? minimum : renderStepFieldValue2(adjusted, maximum);
-    const decimal = String(bounded % 100000000n).padStart(8, "0").replace(/0+$/, "");
+    const decimal = String(bounded % 100000000n).padStart(8, "0").replace(/0{1,8}$/, "");
     input.value = `${bounded / 100000000n}${decimal ? renderStepFieldFragment(decimal) : ""}`;
     input.dispatchEvent(new Event("input", {
       bubbles: true
@@ -3332,7 +3365,6 @@
   window.addEventListener("beforeunload", event => {
     if (hasPending()) {
       event.preventDefault();
-      event.returnValue = "";
     }
   });
   window.addEventListener("pagehide", () => {
@@ -3949,7 +3981,7 @@
     return "Не подключён на сервере";
   }
   function renderProfileValue2() {
-    if (state.config?.login_enabled) {
+    if (state.config?.vkid_enabled) {
       return "Можно подключить";
     }
     return "Не подключён на сервере";
@@ -4059,7 +4091,6 @@
   }) {
     event.preventDefault();
     control.closest("dialog")?.close();
-    return;
   }
   async function handleClickHelp({
     event,
@@ -4069,7 +4100,6 @@
     $("#help-title").textContent = control.dataset.helpTitle;
     $("#help-content").textContent = control.dataset.help;
     $("#help-dialog").showModal();
-    return;
   }
   async function handleClickTheme({
     event,
@@ -4082,7 +4112,6 @@
         document.theme = choice;
       })) applyTheme(choice);
     } else applyTheme(choice);
-    return;
   }
   async function handleClickPublicView({
     event,
@@ -4091,7 +4120,6 @@
     event.preventDefault();
     showApp(true);
     navigate(control.dataset.publicOpen);
-    return;
   }
   async function handleClickRoute({
     event,
@@ -4100,7 +4128,6 @@
     event.preventDefault();
     for (const dialog of $$("dialog[open]")) if (dialog.id !== "session-dialog") dialog.close();
     navigate(control.dataset.route);
-    return;
   }
   async function handleClickAuthMode({
     event,
@@ -4108,7 +4135,6 @@
   }) {
     event.preventDefault();
     openAuth(control.dataset.authMode, state.authLink);
-    return;
   }
   async function handleClickAsset({
     event,
@@ -4120,7 +4146,6 @@
     navigate("asset", {
       uid: control.dataset.asset
     });
-    return;
   }
   async function handleClickAssetTab({
     event,
@@ -4130,7 +4155,6 @@
     state.assetTab = control.dataset.assetTab;
     renderAsset();
     U.bindCharts($("#view-asset"));
-    return;
   }
   async function handleClickWatchlist({
     event,
@@ -4138,7 +4162,6 @@
   }) {
     event.preventDefault();
     toggleWatch(control);
-    return;
   }
   async function handleClickAssetFilter({
     event,
@@ -4147,7 +4170,6 @@
     event.preventDefault();
     state.assetFilter = control.dataset.assetFilter;
     renderCurrent();
-    return;
   }
   async function handleClickSort({
     event,
@@ -4162,7 +4184,6 @@
     $(`[data-sort="${state.sort}"]`, $(`#view-${state.view}`))?.focus({
       preventScroll: true
     });
-    return;
   }
   async function handleClickPeriod({
     event,
@@ -4183,7 +4204,6 @@
         if (state.view === scope) renderCurrent();
       }
     }
-    return;
   }
   async function handleClickEventFilter({
     event,
@@ -4192,7 +4212,6 @@
     event.preventDefault();
     state.eventFilter = control.dataset.eventFilter;
     renderCurrent();
-    return;
   }
   async function handleClickEventOpen({
     event,
@@ -4200,7 +4219,6 @@
   }) {
     event.preventDefault();
     openEvent(control.dataset.eventOpen);
-    return;
   }
   async function handleClickEventRead({
     event,
@@ -4208,7 +4226,6 @@
   }) {
     event.preventDefault();
     await markEvents([control.dataset.eventRead]);
-    return;
   }
   async function handleClickGoalEdit({
     event,
@@ -4216,7 +4233,6 @@
   }) {
     event.preventDefault();
     openGoal(control.dataset.goalEdit);
-    return;
   }
   async function handleClickGoalDelete({
     event,
@@ -4224,7 +4240,6 @@
   }) {
     event.preventDefault();
     confirmGoalDelete(control.dataset.goalDelete);
-    return;
   }
   async function handleClickGoalDeleteConfirm({
     event,
@@ -4251,7 +4266,6 @@
         control.disabled = false;
       }
     }
-    return;
   }
   async function handleClickStrategy({
     event,
@@ -4259,7 +4273,6 @@
   }) {
     event.preventDefault();
     chooseStrategy(control.dataset.selectStrategy);
-    return;
   }
   async function handleClickPublicStrategy({
     event,
@@ -4271,7 +4284,6 @@
     openDialog(preset.title, `<p class="help-copy">${esc(preset.description)}</p><p class="notice">${esc(preset.risk)}</p><p class="fine-print">Параметры подхода можно изменить после входа. Название не является обещанием результата.</p><div class="form-actions">${button("Открыть личный кабинет", "login", {
       primary: true
     })}</div>`);
-    return;
   }
   async function handleClickStep({
     event,
@@ -4279,7 +4291,6 @@
   }) {
     event.preventDefault();
     stepField(control);
-    return;
   }
   async function handleClickChatPrompt({
     event,
@@ -4291,7 +4302,6 @@
       input.value = control.dataset.chatPrompt;
       input.focus();
     }
-    return;
   }
   async function handleClickAction({
     event,
@@ -4304,7 +4314,6 @@
     input
   }) {
     updateStrategyField(input);
-    return;
   }
   async function handleChangeAllocationFlag({
     input
@@ -4329,17 +4338,14 @@
     } else document[fieldName] = document[fieldName].filter(item => item !== key);
     documentChanged();
     renderStrategies();
-    return;
   }
   async function handleChangeGoalSource({
     input
   }) {
     updateGoalFields(input.name === "kind");
-    return;
   }
   async function handleChangeBrokerEnvironment({}) {
     resetBrokerPreview();
-    return;
   }
   async function handleChangeMarketReference({
     input
@@ -4358,7 +4364,6 @@
     event
   }) {
     await startAuth(form, event.submitter?.value || "vkid");
-    return;
   }
   async function handleSubmitSearch({
     form
@@ -4366,17 +4371,14 @@
     navigate("search", {
       q: form.elements.q.value.trim().slice(0, 64)
     });
-    return;
   }
   async function handleSubmitStrategy({}) {
     await saveVersioned("strategy");
-    return;
   }
   async function handleSubmitGoal({
     form
   }) {
     await saveGoal(form);
-    return;
   }
   async function handleSubmitProfile({
     form
@@ -4390,7 +4392,6 @@
       document.display_name = value;
     });
     if (accepted) acceptFormSubmission(form);
-    return;
   }
   async function handleSubmitPreferences({
     form
@@ -4414,25 +4415,21 @@
       acceptFormSubmission(form);
       applyTheme(controls.theme.value);
     }
-    return;
   }
   async function handleSubmitBroker({
     form
   }) {
     await previewBroker(form);
-    return;
   }
   async function handleSubmitAssistant({
     form
   }) {
     await sendAssistant(form);
-    return;
   }
   async function handleSubmitResearch({
     form
   }) {
     await runResearch(form);
-    return;
   }
   async function handleSubmitAccountDeletion({
     form

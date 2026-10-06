@@ -307,15 +307,7 @@ class MarketService:
     ) -> tuple[tuple[TBankHistoricCandle, ...], str, str]:
         connection = self.broker.status(user_id)
         first = self.broker.market_history_start(user_id, instrument_uid)
-        if first is None or first.tzinfo is None or first > requested_at:
-            raise TBankUnavailable("instrument_history_start_unavailable")
-        if requested_at - first > timedelta(days=366 * 80):
-            raise TBankUnavailable("instrument_history_exceeds_request_budget")
-        cursor = first.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        interval = "CANDLE_INTERVAL_MONTH"
-        if requested_at - cursor < timedelta(days=28):
-            interval = "CANDLE_INTERVAL_DAY"
-            cursor = min(cursor, requested_at - timedelta(days=1))
+        cursor, interval, history_from = _available_history_window(first, requested_at)
         history_floor = cursor
         candles: dict[datetime, TBankHistoricCandle] = {}
         reads = 0
@@ -335,7 +327,7 @@ class MarketService:
                 raise TBankUnavailable("instrument_history_exceeds_request_budget")
         if self.broker.status(user_id) != connection:
             raise BrokerConnectionError("market_account_changed")
-        return tuple(candles[key] for key in sorted(candles)), interval, first.isoformat()
+        return tuple(candles[key] for key in sorted(candles)), interval, history_from
 
     def instrument_live_state(
         self,
@@ -355,6 +347,21 @@ class MarketService:
             trading=trading,
             live_after_seconds=self.live_after_seconds,
         )
+
+
+def _available_history_window(
+    first: datetime | None, requested_at: datetime,
+) -> tuple[datetime, str, str]:
+    if first is None or first.tzinfo is None or first > requested_at:
+        raise TBankUnavailable("instrument_history_start_unavailable")
+    if requested_at - first > timedelta(days=366 * 80):
+        raise TBankUnavailable("instrument_history_exceeds_request_budget")
+    cursor = first.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    interval = "CANDLE_INTERVAL_MONTH"
+    if requested_at - cursor < timedelta(days=28):
+        interval = "CANDLE_INTERVAL_DAY"
+        cursor = min(cursor, requested_at - timedelta(days=1))
+    return cursor, interval, first.isoformat()
 
 
 def _required_market_price(value: str | None) -> str:

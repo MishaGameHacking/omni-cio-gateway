@@ -332,7 +332,9 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('REGISTRATION_ENABLED="true"', product_env)
         self.assertIn('REGISTRATION_MAX_USERS="2"', product_env)
         self.assertIn('LEGAL_OPERATOR_EMAIL="operator@example.com"', product_env)
-        self.assertIn('OMNICIO_RECOVERY_STATUS_PATH="/var/lib/omnicio-recovery/status.json"', product_env)
+        self.assertIn(
+            'OMNICIO_RECOVERY_STATUS_PATH="/var/lib/omnicio-recovery/status.json"', product_env,
+        )
         self.assertNotIn("OWNER_VK_ID", product_env)
 
     def test_registration_environment_rejects_invalid_boolean(self) -> None:
@@ -456,7 +458,9 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn(state, ssh.commands[0])
         self.assertIn(f"{MODULE.PRODUCT_ENV}.tmp-{sha}", ssh.commands[0])
         self.assertIn('PRODUCT_ENV_BACKUP="$PRODUCT_ENV.pre-$SHA"', MODULE.REMOTE_ROLLBACK_SCRIPT)
-        self.assertIn('PRODUCT_ENV_STATE="$PRODUCT_ENV.pre-$SHA.state"', MODULE.REMOTE_ROLLBACK_SCRIPT)
+        self.assertIn(
+            'PRODUCT_ENV_STATE="$PRODUCT_ENV.pre-$SHA.state"', MODULE.REMOTE_ROLLBACK_SCRIPT,
+        )
 
     def test_product_environment_backup_rejects_invalid_release_sha(self) -> None:
         with self.assertRaises(MODULE.InfraError):
@@ -507,9 +511,8 @@ class AuthAppDeployTests(unittest.TestCase):
             '"test-only-\\$VALUE-\\`literal\\`-\\"quoted\\"-\\\\path"',
         )
         for value in ("line\nbreak", "line\rbreak"):
-            with self.subTest(value=repr(value)):
-                with self.assertRaises(MODULE.InfraError):
-                    MODULE._environment_value(value)
+            with self.subTest(value=repr(value)), self.assertRaises(MODULE.InfraError):
+                MODULE._environment_value(value)
 
     def test_public_http_surface_has_bounded_resource_consumption(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
@@ -618,7 +621,11 @@ class AuthAppDeployTests(unittest.TestCase):
         consent = (root / "web" / "legal" / "consent.html").read_text(encoding="utf-8")
         terms = (root / "web" / "legal" / "terms.html").read_text(encoding="utf-8")
 
-        for document, version in ((privacy, "2026-10-06-v1.0.0"), (consent, "2026-10-06-v1.0.0"), (terms, "2026-10-06-v1.0.0")):
+        for document, version in (
+            (privacy, "2026-10-06-v1.0.0"),
+            (consent, "2026-10-06-v1.0.0"),
+            (terms, "2026-10-06-v1.0.0"),
+        ):
             self.assertIn('content="noindex,nofollow"', document)
             self.assertIn(version, document)
             self.assertIn("__OMNICIO_OPERATOR_", document)
@@ -646,7 +653,7 @@ class AuthAppDeployTests(unittest.TestCase):
             ("get", "/api/assistant/status"), ("post", "/api/assistant/messages"),
             ("get", "/api/public/news"),
         }
-        self.assertTrue(required <= routes, required - routes)
+        self.assertLessEqual(required, routes, required - routes)
         self.assertNotIn(("post", "/api/profile/strategy/feasibility"), routes)
         self.assertIn(MODULE.SITE_MARKER, page)
         self.assertIn('id="app-sidebar"', page)
@@ -781,7 +788,10 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ("/assets/workspace.js", b"window.OmniUI", "application/javascript"),
             ("/assets/app.css", b"--sidebar:240px", "text/css"),
             ("/sw.js", b"omnicio-public-test " + self.sha[:12].encode(), "text/javascript"),
-            ("/offline.html", b'<html lang="ru">' + self.sha[:12].encode() + b'</html>', "text/html"),
+            (
+                "/offline.html",
+                b'<html lang="ru">' + self.sha[:12].encode() + b'</html>', "text/html",
+            ),
         ):
             self.responses[f"{path}?build={self.sha[:12]}"] = (body, content_type, 200)
         for path, marker in MODULE.LEGAL_PAGES.items():
@@ -826,8 +836,14 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             (MODULE.VERSION_PUBLIC_PATH, b"window.OMNICIO_RELEASE = {}", "text/javascript", 200),
             (f"/assets/workspace.js?build={self.sha[:12]}", b"wrong asset", "text/javascript", 200),
             (f"/sw.js?build={self.sha[:12]}", b"<html>fallback</html>", "text/html", 200),
-            (f"/sw.js?build={self.sha[:12]}", b"omnicio-public-__OMNICIO_BUILD__", "text/javascript", 200),
-            (f"/offline.html?build={self.sha[:12]}", b"<html>__OMNICIO_BUILD__</html>", "text/html", 200),
+            (
+                f"/sw.js?build={self.sha[:12]}",
+                b"omnicio-public-__OMNICIO_BUILD__", "text/javascript", 200,
+            ),
+            (
+                f"/offline.html?build={self.sha[:12]}",
+                b"<html>__OMNICIO_BUILD__</html>", "text/html", 200,
+            ),
             (f"/offline.html?build={self.sha[:12]}", b"<html>old release</html>", "text/html", 200),
             ("/api/auth/config", b"[]", "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": true}', "application/json", 200),

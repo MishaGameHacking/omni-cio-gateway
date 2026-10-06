@@ -55,6 +55,9 @@ ACCEPTED_MIGRATION_SHA256 = {
         "9ce5a36321cb88542b46cca33e6ebe5e1a65f4bf84e0bf00598af262a5550dc8"
     ),
     "0012_strategy_drafts.sql": "eb025bbd52f34398ed4d394b26639ffe82076f9a4b2826f56aa15fdff1df0dd5",
+    "0013_strategy_assessment_admission.sql": (
+        "66e6fa53c70377be00981278dea31361dbb780c632e3fbb40b92b20056ab6089"
+    ),
 }
 USER_ONE = UUID("00000000-0000-0000-0000-000000000101")
 USER_TWO = UUID("00000000-0000-0000-0000-000000000102")
@@ -204,7 +207,8 @@ def _exercise_legacy_recovery(database: Database, runtime, snapshot_id: UUID) ->
 def _settle_legacy_records(ledger: ExecutionStore, runs: dict[str, UUID],
                            legs: dict[str, UUID], mandate_id: UUID) -> None:
     revoked = ledger.revoke_live_mandate(USER_ONE)
-    assert revoked is not None and revoked.id == mandate_id
+    assert revoked is not None
+    assert revoked.id == mandate_id
     assert ledger.live_mandate(USER_ONE) is None
     assert ledger.has_active_live_execution(USER_ONE)
     with pytest.raises(ExecutionLedgerError, match="live_mandate_inactive"):
@@ -216,7 +220,8 @@ def _settle_legacy_records(ledger: ExecutionStore, runs: dict[str, UUID],
         USER_ONE, run_id=runs["live"], leg_id=legs["live"], expected_statuses=("pending",),
         new_status="cancelled", event_type="cancelled_before_submission", details={},
     )
-    assert run.status == leg.status == "cancelled"
+    assert run.status == "cancelled"
+    assert leg.status == "cancelled"
     assert not ledger.has_active_live_execution(USER_ONE)
     pending, _ = ledger.mark_run_reconciling(
         USER_ONE, run_id=runs["sandbox"], leg_id=legs["sandbox"],
@@ -229,7 +234,8 @@ def _settle_legacy_records(ledger: ExecutionStore, runs: dict[str, UUID],
         event_type="provider_state_reconciled", details={}, lots_executed=2,
         executed_amount_rub=Decimal("2000"), executed_commission_rub=Decimal("3"),
     )
-    assert run.status == "succeeded" and leg.status == "filled"
+    assert run.status == "succeeded"
+    assert leg.status == "filled"
     assert leg.executed_amount_rub == Decimal("2000")
     assert leg.executed_commission_rub == Decimal("3")
     saved = ledger.execution(USER_ONE, runs["sandbox"])
@@ -834,7 +840,8 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
 
             proposal_id, action_id = _exercise_legacy_recovery(database, runtime, snapshot_id)
             current_policy = store.current_balancing_policy(USER_ONE)
-            assert current_policy is not None and current_policy.version == 2
+            assert current_policy is not None
+            assert current_policy.version == 2
             assert current_policy.max_instrument_percent == Decimal("20")
             proposal_history = store.proposals(USER_ONE)
             assert len(proposal_history) == 2

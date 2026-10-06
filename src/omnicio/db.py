@@ -161,13 +161,29 @@ class Database:
                     AND to_regclass('public.instrument_issuer_map') IS NOT NULL
                     AND to_regclass('public.investment_profile_versions') IS NOT NULL
                     AND to_regclass('public.job_runs') IS NOT NULL
-                    AND to_regclass('public.job_runs_daily_identity_idx') IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conrelid = to_regclass('public.job_runs')
+                          AND conname = 'job_runs_user_id_job_type_scheduled_for_key'
+                          AND contype = 'u'
+                    )
                     AND to_regclass('public.job_runs_refresh_active_idx') IS NOT NULL
                     AND to_regclass('public.job_runs_refresh_requested_idx') IS NOT NULL
                     AND EXISTS (
                         SELECT 1 FROM information_schema.columns
                         WHERE table_schema = 'public' AND table_name = 'job_runs'
-                          AND column_name = 'requested_at'
+                          AND column_name = 'requested_at' AND is_nullable = 'NO'
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'job_runs'
+                          AND column_name = 'scheduled_for' AND is_nullable = 'YES'
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conrelid = to_regclass('public.job_runs')
+                          AND conname = 'job_runs_schedule_kind_consistent'
+                          AND contype = 'c' AND convalidated
                     )
                     AND to_regclass('public.portfolio_snapshots') IS NOT NULL
                     AND to_regclass('public.portfolio_snapshot_positions') IS NOT NULL

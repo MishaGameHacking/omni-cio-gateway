@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, patch
 from uuid import UUID
 
@@ -26,6 +27,9 @@ from omnicio.workspace_store import WorkspaceStore
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("OMNICIO_TEST_DATABASE_URL"), reason="ephemeral PostgreSQL is required",
+)
+REFRESH_MIGRATION = (
+    Path(__file__).resolve().parents[1] / "migrations" / "0016_portfolio_refresh.sql"
 )
 
 
@@ -54,6 +58,154 @@ def age_request(database: Database, ident: UUID) -> None:
         )
 
 
+def _accepted_daily_insert(database: Database, ident: UUID, day: date) -> dict[str, Any] | None:
+    """Keep the accepted 5457ecb daily INSERT conflict target without a predicate."""
+    with database.pool.connection() as connection:
+        connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(ident),))
+        return connection.execute(
+            "INSERT INTO job_runs (user_id, job_type, scheduled_for, status) "
+            "VALUES (%s, %s, %s, 'running') "
+            "ON CONFLICT (user_id, job_type, scheduled_for) DO NOTHING "
+            "RETURNING id, user_id, job_type, scheduled_for, status, attempt, "
+            "started_at, finished_at",
+            (ident, "portfolio_daily", day),
+        ).fetchone()
+
+
+def test_native_refresh_preserves_accepted_daily_insert_and_reader_during_rollback(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database, admin_url, schema = workspace_database
+    ident, store, day = owner(database), PortfolioStore(database), date.today()
+    daily = _accepted_daily_insert(database, ident, day)
+    assert daily is not None
+    assert daily["scheduled_for"].isoformat() == day.isoformat()
+    assert _accepted_daily_insert(database, ident, day) is None
+    assert store.finish_job(ident, daily["id"], status="succeeded", details={})
+
+    queued = store.request_refresh(ident, LEGAL_VERSIONS)
+    with store.observer_lock() as locked:
+        assert locked
+        manual = store.claim_refresh_job(ident, LEGAL_VERSIONS)
+        assert manual is not None
+        assert manual.scheduled_for is None
+        assert store.finish_job(ident, manual.id, status="degraded", details={})
+    alert = next(item for item in WorkspaceStore(database).events(ident)["items"]
+                 if item["kind"] == "synchronization")
+    assert alert["source"]["scheduled_for"] is None
+    assert alert["source"]["requested_at"] == queued["requested_at"]
+
+    age_request(database, ident)
+    next_request = store.request_refresh(ident, LEGAL_VERSIONS)
+    assert next_request["job_id"] != str(manual.id)
+    with store.observer_lock() as locked:
+        assert locked
+        following = store.claim_refresh_job(ident, LEGAL_VERSIONS)
+        assert following is not None
+        assert following.scheduled_for is None
+        assert store.finish_job(ident, following.id, status="succeeded", details={})
+    with psycopg.connect(admin_url, autocommit=True) as admin:
+        admin.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
+        admin.execute(REFRESH_MIGRATION.read_text(encoding="utf-8"))
+    assert _accepted_daily_insert(database, ident, day) is None
+    with database.pool.connection() as connection:
+        connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(ident),))
+        legacy = connection.execute(
+            "SELECT id, scheduled_for FROM job_runs WHERE user_id = %s "
+            "AND job_type = 'portfolio_daily' AND scheduled_for = %s", (ident, day),
+        ).fetchall()
+        manual_dates = connection.execute(
+            "SELECT scheduled_for FROM job_runs "
+            "WHERE user_id = %s AND job_type = 'portfolio_refresh'", (ident,),
+        ).fetchall()
+    assert [row["id"] for row in legacy] == [daily["id"]]
+    assert legacy[0]["scheduled_for"].isoformat() == day.isoformat()
+    assert [row["scheduled_for"] for row in manual_dates] == [None, None]
+
+
+@pytest.mark.parametrize("job_type, scheduled_for", [
+    ("portfolio_daily", None), ("portfolio_refresh", date.today()),
+])
+def test_native_job_schedule_check_preserves_daily_dates_and_unscheduled_refreshes(
+    workspace_database: tuple[Database, str, str], job_type: str, scheduled_for: date | None,
+) -> None:
+    database = workspace_database[0]
+    ident = owner(database)
+    with database.pool.connection() as connection:
+        connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(ident),))
+        with pytest.raises(
+            psycopg.errors.CheckViolation, match="job_runs_schedule_kind_consistent",
+        ), connection.transaction():
+            connection.execute(
+                "INSERT INTO job_runs (user_id, job_type, scheduled_for, status) "
+                "VALUES (%s, %s, %s, 'running')", (ident, job_type, scheduled_for),
+            )
+
+
+def test_native_active_refresh_guard_applies_when_scheduled_dates_are_null(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    ident = owner(database)
+    PortfolioStore(database).request_refresh(ident, LEGAL_VERSIONS)
+    with database.pool.connection() as connection:
+        connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(ident),))
+        with pytest.raises(
+            psycopg.errors.UniqueViolation, match="job_runs_refresh_active_idx",
+        ), connection.transaction():
+            connection.execute(
+                "INSERT INTO job_runs (user_id, job_type, scheduled_for, status) "
+                "VALUES (%s, 'portfolio_refresh', NULL, 'queued')", (ident,),
+            )
+
+
+def test_native_refresh_migration_recovers_earlier_candidate_without_losing_job_lineage(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database, admin_url, schema = workspace_database
+    ident, store = owner(database), PortfolioStore(database)
+    day = date.today()
+    daily = _accepted_daily_insert(database, ident, day)
+    assert daily is not None
+    queued = store.request_refresh(ident, LEGAL_VERSIONS)
+    with psycopg.connect(admin_url, autocommit=True) as admin:
+        admin.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
+        original = admin.execute(
+            "SELECT id, job_type, status, requested_at, started_at, details FROM job_runs "
+            "WHERE user_id = %s ORDER BY id", (ident,),
+        ).fetchall()
+        # Reproduce the unreleased candidate's schema using only synthetic rows.
+        admin.execute("ALTER TABLE job_runs DROP CONSTRAINT job_runs_schedule_kind_consistent")
+        admin.execute(
+            "ALTER TABLE job_runs DROP CONSTRAINT job_runs_user_id_job_type_scheduled_for_key"
+        )
+        admin.execute(
+            "UPDATE job_runs SET scheduled_for = "
+            "(requested_at AT TIME ZONE 'Europe/Moscow')::date "
+            "WHERE job_type = 'portfolio_refresh'"
+        )
+        admin.execute("ALTER TABLE job_runs ALTER COLUMN scheduled_for SET NOT NULL")
+        admin.execute(
+            "CREATE UNIQUE INDEX job_runs_daily_identity_idx "
+            "ON job_runs (user_id, job_type, scheduled_for) WHERE job_type <> 'portfolio_refresh'"
+        )
+        admin.execute(REFRESH_MIGRATION.read_text(encoding="utf-8"))
+        restored = admin.execute(
+            "SELECT id, job_type, status, requested_at, started_at, details FROM job_runs "
+            "WHERE user_id = %s ORDER BY id", (ident,),
+        ).fetchall()
+    assert restored == original
+    assert _accepted_daily_insert(database, ident, day) is None
+    state = store.refresh_status(ident)
+    assert state["job_id"] == queued["job_id"]
+    assert state["requested_at"] == queued["requested_at"]
+    with store.observer_lock() as locked:
+        assert locked
+        manual = store.claim_refresh_job(ident, LEGAL_VERSIONS)
+        assert manual is not None
+        assert manual.scheduled_for is None
+
+
 def test_native_manual_refresh_is_not_daily_success_and_cooldown_is_durable(
     workspace_database: tuple[Database, str, str],
 ) -> None:
@@ -74,10 +226,9 @@ def test_native_manual_refresh_is_not_daily_success_and_cooldown_is_durable(
     assert queued["started_at"] is None
     assert store.request_refresh(ident, LEGAL_VERSIONS)["job_id"] == queued["job_id"]
     # Reapplying the additive migration preserves old snapshots and queued work.
-    migration = Path(__file__).resolve().parents[1] / "migrations" / "0016_portfolio_refresh.sql"
     with psycopg.connect(admin_url, autocommit=True) as admin:
         admin.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
-        admin.execute(migration.read_text(encoding="utf-8"))
+        admin.execute(REFRESH_MIGRATION.read_text(encoding="utf-8"))
     with store.observer_lock() as locked:
         assert locked
         manual = store.claim_refresh_job(ident, LEGAL_VERSIONS)

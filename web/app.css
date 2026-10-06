@@ -8,12 +8,12 @@
   --line:#203344;
   --text:#f2f6fd;
   --muted:#9aacbf;
-  --subtle:#647e95;
-  --blue:#2874ff;
+  --subtle:#8a9eb2;
+  --blue:#2369e8;
   --blue-light:#6bafff;
   --green:#02d59b;
   --red:#ff6476;
-  --purple:#b365f9;
+  --purple:#b873fa;
   --gold:#efbc60;
   --shadow:0 15px 45px #0003;
   --radius:13px;
@@ -31,11 +31,11 @@
   --panel-hover:#eaf2fc;
   --line:#dbe4ef;
   --text:#142638;
-  --muted:#5e7287;
-  --subtle:#74869a;
+  --muted:#536a81;
+  --subtle:#596e82;
   --blue:#1863ec;
   --blue-light:#1d63bb;
-  --green:#008260;
+  --green:#007755;
   --red:#c83149;
   --purple:#8544d1;
   --gold:#936114;
@@ -196,13 +196,13 @@ button .icon {
   text-decoration:none
 }
 .button.primary {
-  background:linear-gradient(120deg,#2470ff,#2867fa);
+  background:linear-gradient(120deg,#2164e8,#2867fa);
   color:#fff;
   border-color:#4b89ff;
   box-shadow:0 5px 18px #125afb18
 }
 .button.primary:hover {
-  background:#4087ff
+  background:#266dea
 }
 .button.secondary {
   background:transparent;
@@ -576,6 +576,11 @@ button .icon {
   top:64%;
   --node-color:#b39fff
 }
+.node-metals {
+  left:70%;
+  top:59%;
+  --node-color:#d391ff
+}
 .node-commodity {
   left:43%;
   top:72%;
@@ -925,7 +930,7 @@ button .icon {
   flex:none;
   border-radius:50%;
   background:linear-gradient(135deg,#9fd1ff,#367ddd);
-  color:#092348;
+  color:#061321;
   font-weight:700;
   font-size:13px;
   border:1px solid #81baff
@@ -1066,7 +1071,7 @@ button .icon {
   gap:12px;
   text-align:left;
   padding:10px 0;
-  border-bottom:1px solid var(--border)
+  border-bottom:1px solid var(--line)
 }
 .recovery-row span {
   min-width:0;
@@ -1086,7 +1091,7 @@ button .icon {
   margin-top:16px
 }
 .recovery-leg {
-  border:1px solid var(--border);
+  border:1px solid var(--line);
   border-radius:9px;
   padding:12px
 }
@@ -1973,6 +1978,9 @@ button .icon {
   border:1px solid #4b82bd66;
   border-radius:9px
 }
+:root[data-theme=light] .strategy-option[aria-pressed=true] {
+  background:linear-gradient(100deg,#e4efff,#eff4fa)
+}
 .strategy-option .strategy-icon {
   width:33px;
   height:33px;
@@ -1980,7 +1988,7 @@ button .icon {
   display:grid;
   place-items:center;
   flex:none;
-  background:var(--strategy-color,#2779f7);
+  background:var(--strategy-color,#2369e8);
   color:#fff;
   box-shadow:inset 0 0 0 1px #ffffff30
 }
@@ -2562,6 +2570,15 @@ dialog::backdrop {
   padding:0;
   background:linear-gradient(130deg,#17304a,#091624 55%,#122a42);
   color:#f2f6fd;
+  color-scheme:dark;
+  --text:#f2f6fd;
+  --muted:#a7bdcf;
+  --subtle:#8a9eb2;
+  --panel-deep:#091622;
+  --line:#38546e;
+  --green:#02d59b;
+  --red:#ff6476;
+  --blue-light:#8cc8ff;
   isolation:isolate
 }
 .auth-inner {
@@ -2665,7 +2682,7 @@ dialog::backdrop {
   border-color:#4388ff
 }
 .vk-provider:hover {
-  background:#3687ff
+  background:#2564de
 }
 .vk-provider .provider-mark {
   background:transparent;
@@ -3470,8 +3487,8 @@ dialog::backdrop {
     max-width:440px
   }
   .node-property {
-    left:68%;
-    top:84%
+    left:51%;
+    top:76%
   }
   .node-shares {
     left:66%
@@ -3487,6 +3504,10 @@ dialog::backdrop {
   .node-currency {
     left:62%;
     top:69%
+  }
+  .node-metals {
+    left:55%;
+    top:56%
   }
   .node-commodity {
     left:58%;

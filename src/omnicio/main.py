@@ -1173,7 +1173,7 @@ def instrument_market_snapshot(
         ) from exc
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
     except (TBankUnavailable, BrokerConnectionError) as exc:
@@ -1688,7 +1688,7 @@ def portfolio_instrument_visualization(
         )
     except ValueError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
     if payload is None:
@@ -1811,7 +1811,7 @@ def _execution_error(exc: Exception) -> HTTPException:
         code = exc.code
     else:
         return HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         )
     if code in {"proposal_not_found", "execution_not_found"}:

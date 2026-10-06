@@ -256,8 +256,11 @@ class WorkspaceStore:
         row = cur.fetchone()
         snapshots = row["snapshots"] or []
         sampled = row["total"] > _MAX_HISTORY_POINTS
+        coverage_status = "empty"
+        if snapshots:
+            coverage_status = "sampled" if sampled else "complete"
         coverage.update(
-            status=("sampled" if sampled else "complete") if snapshots else "empty",
+            status=coverage_status,
             available_from=(row["available_from"].isoformat()
                             if row["available_from"] is not None else None),
             available_to=(row["available_to"].isoformat()
@@ -535,6 +538,18 @@ class WorkspaceStore:
         goals: Sequence[Mapping[str, Any]],
         now: datetime,
     ) -> None:
+        self._activity_events(cur, user_id)
+        self._job_events(cur, user_id, now)
+        self._goal_events(cur, user_id, goals, now)
+        if basis.latest is None:
+            return
+        snapshot_id = basis.latest["id"]
+        self._risk_events(cur, user_id, snapshot_id, basis.connection)
+        self._payout_events(cur, user_id, snapshot_id, now)
+        account_id = basis.connection["account_id"] if basis.connection else None
+        self._payment_events(cur, user_id, basis.operations, account_id, now)
+
+    def _activity_events(self, cur: Any, user_id: UUID) -> None:
         cur.execute(
             "SELECT id, event_type, created_at FROM audit_events WHERE user_id = %s "
             "AND event_type = ANY (%s) ORDER BY created_at DESC, id DESC LIMIT 100",
@@ -552,8 +567,11 @@ class WorkspaceStore:
                 target="settings",
                 source={"type": "audit", "id": str(row["id"]), "event_type": row["event_type"]},
             )
+
+    def _job_events(self, cur: Any, user_id: UUID, now: datetime) -> None:
         cur.execute(
-            "SELECT id, status, scheduled_for, finished_at FROM job_runs WHERE user_id = %s "
+            "SELECT id, status, scheduled_for, requested_at, finished_at "
+            "FROM job_runs WHERE user_id = %s "
             "AND status IN ('degraded', 'failed') AND finished_at >= %s "
             "ORDER BY finished_at DESC, id DESC LIMIT 20",
             (user_id, now - timedelta(days=7)),
@@ -576,9 +594,15 @@ class WorkspaceStore:
                     "type": "job",
                     "id": str(row["id"]),
                     "status": row["status"],
-                    "scheduled_for": str(row["scheduled_for"]),
+                    "scheduled_for": row["scheduled_for"].isoformat()
+                    if row["scheduled_for"] is not None else None,
+                    "requested_at": row["requested_at"].isoformat(),
                 },
             )
+
+    def _goal_events(
+        self, cur: Any, user_id: UUID, goals: Sequence[Mapping[str, Any]], now: datetime,
+    ) -> None:
         for goal in goals:
             if goal["status"] != "active":
                 continue
@@ -614,11 +638,13 @@ class WorkspaceStore:
                             "due_date": goal["target_date"],
                         },
                     )
-        if basis.latest is None:
-            return
-        snapshot_id = basis.latest["id"]
-        account_id = basis.connection["account_id"] if basis.connection else None
-        environment = basis.connection["environment"] if basis.connection else None
+
+    def _risk_events(
+        self, cur: Any, user_id: UUID, snapshot_id: UUID,
+        connection: Mapping[str, Any] | None,
+    ) -> None:
+        account_id = connection["account_id"] if connection else None
+        environment = connection["environment"] if connection else None
         cur.execute(
             "SELECT r.instrument_uid, r.state, r.assessed_at, "
             "COALESCE(NULLIF(p.ticker, ''), r.instrument_uid) AS ticker "
@@ -635,6 +661,11 @@ class WorkspaceStore:
             (user_id, snapshot_id, account_id, environment),
         )
         for row in cur.fetchall():
+            severity = "warning"
+            if row["state"] in {"critical", "confirmed_default"}:
+                severity = "critical"
+            elif row["state"] == "normal":
+                severity = "info"
             self._insert_event(
                 cur,
                 user_id,
@@ -648,11 +679,7 @@ class WorkspaceStore:
                 detail=f"{row['ticker']}: {_RISK_LABELS[row['state']]}",
                 occurred_at=row["assessed_at"],
                 target="portfolio",
-                severity="critical"
-                if row["state"] in {"critical", "confirmed_default"}
-                else "info"
-                if row["state"] == "normal"
-                else "warning",
+                severity=severity,
                 source={
                     "type": "risk",
                     "account_id": account_id,
@@ -661,10 +688,14 @@ class WorkspaceStore:
                     "state": row["state"],
                 },
             )
-        self._payout_events(cur, user_id, snapshot_id, now)
+
+    def _payment_events(
+        self, cur: Any, user_id: UUID, operations: Sequence[Mapping[str, Any]],
+        account_id: str | None, now: datetime,
+    ) -> None:
         payment_operations = [
             item
-            for item in basis.operations
+            for item in operations
             if item["operation_type"] in {"OPERATION_TYPE_COUPON", "OPERATION_TYPE_DIVIDEND"}
         ]
         for operation in payment_operations[:200]:
@@ -672,20 +703,18 @@ class WorkspaceStore:
             if at is None or at < now - timedelta(days=90):
                 continue
             received = operation["operation_state"] == "OPERATION_STATE_EXECUTED"
-            title = (
-                (
+            title = "Статус выплаты изменён"
+            if received:
+                title = (
                     "Купон получен"
                     if operation["operation_type"] == "OPERATION_TYPE_COUPON"
                     else "Дивиденды получены"
                 )
-                if received
-                else "Статус выплаты изменён"
-            )
             self._insert_event(
                 cur,
                 user_id,
                 identity=[
-                    basis.connection["account_id"] if basis.connection else None,
+                    account_id,
                     operation["provider_operation_id"] or operation["id"],
                 ],
                 category="payments",

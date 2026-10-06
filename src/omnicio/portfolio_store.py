@@ -200,7 +200,7 @@ class JobRunRecord:
     id: UUID
     user_id: UUID
     job_type: str
-    scheduled_for: date
+    scheduled_for: date | None
     status: JobStatus
     attempt: int
     started_at: datetime
@@ -984,8 +984,7 @@ class PortfolioStore:
             context = {key: connection[key] for key in ("account_id", "environment", "verified_at")}
             cur.execute(
                 "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, details) "
-                "VALUES (%s, 'portfolio_refresh', "
-                "(clock_timestamp() AT TIME ZONE 'Europe/Moscow')::date, 'queued', %s::jsonb)",
+                "VALUES (%s, 'portfolio_refresh', NULL, 'queued', %s::jsonb)",
                 (user_id, _json({"connection": context, "legal_versions": legal_versions})),
             )
             return self._refresh_status(cur, user_id, connection)
@@ -1005,8 +1004,8 @@ class PortfolioStore:
         }
         cur.execute(
             "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, attempt, "
-            "requested_at, details) VALUES (%s, 'portfolio_refresh', "
-            "(clock_timestamp() AT TIME ZONE 'Europe/Moscow')::date, 'running', %s, %s, %s::jsonb) "
+            "requested_at, details) VALUES (%s, 'portfolio_refresh', NULL, "
+            "'running', %s, %s, %s::jsonb) "
             "RETURNING *",
             (user_id, row["attempt"] + 1, row["requested_at"], _json(details)),
         )
@@ -1083,8 +1082,7 @@ class PortfolioStore:
                     status
                 )
                 VALUES (%s, %s, %s, 'running')
-                ON CONFLICT (user_id, job_type, scheduled_for)
-                    WHERE job_type <> 'portfolio_refresh' DO NOTHING
+                ON CONFLICT (user_id, job_type, scheduled_for) DO NOTHING
                 RETURNING
                     id,
                     user_id,
@@ -2366,7 +2364,7 @@ def _job_run(row: dict[str, Any]) -> JobRunRecord:
         id=cast(UUID, row["id"]),
         user_id=cast(UUID, row["user_id"]),
         job_type=str(row["job_type"]),
-        scheduled_for=cast(date, row["scheduled_for"]),
+        scheduled_for=cast(date | None, row["scheduled_for"]),
         status=cast(JobStatus, str(row["status"])),
         attempt=int(row["attempt"]),
         started_at=cast(datetime, row["started_at"]),
