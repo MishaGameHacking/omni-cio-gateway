@@ -47,6 +47,8 @@ _ACTIVITY = {
     "support_sessions_revoked": "Сессии аккаунта отозваны",
 }
 _RISK_LABELS = {
+    "normal": "обычная оценка по доступным данным",
+    "data_missing": "недостаточно данных для оценки риска",
     "watch": "требует наблюдения",
     "elevated": "повышенный риск",
     "critical": "критический риск",
@@ -539,6 +541,8 @@ class WorkspaceStore:
         if basis.latest is None:
             return
         snapshot_id = basis.latest["id"]
+        account_id = basis.connection["account_id"] if basis.connection else None
+        environment = basis.connection["environment"] if basis.connection else None
         cur.execute(
             "SELECT r.instrument_uid, r.state, r.assessed_at, "
             "COALESCE(NULLIF(p.ticker, ''), r.instrument_uid) AS ticker "
@@ -546,27 +550,37 @@ class WorkspaceStore:
             "ON p.snapshot_id = r.snapshot_id AND p.user_id = r.user_id "
             "AND p.instrument_uid = r.instrument_uid "
             "WHERE r.user_id = %s AND r.snapshot_id = %s "
-            "AND r.state IN ('watch', 'elevated', 'critical', 'confirmed_default') "
+            "AND (r.state IN ('watch', 'elevated', 'critical', 'confirmed_default') "
+            "OR EXISTS (SELECT 1 FROM workspace_events e WHERE e.user_id = r.user_id "
+            "AND e.kind = 'instrument_risk' AND e.source ->> 'account_id' = %s "
+            "AND e.source ->> 'environment' = %s "
+            "AND e.source ->> 'instrument_uid' = r.instrument_uid)) "
             "ORDER BY r.assessed_at DESC, r.instrument_uid LIMIT 100",
-            (user_id, snapshot_id),
+            (user_id, snapshot_id, account_id, environment),
         )
         for row in cur.fetchall():
             self._insert_event(
                 cur,
                 user_id,
-                identity=[str(snapshot_id), row["instrument_uid"], row["state"]],
+                # A new observation of the same risk must not notify again.
+                # Changes, including a return to normal, update this alert and
+                # clear read_at through the existing source-change contract.
+                identity=[account_id, environment, row["instrument_uid"]],
                 category="portfolio",
                 kind="instrument_risk",
-                title="Изменение оценки риска",
+                title="Оценка риска обновлена",
                 detail=f"{row['ticker']}: {_RISK_LABELS[row['state']]}",
                 occurred_at=row["assessed_at"],
                 target="portfolio",
                 severity="critical"
                 if row["state"] in {"critical", "confirmed_default"}
+                else "info"
+                if row["state"] == "normal"
                 else "warning",
                 source={
                     "type": "risk",
-                    "snapshot_id": str(snapshot_id),
+                    "account_id": account_id,
+                    "environment": environment,
                     "instrument_uid": row["instrument_uid"],
                     "state": row["state"],
                 },

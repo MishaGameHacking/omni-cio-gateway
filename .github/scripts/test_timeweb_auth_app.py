@@ -11,6 +11,8 @@ import json
 import os
 import pathlib
 import re
+import shlex
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -459,6 +461,55 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_product_environment_backup_rejects_invalid_release_sha(self) -> None:
         with self.assertRaises(MODULE.InfraError):
             MODULE.product_environment_backup_paths("short")
+
+    def test_optional_integration_configuration_survives_unrelated_deployment(self) -> None:
+        with patch.dict(os.environ, {"VKID_APP_ID": "123456"}, clear=True):
+            ssh = FakeSsh(True)
+            MODULE.write_product_environment(ssh, release_sha="b" * 40)
+        tokens = shlex.split(ssh.commands[0])
+        program = tokens[tokens.index("-c") + 1]
+        with tempfile.TemporaryDirectory() as directory:
+            old = pathlib.Path(directory) / "previous.env"
+            new = pathlib.Path(directory) / "candidate.env"
+            old.write_text(
+                'TID_CLIENT_ID="existing-app"\n'
+                'TID_CLIENT_SECRET="test-only-value"\n'
+                'TID_LOGIN_ENABLED="true"\n'
+                'ASSISTANT_ENABLED="true"\n'
+                'REGISTRATION_ENABLED="true"\n'
+                'UNRELATED_KEY="must-not-migrate"\n',
+                encoding="utf-8",
+            )
+            new.write_text(
+                'TID_CLIENT_ID="replacement-app"\n'
+                'ASSISTANT_ENABLED="false"\n'
+                'REGISTRATION_ENABLED="false"\n',
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [sys.executable, "-c", program, str(new), str(old)],
+                check=True, timeout=5,
+            )
+            result = new.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(result, [
+            'TID_CLIENT_ID="replacement-app"',
+            'ASSISTANT_ENABLED="false"',
+            'REGISTRATION_ENABLED="false"',
+            'TID_CLIENT_SECRET="test-only-value"',
+            'TID_LOGIN_ENABLED="true"',
+        ])
+
+    def test_runtime_values_escape_systemd_double_quote_metacharacters(self) -> None:
+        # EnvironmentFile uses the POSIX double-quote escape set, including $/`.
+        value = 'test-only-$VALUE-`literal`-"quoted"-\\path'
+        self.assertEqual(
+            MODULE._environment_value(value),
+            '"test-only-\\$VALUE-\\`literal\\`-\\"quoted\\"-\\\\path"',
+        )
+        for value in ("line\nbreak", "line\rbreak"):
+            with self.subTest(value=repr(value)):
+                with self.assertRaises(MODULE.InfraError):
+                    MODULE._environment_value(value)
 
     def test_public_http_surface_has_bounded_resource_consumption(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT

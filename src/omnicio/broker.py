@@ -280,6 +280,32 @@ class BrokerService:
         self._require_current_connection(record)
         return first
 
+    def instrument_facts(
+        self, user_id: UUID, instrument_uid: str,
+    ) -> tuple[TBankInstrumentMetadata, TBankAssetFundamental | None]:
+        """One exact instrument read and at most one asset statistics read."""
+        record, credential, environment = self._connected_credential(user_id)
+        metadata = self.tbank.get_instrument_overview(credential, environment, instrument_uid)
+        self._require_current_connection(record)
+        if metadata.uid != instrument_uid.strip():
+            raise TBankUnavailable("instrument metadata identity mismatch")
+        fundamentals: tuple[TBankAssetFundamental, ...] = ()
+        if metadata.asset_uid:
+            try:
+                fundamentals = self.tbank.get_asset_fundamentals(
+                    credential, environment, (metadata.asset_uid,),
+                )
+            except TBankUnavailable:
+                # Keep the verified instrument card usable without supplying
+                # another asset's statistics or exposing provider error text.
+                fundamentals = ()
+        self._require_current_connection(record)
+        if len(fundamentals) > 1 or any(
+            value.asset_uid != metadata.asset_uid for value in fundamentals
+        ):
+            raise TBankUnavailable("instrument fundamental identity mismatch")
+        return metadata, next(iter(fundamentals), None)
+
     def market_exchange_candles(
         self,
         user_id: UUID,

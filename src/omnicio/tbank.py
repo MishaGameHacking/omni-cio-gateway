@@ -263,6 +263,8 @@ class TBankInstrumentMetadata:
     amortization: bool | None = None
     subordinated: bool | None = None
     liquidity: bool | None = None
+    exchange: str = ""
+    first_1day_candle_date: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -396,6 +398,15 @@ class TBankAssetFundamental:
     roa: str | None
     fiscal_period_start_date: datetime | None
     fiscal_period_end_date: datetime | None
+    market_capitalization: str | None = None
+    pe_ratio_ttm: str | None = None
+    price_to_sales_ttm: str | None = None
+    price_to_book_ttm: str | None = None
+    eps_ttm: str | None = None
+    dividend_yield_daily_ttm: str | None = None
+    forward_annual_dividend_yield: str | None = None
+    dividend_payout_ratio_fy: str | None = None
+    free_cash_flow_to_price: str | None = None
 
 
 def _market_value_quotes(
@@ -635,6 +646,58 @@ def _operation_page_cursor(payload: dict[str, object]) -> tuple[bool, str]:
     return has_next, next_cursor
 
 
+def _instrument_metadata(
+    item: dict[str, object], instrument_type: str,
+) -> TBankInstrumentMetadata:
+    uid = _text(item.get("uid")).strip()
+    if not uid:
+        raise TBankUnavailable("T-Invest metadata has missing or duplicate uid")
+    lot_raw = item.get("lot", 0)
+    if isinstance(lot_raw, bool):
+        raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR)
+    try:
+        lot = int(str(lot_raw))
+    except ValueError as exc:
+        raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR) from exc
+    if lot < 0:
+        raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR)
+    required_tests = tuple(
+        _text(value).strip()
+        for value in _optional_list(item, "requiredTests")
+        if _text(value).strip()
+    )
+    return TBankInstrumentMetadata(
+        uid=uid,
+        name=_text(item.get("name")).strip(),
+        ticker=_text(item.get("ticker")).strip(),
+        isin=_text(item.get("isin")).strip(),
+        instrument_type=instrument_type,
+        sector=_text(item.get("sector")).strip(),
+        country_of_risk=_text(item.get("countryOfRisk")).strip().upper(),
+        for_qual_investor=_optional_bool(item, "forQualInvestorFlag"),
+        figi=_text(item.get("figi")).strip(),
+        asset_uid=_text(item.get("assetUid")).strip(),
+        position_uid=_text(item.get("positionUid")).strip(),
+        currency=_text(item.get("currency")).strip().upper(),
+        class_code=_text(item.get("classCode")).strip(),
+        lot=lot,
+        for_iis=_optional_bool(item, "forIisFlag"),
+        api_trade_available=_optional_bool(item, "apiTradeAvailableFlag"),
+        buy_available=_optional_bool(item, "buyAvailableFlag"),
+        sell_available=_optional_bool(item, "sellAvailableFlag"),
+        required_tests=required_tests,
+        nominal=_money(item.get("nominal")),
+        maturity_date=_optional_provider_timestamp(item.get("maturityDate")),
+        floating_coupon=_optional_bool(item, "floatingCouponFlag"),
+        perpetual=_optional_bool(item, "perpetualFlag"),
+        amortization=_optional_bool(item, "amortizationFlag"),
+        subordinated=_optional_bool(item, "subordinatedFlag"),
+        liquidity=_optional_bool(item, "liquidityFlag"),
+        exchange=_text(item.get("exchange")).strip(),
+        first_1day_candle_date=_optional_provider_timestamp(item.get("first1dayCandleDate")),
+    )
+
+
 def _asset_fundamental(
     raw: object,
     requested: set[str],
@@ -669,6 +732,15 @@ def _asset_fundamental(
         fiscal_period_end_date=_optional_provider_timestamp(
             item.get("fiscalPeriodEndDate")
         ),
+        market_capitalization=_double_text(item.get("marketCapitalization")),
+        pe_ratio_ttm=_double_text(item.get("peRatioTtm")),
+        price_to_sales_ttm=_double_text(item.get("priceToSalesTtm")),
+        price_to_book_ttm=_double_text(item.get("priceToBookTtm")),
+        eps_ttm=_double_text(item.get("epsTtm")),
+        dividend_yield_daily_ttm=_double_text(item.get("dividendYieldDailyTtm")),
+        forward_annual_dividend_yield=_double_text(item.get("forwardAnnualDividendYield")),
+        dividend_payout_ratio_fy=_double_text(item.get("dividendPayoutRatioFy")),
+        free_cash_flow_to_price=_double_text(item.get("freeCashFlowToPrice")),
     )
 
 
@@ -863,80 +935,45 @@ class TBankInvestClient:
     timeout_seconds: int = 10
 
     def get_instrument_metadata(
-        self,
-        token: str,
-        environment: TBankEnvironment,
-        instrument_type: str,
+        self, token: str, environment: TBankEnvironment, instrument_type: str,
     ) -> tuple[TBankInstrumentMetadata, ...]:
-        methods = {"share": "Shares", "bond": "Bonds", "etf": "Etfs"}
-        method = methods.get(instrument_type)
+        method = {"share": "Shares", "bond": "Bonds", "etf": "Etfs"}.get(instrument_type)
         if method is None:
             raise ValueError("unsupported metadata instrument type")
-
         payload = self._post(
-            token=token,
-            environment=environment,
-            service="InstrumentsService",
-            method=method,
+            token=token, environment=environment, service="InstrumentsService", method=method,
             body={"instrumentStatus": "INSTRUMENT_STATUS_ALL"},
         )
-
-        result: list[TBankInstrumentMetadata] = []
-        seen: set[str] = set()
+        result, seen = [], set()
         for raw in _required_list(payload, "instruments"):
-            item = _required_object(raw, "instrument metadata")
-            uid = _text(item.get("uid")).strip()
-            if not uid or uid in seen:
+            item = _instrument_metadata(
+                _required_object(raw, "instrument metadata"), instrument_type,
+            )
+            if item.uid in seen:
                 raise TBankUnavailable("T-Invest metadata has missing or duplicate uid")
-            seen.add(uid)
-
-            lot_raw = item.get("lot", 0)
-            if isinstance(lot_raw, bool):
-                raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR)
-            try:
-                lot = int(str(lot_raw))
-            except ValueError as exc:
-                raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR) from exc
-            if lot < 0:
-                raise TBankUnavailable(_INVALID_METADATA_LOT_ERROR)
-
-            required_tests = tuple(
-                _text(value).strip()
-                for value in _optional_list(item, "requiredTests")
-                if _text(value).strip()
-            )
-
-            result.append(
-                TBankInstrumentMetadata(
-                    uid=uid,
-                    name=_text(item.get("name")).strip(),
-                    ticker=_text(item.get("ticker")).strip(),
-                    isin=_text(item.get("isin")).strip(),
-                    instrument_type=instrument_type,
-                    sector=_text(item.get("sector")).strip(),
-                    country_of_risk=_text(item.get("countryOfRisk")).strip().upper(),
-                    for_qual_investor=_optional_bool(item, "forQualInvestorFlag"),
-                    figi=_text(item.get("figi")).strip(),
-                    asset_uid=_text(item.get("assetUid")).strip(),
-                    position_uid=_text(item.get("positionUid")).strip(),
-                    currency=_text(item.get("currency")).strip().upper(),
-                    class_code=_text(item.get("classCode")).strip(),
-                    lot=lot,
-                    for_iis=_optional_bool(item, "forIisFlag"),
-                    api_trade_available=_optional_bool(item, "apiTradeAvailableFlag"),
-                    buy_available=_optional_bool(item, "buyAvailableFlag"),
-                    sell_available=_optional_bool(item, "sellAvailableFlag"),
-                    required_tests=required_tests,
-                    nominal=_money(item.get("nominal")),
-                    maturity_date=_optional_provider_timestamp(item.get("maturityDate")),
-                    floating_coupon=_optional_bool(item, "floatingCouponFlag"),
-                    perpetual=_optional_bool(item, "perpetualFlag"),
-                    amortization=_optional_bool(item, "amortizationFlag"),
-                    subordinated=_optional_bool(item, "subordinatedFlag"),
-                    liquidity=_optional_bool(item, "liquidityFlag"),
-                )
-            )
+            seen.add(item.uid)
+            result.append(item)
         return tuple(result)
+
+    def _instrument_by(
+        self, token: str, environment: TBankEnvironment, instrument_uid: str,
+        *, method: str = "GetInstrumentBy",
+    ) -> dict[str, object]:
+        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
+        payload = self._post(
+            token=token, environment=environment, service="InstrumentsService", method=method,
+            body={"idType": "INSTRUMENT_ID_TYPE_UID", "id": instrument},
+        )
+        item = _required_object(payload.get("instrument"), "instrument metadata")
+        if item.get("uid") != instrument:
+            raise TBankUnavailable("instrument metadata identity mismatch")
+        return item
+
+    def get_instrument_overview(
+        self, token: str, environment: TBankEnvironment, instrument_uid: str,
+    ) -> TBankInstrumentMetadata:
+        item = self._instrument_by(token, environment, instrument_uid)
+        return _instrument_metadata(item, _text(item.get("instrumentType")).strip())
 
     def get_bond_ratings(
         self,
@@ -969,15 +1006,7 @@ class TBankInvestClient:
     def first_daily_candle(
         self, token: str, environment: TBankEnvironment, instrument_uid: str,
     ) -> datetime | None:
-        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
-        body: dict[str, object] = {"idType": "INSTRUMENT_ID_TYPE_UID", "id": instrument}
-        payload = self._post(
-            token=token, environment=environment, service="InstrumentsService",
-            method="GetInstrumentBy", body=body,
-        )
-        item = _required_object(payload.get("instrument"), "instrument history metadata")
-        if item.get("uid") != instrument:
-            raise TBankUnavailable("instrument history identity mismatch")
+        item = self._instrument_by(token, environment, instrument_uid)
         first = _optional_provider_timestamp(item.get("first1dayCandleDate"))
         if first is not None:
             return first
@@ -987,13 +1016,7 @@ class TBankInvestClient:
         }.get(str(item.get("instrumentType", "")))
         if method is None:
             return None
-        payload = self._post(
-            token=token, environment=environment, service="InstrumentsService",
-            method=method, body=body,
-        )
-        item = _required_object(payload.get("instrument"), "instrument history metadata")
-        if item.get("uid") != instrument:
-            raise TBankUnavailable("instrument history identity mismatch")
+        item = self._instrument_by(token, environment, instrument_uid, method=method)
         return _optional_provider_timestamp(item.get("first1dayCandleDate"))
 
     def get_exchange_candles(

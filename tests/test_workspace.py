@@ -73,6 +73,7 @@ def test_preferences_defaults_have_no_invented_user_facts_and_do_not_alias() -> 
         {"locale": "invented"},
         {"theme": "not-a-theme"},
         {"display_name": "bad\x00name"},
+        {"display_name": "bad\ud800name"},
         {"display_name": "x" * 81},
         {"watchlist": [{"instrument_uid": "../secret", "ticker": "", "name": ""}]},
         {"watchlist": [{"instrument_uid": "one", "ticker": "", "name": ""}] * 2},
@@ -82,6 +83,18 @@ def test_preferences_defaults_have_no_invented_user_facts_and_do_not_alias() -> 
 def test_preferences_reject_ambiguous_or_unbounded_values(change: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         normalize_preferences({**default_preferences(), **change})
+
+
+def test_preferences_unicode_watchlist_cannot_exceed_database_document_budget() -> None:
+    preferences = default_preferences()
+    preferences["watchlist"] = [
+        {"instrument_uid": str(index), "ticker": "TEST", "name": "Ф" * 256} for index in range(50)
+    ]
+    assert len(normalize_preferences(preferences)["watchlist"]) == 50
+    for item in preferences["watchlist"]:
+        item["name"] = "🟦" * 256
+    with pytest.raises(ValueError, match="preferences_too_large"):
+        normalize_preferences(preferences)
 
 
 def test_quiet_hours_respect_timezone_midnight_and_dst() -> None:

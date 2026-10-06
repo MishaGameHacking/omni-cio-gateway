@@ -1501,12 +1501,13 @@ button .icon {
   flex:1;
   overflow:hidden
 }
-.progress-bar {
+.progress-track svg {
+  display:block;
+  width:100%;
   height:100%;
-  width:0;
-  border-radius:8px;
-  background:linear-gradient(90deg,#2267f8,#76bbff);
-  transition:width .3s
+}
+.progress-shape {
+  fill:var(--blue);
 }
 .progress-row>span {
   font-size:9px;
@@ -4501,4 +4502,29 @@ dialog::backdrop {
 
 :root[data-theme=light] .sidebar {
   background:linear-gradient(180deg,#eaf1fa,#f8fbff);
+}
+
+/* Dynamic geometry stays in SVG attributes; all styles comply with style-src self. */
+body.drawer-open {
+  overflow: hidden;
+}
+.legend-dot[data-color="0"] { background: #3689ff; }
+.legend-dot[data-color="1"] { background: #15c7ce; }
+.legend-dot[data-color="2"] { background: #02d59b; }
+.legend-dot[data-color="3"] { background: #efa85f; }
+.legend-dot[data-color="4"] { background: #ad79f1; }
+.legend-dot[data-color="5"] { background: #6ab8de; }
+.strategy-icon[data-preset="balanced"] { --strategy-color: #2b86ff; }
+.strategy-icon[data-preset="conservative"] { --strategy-color: #8645d8; }
+.strategy-icon[data-preset="aggressive"] { --strategy-color: #f24964; }
+.strategy-icon[data-preset="income"] { --strategy-color: #ef9b32; }
+.strategy-icon[data-preset="growth"] { --strategy-color: #2f82ff; }
+.strategy-icon[data-preset="buffett"] { --strategy-color: #27c963; }
+.strategy-icon[data-preset="bogle"] { --strategy-color: #af9a53; }
+.strategy-icon[data-preset="dalio"] { --strategy-color: #a04eed; }
+.strategy-icon[data-preset="ladder"] { --strategy-color: #23ace9; }
+.strategy-icon[data-preset="dividends"] { --strategy-color: #f26333; }
+.info-row dt .data-footnote {
+  display: block;
+  margin: 4px 0 0;
 }

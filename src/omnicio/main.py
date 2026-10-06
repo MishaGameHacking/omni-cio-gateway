@@ -46,6 +46,7 @@ from .execution_store import (
     LiveExecutionMandateRecord,
 )
 from .freshness import PORTFOLIO_MAX_AGE, describe_freshness
+from .instrument_facts import instrument_facts
 from .intelligence import rating_source_references
 from .market import MarketService
 from .news import NewsClient, NewsUnavailable
@@ -69,6 +70,7 @@ from .proposals import (
 )
 from .recovery import recovery_status
 from .security import (
+    OAuthFlow,
     SecurityValueError,
     format_public_id,
     generate_oauth_state,
@@ -81,6 +83,7 @@ from .security import (
 from .service import (
     AccountDeletionRejected,
     AuthService,
+    LoginSucceeded,
     LoginUnavailable,
     RegistrationCapacityReached,
     RegistrationClosed,
@@ -592,7 +595,10 @@ def _start_oauth(
     )}
 
 
-@app.post("/api/auth/vkid/start")
+@app.post("/api/auth/vkid/start", responses={
+    400: {"description": "Required legal acknowledgments are missing"},
+    503: {"description": "VK ID login is not configured"},
+})
 def start_vkid(
     body: StartVKIDBody, request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -600,12 +606,72 @@ def start_vkid(
     return _start_oauth("vkid", body, request, response, session_token)
 
 
-@app.post("/api/auth/tid/start")
+@app.post("/api/auth/tid/start", responses={
+    400: {"description": "Required legal acknowledgments are missing"},
+    503: {"description": "T-ID login is not configured"},
+})
 def start_tid(
     body: StartVKIDBody, request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, str]:
     return _start_oauth("tid", body, request, response, session_token)
+
+
+def _oauth_callback_values(
+    provider: str, request: Request, flow: OAuthFlow,
+) -> tuple[str, str]:
+    values = callback_values(request)
+    if provider == "vkid":
+        return validate_vkid_callback_values(values, flow.state)
+    if any(len(request.query_params.getlist(k)) != 1 for k in ("code", "state")):
+        raise TIDRejected("tid_callback_ambiguous")
+    code = values.get("code", "")
+    if (values.get("error") or not code or len(code) > 4096
+            or not hmac.compare_digest(
+                values.get("state", "").encode(), flow.state.encode(),
+            )):
+        raise TIDRejected("tid_callback_invalid")
+    return code, ""
+
+
+def _oauth_link_user(
+    request: Request, flow: OAuthFlow, session_token: str | None,
+) -> UserRecord | None:
+    if flow.link_user_id is None:
+        return None
+    linked_user = authenticated_user(request, session_token)
+    if (str(linked_user.id) != flow.link_user_id
+            or not hmac.compare_digest(
+                session_digest(session_token or "").hex(), flow.link_session_digest or "",
+            )):
+        raise PermissionError("oauth_link_session_changed")
+    return linked_user
+
+
+def _exchange_oauth_identity(
+    provider: str, request: Request, flow: OAuthFlow, code: str, device_id: str,
+    linked_user: UserRecord | None,
+) -> LoginSucceeded:
+    auth = service(request)
+    link_user_id = linked_user.id if linked_user else None
+    link_digest = bytes.fromhex(flow.link_session_digest) if flow.link_session_digest else None
+    if provider == "vkid":
+        identity = vkid_client(request).exchange_code(
+            code=code, device_id=device_id,
+            code_verifier=flow.code_verifier, expected_state=flow.state,
+        )
+        return auth.complete_vkid_login(
+            vk_user_id=identity.user_id, client_ip=client_ip(request),
+            accepted_legal_versions=flow.legal_versions,
+            link_user_id=link_user_id, link_session_digest=link_digest,
+        )
+    tid: TIDClient = request.app.state.tid_client
+    tid_identity = tid.exchange_code(code=code, code_verifier=flow.code_verifier)
+    return auth.complete_tid_login(
+        tid_subject=tid_identity.subject, client_ip=client_ip(request),
+        accepted_legal_versions=flow.legal_versions,
+        link_user_id=link_user_id, link_session_digest=link_digest,
+    )
 
 
 def _oauth_callback(
@@ -620,55 +686,14 @@ def _oauth_callback(
             flow_cookie, crypto_key=cfg.vkid_flow_crypto_key,
             ttl_seconds=cfg.vkid_flow_ttl_seconds, provider=provider,
         )
-        values = callback_values(request)
-        if provider == "vkid":
-            code, device_id = validate_vkid_callback_values(values, flow.state)
-        else:
-            if any(len(request.query_params.getlist(k)) != 1 for k in ("code", "state")):
-                raise TIDRejected("tid_callback_ambiguous")
-            code = values.get("code", "")
-            if (values.get("error") or not code or len(code) > 4096
-                    or not hmac.compare_digest(
-                        values.get("state", "").encode(), flow.state.encode(),
-                    )):
-                raise TIDRejected("tid_callback_invalid")
-            device_id = ""
-        linked_user = None
-        if flow.link_user_id is not None:
-            linked_user = authenticated_user(request, session_token)
-            if (str(linked_user.id) != flow.link_user_id
-                    or not hmac.compare_digest(
-                        session_digest(session_token or "").hex(), flow.link_session_digest or "",
-                    )):
-                raise PermissionError("oauth_link_session_changed")
+        code, device_id = _oauth_callback_values(provider, request, flow)
+        linked_user = _oauth_link_user(request, flow, session_token)
         database: Database = request.app.state.database
         if not database.claim_oauth_flow(
             session_digest(flow.state), provider, cfg.vkid_flow_ttl_seconds,
         ):
             raise SecurityValueError("oauth_state_already_used")
-        auth = service(request)
-        if provider == "vkid":
-            vk_identity = vkid_client(request).exchange_code(
-                code=code, device_id=device_id,
-                code_verifier=flow.code_verifier, expected_state=flow.state,
-            )
-            result = auth.complete_vkid_login(
-                vk_user_id=vk_identity.user_id, client_ip=client_ip(request),
-                accepted_legal_versions=flow.legal_versions,
-                link_user_id=linked_user.id if linked_user else None,
-                link_session_digest=(bytes.fromhex(flow.link_session_digest)
-                                     if flow.link_session_digest else None),
-            )
-        else:
-            tid: TIDClient = request.app.state.tid_client
-            tid_identity = tid.exchange_code(code=code, code_verifier=flow.code_verifier)
-            result = auth.complete_tid_login(
-                tid_subject=tid_identity.subject, client_ip=client_ip(request),
-                accepted_legal_versions=flow.legal_versions,
-                link_user_id=linked_user.id if linked_user else None,
-                link_session_digest=(bytes.fromhex(flow.link_session_digest)
-                                     if flow.link_session_digest else None),
-            )
+        result = _exchange_oauth_identity(provider, request, flow, code, device_id, linked_user)
     except RegistrationClosed:
         return auth_redirect("/?auth_error=registration", provider)
     except RegistrationCapacityReached:
@@ -757,7 +782,13 @@ def assistant_status(
     return assistant.status()
 
 
-@app.post("/api/assistant/messages")
+@app.post("/api/assistant/messages", responses={
+    409: {"description": "Profile or portfolio context changed during the request"},
+    422: {"description": "Assistant message or history is invalid"},
+    429: {"description": "The bounded assistant worker is busy"},
+    502: {"description": "The configured model did not return a valid response"},
+    503: {"description": "The assistant has not been configured"},
+})
 def assistant_message(
     body: AssistantMessageBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -819,7 +850,10 @@ def _workspace_editor(request: Request, session_token: str | None) -> UserRecord
     return user
 
 
-@app.put("/api/preferences")
+@app.put("/api/preferences", responses={
+    409: {"description": "Preferences version or current legal consent changed"},
+    422: {"description": "Preferences document is invalid"},
+})
 def save_preferences(
     body: WorkspaceSaveBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -844,7 +878,9 @@ def get_goals(
     return workspace_store(request).goals(user.id)
 
 
-@app.post("/api/goals", status_code=201)
+@app.post("/api/goals", status_code=201, responses={
+    422: {"description": "Goal document or allocation is invalid"},
+})
 def create_goal(
     body: WorkspaceDocumentBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -856,7 +892,11 @@ def create_goal(
         raise HTTPException(status_code=422, detail="goal_document_invalid") from exc
 
 
-@app.put("/api/goals/{goal_id}")
+@app.put("/api/goals/{goal_id}", responses={
+    404: {"description": "Goal does not exist in the current profile"},
+    409: {"description": "Goal version or current legal consent changed"},
+    422: {"description": "Goal document or allocation is invalid"},
+})
 def update_goal(
     goal_id: UUID, body: WorkspaceSaveBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -897,7 +937,9 @@ def get_events(
     )
 
 
-@app.post("/api/events/read")
+@app.post("/api/events/read", responses={
+    422: {"description": "Event identifiers are invalid"},
+})
 def mark_events_read(
     body: EventsReadBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1145,6 +1187,41 @@ def instrument_market_snapshot(
         raise HTTPException(status_code=409, detail="profile_context_changed")
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return asdict(snapshot)
+
+
+@app.get(
+    "/api/market/instruments/{instrument_uid}/facts",
+    responses={
+        401: {"description": "Authenticated session required"},
+        409: {"description": "Profile or T-Invest connection requires attention"},
+        422: {"description": "Instrument UID is invalid"},
+        503: {"description": "Instrument facts are temporarily unavailable"},
+    },
+)
+def get_instrument_facts(
+    instrument_uid: str, request: Request, response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    try:
+        payload = instrument_facts(
+            user_id=user.id, instrument_uid=instrument_uid, broker=broker_service(request),
+        )
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail=_TBANK_NOT_CONNECTED_DETAIL) from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(status_code=409, detail=_TBANK_CREDENTIAL_REJECTED_DETAIL) from exc
+    except SecurityValueError as exc:
+        raise HTTPException(status_code=503, detail="instrument_facts_unavailable") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="instrument_uid_invalid") from exc
+    except (TBankUnavailable, BrokerConnectionError) as exc:
+        raise HTTPException(status_code=503, detail="instrument_facts_unavailable") from exc
+    current = authenticated_user(request, session_token)
+    if current.id != user.id:
+        raise HTTPException(status_code=409, detail="profile_context_changed")
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
+    return payload
 
 
 def _terminal_instrument_market_stream_state(error: Exception) -> str | None:
@@ -1448,6 +1525,7 @@ def strategy_account_assessment(
     responses={
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         422: {"description": "Invalid research period or explicit cost assumptions"},
+        429: {"description": "Research is already running or cooling down"},
         503: {"description": "Broker evidence unavailable"},
     },
 )

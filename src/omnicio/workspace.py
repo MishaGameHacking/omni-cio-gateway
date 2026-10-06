@@ -77,7 +77,7 @@ def _text(value: object, *, maximum: int, empty: bool = False) -> str:
     result = value.strip()
     if (not result and not empty) or len(result) > maximum:
         raise ValueError("workspace_text_invalid")
-    if any(ord(char) < 32 or ord(char) == 127 for char in result):
+    if any(ord(char) < 32 or ord(char) == 127 or 0xD800 <= ord(char) <= 0xDFFF for char in result):
         raise ValueError("workspace_text_invalid")
     return result
 
@@ -141,7 +141,7 @@ def normalize_preferences(value: object) -> dict[str, Any]:
                 "name": _text(item["name"], maximum=256, empty=True),
             }
         )
-    return {
+    result: dict[str, Any] = {
         "display_name": _text(data["display_name"], maximum=80, empty=True),
         "locale": _choice(data["locale"], ("ru", "en")),
         "theme": _choice(data["theme"], ("system", "light", "dark")),
@@ -156,6 +156,11 @@ def normalize_preferences(value: object) -> dict[str, Any]:
         },
         "digest_frequency": _choice(data["digest_frequency"], ("off", "daily", "weekly")),
     }
+    # Match the database's JSONB text-size boundary before attempting a write.
+    # Individual field limits alone do not bound a 50-item Unicode watchlist.
+    if len(json.dumps(result, ensure_ascii=False).encode("utf-8")) > 32768:
+        raise ValueError("workspace_preferences_too_large")
+    return result
 
 
 def _date(value: object) -> date:

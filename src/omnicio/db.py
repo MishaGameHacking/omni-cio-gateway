@@ -338,52 +338,14 @@ class Database:
                     raise PermissionError("oauth_link_session_expired")
             cur.execute(lookup[provider], (subject,))
             fetched = cur.fetchone()
-            created = False
-            linked = False
-            if fetched is not None:
-                user = _user(cast(dict[str, Any], fetched))
-                if link_user_id is not None and user.id != link_user_id:
-                    raise PermissionError("identity_already_linked")
-            else:
-                if link_user_id is not None:
-                    cur.execute(
-                        "SELECT id, public_id, status, role FROM users "
-                        "WHERE id = %s AND status = 'active' FOR UPDATE",
-                        (link_user_id,),
-                    )
-                    active = cur.fetchone()
-                    if active is None:
-                        raise PermissionError("link_account_inactive")
-                    user = _user(cast(dict[str, Any], active))
-                    # Each provider is linked once. Do not silently replace it.
-                    existing_query = (
-                        "SELECT 1 FROM vkid_identities WHERE user_id = %s"
-                        if provider == "vkid" else
-                        "SELECT 1 FROM tid_identities WHERE user_id = %s"
-                    )
-                    cur.execute(existing_query, (user.id,))
-                    if cur.fetchone() is not None:
-                        raise PermissionError("provider_already_linked")
-                else:
-                    if not registration_enabled:
-                        raise RegistrationClosedError("registration is closed")
-                    cur.execute(_ADVISORY_LOCK_SQL, ("omnicio-registration-capacity",))
-                    cur.execute("SELECT count(*) AS total FROM users WHERE status <> 'deleted'")
-                    count = cur.fetchone()
-                    if count is None:
-                        raise RuntimeError("registration_capacity_unavailable")
-                    if int(cast(dict[str, Any], count)["total"]) >= registration_max_users:
-                        raise RegistrationCapacityError("registration capacity reached")
-                    cur.execute(
-                        "INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status, role"
-                    )
-                    inserted = cur.fetchone()
-                    if inserted is None:
-                        raise RuntimeError("user_creation_unavailable")
-                    user = _user(cast(dict[str, Any], inserted))
-                    created = True
+            user, created = self._identity_login_user(
+                cur, fetched, provider=provider, link_user_id=link_user_id,
+                registration_enabled=registration_enabled,
+                registration_max_users=registration_max_users,
+            )
+            linked = fetched is None
+            if linked:
                 cur.execute(insert_identity[provider], (user.id, subject))
-                linked = True
             if user.status != "active":
                 raise PermissionError("account is not active")
             for document_type, version in legal_versions.items():
@@ -406,6 +368,62 @@ class Database:
                  json.dumps({"method": provider, "identity_linked": linked})),
             )
             return user, created
+
+    @staticmethod
+    def _identity_login_user(
+        cur: Any, fetched: Any, *, provider: str, link_user_id: UUID | None,
+        registration_enabled: bool, registration_max_users: int,
+    ) -> tuple[UserRecord, bool]:
+        if fetched is not None:
+            user = _user(cast(dict[str, Any], fetched))
+            if link_user_id is not None and user.id != link_user_id:
+                raise PermissionError("identity_already_linked")
+            return user, False
+        if link_user_id is not None:
+            return Database._active_identity_link_target(cur, provider, link_user_id), False
+        return Database._register_identity_user(
+            cur, registration_enabled=registration_enabled,
+            registration_max_users=registration_max_users,
+        ), True
+
+    @staticmethod
+    def _active_identity_link_target(cur: Any, provider: str, user_id: UUID) -> UserRecord:
+        cur.execute(
+            "SELECT id, public_id, status, role FROM users "
+            "WHERE id = %s AND status = 'active' FOR UPDATE", (user_id,),
+        )
+        active = cur.fetchone()
+        if active is None:
+            raise PermissionError("link_account_inactive")
+        user = _user(cast(dict[str, Any], active))
+        # Each provider is linked once. Do not silently replace it.
+        existing_query = (
+            "SELECT 1 FROM vkid_identities WHERE user_id = %s" if provider == "vkid"
+            else "SELECT 1 FROM tid_identities WHERE user_id = %s"
+        )
+        cur.execute(existing_query, (user.id,))
+        if cur.fetchone() is not None:
+            raise PermissionError("provider_already_linked")
+        return user
+
+    @staticmethod
+    def _register_identity_user(
+        cur: Any, *, registration_enabled: bool, registration_max_users: int,
+    ) -> UserRecord:
+        if not registration_enabled:
+            raise RegistrationClosedError("registration is closed")
+        cur.execute(_ADVISORY_LOCK_SQL, ("omnicio-registration-capacity",))
+        cur.execute("SELECT count(*) AS total FROM users WHERE status <> 'deleted'")
+        count = cur.fetchone()
+        if count is None:
+            raise RuntimeError("registration_capacity_unavailable")
+        if int(cast(dict[str, Any], count)["total"]) >= registration_max_users:
+            raise RegistrationCapacityError("registration capacity reached")
+        cur.execute("INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status, role")
+        inserted = cur.fetchone()
+        if inserted is None:
+            raise RuntimeError("user_creation_unavailable")
+        return _user(cast(dict[str, Any], inserted))
 
     def identity_providers(self, user_id: UUID) -> list[str]:
         """Expose provider names only, never external identifiers."""
@@ -777,7 +795,7 @@ class Database:
                 """
                 DELETE FROM job_runs
                 WHERE user_id = %s
-                  AND job_type = 'portfolio_daily'
+                  AND job_type IN ('portfolio_daily', 'portfolio_refresh')
                 """,
                 (user_id,),
             )

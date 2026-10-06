@@ -378,7 +378,8 @@ def test_failed_history_read_is_missing_evidence_and_does_not_expose_provider_er
 
 def test_invalid_research_window_is_rejected_before_any_network(runtime):
     store, broker = research_runtime(runtime)
+    future = datetime.now(UTC) + timedelta(days=1)
     with pytest.raises(ValueError, match="research_window_invalid"):
-        research_call(store, broker, to_at=datetime.now(UTC) + timedelta(days=1))
+        research_call(store, broker, to_at=future)
     broker.status.assert_not_called()
     broker.candidate_daily_exchange_candles.assert_not_called()

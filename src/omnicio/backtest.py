@@ -127,6 +127,20 @@ def history_candidate(
     return replace(candidate, facts=facts)
 
 
+def _validate_bar_values(bar: TBankHistoricCandle) -> None:
+    if type(bar.volume_lots) is not int or bar.volume_lots < 0:
+        raise ValueError("research_invalid_volume")
+    prices = tuple(_decimal(value) for value in (bar.open, bar.high, bar.low, bar.close))
+    opening, high, low, close = prices
+    if (
+        min(prices) <= 0
+        or low > min(opening, close)
+        or high < max(opening, close)
+        or low > high
+    ):
+        raise ValueError("research_invalid_ohlc")
+
+
 def _validated_bars(
     asset: ResearchAsset,
     from_at: datetime,
@@ -153,17 +167,7 @@ def _validated_bars(
             raise ValueError("research_series_identity_or_source")
         if not bar.is_complete or bar.time < from_at or bar.time + _DAY > to_at:
             continue
-        if type(bar.volume_lots) is not int or bar.volume_lots < 0:
-            raise ValueError("research_invalid_volume")
-        prices = tuple(_decimal(value) for value in (bar.open, bar.high, bar.low, bar.close))
-        opening, high, low, close = prices
-        if (
-            min(prices) <= 0
-            or low > min(opening, close)
-            or high < max(opening, close)
-            or low > high
-        ):
-            raise ValueError("research_invalid_ohlc")
+        _validate_bar_values(bar)
         result.append(bar)
     return tuple(result)
 
@@ -433,26 +437,21 @@ def _metrics(state: _Simulation, capital: Decimal) -> dict[str, Any]:
     }
 
 
-def run_strategy_backtest(
-    document: object,
-    assets: Sequence[ResearchAsset],
-    *,
+def _validated_research_capital(
     from_at: datetime,
     to_at: datetime,
+    observed: datetime,
+    asset_count: int,
     initial_capital_rub: Decimal,
     costs: ResearchCosts,
-    now: datetime | None = None,
-) -> dict[str, Any]:
-    """Frozen-training holdout research; never silently replace a failed chosen asset."""
-    data = normalize_document(document)
-    observed = now or datetime.now(UTC)
+) -> Decimal:
     if (
         from_at.tzinfo is None
         or to_at.tzinfo is None
         or observed.tzinfo is None
         or not from_at < to_at <= observed
         or to_at - from_at > timedelta(days=MAX_RESEARCH_DAYS)
-        or len(assets) > MAX_RESEARCH_ASSETS
+        or asset_count > MAX_RESEARCH_ASSETS
     ):
         raise ValueError("research_window_invalid")
     capital = _decimal(initial_capital_rub)
@@ -462,7 +461,12 @@ def run_strategy_backtest(
         not 0 <= _decimal(value) <= 1000 for value in (costs.commission_bps, costs.slippage_bps)
     ):
         raise ValueError("research_costs_invalid")
-    split = from_at + (to_at - from_at) * 0.7
+    return capital
+
+
+def _prepare_research_assets(
+    assets: Sequence[ResearchAsset], from_at: datetime, to_at: datetime, split: datetime,
+) -> tuple[list[ResearchAsset], list[dict[str, Any]]]:
     diagnostics: list[dict[str, Any]] = []
     clean_assets = []
     for asset in assets:
@@ -496,6 +500,70 @@ def run_strategy_backtest(
                 candidate=history_candidate(asset.candidate, training, as_of=split),
             )
         )
+    return clean_assets, diagnostics
+
+
+def _selected_evidence_requirements(
+    data: Mapping[str, Any],
+    selection: Mapping[str, Any],
+    assets: Sequence[ResearchAsset],
+    diagnostics: Sequence[dict[str, Any]],
+    bases: set[ResearchBasis],
+) -> set[str]:
+    missing: set[str] = set()
+    if not assets:
+        missing.update(selection["missing_requirements"] or ["eligible_training_assets"])
+    if len(bases) > 1:
+        missing.add("mixed_return_bases")
+    by_uid = {row["instrument_uid"]: row for row in diagnostics}
+    for asset in assets:
+        diagnostic = by_uid[asset.candidate.instrument_uid]
+        missing.update(diagnostic["reasons"])
+        breaks = _discontinuities(asset.candles)
+        missing.update(breaks)
+        if breaks:
+            diagnostic["status"] = "incomplete"
+            diagnostic["reasons"] = sorted(set(diagnostic["reasons"] + breaks))
+    for key in ("max_daily_turnover_participation_percent", "turnover_budget_percent"):
+        if data["policy"][key] is None:
+            missing.add("policy." + key)
+    return missing
+
+
+def _common_research_times(
+    panel: Mapping[str, Mapping[datetime, TBankHistoricCandle]], split: datetime,
+) -> tuple[int, list[datetime], list[datetime], set[str]]:
+    common = set.intersection(*(set(series) for series in panel.values())) if panel else set()
+    missing = set()
+    if panel and any(set(series) != common for series in panel.values()):
+        missing.add("unaligned_history")
+    training_times = sorted(when for when in common if when + _DAY <= split)
+    test_times = sorted(when for when in common if when >= split)
+    if len(training_times) < MIN_TRAIN_OBSERVATIONS:
+        missing.add("insufficient_training_history")
+    if len(test_times) < MIN_TEST_OBSERVATIONS:
+        missing.add("insufficient_test_history")
+    return len(common), training_times, test_times, missing
+
+
+def run_strategy_backtest(
+    document: object,
+    assets: Sequence[ResearchAsset],
+    *,
+    from_at: datetime,
+    to_at: datetime,
+    initial_capital_rub: Decimal,
+    costs: ResearchCosts,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Frozen-training holdout research; never silently replace a failed chosen asset."""
+    data = normalize_document(document)
+    observed = now or datetime.now(UTC)
+    capital = _validated_research_capital(
+        from_at, to_at, observed, len(assets), initial_capital_rub, costs,
+    )
+    split = from_at + (to_at - from_at) * 0.7
+    clean_assets, diagnostics = _prepare_research_assets(assets, from_at, to_at, split)
     selection = select_strategy_candidates(
         data, [asset.candidate for asset in clean_assets], as_of=split
     )
@@ -632,44 +700,19 @@ def run_strategy_backtest(
         "data_hash": hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest(),
         "missing_requirements": [],
     }
-    missing: set[str] = set()
-    if not selected_assets:
-        missing.update(selection["missing_requirements"] or ["eligible_training_assets"])
-    if len(bases) > 1:
-        missing.add("mixed_return_bases")
-    for diagnostic in diagnostics:
-        if diagnostic["instrument_uid"] in chosen:
-            missing.update(diagnostic["reasons"])
-    for asset in selected_assets:
-        breaks = _discontinuities(asset.candles)
-        missing.update(breaks)
-        if breaks:
-            for diagnostic in diagnostics:
-                if diagnostic["instrument_uid"] == asset.candidate.instrument_uid:
-                    diagnostic["status"] = "incomplete"
-                    diagnostic["reasons"] = sorted(set(diagnostic["reasons"] + breaks))
-    for key in ("max_daily_turnover_participation_percent", "turnover_budget_percent"):
-        if data["policy"][key] is None:
-            missing.add("policy." + key)
+    missing = _selected_evidence_requirements(data, selection, selected_assets, diagnostics, bases)
     panel = {
         asset.candidate.instrument_uid: {bar.time: bar for bar in asset.candles}
         for asset in selected_assets
     }
-    common = set.intersection(*(set(series) for series in panel.values())) if panel else set()
-    if panel and any(set(series) != common for series in panel.values()):
-        missing.add("unaligned_history")
-    training_times = sorted(when for when in common if when + _DAY <= split)
-    test_times = sorted(when for when in common if when >= split)
+    observations, training_times, test_times, history_missing = _common_research_times(panel, split)
+    missing.update(history_missing)
     result["period"].update(
-        observations=len(common),
+        observations=observations,
         train_observations=len(training_times),
         test_observations=len(test_times),
         test_from=test_times[0].isoformat() if test_times else None,
     )
-    if len(training_times) < MIN_TRAIN_OBSERVATIONS:
-        missing.add("insufficient_training_history")
-    if len(test_times) < MIN_TEST_OBSERVATIONS:
-        missing.add("insufficient_test_history")
     result["missing_requirements"] = sorted(missing | set(selection["missing_requirements"]))
     if missing:
         return result

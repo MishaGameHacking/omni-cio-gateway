@@ -185,8 +185,9 @@ class ReleaseEvidenceTests(unittest.TestCase):
             rerun = foundation(run_attempt=2, conclusion=conclusion,
                                status="completed" if conclusion else "queued")
             error = gate.ReleaseBlocked if conclusion else gate.PendingChecks
+            runs = [rerun, foundation()]
             with self.subTest(conclusion=conclusion), self.assertRaises(error):
-                gate.require_foundation([rerun, foundation()], SHA)
+                gate.require_foundation(runs, SHA)
 
     def test_main_moving_before_or_during_verification_blocks_release(self) -> None:
         for responses in ([{"commit": {"sha": "b" * 40}}], [BRANCH, {"commit": {}}]):

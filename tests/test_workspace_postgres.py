@@ -338,3 +338,53 @@ def test_dashboard_uses_latest_operation_correction_and_complete_ledger(
     assert corrected[0]["read_at"] is None
     assert corrected[0]["source"]["state"] == "OPERATION_STATE_CANCELED"
     assert store.dashboard(owner)["income"]["total_rub"] == "0"
+
+
+def test_risk_alerts_survive_unchanged_snapshots_and_notify_actual_state_changes(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    store = WorkspaceStore(database)
+    start = datetime.now(UTC) - timedelta(days=1)
+
+    def observe(state: str, minute: int) -> list[dict[str, Any]]:
+        snapshot_id = uuid4()
+        at = start + timedelta(minutes=minute)
+        with database.pool.connection() as conn:
+            conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+            conn.execute(
+                "INSERT INTO portfolio_snapshots (id, user_id, account_id, environment, "
+                "captured_at, analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, "
+                "rub_cash_unblocked, limits_loading_in_progress, evidence) "
+                "VALUES (%s, %s, %s, 'prod', %s, 'observed', 1000, 0, 0, 0, false, '{}'::jsonb)",
+                (snapshot_id, owner, str(owner), at),
+            )
+            conn.execute(
+                "INSERT INTO portfolio_snapshot_positions (snapshot_id, user_id, instrument_uid, "
+                "ticker, instrument_type, quantity, blocked, blocked_lots) "
+                "VALUES (%s, %s, 'risk-instrument', 'TEST', 'bond', 1, false, 0)",
+                (snapshot_id, owner),
+            )
+            conn.execute(
+                "INSERT INTO portfolio_risk_assessments (user_id, snapshot_id, instrument_uid, "
+                "state, rating_status, fundamental_status, source_status, reasons, evidence, "
+                "assessed_at) VALUES (%s, %s, 'risk-instrument', %s, 'received', "
+                "'not_applicable', 'received', '[]'::jsonb, '{}'::jsonb, %s)",
+                (owner, snapshot_id, state, at),
+            )
+        return [item for item in store.events(owner)["items"] if item["kind"] == "instrument_risk"]
+
+    assert observe("normal", 0) == []
+    first = observe("watch", 1)[0]
+    store.mark_events_read(owner, [first["id"]])
+    unchanged = observe("watch", 2)
+    assert len(unchanged) == 1 and unchanged[0]["id"] == first["id"]
+    assert unchanged[0]["read_at"] is not None
+    assert unchanged[0]["occurred_at"] == first["occurred_at"]
+    for index, state in enumerate(("critical", "normal", "critical"), start=3):
+        changed = observe(state, index)
+        assert len(changed) == 1 and changed[0]["id"] == first["id"]
+        assert changed[0]["read_at"] is None
+        assert changed[0]["source"]["state"] == state
+        store.mark_events_read(owner, [first["id"]])
