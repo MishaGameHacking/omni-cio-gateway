@@ -112,8 +112,9 @@ def normalize_preferences(value: object) -> dict[str, Any]:
     enabled = _boolean(quiet["enabled"])
     for key in ("start", "end"):
         if not isinstance(quiet[key], str) or not re.fullmatch(
-            r"(?:[01][0-9]|2[0-3]):[0-5][0-9]",
+            r"(?:[01]\d|2[0-3]):[0-5]\d",
             quiet[key],
+            flags=re.ASCII,
         ):
             raise ValueError("workspace_quiet_time_invalid")
     if enabled and quiet["start"] == quiet["end"]:
@@ -131,7 +132,7 @@ def normalize_preferences(value: object) -> dict[str, Any]:
     for raw in watchlist:
         item = _exact(raw, ("instrument_uid", "ticker", "name"))
         uid = _text(item["instrument_uid"], maximum=128)
-        if not re.fullmatch(r"[A-Za-z0-9_-]+", uid) or uid in seen:
+        if not re.fullmatch(r"[\w-]+", uid, flags=re.ASCII) or uid in seen:
             raise ValueError("workspace_watchlist_identity")
         seen.add(uid)
         instruments.append(
@@ -164,7 +165,9 @@ def normalize_preferences(value: object) -> dict[str, Any]:
 
 
 def _date(value: object) -> date:
-    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+    if not isinstance(value, str) or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}", value, flags=re.ASCII,
+    ):
         raise ValueError("workspace_date_invalid")
     try:
         return date.fromisoformat(value)
@@ -309,6 +312,70 @@ def _operation_amount(operation: Mapping[str, Any]) -> Decimal | None:
         return None
 
 
+def _executed_cashflow(
+    operation: Mapping[str, Any], from_at: datetime, to_at: datetime,
+    reasons: set[str], income_reasons: set[str],
+) -> tuple[str, datetime] | None:
+    at = timestamp(operation.get("operation_date"))
+    if at is None:
+        reasons.add("operation_time_invalid")
+        income_reasons.add("operation_time_invalid")
+        return None
+    if not from_at < at <= to_at:
+        return None
+    state = operation.get("operation_state")
+    if state in {"OPERATION_STATE_CANCELED", "OPERATION_STATE_PROGRESS"}:
+        return None
+    if state != "OPERATION_STATE_EXECUTED":
+        reasons.add("operation_state_unknown")
+        income_reasons.add("operation_state_unknown")
+        return None
+    kind = str(operation.get("operation_type") or "").removeprefix("OPERATION_TYPE_")
+    if kind in _INTERNAL:
+        return None
+    if kind not in _INPUT | _OUTPUT | _FEES | _TAXES | _INCOME.keys() | _REDEMPTIONS:
+        reasons.add("unclassified_or_non_cash_transfer")
+        if kind not in _NON_INCOME_TRANSFERS:
+            income_reasons.add("unclassified_income")
+        return None
+    return kind, at
+
+
+def _cashflow_payment(
+    operation: Mapping[str, Any], kind: str, reasons: set[str], income_reasons: set[str],
+) -> Decimal | None:
+    payment = _operation_amount(operation)
+    if payment is None:
+        reasons.add("payment_currency_or_amount_unavailable")
+        if kind in _INCOME.keys() | _REDEMPTIONS:
+            income_reasons.add("income_currency_or_amount_unavailable")
+        return None
+    if (kind in _INPUT and payment < 0) or (kind in _OUTPUT and payment > 0):
+        reasons.add("external_flow_sign_invalid")
+        return None
+    return payment
+
+
+def _accumulate_cashflow(
+    kind: str, at: datetime, payment: Decimal, values: dict[str, Decimal],
+    months: dict[str, dict[str, Decimal]],
+) -> None:
+    if kind in _INPUT | _OUTPUT:
+        values["net_contributions_rub"] += payment
+    elif kind in _FEES:
+        values["fees_rub"] -= payment
+    elif kind in _TAXES:
+        values["taxes_rub"] -= payment
+    elif kind in _REDEMPTIONS:
+        values["redemptions_rub"] += payment
+    else:
+        key = _INCOME[kind]
+        values[key] += payment
+        month = at.astimezone(ZoneInfo("Europe/Moscow")).strftime("%Y-%m")
+        monthly = months.setdefault(month, dict.fromkeys(_INCOME_FIELDS, _ZERO))
+        monthly[key] += payment
+
+
 def cashflow_summary(
     operations: Sequence[Mapping[str, Any]],
     *,
@@ -329,51 +396,14 @@ def cashflow_summary(
     reasons = set() if complete else {"history_incomplete"}
     income_reasons = set(reasons)
     for operation in operations:
-        at = timestamp(operation.get("operation_date"))
-        if at is None:
-            reasons.add("operation_time_invalid")
-            income_reasons.add("operation_time_invalid")
+        parsed = _executed_cashflow(operation, from_at, to_at, reasons, income_reasons)
+        if parsed is None:
             continue
-        if not from_at < at <= to_at:
-            continue
-        state = operation.get("operation_state")
-        if state in {"OPERATION_STATE_CANCELED", "OPERATION_STATE_PROGRESS"}:
-            continue
-        if state != "OPERATION_STATE_EXECUTED":
-            reasons.add("operation_state_unknown")
-            income_reasons.add("operation_state_unknown")
-            continue
-        kind = str(operation.get("operation_type") or "").removeprefix("OPERATION_TYPE_")
-        if kind in _INTERNAL:
-            continue
-        if kind not in _INPUT | _OUTPUT | _FEES | _TAXES | _INCOME.keys() | _REDEMPTIONS:
-            reasons.add("unclassified_or_non_cash_transfer")
-            if kind not in _NON_INCOME_TRANSFERS:
-                income_reasons.add("unclassified_income")
-            continue
-        payment = _operation_amount(operation)
+        kind, at = parsed
+        payment = _cashflow_payment(operation, kind, reasons, income_reasons)
         if payment is None:
-            reasons.add("payment_currency_or_amount_unavailable")
-            if kind in _INCOME.keys() | _REDEMPTIONS:
-                income_reasons.add("income_currency_or_amount_unavailable")
             continue
-        if (kind in _INPUT and payment < 0) or (kind in _OUTPUT and payment > 0):
-            reasons.add("external_flow_sign_invalid")
-            continue
-        if kind in _INPUT | _OUTPUT:
-            values["net_contributions_rub"] += payment
-        elif kind in _FEES:
-            values["fees_rub"] -= payment
-        elif kind in _TAXES:
-            values["taxes_rub"] -= payment
-        elif kind in _REDEMPTIONS:
-            values["redemptions_rub"] += payment
-        else:
-            key = _INCOME[kind]
-            values[key] += payment
-            month = at.astimezone(ZoneInfo("Europe/Moscow")).strftime("%Y-%m")
-            monthly = months.setdefault(month, dict.fromkeys(_INCOME_FIELDS, _ZERO))
-            monthly[key] += payment
+        _accumulate_cashflow(kind, at, payment, values, months)
     income_total = sum((values[key] for key in _INCOME_FIELDS), _ZERO)
     return {
         "status": "available" if not reasons else "unavailable",
@@ -472,6 +502,38 @@ def portfolio_performance(
     return result
 
 
+def _portfolio_goal_amount(
+    goal: Mapping[str, Any], snapshot: Mapping[str, Any] | None, now: datetime,
+) -> tuple[Decimal | None, datetime | None, str | None]:
+    observed = timestamp(snapshot.get("captured_at")) if snapshot else None
+    if (
+        snapshot is None or observed is None or observed > now
+        or snapshot.get("analysis_status") != "observed"
+    ):
+        return None, observed, "portfolio_not_reconciled"
+    current = amount(snapshot["nav_rub"]) * amount(goal["allocation_percent"]) / _HUNDRED
+    return current, observed, None
+
+
+def _income_goal_amount(
+    goal: Mapping[str, Any], operations: Sequence[Mapping[str, Any]],
+    watermark: datetime | None, history_complete: bool, now: datetime,
+) -> tuple[Decimal | None, datetime | None, str | None]:
+    if watermark is None or watermark > now:
+        return None, None, "history_incomplete"
+    begin = datetime.combine(_date(goal["start_date"]), time.min, ZoneInfo("Europe/Moscow"))
+    if begin >= watermark:
+        return None, None, "goal_period_not_observed"
+    flow = cashflow_summary(
+        operations, from_at=begin.astimezone(UTC) - timedelta(microseconds=1),
+        to_at=watermark, complete=history_complete,
+    )
+    if flow["income"]["status"] != "available":
+        return None, None, flow["income"]["reason"]
+    current = amount(flow["income"]["total_rub"]) * amount(goal["allocation_percent"]) / _HUNDRED
+    return current, watermark, None
+
+
 def goal_progress(
     goal: Mapping[str, Any],
     *,
@@ -495,51 +557,30 @@ def goal_progress(
     ):
         reason = "linked_account_unavailable"
     elif source == "portfolio":
-        observed = timestamp(snapshot.get("captured_at")) if snapshot else None
-        if (
-            snapshot is None
-            or observed is None
-            or observed > now
-            or snapshot.get("analysis_status") != "observed"
-        ):
-            reason = "portfolio_not_reconciled"
-        else:
-            current = amount(snapshot["nav_rub"]) * amount(goal["allocation_percent"]) / _HUNDRED
-    elif watermark is None or watermark > now:
-        reason = "history_incomplete"
+        current, observed, reason = _portfolio_goal_amount(goal, snapshot, now)
     else:
-        begin = datetime.combine(_date(goal["start_date"]), time.min, ZoneInfo("Europe/Moscow"))
-        if begin >= watermark:
-            reason = "goal_period_not_observed"
-        else:
-            flow = cashflow_summary(
-                operations,
-                from_at=begin.astimezone(UTC),
-                to_at=watermark,
-                complete=history_complete,
-            )
-            if flow["income"]["status"] == "available":
-                current = (
-                    amount(flow["income"]["total_rub"]) * amount(goal["allocation_percent"]) / 100
-                )
-                observed = watermark
-            else:
-                reason = flow["income"]["reason"]
+        current, observed, reason = _income_goal_amount(
+            goal, operations, watermark, history_complete, now,
+        )
     target = amount(goal["target_amount_rub"])
-    state = "available" if current is not None else "unavailable"
-    if source != "manual" and observed is not None and now - observed > timedelta(hours=36):
-        state = "stale" if current is not None else state
-    return {
-        "status": state,
-        "amount_rub": decimal_text(current) if current is not None else None,
-        "percent": decimal_text(current / target * 100) if current is not None else None,
-        "remaining_rub": decimal_text(max(_ZERO, target - current))
-        if current is not None
-        else None,
+    result: dict[str, Any] = {
+        "status": "unavailable",
+        "amount_rub": None,
+        "percent": None,
+        "remaining_rub": None,
         "source": source,
         "as_of": observed.isoformat() if observed is not None else None,
         "reason": reason,
     }
+    if current is not None:
+        result.update(
+            status="available", amount_rub=decimal_text(current),
+            percent=decimal_text(current / target * _HUNDRED),
+            remaining_rub=decimal_text(max(_ZERO, target - current)),
+        )
+        if source != "manual" and observed is not None and now - observed > timedelta(hours=36):
+            result["status"] = "stale"
+    return result
 
 
 def event_id(kind: str, identity: object) -> str:

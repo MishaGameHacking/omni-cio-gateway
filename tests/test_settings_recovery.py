@@ -14,7 +14,6 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from dataclasses import asdict
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -30,14 +29,9 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from omnicio.db import Database, UserRecord
 from omnicio.main import app
-from omnicio.portfolio_store import (
-    BalancingPolicyInput,
-    BalancingPolicyRecord,
-    InvestmentProfileRecord,
-    PortfolioStore,
-    SettingsVersionConflict,
-)
+from omnicio.portfolio_store import PortfolioStore, SettingsVersionConflict
 from omnicio.security import decrypt_secret, encrypt_secret
+from omnicio.strategy import preset_document
 
 ROOT = Path(__file__).resolve().parents[1]
 A, B = UUID(int=901), UUID(int=902)
@@ -49,7 +43,7 @@ PROFILE = dict(
     liquidity_horizon_days=30,
     allow_below_investment_grade=False,
 )
-POLICY = BalancingPolicyInput(
+POLICY = dict(
     max_instrument_percent=Decimal("20"),
     max_sector_percent=Decimal("30"),
     max_issuer_percent=Decimal("20"),
@@ -70,78 +64,6 @@ POLICY = BalancingPolicyInput(
 )
 
 
-@pytest.mark.parametrize("kind", ["investment", "balancing"])
-def test_settings_writes_require_version_and_session_owner(kind: str) -> None:
-    values = PROFILE if kind == "investment" else asdict(POLICY)
-    payload = {
-        key: str(value) if isinstance(value, Decimal) else value for key, value in values.items()
-    }
-    payload["expected_public_id"] = "000000901"
-    path = f"/api/profile/{kind}"
-    database = Mock(spec=Database)
-    database.has_legal_versions.return_value = True
-    store = Mock(spec=PortfolioStore)
-    writer = store.save_profile if kind == "investment" else store.save_balancing_policy
-    writer.side_effect = SettingsVersionConflict("settings_version_conflict")
-    with (
-        patch("omnicio.main.service") as auth,
-        patch("omnicio.main.portfolio_store", return_value=store),
-        patch.object(app.state, "database", database, create=True),
-    ):
-        auth.return_value.refresh_session.side_effect = lambda token: {
-            "a": UserRecord(A, 901, "active", "user"),
-            "b": UserRecord(B, 902, "active", "user"),
-        }.get(token)
-        client = TestClient(app, cookies={"omnicio_session": "a"})
-        headers = {"Origin": "https://omnicio.ru", "X-Omnicio-Profile": "000000901"}
-        missing = client.put(path, json=payload, headers=headers)
-        assert missing.status_code == 422
-        for bad in (-1, True, "1", 1.2):
-            invalid = client.put(path, json={**payload, "expected_version": bad}, headers=headers)
-            assert invalid.status_code == 422
-        writer.assert_not_called()
-        for token, owner in (("a", A), ("b", B)):
-            signed_in = TestClient(app, cookies={"omnicio_session": token})
-            conflict = signed_in.put(
-                path + f"?user_id={B}",
-                json={**payload, "expected_version": 2, "expected_public_id": f"{owner.int:09d}"},
-                headers={**headers, "X-Omnicio-Profile": f"{owner.int:09d}"},
-            )
-            assert conflict.status_code == 409
-            assert conflict.json()["detail"] == "settings_version_conflict"
-            assert conflict.headers["cache-control"] == "private, no-store"
-            assert writer.call_args.args[0] == owner
-            assert writer.call_args.kwargs["expected_version"] == 2
-        calls = writer.call_count
-        switched = TestClient(app, cookies={"omnicio_session": "b"}).put(
-            path,
-            json={**payload, "expected_version": 2},
-            headers={**headers, "X-Omnicio-Profile": "000000902"},
-        )
-        assert switched.status_code == 409
-        assert switched.json()["detail"] == "settings_owner_conflict"
-        assert writer.call_count == calls
-        anonymous = TestClient(app).put(
-            path,
-            json={**payload, "expected_version": 2},
-            headers=headers,
-        )
-        assert anonymous.status_code == 401
-        assert writer.call_count == calls
-        writer.side_effect = None
-        record_type = InvestmentProfileRecord if kind == "investment" else BalancingPolicyRecord
-        writer.return_value = record_type(
-            id=1,
-            user_id=A,
-            version=3,
-            created_at=datetime.now(UTC),
-            **values,
-        )
-        saved = client.put(path, json={**payload, "expected_version": 2}, headers=headers)
-        assert saved.status_code == 200
-        key = "profile" if kind == "investment" else "policy"
-        assert saved.json()[key]["version"] == 3
-        assert saved.headers["cache-control"] == "private, no-store"
 
 
 @contextmanager
@@ -183,35 +105,44 @@ def database_guards(conn):
     """).fetchall()
 
 
-def _exercise_settings(store: PortfolioStore, db: Database) -> None:
-    first = store.save_profile(A, expected_version=0, **PROFILE)
-    repeated = store.save_profile(A, expected_version=0, **PROFILE)
-    assert repeated.id == first.id
+def _insert_historical_setting(
+    db: Database, table: str, owner: UUID, version: int, values: dict[str, object],
+) -> None:
+    """Only synthetic recovery data may seed the retired confirmed-settings tables."""
+    columns = ("user_id", "version", *values)
+    with db.pool.connection() as conn, conn.transaction():
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        conn.execute(
+            sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(
+                sql.Identifier(table),
+                sql.SQL(", ").join(map(sql.Identifier, columns)),
+                sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+            ),
+            (owner, version, *values.values()),
+        )
 
-    # Two clients both loaded v1; exactly one differing write can win.
-    def save(reserve: str) -> str:
-        try:
-            store.save_profile(
-                A, expected_version=1, **{**PROFILE, "reserve_rub": Decimal(reserve)}
+
+def _seed_historical_settings(db: Database) -> None:
+    for owner, version, reserve in ((A, 1, "12345.67"), (A, 2, "20000"), (B, 1, "7.25")):
+        _insert_historical_setting(
+            db, "investment_profile_versions", owner, version,
+            {**PROFILE, "reserve_rub": Decimal(reserve)},
+        )
+    for version, instrument_limit in ((1, "20"), (2, "15")):
+        _insert_historical_setting(
+            db, "balancing_policy_versions", A, version,
+            {**POLICY, "max_instrument_percent": Decimal(instrument_limit)},
+        )
+    with db.pool.connection() as conn:
+        for owner, event in (
+            (A, "investment_profile_saved"), (A, "investment_profile_saved"),
+            (A, "balancing_policy_saved"), (A, "balancing_policy_saved"),
+            (B, "investment_profile_saved"),
+        ):
+            conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+            conn.execute(
+                "INSERT INTO audit_events (user_id, event_type) VALUES (%s, %s)", (owner, event),
             )
-            return "saved"
-        except SettingsVersionConflict:
-            return "conflict"
-
-    with ThreadPoolExecutor(max_workers=2) as threads:
-        assert sorted(threads.map(save, ("20000", "30000"))) == ["conflict", "saved"]
-    store.save_profile(B, expected_version=0, **{**PROFILE, "reserve_rub": Decimal("7.25")})
-    first_policy = store.save_balancing_policy(A, POLICY, expected_version=0)
-    assert store.save_balancing_policy(A, POLICY, expected_version=0).id == first_policy.id
-    changed = BalancingPolicyInput(**{**asdict(POLICY), "max_instrument_percent": Decimal("15")})
-    store.save_balancing_policy(A, changed, expected_version=1)
-    with pytest.raises(SettingsVersionConflict):
-        store.save_balancing_policy(A, POLICY, expected_version=1)
-    with pytest.raises(SettingsVersionConflict):
-        store.save_balancing_policy(B, POLICY, expected_version=2)
-    assert store.current_balancing_policy(B) is None
-    assert len(db.recent_activity(A)) == 4
-    assert len(db.recent_activity(B)) == 1
 
 
 def _verify_restored(dsn: str, role: str, password: str, key: str, expected, guards) -> None:
@@ -255,9 +186,15 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
         assert store.current_profile(A).version == 2
         assert store.current_strategy_draft(A)["version"] == 4
         assert store.current_strategy_draft(B)["document"]["profile"]["reserve_rub"] == "7.01"
-        # Restored sequences and transactional writes must work too.
-        revised = store.save_profile(A, expected_version=2, **PROFILE)
-        assert revised.version == 3
+        # Current working-copy writes survive restore; confirmed history stays
+        # unchanged. Sequences are independently checked with synthetic SQL.
+        previous = store.current_profile(A)
+        revised = store.save_strategy_draft(A, preset_document("balanced"), expected_version=4)
+        assert revised["version"] == 5
+        assert store.current_profile(A) == previous
+        _insert_historical_setting(db, "investment_profile_versions", A, 3, PROFILE)
+        assert store.current_profile(A).id > previous.id
+        assert store.current_profile(A).version == 3
         assert store.current_profile(B).version == 1
 
 
@@ -324,26 +261,30 @@ def test_dump_restore_preserves_settings_and_tenant_isolation(
                 db,
                 store,
             ):
-                _exercise_settings(store, db)
+                _seed_historical_settings(db)
                 _exercise_strategy_drafts(store, db)
                 _exercise_strategy_admission(store, db)
             with psycopg.connect(source_dsn, autocommit=True) as admin:
                 admin.execute(
                     sql.SQL(
-                        "ALTER TABLE audit_events ADD CONSTRAINT synthetic_audit_failure "
-                        "CHECK (user_id <> {}) NOT VALID"
+                        "ALTER TABLE strategy_drafts ADD CONSTRAINT synthetic_draft_failure "
+                        "CHECK (user_id <> {} OR version < 2) NOT VALID"
                     ).format(sql.Literal(B))
                 )
             with database_store(make_conninfo(source_dsn, user=role, password=password)) as (
                 db,
                 store,
             ):
+                before = store.current_strategy_draft(B)
+                changed = copy.deepcopy(before["document"])
+                changed["profile"]["reserve_rub"] = "99"
                 with pytest.raises(psycopg.errors.CheckViolation):
-                    store.save_profile(B, expected_version=1, **PROFILE)
+                    store.save_strategy_draft(B, changed, expected_version=1)
+                assert store.current_strategy_draft(B) == before
                 assert store.current_profile(B).version == 1
                 assert len(db.recent_activity(B)) == 1
             with psycopg.connect(source_dsn, autocommit=True) as admin:
-                admin.execute("ALTER TABLE audit_events DROP CONSTRAINT synthetic_audit_failure")
+                admin.execute("ALTER TABLE strategy_drafts DROP CONSTRAINT synthetic_draft_failure")
                 expected, guards = table_fingerprints(admin), database_guards(admin)
             archive = tmp_path / "synthetic.dump"
             started = time.monotonic()
@@ -403,8 +344,6 @@ def test_dump_restore_preserves_settings_and_tenant_isolation(
 
 
 def test_strategy_draft_api_requires_owner_origin_version_and_keeps_authority_separate() -> None:
-    from omnicio.strategy import preset_document
-
     database = Mock(spec=Database)
     database.has_legal_versions.return_value = True
     store = Mock(spec=PortfolioStore)
@@ -457,8 +396,9 @@ def test_strategy_draft_api_requires_owner_origin_version_and_keeps_authority_se
         assert response.headers["cache-control"] == "private, no-store"
         assert store.save_strategy_draft.call_args.args[0] == A
         assert store.save_strategy_draft.call_args.kwargs["expected_version"] == 0
-        store.save_profile.assert_not_called()
-        store.save_balancing_policy.assert_not_called()
+        assert {call[0] for call in store.mock_calls} == {
+            "current_strategy_draft", "save_strategy_draft",
+        }
         edited = preset_document("balanced")
         edited["policy"]["max_issuer_percent"] = "4.1234"
         response = client.put("/api/profile/strategy", headers=headers,
@@ -477,8 +417,6 @@ def test_strategy_draft_api_requires_owner_origin_version_and_keeps_authority_se
 
 
 def _exercise_strategy_drafts(store: PortfolioStore, db: Database) -> None:
-    from omnicio.strategy import preset_document
-
     a_profile = store.current_profile(A)
     a_policy = store.current_balancing_policy(A)
     activity = db.recent_activity(A)

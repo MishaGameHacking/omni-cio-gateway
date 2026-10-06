@@ -57,7 +57,8 @@ def test_tid_verified_subject_is_stable_and_login_does_not_create_broker_authori
     assert created
     assert database.refresh_session_digest(digest, session_ttl_seconds=3600) == first
     again, created_again, _ = login(database, subject=subject, registration_enabled=False)
-    assert again.id == first.id and not created_again
+    assert again.id == first.id
+    assert not created_again
     assert database.identity_providers(first.id) == ["tid"]
     with database.pool.connection() as connection:
         assert (
@@ -127,7 +128,8 @@ def test_explicit_identity_link_preserves_workspace_and_rejects_another_tenant(
         link_session_digest=session,
         registration_enabled=False,
     )
-    assert linked.id == owner.id and not created
+    assert linked.id == owner.id
+    assert not created
     assert set(database.identity_providers(owner.id)) == {"tid", "vkid"}
     assert store.preferences(owner.id)["document"] == prefs
     with pytest.raises(PermissionError, match="already_linked"):

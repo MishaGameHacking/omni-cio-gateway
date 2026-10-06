@@ -1,4 +1,19 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#071421"><title>Нет сети · OMNICIO</title><style>
-:root{font-family:ui-sans-serif,system-ui,sans-serif;color-scheme:dark;color:#edf4ff;background:#071421}*{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px}main{max-width:440px;width:100%;padding:32px;border:1px solid #20384b;border-radius:18px;background:linear-gradient(135deg,#102437,#0a1927)}.brand{display:flex;align-items:center;gap:12px;font-size:22px;font-weight:700}.ring{width:30px;height:30px;border:7px solid #438aff;border-right-color:#9ccfff;border-bottom-color:#204e9d;border-radius:50%}h1{font-size:27px;line-height:1.2;letter-spacing:-.7px;margin:30px 0 17px}p{font-size:14px;line-height:1.8;color:#a7bbce}a{display:inline-flex;min-height:43px;align-items:center;padding:11px 18px;background:#2874ff;color:#fff;border:1px solid #6a9fff;border-radius:9px;text-decoration:none;font-size:13px;margin-top:15px}a:focus-visible{outline:2px solid #91caff;outline-offset:4px}small{display:block;color:#7790a6;font-size:11px;line-height:1.8;margin-top:25px}@media(prefers-color-scheme:light){:root{color-scheme:light;background:#eff4fa;color:#172e45}main{background:#fff;border-color:#d8e2ee}p{color:#61788d}small{color:#647f97}}
-</style></head><body><main><div class="brand"><span class="ring" aria-hidden="true"></span>OMNICIO</div><h1>Вернёмся к данным,<br>когда появится сеть</h1><p>Для входа, портфеля и сохранения изменений необходимо соединение с интернетом.</p><a href="/">Попробовать снова</a><small>Финансовые данные и сообщения не хранятся в общем офлайн-кэше. Если соединение прервалось во время сохранения, после входа проверьте его результат.</small></main></body></html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#071421">
+  <link rel="stylesheet" href="/assets/app.css?build=__OMNICIO_BUILD__">
+  <title>Нет сети · OMNICIO</title>
+</head>
+<body class="offline-page">
+  <main class="offline-card">
+    <div class="brand"><span class="brand-ring" aria-hidden="true"></span>OMNICIO</div>
+    <h1>Вернёмся к данным,<br>когда появится сеть</h1>
+    <p>Для входа, портфеля и сохранения изменений необходимо соединение с интернетом.</p>
+    <a href="/" class="button primary">Попробовать снова</a>
+    <small>Финансовые данные и сообщения не хранятся в общем офлайн-кэше. Если соединение прервалось во время сохранения, после входа проверьте его результат.</small>
+  </main>
+</body>
+</html>

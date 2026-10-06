@@ -36,6 +36,8 @@ from .workspace import (
 
 _MAX_GOALS = 50
 _MAX_OPERATIONS = 50_000
+_MAX_HISTORY_POINTS = 366
+_HISTORY_PERIOD_DAYS = {"1d": 1, "1w": 7, "1m": 31, "3m": 93, "1y": 365}
 _FINANCIAL_AGE = timedelta(hours=36)
 _ACTIVITY = {
     "account_created": "Аккаунт создан",
@@ -63,14 +65,17 @@ class WorkspaceNotFound(LookupError):
 @dataclass(frozen=True, slots=True)
 class _Basis:
     connection: dict[str, Any] | None
-    snapshots: list[dict[str, Any]]
+    latest: dict[str, Any] | None
     operations: list[dict[str, Any]]
     watermark: datetime | None
     complete: bool
 
-    @property
-    def latest(self) -> dict[str, Any] | None:
-        return self.snapshots[-1] if self.snapshots else None
+
+@dataclass(frozen=True, slots=True)
+class _History:
+    snapshots: list[dict[str, Any]]
+    performance_snapshots: list[dict[str, Any]]
+    coverage: dict[str, Any]
 
 
 def _version(expected: int, actual: int) -> None:
@@ -154,17 +159,16 @@ class WorkspaceStore:
     def _basis(self, cur: Any, user_id: UUID) -> _Basis:
         connection = self._connection(cur, user_id)
         if connection is None:
-            return _Basis(None, [], [], None, False)
+            return _Basis(None, None, [], None, False)
         account_id, environment = connection["account_id"], connection["environment"]
         cur.execute(
-            "SELECT * FROM (SELECT id, captured_at, analysis_status, nav_rub, rub_cash_total, "
+            "SELECT id, captured_at, analysis_status, nav_rub, rub_cash_total, "
             "rub_cash_blocked, rub_cash_unblocked, evidence FROM portfolio_snapshots "
             "WHERE user_id = %s AND account_id = %s AND environment = %s "
-            "ORDER BY captured_at DESC, created_at DESC LIMIT 366) AS recent "
-            "ORDER BY captured_at, id",
+            "ORDER BY captured_at DESC, created_at DESC, id DESC LIMIT 1",
             (user_id, account_id, environment),
         )
-        snapshots = [dict(row) for row in cur.fetchall()]
+        snapshot = cur.fetchone()
         cur.execute(
             "SELECT last_complete_watermark, pending_cursor FROM broker_sync_state "
             "WHERE user_id = %s AND account_id = %s",
@@ -190,7 +194,81 @@ class WorkspaceStore:
             and not state["pending_cursor"]
             and len(operations) <= _MAX_OPERATIONS
         )
-        return _Basis(connection, snapshots, operations[:_MAX_OPERATIONS], watermark, complete)
+        return _Basis(connection, dict(snapshot) if snapshot is not None else None,
+                      operations[:_MAX_OPERATIONS], watermark, complete)
+
+    @staticmethod
+    def _history(
+        cur: Any, user_id: UUID, basis: _Basis, *, period: str,
+        from_at: datetime | None, now: datetime,
+    ) -> _History:
+        coverage: dict[str, Any] = {
+            "status": "empty", "period": period,
+            "requested_from": from_at.isoformat() if from_at is not None else None,
+            "requested_to": now.isoformat(),
+            "available_from": None, "available_to": None,
+            "total_stored_observations": 0, "total_observations": 0,
+            "returned_observations": 0, "returned_from": None, "returned_to": None,
+            "sampling": "all_observations", "max_points": _MAX_HISTORY_POINTS,
+        }
+        if basis.connection is None:
+            return _History([], [], coverage)
+        # One materialized source, one MVCC statement snapshot for chart points,
+        # exact financial endpoints and coverage. Only bounded minimal rows leave
+        # PostgreSQL; a long account history never loads full evidence documents.
+        cur.execute(
+            "WITH source AS MATERIALIZED ("
+            "SELECT id, captured_at, created_at, analysis_status, nav_rub::text AS nav_rub "
+            "FROM portfolio_snapshots "
+            "WHERE user_id = %(user)s AND account_id = %(account)s "
+            "AND environment = %(environment)s), "
+            "selected AS MATERIALIZED (SELECT * FROM source WHERE captured_at <= %(to)s "
+            "AND (%(from)s::timestamptz IS NULL OR captured_at >= %(from)s::timestamptz)), "
+            "ranked AS (SELECT selected.*, "
+            "row_number() OVER (ORDER BY captured_at, created_at, id) AS ordinal, "
+            "count(*) OVER () AS total, min(captured_at) OVER () AS first_at, "
+            "max(captured_at) OVER () AS last_at FROM selected), "
+            "bucketed AS (SELECT ranked.*, CASE WHEN total <= %(limit)s THEN ordinal "
+            "ELSE COALESCE(floor(extract(epoch FROM (captured_at - first_at)) / "
+            "NULLIF(extract(epoch FROM (last_at - first_at)), 0) * (%(limit)s - 2))::bigint, 0) "
+            "END AS bucket FROM ranked), "
+            "sample AS ((SELECT id, captured_at, created_at, analysis_status, nav_rub "
+            "FROM bucketed WHERE ordinal = 1) UNION "
+            "(SELECT DISTINCT ON (bucket) id, captured_at, created_at, analysis_status, nav_rub "
+            "FROM bucketed ORDER BY bucket, captured_at DESC, created_at DESC, id DESC)), "
+            "covered AS MATERIALIZED (SELECT * FROM selected "
+            "WHERE analysis_status = 'observed' AND captured_at <= %(watermark)s), "
+            "endpoints AS ((SELECT * FROM covered ORDER BY captured_at, created_at, id LIMIT 1) "
+            "UNION (SELECT * FROM covered "
+            "ORDER BY captured_at DESC, created_at DESC, id DESC LIMIT 1)) "
+            "SELECT (SELECT jsonb_agg(to_jsonb(sample) - 'created_at' "
+            "ORDER BY captured_at, created_at, id) FROM sample) AS snapshots, "
+            "(SELECT jsonb_agg(to_jsonb(endpoints) - 'created_at' "
+            "ORDER BY captured_at, created_at, id) FROM endpoints) AS performance_snapshots, "
+            "(SELECT count(*) FROM source) AS stored_total, "
+            "(SELECT min(captured_at) FROM source) AS available_from, "
+            "(SELECT max(captured_at) FROM source) AS available_to, "
+            "(SELECT count(*) FROM selected) AS total",
+            {"user": user_id, "account": basis.connection["account_id"],
+             "environment": basis.connection["environment"], "from": from_at,
+             "to": now, "watermark": basis.watermark, "limit": _MAX_HISTORY_POINTS},
+        )
+        row = cur.fetchone()
+        snapshots = row["snapshots"] or []
+        sampled = row["total"] > _MAX_HISTORY_POINTS
+        coverage.update(
+            status=("sampled" if sampled else "complete") if snapshots else "empty",
+            available_from=(row["available_from"].isoformat()
+                            if row["available_from"] is not None else None),
+            available_to=(row["available_to"].isoformat()
+                          if row["available_to"] is not None else None),
+            total_stored_observations=row["stored_total"], total_observations=row["total"],
+            returned_observations=len(snapshots),
+            returned_from=snapshots[0]["captured_at"] if snapshots else None,
+            returned_to=snapshots[-1]["captured_at"] if snapshots else None,
+            sampling="time_bucket_last" if sampled else "all_observations",
+        )
+        return _History(snapshots, row["performance_snapshots"] or [], coverage)
 
     @staticmethod
     def _goal_rows(cur: Any, user_id: UUID) -> list[dict[str, Any]]:
@@ -336,7 +414,7 @@ class WorkspaceStore:
             return True
 
     @staticmethod
-    def _overview(basis: _Basis, now: datetime) -> dict[str, Any]:
+    def _overview(basis: _Basis, history: _History, now: datetime) -> dict[str, Any]:
         latest = basis.latest
         result: dict[str, Any] = {
             "status": "pending" if basis.connection else "not_connected",
@@ -345,7 +423,13 @@ class WorkspaceStore:
             "blocked_cash_rub": None,
             "free_cash_rub": None,
             "observed_at": None,
-            "history": [],
+            "history": [
+                {"captured_at": row["captured_at"], "nav_rub": row["nav_rub"],
+                 "status": row["analysis_status"]}
+                for row in history.snapshots
+            ],
+            "history_coverage": history.coverage,
+            "basis": "latest_observation",
             "allocations": [],
         }
         if latest is None:
@@ -367,14 +451,6 @@ class WorkspaceStore:
             if latest["rub_cash_unblocked"] is not None
             else None,
             "observed_at": captured_at.isoformat() if captured_at is not None else None,
-            "history": [
-                {
-                    "captured_at": row["captured_at"].isoformat(),
-                    "nav_rub": decimal_text(amount(row["nav_rub"])),
-                    "status": row["analysis_status"],
-                }
-                for row in basis.snapshots
-            ],
             "allocations": analysis.get("classes", []),
         }
 
@@ -784,10 +860,17 @@ class WorkspaceStore:
                 cur, user_id, self._preferences(cur, user_id)["document"], now
             )
 
-    def dashboard(self, user_id: UUID) -> dict[str, Any]:
+    def dashboard(self, user_id: UUID, *, history_period: str = "all") -> dict[str, Any]:
+        if history_period != "all" and history_period not in _HISTORY_PERIOD_DAYS:
+            raise ValueError("workspace_history_period_invalid")
         now = datetime.now(UTC)
+        from_at = (now - timedelta(days=_HISTORY_PERIOD_DAYS[history_period])
+                   if history_period != "all" else None)
         with self._transaction(user_id) as cur:
             basis = self._basis(cur, user_id)
+            history = self._history(
+                cur, user_id, basis, period=history_period, from_at=from_at, now=now,
+            )
             preferences = self._preferences(cur, user_id)
             goals = [self._goal(row, basis, now) for row in self._goal_rows(cur, user_id)]
             self._sync_events(cur, user_id, basis, goals, now)
@@ -804,13 +887,16 @@ class WorkspaceStore:
                         }
                     ),
                 },
-                "overview": self._overview(basis, now),
-                "performance": portfolio_performance(
-                    basis.snapshots,
-                    basis.operations,
-                    watermark=basis.watermark,
-                    history_complete=basis.complete,
-                ),
+                "overview": self._overview(basis, history, now),
+                "performance": {
+                    **portfolio_performance(
+                        history.performance_snapshots, basis.operations,
+                        watermark=basis.watermark, history_complete=basis.complete,
+                    ),
+                    "period": history_period,
+                    "requested_from": history.coverage["requested_from"],
+                    "requested_to": history.coverage["requested_to"],
+                },
                 "income": self._income(basis, now),
                 "goals": {"items": goals},
                 "preferences": preferences,

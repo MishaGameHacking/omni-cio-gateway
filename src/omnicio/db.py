@@ -161,6 +161,14 @@ class Database:
                     AND to_regclass('public.instrument_issuer_map') IS NOT NULL
                     AND to_regclass('public.investment_profile_versions') IS NOT NULL
                     AND to_regclass('public.job_runs') IS NOT NULL
+                    AND to_regclass('public.job_runs_daily_identity_idx') IS NOT NULL
+                    AND to_regclass('public.job_runs_refresh_active_idx') IS NOT NULL
+                    AND to_regclass('public.job_runs_refresh_requested_idx') IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'job_runs'
+                          AND column_name = 'requested_at'
+                    )
                     AND to_regclass('public.portfolio_snapshots') IS NOT NULL
                     AND to_regclass('public.portfolio_snapshot_positions') IS NOT NULL
                     AND to_regclass('public.operation_observations') IS NOT NULL

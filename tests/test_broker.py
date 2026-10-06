@@ -35,14 +35,11 @@ from omnicio.tbank import (
     TBankMoney,
     TBankOrderBook,
     TBankOrderLevel,
-    TBankOrderPrice,
     TBankPortfolio,
     TBankPortfolioPosition,
     TBankPositions,
     TBankRating,
     TBankSandboxCancelResult,
-    TBankSandboxMaxLots,
-    TBankSandboxOrderState,
     TBankTokenRejected,
     TBankTradingStatus,
     TBankUnavailable,
@@ -278,81 +275,17 @@ def test_tbank_order_book_preserves_lot_depth_and_consistency() -> None:
     }
 
 
-def test_post_sandbox_order_is_limit_only_margin_false_and_idempotent() -> None:
-    client = TBankInvestClient()
-    request_id = "00000000-0000-0000-0000-000000000701"
-    response = FakeResponse(
-        {
-            "orderId": "exchange-order-1",
-            "orderRequestId": request_id,
-            "instrumentUid": "bond-uid",
-            "executionReportStatus": "EXECUTION_REPORT_STATUS_NEW",
-            "lotsRequested": "2",
-            "lotsExecuted": "0",
-            "totalOrderAmount": {"currency": "rub", "units": "0", "nano": 0},
-            "executedCommission": {"currency": "rub", "units": "0", "nano": 0},
-            "direction": "ORDER_DIRECTION_BUY",
-            "orderType": "ORDER_TYPE_LIMIT",
-        }
-    )
-
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
-        result = client.post_sandbox_order(
-            "t.fake-owner-credential-1234567890",
-            "sandbox",
-            "account-1",
-            "bond-uid",
-            quantity_lots=2,
-            price="101.25",
-            direction="buy",
-            request_id=request_id,
-            price_type="point",
-        )
-
-    assert result == TBankSandboxOrderState(
-        order_id="exchange-order-1",
-        order_request_id=request_id,
-        instrument_uid="bond-uid",
-        execution_report_status="EXECUTION_REPORT_STATUS_NEW",
-        lots_requested=2,
-        lots_executed=0,
-        total_order_amount=TBankMoney("RUB", "0"),
-        executed_commission=TBankMoney("RUB", "0"),
-        direction="ORDER_DIRECTION_BUY",
-        order_type="ORDER_TYPE_LIMIT",
-    )
-    request = urlopen.call_args.args[0]
-    assert request.full_url.endswith("SandboxService/PostSandboxOrder")
-    assert json.loads(request.data.decode()) == {
-        "quantity": "2",
-        "price": {"units": "101", "nano": 250000000},
-        "direction": "ORDER_DIRECTION_BUY",
-        "accountId": "account-1",
-        "orderType": "ORDER_TYPE_LIMIT",
-        "orderId": request_id,
-        "instrumentId": "bond-uid",
-        "timeInForce": "TIME_IN_FORCE_DAY",
-        "priceType": "PRICE_TYPE_POINT",
-        "confirmMarginTrade": False,
-    }
-
-
 def test_sandbox_mutation_rejects_production_environment_before_network() -> None:
     client = TBankInvestClient()
     with (
         patch("urllib.request.urlopen") as urlopen,
         pytest.raises(ValueError, match="sandbox environment"),
     ):
-        client.post_sandbox_order(
+        client.cancel_sandbox_order(
             "t.fake-owner-credential-1234567890",
             "prod",
             "account-1",
-            "bond-uid",
-            quantity_lots=1,
-            price="100",
-            direction="buy",
             request_id="00000000-0000-0000-0000-000000000702",
-            price_type="point",
         )
     urlopen.assert_not_called()
 
@@ -415,133 +348,6 @@ def test_cancel_sandbox_order_uses_request_id_not_exchange_guess() -> None:
         "orderId": request_id,
         "orderIdType": "ORDER_ID_TYPE_REQUEST",
     }
-
-
-def test_sandbox_max_lots_uses_non_margin_limits_only() -> None:
-    client = TBankInvestClient()
-    response = FakeResponse(
-        {
-            "buyLimits": {
-                "buyMoneyAmount": {"currency": "rub", "units": "5000", "nano": 0},
-                "buyMaxLots": "5",
-                "buyMaxMarketLots": "5",
-            },
-            "sellLimits": {"sellMaxLots": "3"},
-            "buyMarginLimits": {"buyMaxLots": "999"},
-            "sellMarginLimits": {"sellMaxLots": "999"},
-            "currency": "rub",
-        }
-    )
-    with patch("urllib.request.urlopen", return_value=response):
-        result = client.get_sandbox_max_lots(
-            "t.fake-owner-credential-1234567890",
-            "sandbox",
-            "account-1",
-            "bond-uid",
-            price="100",
-        )
-
-    assert result == TBankSandboxMaxLots(
-        buy_max_lots=5,
-        sell_max_lots=3,
-        buy_money_amount=TBankMoney("RUB", "5000"),
-        currency="RUB",
-    )
-
-
-def test_tbank_order_price_is_read_only_cost_estimate() -> None:
-    client = TBankInvestClient()
-    response = FakeResponse(
-        {
-            "totalOrderAmount": {
-                "currency": "rub",
-                "units": "1012",
-                "nano": 500000000,
-            },
-            "initialOrderAmount": {
-                "currency": "rub",
-                "units": "1000",
-                "nano": 0,
-            },
-            "executedCommissionRub": {
-                "currency": "rub",
-                "units": "2",
-                "nano": 500000000,
-            },
-            "serviceCommission": {
-                "currency": "rub",
-                "units": "0",
-                "nano": 0,
-            },
-            "dealCommission": {
-                "currency": "rub",
-                "units": "2",
-                "nano": 500000000,
-            },
-            "extraBond": {
-                "aciValue": {
-                    "currency": "rub",
-                    "units": "10",
-                    "nano": 0,
-                }
-            },
-        }
-    )
-
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
-        result = client.get_order_price(
-            "t.fake-owner-credential-1234567890",
-            "prod",
-            "account-1",
-            "bond-uid",
-            price="1000.25",
-            direction="buy",
-            quantity_lots=1,
-        )
-
-    assert result == TBankOrderPrice(
-        total_order_amount=TBankMoney("RUB", "1012.5"),
-        initial_order_amount=TBankMoney("RUB", "1000"),
-        executed_commission_rub=TBankMoney("RUB", "2.5"),
-        service_commission=TBankMoney("RUB", "0"),
-        deal_commission=TBankMoney("RUB", "2.5"),
-        bond_aci_value=TBankMoney("RUB", "10"),
-    )
-    request = urlopen.call_args.args[0]
-    assert request.full_url.endswith("OrdersService/GetOrderPrice")
-    assert json.loads(request.data.decode()) == {
-        "accountId": "account-1",
-        "instrumentId": "bond-uid",
-        "price": {"units": "1000", "nano": 250000000},
-        "direction": "ORDER_DIRECTION_BUY",
-        "quantity": "1",
-    }
-
-
-def test_sandbox_order_price_uses_read_only_sandbox_method() -> None:
-    client = TBankInvestClient()
-    response = FakeResponse(
-        {
-            "totalOrderAmount": {"currency": "rub", "units": "100", "nano": 0},
-            "initialOrderAmount": {"currency": "rub", "units": "99", "nano": 0},
-            "executedCommissionRub": {"currency": "rub", "units": "1", "nano": 0},
-            "serviceCommission": {"currency": "rub", "units": "0", "nano": 0},
-            "dealCommission": {"currency": "rub", "units": "1", "nano": 0},
-        }
-    )
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
-        client.get_order_price(
-            "t.fake-owner-credential-1234567890",
-            "sandbox",
-            "account-1",
-            "share-uid",
-            price="99",
-            direction="sell",
-            quantity_lots=2,
-        )
-    request = urlopen.call_args.args[0]
-    assert request.full_url.endswith("SandboxService/GetSandboxOrderPrice")
-    assert json.loads(request.data.decode())["direction"] == "ORDER_DIRECTION_SELL"
 
 
 @pytest.mark.parametrize(
@@ -1488,7 +1294,6 @@ class FakeTBank:
         )
 
 
-
 class FakeDatabase:
     def __init__(self) -> None:
         self.record: TBankConnectionRecord | None = None
@@ -1539,14 +1344,9 @@ def test_broker_sandbox_mutation_guard_rejects_prod_connection() -> None:
     )
 
     with pytest.raises(BrokerSandboxRequired):
-        service.post_sandbox_order(
+        service.cancel_sandbox_order(
             owner_id,
-            "bond-uid",
-            quantity_lots=1,
-            price="100",
-            direction="buy",
             request_id="00000000-0000-0000-0000-000000000705",
-            price_type="point",
         )
 
 
@@ -2084,3 +1884,13 @@ def test_strategy_read_uses_shared_admission_and_releases_on_error(monkeypatch):
         service.strategy_observation(owner)
     assert state["released"] is True
     read.assert_called_once_with(owner)
+
+
+def test_missing_portfolio_return_is_unknown_instead_of_a_fabricated_zero() -> None:
+    payload = {
+        "positions": [],
+        "totalAmountPortfolio": {"currency": "rub", "units": "100", "nano": 0},
+    }
+    with patch.object(TBankInvestClient, "_post", return_value=payload):
+        result = TBankInvestClient().get_portfolio("synthetic-token", "prod", "synthetic-account")
+    assert result.expected_yield_percent is None

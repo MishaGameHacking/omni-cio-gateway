@@ -125,6 +125,12 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         "AND to_regclass('public.instrument_issuer_map') IS NOT NULL "
         "AND to_regclass('public.investment_profile_versions') IS NOT NULL "
         "AND to_regclass('public.job_runs') IS NOT NULL "
+        "AND to_regclass('public.job_runs_daily_identity_idx') IS NOT NULL "
+        "AND to_regclass('public.job_runs_refresh_active_idx') IS NOT NULL "
+        "AND to_regclass('public.job_runs_refresh_requested_idx') IS NOT NULL "
+        "AND EXISTS ( SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = 'job_runs' "
+        "AND column_name = 'requested_at' ) "
         "AND to_regclass('public.portfolio_snapshots') IS NOT NULL "
         "AND to_regclass('public.portfolio_snapshot_positions') IS NOT NULL "
         "AND to_regclass('public.operation_observations') IS NOT NULL "
@@ -658,7 +664,7 @@ for name in ("privacy.html", "consent.html", "terms.html"):
 PY
 chmod 0644 "$WEB_RELEASE/legal/privacy.html" "$WEB_RELEASE/legal/consent.html" "$WEB_RELEASE/legal/terms.html"
 
-python3 - "$RELEASE/pyproject.toml" "$SHA" "$RELEASE/web/index.html" "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" "$RELEASE/web/sw.js" "$WEB_RELEASE/sw.js" <<'PY'
+python3 - "$RELEASE/pyproject.toml" "$SHA" "$RELEASE/web/index.html" "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" "$RELEASE/web/sw.js" "$WEB_RELEASE/sw.js" "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html" <<'PY'
 import json
 import pathlib
 import sys
@@ -684,12 +690,14 @@ pathlib.Path(sys.argv[5]).write_text(
     + ";\n",
     encoding="utf-8",
 )
-worker_template = pathlib.Path(sys.argv[6]).read_text(encoding="utf-8")
-if "__OMNICIO_BUILD__" not in worker_template:
-    raise SystemExit("service worker release marker is missing")
-pathlib.Path(sys.argv[7]).write_text(
-    worker_template.replace("__OMNICIO_BUILD__", build), encoding="utf-8",
-)
+for source_index in (6, 8):
+    source = pathlib.Path(sys.argv[source_index])
+    template = source.read_text(encoding="utf-8")
+    if "__OMNICIO_BUILD__" not in template:
+        raise SystemExit(f"release marker is missing: {source.name}")
+    pathlib.Path(sys.argv[source_index + 1]).write_text(
+        template.replace("__OMNICIO_BUILD__", build), encoding="utf-8",
+    )
 PY
 chmod 0644 "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" "$WEB_RELEASE/sw.js"
 
@@ -1326,10 +1334,10 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         body, content_type = fetch_public(f"{path}?build={release_sha[:12]}", context)
         if content_type not in content_types or marker not in body:
             raise InfraError(f"Public runtime asset verification failed: {path}")
-        if path == "/sw.js" and (
+        if path in {"/sw.js", "/offline.html"} and (
             release_sha[:12].encode() not in body or b"__OMNICIO_BUILD__" in body
         ):
-            raise InfraError("Public service worker build does not match release")
+            raise InfraError(f"Public runtime asset build does not match release: {path}")
 
 
 def verify_public(release_sha: str) -> None:

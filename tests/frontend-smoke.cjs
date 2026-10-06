@@ -116,6 +116,26 @@ const makeFixture = mode => {
     maxActiveWrites: 0,
     holdWorkspace: false,
     heldWorkspace: [],
+    refreshQueued: false,
+    refreshPollsRemaining: 0,
+    refreshStatus: {
+      status: "idle",
+      job_id: null,
+      requested_at: null,
+      started_at: null,
+      finished_at: null,
+      observed_at: stamp,
+      snapshot_saved: false,
+      history_status: null,
+      history_pages: 0,
+      can_refresh: true,
+      retry_after_seconds: 0,
+      cooldown_until: null,
+      reason: null
+    },
+    executions: [],
+    mandate: null,
+    recoveryLostAck: false,
     connected: true
   };
 };
@@ -273,6 +293,177 @@ const sendJSON = (response, value, status = 200) => {
   response.setHeader("Content-Type", "application/json");
   response.end(JSON.stringify(value));
 };
+const testApiHandlers = [{
+  matches: ({
+    path
+  }) => path === "/api/auth/config",
+  run: serveTestAuthConfig
+}, {
+  matches: ({
+    path
+  }) => path === "/api/strategy/catalog",
+  run: serveTestStrategyCatalog
+}, {
+  matches: ({
+    path
+  }) => path === "/api/public/market-reference",
+  run: serveTestPublicMarketReference
+}, {
+  matches: ({
+    path
+  }) => path === "/api/public/news",
+  run: serveTestPublicNews
+}, {
+  matches: ({
+    path
+  }) => /^\/api\/auth\/(tid|vkid)\/start$/.test(path),
+  run: serveTestGuard5
+}, {
+  matches: ({
+    fixture
+  }) => fixture.mode === "guest",
+  run: serveTestGuard6
+}, {
+  matches: ({
+    request,
+    fixture
+  }) => request.headers["x-omnicio-profile"] && request.headers["x-omnicio-profile"] !== fixture.user,
+  run: serveTestGuard7
+}, {
+  matches: ({
+    method,
+    request,
+    fixture
+  }) => !["GET", "HEAD"].includes(method) && (request.headers["x-omnicio-profile"] !== fixture.user || request.headers.origin !== `http://${request.headers.host}`),
+  run: serveTestGuard8
+}, {
+  matches: ({
+    path
+  }) => path === "/api/me",
+  run: serveTestMe
+}, {
+  matches: ({
+    path
+  }) => path === "/api/auth/identities",
+  run: serveTestAuthIdentities
+}, {
+  matches: ({
+    path
+  }) => path === "/api/workspace",
+  run: serveTestWorkspace
+}, {
+  matches: ({
+    path
+  }) => path === "/api/workspace/refresh",
+  run: serveTestRefresh
+}, {
+  matches: ({
+    path
+  }) => path.startsWith("/api/portfolio/executions"),
+  run: serveTestExecutions
+}, {
+  matches: ({
+    path
+  }) => path === "/api/portfolio/live-execution/mandate",
+  run: serveTestMandate
+}, {
+  matches: ({
+    path
+  }) => path === "/api/preferences" || path === "/api/profile/strategy",
+  run: serveTestPreferences
+}, {
+  matches: ({
+    path
+  }) => path === "/api/profile/investment",
+  run: serveTestProfileInvestment
+}, {
+  matches: ({
+    path
+  }) => path === "/api/profile/balancing",
+  run: serveTestProfileBalancing
+}, {
+  matches: ({
+    path
+  }) => path === "/api/profile/strategy/account-assessment",
+  run: serveTestProfileStrategyAccountAssessment
+}, {
+  matches: ({
+    path
+  }) => path === "/api/profile/strategy/research",
+  run: serveTestProfileStrategyResearch
+}, {
+  matches: ({
+    path
+  }) => path === "/api/portfolio/visualization",
+  run: serveTestPortfolioVisualization
+}, {
+  matches: ({
+    path
+  }) => path.startsWith("/api/portfolio/instruments/"),
+  run: serveTestPortfolioInstruments
+}, {
+  matches: ({
+    path
+  }) => path.startsWith("/api/market/instruments/") && path.endsWith("/facts"),
+  run: serveTestMarketInstruments
+}, {
+  matches: ({
+    path
+  }) => path.startsWith("/api/market/instruments/"),
+  run: serveTestMarketInstruments2
+}, {
+  matches: ({
+    path
+  }) => path === "/api/broker/tbank/instruments/search",
+  run: serveTestBrokerTbankInstrumentsSearch
+}, {
+  matches: ({
+    path
+  }) => path === "/api/broker/tbank/analysis",
+  run: serveTestBrokerTbankAnalysis
+}, {
+  matches: ({
+    path
+  }) => path === "/api/broker/tbank",
+  run: serveTestBrokerTbank
+}, {
+  matches: ({
+    path
+  }) => path === "/api/broker/tbank/accounts",
+  run: serveTestBrokerTbankAccounts
+}, {
+  matches: ({
+    path,
+    method
+  }) => path === "/api/goals" && method === "GET",
+  run: serveTestGoals
+}, {
+  matches: ({
+    path,
+    method
+  }) => path === "/api/goals" && method === "POST",
+  run: serveTestGoals2
+}, {
+  matches: ({
+    path
+  }) => path.startsWith("/api/goals/"),
+  run: serveTestGoals3
+}, {
+  matches: ({
+    path
+  }) => path === "/api/events" || path === "/api/events/read",
+  run: serveTestEvents
+}, {
+  matches: ({
+    path
+  }) => path === "/api/assistant/status",
+  run: serveTestAssistantStatus
+}, {
+  matches: ({
+    path
+  }) => path === "/api/auth/logout" || path === "/api/account/delete",
+  run: serveTestAuthLogout
+}];
 const routeAPI = async (request, response, url, fixture, body) => {
   const path = url.pathname;
   const method = request.method;
@@ -283,303 +474,38 @@ const routeAPI = async (request, response, url, fixture, body) => {
     profile: request.headers["x-omnicio-profile"],
     origin: request.headers.origin
   });
-  if (path === "/api/auth/config") return sendJSON(response, {
-    login_enabled: true,
-    tid_enabled: true,
-    tid_configured: true,
-    auth_provider: "vkid",
-    registration_enabled: false
-  });
-  if (path === "/api/strategy/catalog") return sendJSON(response, catalog);
-  if (path === "/api/public/market-reference") return sendJSON(response, reference);
-  if (path === "/api/public/news") return sendJSON(response, {
-    items: [{
-      id: "news-fixture",
-      title: "Тестовая новость официального источника",
-      url: "https://www.cbr.ru/press/",
-      published_at: stamp,
-      source: "Банк России",
-      category: "market"
-    }],
-    fetched_at: stamp,
-    freshness: "fresh"
-  });
-  if (/^\/api\/auth\/(tid|vkid)\/start$/.test(path)) return sendJSON(response, {
-    authorize_url: "https://untrusted.invalid/authorize"
-  });
-  if (fixture.mode === "guest") return sendJSON(response, {
-    detail: "authentication required"
-  }, 401);
-  if (request.headers["x-omnicio-profile"] && request.headers["x-omnicio-profile"] !== fixture.user) return sendJSON(response, {
-    detail: "profile_context_changed"
-  }, 409);
-  if (!["GET", "HEAD"].includes(method) && (request.headers["x-omnicio-profile"] !== fixture.user || request.headers.origin !== `http://${request.headers.host}`)) return sendJSON(response, {
-    detail: "profile_context_required"
-  }, 409);
-  if (path === "/api/me") return sendJSON(response, {
-    public_id: fixture.user,
-    status: "active",
-    role: "user"
-  });
-  if (path === "/api/auth/identities") return sendJSON(response, {
-    providers: ["vkid"],
-    available_providers: {
-      tid: true,
-      vkid: true
-    }
-  });
-  if (path === "/api/workspace") {
-    const result = workspace(fixture);
-    if (fixture.holdWorkspace) await new Promise(release => fixture.heldWorkspace.push(release));
-    return sendJSON(response, fixture.failWorkspace ? {
-      detail: "synthetic_failure"
-    } : result, fixture.failWorkspace ? 503 : 200);
-  }
-  if (path === "/api/preferences" || path === "/api/profile/strategy") {
-    const strategy = path.endsWith("strategy");
-    const current = strategy ? fixture.selection : fixture.prefs;
-    if (method === "GET") {
-      if (!strategy && fixture.failPreferences || strategy && fixture.failStrategyLoad) return sendJSON(response, {
-        detail: "synthetic_load_failure"
-      }, 503);
-      return sendJSON(response, reorderJSON(strategy ? {
-        public_id: fixture.user,
-        selection: clone(fixture.selection)
-      } : clone(fixture.prefs)));
-    }
-    fixture.activeWrites += 1;
-    fixture.maxActiveWrites = Math.max(fixture.maxActiveWrites, fixture.activeWrites);
-    try {
-      if (fixture.mutationDelay) await delay(fixture.mutationDelay);
-      if (fixture.conflict || body.expected_version !== current.version) return sendJSON(response, {
-        detail: "settings_version_conflict"
-      }, 409);
-      if (strategy) assert.equal(body.expected_public_id, fixture.user);
-      const saved = {
-        version: current.version + 1,
-        document: clone(body.document)
-      };
-      if (strategy) {
-        saved.updated_at = stamp;
-        saved.custom_document = body.intent === "edit" ? clone(body.document) : fixture.selection.custom_document;
-        fixture.selection = saved;
-      } else fixture.prefs = saved;
-      if (fixture.lostAck) {
-        fixture.lostAck = false;
-        return sendJSON(response, {
-          detail: "synthetic_lost_ack"
-        }, 503);
-      }
-      return sendJSON(response, strategy ? {
-        public_id: fixture.user,
-        selection: saved
-      } : saved);
-    } finally {
-      fixture.activeWrites -= 1;
-    }
-  }
-  if (path === "/api/profile/investment") return sendJSON(response, {
-    public_id: fixture.user,
-    profile: {
-      version: 1,
-      ...fixture.selection.document.profile
-    }
-  });
-  if (path === "/api/profile/balancing") return sendJSON(response, {
-    public_id: fixture.user,
-    policy: {
-      version: 1,
-      ...fixture.selection.document.policy
-    }
-  });
-  if (path === "/api/profile/strategy/account-assessment") return sendJSON(response, {
-    public_id: fixture.user,
-    strategy_version: fixture.selection.version,
-    status: "assessed",
-    nav_rub: "150000.25",
-    captured_at: stamp,
-    checks: [{
-      title: "Проверка доли",
-      state: "pass",
-      detail: "Изолированные данные теста",
-      value: "20",
-      limit: "30"
-    }],
-    probability_of_profit: null,
-    probability_reason: "Не является прогнозом"
-  });
-  if (path === "/api/profile/strategy/research") return sendJSON(response, {
-    status: "insufficient_data",
-    reason: "Нет достаточной истории в изолированном тесте",
-    probability_of_profit: null
-  });
-  if (path === "/api/portfolio/visualization") return sendJSON(response, {
-    status: "observed",
-    history: overview().history,
-    latest: {
-      captured_at: stamp,
-      ...overview(),
-      positions: fixture.connected ? positions : []
-    }
-  });
-  if (path.startsWith("/api/portfolio/instruments/")) return sendJSON(response, {
-    status: "observed",
-    latest: {
-      ...positions[0],
-      captured_at: stamp
-    },
-    sources: [],
-    payouts: [],
-    history: []
-  });
-  if (path.startsWith("/api/market/instruments/") && path.endsWith("/facts")) return sendJSON(response, {
-    instrument_uid: "synthetic-a",
-    currency: "rub",
-    name: "Тестовая компания A",
-    ticker: "SYNA",
-    instrument_type: "share",
-    observed_at: stamp,
-    status: "partial",
-    metrics: [{
-      key: "price_earnings_ttm",
-      label: "P/E за 12 месяцев",
-      value: "11.25",
-      unit: "×",
-      period: "Последние 12 месяцев",
-      source_url: "https://developer.tbank.ru/invest/api/instruments-service"
-    }],
-    missing_requirements: ["roe_percent"],
-    limitations: ["Изолированные данные теста"]
-  });
-  if (path.startsWith("/api/market/instruments/")) return sendJSON(response, {
-    instrument_uid: "synthetic-a",
-    period: url.searchParams.get("period"),
-    source: "Synthetic exchange",
-    observed_at: stamp,
-    last_price: "250.25",
-    quote_time: stamp,
-    quote_status: "fresh",
-    trading_status: "SECURITY_TRADING_STATUS_NORMAL_TRADING",
-    candles: [{
-      time: day(3),
-      open: "245",
-      high: "249",
-      low: "242",
-      close: "248",
-      volume_lots: 10
-    }, {
-      time: day(2),
-      open: "248",
-      high: "251",
-      low: "247",
-      close: "250.25",
-      volume_lots: 15
-    }]
-  });
-  if (path === "/api/broker/tbank/instruments/search") return sendJSON(response, {
-    items: [{
-      uid: "synthetic-a",
-      name: "Тестовая компания A",
-      ticker: "SYNA",
-      instrument_type: "share"
-    }]
-  });
-  if (path === "/api/broker/tbank/analysis") return sendJSON(response, {
-    analysis: {
-      security_count: 2,
-      valued_security_count: 2,
-      sector_coverage_percent: "100",
-      observations: []
-    },
-    refreshed_at: stamp
-  });
-  if (path === "/api/broker/tbank") {
-    if (method === "DELETE") fixture.connected = false;
-    if (method === "PUT") fixture.connected = true;
-    return sendJSON(response, connection(fixture));
-  }
-  if (path === "/api/broker/tbank/accounts") return sendJSON(response, {
-    accounts: [{
-      id: "synthetic-account",
-      name: "Тестовый счёт",
-      type: "broker",
-      status: "open"
-    }]
-  });
-  if (path === "/api/goals" && method === "GET") return sendJSON(response, {
-    items: fixture.goals
-  });
-  if (path === "/api/goals" && method === "POST") {
-    const goal = {
-      id: `synthetic-goal-${fixture.goals.length + 1}`,
-      version: 1,
-      ...body.document,
-      created_at: stamp,
-      progress: {
-        status: "available",
-        amount_rub: body.document.manual_amount_rub,
-        percent: "10",
-        remaining_rub: "900",
-        source: "manual",
-        as_of: stamp
-      }
-    };
-    fixture.goals.push(goal);
-    return sendJSON(response, goal);
-  }
-  if (path.startsWith("/api/goals/")) {
-    const id = path.split("/").at(-1);
-    const current = fixture.goals.find(goal => goal.id === id);
-    if (!current || body.expected_version !== current.version) return sendJSON(response, {
-      detail: "settings_version_conflict"
-    }, 409);
-    if (method === "DELETE") {
-      fixture.goals = fixture.goals.filter(goal => goal.id !== id);
-      return sendJSON(response, {
-        deleted: true
-      });
-    }
-    Object.assign(current, body.document, {
-      version: current.version + 1
-    });
-    return sendJSON(response, current);
-  }
-  if (path === "/api/events" || path === "/api/events/read") {
-    if (method === "POST") fixture.events.filter(item => body.ids.includes(item.id)).forEach(item => {
-      item.read_at = stamp;
-    });
-    return sendJSON(response, eventDTO(fixture));
-  }
-  if (path === "/api/assistant/status") return sendJSON(response, {
-    configured: false,
-    provider: "ollama",
-    model: null,
-    context_supported: true,
-    max_message_length: 4000
-  });
-  if (path === "/api/auth/logout" || path === "/api/account/delete") {
-    fixture.mode = "guest";
-    response.statusCode = 204;
-    return response.end();
+  const context = {
+    request,
+    response,
+    url,
+    fixture,
+    body,
+    path,
+    method
+  };
+  const handler = testApiHandlers.find(candidate => candidate.matches(context));
+  if (handler) {
+    return handler.run(context);
   }
   return sendJSON(response, {
     detail: "synthetic_route_missing"
   }, 404);
+};
+const serveTestApiRequest = async (request, response, url) => {
+  const referrer = new URL(request.headers.referer || "http://127.0.0.1/?case=guest");
+  const key = referrer.searchParams.get("case") || "guest";
+  if (!fixtures.has(key)) fixtures.set(key, makeFixture(key.startsWith("guest") ? "guest" : "signed"));
+  const parts = [];
+  for await (const part of request) parts.push(part);
+  const body = parts.length ? JSON.parse(Buffer.concat(parts).toString()) : null;
+  return await routeAPI(request, response, url, fixtures.get(key), body);
 };
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, "http://127.0.0.1");
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
-    if (url.pathname.startsWith("/api/")) {
-      const referrer = new URL(request.headers.referer || "http://127.0.0.1/?case=guest");
-      const key = referrer.searchParams.get("case") || "guest";
-      if (!fixtures.has(key)) fixtures.set(key, makeFixture(key.startsWith("guest") ? "guest" : "signed"));
-      const parts = [];
-      for await (const part of request) parts.push(part);
-      const body = parts.length ? JSON.parse(Buffer.concat(parts).toString()) : null;
-      return await routeAPI(request, response, url, fixtures.get(key), body);
-    }
+    if (url.pathname.startsWith("/api/")) return await serveTestApiRequest(request, response, url);
     if (url.pathname === "/version.js") {
       response.setHeader("Content-Type", "text/javascript");
       response.end(`window.OMNICIO_RELEASE=${JSON.stringify({
@@ -778,6 +704,7 @@ const runBrowser = async base => {
     exited = true;
   });
   let client;
+  let captureFailure;
   try {
     await until(() => websocket || exited, "Chromium start");
     assert.ok(websocket, "Chromium must expose its debugging endpoint");
@@ -795,7 +722,7 @@ const runBrowser = async base => {
     await send("Page.enable");
     await send("Runtime.enable");
     await send("Page.addScriptToEvaluateOnNewDocument", {
-      source: 'window.__browserErrors=[];window.__cspViolations=[];addEventListener("error",e=>window.__browserErrors.push(e.message));addEventListener("unhandledrejection",e=>window.__browserErrors.push(String(e.reason)));addEventListener("securitypolicyviolation",e=>window.__cspViolations.push(e.effectiveDirective));'
+      source: 'window.__browserErrors=[];window.__cspViolations=[];addEventListener("error",e=>window.__browserErrors.push(e.error?.stack||e.message));addEventListener("unhandledrejection",e=>window.__browserErrors.push(e.reason?.stack||String(e.reason)));addEventListener("securitypolicyviolation",e=>window.__cspViolations.push(e.effectiveDirective));'
     });
     const evaluate = async expression => {
       const result = await send("Runtime.evaluate", {
@@ -812,7 +739,12 @@ const runBrowser = async base => {
       if(element.closest('#app-sidebar')?.inert)document.querySelector('#app-menu-toggle').click();
       element.click();
     })()`);
-    const wait = (expression, label) => until(() => evaluate(expression), label || expression);
+    const wait = (expression, label) => until(async () => {
+      const result = await evaluate(`({ready:Boolean(${expression}),errors:window.__browserErrors||[],csp:window.__cspViolations||[]})`);
+      assert.deepEqual(result.errors, [], `${label}: runtime errors before state acknowledgement`);
+      assert.deepEqual(result.csp, [], `${label}: CSP violations before state acknowledgement`);
+      return result.ready;
+    }, label || expression);
     const fieldValue = (form, name, value) => evaluate(`(() => {const input=document.querySelector(${JSON.stringify(form)}).elements[${JSON.stringify(name)}];input.value=${JSON.stringify(value)};input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
     const checkLayout = async label => {
       const data = await evaluate('({width:innerWidth,scroll:document.documentElement.scrollWidth,body:document.body.scrollWidth,errors:window.__browserErrors,csp:window.__cspViolations})');
@@ -827,174 +759,40 @@ const runBrowser = async base => {
       });
       writeFileSync(join(artifacts, name), Buffer.from(result.data, "base64"));
     };
+    captureFailure = async error => {
+      const documentState = await evaluate('({url:location.href,ready:document.readyState,errors:window.__browserErrors,csp:window.__cspViolations,bodyText:document.body?.innerText,bodyHTML:document.body?.innerHTML})');
+      const requests = Object.fromEntries([...fixtures].map(([key, fixture]) => [key, fixture.requests.slice(-30)]));
+      const debug = {
+        failure: error.stack || String(error),
+        document: documentState,
+        requests
+      };
+      writeFileSync(join(artifacts, "failure-state.json"), JSON.stringify(debug, null, 2));
+      await screenshot("failure-state.png");
+      console.error(JSON.stringify({
+        failure: error.message,
+        url: documentState.url,
+        errors: documentState.errors,
+        csp: documentState.csp,
+        bodyText: documentState.bodyText?.slice(0, 3500),
+        requests
+      }, null, 2));
+    };
     const widths = [1440, 1366, 768, 390, 320];
     for (const round of [1, 2]) {
       for (const width of widths) {
-        await send("Emulation.setDeviceMetricsOverride", {
+        await exerciseViewport({
+          send,
           width,
-          height: 900,
-          deviceScaleFactor: 1,
-          mobile: width < 680
+          round,
+          base,
+          wait,
+          checkLayout,
+          screenshot,
+          click,
+          evaluate,
+          fieldValue
         });
-        const guestKey = `guest-${round}-${width}`;
-        await send("Page.navigate", {
-          url: `${base}?case=${guestKey}`
-        });
-        await wait('document.querySelectorAll(".public-strategy-card").length===10', "Public canonical catalog");
-        await checkLayout(`public ${round}/${width}`);
-        await screenshot(`public-${round}-${width}.png`);
-        await click('[data-action="tour"]');
-        await wait('!document.querySelector("#app-shell").hidden', "Product tour");
-        assert.equal(await evaluate('document.querySelectorAll("#sidebar-nav a").length'), 10);
-        assert.equal(await evaluate('document.querySelectorAll("#mobile-nav a").length'), 4);
-        await checkLayout(`tour ${round}/${width}`);
-        assert.equal(fixtures.get(guestKey).requests.filter(item => item.path.startsWith("/api/broker/") || !["GET", "HEAD"].includes(item.method)).length, 0, "Tour cannot read private broker data or mutate anything");
-        if (round === 2) {
-          await click('#tour-notice [data-action="login"]');
-          await checkLayout(`auth ${round}/${width}`);
-          await screenshot(`auth-${round}-${width}.png`);
-          assert.equal(await evaluate('document.querySelectorAll("#auth-form input[required]").length'), 4, "Both OAuth providers require the four consent choices");
-          assert.equal(await evaluate('document.querySelectorAll("#auth-form input[type=password],#auth-form input[type=email]").length'), 0, "Authentication cannot present an unsupported password flow");
-          await evaluate('for(const input of document.querySelectorAll("#auth-form input"))input.checked=true');
-          await click("#tid-login");
-          await wait('document.querySelector("#auth-message").textContent.includes("не прошёл проверку")', "OAuth redirect allowlist");
-          assert.ok((await evaluate("location.href")).startsWith(base), "Untrusted provider URL cannot navigate the page");
-          await click('#auth-dialog [data-close-dialog]');
-        }
-        const key = `signed-${round}-${width}`;
-        fixtures.set(key, makeFixture("signed"));
-        const fixture = fixtures.get(key);
-        await send("Page.navigate", {
-          url: `${base}?case=${key}`
-        });
-        await wait('!document.querySelector("#app-shell").hidden && document.querySelector("#profile-name").textContent.includes("Тестовый") && document.querySelector("#view-home .asset-table")', "Authenticated dashboard");
-        await checkLayout(`dashboard ${round}/${width}`);
-        await screenshot(`dashboard-${round}-${width}.png`);
-        assert.equal(await evaluate('document.querySelector("#view-home .metric-card .main-value").textContent'), "—", "Unknown return must not become zero or NAV-growth percentage");
-        assert.ok(fixture.requests.filter(item => item.path === "/api/workspace").every(item => item.profile === fixture.user), "Private data requests carry the viewed server profile precondition");
-        if (width <= 960) {
-          await click("#app-menu-toggle");
-          await wait('document.querySelector("#app-sidebar").dataset.open==="true"', "Mobile drawer");
-          assert.equal(await evaluate('document.querySelector(".app-main").inert'), true, "Drawer traps interaction outside its surface");
-          await send("Input.dispatchKeyEvent", {
-            type: "keyDown",
-            key: "Escape",
-            code: "Escape",
-            windowsVirtualKeyCode: 27
-          });
-          await wait('document.querySelector("#drawer-backdrop").hidden', "Drawer Escape");
-          assert.equal(await evaluate('document.activeElement.id'), "app-menu-toggle", "Drawer restores focus");
-        }
-        for (const view of ["portfolio", "market", "strategies", "goals", "analytics", "events", "profile", "settings", "assistant"]) {
-          await click(`#sidebar-nav [data-route="${view}"]`);
-          await wait(`!document.querySelector('#view-${view}').hidden && document.querySelector('#view-${view}').textContent.length>20`, view);
-          if (view === "strategies") await wait('document.querySelector("#strategy-form") && !document.querySelector("#view-strategies .loading-panel")', "Strategy loaded");
-          if (view === "settings") await wait('document.querySelector("#preferences-form")', "Server preferences loaded");
-          await delay(80);
-          await checkLayout(`${view} ${round}/${width}`);
-          if (width <= 390) await screenshot(`${view}-${round}-${width}.png`);
-        }
-        assert.equal(await evaluate('document.querySelector("#assistant-form textarea").disabled'), true, "Disconnected AI cannot fabricate answers");
-        await click('#sidebar-nav [data-route="market"]');
-        await fieldValue("#global-search-form", "q", "SYNA");
-        await evaluate('document.querySelector("#global-search-form").requestSubmit()');
-        await wait('document.querySelector("#view-search .search-result")', "Real search response");
-        await click('#view-search [data-asset]');
-        await wait('document.querySelector("#view-asset .chart-svg")', "Asset chart");
-        await click('#view-asset [data-asset-tab="metrics"]');
-        assert.ok(await evaluate('document.querySelector("#view-asset .asset-tab-content").textContent.includes("Максимум периода")'));
-        await click('#view-asset [data-asset-tab="chart"]');
-        await click('#view-asset [data-period="all"]');
-        await wait('document.querySelector("#view-asset .chart-svg") && !document.querySelector("#view-asset .loading-panel")', "All available market history");
-        assert.ok(fixture.requests.some(item => item.path.startsWith("/api/market/instruments/")), "Asset tabs consume real API contracts");
-        await evaluate('document.querySelector("#view-asset .chart-svg").focus()');
-        const before = await evaluate('document.querySelector("#view-asset .chart-readout").textContent');
-        await send("Input.dispatchKeyEvent", {
-          type: "keyDown",
-          key: "Home",
-          code: "Home",
-          windowsVirtualKeyCode: 36
-        });
-        assert.notEqual(await evaluate('document.querySelector("#view-asset .chart-readout").textContent'), before, "Keyboard chart inspection changes the selected real observation");
-        await checkLayout(`asset ${round}/${width}`);
-        await screenshot(`asset-${round}-${width}.png`);
-        await click('#view-asset [data-watch]');
-        await until(() => fixture.prefs.document.watchlist.length === 1, "Persistent watchlist");
-        await wait('document.querySelector("#view-asset [data-watch]").getAttribute("aria-pressed")==="true"', "Saved favorite");
-        await click('#sidebar-nav [data-route="strategies"]');
-        await wait('document.querySelector("#strategy-form")', "Strategy form");
-        fixture.mutationDelay = 150;
-        await click('[data-select-strategy="conservative"]');
-        await until(() => fixture.selection.document.base_preset_id === "conservative", "Persist strategy selection");
-        await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Strategy saved acknowledgement");
-        assert.equal(fixture.selection.document.profile.reserve_rub, "123456789.12345678", "Selecting a preset preserves exact private amounts");
-        const reserveControl = '[data-step-field="strategy.profile.reserve_rub"][data-step-direction="1"]';
-        await click(reserveControl);
-        await until(() => fixture.selection.document.profile.reserve_rub === "123457789.12345678", "Exact decimal step");
-        await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Saved custom parameters");
-        assert.equal(fixture.selection.document.customized, true);
-        await screenshot(`strategies-${round}-${width}.png`);
-        assert.equal(fixture.maxActiveWrites, 1, "Versioned autosave uses a single in-flight mutation");
-        await click('#sidebar-nav [data-route="goals"]');
-        await click('#view-goals [data-action="goal-create"]');
-        await fieldValue("#goal-form", "title", "Тестовая цель");
-        await fieldValue("#goal-form", "target_amount_rub", "1000");
-        await fieldValue("#goal-form", "progress_source", "manual");
-        await fieldValue("#goal-form", "manual_amount_rub", "100");
-        await click('#goal-form [type="submit"]');
-        await until(() => fixture.goals.length === 1, "Create goal on server");
-        await wait('!document.querySelector("#workspace-dialog").open', "Goal saved");
-        assert.equal(fixture.goals[0].manual_amount_rub, "100");
-        await click('#view-goals [data-goal-edit]');
-        await fieldValue("#goal-form", "title", "Изменённая тестовая цель");
-        await click('#goal-form [type="submit"]');
-        await until(() => fixture.goals[0].version === 2, "Versioned goal update");
-        await wait('!document.querySelector("#workspace-dialog").open', "Goal updated");
-        await click('#view-goals [data-goal-delete]');
-        await click('[data-goal-delete-confirm]');
-        await until(() => fixture.goals.length === 0, "Goal deletion");
-        await click('#sidebar-nav [data-route="events"]');
-        await click('#view-events [data-action="events-read-all"]');
-        await until(() => fixture.events.every(item => item.read_at), "Durable read receipts");
-        await click('#sidebar-nav [data-route="settings"]');
-        await wait('document.querySelector("#preferences-form")', "Preferences form");
-        await fieldValue("#preferences-form", "theme", "light");
-        await click('#preferences-form [type="submit"]');
-        await until(() => fixture.prefs.document.theme === "light", "Server theme setting");
-        await wait('document.documentElement.dataset.theme==="light"', "Applied light theme");
-        await checkLayout(`settings-light ${round}/${width}`);
-        if (round === 2) {
-          fixture.lostAck = true;
-          await fieldValue("#preferences-form", "theme", "dark");
-          await click('#preferences-form [type="submit"]');
-          await wait('document.querySelector("[data-save-status=prefs]").dataset.state==="saved" && document.documentElement.dataset.theme==="dark"', "Lost acknowledgement reconciled before Saved");
-          assert.equal(fixture.maxActiveWrites, 1);
-          fixture.conflict = true;
-          await fieldValue("#preferences-form", "locale", "en");
-          await click('#preferences-form [type="submit"]');
-          await wait('document.querySelector("[data-save-status=prefs]").dataset.state==="conflict"', "Version conflict stays explicit");
-          assert.equal(fixture.prefs.document.locale, "ru", "Conflict cannot overwrite the server");
-          fixture.conflict = false;
-          await click('[data-action="prefs-reload"]');
-          await click('[data-action="prefs-discard"]');
-          await wait('document.querySelector("[data-save-status=prefs]").dataset.state==="saved"', "Explicit conflict resolution");
-          fixture.holdWorkspace = true;
-          await click('#view-settings [data-action="refresh"]');
-          await until(() => fixture.heldWorkspace.length > 0, "In-flight old-account response");
-          fixture.user = "000000999";
-          await evaluate('window.dispatchEvent(new Event("focus"))');
-          await wait('document.querySelector("#session-dialog").open && document.querySelector("#app-shell").hidden', "Tenant change clears private views");
-          fixture.heldWorkspace.splice(0).forEach(release => release());
-          fixture.holdWorkspace = false;
-          await delay(250);
-          assert.equal(await evaluate('document.querySelector("#main-content").textContent.includes("Тестовая компания")'), false, "Late old-profile response cannot restore data");
-          assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Мой профиль");
-        }
-        const browserStorage = await evaluate('({local:Object.keys(localStorage),session:Object.keys(sessionStorage)})');
-        assert.deepEqual(browserStorage.session, [], "Private session data never enters sessionStorage");
-        assert.ok(browserStorage.local.every(key => key === "omnicio-theme"), "Only a display theme may enter localStorage");
-        assert.deepEqual(await evaluate("window.__browserErrors"), [], "No browser errors after workflows");
-        console.log(`PASS round ${round}, ${width}px: layout, navigation, search, real charts, strategies, goals, events, settings, session isolation`);
       }
     }
     const failureKey = "signed-load-failure";
@@ -1014,6 +812,9 @@ const runBrowser = async base => {
     await delay(750);
     assert.equal(failure.requests.filter(item => !["GET", "HEAD"].includes(item.method)).length, 0, "Unknown saved settings cannot be overwritten by selecting a preset");
     console.log("PASS failure states: no defaults saved over failed loads");
+  } catch (error) {
+    if (captureFailure) await captureFailure(error).catch(diagnosticError => console.error("Could not capture browser failure:", diagnosticError.message));
+    throw error;
   } finally {
     if (client) {
       try {
@@ -1049,3 +850,834 @@ const runBrowser = async base => {
     server.close();
   }
 })();
+async function serveTestAuthConfig({
+  response
+}) {
+  return sendJSON(response, {
+    login_enabled: true,
+    tid_enabled: true,
+    tid_configured: true,
+    auth_provider: "vkid",
+    registration_enabled: false
+  });
+}
+async function serveTestStrategyCatalog({
+  response
+}) {
+  return sendJSON(response, catalog);
+}
+async function serveTestPublicMarketReference({
+  response
+}) {
+  return sendJSON(response, reference);
+}
+async function serveTestPublicNews({
+  response
+}) {
+  return sendJSON(response, {
+    items: [{
+      id: "news-fixture",
+      title: "Тестовая новость официального источника",
+      url: "https://www.cbr.ru/press/",
+      published_at: stamp,
+      source: "Банк России",
+      category: "market"
+    }],
+    fetched_at: stamp,
+    freshness: "fresh"
+  });
+}
+async function serveTestGuard5({
+  response
+}) {
+  return sendJSON(response, {
+    authorize_url: "https://untrusted.invalid/authorize"
+  });
+}
+async function serveTestGuard6({
+  response
+}) {
+  return sendJSON(response, {
+    detail: "authentication required"
+  }, 401);
+}
+async function serveTestGuard7({
+  response
+}) {
+  return sendJSON(response, {
+    detail: "profile_context_changed"
+  }, 409);
+}
+async function serveTestGuard8({
+  response
+}) {
+  return sendJSON(response, {
+    detail: "profile_context_required"
+  }, 409);
+}
+async function serveTestMe({
+  response,
+  fixture
+}) {
+  return sendJSON(response, {
+    public_id: fixture.user,
+    status: "active",
+    role: "user"
+  });
+}
+async function serveTestAuthIdentities({
+  response
+}) {
+  return sendJSON(response, {
+    providers: ["vkid"],
+    available_providers: {
+      tid: true,
+      vkid: true
+    }
+  });
+}
+async function serveTestWorkspace({
+  fixture,
+  response,
+  url
+}) {
+  const result = workspace(fixture);
+  const period = url.searchParams.get("history_period") || "all";
+  const stored = result.overview.history;
+  const days = {
+    "1d": 1,
+    "1w": 7,
+    "1m": 31,
+    "3m": 93,
+    "1y": 365
+  }[period];
+  const requestedFrom = days ? day(days) : null;
+  const points = stored.filter(item => !requestedFrom || item.captured_at >= requestedFrom);
+  result.overview.history = points;
+  result.overview.history_coverage = {
+    status: points.length ? "complete" : "empty",
+    period,
+    requested_from: requestedFrom,
+    requested_to: stamp,
+    available_from: stored[0]?.captured_at || null,
+    available_to: stored.at(-1)?.captured_at || null,
+    total_stored_observations: stored.length,
+    total_observations: points.length,
+    returned_observations: points.length,
+    returned_from: points[0]?.captured_at || null,
+    returned_to: points.at(-1)?.captured_at || null,
+    sampling: "all_observations",
+    max_points: 366
+  };
+  if (fixture.holdWorkspace) await new Promise(release => fixture.heldWorkspace.push(release));
+  return sendJSON(response, fixture.failWorkspace ? {
+    detail: "synthetic_failure"
+  } : result, fixture.failWorkspace ? 503 : 200);
+}
+function serveTestRefresh({
+  fixture,
+  response,
+  method,
+  body
+}) {
+  if (method === "POST") {
+    assert.equal(body.expected_public_id, fixture.user, "Refresh body confirms current public profile");
+    fixture.refreshPollsRemaining = fixture.refreshQueued ? 2 : 0;
+    fixture.refreshStatus = {
+      ...fixture.refreshStatus,
+      status: fixture.refreshQueued ? "queued" : "succeeded",
+      job_id: "synthetic-refresh",
+      requested_at: stamp,
+      started_at: stamp,
+      can_refresh: !fixture.refreshQueued,
+      snapshot_saved: !fixture.refreshQueued
+    };
+  } else if (fixture.refreshPollsRemaining > 0) {
+    fixture.refreshPollsRemaining -= 1;
+    const finished = fixture.refreshPollsRemaining === 0;
+    fixture.refreshStatus = {
+      ...fixture.refreshStatus,
+      status: finished ? "succeeded" : "running",
+      finished_at: finished ? stamp : null,
+      can_refresh: finished,
+      snapshot_saved: finished,
+      history_status: finished ? "complete" : null
+    };
+  }
+  return sendJSON(response, fixture.refreshStatus);
+}
+const executionListDTO = fixture => ({
+  executions: fixture.executions.map(execution => ({
+    ...execution,
+    legs: []
+  })),
+  has_active_live_execution: fixture.executions.some(execution => execution.mode === "live" && ["created", "running", "reconciling"].includes(execution.status)),
+  live_mandate: fixture.mandate,
+  recovery_only: true,
+  new_orders_enabled: false
+});
+const executionDetailDTO = execution => ({
+  execution: clone(execution),
+  events: [],
+  recovery_only: true,
+  new_orders_enabled: false
+});
+function serveTestExecutions({
+  path,
+  fixture,
+  response,
+  method
+}) {
+  if (path === "/api/portfolio/executions") return sendJSON(response, executionListDTO(fixture));
+  const [,,,, id, action] = path.split("/");
+  const execution = fixture.executions.find(item => item.id === id);
+  if (!execution) return sendJSON(response, {
+    detail: "execution_not_found"
+  }, 404);
+  if (method === "POST") {
+    assert.ok(["reconcile", "cancel"].includes(action), "Recovery can only reconcile or cancel existing requests");
+    if (action === "cancel") {
+      execution.status = "cancelled";
+      execution.legs[0].status = "cancelled";
+    } else execution.legs[0].last_checked_at = stamp;
+    if (fixture.recoveryLostAck) {
+      fixture.recoveryLostAck = false;
+      return sendJSON(response, {
+        detail: "synthetic_lost_ack"
+      }, 503);
+    }
+  }
+  return sendJSON(response, executionDetailDTO(execution));
+}
+function serveTestMandate({
+  fixture,
+  response,
+  method
+}) {
+  if (method === "DELETE") fixture.mandate = null;
+  return sendJSON(response, {
+    live_mandate: fixture.mandate
+  });
+}
+async function serveTestPreferences({
+  path,
+  fixture,
+  method,
+  response,
+  body
+}) {
+  const strategy = path.endsWith("strategy");
+  const current = strategy ? fixture.selection : fixture.prefs;
+  if (method === "GET") return serveTestSavedSettings({
+    strategy,
+    fixture,
+    response
+  });
+  fixture.activeWrites += 1;
+  fixture.maxActiveWrites = Math.max(fixture.maxActiveWrites, fixture.activeWrites);
+  try {
+    if (fixture.mutationDelay) await delay(fixture.mutationDelay);
+    if (fixture.conflict || body.expected_version !== current.version) return sendJSON(response, {
+      detail: "settings_version_conflict"
+    }, 409);
+    if (strategy) assert.equal(body.expected_public_id, fixture.user);
+    const saved = {
+      version: current.version + 1,
+      document: clone(body.document)
+    };
+    if (strategy) {
+      saved.updated_at = stamp;
+      saved.custom_document = body.intent === "edit" ? clone(body.document) : fixture.selection.custom_document;
+      fixture.selection = saved;
+    } else fixture.prefs = saved;
+    if (fixture.lostAck) {
+      fixture.lostAck = false;
+      return sendJSON(response, {
+        detail: "synthetic_lost_ack"
+      }, 503);
+    }
+    return sendJSON(response, strategy ? {
+      public_id: fixture.user,
+      selection: saved
+    } : saved);
+  } finally {
+    fixture.activeWrites -= 1;
+  }
+}
+async function serveTestProfileInvestment({
+  response,
+  fixture
+}) {
+  return sendJSON(response, {
+    public_id: fixture.user,
+    profile: {
+      version: 1,
+      ...fixture.selection.document.profile
+    }
+  });
+}
+async function serveTestProfileBalancing({
+  response,
+  fixture
+}) {
+  return sendJSON(response, {
+    public_id: fixture.user,
+    policy: {
+      version: 1,
+      ...fixture.selection.document.policy
+    }
+  });
+}
+async function serveTestProfileStrategyAccountAssessment({
+  response,
+  fixture
+}) {
+  return sendJSON(response, {
+    public_id: fixture.user,
+    strategy_version: fixture.selection.version,
+    status: "assessed",
+    nav_rub: "150000.25",
+    captured_at: stamp,
+    checks: [{
+      title: "Проверка доли",
+      state: "pass",
+      detail: "Изолированные данные теста",
+      value: "20",
+      limit: "30"
+    }],
+    probability_of_profit: null,
+    probability_reason: "Не является прогнозом"
+  });
+}
+async function serveTestProfileStrategyResearch({
+  response
+}) {
+  return sendJSON(response, {
+    status: "insufficient_data",
+    reason: "Нет достаточной истории в изолированном тесте",
+    probability_of_profit: null
+  });
+}
+async function serveTestPortfolioVisualization({
+  response,
+  fixture
+}) {
+  return sendJSON(response, {
+    status: "observed",
+    history: overview().history,
+    latest: {
+      captured_at: stamp,
+      ...overview(),
+      positions: fixture.connected ? positions : []
+    }
+  });
+}
+async function serveTestPortfolioInstruments({
+  response
+}) {
+  return sendJSON(response, {
+    status: "observed",
+    latest: {
+      ...positions[0],
+      captured_at: stamp
+    },
+    sources: [],
+    payouts: [],
+    history: []
+  });
+}
+async function serveTestMarketInstruments({
+  response
+}) {
+  return sendJSON(response, {
+    instrument_uid: "synthetic-a",
+    currency: "rub",
+    name: "Тестовая компания A",
+    ticker: "SYNA",
+    instrument_type: "share",
+    observed_at: stamp,
+    status: "partial",
+    metrics: [{
+      key: "price_earnings_ttm",
+      label: "P/E за 12 месяцев",
+      value: "11.25",
+      unit: "×",
+      period: "Последние 12 месяцев",
+      source_url: "https://developer.tbank.ru/invest/api/instruments-service"
+    }],
+    missing_requirements: ["roe_percent"],
+    limitations: ["Изолированные данные теста"]
+  });
+}
+async function serveTestMarketInstruments2({
+  response,
+  url
+}) {
+  return sendJSON(response, {
+    instrument_uid: "synthetic-a",
+    period: url.searchParams.get("period"),
+    source: "Synthetic exchange",
+    observed_at: stamp,
+    last_price: "250.25",
+    quote_time: stamp,
+    quote_status: "fresh",
+    trading_status: "SECURITY_TRADING_STATUS_NORMAL_TRADING",
+    candles: [{
+      time: day(3),
+      open: "245",
+      high: "249",
+      low: "242",
+      close: "248",
+      volume_lots: 10
+    }, {
+      time: day(2),
+      open: "248",
+      high: "251",
+      low: "247",
+      close: "250.25",
+      volume_lots: 15
+    }]
+  });
+}
+async function serveTestBrokerTbankInstrumentsSearch({
+  response
+}) {
+  return sendJSON(response, {
+    items: [{
+      uid: "synthetic-a",
+      name: "Тестовая компания A",
+      ticker: "SYNA",
+      instrument_type: "share"
+    }]
+  });
+}
+async function serveTestBrokerTbankAnalysis({
+  response
+}) {
+  return sendJSON(response, {
+    analysis: {
+      security_count: 2,
+      valued_security_count: 2,
+      sector_coverage_percent: "100",
+      observations: []
+    },
+    refreshed_at: stamp
+  });
+}
+async function serveTestBrokerTbank({
+  method,
+  fixture,
+  response
+}) {
+  if (method === "DELETE") fixture.connected = false;
+  if (method === "PUT") fixture.connected = true;
+  return sendJSON(response, connection(fixture));
+}
+async function serveTestBrokerTbankAccounts({
+  response
+}) {
+  return sendJSON(response, {
+    accounts: [{
+      id: "synthetic-account",
+      name: "Тестовый счёт",
+      type: "broker",
+      status: "open"
+    }]
+  });
+}
+async function serveTestGoals({
+  response,
+  fixture
+}) {
+  return sendJSON(response, {
+    items: fixture.goals
+  });
+}
+async function serveTestGoals2({
+  fixture,
+  body,
+  response
+}) {
+  const goal = {
+    id: `synthetic-goal-${fixture.goals.length + 1}`,
+    version: 1,
+    ...body.document,
+    created_at: stamp,
+    progress: {
+      status: "available",
+      amount_rub: body.document.manual_amount_rub,
+      percent: "10",
+      remaining_rub: "900",
+      source: "manual",
+      as_of: stamp
+    }
+  };
+  fixture.goals.push(goal);
+  return sendJSON(response, goal);
+}
+async function serveTestGoals3({
+  path,
+  fixture,
+  body,
+  response,
+  method
+}) {
+  const id = path.split("/").at(-1);
+  const current = fixture.goals.find(goal => goal.id === id);
+  if (!current || body.expected_version !== current.version) return sendJSON(response, {
+    detail: "settings_version_conflict"
+  }, 409);
+  if (method === "DELETE") {
+    fixture.goals = fixture.goals.filter(goal => goal.id !== id);
+    return sendJSON(response, {
+      deleted: true
+    });
+  }
+  Object.assign(current, body.document, {
+    version: current.version + 1
+  });
+  return sendJSON(response, current);
+}
+async function serveTestEvents({
+  method,
+  fixture,
+  body,
+  response
+}) {
+  if (method === "POST") fixture.events.filter(item => body.ids.includes(item.id)).forEach(item => {
+    item.read_at = stamp;
+  });
+  return sendJSON(response, eventDTO(fixture));
+}
+async function serveTestAssistantStatus({
+  response
+}) {
+  return sendJSON(response, {
+    configured: false,
+    provider: "ollama",
+    model: null,
+    context_supported: true,
+    max_message_length: 4000
+  });
+}
+async function serveTestAuthLogout({
+  fixture,
+  response
+}) {
+  fixture.mode = "guest";
+  response.statusCode = 204;
+  return response.end();
+}
+async function exerciseViewport({
+  send,
+  width,
+  round,
+  base,
+  wait,
+  checkLayout,
+  screenshot,
+  click,
+  evaluate,
+  fieldValue
+}) {
+  await send("Emulation.setDeviceMetricsOverride", {
+    width,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: width < 680
+  });
+  const guestKey = `guest-${round}-${width}`;
+  await send("Page.navigate", {
+    url: `${base}?case=${guestKey}`
+  });
+  await wait('document.querySelectorAll(".public-strategy-card").length===10', "Public canonical catalog");
+  await checkLayout(`public ${round}/${width}`);
+  await screenshot(`public-${round}-${width}.png`);
+  await click('[data-action="tour"]');
+  await wait('!document.querySelector("#app-shell").hidden', "Product tour");
+  assert.equal(await evaluate('document.querySelectorAll("#sidebar-nav a").length'), 10);
+  assert.equal(await evaluate('document.querySelectorAll("#mobile-nav a").length'), 4);
+  await checkLayout(`tour ${round}/${width}`);
+  assert.equal(fixtures.get(guestKey).requests.filter(item => item.path.startsWith("/api/broker/") || !["GET", "HEAD"].includes(item.method)).length, 0, "Tour cannot read private broker data or mutate anything");
+  if (round === 2) {
+    await click('#tour-notice [data-action="login"]');
+    await checkLayout(`auth ${round}/${width}`);
+    await screenshot(`auth-${round}-${width}.png`);
+    assert.equal(await evaluate('document.querySelectorAll("#auth-form input[required]").length'), 4, "Both OAuth providers require the four consent choices");
+    assert.equal(await evaluate('document.querySelectorAll("#auth-form input[type=password],#auth-form input[type=email]").length'), 0, "Authentication cannot present an unsupported password flow");
+    await evaluate('for(const input of document.querySelectorAll("#auth-form input"))input.checked=true');
+    await click("#tid-login");
+    await wait('document.querySelector("#auth-message").textContent.includes("не прошёл проверку")', "OAuth redirect allowlist");
+    assert.ok((await evaluate("location.href")).startsWith(base), "Untrusted provider URL cannot navigate the page");
+    await click('#auth-dialog [data-close-dialog]');
+  }
+  const key = `signed-${round}-${width}`;
+  fixtures.set(key, makeFixture("signed"));
+  const fixture = fixtures.get(key);
+  await send("Page.navigate", {
+    url: `${base}?case=${key}`
+  });
+  await wait('!document.querySelector("#app-shell").hidden && document.querySelector("#profile-name").textContent.includes("Тестовый") && document.querySelector("#view-home .asset-table")', "Authenticated dashboard");
+  await checkLayout(`dashboard ${round}/${width}`);
+  await screenshot(`dashboard-${round}-${width}.png`);
+  assert.equal(await evaluate('document.querySelector("#view-home .metric-card .main-value").textContent'), "—", "Unknown return must not become zero or NAV-growth percentage");
+  assert.ok(fixture.requests.filter(item => item.path === "/api/workspace").every(item => item.profile === fixture.user), "Private data requests carry the viewed server profile precondition");
+  if (width <= 960) {
+    await click("#app-menu-toggle");
+    await wait('document.querySelector("#app-sidebar").dataset.open==="true"', "Mobile drawer");
+    assert.equal(await evaluate('document.querySelector(".app-main").inert'), true, "Drawer traps interaction outside its surface");
+    await send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Escape",
+      code: "Escape",
+      windowsVirtualKeyCode: 27
+    });
+    await wait('document.querySelector("#drawer-backdrop").hidden', "Drawer Escape");
+    assert.equal(await evaluate('document.activeElement.id'), "app-menu-toggle", "Drawer restores focus");
+  }
+  for (const view of ["portfolio", "market", "strategies", "goals", "analytics", "events", "profile", "settings", "assistant"]) {
+    await click(`#sidebar-nav [data-route="${view}"]`);
+    await wait(`!document.querySelector('#view-${view}').hidden && document.querySelector('#view-${view}').textContent.length>20`, view);
+    if (view === "strategies") await wait('document.querySelector("#strategy-form") && !document.querySelector("#view-strategies .loading-panel")', "Strategy loaded");
+    if (view === "settings") await wait('document.querySelector("#preferences-form")', "Server preferences loaded");
+    await delay(80);
+    await checkLayout(`${view} ${round}/${width}`);
+    if (width <= 390) await screenshot(`${view}-${round}-${width}.png`);
+  }
+  assert.equal(await evaluate('document.querySelector("#assistant-form textarea").disabled'), true, "Disconnected AI cannot fabricate answers");
+  await click('#sidebar-nav [data-route="market"]');
+  await fieldValue("#global-search-form", "q", "SYNA");
+  await evaluate('document.querySelector("#global-search-form").requestSubmit()');
+  await wait('document.querySelector("#view-search .search-result")', "Real search response");
+  await click('#view-search [data-asset]');
+  await wait('document.querySelector("#view-asset .chart-svg")', "Asset chart");
+  await click('#view-asset [data-asset-tab="metrics"]');
+  assert.ok(await evaluate('document.querySelector("#view-asset .asset-tab-content").textContent.includes("Максимум периода")'));
+  await click('#view-asset [data-asset-tab="chart"]');
+  await click('#view-asset [data-period="all"]');
+  await wait('document.querySelector("#view-asset .chart-svg") && !document.querySelector("#view-asset .loading-panel")', "All available market history");
+  assert.ok(fixture.requests.some(item => item.path.startsWith("/api/market/instruments/")), "Asset tabs consume real API contracts");
+  await evaluate('document.querySelector("#view-asset .chart-svg").focus()');
+  const before = await evaluate('document.querySelector("#view-asset .chart-readout").textContent');
+  await send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Home",
+    code: "Home",
+    windowsVirtualKeyCode: 36
+  });
+  assert.notEqual(await evaluate('document.querySelector("#view-asset .chart-readout").textContent'), before, "Keyboard chart inspection changes the selected real observation");
+  await checkLayout(`asset ${round}/${width}`);
+  await screenshot(`asset-${round}-${width}.png`);
+  await click('#view-asset [data-watch]');
+  await until(() => fixture.prefs.document.watchlist.length === 1, "Persistent watchlist");
+  await wait('document.querySelector("#view-asset [data-watch]").getAttribute("aria-pressed")==="true"', "Saved favorite");
+  await click('#sidebar-nav [data-route="strategies"]');
+  await wait('document.querySelector("#strategy-form")', "Strategy form");
+  fixture.mutationDelay = 150;
+  await click('[data-select-strategy="conservative"]');
+  await until(() => fixture.selection.document.base_preset_id === "conservative", "Persist strategy selection");
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Strategy saved acknowledgement");
+  assert.equal(fixture.selection.document.profile.reserve_rub, "123456789.12345678", "Selecting a preset preserves exact private amounts");
+  const reserveControl = '[data-step-field="strategy.profile.reserve_rub"][data-step-direction="1"]';
+  await click(reserveControl);
+  await until(() => fixture.selection.document.profile.reserve_rub === "123457789.12345678", "Exact decimal step");
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Saved custom parameters");
+  assert.equal(fixture.selection.document.customized, true);
+  await screenshot(`strategies-${round}-${width}.png`);
+  assert.equal(fixture.maxActiveWrites, 1, "Versioned autosave uses a single in-flight mutation");
+  await click('#sidebar-nav [data-route="goals"]');
+  await click('#view-goals [data-action="goal-create"]');
+  await fieldValue("#goal-form", "title", "Тестовая цель");
+  await fieldValue("#goal-form", "target_amount_rub", "1000");
+  await fieldValue("#goal-form", "progress_source", "manual");
+  await fieldValue("#goal-form", "manual_amount_rub", "100");
+  await click('#goal-form [type="submit"]');
+  await until(() => fixture.goals.length === 1, "Create goal on server");
+  await wait('!document.querySelector("#workspace-dialog").open', "Goal saved");
+  assert.equal(fixture.goals[0].manual_amount_rub, "100");
+  await click('#view-goals [data-goal-edit]');
+  await fieldValue("#goal-form", "title", "Изменённая тестовая цель");
+  await click('#goal-form [type="submit"]');
+  await until(() => fixture.goals[0].version === 2, "Versioned goal update");
+  await wait('!document.querySelector("#workspace-dialog").open', "Goal updated");
+  await click('#view-goals [data-goal-delete]');
+  await click('[data-goal-delete-confirm]');
+  await until(() => fixture.goals.length === 0, "Goal deletion");
+  await click('#sidebar-nav [data-route="events"]');
+  await click('#view-events [data-action="events-read-all"]');
+  await until(() => fixture.events.every(item => item.read_at), "Durable read receipts");
+  await click('#sidebar-nav [data-route="settings"]');
+  await wait('document.querySelector("#preferences-form")', "Preferences form");
+  if (width === 390) await exerciseProfileDraft({
+    fixture,
+    click,
+    fieldValue,
+    wait,
+    evaluate
+  });
+  const preferencesVersionBeforeInput = fixture.prefs.version;
+  await fieldValue("#preferences-form", "theme", "light");
+  await wait('document.querySelector("#preferences-form [data-save-status=prefs]").dataset.state==="pending"', "Unsubmitted preference draft is visible");
+  if (width === 390) await delay(700);
+  assert.equal(fixture.prefs.version, preferencesVersionBeforeInput, "Editing a form cannot submit settings before the explicit save action");
+  await click('#preferences-form [type="submit"]');
+  await until(() => fixture.prefs.document.theme === "light", "Server theme setting");
+  await wait('document.documentElement.dataset.theme==="light"', "Applied light theme");
+  await checkLayout(`settings-light ${round}/${width}`);
+  if (width === 390) await exerciseRefreshRecovery({
+    fixture,
+    click,
+    wait,
+    evaluate,
+    checkLayout
+  });
+  if (round === 2) {
+    fixture.lostAck = true;
+    await fieldValue("#preferences-form", "theme", "dark");
+    await click('#preferences-form [type="submit"]');
+    await wait('document.querySelector("[data-save-status=prefs]").dataset.state==="saved" && document.documentElement.dataset.theme==="dark"', "Lost acknowledgement reconciled before Saved");
+    assert.equal(fixture.maxActiveWrites, 1);
+    fixture.conflict = true;
+    await fieldValue("#preferences-form", "locale", "en");
+    await click('#preferences-form [type="submit"]');
+    await wait('document.querySelector("[data-save-status=prefs]").dataset.state==="conflict"', "Version conflict stays explicit");
+    assert.equal(fixture.prefs.document.locale, "ru", "Conflict cannot overwrite the server");
+    fixture.conflict = false;
+    await click('[data-action="prefs-reload"]');
+    await click('[data-action="prefs-discard"]');
+    await wait('document.querySelector("[data-save-status=prefs]").dataset.state==="saved"', "Explicit conflict resolution");
+    fixture.holdWorkspace = true;
+    await click('#view-settings [data-action="refresh"]');
+    await until(() => fixture.heldWorkspace.length > 0, "In-flight old-account response");
+    fixture.user = "000000999";
+    await evaluate('window.dispatchEvent(new Event("focus"))');
+    await wait('document.querySelector("#session-dialog").open && document.querySelector("#app-shell").hidden', "Tenant change clears private views");
+    fixture.heldWorkspace.splice(0).forEach(release => release());
+    fixture.holdWorkspace = false;
+    await delay(250);
+    assert.equal(await evaluate('document.querySelector("#main-content").textContent.includes("Тестовая компания")'), false, "Late old-profile response cannot restore data");
+    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Мой профиль");
+  }
+  const browserStorage = await evaluate('({local:Object.keys(localStorage),session:Object.keys(sessionStorage)})');
+  assert.deepEqual(browserStorage.session, [], "Private session data never enters sessionStorage");
+  assert.ok(browserStorage.local.every(key => key === "omnicio-theme"), "Only a display theme may enter localStorage");
+  assert.deepEqual(await evaluate("window.__browserErrors"), [], "No browser errors after workflows");
+  console.log(`PASS round ${round}, ${width}px: layout, navigation, search, real charts, strategies, goals, events, settings, session isolation`);
+}
+async function exerciseProfileDraft({
+  fixture,
+  click,
+  fieldValue,
+  wait,
+  evaluate
+}) {
+  const name = fixture.prefs.document.display_name;
+  const version = fixture.prefs.version;
+  await click('#sidebar-nav [data-route="profile"]');
+  await wait('document.querySelector("#profile-form")', "Editable profile loaded");
+  await fieldValue("#profile-form", "display_name", "Несохранённый черновик");
+  await wait('document.querySelector("#profile-form [data-save-status=prefs]").dataset.state==="pending"', "Profile draft status");
+  await delay(700);
+  assert.equal(fixture.prefs.document.display_name, name, "Typing a profile name does not mutate the server");
+  assert.equal(fixture.prefs.version, version);
+  await click('#sidebar-nav [data-route="home"]');
+  await wait('document.querySelector("#view-home .asset-table")', "Home remains available with a local form draft");
+  await click('#sidebar-nav [data-route="profile"]');
+  await wait('document.querySelector("#profile-form").elements.display_name.value==="Несохранённый черновик"', "A server reload cannot erase an unsubmitted form draft");
+  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), name, "The identity header still displays confirmed preferences");
+  await fieldValue("#profile-form", "display_name", name);
+  await wait('document.querySelector("#profile-form [data-save-status=prefs]").dataset.state==="saved"', "Reverting a draft restores the accurate saved status");
+  await click('#sidebar-nav [data-route="settings"]');
+  await wait('document.querySelector("#preferences-form")', "Return to settings");
+}
+async function exerciseRefreshRecovery({
+  fixture,
+  click,
+  wait,
+  evaluate,
+  checkLayout
+}) {
+  await wait('document.querySelector("#view-settings [data-action=refresh]").disabled===false', "Refresh available");
+  fixture.refreshQueued = true;
+  const initialObservations = fixture.requests.filter(item => item.path === "/api/workspace").length;
+  await click('#view-settings [data-action="refresh"]');
+  await wait('document.querySelector("#connection-banner").textContent.includes("поставлено в очередь")', "Durable refresh queue");
+  assert.equal(await evaluate('document.querySelector("#view-settings [data-action=refresh]").disabled'), true, "Repeated refresh stays disabled while the server job runs");
+  await wait('document.querySelector("#view-settings [data-action=refresh]").disabled===false', "Completed refresh job");
+  assert.ok(fixture.requests.filter(item => item.path === "/api/workspace").length > initialObservations, "A completed job reloads saved observations");
+  assert.ok(fixture.requests.filter(item => item.path === "/api/workspace/refresh" && item.method === "GET").length >= 2, "Running refresh is polled from the server");
+  fixture.refreshQueued = false;
+  fixture.executions = [{
+    id: "synthetic-run",
+    proposal_id: "synthetic-proposal",
+    account_id: "synthetic-account",
+    mode: "live",
+    provider_environment: "prod",
+    status: "running",
+    error_code: null,
+    created_at: stamp,
+    updated_at: stamp,
+    finished_at: null,
+    legs: [{
+      id: "synthetic-leg",
+      leg_index: 0,
+      action: "buy",
+      instrument_uid: "synthetic-uid",
+      lots_requested: 2,
+      lots_executed: 1,
+      request_id: "synthetic-request",
+      provider_order_id: "synthetic-order",
+      provider_status: "EXECUTION_REPORT_STATUS_PARTIALLYFILL",
+      status: "partially_filled",
+      submitted_at: stamp,
+      last_checked_at: null,
+      terminal_at: null
+    }]
+  }];
+  fixture.mandate = {
+    id: "synthetic-mandate",
+    account_id: "synthetic-account",
+    max_order_notional_rub: "1000",
+    max_daily_notional_rub: "2000",
+    created_at: stamp,
+    expires_at: day(-1),
+    revoked_at: null
+  };
+  await click('[data-action="recovery-reload"]');
+  await wait('document.querySelector(".recovery-row")', "Existing execution history");
+  assert.equal(await evaluate('document.querySelector("[data-action=disconnect-start]").disabled'), true, "Active order blocks a simple broker disconnect");
+  await click('[data-action="recovery-open"]');
+  await wait('document.querySelector(".recovery-leg")', "Persisted execution details");
+  await checkLayout("Recovery details at 390px");
+  await click('[data-action="recovery-reconcile"]');
+  await wait('document.querySelector("#recovery-message").textContent.includes("Состояние получено")', "Read-only reconciliation");
+  assert.equal(fixture.executions[0].legs[0].lots_executed, 1, "Reconciliation does not fabricate an execution");
+  fixture.recoveryLostAck = true;
+  await click('[data-action="recovery-cancel"]');
+  await click('[data-action="recovery-cancel-confirm"]');
+  await wait('document.querySelector("#recovery-message").classList.contains("error")', "Ambiguous cancellation is explicit");
+  assert.equal(await evaluate('document.querySelector("[data-action=recovery-cancel]").disabled'), true, "Unconfirmed cancellation cannot be repeated against the next leg");
+  await click('[data-action="recovery-detail-reload"]');
+  await wait('document.querySelector("#dialog-content").textContent.includes("Отменено") && !document.querySelector("[data-action=recovery-cancel]")', "Cancellation read back from ledger");
+  await click('#workspace-dialog [data-close-dialog]');
+  await click('[data-action="recovery-reload"]');
+  await wait('document.querySelector("[data-action=disconnect-start]").disabled===false', "Terminal order allows disconnect");
+  await click('[data-action="mandate-revoke"]');
+  await click('[data-action="mandate-revoke-confirm"]');
+  await wait('!document.querySelector("#workspace-dialog").open && !document.querySelector("[data-action=mandate-revoke]")', "Server-side mandate revoked");
+  assert.equal(fixture.mandate, null);
+  assert.equal(fixture.requests.filter(item => item.method === "POST" && /proposals|advance|executions$/.test(item.path)).length, 0, "Recovery must never create or advance a plan");
+}
+function serveTestSavedSettings({
+  strategy,
+  fixture,
+  response
+}) {
+  if (!strategy && fixture.failPreferences || strategy && fixture.failStrategyLoad) return sendJSON(response, {
+    detail: "synthetic_load_failure"
+  }, 503);
+  return sendJSON(response, reorderJSON(strategy ? {
+    public_id: fixture.user,
+    selection: clone(fixture.selection)
+  } : clone(fixture.prefs)));
+}

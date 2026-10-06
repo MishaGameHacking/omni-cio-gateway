@@ -65,6 +65,9 @@ concurrency:
 
 jobs:
   tests:
+    permissions:
+      contents: read
+      checks: read
     if: >-
       github.event_name != 'pull_request' ||
       (github.event.pull_request.head.repo.full_name == github.repository &&
@@ -120,7 +123,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: frontend-screenshots
-          path: artifacts/frontend/*.png
+          path: |
+            artifacts/frontend/*.png
+            artifacts/frontend/failure-state.json
           if-no-files-found: warn
           retention-days: 7
 
@@ -135,6 +140,14 @@ jobs:
         shell: cmd
         run: >-
           "%OMNICIO_PYTHON%" -c "from pathlib import Path; text=Path('web/index.html').read_text(encoding='utf-8'); assert 'name=\"omni-cio-white-site\"' in text; assert r'\n' not in text"
+
+      - name: Report source-specific Sonar diagnostics
+        if: always()
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: '"%OMNICIO_PYTHON%" .github/scripts/report_sonar_annotations.py'
 
   deploy:
     permissions:

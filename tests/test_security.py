@@ -209,7 +209,7 @@ def test_private_errors_have_unique_server_traces_without_secret_leaks(
     assert secret not in caplog.text
 
 
-@pytest.mark.parametrize("path", ["/api/me", "/api/me/activity", "/api/broker/tbank/portfolio"])
+@pytest.mark.parametrize("path", ["/api/me", "/api/me/activity", "/api/portfolio/executions"])
 def test_private_unauthorized_responses_cannot_be_cached(path: str) -> None:
     with patch("omnicio.main.service") as auth:
         auth.return_value.refresh_session.return_value = None
@@ -283,7 +283,7 @@ def test_stale_tab_cannot_attach_its_broker_token_to_another_session_user(expect
 
 @pytest.mark.parametrize("method,path,payload", [
     ("GET", "/api/me/activity", None),
-    ("GET", "/api/broker/tbank/portfolio", None),
+    ("GET", "/api/portfolio/executions", None),
     ("POST", "/api/broker/tbank/accounts", {
         "credential": "synthetic-token-from-tab-a", "environment": "prod",
         "accept_personal_terms": True,

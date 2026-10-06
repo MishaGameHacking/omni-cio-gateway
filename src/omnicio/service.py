@@ -1,4 +1,4 @@
-"""VK ID authentication and registration business logic."""
+"""Verified provider authentication, registration and explicit identity linking."""
 
 from __future__ import annotations
 
@@ -25,15 +25,15 @@ class AuthError(RuntimeError):
 
 
 class LoginUnavailable(AuthError):
-    """VK ID login is not operationally ready."""
+    """The selected identity provider is not operationally ready."""
 
 
 class RegistrationClosed(AuthError):
-    """A new VK ID cannot create an account while registration is closed."""
+    """A new verified identity cannot create an account while registration is closed."""
 
 
 class RegistrationCapacityReached(AuthError):
-    """A new VK ID cannot create an account because all slots are occupied."""
+    """A new verified identity cannot create an account because all slots are occupied."""
 
 
 class AccountDeletionRejected(AuthError):

@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from html import unescape
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 _SOURCE_URL = "https://www.cbr.ru/rss/eventrss"
 _MAX_BYTES = 512_000
@@ -52,9 +52,7 @@ def parse_news(raw: bytes, *, fetched_at: datetime) -> dict[str, Any]:
         except (ValueError, TypeError, IndexError):
             continue
         # The source links sometimes use HTTP; the canonical public site has TLS.
-        url = "https://www.cbr.ru" + parsed.path
-        if parsed.query:
-            url += "?" + parsed.query
+        url = urlunsplit(("https", "www.cbr.ru", parsed.path, parsed.query, ""))
         identity = hashlib.sha256(url.encode()).hexdigest()
         if identity in seen:
             continue

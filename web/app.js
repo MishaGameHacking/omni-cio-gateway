@@ -82,6 +82,20 @@
     verifying: false,
     authMode: "login"
   };
+  state.formDrafts = {};
+  state.formBaselines = {};
+  state.refresh = {
+    sequence: 0,
+    timer: null,
+    busy: false
+  };
+  state.recovery = {
+    id: null,
+    sequence: 0,
+    busy: false,
+    record: null,
+    uncertain: false
+  };
   const views = new Set([...U.navigation.map(([key]) => key), "asset", "search"]);
   const assetTypes = [["all", "Все"], ["share", "Акции"], ["bond", "Облигации"], ["etf", "Фонды"], ["currency", "Валюта"], ["other", "Другое"]];
   const strategyIcons = {
@@ -131,7 +145,44 @@
     if (url.origin !== location.origin || !url.pathname.startsWith("/api/") || url.hash || url.username || url.password) throw new TypeError("Invalid API origin");
     return url;
   };
-  const privateRequest = path => !["/api/auth/config", "/api/auth/vkid/start", "/api/auth/tid/start", "/api/strategy/catalog", "/api/public/market-reference", "/api/public/news"].some(allowed => path.split("?")[0] === allowed);
+  const privateRequest = path => !["/api/auth/config", "/api/auth/vkid/start", "/api/auth/tid/start", "/api/strategy/catalog", "/api/public/market-reference", "/api/public/news"].includes(path.split("?")[0]);
+  const ensureResponseContext = ({
+    generation,
+    profile,
+    bootstrap
+  }) => {
+    if (generation !== state.generation) throw contextError();
+    if (profile && state.user?.public_id !== profile) throw contextError();
+    if (state.locked && !bootstrap) throw contextError();
+  };
+  const apiFailure = (response, payload, profile) => {
+    const code = typeof payload?.detail === "string" ? payload.detail : "request_failed";
+    const error = Object.assign(new Error(code), {
+      status: response.status,
+      code
+    });
+    const requestId = response.headers.get("X-Request-ID") || "";
+    if (/^[a-f0-9]{32}$/.test(requestId)) error.requestId = requestId;
+    const contextChanged = ["profile_context_changed", "profile_context_required", "settings_owner_conflict", "strategy_account_context_changed"].includes(code);
+    if (profile && (response.status === 401 || contextChanged)) {
+      lockSession(response.status === 401 ? "Сессия завершилась. Войдите снова, чтобы продолжить." : "Аккаунт в браузере изменился. Старые данные очищены. Проверьте текущую сессию.");
+      return contextError();
+    }
+    return error;
+  };
+  const readApiResponse = async (response, context) => {
+    const payload = response.status === 204 ? null : await response.json().catch(() => null);
+    ensureResponseContext(context);
+    if (!response.ok) throw apiFailure(response, payload, context.profile);
+    if (payload?.public_id && context.profile && payload.public_id !== context.profile) {
+      lockSession("Сервер вернул другой аккаунт. Старые данные очищены; требуется проверка сессии.");
+      throw contextError();
+    }
+    if (response.status !== 204 && (!payload || typeof payload !== "object")) throw Object.assign(new Error("invalid_server_response"), {
+      status: 502
+    });
+    return payload;
+  };
   const api = async (path, {
     method = "GET",
     body,
@@ -147,8 +198,11 @@
       status: 0,
       definite: true
     });
-    const generation = state.generation;
-    const profile = state.user?.public_id;
+    const context = {
+      generation: state.generation,
+      profile: state.user?.public_id,
+      bootstrap
+    };
     const controller = new AbortController();
     state.requests.add(controller);
     let timedOut = false;
@@ -160,7 +214,7 @@
       Accept: "application/json"
     });
     if (body !== undefined) headers.set("Content-Type", "application/json");
-    if (profile && !bootstrap) headers.set("X-Omnicio-Profile", profile);
+    if (context.profile && !bootstrap) headers.set("X-Omnicio-Profile", context.profile);
     try {
       const response = await fetch(url, {
         method,
@@ -171,31 +225,7 @@
         redirect: "error",
         signal: controller.signal
       });
-      const payload = response.status === 204 ? null : await response.json().catch(() => null);
-      if (generation !== state.generation || profile && state.user?.public_id !== profile) throw contextError();
-      if (state.locked && !bootstrap) throw contextError();
-      if (!response.ok) {
-        const code = typeof payload?.detail === "string" ? payload.detail : "request_failed";
-        const error = Object.assign(new Error(code), {
-          status: response.status,
-          code
-        });
-        const requestId = response.headers.get("X-Request-ID") || "";
-        if (/^[a-f0-9]{32}$/.test(requestId)) error.requestId = requestId;
-        if (profile && (response.status === 401 || ["profile_context_changed", "profile_context_required", "settings_owner_conflict", "strategy_account_context_changed"].includes(code))) {
-          lockSession(response.status === 401 ? "Сессия завершилась. Войдите снова, чтобы продолжить." : "Аккаунт в браузере изменился. Старые данные очищены. Проверьте текущую сессию.");
-          throw contextError();
-        }
-        throw error;
-      }
-      if (payload?.public_id && profile && payload.public_id !== profile) {
-        lockSession("Сервер вернул другой аккаунт. Старые данные очищены; требуется проверка сессии.");
-        throw contextError();
-      }
-      if (response.status !== 204 && (!payload || typeof payload !== "object")) throw Object.assign(new Error("invalid_server_response"), {
-        status: 502
-      });
-      return payload;
+      return await readApiResponse(response, context);
     } catch (error) {
       if (timedOut) throw Object.assign(new Error("request_timeout"), {
         status: 0,
@@ -244,6 +274,10 @@
     element.classList.toggle("success", !isError && Boolean(text));
   };
   const openDialog = (title, content) => {
+    state.recovery.id = null;
+    state.recovery.record = null;
+    state.recovery.uncertain = false;
+    state.recovery.sequence += 1;
     const dialog = $("#workspace-dialog");
     $("#dialog-title").textContent = title;
     $("#dialog-content").innerHTML = content;
@@ -266,9 +300,24 @@
     state.loading.clear();
     clearTimeout(state.prefs.timer);
     clearTimeout(state.strategy.timer);
+    clearTimeout(state.refresh.timer);
+    state.refresh = {
+      sequence: state.refresh.sequence + 1,
+      timer: null,
+      busy: false
+    };
+    state.recovery = {
+      id: null,
+      sequence: state.recovery.sequence + 1,
+      busy: false,
+      record: null,
+      uncertain: false
+    };
     state.user = null;
     state.data = {};
     state.errors = {};
+    state.formDrafts = {};
+    state.formBaselines = {};
     state.chat = [];
     state.asset = null;
     state.searchResults = [];
@@ -365,6 +414,18 @@
       q: params.get("q") || ""
     };
   };
+  const updateRouteHistory = (view, detail, {
+    replace,
+    fromHistory
+  }) => {
+    const query = new URLSearchParams();
+    if (view === "asset" && detail.uid) query.set("uid", detail.uid);
+    if (view === "search" && detail.q) query.set("q", detail.q);
+    const hash = `#${view}${query.size ? renderNavigateFragment(query) : ""}`;
+    if (!fromHistory && location.hash !== hash) history[replace ? "replaceState" : "pushState"]({
+      view
+    }, "", hash);
+  };
   const navigate = (view, detail = {}, {
     replace = false,
     fromHistory = false
@@ -384,13 +445,10 @@
     }
     state.view = view;
     state.route = detail;
-    const query = new URLSearchParams();
-    if (view === "asset" && detail.uid) query.set("uid", detail.uid);
-    if (view === "search" && detail.q) query.set("q", detail.q);
-    const hash = `#${view}${query.size ? renderNavigateFragment(query) : ""}`;
-    if (!fromHistory && location.hash !== hash) history[replace ? "replaceState" : "pushState"]({
-      view
-    }, "", hash);
+    updateRouteHistory(view, detail, {
+      replace,
+      fromHistory
+    });
     for (const element of $$("[data-view]")) element.hidden = element.dataset.view !== view;
     document.title = `${U.navigation.find(([key]) => key === view)?.[1] || (view === "asset" ? "Актив" : "Поиск")} · OMNICIO`;
     renderNav();
@@ -414,6 +472,7 @@
     navigate(route.view, route, {
       replace: true
     });
+    if (!tour) void resumeWorkspaceRefresh();
   };
   const loadResource = async (name, path, {
     force = false,
@@ -430,9 +489,7 @@
       const payload = await api(path, options);
       if (generation !== state.generation || state.resourceVersions.get(name) !== sequence) return null;
       state.data[name] = payload;
-      if (name === "workspace") adoptWorkspace(payload);
-      if (name === "preferences") adoptPreferences(payload);
-      if (name === "strategy") adoptStrategy(payload);
+      adoptLoadedResource(name, payload);
       return payload;
     } catch (error) {
       if (generation === state.generation && state.resourceVersions.get(name) === sequence && !isCancelled(error)) state.errors[name] = error;
@@ -448,90 +505,116 @@
     if (payload.connection) state.data.connection = payload.connection;
     $("#workspace-freshness").textContent = payload.overview?.observed_at ? `T-Invest · ${date(payload.overview.observed_at, true)} МСК · Стоимость по последнему наблюдению` : renderAdoptWorkspaceValue(payload);
   };
-  const loadForView = async (view, detail = {}, force = false) => {
-    const generation = state.generation;
-    if (state.tour) {
-      if (["home", "market", "events", "asset", "search"].includes(view)) await loadResource("news", "/api/public/news", {
-        force
-      });
-      if (view === "strategies") await loadResource("catalog", "/api/strategy/catalog", {
-        force
-      });
-      if (view === "market") await loadResource("marketReference", `/api/public/market-reference?currency=${state.cbrCurrency}&period=${state.cbrPeriod}`, {
-        force
-      });
-      if (view === "search") {
-        await runSearch(detail.q || "");
-        return;
-      }
-    } else {
-      const requests = [];
-      if (["home", "market", "events", "asset", "search"].includes(view)) requests.push(loadResource("news", "/api/public/news", {
-        force
-      }));
-      if (view === "profile") requests.push(loadResource("identities", "/api/auth/identities", {
-        force
-      }));
-      if (["home", "portfolio", "analytics", "goals", "events", "settings", "profile"].includes(view)) requests.push(loadResource("workspace", "/api/workspace", {
-        force
-      }));
-      if (["home", "portfolio", "analytics", "market"].includes(view)) requests.push(loadResource("visualization", "/api/portfolio/visualization?history_limit=365", {
-        force
-      }));
-      if (["home", "strategies", "analytics"].includes(view)) requests.push(loadResource("strategy", "/api/profile/strategy", {
-        force
-      }), loadResource("catalog", "/api/strategy/catalog", {
-        force
-      }));
-      if (view === "strategies") requests.push(loadResource("investmentProfile", "/api/profile/investment", {
-        force
-      }), loadResource("balancingPolicy", "/api/profile/balancing", {
-        force
-      }));
-      if (["market", "home"].includes(view)) requests.push(loadResource("marketReference", `/api/public/market-reference?currency=${state.cbrCurrency}&period=${state.cbrPeriod}`, {
-        force
-      }));
-      if (["market", "asset"].includes(view)) requests.push(loadResource("preferences", "/api/preferences", {
-        force
-      }), loadResource("connection", "/api/broker/tbank", {
-        force
-      }));
-      if (["settings", "profile"].includes(view)) requests.push(loadResource("preferences", "/api/preferences", {
-        force
-      }), loadResource("connection", "/api/broker/tbank", {
-        force
-      }));
-      if (view === "assistant") requests.push(loadResource("assistantStatus", "/api/assistant/status", {
-        force
-      }));
-      if (view === "events") requests.push(loadResource("events", "/api/events?limit=50&category=all", {
-        force
-      }));
-      if (view === "goals") requests.push(loadResource("goals", "/api/goals", {
-        force
-      }));
-      if (view === "analytics") requests.push(loadResource("analysis", "/api/broker/tbank/analysis", {
-        force,
-        timeout: 45000
-      }));
-      await Promise.allSettled(requests);
-      if (view === "asset" && detail.uid) {
-        try {
-          await loadAsset(detail.uid, force);
-        } catch (error) {
-          if (!isCancelled(error)) {
-            state.asset = null;
-            $("#view-asset").innerHTML = empty("Некорректный инструмент", "Откройте актив из портфеля или результатов поиска.", "", "", "info", true);
-          }
-        }
-        return;
-      }
-      if (view === "search") {
-        await runSearch(detail.q || "");
-        return;
+  const adoptLoadedResource = (name, payload) => {
+    if (name === "workspace") adoptWorkspace(payload);
+    if (name === "preferences") adoptPreferences(payload);
+    if (name === "strategy") adoptStrategy(payload);
+  };
+  const workspacePeriod = (view = state.view) => {
+    if (view === "home") return state.homePeriod;
+    if (["portfolio", "analytics"].includes(view)) return state.portfolioPeriod;
+    return "all";
+  };
+  const workspacePath = () => `/api/workspace?history_period=${workspacePeriod()}`;
+  const viewResources = [{
+    name: "news",
+    views: ["home", "market", "events", "asset", "search"],
+    path: "/api/public/news",
+    public: true
+  }, {
+    name: "identities",
+    views: ["profile"],
+    path: "/api/auth/identities"
+  }, {
+    name: "workspace",
+    views: ["home", "portfolio", "analytics", "goals", "events", "settings", "profile"],
+    path: workspacePath
+  }, {
+    name: "visualization",
+    views: ["home", "portfolio", "analytics", "market"],
+    path: "/api/portfolio/visualization?history_limit=365"
+  }, {
+    name: "strategy",
+    views: ["home", "strategies", "analytics"],
+    path: "/api/profile/strategy"
+  }, {
+    name: "catalog",
+    views: ["home", "strategies", "analytics"],
+    path: "/api/strategy/catalog",
+    public: true
+  }, {
+    name: "investmentProfile",
+    views: ["strategies"],
+    path: "/api/profile/investment"
+  }, {
+    name: "balancingPolicy",
+    views: ["strategies"],
+    path: "/api/profile/balancing"
+  }, {
+    name: "marketReference",
+    views: ["home", "market"],
+    path: () => `/api/public/market-reference?currency=${state.cbrCurrency}&period=${state.cbrPeriod}`,
+    public: true
+  }, {
+    name: "preferences",
+    views: ["market", "asset", "settings", "profile"],
+    path: "/api/preferences"
+  }, {
+    name: "connection",
+    views: ["market", "asset", "settings", "profile"],
+    path: "/api/broker/tbank"
+  }, {
+    name: "executions",
+    views: ["settings"],
+    path: "/api/portfolio/executions"
+  }, {
+    name: "assistantStatus",
+    views: ["assistant"],
+    path: "/api/assistant/status"
+  }, {
+    name: "events",
+    views: ["events"],
+    path: "/api/events?limit=50&category=all"
+  }, {
+    name: "goals",
+    views: ["goals"],
+    path: "/api/goals"
+  }, {
+    name: "analysis",
+    views: ["analytics"],
+    path: "/api/broker/tbank/analysis",
+    timeout: 45000
+  }];
+  const loadAssetView = async (uid, force) => {
+    try {
+      await loadAsset(uid, force);
+    } catch (error) {
+      if (!isCancelled(error) && state.view === "asset") {
+        state.asset = null;
+        $("#view-asset").innerHTML = empty("Некорректный инструмент", "Откройте актив из портфеля или результатов поиска.", "", "", "info", true);
       }
     }
-    if (generation === state.generation && state.view === view) renderCurrent();
+  };
+  const loadForView = async (view, detail = {}, force = false) => {
+    const generation = state.generation;
+    const resources = viewResources.filter(resource => resource.views.includes(view) && (!state.tour || resource.public));
+    await Promise.allSettled(resources.map(resource => {
+      const historyChanged = resource.name === "workspace" && state.data.workspace?.overview?.history_coverage?.period !== workspacePeriod(view);
+      return loadResource(resource.name, typeof resource.path === "function" ? resource.path() : resource.path, {
+        force: force || historyChanged,
+        timeout: resource.timeout || 30000
+      });
+    }));
+    if (generation !== state.generation || state.view !== view) return;
+    if (view === "asset" && detail.uid && !state.tour) {
+      if (detail.uid === state.route.uid) await loadAssetView(detail.uid, force);
+      return;
+    }
+    if (view === "search") {
+      await runSearch(detail.q || "");
+      return;
+    }
+    renderCurrent();
   };
   const dataError = (name, label = "Не удалось загрузить данные") => state.errors[name] ? `<div class="notice error"><strong>${esc(label)}</strong><p>${esc(humanError(state.errors[name]))}</p>${button("Повторить загрузку", "refresh", {
     small: true
@@ -544,6 +627,159 @@
     $("#notification-dot").hidden = unread === 0 || state.tour || Boolean(state.data.events?.alerts_suppressed);
     $("#notifications-button").setAttribute("aria-label", unread ? `Уведомления: ${unread} непрочитанных` : "Уведомления");
   };
+  const refreshActive = result => ["queued", "running"].includes(result?.status);
+  const refreshContext = () => ({
+    generation: state.generation,
+    sequence: ++state.refresh.sequence
+  });
+  const currentRefresh = context => context.generation === state.generation && context.sequence === state.refresh.sequence && Boolean(state.user) && !state.locked;
+  const refreshUnavailable = () => {
+    if (state.refresh.busy) return true;
+    if (state.errors.refreshStatus) return false;
+    const connected = state.data.connection?.connected || state.data.workspace?.connection?.connected;
+    return refreshActive(state.data.refreshStatus) || Boolean(connected && state.data.refreshStatus?.can_refresh === false);
+  };
+  const updateRefreshControls = () => {
+    const unavailable = refreshUnavailable();
+    const collecting = state.refresh.busy || refreshActive(state.data.refreshStatus);
+    for (const control of $$('[data-action="workspace-refresh"]')) {
+      control.disabled = unavailable;
+      control.setAttribute("aria-busy", String(collecting));
+    }
+    if (!["home", "portfolio", "analytics", "settings"].includes(state.view)) return;
+    for (const control of $$('[data-view="' + state.view + '"] [data-action="refresh"]')) {
+      control.disabled = unavailable;
+      control.setAttribute("aria-busy", String(collecting));
+    }
+  };
+  const workspaceRefreshText = () => {
+    const result = state.data.refreshStatus;
+    if (state.errors.refreshStatus) return humanError(state.errors.refreshStatus);
+    if (state.refresh.busy && !refreshActive(result)) return "Запрашиваем обновление у сервера…";
+    const labels = {
+      queued: "Обновление поставлено в очередь. Источник данных подключён; ожидаем начало сбора.",
+      running: "Получаем портфель и историю операций из T-Invest. Показатели обновятся после сохранения наблюдения.",
+      degraded: "Наблюдение обновлено частично. Полнота истории операций проверяется отдельно; недоступные показатели не рассчитываются.",
+      failed: "Обновление не завершилось. Сохранённые ранее данные остаются отмечены временем наблюдения."
+    };
+    let text = labels[result?.status] || "";
+    const reasons = {
+      consent_required: "Примите актуальные документы, повторно выполнив вход в аккаунт.",
+      worker_interrupted: "Сбор данных прерван перезапуском сервиса; его можно повторить.",
+      observation_context_changed: "Подключение или разрешения изменились. Проверьте настройки источника.",
+      observation_interrupted: "Подключение или разрешения изменились. Проверьте настройки источника.",
+      ObservationCancelled: "Подключение или разрешения изменились. Проверьте настройки источника.",
+      TBankUnavailable: "Источник T-Invest временно недоступен.",
+      TBankTokenRejected: "Источник перестал принимать токен. Проверьте подключение.",
+      BrokerConnectionError: "Подключение изменилось. Проверьте источник данных.",
+      BrokerNotConnected: "Источник данных сейчас не подключён.",
+      ValueError: "Ответ источника не прошёл проверку согласованности."
+    };
+    if (reasons[result?.reason]) text += " " + reasons[result.reason];
+    if (result?.history_status === "continuation_pending") text += " Получена часть истории операций; следующее обновление продолжит сбор.";
+    if (["opened_date_missing", "opened_date_invalid"].includes(result?.history_status)) text += " Источник не подтвердил дату открытия счёта; полнота истории пока неизвестна.";
+    if (result?.reason === "refresh_cooldown") text += ` Следующее обновление доступно через ${format(result.retry_after_seconds, 0)} с.`;
+    if (text && result?.observed_at) text += ` Последнее наблюдение: ${date(result.observed_at, true)} МСК.`;
+    return text;
+  };
+  const scheduleRefreshPoll = (context, delay) => {
+    clearTimeout(state.refresh.timer);
+    state.refresh.timer = window.setTimeout(() => {
+      if (currentRefresh(context)) void pollWorkspaceRefresh(context);
+    }, delay);
+  };
+  const repaintRefreshedWorkspace = () => {
+    if (["home", "portfolio", "analytics", "goals", "events"].includes(state.view)) renderCurrent();else {
+      updateIdentity();
+      renderConnectionBanner();
+      if (state.view === "settings") {
+        const target = $("#broker-settings");
+        if (target) target.innerHTML = `<h2 class="panel-title">Подключение T-Invest</h2>${brokerSettingsHTML()}`;
+      }
+    }
+    updateRefreshControls();
+  };
+  const reloadWorkspaceObservation = async context => {
+    const resources = [["workspace", workspacePath()], ["visualization", "/api/portfolio/visualization?history_limit=365"]];
+    if (state.view === "analytics") resources.push(["analysis", "/api/broker/tbank/analysis"]);else delete state.data.analysis;
+    await Promise.allSettled(resources.map(([name, path]) => loadResource(name, path, {
+      force: true,
+      timeout: 45000
+    })));
+    if (!currentRefresh(context)) return;
+    state.strategy.assessment = null;
+    repaintRefreshedWorkspace();
+  };
+  const adoptRefreshStatus = async (result, context) => {
+    if (!currentRefresh(context)) return;
+    const previous = state.data.refreshStatus;
+    state.data.refreshStatus = result;
+    delete state.errors.refreshStatus;
+    renderConnectionBanner();
+    updateRefreshControls();
+    const changedObservation = result.observed_at && result.observed_at !== state.data.workspace?.overview?.observed_at;
+    const finished = (refreshActive(previous) || state.refresh.busy) && !refreshActive(result);
+    if (changedObservation || finished) await reloadWorkspaceObservation(context);
+    if (!currentRefresh(context)) return;
+    if (refreshActive(result)) scheduleRefreshPoll(context, 2500);else if (!result.can_refresh && result.retry_after_seconds > 0) scheduleRefreshPoll(context, Math.min(60000, result.retry_after_seconds * 1000));
+  };
+  const refreshFailed = (error, context) => {
+    if (!currentRefresh(context) || isCancelled(error)) return;
+    state.errors.refreshStatus = error;
+    renderConnectionBanner();
+    updateRefreshControls();
+  };
+  const pollWorkspaceRefresh = async context => {
+    if (!currentRefresh(context)) return;
+    try {
+      await adoptRefreshStatus(await api("/api/workspace/refresh"), context);
+    } catch (error) {
+      refreshFailed(error, context);
+    }
+  };
+  const resumeWorkspaceRefresh = async () => {
+    if (!state.user || state.tour || state.locked || state.refresh.busy) return;
+    const context = refreshContext();
+    clearTimeout(state.refresh.timer);
+    await pollWorkspaceRefresh(context);
+  };
+  const requestWorkspaceRefresh = async () => {
+    if (!requireUser() || state.refresh.busy) return;
+    const context = refreshContext();
+    clearTimeout(state.refresh.timer);
+    state.refresh.busy = true;
+    delete state.errors.refreshStatus;
+    renderConnectionBanner();
+    updateRefreshControls();
+    try {
+      const result = await api("/api/workspace/refresh", {
+        method: "POST",
+        body: {
+          expected_public_id: state.user.public_id
+        }
+      });
+      await adoptRefreshStatus(result, context);
+    } catch (error) {
+      refreshFailed(error, context);
+    } finally {
+      if (currentRefresh(context)) {
+        state.refresh.busy = false;
+        renderConnectionBanner();
+        updateRefreshControls();
+      }
+    }
+  };
+  const connectionStatusText = (connection, workspace) => {
+    if (state.errors.workspace) return humanError(state.errors.workspace);
+    const refreshText = workspaceRefreshText();
+    if (refreshText) return refreshText;
+    if (connection && !connection.connected) return "Подключите T-Invest, чтобы увидеть стоимость, состав и аналитику своего портфеля.";
+    if (connection?.connected && workspace && !workspace.overview?.observed_at) return "Счёт подключён. Подтверждённое наблюдение пока не получено. Запустите обновление: история начнётся с реальных данных источника.";
+    if (connection?.environment === "sandbox") return "Подключена тестовая среда T-Invest. Эти данные относятся к тестовому счёту.";
+    if (workspace?.overview?.status === "stale") return "Последнее наблюдение устарело. Значения помечены временем получения; обновите данные.";
+    if (workspace?.overview?.status === "partial") return "Получена только часть данных счёта. Некоторые показатели пока не рассчитаны.";
+    return "";
+  };
   const renderConnectionBanner = () => {
     const banner = $("#connection-banner");
     const ws = state.data.workspace;
@@ -552,16 +788,12 @@
       banner.hidden = true;
       return;
     }
-    let text = "";
-    let error = false;
-    if (state.errors.workspace) {
-      text = humanError(state.errors.workspace);
-      error = true;
-    } else if (connection && !connection.connected) text = "Подключите T-Invest, чтобы увидеть стоимость, состав и аналитику своего портфеля.";else if (connection?.connected && ws && !ws.overview?.observed_at) text = "Счёт подключён. Первое подтверждённое наблюдение ещё не получено; история начнётся после сбора данных. Обновите состояние через некоторое время.";else if (connection?.environment === "sandbox") text = "Подключена тестовая среда T-Invest. Эти данные относятся к тестовому счёту.";else if (ws?.overview?.status === "stale") text = "Последнее наблюдение устарело. Значения помечены временем получения; обновите данные.";else if (ws?.overview?.status === "partial") text = "Получена только часть данных счёта. Некоторые показатели пока не рассчитаны.";
+    const text = connectionStatusText(connection, ws);
     banner.hidden = !text;
-    banner.classList.toggle("error", error);
+    banner.classList.toggle("error", Boolean(state.errors.workspace || state.errors.refreshStatus) || state.data.refreshStatus?.status === "failed");
     banner.innerHTML = text ? `<span>${esc(text)}</span>${button(renderConnectionBannerValue(connection), renderConnectionBannerValue2(connection), {
-      small: true
+      small: true,
+      extra: renderConnectionBannerValue3(connection)
     })}` : "";
   };
   const portfolioRows = () => {
@@ -604,7 +836,13 @@
   const selectedPreset = () => {
     const id = state.strategy.draft?.base_preset_id;
     const catalog = state.data.catalog;
-    return [...(catalog?.presets || []), ...(catalog?.legacy_presets || [])].find(item => item.id === id);
+    const current = catalog?.presets?.find(item => item.id === id);
+    if (current) return current;
+    const legacy = catalog?.legacy_presets?.[id];
+    return legacy ? {
+      id,
+      ...legacy
+    } : undefined;
   };
   const strategyTitle = () => state.strategy.draft?.customized ? "Моя настройка" : selectedPreset()?.title || "Выберите стратегию";
   const homeStrategy = () => {
@@ -636,6 +874,18 @@
     const goals = (state.data.goals?.items || []).filter(item => item.status === "active");
     return `${cardHeader("Цели", "goals", "")}${goals.length ? renderHomeGoalsGoalsPreviewList(goals) : empty("Начните с цели", "Укажите сумму и срок. Прогресс рассчитывается по выбранному источнику.", "goal-create", "Добавить цель", "goals")}<button class="button secondary full" data-route="goals">Все цели ${icon("arrow", true)}</button>`;
   };
+  const portfolioHistory = (overview, period) => {
+    if (overview.history_coverage?.period !== period) return [];
+    return overview.history || [];
+  };
+  const navCoverageHTML = (overview, period) => {
+    const coverage = overview.history_coverage;
+    if (!coverage || coverage.period !== period) return '<p class="data-footnote">Покрытие выбранного периода ещё не получено.</p>';
+    if (coverage.status === "empty") return '<p class="data-footnote">В выбранном периоде нет сохранённых наблюдений.</p>';
+    const range = date(coverage.returned_from, true) + " — " + date(coverage.returned_to, true) + " МСК";
+    const observations = coverage.status === "sampled" ? `${format(coverage.returned_observations, 0)} из ${format(coverage.total_observations, 0)} реальных наблюдений за период` : `${format(coverage.returned_observations, 0)} реальных наблюдений`;
+    return `<p class="data-footnote" data-history-period="${esc(period)}">${esc(range)}<br>${esc(observations)}. ${coverage.status === "sampled" ? "На графике показаны последние точки временных интервалов; расчёты используют полную сохранённую историю." : "Глубина истории зависит от сохранённых данных."}</p>`;
+  };
   const renderHome = () => {
     const ws = state.data.workspace;
     const overview = ws?.overview || {};
@@ -647,13 +897,13 @@
       ...item,
       time: `${item.month}-01`
     }));
-    const history = U.filteredSeries(overview.history, state.homePeriod);
+    const history = portfolioHistory(overview, state.homePeriod);
     const result = number(performance.investment_result_rub);
-    const resultText = result === null ? "Подключите счёт для расчёта" : `${money(result)} · результат за период`;
+    const resultText = result === null ? "Полная история для расчёта ещё не получена" : `${money(result)} · ${date(performance.from)} — ${date(performance.to)}`;
     $("#view-home").innerHTML = `<h1 class="sr-only">Главная — обзор портфеля</h1><div class="dashboard-top"><section class="card summary-card"><p class="card-label">Общая стоимость</p><p class="main-value">${esc(money(overview.nav_rub))}</p><div class="value-change ${result === null ? "" : renderHomeValue(result)}">${esc(resultText)}</div>${overview.observed_at ? renderHomeDataFootnote(overview) : ""}${chart(history, {
       label: "Стоимость портфеля",
       compact: true
-    })}${periods("home", state.homePeriod)}</section><section class="card allocation-card">${cardHeader("Структура портфеля")}${U.allocation(overview.allocations, overview.nav_rub)}</section><div class="metric-stack"><section class="card metric-card"><p class="card-label">Доходность</p><p class="main-value">${esc(percent(performance.return_percent, true))}</p><p class="metric-note">${performance.return_percent === null || performance.return_percent === undefined ? "Для процента нужна подтверждённая методика и полная история потоков." : renderHomeFragment(performance)}</p>${result !== null ? renderHomeMetricNote(result) : ""}</section><section class="card metric-card secondary-metric"><p class="card-label">Пассивный доход</p><p class="main-value">${esc(money(latestMonth?.total_rub))}</p><p class="metric-note">${latestMonth ? renderHomeFragment3(latestMonth) : "Выплаты до налоговых списаний: данных пока нет"}</p>${incomeCurve.length > 1 ? chart(incomeCurve, {
+    })}${periods("home", state.homePeriod)}${navCoverageHTML(overview, state.homePeriod)}</section><section class="card allocation-card">${cardHeader("Структура портфеля")}${U.allocation(overview.allocations, overview.nav_rub)}</section><div class="metric-stack"><section class="card metric-card"><p class="card-label">Доходность</p><p class="main-value">${esc(percent(performance.return_percent, true))}</p><p class="metric-note">${performance.return_percent === null || performance.return_percent === undefined ? "Для процента нужна подтверждённая методика и полная история потоков." : renderHomeFragment(performance)}</p>${result !== null ? renderHomeMetricNote(result) : ""}</section><section class="card metric-card secondary-metric"><p class="card-label">Пассивный доход</p><p class="main-value">${esc(money(latestMonth?.total_rub))}</p><p class="metric-note">${latestMonth ? renderHomeFragment3(latestMonth) : "Выплаты до налоговых списаний: данных пока нет"}</p>${incomeCurve.length > 1 ? chart(incomeCurve, {
       timeKey: "time",
       valueKey: "total_rub",
       label: "Полученные выплаты по месяцам",
@@ -669,7 +919,7 @@
       small: true
     }) + button("Подключение", "connect", {
       small: true
-    }))}<div class="metric-grid">${[["Стоимость портфеля", money(overview.nav_rub)], ["Свободные средства", money(overview.free_cash_rub)], ["Результат за период", money(performance.investment_result_rub)], ["Активов", portfolioRows().length ? String(portfolioRows().length) : "—"]].map(([title, value]) => renderPortfolioCard(title, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader("Стоимость портфеля")}${chart(U.filteredSeries(overview.history, state.portfolioPeriod))}${periods("portfolio", state.portfolioPeriod)}<p class="data-footnote">График стоимости включает пополнения и выводы. Он не является графиком доходности.</p></section><section class="card">${cardHeader("Структура портфеля")}${U.allocation(overview.allocations, overview.nav_rub)}${freshness("T-Invest", overview.observed_at, overview.status)}</section></div><section class="card section-gap">${cardHeader("Мои активы")}${filtersHTML()}${assetsTable(false)}</section>${dataError("workspace")}`;
+    }))}<div class="metric-grid">${[["Стоимость портфеля", money(overview.nav_rub)], ["Свободные средства", money(overview.free_cash_rub)], ["Результат за период", money(performance.investment_result_rub)], ["Активов", portfolioRows().length ? String(portfolioRows().length) : "—"]].map(([title, value]) => renderPortfolioCard(title, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader("Стоимость портфеля")}${chart(portfolioHistory(overview, state.portfolioPeriod))}${periods("portfolio", state.portfolioPeriod)}${navCoverageHTML(overview, state.portfolioPeriod)}<p class="data-footnote">График стоимости включает пополнения и выводы. Он не является графиком доходности.</p></section><section class="card">${cardHeader("Структура портфеля")}${U.allocation(overview.allocations, overview.nav_rub)}${freshness("T-Invest", overview.observed_at, overview.status)}</section></div><section class="card section-gap">${cardHeader("Мои активы")}${filtersHTML()}${assetsTable(false)}</section>${dataError("workspace")}`;
   };
   const newsHTML = () => {
     const rows = state.data.news?.items || [];
@@ -794,12 +1044,7 @@
     const metrics = (facts.metrics || []).filter(item => number(item.value) !== null);
     return `<h3 class="panel-title">Финансовые показатели</h3>${metrics.length ? renderFundamentalMetricsHTMLInfoList(metrics, compact) : '<p class="notice">Источник не предоставил подтверждённые финансовые показатели этого инструмента.</p>'}${freshness("Финансовые данные T-Invest", facts.observed_at)}${!compact && facts.metrics?.length ? renderFundamentalMetricsHTMLSourceList(facts) : ""}${!compact && facts.missing_requirements?.length ? renderFundamentalMetricsHTMLDetailsSummary(facts) : ""}${!compact && facts.limitations?.length ? renderFundamentalMetricsHTMLFinePrint(facts) : ""}`;
   };
-  const renderAsset = () => {
-    const asset = state.asset;
-    if (!asset || asset.uid !== state.route.uid) {
-      $("#view-asset").innerHTML = U.loading("Получаем данные актива…");
-      return;
-    }
+  const assetPricing = asset => {
     const market = asset.market;
     const details = asset.details;
     const latest = details?.latest || {};
@@ -809,24 +1054,121 @@
     const change = current !== null && initial !== null && initial !== 0 ? current - initial : null;
     const changePercent = change !== null ? change / initial * 100 : null;
     const searched = state.searchResults.find(item => (item.uid || item.instrument_uid) === asset.uid);
-    const currency = String(asset.facts?.currency || latest.current_price_currency || latest.currency || market?.currency || searched?.currency || "").toUpperCase();
-    const chartContent = `<div class="main-value">${esc(money(current, 2, currency, false))}</div><p class="value-change ${change === null ? "" : renderAssetValue(change)}">${change === null ? "Изменение за период не рассчитано" : renderAssetFragment(change, currency, changePercent)}</p>${periods("asset", state.assetPeriod, true)}${asset.loading ? U.loading("Загружаем биржевой график…") : chart(candles, {
+    const currency = String([asset.facts?.currency, latest.current_price_currency, latest.currency, market?.currency, searched?.currency].find(Boolean) || "").toUpperCase();
+    const highs = candles.map(item => number(item.high)).filter(item => item !== null);
+    const lows = candles.map(item => number(item.low)).filter(item => item !== null);
+    return {
+      asset,
+      market,
+      details,
+      latest,
+      candles,
+      current,
+      change,
+      changePercent,
+      currency,
+      high: highs.length ? Math.max(...highs) : null,
+      low: lows.length ? Math.min(...lows) : null
+    };
+  };
+  const assetChartHTML = ({
+    asset,
+    market,
+    candles,
+    current,
+    change,
+    changePercent,
+    currency
+  }) => {
+    const changeLabel = change === null ? "Изменение за период не рассчитано" : renderAssetFragment(change, currency, changePercent);
+    const chartMarkup = asset.loading ? U.loading("Загружаем биржевой график…") : chart(candles, {
       timeKey: "time",
       valueKey: "close",
       label: renderAssetFragment2(asset),
       personal: false,
       currency
-    })}${freshness(market?.source || "T-Invest", market?.quote_time || market?.observed_at, market?.quote_status)}<p class="data-footnote">${currency ? "" : "Валюта цены не получена от источника. "}${market?.trading_status ? renderAssetFragment3(market) : ""}${state.assetPeriod === "all" ? "Доступная история источника. " : ""}${market?.history_note ? esc(market.history_note) + " " : ""}График показывает цены закрытия свечей.</p>`;
-    let content = chartContent;
-    if (state.assetTab === "overview") content = `${infoRows([["Название", asset.name], ["Тикер", asset.ticker || "—"], ["Тип", {
+    });
+    const notes = [currency ? "" : "Валюта цены не получена от источника.", market?.trading_status ? renderAssetFragment3(market) : "", state.assetPeriod === "all" ? "Доступная история источника." : "", esc(market?.history_note || ""), "График показывает цены закрытия свечей."].filter(Boolean).join(" ");
+    return `<div class="main-value">${esc(money(current, 2, currency, false))}</div><p class="value-change ${change === null ? "" : renderAssetValue(change)}">${changeLabel}</p>${periods("asset", state.assetPeriod, true)}${chartMarkup}${freshness(market?.source || "T-Invest", market?.quote_time || market?.observed_at, market?.quote_status)}<p class="data-footnote">${notes}</p>`;
+  };
+  const assetHoldingNote = ({
+    asset,
+    details,
+    latest
+  }) => {
+    if (details) return renderAssetDataFootnote(latest);
+    if (asset.detailsError && asset.detailsError.status !== 404) return `<p class="notice error">Данные позиции не загрузились: ${esc(humanError(asset.detailsError))}</p>`;
+    if (asset.loading) return U.loading("Проверяем состав вашего счёта…");
+    return '<p class="notice">Инструмент не найден в истории вашего счёта. Биржевой график доступен независимо от наличия позиции.</p>';
+  };
+  const assetOverviewHTML = context => {
+    const {
+      asset,
+      latest
+    } = context;
+    const type = {
       share: "Акция",
       bond: "Облигация",
       etf: "Фонд",
       currency: "Валюта"
-    }[latest.instrument_type] || "Не получен"], ["В портфеле", money(latest.value_rub)], ["Доля", percent(latest.nav_percent)], ["Количество", format(latest.quantity, 8)]])}${details ? renderAssetDataFootnote(latest) : '<p class="notice">Инструмент не найден в истории вашего счёта. Биржевой график доступен независимо от наличия позиции.</p>'}`;
-    if (state.assetTab === "metrics") content = `${infoRows([["Открытие периода", money(candles[0]?.open, 2, currency, false)], ["Максимум периода", money(candles.length ? Math.max(...candles.map(item => number(item.high)).filter(item => item !== null)) : null, 2, currency, false)], ["Минимум периода", money(candles.length ? Math.min(...candles.map(item => number(item.low)).filter(item => item !== null)) : null, 2, currency, false)], ["Последняя цена", money(current, 2, currency, false)], ["Время цены", market?.quote_time ? renderAssetFragment4(market) : "—"], ["Свечей в периоде", candles.length ? String(candles.length) : "—"], ["Режим торгов", tradingLabel(market?.trading_status)]])}<p class="data-footnote">Показатели рассчитаны только по полученным свечам выбранного периода.</p>`;
-    if (state.assetTab === "news") content = `${details?.sources?.length ? renderAssetDetailsSummary(details) : ""}<h3 class="panel-title section-gap">Общерыночные новости Банка России</h3><p class="fine-print">Это официальный общий источник, а не лента отдельного эмитента.</p>${newsHTML()}`;
-    $("#view-asset").innerHTML = `<div class="breadcrumb"><button class="icon-button" data-action="asset-back" aria-label="Назад к рынку">${icon("back")}</button><span>График актива</span></div><div class="asset-detail-header"><span class="asset-logo">${esc((asset.ticker || asset.name).slice(0, 1))}</span><div><h1>${esc(asset.name)}</h1><p>${esc(asset.ticker || "Инструмент T-Invest")}</p></div>${watchButton(asset)}</div><div class="asset-detail-layout"><section class="card asset-chart-card"><div class="tab-bar" role="tablist" aria-label="Карточка актива">${[["overview", "Обзор"], ["chart", "График"], ["metrics", "Показатели"], ["news", "Новости"]].map(([key, label]) => renderAssetTabButton(key, label)).join("")}</div><div class="asset-tab-content" role="tabpanel">${asset.error ? renderAssetNotice(asset) : ""}${content}</div></section><section class="card">${cardHeader("Основные показатели")}${infoRows([["Открытие", money(candles[0]?.open, 2, currency, false)], ["Максимум", money(candles.length ? Math.max(...candles.map(item => number(item.high)).filter(item => item !== null)) : null, 2, currency, false)], ["Стоимость в портфеле", money(latest.value_rub)], ["Доля портфеля", percent(latest.nav_percent)], ["Заблокировано лотов", latest.blocked_lots === undefined ? "—" : format(latest.blocked_lots)]])}<p class="notice">${esc(latest.risk_state ? riskLabel(latest.risk_state) : "Для оценки риска нужны данные об эмитенте и инструменте.")}</p>${details?.payouts?.length ? renderAssetDetailsSummary2(details) : ""}</section></div>`;
+    }[asset.facts?.instrument_type || latest.instrument_type] || "Не получен";
+    return `${infoRows([["Название", asset.name], ["Тикер", asset.ticker || "—"], ["Тип", type], ["Биржа", asset.facts?.exchange || "—"], ["Размер лота", format(asset.facts?.lot, 0)], ["В портфеле", money(latest.value_rub)], ["Доля", percent(latest.nav_percent)], ["Количество", format(latest.quantity, 8)]])}${assetHoldingNote(context)}`;
+  };
+  const assetMetricsHTML = ({
+    asset,
+    market,
+    candles,
+    current,
+    currency,
+    high,
+    low
+  }) => {
+    const quoteTime = market?.quote_time ? renderAssetFragment4(market) : "—";
+    const rows = [["Открытие периода", money(candles[0]?.open, 2, currency, false)], ["Максимум периода", money(high, 2, currency, false)], ["Минимум периода", money(low, 2, currency, false)], ["Последняя цена", money(current, 2, currency, false)], ["Время цены", quoteTime], ["Свечей в периоде", candles.length ? String(candles.length) : "—"], ["Режим торгов", tradingLabel(market?.trading_status)]];
+    return `${infoRows(rows)}<p class="data-footnote">Ценовые показатели рассчитаны только по полученным свечам выбранного периода.</p><div class="section-gap">${fundamentalMetricsHTML(asset)}</div>`;
+  };
+  const assetNewsHTML = ({
+    details
+  }) => `${details?.sources?.length ? renderAssetDetailsSummary(details) : ""}<h3 class="panel-title section-gap">Общерыночные новости Банка России</h3><p class="fine-print">Это официальный общий источник, а не лента отдельного эмитента.</p>${newsHTML()}`;
+  const assetSideHTML = ({
+    asset,
+    latest,
+    candles,
+    currency,
+    high,
+    details
+  }) => {
+    const rows = [["Открытие", money(candles[0]?.open, 2, currency, false)], ["Максимум", money(high, 2, currency, false)], ["Стоимость в портфеле", money(latest.value_rub)], ["Доля портфеля", percent(latest.nav_percent)], ["Заблокировано лотов", latest.blocked_lots === undefined ? "—" : format(latest.blocked_lots)]];
+    const risk = latest.risk_state ? riskLabel(latest.risk_state) : "Для оценки риска нужны данные об эмитенте и инструменте.";
+    return `${cardHeader("Основные показатели")}${infoRows(rows)}<p class="notice">${esc(risk)}</p><div class="section-gap">${fundamentalMetricsHTML(asset, true)}</div>${details?.payouts?.length ? renderAssetDetailsSummary2(details) : ""}`;
+  };
+  const assetFrameHTML = (context, content) => {
+    const {
+      asset
+    } = context;
+    const tabs = [["overview", "Обзор"], ["chart", "График"], ["metrics", "Показатели"], ["news", "Новости"]].map(([key, label]) => renderAssetTabButton(key, label)).join("");
+    return `<div class="breadcrumb"><button class="icon-button" data-action="asset-back" aria-label="Назад к рынку">${icon("back")}</button><span>График актива</span></div><div class="asset-detail-header"><span class="asset-logo">${esc((asset.ticker || asset.name).slice(0, 1))}</span><div><h1>${esc(asset.name)}</h1><p>${esc(asset.ticker || "Инструмент T-Invest")}</p></div>${watchButton(asset)}</div><div class="asset-detail-layout"><section class="card asset-chart-card"><div class="tab-bar" role="tablist" aria-label="Карточка актива">${tabs}</div><div class="asset-tab-content" role="tabpanel">${asset.error ? renderAssetNotice(asset) : ""}${content}</div></section><section class="card">${assetSideHTML(context)}</section></div>`;
+  };
+  const renderAsset = () => {
+    const container = $("#view-asset");
+    if (state.tour) {
+      container.innerHTML = empty("Карточка инструмента", "Войдите и подключите источник, чтобы получить цену, историю и финансовые показатели.", "login", "Войти", "market", true);
+      return;
+    }
+    const asset = state.asset;
+    if (!asset || asset.uid !== state.route.uid) {
+      container.innerHTML = U.loading("Получаем данные актива…");
+      return;
+    }
+    const context = assetPricing(asset);
+    const renderers = {
+      chart: assetChartHTML,
+      overview: assetOverviewHTML,
+      metrics: assetMetricsHTML,
+      news: assetNewsHTML
+    };
+    const renderer = renderers[state.assetTab] || assetChartHTML;
+    container.innerHTML = assetFrameHTML(context, renderer(context));
   };
   const tradingLabel = value => ({
     SECURITY_TRADING_STATUS_NORMAL_TRADING: "Основная сессия",
@@ -843,10 +1185,38 @@
     review_required: "Требуется дополнительная проверка данных."
   })[value] || "Оценка требует проверки исходных данных.";
   const validRecord = record => record && Number.isInteger(record.version) && record.version >= 0 && record.document && typeof record.document === "object";
+  const editablePreferenceForms = ["preferences-form", "profile-form"];
+  const hasFormDrafts = () => Object.keys(state.formDrafts).length > 0;
+  const formValues = form => Object.fromEntries(Array.from(form.elements).filter(input => input.name).map(input => [input.name, input.type === "checkbox" ? input.checked : input.value]));
+  const restoreEditableForm = formId => {
+    const form = $("#" + formId);
+    if (!form) return;
+    state.formBaselines[formId] = formValues(form);
+    const values = state.formDrafts[formId];
+    if (!values) return;
+    for (const [name, value] of Object.entries(values)) {
+      const input = form.elements.namedItem(name);
+      if (!input) continue;
+      if (input.type === "checkbox") input.checked = value;else input.value = value;
+    }
+  };
+  const captureFormDraft = input => {
+    const form = input.closest("form");
+    if (!form || !editablePreferenceForms.includes(form.id) || !state.prefs.server) return false;
+    const values = formValues(form);
+    if (same(values, state.formBaselines[form.id])) delete state.formDrafts[form.id];else state.formDrafts[form.id] = values;
+    updateSaveStatus("prefs");
+    return true;
+  };
+  const acceptFormSubmission = form => {
+    state.formBaselines[form.id] = formValues(form);
+    delete state.formDrafts[form.id];
+    updateSaveStatus("prefs");
+  };
   function adoptPreferences(payload) {
     if (!validRecord(payload)) return;
     const slot = state.prefs;
-    if (slot.dirty || slot.busy || slot.server && slot.server.version > payload.version) return;
+    if (slot.dirty || slot.busy || hasFormDrafts() || slot.server && slot.server.version > payload.version) return;
     slot.server = clone(payload);
     slot.draft = clone(payload.document);
     slot.error = null;
@@ -865,6 +1235,17 @@
     slot.draft = selection ? clone(selection.document) : null;
     slot.error = null;
   }
+  const updateStrategySaveControls = slot => {
+    const unavailable = !slot.server || slot.dirty || slot.busy || Boolean(slot.error);
+    const assess = $('[data-action="assess-strategy"]');
+    if (assess) assess.disabled = unavailable || state.loading.has("assessment");
+    const research = $('#research-form [type="submit"]');
+    if (research) research.disabled = unavailable || state.loading.has("research");
+    const title = $(".strategy-heading h2");
+    if (title) title.textContent = strategyTitle();
+    for (const option of $$("[data-select-strategy]")) option.setAttribute("aria-pressed", String(!slot.draft?.customized && option.dataset.selectStrategy === slot.draft?.base_preset_id));
+    for (const tab of $$('[data-action="strategy-catalog"],[data-action="strategy-custom"]')) tab.setAttribute("aria-selected", String(tab.dataset.action === "strategy-custom" ? Boolean(slot.draft?.customized) : !slot.draft?.customized));
+  };
   const updateSaveStatus = kind => {
     const slot = state[kind];
     const status = slot.error ? renderUpdateSaveStatusValue(slot) : renderUpdateSaveStatusValue4(slot);
@@ -877,20 +1258,12 @@
       empty: "Пока не сохранено"
     }[status];
     for (const element of $$(`[data-save-status="${kind}"]`)) {
-      element.dataset.state = status;
-      element.textContent = text;
+      const formId = element.closest("form")?.id;
+      const unsubmitted = kind === "prefs" && Boolean(state.formDrafts[formId]);
+      element.dataset.state = unsubmitted && !slot.error ? "pending" : status;
+      element.textContent = unsubmitted && !slot.error ? "Изменения формы не отправлены" : text;
     }
-    if (kind === "strategy") {
-      const unavailable = !slot.server || slot.dirty || slot.busy || Boolean(slot.error);
-      const assess = $('[data-action="assess-strategy"]');
-      if (assess) assess.disabled = unavailable || state.loading.has("assessment");
-      const research = $('#research-form [type="submit"]');
-      if (research) research.disabled = unavailable || state.loading.has("research");
-      const title = $(".strategy-heading h2");
-      if (title) title.textContent = strategyTitle();
-      for (const option of $$("[data-select-strategy]")) option.setAttribute("aria-pressed", String(!slot.draft?.customized && option.dataset.selectStrategy === slot.draft?.base_preset_id));
-      for (const tab of $$('[data-action="strategy-catalog"],[data-action="strategy-custom"]')) tab.setAttribute("aria-selected", String(tab.dataset.action === "strategy-custom" ? Boolean(slot.draft?.customized) : !slot.draft?.customized));
-    }
+    if (kind === "strategy") updateStrategySaveControls(slot);
     for (const element of $$(`[data-save-error="${kind}"]`)) {
       element.hidden = !slot.error;
       element.innerHTML = slot.error ? `<p>${esc(humanError(slot.error))}</p><div class="button-group">${button("Загрузить сохранённое", renderUpdateSaveStatusFragment(kind), {
@@ -928,65 +1301,90 @@
     slot.error = null;
     applySavedEffects(kind);
   };
-  const saveVersioned = async kind => {
-    const slot = state[kind];
-    if (slot.busy || !slot.dirty || slot.error || !slot.draft || !state.user || state.locked) return;
-    if (kind === "prefs" && !slot.server) return;
+  const currentWrite = context => context.generation === state.generation && state[context.kind] === context.slot;
+  const reconcileVersionedWrite = async context => {
+    try {
+      const payload = await api(context.path);
+      if (!currentWrite(context)) return;
+      const actual = recordFrom(context.kind, payload);
+      if (!validRecord(actual) || actual.version <= context.expected) return;
+      if (same(actual.document, context.document)) acceptWrite(context.kind, context.slot, actual, context.revision);else context.slot.error = Object.assign(new Error("settings_version_conflict"), {
+        status: 409
+      });
+    } catch (error) {
+      if (isCancelled(error)) return;
+    }
+  };
+  const attemptVersionedWrite = async context => {
+    const {
+      kind,
+      slot,
+      path
+    } = context;
+    const attempt = {
+      ...context,
+      revision: slot.revision,
+      document: clone(slot.draft),
+      expected: slot.server?.version || 0
+    };
+    try {
+      const result = await api(path, {
+        method: "PUT",
+        body: writePayload(kind, attempt.expected, attempt.document, slot.intent || "edit")
+      });
+      if (!currentWrite(context)) return false;
+      const saved = recordFrom(kind, result);
+      if (!validRecord(saved) || saved.version <= attempt.expected) throw Object.assign(new Error("invalid_server_response"), {
+        status: 502
+      });
+      acceptWrite(kind, slot, saved, attempt.revision);
+    } catch (error) {
+      if (!currentWrite(context) || isCancelled(error)) return false;
+      slot.error = error;
+      if (!error.definite && (!error.status || error.status >= 500)) await reconcileVersionedWrite(attempt);
+    }
+    return !slot.error;
+  };
+  const canSaveVersioned = (kind, slot) => {
+    if (slot.busy || !slot.dirty || slot.error || !slot.draft || !state.user || state.locked) return false;
+    if (kind === "prefs" && !slot.server) return false;
     const activeForm = $(`#${kind === "strategy" ? "strategy-form" : "preferences-form"}`);
     if (activeForm && !activeForm.checkValidity()) {
       slot.error = Object.assign(new Error("invalid_values"), {
         status: 422
       });
       updateSaveStatus(kind);
-      return;
+      return false;
     }
-    const generation = state.generation;
-    const path = kind === "strategy" ? "/api/profile/strategy" : "/api/preferences";
+    return true;
+  };
+  const finishVersionedSave = context => {
+    if (!currentWrite(context)) return;
+    const {
+      slot,
+      kind
+    } = context;
+    slot.busy = false;
+    updateSaveStatus(kind);
+    if (slot.error && kind === "prefs" && !["profile", "settings"].includes(state.view)) toast(`Настройки не сохранены: ${humanError(slot.error)} Откройте Настройки, чтобы проверить серверную версию.`, true);
+  };
+  const saveVersioned = async kind => {
+    const slot = state[kind];
+    if (!canSaveVersioned(kind, slot)) return;
+    const context = {
+      kind,
+      slot,
+      generation: state.generation,
+      path: kind === "strategy" ? "/api/profile/strategy" : "/api/preferences"
+    };
     slot.busy = true;
     updateSaveStatus(kind);
     try {
-      while (slot.dirty && !slot.error && generation === state.generation && state[kind] === slot) {
-        const revision = slot.revision;
-        const document = clone(slot.draft);
-        const expected = slot.server?.version || 0;
-        const intent = slot.intent || "edit";
-        try {
-          const result = await api(path, {
-            method: "PUT",
-            body: writePayload(kind, expected, document, intent)
-          });
-          if (generation !== state.generation || state[kind] !== slot) return;
-          const saved = recordFrom(kind, result);
-          if (!validRecord(saved) || saved.version <= expected) throw Object.assign(new Error("invalid_server_response"), {
-            status: 502
-          });
-          acceptWrite(kind, slot, saved, revision);
-        } catch (error) {
-          if (generation !== state.generation || isCancelled(error) || state[kind] !== slot) return;
-          slot.error = error;
-          if (!error.definite && (!error.status || error.status >= 500)) {
-            try {
-              const reconciliation = await api(path);
-              if (generation !== state.generation || state[kind] !== slot) return;
-              const actual = recordFrom(kind, reconciliation);
-              if (validRecord(actual) && actual.version > expected && same(actual.document, document)) acceptWrite(kind, slot, actual, revision);else if (validRecord(actual) && actual.version > expected) slot.error = Object.assign(new Error("settings_version_conflict"), {
-                status: 409
-              });
-            } catch (readError) {
-              if (isCancelled(readError)) return;
-            }
-          }
-          if (slot.error) break;
-        }
+      while (slot.dirty && !slot.error && currentWrite(context)) {
+        if (!(await attemptVersionedWrite(context))) break;
       }
     } finally {
-      if (generation === state.generation && state[kind] === slot) {
-        slot.busy = false;
-        updateSaveStatus(kind);
-        if (slot.error && kind === "prefs" && !["profile", "settings"].includes(state.view)) {
-          toast(`Настройки не сохранены: ${humanError(slot.error)} Откройте Настройки, чтобы проверить серверную версию.`, true);
-        }
-      }
+      finishVersionedSave(context);
     }
   };
   const scheduleSave = kind => {
@@ -1024,7 +1422,7 @@
       toast("Дождитесь завершения отправленного изменения.");
       return;
     }
-    if (slot.dirty && !discard) {
+    if ((slot.dirty || kind === "prefs" && hasFormDrafts()) && !discard) {
       openDialog("Загрузить сохранённые данные?", `<p class="help-copy">Правки этой вкладки будут заменены текущей серверной версией.</p><div class="form-actions">${button("Загрузить с сервера", renderReloadVersionedFragment(kind), {
         primary: true
       })}<button class="button secondary" data-close-dialog>Отмена</button></div>`);
@@ -1034,6 +1432,7 @@
       const generation = state.generation;
       const payload = await api(kind === "strategy" ? "/api/profile/strategy" : "/api/preferences");
       if (generation !== state.generation) return;
+      if (kind === "prefs" && !validRecord(payload)) throw Object.assign(new Error("invalid_server_response"), {status: 502});
       slot.dirty = false;
       slot.error = null;
       slot.revision += 1;
@@ -1042,7 +1441,11 @@
         state.data.strategy = payload;
         slot.assessment = null;
         slot.research = null;
-      } else adoptPreferences(payload);
+      } else {
+        state.formDrafts = {};
+        state.formBaselines = {};
+        adoptPreferences(payload);
+      }
       renderCurrent();
     } catch (error) {
       if (!isCancelled(error)) toast(humanError(error), true);
@@ -1133,19 +1536,12 @@
     const step = key.includes("months") || key.includes("days") ? "1" : "any";
     return `<div class="field"><span>${esc(title)}${help(title, helpText)}</span><div class="touch-input"><button type="button" class="step-button" data-step-field="${name}" data-step-direction="-1" aria-label="Уменьшить: ${esc(title)}">−</button><input name="${name}" aria-label="${esc(title)}, ${esc(unit)}" type="number" inputmode="decimal" min="${key === "horizon_months" ? "1" : "0"}" max="${max}" step="${step}" value="${esc(value ?? "")}" placeholder="Не указано"><button type="button" class="step-button" data-step-field="${name}" data-step-direction="1" aria-label="Увеличить: ${esc(title)}">+</button><small>${esc(unit)}</small></div></div>`;
   };
-  const renderStrategies = () => {
-    const catalog = state.data.catalog;
-    const slot = state.strategy;
-    const document = slot.draft;
-    const preset = selectedPreset();
-    if (!catalog) {
-      $("#view-strategies").innerHTML = `${heading("Стратегии", "Выбор подхода и личные ограничения")}${state.errors.catalog ? dataError("catalog") : U.loading("Получаем каталог стратегий…")}`;
-      return;
-    }
-    const list = `<aside class="card strategy-catalog"><h2>Выбор стратегии</h2><div class="tab-bar" role="tablist" aria-label="Источник стратегии"><button class="tab-button" role="tab" data-action="strategy-catalog" aria-selected="${!document?.customized}">Готовые стратегии</button><button class="tab-button" role="tab" data-action="strategy-custom" aria-selected="${Boolean(document?.customized)}">Моя настройка</button></div>${catalog.presets.map(item => {
-      const [symbol] = strategyIcons[item.id] || ["strategies"];
-      return renderStrategiesStrategyOption(item, document, symbol);
-    }).join("")}</aside>`;
+  const strategyEditorHTML = ({
+    document,
+    preset,
+    slot,
+    catalog
+  }) => {
     let editor;
     if (!document) editor = `<section class="card">${state.errors.strategy ? dataError("strategy") : empty("Выберите свой подход", "Изучите описание и выберите стратегию. Личные суммы не подставляются из шаблона; их задаёте вы.", renderStrategiesValue(), "Войти", "strategies", true)}<p class="notice">Расчёты проверяют условия на данных, доступных системе. Ни одна стратегия не гарантирует сохранность капитала или прибыль.</p></section>`;else editor = `<div class="strategy-editor"><section class="card"><div class="strategy-heading"><h2>${esc(strategyTitle())}</h2><span class="save-status" data-save-status="strategy"></span></div><p class="strategy-note section-gap">${esc(preset?.description || "Ваши сохранённые параметры стратегии")}</p>${saveErrorHTML("strategy")}<form id="strategy-form"><div class="allocation-sliders">${[["shares", "Акции"], ["bonds", "Облигации"], ["funds", "Фонды"], ["cash", "Деньги"]].map(([key, label], index) => renderStrategiesRangeRow(key, index, label, document)).join("")}</div><p class="data-footnote">Сумма долей всегда 100%. Изменение одной доли пропорционально перераспределяет остальные незакреплённые доли.</p><details><summary class="details-summary">Закрепить или исключить классы</summary><div class="allocation-flags">${[["shares", "Акции"], ["bonds", "Облигации"], ["funds", "Фонды"], ["cash", "Деньги"]].map(([key, label]) => renderStrategiesAllocationFlagRow(label, key, document)).join("")}</div></details><h3 class="panel-title section-gap">Ваши условия</h3><div class="field-grid">${strategyField("profile", "reserve_rub", "Резерв вне инвестиций", "₽", 1000000000000, "Личная сумма, которую следует сохранить доступной. Укажите реальное значение; пустое поле означает неизвестные условия.", document.profile.reserve_rub)}${strategyField("profile", "planned_withdrawal_rub", "Планируемый вывод", "₽", 1000000000000, "Запланированная потребность в деньгах. При смене готовой стратегии эта сумма сохраняется.", document.profile.planned_withdrawal_rub)}${strategyField("profile", "horizon_months", "Инвестиционный горизонт", "мес.", 1200, "Срок вашей цели. Более длинный срок не исключает убытки и потребность в резерве.", document.profile.horizon_months)}${strategyField("profile", "max_drawdown_percent", "Допустимая просадка", "%", 100, "Ваша готовность к временному снижению капитала. Это условие модели, а не гарантированный предел потерь.", document.profile.max_drawdown_percent)}${strategyField("profile", "liquidity_horizon_days", "Срок доступности денег", "дней", 36500, "За сколько дней вам могут понадобиться деньги. Фактическая ликвидность инструментов проверяется отдельно.", document.profile.liquidity_horizon_days)}</div><label class="check-field section-gap"><input type="checkbox" name="strategy.profile.allow_below_investment_grade"${document.profile.allow_below_investment_grade ? " checked" : ""}><span>Рассматривать бумаги ниже инвестиционного рейтинга. Это повышенный кредитный риск.</span></label><details><summary class="details-summary">Ограничения портфеля</summary><div class="field-grid">${policyFields.map(([key, title, unit, max, detail]) => strategyField("policy", key, title, unit, max, detail, document.policy[key])).join("")}</div></details><details><summary class="details-summary">Рейтинги и условия доходности</summary><p class="fine-print">Доли по рейтинговым категориям — верхние границы. Рейтинговый уровень не равен вероятности успеха.</p><div class="field-grid">${select("strategy.rules.yield_floor", "Условие доходности", [["none", "Не задавать"], ["key_rate", "От ключевой ставки"]], document.rules.yield_floor, "Порог применяется только при наличии сопоставимых данных о доходности инструмента и ключевой ставке.")}${strategyField("rules", "yield_margin_pp", "Надбавка к ставке", "п.п.", 100, "Заданная надбавка к официальной ключевой ставке для фильтра условий. Это не обещание доходности.", document.rules.yield_margin_pp)}${strategyField("rules", "fund_wrapper_cap_percent", "Доля одного фонда", "%", 100, "Дополнительный предел для отдельного фонда. Не отменяет проверки его состава.", document.rules.fund_wrapper_cap_percent)}${(catalog.rating_levels || []).map(grade => field({
       name: renderStrategiesFragment(grade),
@@ -1161,6 +1557,27 @@
       small: true,
       extra: state.loading.has("assessment") || slot.busy || slot.dirty ? "disabled" : ""
     })}</div><p class="fine-print">Проверяются распределение и ограничения по фактическому составу. Расчёт не сохраняет новые условия и не создаёт сделки.</p><div id="strategy-assessment">${renderAssessment()}</div></section><section class="card"><h3 class="panel-title">Исследование на истории</h3><p class="fine-print">Задайте период, расчётный капитал и издержки. Система использует полученные наблюдения и отделяет проверочный период. Вероятность будущей прибыли из результата не выводится.</p>${researchForm()}<div id="strategy-research">${renderResearch()}</div></section></div>`;
+    return editor;
+  };
+  const renderStrategies = () => {
+    const catalog = state.data.catalog;
+    const slot = state.strategy;
+    const document = slot.draft;
+    const preset = selectedPreset();
+    if (!catalog) {
+      $("#view-strategies").innerHTML = `${heading("Стратегии", "Выбор подхода и личные ограничения")}${state.errors.catalog ? dataError("catalog") : U.loading("Получаем каталог стратегий…")}`;
+      return;
+    }
+    const list = `<aside class="card strategy-catalog"><h2>Выбор стратегии</h2><div class="tab-bar" role="tablist" aria-label="Источник стратегии"><button class="tab-button" role="tab" data-action="strategy-catalog" aria-selected="${!document?.customized}">Готовые стратегии</button><button class="tab-button" role="tab" data-action="strategy-custom" aria-selected="${Boolean(document?.customized)}">Моя настройка</button></div>${catalog.presets.map(item => {
+      const [symbol] = strategyIcons[item.id] || ["strategies"];
+      return renderStrategiesStrategyOption(item, document, symbol);
+    }).join("")}</aside>`;
+    const editor = strategyEditorHTML({
+      document,
+      preset,
+      slot,
+      catalog
+    });
     $("#view-strategies").innerHTML = `${heading("Стратегии", "Десять подходов. Ваши цели, ограничения и данные.", button("Обновить", "refresh", {
       small: true
     }))}<div class="strategy-layout">${list}${editor}</div>${dataError("investmentProfile")}${dataError("balancingPolicy")}`;
@@ -1305,13 +1722,7 @@
     max_below_grade_percent_excluded: "Низкие рейтинги исключены",
     four_economic_regimes: "Не покрыты все четыре экономических режима"
   };
-  const humanRequirement = value => {
-    if (value && typeof value === "object") return humanRequirement(value.title || value.reason || "");
-    const key = String(value || "");
-    if (/[А-Яа-яЁё]/.test(key)) return key;
-    if (selectionReasonLabels[key]) return selectionReasonLabels[key];
-    const [prefix, name] = key.split(":");
-    if (["missing", "unverified"].includes(prefix)) return factLabels[name] ? `Не подтверждены данные: ${factLabels[name]}.` : "Не подтверждён необходимый показатель источника.";
+  const allocationRequirement = (key, prefix, name) => {
     const assetClass = {
       shares: "акций",
       bonds: "облигаций",
@@ -1320,6 +1731,17 @@
     if (key.startsWith("eligible_") && assetClass) return `Нет подходящих ${assetClass} с подтверждёнными данными.`;
     if (prefix === "unfilled_target" && assetClass) return `Целевая доля ${assetClass} заполнена частично.`;
     if (prefix === "target_above_class_cap" && assetClass) return `Целевая доля ${assetClass} выше ограничения.`;
+    return null;
+  };
+  const humanRequirement = value => {
+    if (value && typeof value === "object") return humanRequirement(value.title || value.reason || "");
+    const key = String(value || "");
+    if (/[А-Яа-яЁё]/.test(key)) return key;
+    if (selectionReasonLabels[key]) return selectionReasonLabels[key];
+    const [prefix, name] = key.split(":");
+    if (["missing", "unverified"].includes(prefix)) return factLabels[name] ? `Не подтверждены данные: ${factLabels[name]}.` : "Не подтверждён необходимый показатель источника.";
+    const allocationReason = allocationRequirement(key, prefix, name);
+    if (allocationReason) return allocationReason;
     if (key.startsWith("policy.")) return "Не указан необходимый предел в настройках портфеля.";
     if (factLabels[key]) return `Не получены данные: ${factLabels[key]}.`;
     return "Требуется проверка условий и полноты исходных данных.";
@@ -1450,7 +1872,7 @@
     step: ".01",
     required: true,
     helpText: "Дополнительная разница между наблюдаемой и расчётной ценой. Реальное проскальзывание заранее неизвестно."
-  })}</div><div class="form-actions"><button class="button primary" type="submit"${state.strategy.dirty || state.strategy.busy || state.loading.has("research") ? " disabled" : ""}>Проверить на истории</button></div><p id="research-message" class="form-message" role="status"></p></form>`;
+  })}</div><div class="form-actions"><button class="button primary" type="submit"${state.strategy.dirty || state.strategy.busy || state.loading.has("research") ? " disabled" : ""}>Проверить на истории</button></div><output id="research-message" class="form-message"></output></form>`;
   const researchMetricLabels = {
     net_return_percent: "Результат за период",
     max_drawdown_percent: "Максимальная просадка",
@@ -1559,7 +1981,7 @@
       step: "any",
       value: document.manual_amount_rub ?? "",
       helpText: "Сумма, которую вы подтверждаете сами. Она не выдаётся за полученную из брокерского API."
-    })}</div><p id="goal-source-note" class="fine-print"></p><div class="form-actions"><button class="button primary" type="submit">${goal ? "Сохранить цель" : "Создать цель"}</button><button class="button secondary" type="button" data-close-dialog>Отмена</button></div><p id="goal-message" class="form-message" role="status"></p></form>`);
+    })}</div><p id="goal-source-note" class="fine-print"></p><div class="form-actions"><button class="button primary" type="submit">${goal ? "Сохранить цель" : "Создать цель"}</button><button class="button secondary" type="button" data-close-dialog>Отмена</button></div><output id="goal-message" class="form-message"></output></form>`);
     updateGoalFields();
   };
   const updateGoalFields = (kindChanged = false) => {
@@ -1578,6 +2000,30 @@
     form.elements.manual_amount_rub.disabled = !manual;
     form.elements.manual_amount_rub.required = manual;
     $("#goal-source-note").textContent = manual ? "Вы явно задаёте накопленную сумму. Её можно обновить в любое время." : renderUpdateGoalFieldsValue(kind);
+  };
+  const reportGoalSaveError = (form, error) => {
+    if (!isCancelled(error)) {
+      showMessage($("#goal-message"), humanError(error), true);
+      if (!error.status || error.status >= 500) {
+        form.dataset.uncertain = "true";
+        $("#goal-message").innerHTML = `Результат сохранения не подтверждён. Проверьте список целей перед повтором.<div class="form-actions">${button("Проверить список", "goal-reconcile", {
+          small: true
+        })}</div>`;
+      }
+    }
+  };
+  const writeGoalDocument = (form, document) => {
+    const id = form.dataset.goalId;
+    const path = id ? `/api/goals/${safeSegment(id)}` : "/api/goals";
+    return api(path, {
+      method: id ? "PUT" : "POST",
+      body: id ? {
+        expected_version: Number(form.dataset.goalVersion),
+        document
+      } : {
+        document
+      }
+    });
   };
   const saveGoal = async form => {
     if (!requireUser() || form.dataset.busy === "true" || form.dataset.uncertain === "true" || !form.reportValidity()) return;
@@ -1603,17 +2049,7 @@
     form.dataset.busy = "true";
     const generation = state.generation;
     try {
-      const id = form.dataset.goalId;
-      const path = id ? `/api/goals/${safeSegment(id)}` : "/api/goals";
-      await api(path, {
-        method: id ? "PUT" : "POST",
-        body: id ? {
-          expected_version: Number(form.dataset.goalVersion),
-          document
-        } : {
-          document
-        }
-      });
+      await writeGoalDocument(form, document);
       if (generation !== state.generation) return;
       $("#workspace-dialog").close();
       await loadResource("goals", "/api/goals", {
@@ -1623,15 +2059,7 @@
       toast("Цель сохранена на сервере.");
       if (["goals", "home"].includes(state.view)) renderCurrent();
     } catch (error) {
-      if (!isCancelled(error)) {
-        showMessage($("#goal-message"), humanError(error), true);
-        if (!error.status || error.status >= 500) {
-          form.dataset.uncertain = "true";
-          $("#goal-message").innerHTML = `Результат сохранения не подтверждён. Проверьте список целей перед повтором.<div class="form-actions">${button("Проверить список", "goal-reconcile", {
-            small: true
-          })}</div>`;
-        }
-      }
+      reportGoalSaveError(form, error);
     } finally {
       delete form.dataset.busy;
       if (form.isConnected && generation === state.generation) submit.disabled = form.dataset.uncertain === "true";
@@ -1641,7 +2069,7 @@
     if (!requireUser()) return;
     const goal = state.data.goals?.items?.find(item => item.id === id);
     if (!goal) return;
-    openDialog("Удалить цель?", `<p class="help-copy">Цель «${esc(goal.title)}» будет удалена из вашего аккаунта. Данные брокерского счёта это действие не изменяет.</p><div class="form-actions"><button class="button danger" data-goal-delete-confirm="${esc(goal.id)}" data-version="${goal.version}">Удалить цель</button><button class="button secondary" data-close-dialog>Отмена</button></div><p id="goal-delete-message" class="form-message" role="status"></p>`);
+    openDialog("Удалить цель?", `<p class="help-copy">Цель «${esc(goal.title)}» будет удалена из вашего аккаунта. Данные брокерского счёта это действие не изменяет.</p><div class="form-actions"><button class="button danger" data-goal-delete-confirm="${esc(goal.id)}" data-version="${goal.version}">Удалить цель</button><button class="button secondary" data-close-dialog>Отмена</button></div><output id="goal-delete-message" class="form-message"></output>`);
   };
   const renderEvents = () => {
     const data = state.data.events;
@@ -1718,7 +2146,195 @@
     })}${button("Выйти", "logout", {
       small: true
     })}</div></section><section class="card wide"><h2 class="panel-title">Удаление аккаунта</h2><p class="fine-print">Удаляются профиль OMNICIO, его настройки, сессии и сохранённое подключение. Операция требует подтверждения ID вашего профиля.</p><button class="button danger" data-action="delete-account">Удалить аккаунт</button></section></div>`;
+    restoreEditableForm("profile-form");
     updateSaveStatus("prefs");
+  };
+  const executionActive = execution => ["created", "running", "reconciling"].includes(execution?.status) && ["live", "sandbox"].includes(execution?.mode);
+  const activeExecutionExists = () => Boolean(state.data.executions?.has_active_live_execution || state.data.executions?.executions?.some(executionActive));
+  const disconnectBlocked = () => !state.data.executions || Boolean(state.errors.executions) || activeExecutionExists();
+  const executionStatus = status => ({
+    created: "План создан",
+    running: "Есть незавершённые шаги",
+    reconciling: "Требуется сверка",
+    succeeded: "Завершено",
+    cancelled: "Отменено",
+    failed: "Ошибка",
+    pending: "Не отправлено",
+    submitting: "Результат отправки уточняется",
+    submitted: "Заявка у брокера",
+    partially_filled: "Исполнена частично",
+    filled: "Исполнена",
+    cancel_requested: "Отмена запрошена",
+    rejected: "Отклонена",
+    shadow_filled: "Запись исторического расчёта"
+  })[status] || "Статус требует проверки";
+  const executionMode = mode => ({
+    live: "Основной счёт",
+    sandbox: "Тестовый счёт",
+    shadow: "История расчёта"
+  })[mode] || "Среда не подтверждена";
+  const executionRow = execution => `<button class="recovery-row" data-action="recovery-open" data-recovery-id="${esc(execution.id)}"><span><strong>${esc(executionStatus(execution.status))}</strong><small>${esc(executionMode(execution.mode))} · ${esc(date(execution.updated_at, true))} МСК</small><small>Счёт ${esc(execution.account_id)}</small></span>${icon("arrow", true)}</button>`;
+  const mandateHTML = mandate => {
+    if (!mandate) return "";
+    return `<div class="notice section-gap"><strong>Ранее выданное разрешение</strong>${infoRows([["Счёт", mandate.account_id], ["Действует до", date(mandate.expires_at, true) + " МСК"], ["Лимит заявки", money(mandate.max_order_notional_rub)], ["Дневной лимит", money(mandate.max_daily_notional_rub)]])}<div class="form-actions">${button("Отозвать разрешение", "mandate-revoke", {
+      small: true
+    })}</div></div>`;
+  };
+  const recoveryPanelHTML = () => {
+    if (state.errors.executions) return `<section class="card section-gap"><h2 class="panel-title">Ранее начатые исполнения</h2>${dataError("executions", "История исполнений недоступна")}<p class="fine-print">Перед отключением источника требуется проверить незавершённые заявки.</p></section>`;
+    const data = state.data.executions;
+    if (!data) return `<section class="card section-gap">${U.loading("Проверяем ранее начатые исполнения…")}</section>`;
+    if (!data.executions.length && !data.live_mandate) return `<section class="card section-gap"><h2 class="panel-title">Ранее начатые исполнения</h2><p class="fine-print">В сохранённой истории нет исполнений прежней версии и активного разрешения.</p>${button("Проверить историю", "recovery-reload", {
+      small: true
+    })}</section>`;
+    return `<section class="card section-gap"><div class="card-header"><h2>Ранее начатые исполнения</h2>${button("Обновить", "recovery-reload", {
+      small: true
+    })}</div><p class="fine-print">История и восстановление заявок прежней версии. Сверка читает состояние ранее отправленной заявки. Новые заявки из этого раздела не создаются.</p><div class="recovery-list">${data.executions.map(executionRow).join("")}</div>${mandateHTML(data.live_mandate)}<output id="recovery-list-message" class="form-message"></output></section>`;
+  };
+  const repaintRecoveryPanel = () => {
+    const panel = $("#recovery-settings");
+    if (panel) panel.innerHTML = recoveryPanelHTML();
+    const broker = $("#broker-settings");
+    if (broker && state.data.connection?.connected) broker.innerHTML = `<h2 class="panel-title">Подключение T-Invest</h2>${brokerSettingsHTML()}`;
+  };
+  const reloadRecovery = async () => {
+    await loadResource("executions", "/api/portfolio/executions", {
+      force: true
+    });
+    if (state.user && !state.locked) repaintRecoveryPanel();
+  };
+  const nextExecutionLeg = execution => execution.legs?.find(leg => !["filled", "shadow_filled", "cancelled", "rejected", "failed"].includes(leg.status));
+  const recoveryButtons = execution => {
+    if (!executionActive(execution)) return "";
+    const next = nextExecutionLeg(execution);
+    if (!next) return "";
+    const pending = next.status === "pending";
+    const reconcile = pending ? "" : button("Сверить исполнение", "recovery-reconcile", {
+      small: true
+    });
+    return `<div class="form-actions">${reconcile}${button(pending ? "Закрыть неотправленный план" : "Отменить заявку", "recovery-cancel", {
+      small: true
+    })}</div>`;
+  };
+  const executionLegHTML = leg => {
+    const action = {
+      buy: "Покупка",
+      sell: "Продажа"
+    }[leg.action] || "Действие не определено";
+    return `<article class="recovery-leg"><h3>${esc(action)} · ${esc(executionStatus(leg.status))}</h3>${infoRows([["Инструмент", leg.instrument_uid], ["Запрошено лотов", format(leg.lots_requested, 0)], ["Исполнено лотов", format(leg.lots_executed, 0)], ["ID запроса", leg.request_id || "Не получен"], ["ID заявки брокера", leg.provider_order_id || "Не подтверждён"], ["Статус брокера", leg.provider_status || "Не получен"], ["Последняя сверка", leg.last_checked_at ? date(leg.last_checked_at, true) + " МСК" : "Ещё не выполнена"]])}</article>`;
+  };
+  const recoveryDetailsHTML = execution => `${infoRows([["Состояние", executionStatus(execution.status)], ["Среда", executionMode(execution.mode)], ["Счёт", execution.account_id], ["ID исполнения", execution.id], ["Обновлено", date(execution.updated_at, true) + " МСК"]])}${execution.error_code ? '<p class="notice error">Ранее получена ошибка. Сверьте состояние заявки перед следующим действием.</p>' : ""}<div class="recovery-legs">${(execution.legs || []).map(executionLegHTML).join("")}</div>${recoveryButtons(execution)}<div id="recovery-confirmation"></div><output id="recovery-message" class="form-message"></output><p class="fine-print section-gap">Отмена относится к ближайшему незавершённому шагу. Запрошенная отмена подтверждается состоянием брокера; фактически исполненные лоты остаются исполненными.</p>`;
+  const recoveryStatusButton = () => button("Обновить статус", "recovery-detail-reload", {
+    small: true
+  });
+  const updateRecoveryControls = () => {
+    for (const control of $$('#dialog-content [data-action^="recovery-"]')) {
+      const needsConfirmation = control.dataset.action !== "recovery-detail-reload";
+      control.disabled = state.recovery.busy || state.recovery.uncertain && needsConfirmation;
+    }
+  };
+  const recoveryContext = () => ({
+    id: state.recovery.id,
+    sequence: state.recovery.sequence,
+    generation: state.generation
+  });
+  const currentRecovery = context => context.generation === state.generation && context.sequence === state.recovery.sequence && context.id === state.recovery.id && $("#workspace-dialog").open;
+  const readRecoveryDetails = async context => {
+    try {
+      const result = await api(`/api/portfolio/executions/${safeSegment(context.id)}`);
+      if (!currentRecovery(context)) return;
+      state.recovery.record = result.execution;
+      state.recovery.uncertain = false;
+      $("#dialog-content").innerHTML = recoveryDetailsHTML(result.execution) + recoveryStatusButton();
+      updateRecoveryControls();
+    } catch (error) {
+      if (!currentRecovery(context) || isCancelled(error)) return;
+      $("#dialog-content").innerHTML = `<div class="notice error">${esc(humanError(error))}</div>${button("Повторить загрузку", "recovery-detail-reload", {
+        small: true
+      })}`;
+    }
+  };
+  const reloadRecoveryDetails = () => {
+    if (!state.recovery.id || state.recovery.busy) return;
+    state.recovery.sequence += 1;
+    return readRecoveryDetails(recoveryContext());
+  };
+  const openRecovery = async control => {
+    if (!requireUser()) return;
+    const id = control.dataset.recoveryId;
+    if (!state.data.executions?.executions.some(item => item.id === id)) return;
+    openDialog("Ранее начатое исполнение", U.loading("Читаем сохранённое состояние…"));
+    state.recovery.id = id;
+    await readRecoveryDetails(recoveryContext());
+  };
+  const askRecoveryCancellation = () => {
+    const execution = state.recovery.record;
+    if (!executionActive(execution) || state.recovery.busy || state.recovery.uncertain) return;
+    const pending = nextExecutionLeg(execution)?.status === "pending";
+    const description = pending ? "Неотправленный шаг будет закрыт в сохранённом плане. Брокерская заявка для него не создаётся." : "Сервер запросит отмену существующей заявки. Уже исполненные лоты отменить этим действием нельзя. После запроса проверьте ответ брокера.";
+    $("#recovery-confirmation").innerHTML = `<div class="notice section-gap"><p>${esc(description)}</p><div class="form-actions">${button("Подтвердить отмену", "recovery-cancel-confirm", {
+      small: true
+    })}${button("Продолжить просмотр", "recovery-cancel-dismiss", {
+      small: true
+    })}</div></div>`;
+    $('[data-action="recovery-cancel-confirm"]').focus();
+  };
+  const mutateRecovery = async action => {
+    if (!requireUser() || state.recovery.busy || state.recovery.uncertain || !executionActive(state.recovery.record)) return;
+    const context = recoveryContext();
+    state.recovery.busy = true;
+    for (const control of $$('#dialog-content [data-action^="recovery-"]')) control.disabled = true;
+    try {
+      const result = await api(`/api/portfolio/executions/${safeSegment(context.id)}/${action}`, {
+        method: "POST",
+        body: {}
+      });
+      if (currentRecovery(context)) {
+        state.recovery.record = result.execution;
+        $("#dialog-content").innerHTML = recoveryDetailsHTML(result.execution) + recoveryStatusButton();
+        showMessage($("#recovery-message"), "Состояние получено с сервера: " + executionStatus(result.execution.status));
+      }
+      if (context.generation === state.generation) await reloadRecovery();
+    } catch (error) {
+      if (currentRecovery(context) && !isCancelled(error)) {
+        state.recovery.uncertain = true;
+        showMessage($("#recovery-message"), humanError(error) + " Обновите состояние перед повтором.", true);
+      }
+    } finally {
+      if (context.generation === state.generation) state.recovery.busy = false;
+      if (currentRecovery(context)) updateRecoveryControls();
+    }
+  };
+  const askMandateRevoke = () => {
+    if (!requireUser() || !state.data.executions?.live_mandate) return;
+    openDialog("Отозвать ранее выданное разрешение?", `<p class="help-copy">Разрешение будет отозвано на сервере. Состояние уже отправленных заявок проверяется отдельно в истории исполнений.</p><div class="form-actions">${button("Отозвать разрешение", "mandate-revoke-confirm", {
+      small: true
+    })}<button class="button secondary" data-close-dialog>Отмена</button></div><output id="mandate-message" class="form-message"></output>`);
+  };
+  const revokeMandate = async control => {
+    if (!requireUser() || !state.data.executions?.live_mandate) return;
+    const generation = state.generation;
+    control.disabled = true;
+    try {
+      await api("/api/portfolio/live-execution/mandate", {
+        method: "DELETE",
+        body: {}
+      });
+      if (generation !== state.generation) return;
+      $("#workspace-dialog").close();
+      await reloadRecovery();
+      if (generation === state.generation) toast("Разрешение отозвано на сервере.");
+    } catch (error) {
+      if (generation === state.generation && !isCancelled(error)) {
+        showMessage($("#mandate-message"), humanError(error) + " Проверьте текущее разрешение перед повтором.", true);
+        control.disabled = false;
+      }
+    }
+  };
+  const brokerDisconnectDescription = () => {
+    if (activeExecutionExists()) return "Есть незавершённое исполнение. Сначала проверьте заявки в панели ниже; источник нужен для их сверки и отмены.";
+    if (disconnectBlocked()) return "Перед отключением проверяем ранее начатые исполнения. Если проверка не завершится, обновите историю ниже.";
+    return "Токен хранится на сервере и не возвращается в браузер. Для замены счёта сначала отключите текущее подключение.";
   };
   const renderSettings = () => {
     if (state.tour) {
@@ -1743,7 +2359,7 @@
     })}</div><div class="form-actions"><button class="button primary" type="submit">Сохранить настройки</button><span class="save-status" data-save-status="prefs"></span></div>${saveErrorHTML("prefs")}</section></form>` : `<section class="card">${renderSettingsValue2()}</section>`;
     $("#view-settings").innerHTML = `${heading("Настройки", "Источники, оформление и события — под вашим контролем", button("Обновить", "refresh", {
       small: true
-    }))}<div class="settings-layout"><div>${preferences}</div><div><section class="card" id="broker-settings"><h2 class="panel-title">Подключение T-Invest</h2>${brokerSettingsHTML()}</section><section class="card section-gap"><h2 class="panel-title">Персональный ИИ</h2><p class="fine-print">Статус и интерфейс ИИ находятся в отдельном разделе. Переписка текущего сеанса хранится только в памяти вкладки.</p>${button("Открыть ИИ-помощника", "assistant", {
+    }))}<div class="settings-layout"><div>${preferences}</div><div><section class="card" id="broker-settings"><h2 class="panel-title">Подключение T-Invest</h2>${brokerSettingsHTML()}</section><div id="recovery-settings">${recoveryPanelHTML()}</div><section class="card section-gap"><h2 class="panel-title">Персональный ИИ</h2><p class="fine-print">Статус и интерфейс ИИ находятся в отдельном разделе. Переписка текущего сеанса хранится только в памяти вкладки.</p>${button("Открыть ИИ-помощника", "assistant", {
       route: true,
       small: true
     })}</section><section class="card section-gap"><h2 class="panel-title">О приложении</h2>${infoRows([["Версия", $("[data-release-version]").textContent], ["Сборка", window.OMNICIO_RELEASE?.build || "Не получена"], ["Язык интерфейса", "Русский"]])}<div class="form-actions">${button("Условия использования", "legal", {
@@ -1752,17 +2368,19 @@
       route: true,
       small: true
     })}</div></section></div></div>`;
+    restoreEditableForm("preferences-form");
     updateSaveStatus("prefs");
   };
   const brokerSettingsHTML = () => {
     const connection = state.data.connection;
     if (!connection) return state.errors.connection ? dataError("connection") : U.loading("Проверяем подключение…");
-    if (connection.connected) return `<div class="connection-state"><span class="provider-mark">T</span><div><strong>${esc(connection.account_name || "Счёт T-Invest")}</strong><small>${connection.environment === "sandbox" ? "Тестовая среда" : "Основной счёт"}</small></div><span class="status-dot"></span></div>${infoRows([["ID счёта", connection.account_id], ["Проверен", connection.verified_at ? renderBrokerSettingsHTMLFragment(connection) : "—"]])}<p class="fine-print section-gap">Токен хранится на сервере и не возвращается в браузер. Для замены счёта сначала отключите текущее подключение.</p><div class="form-actions">${button("Обновить данные", "refresh", {
+    if (connection.connected) return `<div class="connection-state"><span class="provider-mark">T</span><div><strong>${esc(connection.account_name || "Счёт T-Invest")}</strong><small>${connection.environment === "sandbox" ? "Тестовая среда" : "Основной счёт"}</small></div><span class="status-dot"></span></div>${infoRows([["ID счёта", connection.account_id], ["Проверен", connection.verified_at ? renderBrokerSettingsHTMLFragment(connection) : "—"]])}<p class="fine-print section-gap">${esc(brokerDisconnectDescription())}</p><div class="form-actions">${button("Обновить данные", "refresh", {
       small: true
     })}${button("Отключить", "disconnect-start", {
-      small: true
+      small: true,
+      extra: disconnectBlocked() ? " disabled" : ""
     })}</div>`;
-    return `<p class="fine-print">Добавьте личный токен API T-Invest. Проверка покажет доступные счета; затем вы явно выберете нужный.</p><form id="broker-form" class="connection-steps"><label class="field"><span>API-токен ${help("API-токен", "Создайте токен в личном кабинете T-Invest для чтения данных. Токен вводится только после входа в OMNICIO, проверяется сервером и хранится зашифрованным. Не передавайте его в переписке.")}</span><input type="password" name="credential" autocomplete="off" minlength="20" maxlength="4096" required placeholder="Вставьте токен" spellcheck="false"></label>${select("environment", "Среда источника", [["prod", "Основной счёт"], ["sandbox", "Тестовая среда"]], "prod")}<label class="check-field"><input type="checkbox" name="accept_personal_terms" required><span>Подтверждаю доступ к своим данным на условиях <a href="/legal/terms.html" target="_blank" rel="noopener">использования сервиса</a>.</span></label><button class="button primary" type="submit">Проверить токен</button><div id="broker-accounts"></div><p id="broker-message" class="form-message" role="status"></p></form>`;
+    return `<p class="fine-print">Добавьте личный токен API T-Invest. Проверка покажет доступные счета; затем вы явно выберете нужный.</p><form id="broker-form" class="connection-steps"><label class="field"><span>API-токен ${help("API-токен", "Создайте токен в личном кабинете T-Invest для чтения данных. Токен вводится только после входа в OMNICIO, проверяется сервером и хранится зашифрованным. Не передавайте его в переписке.")}</span><input type="password" name="credential" autocomplete="off" minlength="20" maxlength="4096" required placeholder="Вставьте токен" spellcheck="false"></label>${select("environment", "Среда источника", [["prod", "Основной счёт"], ["sandbox", "Тестовая среда"]], "prod")}<label class="check-field"><input type="checkbox" name="accept_personal_terms" required><span>Подтверждаю доступ к своим данным на условиях <a href="/legal/terms.html" target="_blank" rel="noopener">использования сервиса</a>.</span></label><button class="button primary" type="submit">Проверить токен</button><div id="broker-accounts"></div><output id="broker-message" class="form-message"></output></form>`;
   };
   const renderAssistant = () => {
     const status = state.data.assistantStatus;
@@ -1770,10 +2388,18 @@
     const chat = state.chat.map(item => `<article class="chat-message ${item.role === "user" ? "user" : ""}"><small>${item.role === "user" ? "Вы" : "OMNICIO · ИИ"}</small>${esc(item.content)}${item.sources?.length ? renderAssistantSourceList(item) : ""}</article>`).join("");
     $("#view-assistant").innerHTML = `${heading("ИИ-помощник", "Объяснения, контекст портфеля и ваши вопросы", button("Проверить подключение", "refresh", {
       small: true
-    }))}<div class="assistant-layout"><section class="card chat-card"><div class="assistant-status">${icon("assistant")}<strong>Персональный помощник</strong><span class="chip">${configured ? "Подключён" : "Не подключён"}</span>${configured ? renderAssistantFinePrint(status) : ""}</div><div id="chat-messages" class="chat-messages" role="log" aria-label="Переписка с ИИ">${chat || empty(configured ? "Что вы хотите понять?" : "Подключите ИИ-провайдера", configured ? "Задайте вопрос о понятиях или выберите контекст своего портфеля." : "Интерфейс готов к работе. Ответы появятся после настройки настоящего провайдера на сервере.", "", "", "assistant", true)}${state.assistantBusy ? U.loading("Помощник готовит ответ…") : ""}</div><form id="assistant-form"><div class="assistant-context">${select("context", "Контекст вопроса", [["general", "Общий вопрос"], ["portfolio", "Данные моего портфеля"]], "general")}<p class="fine-print">Контекст портфеля отправляется только по вашему выбору. Переписка доступна до перезагрузки вкладки и очищается при выходе.</p></div><div class="chat-compose"><textarea name="message" aria-label="Сообщение помощнику" maxlength="4000" required placeholder="Задайте свой вопрос…"${!configured || state.assistantBusy || state.tour ? " disabled" : ""}></textarea><button class="button primary" type="submit" aria-label="Отправить сообщение"${!configured || state.assistantBusy || state.tour ? " disabled" : ""}>${icon("arrow")}<span>Отправить</span></button></div><p id="assistant-message" class="form-message chat-form-message" role="status"></p></form>${dataError("assistantStatus")}</section><aside class="card assistant-side"><h2 class="panel-title">Начать с вопроса</h2><div class="assistant-prompts">${["Как читать структуру моего портфеля?", "Что означает просадка?", "Какие данные нужны для оценки стратегии?"].map(text => renderAssistantButton(text, configured)).join("")}</div><p class="section-gap">ИИ помогает разбираться в данных. Его ответ не подтверждает цену, результат расчёта или исполнение сделки.</p>${state.chat.length ? button("Очистить переписку", "chat-clear", {
+    }))}<div class="assistant-layout"><section class="card chat-card"><div class="assistant-status">${icon("assistant")}<strong>Персональный помощник</strong><span class="chip">${configured ? "Подключён" : "Не подключён"}</span>${configured ? renderAssistantFinePrint(status) : ""}</div><div id="chat-messages" class="chat-messages" role="log" aria-label="Переписка с ИИ">${chat || empty(configured ? "Что вы хотите понять?" : "Подключите ИИ-провайдера", configured ? "Задайте вопрос о понятиях или выберите контекст своего портфеля." : "Интерфейс готов к работе. Ответы появятся после настройки настоящего провайдера на сервере.", "", "", "assistant", true)}${state.assistantBusy ? U.loading("Помощник готовит ответ…") : ""}</div><form id="assistant-form"><div class="assistant-context">${select("context", "Контекст вопроса", [["general", "Общий вопрос"], ["portfolio", "Данные моего портфеля"]], "general")}<p class="fine-print">Контекст портфеля отправляется только по вашему выбору. Переписка доступна до перезагрузки вкладки и очищается при выходе.</p></div><div class="chat-compose"><textarea name="message" aria-label="Сообщение помощнику" maxlength="4000" required placeholder="Задайте свой вопрос…"${!configured || state.assistantBusy || state.tour ? " disabled" : ""}></textarea><button class="button primary" type="submit" aria-label="Отправить сообщение"${!configured || state.assistantBusy || state.tour ? " disabled" : ""}>${icon("arrow")}<span>Отправить</span></button></div><output id="assistant-message" class="form-message chat-form-message"></output></form>${dataError("assistantStatus")}</section><aside class="card assistant-side"><h2 class="panel-title">Начать с вопроса</h2><div class="assistant-prompts">${["Как читать структуру моего портфеля?", "Что означает просадка?", "Какие данные нужны для оценки стратегии?"].map(text => renderAssistantButton(text, configured)).join("")}</div><p class="section-gap">ИИ помогает разбираться в данных. Его ответ не подтверждает цену, результат расчёта или исполнение сделки.</p>${state.chat.length ? button("Очистить переписку", "chat-clear", {
       small: true,
       extra: renderAssistantValue()
     }) : ""}</aside></div>`;
+  };
+  const reportAssistantError = (error, generation) => {
+    if (generation !== state.generation || isCancelled(error)) return;
+    state.assistantBusy = false;
+    if (state.view === "assistant") {
+      renderAssistant();
+      showMessage($("#assistant-message"), humanError(error), true);
+    } else toast(humanError(error), true);
   };
   const sendAssistant = async form => {
     if (!requireUser() || state.assistantBusy || !state.data.assistantStatus?.configured) return;
@@ -1820,12 +2446,7 @@
         $("#chat-messages").scrollTop = $("#chat-messages").scrollHeight;
       }
     } catch (error) {
-      if (generation !== state.generation || isCancelled(error)) return;
-      state.assistantBusy = false;
-      if (state.view === "assistant") {
-        renderAssistant();
-        showMessage($("#assistant-message"), humanError(error), true);
-      } else toast(humanError(error), true);
+      reportAssistantError(error, generation);
     }
   };
   const renderCurrent = () => {
@@ -1847,6 +2468,7 @@
       search: renderSearch
     };
     renderers[state.view]?.();
+    updateRefreshControls();
     U.bindCharts($(`#view-${state.view}`));
   };
   const renderPublicCatalog = catalog => {
@@ -2009,25 +2631,31 @@
       if (form.isConnected && generation === state.generation) submit.disabled = false;
     }
   };
-  const connectBroker = async control => {
-    if (!requireUser()) return;
+  const brokerConnectionInput = () => {
     const form = $("#broker-form");
     const preview = state.brokerPreview;
     if (!form || !preview || preview.credential !== form.elements.credential.value.trim() || preview.environment !== form.elements.environment.value || !form.elements.accept_personal_terms.checked) {
       resetBrokerPreview();
       showMessage($("#broker-message"), "Данные изменились. Проверьте токен повторно.", true);
-      return;
+      return null;
     }
     const accountId = form.elements.account_id?.value;
     if (!preview.accounts.some(item => item.id === accountId)) {
       showMessage($("#broker-message"), "Выберите один из доступных счетов.", true);
-      return;
+      return null;
     }
-    control.disabled = true;
-    const generation = state.generation;
-    let connected = null;
+    return {
+      form,
+      preview,
+      accountId
+    };
+  };
+  const writeBrokerConnection = async ({
+    preview,
+    accountId
+  }) => {
     try {
-      connected = await api("/api/broker/tbank", {
+      return await api("/api/broker/tbank", {
         method: "PUT",
         timeout: 45000,
         body: {
@@ -2038,21 +2666,16 @@
         }
       });
     } catch (error) {
-      if (isCancelled(error) || generation !== state.generation) return;
-      if (!error.status || error.status >= 500) {
-        try {
-          const current = await api("/api/broker/tbank");
-          if (current.connected && current.account_id === accountId && current.environment === preview.environment) connected = current;
-        } catch (readError) {
-          if (isCancelled(readError)) return;
-        }
-      }
-      if (!connected) {
-        showMessage($("#broker-message"), humanError(error), true);
-        control.disabled = false;
-        return;
-      }
+      if (isCancelled(error) || error.definite || error.status && error.status < 500) throw error;
+      const current = await api("/api/broker/tbank");
+      if (current.connected && current.account_id === accountId && current.environment === preview.environment) return current;
+      throw error;
     }
+  };
+  const adoptBrokerConnection = async ({
+    form,
+    generation
+  }, connected) => {
     if (generation !== state.generation) return;
     form.elements.credential.value = "";
     resetBrokerPreview();
@@ -2062,10 +2685,30 @@
     delete state.data.analysis;
     toast("Счёт подключён. Загружаем реальные данные.");
     renderSettings();
-    await loadResource("workspace", "/api/workspace", {
+    await requestWorkspaceRefresh();
+    if (generation !== state.generation) return;
+    await loadResource("workspace", workspacePath(), {
       force: true
     });
     if (generation === state.generation && state.view === "settings") renderCurrent();
+  };
+  const connectBroker = async control => {
+    if (!requireUser()) return;
+    const input = brokerConnectionInput();
+    if (!input) return;
+    const context = {
+      ...input,
+      generation: state.generation
+    };
+    control.disabled = true;
+    try {
+      await adoptBrokerConnection(context, await writeBrokerConnection(context));
+    } catch (error) {
+      if (!isCancelled(error) && context.generation === state.generation) {
+        showMessage($("#broker-message"), humanError(error), true);
+        control.disabled = false;
+      }
+    }
   };
   const clearBrokerState = async () => {
     const user = state.user;
@@ -2077,7 +2720,7 @@
     state.tour = false;
     showApp();
   };
-  const hasPending = () => state.prefs.dirty || state.prefs.busy || state.strategy.dirty || state.strategy.busy;
+  const hasPending = () => state.prefs.dirty || state.prefs.busy || state.strategy.dirty || state.strategy.busy || hasFormDrafts();
   const logout = async () => {
     if (!state.user) {
       state.tour = false;
@@ -2111,7 +2754,7 @@
       name: "confirm_public_id",
       label: "ID вашего профиля",
       required: true
-    })}<label class="check-field section-gap"><input type="checkbox" name="confirm_irreversible" required><span>Подтверждаю удаление профиля и понимаю, что восстановление через интерфейс недоступно.</span></label><div class="form-actions"><button class="button danger" type="submit">Удалить аккаунт</button><button class="button secondary" type="button" data-close-dialog>Отмена</button></div><p id="delete-account-message" class="form-message" role="status"></p></form>`);
+    })}<label class="check-field section-gap"><input type="checkbox" name="confirm_irreversible" required><span>Подтверждаю удаление профиля и понимаю, что восстановление через интерфейс недоступно.</span></label><div class="form-actions"><button class="button danger" type="submit">Удалить аккаунт</button><button class="button secondary" type="button" data-close-dialog>Отмена</button></div><output id="delete-account-message" class="form-message"></output></form>`);
   };
   const toggleWatch = control => {
     const uid = control.dataset.watch;
@@ -2178,6 +2821,17 @@
       bubbles: true
     }));
   };
+  const finishResearch = (generation, submit) => {
+    if (generation === state.generation) {
+      state.loading.delete("research");
+      if (submit.isConnected) submit.disabled = false;
+      const target = $("#strategy-research");
+      if (target) {
+        target.innerHTML = renderResearch();
+        U.bindCharts(target);
+      }
+    }
+  };
   const runResearch = async form => {
     if (!requireUser() || state.loading.has("research") || !form.reportValidity()) return;
     const slot = state.strategy;
@@ -2219,15 +2873,7 @@
     } catch (error) {
       if (generation === state.generation && !isCancelled(error)) showMessage($("#research-message"), humanError(error), true);
     } finally {
-      if (generation === state.generation) {
-        state.loading.delete("research");
-        if (submit.isConnected) submit.disabled = false;
-        const target = $("#strategy-research");
-        if (target) {
-          target.innerHTML = renderResearch();
-          U.bindCharts(target);
-        }
-      }
+      finishResearch(generation, submit);
     }
   };
   const actions = {
@@ -2256,8 +2902,20 @@
         toast("Сначала завершите сохранение или загрузите серверную версию через сообщение об ошибке.", true);
         return;
       }
-      await loadForView(state.view, state.route, true);
+      if (["home", "portfolio", "analytics", "settings"].includes(state.view) && (state.data.connection?.connected || state.data.workspace?.connection?.connected)) await requestWorkspaceRefresh();else await loadForView(state.view, state.route, true);
     },
+    "workspace-refresh": requestWorkspaceRefresh,
+    "recovery-open": openRecovery,
+    "recovery-reload": reloadRecovery,
+    "recovery-detail-reload": reloadRecoveryDetails,
+    "recovery-reconcile": () => mutateRecovery("reconcile"),
+    "recovery-cancel": askRecoveryCancellation,
+    "recovery-cancel-confirm": () => mutateRecovery("cancel"),
+    "recovery-cancel-dismiss": () => {
+      $("#recovery-confirmation").replaceChildren();
+    },
+    "mandate-revoke": askMandateRevoke,
+    "mandate-revoke-confirm": revokeMandate,
     language: () => openDialog("Язык интерфейса", '<p class="help-copy">Русский</p><p class="fine-print">Формат чисел и дат можно изменить в настройках личного аккаунта.</p>'),
     premium: () => openDialog("Возможности вашего плана", `<p class="help-copy">Сейчас доступен личный кабинет OMNICIO: портфель, стратегии, цели, аналитика, события и настройки.</p><p class="notice">Платный тариф и приём оплаты ещё не подключены. Интерфейс не принимает платёжные данные.</p><div class="form-actions">${button("Открыть настройки", "settings", {
       route: true,
@@ -2294,15 +2952,20 @@
     "broker-connect": connectBroker,
     "disconnect-start": () => {
       if (!requireUser()) return;
+      if (disconnectBlocked()) {
+        toast("Сначала проверьте ранее начатые исполнения в настройках.", true);
+        return;
+      }
       if (hasPending()) {
         toast("Перед отключением завершите сохранение настроек.", true);
         return;
       }
       openDialog("Отключить T-Invest?", `<p class="help-copy">Токен подключения будет удалён. Новые данные счёта перестанут поступать. Для восстановления потребуется повторное подключение.</p><div class="form-actions">${button("Отключить источник", "disconnect-confirm", {
         primary: true
-      })}<button class="button secondary" data-close-dialog>Отмена</button></div><p id="disconnect-message" class="form-message" role="status"></p>`);
+      })}<button class="button secondary" data-close-dialog>Отмена</button></div><output id="disconnect-message" class="form-message"></output>`);
     },
     "disconnect-confirm": async control => {
+      if (disconnectBlocked()) return;
       control.disabled = true;
       try {
         await api("/api/broker/tbank", {
@@ -2338,181 +3001,133 @@
     },
     "link-identity": () => openAuth("login", true)
   };
+  const clickHandlers = [{
+    matches: ({
+      control
+    }) => control.dataset.closeDialog !== undefined,
+    run: handleClickCloseDialog
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.help,
+    run: handleClickHelp
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.themeChoice,
+    run: handleClickTheme
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.publicOpen,
+    run: handleClickPublicView
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.route,
+    run: handleClickRoute
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.authMode,
+    run: handleClickAuthMode
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.asset,
+    run: handleClickAsset
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.assetTab,
+    run: handleClickAssetTab
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.watch,
+    run: handleClickWatchlist
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.assetFilter,
+    run: handleClickAssetFilter
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.sort,
+    run: handleClickSort
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.period,
+    run: handleClickPeriod
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.eventFilter,
+    run: handleClickEventFilter
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.eventOpen,
+    run: handleClickEventOpen
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.eventRead,
+    run: handleClickEventRead
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.goalEdit,
+    run: handleClickGoalEdit
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.goalDelete,
+    run: handleClickGoalDelete
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.goalDeleteConfirm,
+    run: handleClickGoalDeleteConfirm
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.selectStrategy,
+    run: handleClickStrategy
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.publicStrategy,
+    run: handleClickPublicStrategy
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.stepField,
+    run: handleClickStep
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.chatPrompt,
+    run: handleClickChatPrompt
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.action && actions[control.dataset.action],
+    run: handleClickAction
+  }];
   document.addEventListener("click", async event => {
     const control = event.target.closest("button,a[data-route],a[data-public-open]");
     if (!control || control.disabled) return;
     try {
-      if (control.hasAttribute("data-close-dialog")) {
-        event.preventDefault();
-        control.closest("dialog")?.close();
-        return;
-      }
-      if (control.dataset.help) {
-        event.preventDefault();
-        $("#help-title").textContent = control.dataset.helpTitle;
-        $("#help-content").textContent = control.dataset.help;
-        $("#help-dialog").showModal();
-        return;
-      }
-      if (control.dataset.themeChoice) {
-        event.preventDefault();
-        const choice = control.dataset.themeChoice;
-        if (state.user && !state.tour) {
-          if (editPreferences(document => {
-            document.theme = choice;
-          })) applyTheme(choice);
-        } else applyTheme(choice);
-        return;
-      }
-      if (control.dataset.publicOpen) {
-        event.preventDefault();
-        showApp(true);
-        navigate(control.dataset.publicOpen);
-        return;
-      }
-      if (control.dataset.route) {
-        event.preventDefault();
-        for (const dialog of $$("dialog[open]")) if (dialog.id !== "session-dialog") dialog.close();
-        navigate(control.dataset.route);
-        return;
-      }
-      if (control.dataset.authMode) {
-        event.preventDefault();
-        openAuth(control.dataset.authMode, state.authLink);
-        return;
-      }
-      if (control.dataset.asset) {
-        event.preventDefault();
-        state.assetPeriod = "1m";
-        state.assetTab = "chart";
-        navigate("asset", {
-          uid: control.dataset.asset
-        });
-        return;
-      }
-      if (control.dataset.assetTab) {
-        event.preventDefault();
-        state.assetTab = control.dataset.assetTab;
-        renderAsset();
-        U.bindCharts($("#view-asset"));
-        return;
-      }
-      if (control.dataset.watch) {
-        event.preventDefault();
-        toggleWatch(control);
-        return;
-      }
-      if (control.dataset.assetFilter) {
-        event.preventDefault();
-        state.assetFilter = control.dataset.assetFilter;
-        renderCurrent();
-        return;
-      }
-      if (control.dataset.sort) {
-        event.preventDefault();
-        if (state.sort === control.dataset.sort) state.sortDirection *= -1;else {
-          state.sort = control.dataset.sort;
-          state.sortDirection = 1;
-        }
-        renderCurrent();
-        $(`[data-sort="${state.sort}"]`, $(`#view-${state.view}`))?.focus({
-          preventScroll: true
-        });
-        return;
-      }
-      if (control.dataset.period) {
-        event.preventDefault();
-        const scope = control.dataset.periodScope;
-        if (scope === "asset") {
-          state.assetPeriod = control.dataset.period;
-          if (state.asset) await loadAsset(state.asset.uid);
-        } else {
-          state[`${scope}Period`] = control.dataset.period;
-          renderCurrent();
-        }
-        return;
-      }
-      if (control.dataset.eventFilter) {
-        event.preventDefault();
-        state.eventFilter = control.dataset.eventFilter;
-        renderCurrent();
-        return;
-      }
-      if (control.dataset.eventOpen) {
-        event.preventDefault();
-        openEvent(control.dataset.eventOpen);
-        return;
-      }
-      if (control.dataset.eventRead) {
-        event.preventDefault();
-        await markEvents([control.dataset.eventRead]);
-        return;
-      }
-      if (control.dataset.goalEdit) {
-        event.preventDefault();
-        openGoal(control.dataset.goalEdit);
-        return;
-      }
-      if (control.dataset.goalDelete) {
-        event.preventDefault();
-        confirmGoalDelete(control.dataset.goalDelete);
-        return;
-      }
-      if (control.dataset.goalDeleteConfirm) {
-        event.preventDefault();
-        control.disabled = true;
-        try {
-          await api(`/api/goals/${safeSegment(control.dataset.goalDeleteConfirm)}`, {
-            method: "DELETE",
-            body: {
-              expected_version: Number(control.dataset.version)
-            }
-          });
-          $("#workspace-dialog").close();
-          await loadResource("goals", "/api/goals", {
-            force: true
-          });
-          renderCurrent();
-          toast("Цель удалена.");
-        } catch (error) {
-          if (!isCancelled(error)) {
-            showMessage($("#goal-delete-message"), humanError(error), true);
-            control.disabled = false;
-          }
-        }
-        return;
-      }
-      if (control.dataset.selectStrategy) {
-        event.preventDefault();
-        chooseStrategy(control.dataset.selectStrategy);
-        return;
-      }
-      if (control.dataset.publicStrategy) {
-        event.preventDefault();
-        const preset = state.data.catalog?.presets?.find(item => item.id === control.dataset.publicStrategy);
-        if (!preset) return;
-        openDialog(preset.title, `<p class="help-copy">${esc(preset.description)}</p><p class="notice">${esc(preset.risk)}</p><p class="fine-print">Параметры подхода можно изменить после входа. Название не является обещанием результата.</p><div class="form-actions">${button("Открыть личный кабинет", "login", {
-          primary: true
-        })}</div>`);
-        return;
-      }
-      if (control.dataset.stepField) {
-        event.preventDefault();
-        stepField(control);
-        return;
-      }
-      if (control.dataset.chatPrompt) {
-        event.preventDefault();
-        const input = $("#assistant-form")?.elements.message;
-        if (input && !input.disabled) {
-          input.value = control.dataset.chatPrompt;
-          input.focus();
-        }
-        return;
-      }
-      if (control.dataset.action && actions[control.dataset.action]) {
-        event.preventDefault();
-        await actions[control.dataset.action](control);
+      const context = {
+        control,
+        event
+      };
+      const handler = clickHandlers.find(candidate => candidate.matches(context));
+      if (handler) {
+        await handler.run(context);
       }
     } catch (error) {
       if (!isCancelled(error)) toast(humanError(error), true);
@@ -2520,6 +3135,7 @@
   });
   document.addEventListener("input", event => {
     const input = event.target;
+    if (captureFormDraft(input)) return;
     if (input.dataset.allocation) {
       updateAllocation(input.dataset.allocation, Number(input.value));
       return;
@@ -2530,152 +3146,107 @@
     }
     if (input.closest("#broker-form") && ["credential", "environment"].includes(input.name)) resetBrokerPreview();
   });
+  const changeHandlers = [{
+    matches: ({
+      input
+    }) => input.name?.startsWith("strategy."),
+    run: handleChangeStrategyField
+  }, {
+    matches: ({
+      input
+    }) => input.dataset.allocationLock || input.dataset.allocationExclude,
+    run: handleChangeAllocationFlag
+  }, {
+    matches: ({
+      input
+    }) => input.closest("#goal-form") && ["kind", "progress_source"].includes(input.name),
+    run: handleChangeGoalSource
+  }, {
+    matches: ({
+      input
+    }) => input.closest("#broker-form") && input.name === "environment",
+    run: handleChangeBrokerEnvironment
+  }, {
+    matches: ({
+      input
+    }) => ["cbr_currency", "cbr_period"].includes(input.name),
+    run: handleChangeMarketReference
+  }];
   document.addEventListener("change", async event => {
     const input = event.target;
-    if (input.name?.startsWith("strategy.")) {
-      updateStrategyField(input);
-      return;
-    }
-    if (input.dataset.allocationLock || input.dataset.allocationExclude) {
-      const document = state.strategy.draft;
-      if (!document) return;
-      const key = input.dataset.allocationLock || input.dataset.allocationExclude;
-      const fieldName = input.dataset.allocationLock ? "locked" : "excluded";
-      if (input.checked) {
-        if (fieldName === "excluded") {
-          const next = clone(document);
-          next.locked = next.locked.filter(item => item !== key);
-          if (!redistribute(next, key, 0)) {
-            input.checked = false;
-            toast("Освободите другую долю, прежде чем исключать этот класс.");
-            return;
-          }
-          document.allocation = next.allocation;
-          document.locked = next.locked;
-        }
-        if (!document[fieldName].includes(key)) document[fieldName].push(key);
-      } else document[fieldName] = document[fieldName].filter(item => item !== key);
-      documentChanged();
-      renderStrategies();
-      return;
-    }
-    if (input.closest("#goal-form") && ["kind", "progress_source"].includes(input.name)) {
-      updateGoalFields(input.name === "kind");
-      return;
-    }
-    if (input.closest("#broker-form") && input.name === "environment") {
-      resetBrokerPreview();
-      return;
-    }
-    if (["cbr_currency", "cbr_period"].includes(input.name)) {
-      if (input.name === "cbr_currency") state.cbrCurrency = input.value;else state.cbrPeriod = input.value;
-      await loadResource("marketReference", `/api/public/market-reference?currency=${state.cbrCurrency}&period=${state.cbrPeriod}`, {
-        force: true
-      });
-      if (state.view === "market") {
-        renderMarket();
-        U.bindCharts($("#view-market"));
-      }
+    if (captureFormDraft(input)) return;
+    const context = {
+      input,
+      event
+    };
+    const handler = changeHandlers.find(candidate => candidate.matches(context));
+    if (handler) {
+      await handler.run(context);
     }
   });
+  const submitHandlers = [{
+    matches: ({
+      form
+    }) => form.id === "auth-form",
+    run: handleSubmitAuth
+  }, {
+    matches: ({
+      form
+    }) => form.id === "global-search-form",
+    run: handleSubmitSearch
+  }, {
+    matches: ({
+      form
+    }) => form.id === "strategy-form",
+    run: handleSubmitStrategy
+  }, {
+    matches: ({
+      form
+    }) => form.id === "goal-form",
+    run: handleSubmitGoal
+  }, {
+    matches: ({
+      form
+    }) => form.id === "profile-form",
+    run: handleSubmitProfile
+  }, {
+    matches: ({
+      form
+    }) => form.id === "preferences-form",
+    run: handleSubmitPreferences
+  }, {
+    matches: ({
+      form
+    }) => form.id === "broker-form",
+    run: handleSubmitBroker
+  }, {
+    matches: ({
+      form
+    }) => form.id === "assistant-form",
+    run: handleSubmitAssistant
+  }, {
+    matches: ({
+      form
+    }) => form.id === "research-form",
+    run: handleSubmitResearch
+  }, {
+    matches: ({
+      form
+    }) => form.id === "delete-account-form",
+    run: handleSubmitAccountDeletion
+  }];
   document.addEventListener("submit", async event => {
     const form = event.target;
     if (!form.id || !["auth-form", "global-search-form", "strategy-form", "goal-form", "profile-form", "preferences-form", "broker-form", "assistant-form", "research-form", "delete-account-form"].includes(form.id)) return;
     event.preventDefault();
     try {
-      if (form.id === "auth-form") {
-        await startAuth(form, event.submitter?.value || "vkid");
-        return;
-      }
-      if (form.id === "global-search-form") {
-        navigate("search", {
-          q: form.elements.q.value.trim().slice(0, 64)
-        });
-        return;
-      }
-      if (form.id === "strategy-form") {
-        await saveVersioned("strategy");
-        return;
-      }
-      if (form.id === "goal-form") {
-        await saveGoal(form);
-        return;
-      }
-      if (form.id === "profile-form") {
-        const value = form.elements.display_name.value.trim();
-        if (value.length > 80) {
-          toast("Имя должно быть не длиннее 80 символов.", true);
-          return;
-        }
-        editPreferences(document => {
-          document.display_name = value;
-        });
-        return;
-      }
-      if (form.id === "preferences-form") {
-        if (!form.reportValidity()) return;
-        const controls = form.elements;
-        const changed = editPreferences(document => {
-          document.theme = controls.theme.value;
-          document.locale = controls.locale.value;
-          document.mask_balances = controls.mask_balances.checked;
-          document.digest_frequency = controls.digest_frequency.value;
-          document.quiet_hours = {
-            enabled: controls.quiet_enabled.checked,
-            start: controls.quiet_start.value,
-            end: controls.quiet_end.value,
-            timezone: controls.quiet_timezone.value
-          };
-          for (const key of ["portfolio", "payments", "goals", "system"]) document.notifications[key] = controls[`notify_${key}`].checked;
-        });
-        if (changed) applyTheme(controls.theme.value);
-        return;
-      }
-      if (form.id === "broker-form") {
-        await previewBroker(form);
-        return;
-      }
-      if (form.id === "assistant-form") {
-        await sendAssistant(form);
-        return;
-      }
-      if (form.id === "research-form") {
-        await runResearch(form);
-        return;
-      }
-      if (form.id === "delete-account-form") {
-        if (!requireUser() || !form.reportValidity()) return;
-        const confirmation = form.elements.confirm_public_id.value.trim();
-        if (confirmation !== state.user.public_id) {
-          showMessage($("#delete-account-message"), "ID не совпадает с текущим профилем.", true);
-          return;
-        }
-        const submit = form.querySelector("[type=submit]");
-        submit.disabled = true;
-        try {
-          await api("/api/account/delete", {
-            method: "POST",
-            body: {
-              confirm_public_id: confirmation,
-              confirm_irreversible: form.elements.confirm_irreversible.checked
-            }
-          });
-          clearPrivateState();
-          state.tour = false;
-          state.locked = false;
-          $("#app-shell").hidden = true;
-          $("#public-site").hidden = false;
-          sessionChannel?.postMessage({
-            type: "session-cleared"
-          });
-          toast("Аккаунт удалён.");
-          await bootstrap();
-        } catch (error) {
-          if (!isCancelled(error)) {
-            showMessage($("#delete-account-message"), humanError(error), true);
-            submit.disabled = false;
-          }
-        }
+      const context = {
+        form,
+        event
+      };
+      const handler = submitHandlers.find(candidate => candidate.matches(context));
+      if (handler) {
+        await handler.run(context);
       }
     } catch (error) {
       if (!isCancelled(error)) toast(humanError(error), true);
@@ -2719,52 +3290,23 @@
     }
   });
   document.addEventListener("keydown", event => {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k" && !$("#app-shell").hidden) {
-      event.preventDefault();
-      $("#global-search").focus();
-    }
-    if (event.key === "Escape") {
-      if (!$("#drawer-backdrop").hidden) {
-        event.preventDefault();
-        closeDrawer();
-      }
-      if (!$("#profile-menu").hidden) {
-        $("#profile-menu").hidden = true;
-        $("#profile-button").setAttribute("aria-expanded", "false");
-        $("#profile-button").focus();
-      }
-      delete $(".public-nav").dataset.open;
-      $("#public-menu-toggle").setAttribute("aria-expanded", "false");
-    }
-    if (!$("#drawer-backdrop").hidden && event.key === "Tab") {
-      const focusable = $$("a[href],button:not([disabled])", $("#app-sidebar")).filter(element => element.getClientRects().length);
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      }
-      if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
+    handleSearchShortcut({
+      event
+    });
+    handleEscape({
+      event
+    });
+    handleDrawerFocus({
+      event
+    });
     const tab = event.target.closest('[role="tab"]');
-    if (tab && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
-      const tabs = $$('[role="tab"]', tab.closest('[role="tablist"]'));
-      const index = tabs.indexOf(tab);
-      const next = event.key === "Home" ? 0 : renderViewValue2(event, tabs, index);
-      event.preventDefault();
-      tabs[next].focus();
-      tabs[next].click();
-    }
-    if (!$("#profile-menu").hidden && ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
-      const items = $$('[role="menuitem"]', $("#profile-menu"));
-      const index = items.indexOf(document.activeElement);
-      const next = event.key === "Home" ? 0 : renderViewValue4(event, items, index);
-      event.preventDefault();
-      items[next].focus();
-    }
+    handleTabFocus({
+      tab,
+      event
+    });
+    handleProfileFocus({
+      event
+    });
   });
   const historyNavigation = () => {
     if (!state.user && !state.tour) return;
@@ -2779,7 +3321,10 @@
     void verifySession();
   });
   window.addEventListener("pageshow", event => {
-    if (event.persisted) void verifySession();
+    if (event.persisted) {
+      void verifySession();
+      void resumeWorkspaceRefresh();
+    }
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void verifySession();
@@ -2791,6 +3336,13 @@
     }
   });
   window.addEventListener("pagehide", () => {
+    const pendingGoal = $("#goal-form");
+    if (pendingGoal?.dataset.busy === "true") reportGoalSaveError(pendingGoal, Object.assign(new Error("request_interrupted"), {
+      status: 0
+    }));
+    clearTimeout(state.refresh.timer);
+    state.refresh.sequence += 1;
+    state.refresh.busy = false;
     for (const controller of state.requests) controller.abort();
     resetBrokerPreview();
     const input = $('#broker-form [name="credential"]');
@@ -2831,7 +3383,7 @@
   void bootstrap();
   function renderStableDocumentValue(value) {
     if (value && typeof value === "object") {
-      return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableDocument(value[key])]));
+      return Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right)).map(key => [key, stableDocument(value[key])]));
     }
     return value;
   }
@@ -2876,7 +3428,7 @@
   }
   function renderConnectionBannerValue2(connection) {
     if (connection?.connected) {
-      return "refresh";
+      return "workspace-refresh";
     }
     return "connect";
   }
@@ -2950,14 +3502,8 @@
   function renderHomeFragment(performance) {
     return `${esc(date(performance.from))} — ${esc(date(performance.to))}`;
   }
-  function renderHomeValue2(result) {
-    if (result >= 0) {
-      return "positive";
-    }
-    return "negative";
-  }
   function renderHomeMetricNote(result) {
-    return `<p class="metric-note">Результат: <span class="${renderHomeValue2(result)}">${esc(money(result))}</span></p>`;
+    return `<p class="metric-note">Результат: <span class="${renderHomeValue(result)}">${esc(money(result))}</span></p>`;
   }
   function renderHomeFragment2(latestMonth) {
     return `${latestMonth.month}-01`;
@@ -3181,11 +3727,8 @@
   function renderSelectionHTMLPanelTitle(selected) {
     return `<h4 class="panel-title section-gap">Расчётные доли инструментов</h4>${infoRows(selected.map(item => [item.ticker || item.instrument_uid, percent(item.target_weight_percent)]))}`;
   }
-  function renderSelectionHTMLLi(item) {
-    return `<li>${esc(humanRequirement(item))}</li>`;
-  }
   function renderSelectionHTMLRiskList(selection) {
-    return `<ul class="risk-list">${selection.missing_requirements.map(item => renderSelectionHTMLLi(item)).join("")}</ul>`;
+    return `<ul class="risk-list">${selection.missing_requirements.map(item => renderFundamentalMetricsHTMLLi2(item)).join("")}</ul>`;
   }
   function renderSelectionHTMLValue(item) {
     if (item.eligible) {
@@ -3277,11 +3820,8 @@
   function renderResearchDetailsSummary(result) {
     return `<details><summary class="details-summary">Сравнение: ${esc(result.benchmark.name)}</summary>${infoRows(Object.entries(researchMetricLabels).filter(([key]) => result.benchmark.metrics?.[key] !== undefined).map(([key, label]) => [label, renderResearchValue2(key, result)]))}</details>`;
   }
-  function renderResearchLi(item) {
-    return `<li>${esc(humanRequirement(item))}</li>`;
-  }
   function renderResearchRiskList(result) {
-    return `<ul class="risk-list">${result.missing_requirements.map(item => renderResearchLi(item)).join("")}</ul>`;
+    return `<ul class="risk-list">${result.missing_requirements.map(item => renderFundamentalMetricsHTMLLi2(item)).join("")}</ul>`;
   }
   function renderResearchLi2(item) {
     return `<li>${esc(item)}</li>`;
@@ -3512,5 +4052,494 @@
       return items.length - 1;
     }
     return (index + renderViewValue3(event) + items.length) % items.length;
+  }
+  async function handleClickCloseDialog({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    control.closest("dialog")?.close();
+    return;
+  }
+  async function handleClickHelp({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    $("#help-title").textContent = control.dataset.helpTitle;
+    $("#help-content").textContent = control.dataset.help;
+    $("#help-dialog").showModal();
+    return;
+  }
+  async function handleClickTheme({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    const choice = control.dataset.themeChoice;
+    if (state.user && !state.tour) {
+      if (editPreferences(document => {
+        document.theme = choice;
+      })) applyTheme(choice);
+    } else applyTheme(choice);
+    return;
+  }
+  async function handleClickPublicView({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    showApp(true);
+    navigate(control.dataset.publicOpen);
+    return;
+  }
+  async function handleClickRoute({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    for (const dialog of $$("dialog[open]")) if (dialog.id !== "session-dialog") dialog.close();
+    navigate(control.dataset.route);
+    return;
+  }
+  async function handleClickAuthMode({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    openAuth(control.dataset.authMode, state.authLink);
+    return;
+  }
+  async function handleClickAsset({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    state.assetPeriod = "1m";
+    state.assetTab = "chart";
+    navigate("asset", {
+      uid: control.dataset.asset
+    });
+    return;
+  }
+  async function handleClickAssetTab({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    state.assetTab = control.dataset.assetTab;
+    renderAsset();
+    U.bindCharts($("#view-asset"));
+    return;
+  }
+  async function handleClickWatchlist({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    toggleWatch(control);
+    return;
+  }
+  async function handleClickAssetFilter({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    state.assetFilter = control.dataset.assetFilter;
+    renderCurrent();
+    return;
+  }
+  async function handleClickSort({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    if (state.sort === control.dataset.sort) state.sortDirection *= -1;else {
+      state.sort = control.dataset.sort;
+      state.sortDirection = 1;
+    }
+    renderCurrent();
+    $(`[data-sort="${state.sort}"]`, $(`#view-${state.view}`))?.focus({
+      preventScroll: true
+    });
+    return;
+  }
+  async function handleClickPeriod({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    const scope = control.dataset.periodScope;
+    if (scope === "asset") {
+      state.assetPeriod = control.dataset.period;
+      if (state.asset) await loadAsset(state.asset.uid);
+    } else if (["home", "portfolio"].includes(scope)) {
+      state[`${scope}Period`] = control.dataset.period;
+      renderCurrent();
+      if (!state.tour) {
+        await loadResource("workspace", workspacePath(), {
+          force: true
+        });
+        if (state.view === scope) renderCurrent();
+      }
+    }
+    return;
+  }
+  async function handleClickEventFilter({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    state.eventFilter = control.dataset.eventFilter;
+    renderCurrent();
+    return;
+  }
+  async function handleClickEventOpen({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    openEvent(control.dataset.eventOpen);
+    return;
+  }
+  async function handleClickEventRead({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    await markEvents([control.dataset.eventRead]);
+    return;
+  }
+  async function handleClickGoalEdit({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    openGoal(control.dataset.goalEdit);
+    return;
+  }
+  async function handleClickGoalDelete({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    confirmGoalDelete(control.dataset.goalDelete);
+    return;
+  }
+  async function handleClickGoalDeleteConfirm({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    control.disabled = true;
+    try {
+      await api(`/api/goals/${safeSegment(control.dataset.goalDeleteConfirm)}`, {
+        method: "DELETE",
+        body: {
+          expected_version: Number(control.dataset.version)
+        }
+      });
+      $("#workspace-dialog").close();
+      await loadResource("goals", "/api/goals", {
+        force: true
+      });
+      renderCurrent();
+      toast("Цель удалена.");
+    } catch (error) {
+      if (!isCancelled(error)) {
+        showMessage($("#goal-delete-message"), humanError(error), true);
+        control.disabled = false;
+      }
+    }
+    return;
+  }
+  async function handleClickStrategy({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    chooseStrategy(control.dataset.selectStrategy);
+    return;
+  }
+  async function handleClickPublicStrategy({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    const preset = state.data.catalog?.presets?.find(item => item.id === control.dataset.publicStrategy);
+    if (!preset) return;
+    openDialog(preset.title, `<p class="help-copy">${esc(preset.description)}</p><p class="notice">${esc(preset.risk)}</p><p class="fine-print">Параметры подхода можно изменить после входа. Название не является обещанием результата.</p><div class="form-actions">${button("Открыть личный кабинет", "login", {
+      primary: true
+    })}</div>`);
+    return;
+  }
+  async function handleClickStep({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    stepField(control);
+    return;
+  }
+  async function handleClickChatPrompt({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    const input = $("#assistant-form")?.elements.message;
+    if (input && !input.disabled) {
+      input.value = control.dataset.chatPrompt;
+      input.focus();
+    }
+    return;
+  }
+  async function handleClickAction({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    await actions[control.dataset.action](control);
+  }
+  async function handleChangeStrategyField({
+    input
+  }) {
+    updateStrategyField(input);
+    return;
+  }
+  async function handleChangeAllocationFlag({
+    input
+  }) {
+    const document = state.strategy.draft;
+    if (!document) return;
+    const key = input.dataset.allocationLock || input.dataset.allocationExclude;
+    const fieldName = input.dataset.allocationLock ? "locked" : "excluded";
+    if (input.checked) {
+      if (fieldName === "excluded") {
+        const next = clone(document);
+        next.locked = next.locked.filter(item => item !== key);
+        if (!redistribute(next, key, 0)) {
+          input.checked = false;
+          toast("Освободите другую долю, прежде чем исключать этот класс.");
+          return;
+        }
+        document.allocation = next.allocation;
+        document.locked = next.locked;
+      }
+      if (!document[fieldName].includes(key)) document[fieldName].push(key);
+    } else document[fieldName] = document[fieldName].filter(item => item !== key);
+    documentChanged();
+    renderStrategies();
+    return;
+  }
+  async function handleChangeGoalSource({
+    input
+  }) {
+    updateGoalFields(input.name === "kind");
+    return;
+  }
+  async function handleChangeBrokerEnvironment({}) {
+    resetBrokerPreview();
+    return;
+  }
+  async function handleChangeMarketReference({
+    input
+  }) {
+    if (input.name === "cbr_currency") state.cbrCurrency = input.value;else state.cbrPeriod = input.value;
+    await loadResource("marketReference", `/api/public/market-reference?currency=${state.cbrCurrency}&period=${state.cbrPeriod}`, {
+      force: true
+    });
+    if (state.view === "market") {
+      renderMarket();
+      U.bindCharts($("#view-market"));
+    }
+  }
+  async function handleSubmitAuth({
+    form,
+    event
+  }) {
+    await startAuth(form, event.submitter?.value || "vkid");
+    return;
+  }
+  async function handleSubmitSearch({
+    form
+  }) {
+    navigate("search", {
+      q: form.elements.q.value.trim().slice(0, 64)
+    });
+    return;
+  }
+  async function handleSubmitStrategy({}) {
+    await saveVersioned("strategy");
+    return;
+  }
+  async function handleSubmitGoal({
+    form
+  }) {
+    await saveGoal(form);
+    return;
+  }
+  async function handleSubmitProfile({
+    form
+  }) {
+    const value = form.elements.display_name.value.trim();
+    if (value.length > 80) {
+      toast("Имя должно быть не длиннее 80 символов.", true);
+      return;
+    }
+    const accepted = editPreferences(document => {
+      document.display_name = value;
+    });
+    if (accepted) acceptFormSubmission(form);
+    return;
+  }
+  async function handleSubmitPreferences({
+    form
+  }) {
+    if (!form.reportValidity()) return;
+    const controls = form.elements;
+    const changed = editPreferences(document => {
+      document.theme = controls.theme.value;
+      document.locale = controls.locale.value;
+      document.mask_balances = controls.mask_balances.checked;
+      document.digest_frequency = controls.digest_frequency.value;
+      document.quiet_hours = {
+        enabled: controls.quiet_enabled.checked,
+        start: controls.quiet_start.value,
+        end: controls.quiet_end.value,
+        timezone: controls.quiet_timezone.value
+      };
+      for (const key of ["portfolio", "payments", "goals", "system"]) document.notifications[key] = controls[`notify_${key}`].checked;
+    });
+    if (changed) {
+      acceptFormSubmission(form);
+      applyTheme(controls.theme.value);
+    }
+    return;
+  }
+  async function handleSubmitBroker({
+    form
+  }) {
+    await previewBroker(form);
+    return;
+  }
+  async function handleSubmitAssistant({
+    form
+  }) {
+    await sendAssistant(form);
+    return;
+  }
+  async function handleSubmitResearch({
+    form
+  }) {
+    await runResearch(form);
+    return;
+  }
+  async function handleSubmitAccountDeletion({
+    form
+  }) {
+    if (!requireUser() || !form.reportValidity()) return;
+    const confirmation = form.elements.confirm_public_id.value.trim();
+    if (confirmation !== state.user.public_id) {
+      showMessage($("#delete-account-message"), "ID не совпадает с текущим профилем.", true);
+      return;
+    }
+    const submit = form.querySelector("[type=submit]");
+    submit.disabled = true;
+    try {
+      await api("/api/account/delete", {
+        method: "POST",
+        body: {
+          confirm_public_id: confirmation,
+          confirm_irreversible: form.elements.confirm_irreversible.checked
+        }
+      });
+      clearPrivateState();
+      state.tour = false;
+      state.locked = false;
+      $("#app-shell").hidden = true;
+      $("#public-site").hidden = false;
+      sessionChannel?.postMessage({
+        type: "session-cleared"
+      });
+      toast("Аккаунт удалён.");
+      await bootstrap();
+    } catch (error) {
+      if (!isCancelled(error)) {
+        showMessage($("#delete-account-message"), humanError(error), true);
+        submit.disabled = false;
+      }
+    }
+  }
+  function handleSearchShortcut({
+    event
+  }) {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k" && !$("#app-shell").hidden) {
+      event.preventDefault();
+      $("#global-search").focus();
+    }
+  }
+  function handleEscape({
+    event
+  }) {
+    if (event.key === "Escape") {
+      if (!$("#drawer-backdrop").hidden) {
+        event.preventDefault();
+        closeDrawer();
+      }
+      if (!$("#profile-menu").hidden) {
+        $("#profile-menu").hidden = true;
+        $("#profile-button").setAttribute("aria-expanded", "false");
+        $("#profile-button").focus();
+      }
+      delete $(".public-nav").dataset.open;
+      $("#public-menu-toggle").setAttribute("aria-expanded", "false");
+    }
+  }
+  function handleDrawerFocus({
+    event
+  }) {
+    if (!$("#drawer-backdrop").hidden && event.key === "Tab") {
+      const focusable = $$("a[href],button:not([disabled])", $("#app-sidebar")).filter(element => element.getClientRects().length);
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  }
+  function handleTabFocus({
+    tab,
+    event
+  }) {
+    if (tab && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+      const tabs = $$('[role="tab"]', tab.closest('[role="tablist"]'));
+      const index = tabs.indexOf(tab);
+      const next = event.key === "Home" ? 0 : renderViewValue2(event, tabs, index);
+      event.preventDefault();
+      tabs[next].focus();
+      tabs[next].click();
+    }
+  }
+  function handleProfileFocus({
+    event
+  }) {
+    if (!$("#profile-menu").hidden && ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+      const items = $$('[role="menuitem"]', $("#profile-menu"));
+      const index = items.indexOf(document.activeElement);
+      const next = event.key === "Home" ? 0 : renderViewValue4(event, items, index);
+      event.preventDefault();
+      items[next].focus();
+    }
+  }
+  function renderConnectionBannerValue3(connection) {
+    if (connection?.connected && refreshUnavailable()) {
+      return " disabled";
+    }
+    return "";
   }
 })();

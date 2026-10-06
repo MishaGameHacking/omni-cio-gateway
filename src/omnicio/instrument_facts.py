@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from .broker import BrokerService
-from .tbank import TBankAssetFundamental, TBankUnavailable
+from .tbank import TBankAssetFundamental, TBankInstrumentMetadata, TBankUnavailable
 
 _INSTRUMENT_SOURCE = "https://developer.tbank.ru/invest/api/instruments-service-get-instrument-by"
 _FUNDAMENTAL_SOURCE = (
@@ -78,6 +78,17 @@ def _fundamental_metrics(
     return rows, missing
 
 
+def _instrument_requirements(metadata: TBankInstrumentMetadata) -> set[str]:
+    missing = {
+        "instrument:" + key
+        for key in ("currency", "name", "ticker", "instrument_type", "exchange", "asset_uid")
+        if not getattr(metadata, key)
+    }
+    if metadata.lot <= 0:
+        missing.add("instrument:lot")
+    return missing
+
+
 def instrument_facts(
     *, user_id: UUID, instrument_uid: str, broker: BrokerService,
 ) -> dict[str, Any]:
@@ -88,11 +99,7 @@ def instrument_facts(
     ):
         raise TBankUnavailable("instrument facts identity mismatch")
     metrics, missing = _fundamental_metrics(fundamental)
-    for key in ("currency", "name", "ticker", "instrument_type", "exchange", "asset_uid"):
-        if not getattr(metadata, key):
-            missing.add("instrument:" + key)
-    if metadata.lot <= 0:
-        missing.add("instrument:lot")
+    missing.update(_instrument_requirements(metadata))
     limitations = [
         "Показатели взяты из последней доступной статистики T-Invest. Точная дата оценки "
         "и публикации отдельных значений не раскрыта; время получения не заменяет эти даты.",

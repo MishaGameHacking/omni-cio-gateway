@@ -81,8 +81,9 @@ def test_preferences_defaults_have_no_invented_user_facts_and_do_not_alias() -> 
     ],
 )
 def test_preferences_reject_ambiguous_or_unbounded_values(change: dict[str, Any]) -> None:
+    document = {**default_preferences(), **change}
     with pytest.raises(ValueError):
-        normalize_preferences({**default_preferences(), **change})
+        normalize_preferences(document)
 
 
 def test_preferences_unicode_watchlist_cannot_exceed_database_document_budget() -> None:
@@ -123,8 +124,9 @@ def test_quiet_hours_respect_timezone_midnight_and_dst() -> None:
     ],
 )
 def test_invalid_quiet_hours_are_not_silently_accepted(quiet: dict[str, Any]) -> None:
+    document = {**default_preferences(), "quiet_hours": quiet}
     with pytest.raises(ValueError):
-        normalize_preferences({**default_preferences(), "quiet_hours": quiet})
+        normalize_preferences(document)
 
 
 @pytest.mark.parametrize(
@@ -143,8 +145,9 @@ def test_invalid_quiet_hours_are_not_silently_accepted(quiet: dict[str, Any]) ->
     ],
 )
 def test_goals_require_explicit_coherent_source_and_exact_amounts(changes: dict[str, Any]) -> None:
+    document = goal_document(**changes)
     with pytest.raises(ValueError):
-        normalize_goal(goal_document(**changes))
+        normalize_goal(document)
 
 
 def test_goal_document_cannot_assign_identity_or_trade_authority() -> None:
@@ -297,6 +300,35 @@ def test_income_goal_uses_only_allocated_received_income() -> None:
         now=END,
     )
     assert result["amount_rub"] == "250"
+
+
+def test_income_goal_calendar_start_includes_midnight_without_earlier_payments() -> None:
+    midnight_moscow = datetime(2025, 12, 31, 21, tzinfo=UTC)
+    goal = {
+        **goal_document(kind="income", progress_source="income", allocation_percent="100",
+                        manual_amount_rub=None),
+        "updated_at": END, "account_id": "A", "environment": "prod",
+    }
+    result = goal_progress(
+        goal, connection={"account_id": "A", "environment": "prod"}, snapshot=None,
+        operations=[
+            operation("COUPON", "100", operation_date=midnight_moscow),
+            operation("COUPON", "900", operation_date=midnight_moscow - timedelta(microseconds=1)),
+        ],
+        watermark=END, history_complete=True, now=END,
+    )
+    assert result["amount_rub"] == "100"
+
+
+def test_zero_nav_is_a_real_observation_but_one_point_is_not_a_performance_period() -> None:
+    first = {"captured_at": START, "nav_rub": "0", "analysis_status": "observed"}
+    single = portfolio_performance([first], [], watermark=END, history_complete=True)
+    assert single["investment_result_rub"] is None
+    assert single["reason"] == "insufficient_covered_snapshots"
+    second = {"captured_at": END, "nav_rub": "0", "analysis_status": "observed"}
+    pair = portfolio_performance([first, second], [], watermark=END, history_complete=True)
+    assert pair["investment_result_rub"] == "0"
+    assert pair["return_percent"] is None
 
 
 def test_event_identity_is_stable_and_digest_is_not_a_probability() -> None:

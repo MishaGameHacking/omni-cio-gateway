@@ -154,8 +154,7 @@ def current_account_assessment(
     }
 
 
-def _research_rows(context: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Bound the inspected universe, interleaving classes instead of taking only bonds."""
+def _research_catalog_rows(context: Mapping[str, Any]) -> list[dict[str, Any]]:
     unique: dict[str, dict[str, Any]] = {}
     for name in ("holdings", "candidates"):
         rows = context.get(name)
@@ -167,8 +166,14 @@ def _research_rows(context: Mapping[str, Any]) -> list[dict[str, Any]]:
             uid = row.get("instrument_uid")
             if isinstance(uid, str) and uid:
                 unique[uid] = {**unique.get(uid, {}), **row}
+    return list(unique.values())
+
+
+def _research_rows(context: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Bound the inspected universe, interleaving classes instead of taking only bonds."""
+    catalog = _research_catalog_rows(context)
     classes = [
-        [row for row in unique.values() if row.get("instrument_type") == kind]
+        [row for row in catalog if row.get("instrument_type") == kind]
         for kind in ("share", "bond", "etf")
     ]
     result: list[dict[str, Any]] = []
@@ -266,7 +271,6 @@ def _research_fundamentals(
     for item in values:
         facts = {}
         for key, raw in (
-            ("roe_percent", item.roe),
             ("debt_to_ebitda", item.total_debt_to_ebitda_mrq),
             ("free_cash_flow_ttm", item.free_cash_flow_ttm),
             ("net_income_ttm", item.net_income_ttm),
@@ -275,6 +279,8 @@ def _research_fundamentals(
                 number = Decimal(raw)
                 if number.is_finite():
                     facts[key] = StrategyFact(number, now, source)
+        # The source does not document ROE's numeric scale, so its raw value
+        # cannot satisfy a percentage-based profitability threshold.
         # The provider does not expose publication time in this DTO. These facts
         # may support today's screen, never selection inside an earlier backtest.
         result[item.asset_uid] = facts

@@ -102,6 +102,7 @@ class FakeStore:
         self.finished: list[tuple[str, dict[str, object]]] = []
         self.saved_snapshots = 0
         self.saved_pages: list[str] = []
+        self.saved_windows: list[tuple[datetime, datetime]] = []
         self.saved_evidence = 0
         self.claimed = False
         self.lock_available = True
@@ -205,6 +206,7 @@ class FakeStore:
         assert account_id == "account-1"
         assert window_from <= window_to <= observed_at
         self.saved_pages.append(page.next_cursor)
+        self.saved_windows.append((window_from, window_to))
         return len(page.items)
 
 
@@ -401,7 +403,10 @@ def test_daily_observer_resumes_durable_cursor_window() -> None:
     )
     store = FakeStore(state=state)
     broker = FakeBroker(
-        pages={"resume-me": TBankOperationsPage(False, "", ())},
+        pages={
+            "resume-me": TBankOperationsPage(False, "", ()),
+            "": TBankOperationsPage(False, "", ()),
+        },
     )
 
     result = PortfolioObserver(
@@ -415,7 +420,49 @@ def test_daily_observer_resumes_durable_cursor_window() -> None:
 
     assert result is not None
     assert result.status == "succeeded"
+    assert result.history_pages == 2
+    assert broker.seen_cursors == ["resume-me", ""]
+    assert store.saved_windows == [
+        (datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 10, 1, tzinfo=UTC)),
+        (datetime(2026, 9, 24, tzinfo=UTC), datetime(2026, 10, 2, 6, 0, tzinfo=UTC)),
+    ]
+
+
+def test_resumed_window_does_not_claim_current_coverage_when_page_budget_is_exhausted() -> None:
+    state = BrokerSyncState(
+        user_id=USER_ID, account_id="account-1",
+        history_window_from=datetime(2026, 9, 1, tzinfo=UTC),
+        history_window_to=datetime(2026, 10, 1, tzinfo=UTC),
+        pending_cursor="resume-me",
+        last_complete_watermark=datetime(2026, 8, 31, tzinfo=UTC),
+        updated_at=datetime(2026, 10, 1, tzinfo=UTC),
+    )
+    store = FakeStore(state=state)
+    broker = FakeBroker(pages={"resume-me": TBankOperationsPage(False, "", ())})
+    with patch("omnicio.observer.MAX_HISTORY_PAGES_PER_RUN", 1):
+        result = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_user(
+            USER_ID, now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
+        )
+    assert result is not None
+    assert result.status == "degraded"
+    assert result.history_pages == 1
     assert broker.seen_cursors == ["resume-me"]
+    assert store.finished[0][1]["history_status"] == "continuation_pending"
+
+
+def test_history_covers_a_snapshot_captured_after_the_job_started() -> None:
+    store = FakeStore()
+    broker = FakeBroker(pages={"": TBankOperationsPage(False, "", ())})
+    captured = datetime(2026, 10, 2, 6, 1, tzinfo=UTC)
+    with patch.object(broker, "observation_bundle", return_value=replace(
+        bundle(), refreshed_at=captured,
+    )):
+        result = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_user(
+            USER_ID, now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
+        )
+    assert result is not None
+    assert result.status == "succeeded"
+    assert store.saved_windows == [(datetime(2024, 1, 1, tzinfo=UTC), captured)]
 
 
 def test_user_info_outage_degrades_but_keeps_portfolio_snapshot() -> None:
@@ -628,7 +675,6 @@ def test_native_connection_lifecycle_keeps_tenants_and_discards_old_jobs(connect
     # Old account rows left by a previous version cannot become the selected account.
     admin.execute("UPDATE portfolio_snapshots SET account_id='legacy' WHERE id=%s", (snapshot,))
     assert store.portfolio_visualization(USER_ID)["status"] == "pending"
-    assert store.latest_intelligence(USER_ID) is None
     assert store.latest_balancing_context(USER_ID) is None
     assert store.instrument_visualization(USER_ID, "not-held") is None
     assert store.portfolio_visualization(other)["status"] == "observed"

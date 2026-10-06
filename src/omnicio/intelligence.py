@@ -45,11 +45,11 @@ RATIO_FUNDAMENTAL_FIELDS = (
     "net_debt_to_ebitda",
     "current_ratio_mrq",
     "fixed_charge_coverage_ratio_fy",
-    "net_interest_margin_mrq",
-    "roe",
-    "roa",
 )
-FUNDAMENTAL_FIELDS = MONETARY_FUNDAMENTAL_FIELDS + RATIO_FUNDAMENTAL_FIELDS
+SOURCE_SCALE_FUNDAMENTAL_FIELDS = ("net_interest_margin_mrq", "roe", "roa")
+FUNDAMENTAL_FIELDS = (
+    MONETARY_FUNDAMENTAL_FIELDS + RATIO_FUNDAMENTAL_FIELDS + SOURCE_SCALE_FUNDAMENTAL_FIELDS
+)
 TBANK_DIVIDENDS_SOURCE = (
     "https://developer.tbank.ru/invest/api/instruments-service-get-dividends"
 )
@@ -708,10 +708,16 @@ def _fundamental_document(item: TBankAssetFundamental) -> EvidenceDocument:
     facts: list[EvidenceFact] = []
     monetary_fields = set(MONETARY_FUNDAMENTAL_FIELDS)
     ratio_fields = set(RATIO_FUNDAMENTAL_FIELDS)
+    source_scale_fields = set(SOURCE_SCALE_FUNDAMENTAL_FIELDS)
     for name in FUNDAMENTAL_FIELDS:
         raw = getattr(item, name)
         if raw is None:
             continue
+        unit: str | None = None
+        if name in ratio_fields:
+            unit = "ratio"
+        elif name in source_scale_fields:
+            unit = "source_unit"
         facts.append(
             EvidenceFact(
                 subject_uid=item.asset_uid,
@@ -719,7 +725,7 @@ def _fundamental_document(item: TBankAssetFundamental) -> EvidenceDocument:
                 fact_key=name,
                 value_numeric=Decimal(raw),
                 currency=item.currency if name in monetary_fields else None,
-                unit="ratio" if name in ratio_fields else None,
+                unit=unit,
                 effective_at=item.fiscal_period_end_date,
                 published_at=None,
                 payload={"source_field": name},

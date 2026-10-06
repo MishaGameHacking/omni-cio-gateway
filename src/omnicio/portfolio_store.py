@@ -7,10 +7,13 @@ import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from math import ceil
 from typing import Any, Literal, cast
 from uuid import UUID
+
+from psycopg import DatabaseError
 
 from .broker import BrokerObservationBundle
 from .db import Database, live_execution_lock_key
@@ -32,6 +35,44 @@ from .tbank import (
 )
 
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
+REFRESH_JOB_TYPE = "portfolio_refresh"
+REFRESH_COOLDOWN_SECONDS = 120
+REFRESH_MAX_ATTEMPTS = 3
+
+
+def _has_refresh_legal(cur: Any, user_id: UUID, versions: object) -> bool:
+    if not isinstance(versions, dict) or set(versions) != {
+        "privacy_policy", "personal_data_consent", "terms",
+    } or any(not isinstance(value, str) or not value for value in versions.values()):
+        return False
+    cur.execute(
+        "SELECT NOT EXISTS (SELECT 1 FROM jsonb_each_text(%s::jsonb) AS v "
+        "WHERE NOT EXISTS (SELECT 1 FROM legal_acceptances a WHERE a.user_id = %s "
+        "AND a.document_type = v.key AND a.document_version = v.value)) AS accepted",
+        (_json(versions), user_id),
+    )
+    row = cur.fetchone()
+    return row is not None and bool(row["accepted"])
+
+
+def _refresh_context_matches(context: object, connection: Mapping[str, Any]) -> bool:
+    if not isinstance(context, dict):
+        return False
+    return context == {
+        "account_id": connection["account_id"],
+        "environment": connection["environment"],
+        "verified_at": connection["verified_at"].astimezone(UTC).isoformat(),
+    }
+
+
+def _require_refresh_context(cur: Any, user_id: UUID, connection: Mapping[str, Any]) -> None:
+    if connection["job_type"] != REFRESH_JOB_TYPE:
+        return
+    details = connection["details"]
+    if not _refresh_context_matches(details.get("connection"), connection):
+        raise ObservationCancelled("observation_connection_changed")
+    if not _has_refresh_legal(cur, user_id, details.get("legal_versions")):
+        raise ObservationCancelled("observation_consent_changed")
 
 
 class SettingsVersionConflict(ValueError):
@@ -55,13 +96,14 @@ def _require_observation_job(
     cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
     cur.execute(
         """
-        SELECT c.account_id, c.environment
+        SELECT c.account_id, c.environment, c.verified_at, j.job_type, j.details
         FROM job_runs AS j
         JOIN users AS u ON u.id = j.user_id
         JOIN tbank_connection AS c ON c.user_id = j.user_id
         WHERE j.id = %s AND j.user_id = %s
-          AND j.job_type = 'portfolio_daily' AND j.status = 'running'
+          AND j.job_type IN ('portfolio_daily', 'portfolio_refresh') AND j.status = 'running'
           AND u.status = 'active'
+        FOR SHARE OF u
         """,
         (job_run_id, user_id),
     )
@@ -70,6 +112,7 @@ def _require_observation_job(
         account_id is not None and connection["account_id"] != account_id
     ) or (environment is not None and connection["environment"] != environment):
         raise ObservationCancelled("observation_connection_changed")
+    _require_refresh_context(cur, user_id, connection)
     if snapshot_id is not None:
         cur.execute(
             """
@@ -89,17 +132,7 @@ def _require_settings_version(expected: int, actual: int, *, unchanged: bool = F
         raise SettingsVersionConflict("settings_version_conflict")
 
 
-JobStatus = Literal["running", "succeeded", "degraded", "failed"]
-ProposalAction = Literal[
-    "confirmed",
-    "rejected",
-    "deferred",
-    "superseded",
-    "revoked",
-    "expired",
-]
-
-
+JobStatus = Literal["queued", "running", "succeeded", "degraded", "failed"]
 @dataclass(frozen=True, slots=True)
 class InvestmentProfileRecord:
     id: int
@@ -112,27 +145,6 @@ class InvestmentProfileRecord:
     liquidity_horizon_days: int
     allow_below_investment_grade: bool
     created_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class BalancingPolicyInput:
-    max_instrument_percent: Decimal
-    max_sector_percent: Decimal
-    max_issuer_percent: Decimal
-    max_group_percent: Decimal
-    max_share_percent: Decimal
-    max_bond_percent: Decimal
-    max_etf_percent: Decimal
-    max_below_grade_percent: Decimal
-    max_unknown_percent: Decimal
-    max_term_months: int
-    turnover_budget_percent: Decimal
-    max_daily_turnover_participation_percent: Decimal
-    securities_tax_rate_percent: Decimal
-    uncertainty_haircut_percent: Decimal
-    credit_loss_haircut_percent: Decimal
-    no_trade_band_percent: Decimal
-    min_replace_benefit_rub: Decimal
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,26 +196,6 @@ class PortfolioProposalRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class PortfolioProposalActionRecord:
-    id: int
-    proposal_id: UUID
-    user_id: UUID
-    action: ProposalAction
-    proposal_version: int
-    proposal_hash: bytes
-    reason: str
-    user_reason: str
-    deferred_until: datetime | None
-    acted_at: datetime
-
-
-class ProposalStateError(RuntimeError):
-    def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
-
-
-@dataclass(frozen=True, slots=True)
 class JobRunRecord:
     id: UUID
     user_id: UUID
@@ -224,65 +216,6 @@ class BrokerSyncState:
     pending_cursor: str
     last_complete_watermark: datetime | None
     updated_at: datetime
-
-
-def _validate_proposal_decision_input(
-    *,
-    expected_hash: bytes,
-    session_digest: bytes,
-    action: Literal["confirmed", "rejected", "deferred"],
-    user_reason: str,
-    deferred_until: datetime | None,
-    now: datetime,
-) -> str:
-    if now.tzinfo is None:
-        raise ValueError("proposal decision time must be timezone-aware")
-    if len(expected_hash) != 32:
-        raise ValueError("proposal hash must be SHA-256")
-    if len(session_digest) != 32:
-        raise ValueError("proposal session digest must be SHA-256")
-
-    clean_reason = user_reason.strip()
-    if len(clean_reason) > 500:
-        raise ValueError("proposal decision reason is too long")
-    if action == "rejected" and not clean_reason:
-        raise ValueError("proposal rejection reason is required")
-
-    if action == "deferred":
-        if deferred_until is None or deferred_until.tzinfo is None:
-            raise ValueError("proposal defer time must be timezone-aware")
-        if deferred_until.astimezone(UTC) <= now.astimezone(UTC):
-            raise ValueError("proposal defer time must be in the future")
-    elif deferred_until is not None:
-        raise ValueError("proposal defer time is only valid for defer")
-    return clean_reason
-
-
-def _proposal_decision_outcome(
-    cur: Any,
-    *,
-    proposal: PortfolioProposalRecord,
-    user_id: UUID,
-    action: Literal["confirmed", "rejected", "deferred"],
-    material_current: bool,
-    now: datetime,
-) -> tuple[ProposalAction, str]:
-    if proposal.expires_at <= now.astimezone(UTC):
-        return "expired", "proposal_expired"
-    if not material_current:
-        return "revoked", "proposal_material_changed"
-    try:
-        _require_current_proposal_sources(
-            cur,
-            user_id=user_id,
-            snapshot_id=proposal.source_snapshot_id,
-            account_id=proposal.account_id,
-            profile_version=proposal.profile_version,
-            policy_version=proposal.policy_version,
-        )
-    except ProposalStateError:
-        return "revoked", "proposal_sources_changed"
-    return action, "user_decision"
 
 
 def _source_document_id(
@@ -690,26 +623,33 @@ class PortfolioStore:
     @contextmanager
     def observer_lock(self) -> Iterator[bool]:
         lock_name = "omnicio-portfolio-observer"
-        with self.database.pool.connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT pg_try_advisory_lock(hashtextextended(%s, 0)) AS locked",
-                (lock_name,),
-            )
-            row = cur.fetchone()
-            locked = row is not None and bool(cast(dict[str, Any], row)["locked"])
-            if not locked:
-                yield False
-                return
+        with self.database.pool.connection() as conn:
+            locked = False
             try:
-                yield True
+                with conn.transaction(), conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT pg_try_advisory_lock(hashtextextended(%s, 0)) AS locked",
+                        (lock_name,),
+                    )
+                    row = cur.fetchone()
+                    locked = row is not None and bool(cast(dict[str, Any], row)["locked"])
+                # A session lock excludes other workers without keeping a
+                # database transaction open throughout provider requests.
+                yield locked
             finally:
-                cur.execute(
-                    "SELECT pg_advisory_unlock(hashtextextended(%s, 0)) AS unlocked",
-                    (lock_name,),
-                )
-                released = cur.fetchone()
-                if released is None or not bool(cast(dict[str, Any], released)["unlocked"]):
-                    raise RuntimeError("portfolio observer advisory lock was not released")
+                if locked:
+                    try:
+                        with conn.transaction(), conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT pg_advisory_unlock(hashtextextended(%s, 0)) AS unlocked",
+                                (lock_name,),
+                            )
+                            released = cur.fetchone()
+                            if released is None or not cast(dict[str, Any], released)["unlocked"]:
+                                raise RuntimeError("portfolio observer lock was not released")
+                    except (DatabaseError, RuntimeError):
+                        conn.close()
+                        raise
 
     def observer_user_ids(self, legal_versions: dict[str, str]) -> tuple[UUID, ...]:
         with self.database.pool.connection() as conn, conn.cursor() as cur:
@@ -827,112 +767,6 @@ class PortfolioStore:
                 return None
             return _profile(cast(dict[str, Any], fetched))
 
-    def save_profile(
-        self,
-        user_id: UUID,
-        *,
-        reserve_rub: Decimal,
-        planned_withdrawal_rub: Decimal,
-        horizon_months: int,
-        max_drawdown_percent: Decimal,
-        liquidity_horizon_days: int,
-        allow_below_investment_grade: bool,
-        expected_version: int,
-    ) -> InvestmentProfileRecord:
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
-            self._tenant(cur, user_id)
-            cur.execute(
-                _ADVISORY_LOCK_SQL,
-                (f"investment-profile:{user_id}",),
-            )
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    user_id,
-                    version,
-                    reserve_rub,
-                    planned_withdrawal_rub,
-                    horizon_months,
-                    max_drawdown_percent,
-                    liquidity_horizon_days,
-                    allow_below_investment_grade,
-                    created_at
-                FROM investment_profile_versions
-                WHERE user_id = %s
-                ORDER BY version DESC
-                LIMIT 1
-                """,
-                (user_id,),
-            )
-            latest_row = cur.fetchone()
-            if latest_row is None:
-                _require_settings_version(expected_version, 0)
-                version = 1
-            else:
-                latest = _profile(cast(dict[str, Any], latest_row))
-                if (
-                    latest.reserve_rub == reserve_rub
-                    and latest.planned_withdrawal_rub == planned_withdrawal_rub
-                    and latest.horizon_months == horizon_months
-                    and latest.max_drawdown_percent == max_drawdown_percent
-                    and latest.liquidity_horizon_days == liquidity_horizon_days
-                    and latest.allow_below_investment_grade == allow_below_investment_grade
-                ):
-                    _require_settings_version(expected_version, latest.version, unchanged=True)
-                    return latest
-                _require_settings_version(expected_version, latest.version)
-                version = latest.version + 1
-            cur.execute(
-                """
-                INSERT INTO investment_profile_versions (
-                    user_id,
-                    version,
-                    reserve_rub,
-                    planned_withdrawal_rub,
-                    horizon_months,
-                    max_drawdown_percent,
-                    liquidity_horizon_days,
-                    allow_below_investment_grade
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING
-                    id,
-                    user_id,
-                    version,
-                    reserve_rub,
-                    planned_withdrawal_rub,
-                    horizon_months,
-                    max_drawdown_percent,
-                    liquidity_horizon_days,
-                    allow_below_investment_grade,
-                    created_at
-                """,
-                (
-                    user_id,
-                    version,
-                    reserve_rub,
-                    planned_withdrawal_rub,
-                    horizon_months,
-                    max_drawdown_percent,
-                    liquidity_horizon_days,
-                    allow_below_investment_grade,
-                ),
-            )
-            fetched = cur.fetchone()
-            if fetched is None:
-                raise RuntimeError("investment profile insert returned no row")
-            cur.execute(
-                "INSERT INTO audit_events (user_id, event_type) "
-                "VALUES (%s, 'investment_profile_saved')",
-                (user_id,),
-            )
-            return _profile(cast(dict[str, Any], fetched))
-
     def current_balancing_policy(
         self,
         user_id: UUID,
@@ -978,361 +812,6 @@ class PortfolioStore:
             if fetched is None:
                 return None
             return _balancing_policy(cast(dict[str, Any], fetched))
-
-    def save_balancing_policy(
-        self,
-        user_id: UUID,
-        policy: BalancingPolicyInput,
-        *,
-        expected_version: int,
-    ) -> BalancingPolicyRecord:
-        desired = (
-            policy.max_instrument_percent,
-            policy.max_sector_percent,
-            policy.max_issuer_percent,
-            policy.max_group_percent,
-            policy.max_share_percent,
-            policy.max_bond_percent,
-            policy.max_etf_percent,
-            policy.max_below_grade_percent,
-            policy.max_unknown_percent,
-            policy.max_term_months,
-            policy.turnover_budget_percent,
-            policy.max_daily_turnover_participation_percent,
-            policy.securities_tax_rate_percent,
-            policy.uncertainty_haircut_percent,
-            policy.credit_loss_haircut_percent,
-            policy.no_trade_band_percent,
-            policy.min_replace_benefit_rub,
-        )
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
-            self._tenant(cur, user_id)
-            cur.execute(
-                _ADVISORY_LOCK_SQL,
-                (f"balancing-policy:{user_id}",),
-            )
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    user_id,
-                    version,
-                    max_instrument_percent,
-                    max_sector_percent,
-                    max_issuer_percent,
-                    max_group_percent,
-                    max_share_percent,
-                    max_bond_percent,
-                    max_etf_percent,
-                    max_below_grade_percent,
-                    max_unknown_percent,
-                    max_term_months,
-                    turnover_budget_percent,
-                    max_daily_turnover_participation_percent,
-                    securities_tax_rate_percent,
-                    uncertainty_haircut_percent,
-                    credit_loss_haircut_percent,
-                    no_trade_band_percent,
-                    min_replace_benefit_rub,
-                    created_at
-                FROM balancing_policy_versions
-                WHERE user_id = %s
-                ORDER BY version DESC
-                LIMIT 1
-                """,
-                (user_id,),
-            )
-            latest_row = cur.fetchone()
-            if latest_row is None:
-                _require_settings_version(expected_version, 0)
-                version = 1
-            else:
-                latest = _balancing_policy(cast(dict[str, Any], latest_row))
-                current = (
-                    latest.max_instrument_percent,
-                    latest.max_sector_percent,
-                    latest.max_issuer_percent,
-                    latest.max_group_percent,
-                    latest.max_share_percent,
-                    latest.max_bond_percent,
-                    latest.max_etf_percent,
-                    latest.max_below_grade_percent,
-                    latest.max_unknown_percent,
-                    latest.max_term_months,
-                    latest.turnover_budget_percent,
-                    latest.max_daily_turnover_participation_percent,
-                    latest.securities_tax_rate_percent,
-                    latest.uncertainty_haircut_percent,
-                    latest.credit_loss_haircut_percent,
-                    latest.no_trade_band_percent,
-                    latest.min_replace_benefit_rub,
-                )
-                if current == desired:
-                    _require_settings_version(expected_version, latest.version, unchanged=True)
-                    return latest
-                _require_settings_version(expected_version, latest.version)
-                version = latest.version + 1
-
-            cur.execute(
-                """
-                INSERT INTO balancing_policy_versions (
-                    user_id,
-                    version,
-                    max_instrument_percent,
-                    max_sector_percent,
-                    max_issuer_percent,
-                    max_group_percent,
-                    max_share_percent,
-                    max_bond_percent,
-                    max_etf_percent,
-                    max_below_grade_percent,
-                    max_unknown_percent,
-                    max_term_months,
-                    turnover_budget_percent,
-                    max_daily_turnover_participation_percent,
-                    securities_tax_rate_percent,
-                    uncertainty_haircut_percent,
-                    credit_loss_haircut_percent,
-                    no_trade_band_percent,
-                    min_replace_benefit_rub
-                )
-                VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s
-                )
-                RETURNING
-                    id,
-                    user_id,
-                    version,
-                    max_instrument_percent,
-                    max_sector_percent,
-                    max_issuer_percent,
-                    max_group_percent,
-                    max_share_percent,
-                    max_bond_percent,
-                    max_etf_percent,
-                    max_below_grade_percent,
-                    max_unknown_percent,
-                    max_term_months,
-                    turnover_budget_percent,
-                    max_daily_turnover_participation_percent,
-                    securities_tax_rate_percent,
-                    uncertainty_haircut_percent,
-                    credit_loss_haircut_percent,
-                    no_trade_band_percent,
-                    min_replace_benefit_rub,
-                    created_at
-                """,
-                (user_id, version, *desired),
-            )
-            fetched = cur.fetchone()
-            if fetched is None:
-                raise RuntimeError("balancing policy insert returned no row")
-            cur.execute(
-                "INSERT INTO audit_events (user_id, event_type) "
-                "VALUES (%s, 'balancing_policy_saved')",
-                (user_id,),
-            )
-            return _balancing_policy(cast(dict[str, Any], fetched))
-
-    def create_proposal(
-        self,
-        user_id: UUID,
-        *,
-        source_snapshot_id: UUID,
-        account_id: str,
-        profile_version: int,
-        policy_version: int,
-        scenario_kind: str,
-        target_instrument_uid: str | None,
-        replaced_instrument_uid: str | None,
-        proposal_hash: bytes,
-        session_digest: bytes,
-        payload: dict[str, object],
-        expires_at: datetime,
-    ) -> PortfolioProposalRecord:
-        if len(proposal_hash) != 32:
-            raise ValueError("proposal hash must be SHA-256")
-        if len(session_digest) != 32:
-            raise ValueError("proposal session digest must be SHA-256")
-        if not account_id or len(account_id) > 128:
-            raise ValueError("proposal account id is invalid")
-        if expires_at.tzinfo is None:
-            raise ValueError("proposal expiry must be timezone-aware")
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
-            self._tenant(cur, user_id)
-            cur.execute(
-                _ADVISORY_LOCK_SQL,
-                (f"portfolio-proposal:{user_id}",),
-            )
-            _require_current_proposal_sources(
-                cur,
-                user_id=user_id,
-                snapshot_id=source_snapshot_id,
-                account_id=account_id,
-                profile_version=profile_version,
-                policy_version=policy_version,
-            )
-            cur.execute(
-                """
-                INSERT INTO portfolio_proposal_actions (
-                    proposal_id,
-                    user_id,
-                    action,
-                    proposal_version,
-                    proposal_hash,
-                    session_digest,
-                    reason
-                )
-                SELECT
-                    p.id,
-                    p.user_id,
-                    'superseded',
-                    p.version,
-                    p.proposal_hash,
-                    %s,
-                    'superseded_by_new_proposal'
-                FROM portfolio_proposals AS p
-                LEFT JOIN portfolio_proposal_actions AS a
-                  ON a.proposal_id = p.id
-                WHERE p.user_id = %s
-                  AND a.id IS NULL
-                  AND p.expires_at > now()
-                ON CONFLICT (proposal_id) DO NOTHING
-                """,
-                (session_digest, user_id),
-            )
-            cur.execute(
-                """
-                SELECT COALESCE(max(version), 0) + 1 AS next_version
-                FROM portfolio_proposals
-                WHERE user_id = %s
-                """,
-                (user_id,),
-            )
-            next_row = cur.fetchone()
-            version = (
-                int(cast(dict[str, Any], next_row)["next_version"])
-                if next_row is not None
-                else 1
-            )
-            cur.execute(
-                """
-                INSERT INTO portfolio_proposals (
-                    user_id,
-                    version,
-                    source_snapshot_id,
-                    account_id,
-                    profile_version,
-                    policy_version,
-                    scenario_kind,
-                    target_instrument_uid,
-                    replaced_instrument_uid,
-                    proposal_hash,
-                    created_session_digest,
-                    payload,
-                    expires_at
-                )
-                VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
-                )
-                RETURNING
-                    id,
-                    user_id,
-                    version,
-                    source_snapshot_id,
-                    account_id,
-                    profile_version,
-                    policy_version,
-                    scenario_kind,
-                    target_instrument_uid,
-                    replaced_instrument_uid,
-                    proposal_hash,
-                    payload,
-                    created_at,
-                    expires_at
-                """,
-                (
-                    user_id,
-                    version,
-                    source_snapshot_id,
-                    account_id,
-                    profile_version,
-                    policy_version,
-                    scenario_kind,
-                    target_instrument_uid,
-                    replaced_instrument_uid,
-                    proposal_hash,
-                    session_digest,
-                    _json(payload),
-                    expires_at.astimezone(UTC),
-                ),
-            )
-            row = cur.fetchone()
-            if row is None:
-                raise RuntimeError("proposal insert returned no row")
-            return _proposal_record(cast(dict[str, Any], row))
-
-    def proposal(
-        self,
-        user_id: UUID,
-        proposal_id: UUID,
-    ) -> PortfolioProposalRecord | None:
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
-            self._tenant(cur, user_id)
-            cur.execute(
-                """
-                SELECT
-                    p.id,
-                    p.user_id,
-                    p.version,
-                    p.source_snapshot_id,
-                    p.account_id,
-                    p.profile_version,
-                    p.policy_version,
-                    p.scenario_kind,
-                    p.target_instrument_uid,
-                    p.replaced_instrument_uid,
-                    p.proposal_hash,
-                    p.payload,
-                    p.created_at,
-                    p.expires_at,
-                    COALESCE(
-                        a.action,
-                        CASE
-                            WHEN p.expires_at <= now() THEN 'expired'
-                            ELSE 'pending'
-                        END
-                    ) AS status,
-                    COALESCE(a.reason, '') AS decision_reason,
-                    COALESCE(a.user_reason, '') AS decision_user_reason,
-                    a.deferred_until,
-                    a.acted_at AS decided_at
-                FROM portfolio_proposals AS p
-                LEFT JOIN portfolio_proposal_actions AS a
-                  ON a.proposal_id = p.id
-                WHERE p.id = %s
-                  AND p.user_id = %s
-                """,
-                (proposal_id, user_id),
-            )
-            row = cur.fetchone()
-            if row is None:
-                return None
-            return _proposal_record(cast(dict[str, Any], row))
 
     def proposals(
         self,
@@ -1390,152 +869,176 @@ class PortfolioStore:
                 for row in cur.fetchall()
             )
 
-    def decide_proposal(
-        self,
-        user_id: UUID,
-        *,
-        proposal_id: UUID,
-        expected_version: int,
-        expected_hash: bytes,
-        action: Literal["confirmed", "rejected", "deferred"],
-        session_digest: bytes,
-        user_reason: str,
-        deferred_until: datetime | None,
-        material_current: bool,
-        now: datetime,
-    ) -> tuple[PortfolioProposalRecord, PortfolioProposalActionRecord]:
-        clean_reason = _validate_proposal_decision_input(
-            expected_hash=expected_hash,
-            session_digest=session_digest,
-            action=action,
-            user_reason=user_reason,
-            deferred_until=deferred_until,
-            now=now,
+    @staticmethod
+    def _refresh_connection(cur: Any, user_id: UUID) -> dict[str, Any] | None:
+        cur.execute(
+            "SELECT c.account_id, c.environment, c.verified_at, clock_timestamp() AS server_now "
+            "FROM tbank_connection c JOIN users u ON u.id = c.user_id "
+            "WHERE c.user_id = %s AND u.status = 'active' FOR SHARE OF u",
+            (user_id,),
         )
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
+        return cast(dict[str, Any] | None, cur.fetchone())
+
+    @staticmethod
+    def _refresh_row(
+        cur: Any, user_id: UUID, *, active_only: bool = False,
+    ) -> dict[str, Any] | None:
+        cur.execute(
+            "SELECT j.*, s.captured_at AS snapshot_at FROM job_runs j "
+            "LEFT JOIN portfolio_snapshots s ON s.job_run_id = j.id AND s.user_id = j.user_id "
+            "WHERE j.user_id = %s AND j.job_type = 'portfolio_refresh' "
+            "AND (NOT %s OR j.status IN ('queued', 'running')) "
+            "ORDER BY j.requested_at DESC, j.started_at DESC, j.id DESC LIMIT 1",
+            (user_id, active_only),
+        )
+        return cast(dict[str, Any] | None, cur.fetchone())
+
+    def _refresh_status(
+        self, cur: Any, user_id: UUID, connection: dict[str, Any] | None,
+        *, reason: str | None = None,
+    ) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "status": "not_connected", "job_id": None, "requested_at": None,
+            "started_at": None, "finished_at": None, "observed_at": None,
+            "snapshot_saved": False, "history_status": None, "history_pages": 0,
+            "can_refresh": False, "retry_after_seconds": 0, "cooldown_until": None,
+            "reason": "broker_not_connected",
+        }
+        if connection is None:
+            return result
+        result.update(status="idle", can_refresh=reason is None, reason=reason)
+        cur.execute(
+            "SELECT captured_at FROM portfolio_snapshots WHERE user_id = %s "
+            "AND account_id = %s AND environment = %s ORDER BY captured_at DESC LIMIT 1",
+            (user_id, connection["account_id"], connection["environment"]),
+        )
+        snapshot = cur.fetchone()
+        if snapshot is not None:
+            result["observed_at"] = snapshot["captured_at"].isoformat()
+        job = self._refresh_row(cur, user_id)
+        if job is None or not _refresh_context_matches(
+            job["details"].get("connection"), connection,
         ):
+            return result
+        cooldown = job["requested_at"] + timedelta(seconds=REFRESH_COOLDOWN_SECONDS)
+        retry = max(0, ceil((cooldown - connection["server_now"]).total_seconds()))
+        active = job["status"] in {"queued", "running"}
+        result.update(
+            status=job["status"], job_id=str(job["id"]),
+            requested_at=job["requested_at"].isoformat(),
+            started_at=job["started_at"].isoformat() if job["status"] != "queued" else None,
+            finished_at=job["finished_at"].isoformat() if job["finished_at"] else None,
+            snapshot_saved=job["snapshot_at"] is not None,
+            history_status=job["details"].get("history_status"),
+            history_pages=job["details"].get("history_pages", 0),
+            can_refresh=not active and retry == 0 and reason is None,
+            retry_after_seconds=max(2, retry) if active else retry,
+            cooldown_until=cooldown.isoformat(),
+            reason=reason or job["details"].get("stage_error"),
+        )
+        return result
+
+    def refresh_status(self, user_id: UUID) -> dict[str, Any]:
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             self._tenant(cur, user_id)
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    user_id,
-                    version,
-                    source_snapshot_id,
-                    account_id,
-                    profile_version,
-                    policy_version,
-                    scenario_kind,
-                    target_instrument_uid,
-                    replaced_instrument_uid,
-                    proposal_hash,
-                    payload,
-                    created_at,
-                    expires_at
-                FROM portfolio_proposals
-                WHERE id = %s
-                  AND user_id = %s
-                FOR UPDATE
-                """,
-                (proposal_id, user_id),
-            )
-            fetched = cur.fetchone()
-            if fetched is None:
-                raise ProposalStateError("proposal_not_found")
-            proposal = _proposal_record(cast(dict[str, Any], fetched))
-            if proposal.version != expected_version:
-                raise ProposalStateError("proposal_version_mismatch")
-            if proposal.proposal_hash != expected_hash:
-                raise ProposalStateError("proposal_hash_mismatch")
+            cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+            return self._refresh_status(cur, user_id, self._refresh_connection(cur, user_id))
 
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    proposal_id,
-                    user_id,
-                    action,
-                    proposal_version,
-                    proposal_hash,
-                    reason,
-                    acted_at
-                FROM portfolio_proposal_actions
-                WHERE proposal_id = %s
-                """,
-                (proposal_id,),
-            )
-            existing = cur.fetchone()
-            if existing is not None:
-                raise ProposalStateError("proposal_already_decided")
+    @staticmethod
+    def _fail_refresh(cur: Any, user_id: UUID, job_id: UUID, reason: str) -> None:
+        cur.execute(
+            "UPDATE job_runs SET status = 'failed', finished_at = clock_timestamp(), "
+            "details = details || %s::jsonb WHERE id = %s AND user_id = %s "
+            "AND job_type = 'portfolio_refresh' AND status IN ('queued', 'running')",
+            (_json({"stage_error": reason}), job_id, user_id),
+        )
 
-            decided_action, reason = _proposal_decision_outcome(
-                cur,
-                proposal=proposal,
-                user_id=user_id,
-                action=action,
-                material_current=material_current,
-                now=now,
-            )
+    def fail_refresh_job(self, user_id: UUID, job_id: UUID, reason: str) -> None:
+        """Settle an interrupted run without authorizing any financial fact writes."""
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+            self._fail_refresh(cur, user_id, job_id, reason)
 
+    def request_refresh(self, user_id: UUID, legal_versions: dict[str, str]) -> dict[str, Any]:
+        """One durable pending run per owner; cooldown uses the database clock."""
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+            connection = self._refresh_connection(cur, user_id)
+            if connection is None:
+                return self._refresh_status(cur, user_id, None)
+            if not _has_refresh_legal(cur, user_id, legal_versions):
+                return self._refresh_status(cur, user_id, connection, reason="consent_required")
+            active = self._refresh_row(cur, user_id, active_only=True)
+            if active is not None and (
+                not _refresh_context_matches(active["details"].get("connection"), connection)
+                or active["details"].get("legal_versions") != legal_versions
+            ):
+                self._fail_refresh(cur, user_id, active["id"], "observation_context_changed")
+            current = self._refresh_status(cur, user_id, connection)
+            if not current["can_refresh"]:
+                if current["status"] not in {"queued", "running"}:
+                    current["reason"] = "refresh_cooldown"
+                return current
+            context = {key: connection[key] for key in ("account_id", "environment", "verified_at")}
             cur.execute(
-                """
-                INSERT INTO portfolio_proposal_actions (
-                    proposal_id,
-                    user_id,
-                    action,
-                    proposal_version,
-                    proposal_hash,
-                    session_digest,
-                    reason,
-                    user_reason,
-                    deferred_until,
-                    acted_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING
-                    id,
-                    proposal_id,
-                    user_id,
-                    action,
-                    proposal_version,
-                    proposal_hash,
-                    reason,
-                    user_reason,
-                    deferred_until,
-                    acted_at
-                """,
-                (
-                    proposal.id,
-                    user_id,
-                    decided_action,
-                    proposal.version,
-                    proposal.proposal_hash,
-                    session_digest,
-                    reason,
-                    (
-                        clean_reason
-                        if decided_action == action
-                        else ""
-                    ),
-                    (
-                        deferred_until.astimezone(UTC)
-                        if decided_action == "deferred"
-                        and deferred_until is not None
-                        else None
-                    ),
-                    now.astimezone(UTC),
-                ),
+                "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, details) "
+                "VALUES (%s, 'portfolio_refresh', "
+                "(clock_timestamp() AT TIME ZONE 'Europe/Moscow')::date, 'queued', %s::jsonb)",
+                (user_id, _json({"connection": context, "legal_versions": legal_versions})),
             )
-            action_row = cur.fetchone()
-            if action_row is None:
-                raise RuntimeError("proposal action insert returned no row")
-            return (
-                proposal,
-                _proposal_action_record(cast(dict[str, Any], action_row)),
+            return self._refresh_status(cur, user_id, connection)
+
+    def _resume_refresh(
+        self, cur: Any, user_id: UUID, row: dict[str, Any],
+    ) -> JobRunRecord | None:
+        # A new run owns a new immutable snapshot. Reusing a crashed run's ID
+        # would attach newly fetched evidence to its already persisted old NAV.
+        self._fail_refresh(cur, user_id, row["id"], "worker_interrupted")
+        if row["attempt"] >= REFRESH_MAX_ATTEMPTS:
+            return None
+        details = {
+            "connection": row["details"]["connection"],
+            "legal_versions": row["details"]["legal_versions"],
+            "resumed_from": str(row["id"]),
+        }
+        cur.execute(
+            "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, attempt, "
+            "requested_at, details) VALUES (%s, 'portfolio_refresh', "
+            "(clock_timestamp() AT TIME ZONE 'Europe/Moscow')::date, 'running', %s, %s, %s::jsonb) "
+            "RETURNING *",
+            (user_id, row["attempt"] + 1, row["requested_at"], _json(details)),
+        )
+        return _job_run(cast(dict[str, Any], cur.fetchone()))
+
+    def claim_refresh_job(
+        self, user_id: UUID, legal_versions: dict[str, str],
+    ) -> JobRunRecord | None:
+        """Claim/recover only while the caller holds the global observer session lock."""
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+            connection = self._refresh_connection(cur, user_id)
+            row = self._refresh_row(cur, user_id, active_only=True)
+            if row is None:
+                return None
+            if connection is None or (
+                not _refresh_context_matches(row["details"].get("connection"), connection)
+                or row["details"].get("legal_versions") != legal_versions
+                or not _has_refresh_legal(cur, user_id, legal_versions)
+            ):
+                self._fail_refresh(cur, user_id, row["id"], "observation_context_changed")
+                return None
+            if row["status"] == "running":
+                return self._resume_refresh(cur, user_id, row)
+            cur.execute(
+                "UPDATE job_runs SET status = 'running', started_at = clock_timestamp() "
+                "WHERE id = %s AND user_id = %s AND status = 'queued' RETURNING *",
+                (row["id"], user_id),
             )
+            claimed = cur.fetchone()
+            return _job_run(cast(dict[str, Any], claimed)) if claimed is not None else None
 
     def claim_daily_job(
         self,
@@ -1580,7 +1083,8 @@ class PortfolioStore:
                     status
                 )
                 VALUES (%s, %s, %s, 'running')
-                ON CONFLICT (user_id, job_type, scheduled_for) DO NOTHING
+                ON CONFLICT (user_id, job_type, scheduled_for)
+                    WHERE job_type <> 'portfolio_refresh' DO NOTHING
                 RETURNING
                     id,
                     user_id,
@@ -1659,7 +1163,7 @@ class PortfolioStore:
                 SET
                     status = %s,
                     finished_at = now(),
-                    details = %s::jsonb
+                    details = details || %s::jsonb
                 WHERE id = %s
                   AND user_id = %s
                   AND status = 'running'
@@ -1668,7 +1172,7 @@ class PortfolioStore:
                 (status, _json(details), job_run_id, user_id),
             )
             if cur.fetchone() is None:
-                raise RuntimeError("daily job is no longer running")
+                raise RuntimeError("observation job is no longer running")
             return True
 
     def sync_state(self, user_id: UUID, account_id: str) -> BrokerSyncState | None:
@@ -2715,230 +2219,6 @@ class PortfolioStore:
             "candidates": candidates,
         }
 
-    def latest_intelligence(
-        self,
-        user_id: UUID,
-        *,
-        now: datetime | None = None,
-    ) -> dict[str, object] | None:
-        observed_at = now or datetime.now(UTC)
-        if observed_at.tzinfo is None:
-            raise ValueError("intelligence time must be timezone-aware")
-        observed_at = observed_at.astimezone(UTC)
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
-            self._tenant(cur, user_id)
-            cur.execute(
-                """
-                SELECT id, captured_at, analysis_status
-                FROM portfolio_snapshots
-                JOIN tbank_connection USING (user_id, account_id, environment)
-                WHERE user_id = %s
-                ORDER BY captured_at DESC, created_at DESC
-                LIMIT 1
-                """,
-                (user_id,),
-            )
-            snapshot = cur.fetchone()
-            if snapshot is None:
-                return None
-            snapshot_row = cast(dict[str, Any], snapshot)
-            snapshot_id = cast(UUID, snapshot_row["id"])
-
-            cur.execute(
-                """
-                SELECT
-                    p.instrument_uid,
-                    p.ticker,
-                    p.instrument_type,
-                    p.sector,
-                    p.value_rub,
-                    p.nav_percent,
-                    r.state,
-                    r.rating_status,
-                    r.fundamental_status,
-                    r.source_status,
-                    r.reasons,
-                    r.evidence,
-                    r.assessed_at
-                FROM portfolio_snapshot_positions AS p
-                LEFT JOIN portfolio_risk_assessments AS r
-                  ON r.snapshot_id = p.snapshot_id
-                 AND r.user_id = p.user_id
-                 AND r.instrument_uid = p.instrument_uid
-                WHERE p.snapshot_id = %s
-                  AND p.user_id = %s
-                ORDER BY
-                    CASE COALESCE(r.state, 'data_missing')
-                        WHEN 'confirmed_default' THEN 0
-                        WHEN 'critical' THEN 1
-                        WHEN 'elevated' THEN 2
-                        WHEN 'watch' THEN 3
-                        WHEN 'data_missing' THEN 4
-                        ELSE 5
-                    END,
-                    p.nav_percent DESC NULLS LAST,
-                    p.ticker
-                """,
-                (snapshot_id, user_id),
-            )
-            risk_rows = [dict(row) for row in cur.fetchall()]
-
-            cur.execute(
-                """
-                WITH held AS (
-                    SELECT p.instrument_uid
-                    FROM portfolio_snapshot_positions AS p
-                    WHERE p.snapshot_id = %s
-                      AND p.user_id = %s
-                    UNION
-                    SELECT c.instrument_uid
-                    FROM portfolio_snapshot_positions AS p
-                    JOIN instrument_catalog AS c
-                      ON c.provider = 'tbank'
-                     AND (
-                         c.instrument_uid = p.instrument_uid
-                         OR (p.figi <> '' AND c.figi = p.figi)
-                     )
-                    WHERE p.snapshot_id = %s
-                      AND p.user_id = %s
-                ),
-                latest AS (
-                    SELECT DISTINCT ON (
-                        pe.provider,
-                        pe.instrument_uid,
-                        pe.event_type,
-                        pe.provider_key
-                    )
-                        pe.provider,
-                        pe.instrument_uid,
-                        pe.event_type,
-                        pe.provider_key,
-                        pe.announced_at,
-                        pe.record_at,
-                        pe.expected_at,
-                        pe.actual_at,
-                        pe.amount,
-                        pe.currency,
-                        pe.status,
-                        pe.payload,
-                        sd.source_url,
-                        sd.first_retrieved_at
-                    FROM payout_events AS pe
-                    JOIN source_documents AS sd
-                      ON sd.id = pe.source_document_id
-                    JOIN held
-                      ON held.instrument_uid = pe.instrument_uid
-                    ORDER BY
-                        pe.provider,
-                        pe.instrument_uid,
-                        pe.event_type,
-                        pe.provider_key,
-                        sd.first_retrieved_at DESC,
-                        pe.id DESC
-                )
-                SELECT *
-                FROM latest
-                WHERE COALESCE(actual_at, expected_at, announced_at)
-                    >= now() - interval '45 days'
-                ORDER BY
-                    COALESCE(actual_at, expected_at, announced_at) ASC NULLS LAST,
-                    instrument_uid
-                LIMIT 200
-                """,
-                (snapshot_id, user_id, snapshot_id, user_id),
-            )
-            payout_rows = [dict(row) for row in cur.fetchall()]
-
-            cur.execute(
-                """
-                WITH held_subjects AS (
-                    SELECT p.instrument_uid AS subject_uid
-                    FROM portfolio_snapshot_positions AS p
-                    WHERE p.snapshot_id = %s
-                      AND p.user_id = %s
-                    UNION
-                    SELECT c.instrument_uid
-                    FROM portfolio_snapshot_positions AS p
-                    JOIN instrument_catalog AS c
-                      ON c.provider = 'tbank'
-                     AND (
-                         c.instrument_uid = p.instrument_uid
-                         OR (p.figi <> '' AND c.figi = p.figi)
-                     )
-                    WHERE p.snapshot_id = %s
-                      AND p.user_id = %s
-                    UNION
-                    SELECT c.asset_uid
-                    FROM portfolio_snapshot_positions AS p
-                    JOIN instrument_catalog AS c
-                      ON c.provider = 'tbank'
-                     AND (
-                         c.instrument_uid = p.instrument_uid
-                         OR (p.figi <> '' AND c.figi = p.figi)
-                     )
-                    WHERE p.snapshot_id = %s
-                      AND p.user_id = %s
-                      AND c.asset_uid <> ''
-                )
-                SELECT
-                    sd.provider,
-                    sd.document_type,
-                    min(sd.source_url) AS source_url,
-                    max(sr.retrieved_at) AS retrieved_at,
-                    count(DISTINCT sd.id) AS versions
-                FROM source_documents AS sd
-                JOIN source_retrievals AS sr
-                  ON sr.source_document_id = sd.id
-                JOIN held_subjects AS hs
-                  ON hs.subject_uid = sd.subject_uid
-                GROUP BY sd.provider, sd.document_type
-                ORDER BY sd.provider, sd.document_type
-                """,
-                (
-                    snapshot_id,
-                    user_id,
-                    snapshot_id,
-                    user_id,
-                    snapshot_id,
-                    user_id,
-                ),
-            )
-            source_rows = [dict(row) for row in cur.fetchall()]
-
-        captured_at = cast(datetime, snapshot_row["captured_at"]).astimezone(UTC)
-        snapshot_age = _age_seconds(captured_at, now=observed_at)
-        snapshot_freshness = _freshness_status(captured_at, now=observed_at)
-        for row in risk_rows:
-            assessed_at = cast(datetime | None, row.get("assessed_at"))
-            row["assessment_freshness"] = _freshness_status(
-                assessed_at,
-                now=observed_at,
-            )
-        for row in source_rows:
-            retrieved_at = cast(datetime | None, row.get("retrieved_at"))
-            row["freshness_status"] = _freshness_status(
-                retrieved_at,
-                now=observed_at,
-            )
-            row["age_seconds"] = _age_seconds(retrieved_at, now=observed_at)
-
-        return {
-            "snapshot_id": str(snapshot_id),
-            "captured_at": captured_at,
-            "snapshot_age_seconds": snapshot_age,
-            "snapshot_freshness": snapshot_freshness,
-            "analysis_status": snapshot_row["analysis_status"],
-            "execution_enabled": False,
-            "rating_feed_status": "data_missing",
-            "risks": risk_rows,
-            "payouts": payout_rows,
-            "sources": source_rows,
-        }
-
     def save_history_page(
         self,
         user_id: UUID,
@@ -3079,80 +2359,6 @@ def _proposal_record(row: dict[str, Any]) -> PortfolioProposalRecord:
         deferred_until=cast(datetime | None, row.get("deferred_until")),
         decided_at=cast(datetime | None, row.get("decided_at")),
     )
-
-
-def _proposal_action_record(
-    row: dict[str, Any],
-) -> PortfolioProposalActionRecord:
-    return PortfolioProposalActionRecord(
-        id=int(row["id"]),
-        proposal_id=cast(UUID, row["proposal_id"]),
-        user_id=cast(UUID, row["user_id"]),
-        action=cast(ProposalAction, row["action"]),
-        proposal_version=int(row["proposal_version"]),
-        proposal_hash=bytes(row["proposal_hash"]),
-        reason=str(row["reason"]),
-        user_reason=str(row.get("user_reason") or ""),
-        deferred_until=cast(datetime | None, row.get("deferred_until")),
-        acted_at=cast(datetime, row["acted_at"]),
-    )
-
-
-def _require_current_proposal_sources(
-    cur: Any,
-    *,
-    user_id: UUID,
-    snapshot_id: UUID,
-    account_id: str,
-    profile_version: int,
-    policy_version: int,
-) -> None:
-    cur.execute(
-        """
-        SELECT id, account_id
-        FROM portfolio_snapshots
-        JOIN tbank_connection USING (user_id, account_id, environment)
-        WHERE user_id = %s
-        ORDER BY captured_at DESC, created_at DESC
-        LIMIT 1
-        """,
-        (user_id,),
-    )
-    snapshot_row = cur.fetchone()
-    if (
-        snapshot_row is None
-        or snapshot_row["id"] != snapshot_id
-        or str(snapshot_row["account_id"]) != account_id
-    ):
-        raise ProposalStateError("proposal_snapshot_stale")
-
-    cur.execute(
-        """
-        SELECT version
-        FROM investment_profile_versions
-        WHERE user_id = %s
-        ORDER BY version DESC
-        LIMIT 1
-        """,
-        (user_id,),
-    )
-    profile_row = cur.fetchone()
-    if profile_row is None or int(profile_row["version"]) != profile_version:
-        raise ProposalStateError("proposal_profile_stale")
-
-    cur.execute(
-        """
-        SELECT version
-        FROM balancing_policy_versions
-        WHERE user_id = %s
-        ORDER BY version DESC
-        LIMIT 1
-        """,
-        (user_id,),
-    )
-    policy_row = cur.fetchone()
-    if policy_row is None or int(policy_row["version"]) != policy_version:
-        raise ProposalStateError("proposal_policy_stale")
 
 
 def _job_run(row: dict[str, Any]) -> JobRunRecord:

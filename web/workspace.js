@@ -55,6 +55,7 @@
     return new Intl.DateTimeFormat(displayLocale, {
       day: "numeric",
       month: "short",
+      year: "numeric",
       timeZone: "Europe/Moscow",
       ...(time ? {
         hour: "2-digit",
@@ -88,7 +89,7 @@
     primary: true,
     small: !centered
   }) : ""}</div>`;
-  const loading = (label = "Загружаем данные…") => `<div class="loading-panel" role="status"><span class="spinner" aria-hidden="true"></span>${escape(label)}</div>`;
+  const loading = (label = "Загружаем данные…") => `<output class="loading-panel"><span class="spinner" aria-hidden="true"></span>${escape(label)}</output>`;
   const heading = (title, detail = "", actions = "") => `<div class="view-header"><div><h1>${escape(title)}</h1>${detail ? renderHeadingP(detail) : ""}</div>${actions ? renderHeadingViewActions(actions) : ""}</div>`;
   const cardHeader = (title, route = "", label = "Смотреть все") => `<div class="card-header"><h2>${escape(title)}</h2>${route ? renderCardHeaderTextButton(route, label) : ""}</div>`;
   const periodLabels = [["1d", "1Д"], ["1w", "1Н"], ["1m", "1М"], ["3m", "3М"], ["1y", "1Г"], ["all", "ВСЕ"]];
@@ -103,10 +104,12 @@
       "1y": 365
     }[period];
     if (!days) return data;
-    const times = data.map(item => new Date(item[timeKey]).getTime()).filter(Number.isFinite);
-    if (!times.length) return [];
-    const cutoff = Math.max(...times) - days * 86400000;
-    return data.filter(item => new Date(item[timeKey]).getTime() >= cutoff);
+    const now = Date.now();
+    const cutoff = now - days * 86400000;
+    return data.filter(item => {
+      const time = new Date(item[timeKey]).getTime();
+      return time >= cutoff && time <= now;
+    });
   };
   const chart = (rows, {
     timeKey = "captured_at",

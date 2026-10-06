@@ -109,8 +109,10 @@ def test_assistant_transport_sends_only_bounded_chat_and_never_executes_model_to
     request = connection.request.call_args
     assert request.args == ("POST", "/api/chat")
     body = json.loads(request.kwargs["body"])
-    assert "tools" not in body and "tool_choice" not in body
-    assert body["stream"] is False and body["options"]["num_predict"] == 1024
+    assert "tools" not in body
+    assert "tool_choice" not in body
+    assert body["stream"] is False
+    assert body["options"]["num_predict"] == 1024
     assert body["model"] == "configured-model"
     assert [item["role"] for item in body["messages"]] == ["system", "assistant", "user"]
     assert "nav_rub" in body["messages"][0]["content"]
@@ -119,7 +121,8 @@ def test_assistant_transport_sends_only_bounded_chat_and_never_executes_model_to
     assert result["reply"] == "Проверенный текст ответа"
     assert result["context_used"] == "portfolio"
     assert len(result["message_id"]) == 32
-    assert "tool_calls" not in result and "secret_provider_metadata" not in result
+    assert "tool_calls" not in result
+    assert "secret_provider_metadata" not in result
     assert "test-secret-key" not in json.dumps(result)
 
 
@@ -137,16 +140,18 @@ def test_assistant_transport_sends_only_bounded_chat_and_never_executes_model_to
     ],
 )
 def test_assistant_rejects_incomplete_or_unbounded_provider_result(payload: bytes) -> None:
+    client = configured()
     connection = Mock()
     connection.getresponse.return_value = Mock(status=200, read=Mock(return_value=payload))
     with (
         patch("omnicio.assistant.http.client.HTTPSConnection", return_value=connection),
         pytest.raises(AssistantUnavailable),
     ):
-        configured().chat(message="Вопрос", history=[])
+        client.chat(message="Вопрос", history=[])
 
 
 def test_assistant_redirect_and_transport_error_cannot_expose_provider_secret() -> None:
+    client = configured()
     connection = Mock()
     response = Mock(status=302)
     response.read.return_value = b"private-token-in-provider-body"
@@ -155,7 +160,7 @@ def test_assistant_redirect_and_transport_error_cannot_expose_provider_secret() 
         patch("omnicio.assistant.http.client.HTTPSConnection", return_value=connection) as factory,
         pytest.raises(AssistantUnavailable) as error,
     ):
-        configured().chat(message="Вопрос", history=[])
+        client.chat(message="Вопрос", history=[])
     factory.assert_called_once()
     response.read.assert_not_called()
     assert "private-token" not in str(error.value)
@@ -177,11 +182,12 @@ def test_assistant_message_history_cannot_change_roles_or_exceed_budget(
     message: str,
     history: list[dict[str, Any]],
 ) -> None:
+    client = configured()
     with (
         patch("omnicio.assistant.http.client.HTTPSConnection") as request,
         pytest.raises(ValueError),
     ):
-        configured().chat(message=message, history=history)
+        client.chat(message=message, history=history)
     request.assert_not_called()
 
 
@@ -298,7 +304,8 @@ def test_assistant_http_releases_only_server_allowlisted_context_for_explicit_re
         revoked = client.post(
             "/api/assistant/messages", json={"message": "Вопрос"}, headers=HEADERS
         )
-        assert revoked.status_code == 401 and "reply" not in revoked.json()
+        assert revoked.status_code == 401
+        assert "reply" not in revoked.json()
 
 
 def test_assistant_http_discards_reply_after_account_switch(

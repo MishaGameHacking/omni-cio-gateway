@@ -71,8 +71,9 @@ def test_news_keeps_real_dates_sorts_deduplicates_and_canonicalizes_source_https
     ],
 )
 def test_news_rejects_untrusted_link_instead_of_rewriting_its_authority(url: str) -> None:
+    document = feed(item(link=url))
     with pytest.raises(NewsUnavailable, match="empty"):
-        parse_news(feed(item(link=url)), fetched_at=NOW)
+        parse_news(document, fetched_at=NOW)
 
 
 @pytest.mark.parametrize("encoding", ["utf-8", "utf-16", "utf-32"])
@@ -84,8 +85,9 @@ def test_news_forbids_dtd_and_entities_in_every_supported_xml_encoding(encoding:
         "<link>https://www.cbr.ru/press/event/1</link>"
         "<pubDate>Mon, 05 Oct 2026 12:00:00 GMT</pubDate></item></channel></rss>"
     )
+    document = xml.encode(encoding)
     with pytest.raises(NewsUnavailable, match="invalid"):
-        parse_news(xml.encode(encoding), fetched_at=NOW)
+        parse_news(document, fetched_at=NOW)
 
 
 @pytest.mark.parametrize("payload", [b"x" * 512001, b"<rss>", b"<html/>", b"<rss><channel/></rss>"])

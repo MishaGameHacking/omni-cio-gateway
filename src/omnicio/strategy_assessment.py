@@ -892,11 +892,10 @@ def _constituents_known(candidate: StrategyCandidateFacts, as_of: datetime) -> b
     )
 
 
-def _bond_criteria(
+def _bond_maturity(
     candidate: StrategyCandidateFacts,
     data: Mapping[str, Any],
     as_of: datetime,
-    rules: Mapping[str, Any],
 ) -> tuple[list[str], int | None]:
     reasons: list[str] = []
     maturity = _known_fact(candidate, "maturity_date", as_of)
@@ -921,6 +920,16 @@ def _bond_criteria(
             if limit is not None
         ):
             reasons.append("maturity_limit")
+    return reasons, months
+
+
+def _bond_criteria(
+    candidate: StrategyCandidateFacts,
+    data: Mapping[str, Any],
+    as_of: datetime,
+    rules: Mapping[str, Any],
+) -> tuple[list[str], int | None]:
+    reasons, months = _bond_maturity(candidate, data, as_of)
     notch = _known_fact(candidate, "rating", as_of)
     if not isinstance(notch, str) or notch not in RATING_LEVELS:
         notch = "NR"

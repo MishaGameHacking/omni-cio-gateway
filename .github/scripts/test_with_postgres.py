@@ -29,6 +29,7 @@ MAX_EXPANDED_BYTES = 256 * 1024 * 1024
 
 
 def install_binaries(destination: Path) -> Path:
+    print("Downloading hash-pinned disposable PostgreSQL", flush=True)
     with closing(http.client.HTTPSConnection("get.enterprisedb.com", timeout=60)) as client:
         client.request("GET", ARCHIVE_PATH)
         response = client.getresponse()
@@ -37,6 +38,7 @@ def install_binaries(destination: Path) -> Path:
         archive = response.read(MAX_ARCHIVE_BYTES + 1)
     if len(archive) > MAX_ARCHIVE_BYTES or hashlib.sha256(archive).hexdigest() != ARCHIVE_SHA256:
         raise RuntimeError("PostgreSQL binary checksum mismatch")
+    print(f"Verified PostgreSQL archive: {len(archive)} bytes", flush=True)
     destination.mkdir()
     root = destination.resolve()
     expanded = 0
@@ -67,6 +69,7 @@ def run_suite(binary: Path, directory: Path) -> int:
     data = directory / "data"
     port = available_port()
     # Trust applies only to this temporary loopback-only CI database.
+    print("Initializing disposable loopback PostgreSQL", flush=True)
     subprocess.run([
         str(binary / "initdb.exe"), "-D", str(data), "-U", "postgres",
         "--auth=trust", "--encoding=UTF8", "--no-locale",
@@ -86,13 +89,18 @@ def run_suite(binary: Path, directory: Path) -> int:
             "OMNICIO_TEST_DATABASE_URL": base + "omnicio_test",
             "OMNICIO_TEST_POSTGRES_BIN": str(binary.resolve()),
         }
+        print("Running full pytest suite with native PostgreSQL", flush=True)
         return subprocess.run(
-            [sys.executable, "-m", "pytest"],
+            [
+                sys.executable, "-m", "pytest", "-vv", "--durations=10",
+                "-o", "faulthandler_timeout=60",
+            ],
             cwd=Path(__file__).resolve().parents[2], env=environment,
             check=False, timeout=600,
         ).returncode
     finally:
         if (data / "postmaster.pid").exists():
+            print("Stopping disposable PostgreSQL", flush=True)
             subprocess.run([*control, "-m", "fast", "stop"], check=True, timeout=45)
 
 

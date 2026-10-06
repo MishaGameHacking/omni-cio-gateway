@@ -124,7 +124,15 @@ def history_candidate(
             for key, value in values.items()
         }
     )
-    return replace(candidate, facts=facts)
+    return StrategyCandidateFacts(
+        instrument_uid=candidate.instrument_uid,
+        ticker=candidate.ticker,
+        asset_class=candidate.asset_class,
+        lot_size=candidate.lot_size,
+        currency=candidate.currency,
+        facts=facts,
+        constituents=candidate.constituents,
+    )
 
 
 def _validate_bar_values(bar: TBankHistoricCandle) -> None:
@@ -268,6 +276,24 @@ def _order(
     return amount * per_lot
 
 
+def _accrue_distributions(
+    state: _Simulation,
+    asset: ResearchAsset,
+    *,
+    start: datetime,
+    through: datetime,
+    inclusive: bool,
+) -> None:
+    for index, event in enumerate(asset.cashflows):
+        key = (asset.candidate.instrument_uid, index)
+        reached = event.entitlement_at <= through if inclusive else event.entitlement_at < through
+        if start <= event.entitlement_at and reached and key not in state.accrued_events:
+            state.accrued_events.add(key)
+            entitlement = state.lots[asset.candidate.instrument_uid] * asset.candidate.lot_size
+            if entitlement:
+                state.receivables.append((event.paid_at, entitlement * event.amount_per_unit_rub))
+
+
 def _distributions(
     state: _Simulation,
     assets: Sequence[ResearchAsset],
@@ -277,18 +303,7 @@ def _distributions(
     inclusive: bool,
 ) -> None:
     for asset in assets:
-        for index, event in enumerate(asset.cashflows):
-            key = (asset.candidate.instrument_uid, index)
-            reached = (
-                event.entitlement_at <= through if inclusive else event.entitlement_at < through
-            )
-            if start <= event.entitlement_at and reached and key not in state.accrued_events:
-                state.accrued_events.add(key)
-                entitlement = state.lots[asset.candidate.instrument_uid] * asset.candidate.lot_size
-                if entitlement:
-                    state.receivables.append(
-                        (event.paid_at, entitlement * event.amount_per_unit_rub)
-                    )
+        _accrue_distributions(state, asset, start=start, through=through, inclusive=inclusive)
     unpaid = []
     for when, amount in state.receivables:
         reached = when <= through if inclusive else when < through

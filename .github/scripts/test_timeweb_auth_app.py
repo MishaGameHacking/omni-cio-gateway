@@ -703,6 +703,28 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertGreaterEqual(script.count('add_header Cache-Control "no-cache";'), 5)
         self.assertNotIn('add_header Cache-Control "public, max-age=300";', script)
 
+    def test_rendered_offline_styles_match_the_service_worker_build(self) -> None:
+        root = SCRIPT_DIR.parent.parent
+        program = MODULE.REMOTE_DEPLOY_SCRIPT.split(
+            'python3 - "$RELEASE/pyproject.toml"', 1,
+        )[1].split("<<'PY'\n", 1)[1].split("\nPY\n", 1)[0]
+        build = "b" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory)
+            subprocess.run([
+                sys.executable, "-c", program, str(root / "pyproject.toml"), build,
+                str(root / "web" / "index.html"), str(output / "index.html"),
+                str(output / "version.js"),
+                str(root / "web" / "sw.js"), str(output / "sw.js"),
+                str(root / "web" / "offline.html"), str(output / "offline.html"),
+            ], check=True, capture_output=True, timeout=10)
+            offline = (output / "offline.html").read_text(encoding="utf-8")
+            worker = (output / "sw.js").read_text(encoding="utf-8")
+            self.assertIn(f"/assets/app.css?build={build[:12]}", offline)
+            self.assertIn(f'const build = "{build[:12]}"', worker)
+            self.assertNotIn("__OMNICIO_BUILD__", offline)
+            self.assertNotIn("__OMNICIO_BUILD__", worker)
+
     def test_remote_release_publishes_all_legal_pages(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn('"$RELEASE/web/legal"', script)
@@ -759,7 +781,7 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ("/assets/workspace.js", b"window.OmniUI", "application/javascript"),
             ("/assets/app.css", b"--sidebar:240px", "text/css"),
             ("/sw.js", b"omnicio-public-test " + self.sha[:12].encode(), "text/javascript"),
-            ("/offline.html", b'<html lang="ru">Offline</html>', "text/html"),
+            ("/offline.html", b'<html lang="ru">' + self.sha[:12].encode() + b'</html>', "text/html"),
         ):
             self.responses[f"{path}?build={self.sha[:12]}"] = (body, content_type, 200)
         for path, marker in MODULE.LEGAL_PAGES.items():
@@ -805,6 +827,8 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             (f"/assets/workspace.js?build={self.sha[:12]}", b"wrong asset", "text/javascript", 200),
             (f"/sw.js?build={self.sha[:12]}", b"<html>fallback</html>", "text/html", 200),
             (f"/sw.js?build={self.sha[:12]}", b"omnicio-public-__OMNICIO_BUILD__", "text/javascript", 200),
+            (f"/offline.html?build={self.sha[:12]}", b"<html>__OMNICIO_BUILD__</html>", "text/html", 200),
+            (f"/offline.html?build={self.sha[:12]}", b"<html>old release</html>", "text/html", 200),
             ("/api/auth/config", b"[]", "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": true}', "application/json", 200),
             ("/api/auth/config", b'{"registration_enabled": false}', "application/json", 200),

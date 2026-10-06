@@ -128,10 +128,11 @@ def test_preference_versions_and_goal_crud_are_tenant_isolated(
     ident = UUID(created["id"])
     assert created["progress"]["amount_rub"] == "15000.00000000"
     assert store.goals(other)["items"] == []
+    document = goal_document()
     with pytest.raises(WorkspaceNotFound):
-        store.update_goal(other, ident, goal_document(), expected_version=1)
+        store.update_goal(other, ident, document, expected_version=1)
     with pytest.raises(SettingsVersionConflict):
-        store.update_goal(owner, ident, goal_document(), expected_version=0)
+        store.update_goal(owner, ident, document, expected_version=0)
     updated = store.update_goal(owner, ident, goal_document(title="Изменено"), expected_version=1)
     assert updated["version"] == 2
     with pytest.raises(SettingsVersionConflict):
@@ -227,13 +228,15 @@ def test_workspace_database_rls_and_user_cascade_are_enforced(
                 ).fetchone()["count"]
                 == 0
             )
-    with pytest.raises(psycopg.errors.InsufficientPrivilege), database.pool.connection() as conn:
+    with database.pool.connection() as conn:
         conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(other),))
-        conn.execute(
-            "INSERT INTO workspace_preferences (user_id, version, document) "
-            "VALUES (%s, 1, '{}'::jsonb)",
-            (owner,),
-        )
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(
+                "INSERT INTO workspace_preferences (user_id, version, document) "
+                "VALUES (%s, 1, '{}'::jsonb)",
+                (owner,),
+            )
+        conn.rollback()
     with psycopg.connect(admin_url, autocommit=True) as admin:
         admin.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema)))
         enforced = admin.execute(
@@ -241,7 +244,10 @@ def test_workspace_database_rls_and_user_cascade_are_enforced(
             "WHERE relnamespace = %s::regnamespace AND relname = ANY (%s)",
             (schema, ["workspace_preferences", "investment_goals", "workspace_events"]),
         ).fetchall()
-        assert len(enforced) == 3 and all(enabled and forced for enabled, forced in enforced)
+        assert len(enforced) == 3
+        for enabled, forced in enforced:
+            assert enabled
+            assert forced
         admin.execute("DELETE FROM users WHERE id = %s", (owner,))
         for table in ("workspace_preferences", "investment_goals", "workspace_events"):
             assert (
@@ -379,12 +385,161 @@ def test_risk_alerts_survive_unchanged_snapshots_and_notify_actual_state_changes
     first = observe("watch", 1)[0]
     store.mark_events_read(owner, [first["id"]])
     unchanged = observe("watch", 2)
-    assert len(unchanged) == 1 and unchanged[0]["id"] == first["id"]
+    assert len(unchanged) == 1
+    assert unchanged[0]["id"] == first["id"]
     assert unchanged[0]["read_at"] is not None
     assert unchanged[0]["occurred_at"] == first["occurred_at"]
     for index, state in enumerate(("critical", "normal", "critical"), start=3):
         changed = observe(state, index)
-        assert len(changed) == 1 and changed[0]["id"] == first["id"]
+        assert len(changed) == 1
+        assert changed[0]["id"] == first["id"]
         assert changed[0]["read_at"] is None
         assert changed[0]["source"]["state"] == state
         store.mark_events_read(owner, [first["id"]])
+
+
+def _long_history(database: Database, owner: UUID, begin: datetime) -> None:
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        conn.execute(
+            "INSERT INTO portfolio_snapshots (user_id, account_id, environment, captured_at, "
+            "analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, rub_cash_unblocked, "
+            "limits_loading_in_progress, evidence) "
+            "SELECT %s, %s, 'prod', %s::timestamptz + n * interval '12 hours', "
+            "CASE WHEN n = 0 THEN 'partial' ELSE 'observed' END, "
+            "10000 + n * 10, 0, 0, 0, false, "
+            "jsonb_build_object('account', jsonb_build_object('opened_at', %s::text)) "
+            "FROM generate_series(0, 999) AS history(n)",
+            (owner, str(owner), begin, (begin - timedelta(days=1)).isoformat()),
+        )
+        conn.execute(
+            "INSERT INTO broker_sync_state (user_id, account_id, last_complete_watermark) "
+            "VALUES (%s, %s, %s)",
+            (owner, str(owner), begin + timedelta(hours=800 * 12)),
+        )
+        for number, kind, value, offset in (
+            (1, "COUPON", "250", 400), (2, "INPUT", "3000", 500),
+        ):
+            conn.execute(
+                "INSERT INTO operation_observations (user_id, account_id, observation_hash, "
+                "semantic_hash, provider_operation_id, operation_date, operation_type, "
+                "operation_state, payment_value, payment_currency, normalized, observed_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, 'OPERATION_STATE_EXECUTED', "
+                "%s, 'RUB', '{}'::jsonb, %s)",
+                (owner, str(owner), bytes([number]) * 32, bytes([number]) * 32, str(number),
+                 begin + timedelta(hours=offset * 12), "OPERATION_TYPE_" + kind, value,
+                 datetime.now(UTC)),
+            )
+
+
+def test_full_range_nav_sampling_keeps_exact_covered_performance_endpoints(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    begin = datetime.now(UTC) - timedelta(days=500) + timedelta(hours=6)
+    _long_history(database, owner, begin)
+    store = WorkspaceStore(database)
+    result = store.dashboard(owner)
+    history, coverage = result["overview"]["history"], result["overview"]["history_coverage"]
+    assert coverage["status"] == "sampled"
+    assert coverage["period"] == "all"
+    assert coverage["sampling"] == "time_bucket_last"
+    assert coverage["total_stored_observations"] == 1000
+    assert coverage["total_observations"] == 1000
+    assert len(history) >= 2
+    assert len(history) <= 366
+    assert coverage["max_points"] == 366
+    assert coverage["returned_observations"] == len(history)
+    assert datetime.fromisoformat(coverage["returned_from"]) == begin
+    assert datetime.fromisoformat(coverage["returned_to"]) == begin + timedelta(hours=999 * 12)
+    assert datetime.fromisoformat(coverage["available_from"]) == begin
+    expected = {(begin + timedelta(hours=n * 12), Decimal(10000 + n * 10)) for n in range(1000)}
+    actual = {(datetime.fromisoformat(row["captured_at"]), Decimal(row["nav_rub"]))
+              for row in history}
+    assert actual <= expected
+    assert len(actual) == len(history)
+    # Both covered endpoints lie between sampled points. P&L must come from the
+    # full underlying observations, not whichever chart points survived sampling.
+    performance = result["performance"]
+    assert datetime.fromisoformat(performance["from"]) == begin + timedelta(hours=12)
+    assert datetime.fromisoformat(performance["to"]) == begin + timedelta(hours=800 * 12)
+    assert datetime.fromisoformat(performance["from"]) not in {point[0] for point in actual}
+    assert datetime.fromisoformat(performance["to"]) not in {point[0] for point in actual}
+    assert Decimal(performance["investment_result_rub"]) == 4990
+    assert Decimal(performance["net_contributions_rub"]) == 3000
+    assert Decimal(result["overview"]["nav_rub"]) == 19990
+    assert Decimal(result["income"]["total_rub"]) == 250
+
+    yearly = store.dashboard(owner, history_period="1y")
+    year_coverage = yearly["overview"]["history_coverage"]
+    assert year_coverage["status"] == "sampled"
+    assert year_coverage["total_observations"] == 730
+    assert year_coverage["total_stored_observations"] == 1000
+    year_begin = begin + timedelta(hours=270 * 12)
+    assert datetime.fromisoformat(year_coverage["returned_from"]) == year_begin
+    assert datetime.fromisoformat(yearly["performance"]["from"]) == year_begin
+    assert Decimal(yearly["performance"]["investment_result_rub"]) == 2300
+    assert Decimal(yearly["income"]["total_rub"]) == 250
+
+    daily = store.dashboard(owner, history_period="1d")
+    day_coverage = daily["overview"]["history_coverage"]
+    assert day_coverage["status"] == "complete"
+    assert day_coverage["total_observations"] == 2
+    assert day_coverage["returned_observations"] == 2
+    assert datetime.fromisoformat(day_coverage["requested_to"]) == datetime.fromisoformat(
+        daily["generated_at"]
+    )
+    assert daily["performance"]["reason"] == "insufficient_covered_snapshots"
+    assert daily["performance"]["investment_result_rub"] is None
+    assert Decimal(daily["income"]["total_rub"]) == 250
+
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        conn.execute(
+            "UPDATE broker_sync_state SET pending_cursor = 'unread-page', "
+            "history_window_from = %s, history_window_to = %s WHERE user_id = %s",
+            (begin, datetime.now(UTC), owner),
+        )
+    partial = store.dashboard(owner)
+    assert partial["overview"]["history_coverage"]["status"] == "sampled"
+    assert partial["performance"]["status"] == "unavailable"
+    assert partial["performance"]["investment_result_rub"] is None
+    assert partial["income"]["total_rub"] is None
+
+
+def test_nav_history_empty_single_zero_and_replaced_account_are_explicit(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    store = WorkspaceStore(database)
+    empty = store.dashboard(owner, history_period="1d")
+    assert empty["overview"]["history_coverage"]["status"] == "empty"
+    assert empty["overview"]["history_coverage"]["available_from"] is None
+    assert empty["overview"]["nav_rub"] is None
+    at = datetime.now(UTC) - timedelta(minutes=1)
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        conn.execute(
+            "INSERT INTO portfolio_snapshots (user_id, account_id, environment, captured_at, "
+            "analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, rub_cash_unblocked, "
+            "limits_loading_in_progress, evidence) "
+            "VALUES (%s, %s, 'prod', %s, 'observed', 0, 0, 0, 0, false, '{}'::jsonb)",
+            (owner, str(owner), at),
+        )
+    single = store.dashboard(owner)
+    assert single["overview"]["history_coverage"]["status"] == "complete"
+    assert single["overview"]["history_coverage"]["total_observations"] == 1
+    assert Decimal(single["overview"]["nav_rub"]) == 0
+    assert single["performance"]["investment_result_rub"] is None
+    assert single["income"]["total_rub"] is None
+    with database.pool.connection() as conn:
+        conn.execute(
+            "UPDATE tbank_connection SET account_id = 'other' WHERE user_id = %s", (owner,),
+        )
+    switched = store.dashboard(owner)
+    assert switched["overview"]["history"] == []
+    assert switched["overview"]["history_coverage"]["total_stored_observations"] == 0
+    assert switched["overview"]["nav_rub"] is None
+    assert switched["performance"]["investment_result_rub"] is None

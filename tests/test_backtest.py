@@ -310,15 +310,18 @@ def test_empirical_tail_loss_and_volatility_include_transaction_costs():
 
 
 def test_future_window_and_nonfinite_costs_are_rejected_before_research():
+    document = research_document()
+    capital = Decimal(1000)
+    nonfinite_costs = ResearchCosts(Decimal("NaN"), Decimal(0))
     with pytest.raises(ValueError, match="window"):
         run_strategy_backtest(
-            research_document(),
+            document,
             [],
             from_at=START,
             to_at=END,
             now=START,
-            initial_capital_rub=Decimal(1000),
+            initial_capital_rub=capital,
             costs=ZERO_COSTS,
         )
     with pytest.raises(ValueError, match="decimal"):
-        run(costs=ResearchCosts(Decimal("NaN"), Decimal(0)))
+        run(costs=nonfinite_costs)

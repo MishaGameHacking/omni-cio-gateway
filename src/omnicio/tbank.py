@@ -166,16 +166,6 @@ class TBankOrderBook:
 
 
 @dataclass(frozen=True, slots=True)
-class TBankOrderPrice:
-    total_order_amount: TBankMoney
-    initial_order_amount: TBankMoney
-    executed_commission_rub: TBankMoney
-    service_commission: TBankMoney
-    deal_commission: TBankMoney
-    bond_aci_value: TBankMoney | None
-
-
-@dataclass(frozen=True, slots=True)
 class TBankOrderState:
     order_id: str
     order_request_id: str
@@ -190,17 +180,6 @@ class TBankOrderState:
 
 
 TBankSandboxOrderState = TBankOrderState
-
-
-@dataclass(frozen=True, slots=True)
-class TBankMaxLots:
-    buy_max_lots: int
-    sell_max_lots: int
-    buy_money_amount: TBankMoney | None
-    currency: str
-
-
-TBankSandboxMaxLots = TBankMaxLots
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,7 +249,7 @@ class TBankInstrumentMetadata:
 @dataclass(frozen=True, slots=True)
 class TBankPortfolio:
     total: TBankMoney
-    expected_yield_percent: str
+    expected_yield_percent: str | None
     daily_yield: TBankMoney | None
     daily_yield_percent: str
     asset_totals: tuple[TBankAssetTotal, ...]
@@ -1281,180 +1260,6 @@ class TBankInvestClient:
             is_consistent=consistent,
         )
 
-    def get_order_price(
-        self,
-        token: str,
-        environment: TBankEnvironment,
-        account_id: str,
-        instrument_uid: str,
-        *,
-        price: str,
-        direction: Literal["buy", "sell"],
-        quantity_lots: int,
-    ) -> TBankOrderPrice:
-        account = _validate_provider_id(account_id, "account id")
-        instrument = _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD)
-        try:
-            price_value = Decimal(price)
-        except InvalidOperation as exc:
-            raise ValueError("order price is invalid") from exc
-        if not price_value.is_finite() or price_value <= 0:
-            raise ValueError("order price must be positive")
-        if quantity_lots <= 0:
-            raise ValueError("order quantity must be positive")
-        direction_value = {
-            "buy": "ORDER_DIRECTION_BUY",
-            "sell": "ORDER_DIRECTION_SELL",
-        }[direction]
-        service = "OrdersService" if environment == "prod" else "SandboxService"
-        method = "GetOrderPrice" if environment == "prod" else "GetSandboxOrderPrice"
-        payload = self._post(
-            token=token,
-            environment=environment,
-            service=service,
-            method=method,
-            body={
-                "accountId": account,
-                "instrumentId": instrument,
-                "price": _quotation_payload(price_value),
-                "direction": direction_value,
-                "quantity": str(quantity_lots),
-            },
-        )
-        total = _money(payload.get("totalOrderAmount"))
-        initial = _money(payload.get("initialOrderAmount"))
-        commission = _money(payload.get("executedCommissionRub"))
-        service_commission = _money(payload.get("serviceCommission"))
-        deal_commission = _money(payload.get("dealCommission"))
-        if (
-            total is None
-            or initial is None
-            or commission is None
-            or service_commission is None
-            or deal_commission is None
-        ):
-            raise TBankUnavailable("T-Invest order price is missing cost fields")
-        extra_bond = payload.get("extraBond")
-        bond_aci = None
-        if extra_bond is not None:
-            bond_aci = _money(_required_object(extra_bond, "bond order price").get("aciValue"))
-        return TBankOrderPrice(
-            total_order_amount=total,
-            initial_order_amount=initial,
-            executed_commission_rub=commission,
-            service_commission=service_commission,
-            deal_commission=deal_commission,
-            bond_aci_value=bond_aci,
-        )
-
-    def post_order(
-        self,
-        token: str,
-        environment: TBankEnvironment,
-        account_id: str,
-        instrument_uid: str,
-        *,
-        quantity_lots: int,
-        price: str,
-        direction: Literal["buy", "sell"],
-        request_id: str,
-        price_type: Literal["point", "currency"],
-    ) -> TBankOrderState:
-        _require_prod(environment)
-        return self._post_limit_order(
-            token,
-            environment,
-            service="OrdersService",
-            method="PostOrder",
-            account_id=account_id,
-            instrument_uid=instrument_uid,
-            quantity_lots=quantity_lots,
-            price=price,
-            direction=direction,
-            request_id=request_id,
-            price_type=price_type,
-            time_in_force="TIME_IN_FORCE_FILL_AND_KILL",
-        )
-
-    def post_sandbox_order(
-        self,
-        token: str,
-        environment: TBankEnvironment,
-        account_id: str,
-        instrument_uid: str,
-        *,
-        quantity_lots: int,
-        price: str,
-        direction: Literal["buy", "sell"],
-        request_id: str,
-        price_type: Literal["point", "currency"],
-    ) -> TBankOrderState:
-        _require_sandbox(environment)
-        return self._post_limit_order(
-            token,
-            environment,
-            service="SandboxService",
-            method="PostSandboxOrder",
-            account_id=account_id,
-            instrument_uid=instrument_uid,
-            quantity_lots=quantity_lots,
-            price=price,
-            direction=direction,
-            request_id=request_id,
-            price_type=price_type,
-            time_in_force="TIME_IN_FORCE_DAY",
-        )
-
-    def _post_limit_order(
-        self,
-        token: str,
-        environment: TBankEnvironment,
-        *,
-        service: str,
-        method: str,
-        account_id: str,
-        instrument_uid: str,
-        quantity_lots: int,
-        price: str,
-        direction: Literal["buy", "sell"],
-        request_id: str,
-        price_type: Literal["point", "currency"],
-        time_in_force: str,
-    ) -> TBankOrderState:
-        if quantity_lots <= 0:
-            raise ValueError("order quantity must be positive")
-        request_uuid = _validate_request_uuid(request_id)
-        try:
-            price_value = Decimal(price)
-        except InvalidOperation as exc:
-            raise ValueError("order price is invalid") from exc
-        if not price_value.is_finite() or price_value <= 0:
-            raise ValueError("order price must be positive")
-        payload = self._post(
-            token=token,
-            environment=environment,
-            service=service,
-            method=method,
-            body={
-                "quantity": str(quantity_lots),
-                "price": _quotation_payload(price_value),
-                "direction": {
-                    "buy": "ORDER_DIRECTION_BUY",
-                    "sell": "ORDER_DIRECTION_SELL",
-                }[direction],
-                "accountId": _validate_account_id(account_id),
-                "orderType": "ORDER_TYPE_LIMIT",
-                "orderId": request_uuid,
-                "instrumentId": _validate_provider_id(
-                    instrument_uid,
-                    _INSTRUMENT_UID_FIELD,
-                ),
-                "timeInForce": time_in_force,
-                "priceType": _provider_price_type(price_type),
-                "confirmMarginTrade": False,
-            },
-        )
-        return _order_state(payload, expected_request_id=request_uuid)
 
     def get_order_state(
         self,
@@ -1585,89 +1390,6 @@ class TBankInvestClient:
             raise TBankUnavailable("T-Invest cancellation has no timestamp")
         return TBankCancelResult(cancelled_at=cancelled_at)
 
-    def get_max_lots(
-        self,
-        token: str,
-        environment: TBankEnvironment,
-        account_id: str,
-        instrument_uid: str,
-        *,
-        price: str,
-    ) -> TBankMaxLots:
-        _require_prod(environment)
-        return self._get_max_lots(
-            token,
-            environment,
-            service="OrdersService",
-            method="GetMaxLots",
-            account_id=account_id,
-            instrument_uid=instrument_uid,
-            price=price,
-        )
-
-    def get_sandbox_max_lots(
-        self,
-        token: str,
-        environment: TBankEnvironment,
-        account_id: str,
-        instrument_uid: str,
-        *,
-        price: str,
-    ) -> TBankMaxLots:
-        _require_sandbox(environment)
-        return self._get_max_lots(
-            token,
-            environment,
-            service="SandboxService",
-            method="GetSandboxMaxLots",
-            account_id=account_id,
-            instrument_uid=instrument_uid,
-            price=price,
-        )
-
-    def _get_max_lots(
-        self,
-        token: str,
-        environment: TBankEnvironment,
-        *,
-        service: str,
-        method: str,
-        account_id: str,
-        instrument_uid: str,
-        price: str,
-    ) -> TBankMaxLots:
-        try:
-            price_value = Decimal(price)
-        except InvalidOperation as exc:
-            raise ValueError("max-lots price is invalid") from exc
-        if not price_value.is_finite() or price_value <= 0:
-            raise ValueError("max-lots price must be positive")
-        payload = self._post(
-            token=token,
-            environment=environment,
-            service=service,
-            method=method,
-            body={
-                "accountId": _validate_account_id(account_id),
-                "instrumentId": _validate_provider_id(
-                    instrument_uid,
-                    _INSTRUMENT_UID_FIELD,
-                ),
-                "price": _quotation_payload(price_value),
-            },
-        )
-        buy = _required_object(payload.get("buyLimits"), "buy limits")
-        sell = _required_object(payload.get("sellLimits"), "sell limits")
-        buy_max = _int_value(buy.get("buyMaxLots"), "buyMaxLots")
-        sell_max = _int_value(sell.get("sellMaxLots"), "sellMaxLots")
-        if buy_max < 0 or sell_max < 0:
-            raise TBankUnavailable("T-Invest max lots is negative")
-        return TBankMaxLots(
-            buy_max_lots=buy_max,
-            sell_max_lots=sell_max,
-            buy_money_amount=_money(buy.get("buyMoneyAmount")),
-            currency=_text(payload.get("currency")).strip().upper(),
-        )
 
     def get_accounts(
         self,
@@ -1877,7 +1599,7 @@ class TBankInvestClient:
 
         return TBankPortfolio(
             total=total,
-            expected_yield_percent=_quotation(payload.get("expectedYield")) or "0",
+            expected_yield_percent=_quotation(payload.get("expectedYield")),
             daily_yield=_money(payload.get("dailyYield")),
             daily_yield_percent=_quotation(payload.get("dailyYieldRelative")) or "0",
             asset_totals=tuple(asset_totals),
@@ -2436,14 +2158,6 @@ def _order_levels(
             raise TBankUnavailable("T-Invest order book has non-positive level")
         result.append(TBankOrderLevel(price=price, quantity_lots=quantity))
     return tuple(result)
-
-
-def _quotation_payload(value: Decimal) -> dict[str, object]:
-    if not value.is_finite():
-        raise ValueError("quotation must be finite")
-    units = int(value)
-    nano = int((value - Decimal(units)) * Decimal(1_000_000_000))
-    return {"units": str(units), "nano": nano}
 
 
 def _money(value: object) -> TBankMoney | None:

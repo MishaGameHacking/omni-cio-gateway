@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import ANY, patch
+from unittest.mock import patch
 from uuid import UUID
 
 import pytest
@@ -11,8 +11,6 @@ from fastapi.testclient import TestClient
 
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot, BrokerNotConnected
 from omnicio.db import ActiveLiveExecutionError, BrokerConnectionConflict
-from omnicio.execution_service import ExecutionServiceError
-from omnicio.execution_store import ExecutionLedgerError
 from omnicio.main import app
 from omnicio.market import (
     CBRIndicator,
@@ -24,11 +22,7 @@ from omnicio.portfolio import PortfolioAnalysisError, analyze_portfolio
 from omnicio.portfolio_store import (
     BalancingPolicyRecord,
     InvestmentProfileRecord,
-    PortfolioProposalActionRecord,
-    PortfolioProposalRecord,
-    ProposalStateError,
 )
-from omnicio.proposals import ProposalDraft
 from omnicio.security import SecurityValueError
 from omnicio.tbank import (
     TBankAssetTotal,
@@ -430,92 +424,6 @@ def test_investment_profile_http_is_private_and_uses_session_tenant() -> None:
     store.return_value.current_profile.assert_called_once_with("server-user")
 
 
-def test_investment_profile_write_requires_origin_and_current_consent() -> None:
-    payload = {
-        "expected_version": 0, "expected_public_id": "000000901",
-        "reserve_rub": "100000",
-        "planned_withdrawal_rub": "25000",
-        "horizon_months": 60,
-        "max_drawdown_percent": "20",
-        "liquidity_horizon_days": 30,
-        "allow_below_investment_grade": False,
-    }
-    database = type(
-        "ConsentDatabase",
-        (),
-        {"has_legal_versions": lambda self, user_id, versions: False},
-    )()
-
-    with (
-        patch.object(app.state, "database", database, create=True),
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.portfolio_store") as store,
-        patch("omnicio.main.service") as auth,
-    ):
-        user.return_value.id = "server-user"
-        auth.return_value.legal_versions.return_value = {
-            "privacy_policy": "2026-10-02-v6",
-            "personal_data_consent": "2026-10-02-v6",
-            "terms": "2026-10-02-v6",
-        }
-
-        cross_origin = TestClient(app).put(
-            "/api/profile/investment",
-            json=payload,
-            headers={"Origin": "https://evil.example"},
-        )
-        assert cross_origin.status_code == 403
-
-        missing_consent = TestClient(app).put(
-            "/api/profile/investment",
-            json=payload,
-            headers={"Origin": "https://omnicio.ru"},
-        )
-        assert missing_consent.status_code == 409
-        store.return_value.save_profile.assert_not_called()
-
-
-def test_investment_profile_rejects_non_finite_decimal_values() -> None:
-    response = TestClient(app).put(
-        "/api/profile/investment",
-        json={
-            "expected_version": 0, "expected_public_id": "000000901",
-            "reserve_rub": "NaN",
-            "planned_withdrawal_rub": "0",
-            "horizon_months": 12,
-            "max_drawdown_percent": "10",
-            "liquidity_horizon_days": 7,
-            "allow_below_investment_grade": False,
-        },
-        headers={"Origin": "https://omnicio.ru"},
-    )
-    assert response.status_code == 422
-
-
-def test_investment_profile_rejects_unknown_json_fields_before_side_effects() -> None:
-    response = TestClient(app).put(
-        "/api/profile/investment",
-        json={
-            "expected_version": 0, "expected_public_id": "000000901",
-            "reserve_rub": "100000",
-            "planned_withdrawal_rub": "0",
-            "horizon_months": 12,
-            "max_drawdown_percent": "10",
-            "liquidity_horizon_days": 7,
-            "allow_below_investment_grade": False,
-            "user_id": "attacker-controlled-tenant",
-        },
-        headers={"Origin": "https://omnicio.ru"},
-    )
-
-    assert response.status_code == 422
-    assert any(
-        item.get("loc") == ["body", "user_id"]
-        and item.get("type") == "extra_forbidden"
-        for item in response.json()["detail"]
-    )
-
-
 def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
     now = datetime.now(UTC)
     policy = BalancingPolicyRecord(
@@ -565,86 +473,6 @@ def test_balancing_policy_http_is_private_and_uses_session_tenant() -> None:
     assert payload["system_constraints"]["allowed_currencies"] == ["RUB"]
     assert payload["system_constraints"]["new_buy_risk_states"] == ["normal"]
     store.return_value.current_balancing_policy.assert_called_once_with("server-user")
-
-
-def test_balancing_policy_write_requires_origin_and_current_consent() -> None:
-    payload = {
-        "expected_version": 0, "expected_public_id": "000000901",
-        "max_instrument_percent": "20",
-        "max_sector_percent": "30",
-        "max_issuer_percent": "20",
-        "max_group_percent": "25",
-        "max_share_percent": "70",
-        "max_bond_percent": "80",
-        "max_etf_percent": "70",
-        "max_below_grade_percent": "5",
-        "max_unknown_percent": "0",
-        "max_term_months": 120,
-        "turnover_budget_percent": "25",
-        "max_daily_turnover_participation_percent": "5",
-        "securities_tax_rate_percent": "15",
-        "uncertainty_haircut_percent": "3",
-        "credit_loss_haircut_percent": "2",
-        "no_trade_band_percent": "1",
-        "min_replace_benefit_rub": "500",
-    }
-    database = type(
-        "ConsentDatabase",
-        (),
-        {"has_legal_versions": lambda self, user_id, versions: False},
-    )()
-
-    with (
-        patch.object(app.state, "database", database, create=True),
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.portfolio_store") as store,
-        patch("omnicio.main.service") as auth,
-    ):
-        user.return_value.id = "server-user"
-        auth.return_value.legal_versions.return_value = {
-            "privacy_policy": "2026-10-02-v6",
-            "personal_data_consent": "2026-10-02-v6",
-            "terms": "2026-10-02-v6",
-        }
-
-        cross_origin = TestClient(app).put(
-            "/api/profile/balancing",
-            json=payload,
-            headers={"Origin": "https://evil.example"},
-        )
-        assert cross_origin.status_code == 403
-
-        missing_consent = TestClient(app).put(
-            "/api/profile/balancing",
-            json=payload,
-            headers={"Origin": "https://omnicio.ru"},
-        )
-        assert missing_consent.status_code == 409
-        store.return_value.save_balancing_policy.assert_not_called()
-
-
-def test_balancing_policy_rejects_non_finite_decimal_values() -> None:
-    response = TestClient(app).put(
-        "/api/profile/balancing",
-        json={
-            "expected_version": 0, "expected_public_id": "000000901",
-            "max_instrument_percent": "NaN",
-            "max_sector_percent": "30",
-            "max_issuer_percent": "20",
-            "max_group_percent": "25",
-            "max_share_percent": "70",
-            "max_bond_percent": "80",
-            "max_etf_percent": "70",
-            "max_below_grade_percent": "5",
-            "max_unknown_percent": "0",
-            "max_term_months": 120,
-            "turnover_budget_percent": "25",
-            "no_trade_band_percent": "1",
-            "min_replace_benefit_rub": "500",
-        },
-        headers={"Origin": "https://omnicio.ru"},
-    )
-    assert response.status_code == 422
 
 
 def test_analysis_http_requires_a_session_before_touching_the_broker() -> None:
@@ -721,7 +549,6 @@ def test_analysis_endpoint_has_no_write_method() -> None:
         json={"confirm": True},
     )
     assert response.status_code == 405
-
 
 
 def test_portfolio_visualization_http_is_private_and_tenant_scoped() -> None:
@@ -812,444 +639,7 @@ def test_instrument_visualization_rejects_missing_or_invalid_identifier() -> Non
         assert invalid.status_code == 422
 
 
-def test_balancing_preview_http_is_private_tenant_scoped_and_read_only() -> None:
-    expected = {
-        "status": "observed",
-        "stage": "r4_preview",
-        "execution_enabled": False,
-        "proposal_enabled": False,
-    }
-    profile = object()
-    policy = object()
-    context = {"snapshot_id": "snapshot"}
-
-    with (
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.portfolio_store") as store,
-        patch("omnicio.main.broker_service") as broker,
-        patch("omnicio.main.build_live_balancing_payload") as builder,
-    ):
-        user.return_value.id = "server-resolved-user"
-        store.return_value.current_profile.return_value = profile
-        store.return_value.current_balancing_policy.return_value = policy
-        store.return_value.latest_balancing_context.return_value = context
-        builder.return_value = expected
-
-        response = TestClient(app).get(
-            "/api/portfolio/balancing?user_id=attacker"
-        )
-
-    assert response.status_code == 200
-    assert response.headers["cache-control"] == "private, no-store"
-    assert response.json()["execution_enabled"] is False
-    assert response.json()["proposal_enabled"] is False
-    store.return_value.current_profile.assert_called_once_with(
-        "server-resolved-user"
-    )
-    store.return_value.current_balancing_policy.assert_called_once_with(
-        "server-resolved-user"
-    )
-    store.return_value.latest_balancing_context.assert_called_once_with(
-        "server-resolved-user"
-    )
-    builder.assert_called_once_with(
-        user_id="server-resolved-user",
-        profile=profile,
-        policy_record=policy,
-        context=context,
-        broker=broker.return_value,
-    )
-
-    write_response = TestClient(app).post(
-        "/api/portfolio/balancing",
-        json={"confirm": True},
-    )
-    assert write_response.status_code == 405
-
-
-def test_balancing_preview_requires_session_before_touching_store() -> None:
-    with (
-        patch("omnicio.main.service") as auth,
-        patch("omnicio.main.portfolio_store") as store,
-    ):
-        auth.return_value.refresh_session.return_value = None
-        response = TestClient(app).get("/api/portfolio/balancing")
-
-    assert response.status_code == 401
-    store.assert_not_called()
-
-
-def test_proposal_http_creation_is_same_origin_tenant_scoped_and_non_executing() -> None:
-    now = datetime(2026, 10, 3, 8, 30, tzinfo=UTC)
-    proposal_id = UUID("22222222-2222-2222-2222-222222222222")
-    snapshot_id = UUID("11111111-1111-1111-1111-111111111111")
-    draft = ProposalDraft(
-        source_snapshot_id=snapshot_id,
-        account_id="account-1",
-        profile_version=3,
-        policy_version=2,
-        scenario_kind="deploy_cash",
-        target_instrument_uid="candidate-1",
-        replaced_instrument_uid=None,
-        payload={"schema": "omnicio.portfolio.proposal.v1"},
-        proposal_hash=b"x" * 32,
-        expires_at=now + timedelta(minutes=10),
-    )
-    proposal = PortfolioProposalRecord(
-        id=proposal_id,
-        user_id=UUID("00000000-0000-0000-0000-000000000901"),
-        version=1,
-        source_snapshot_id=snapshot_id,
-        account_id="account-1",
-        profile_version=3,
-        policy_version=2,
-        scenario_kind="deploy_cash",
-        target_instrument_uid="candidate-1",
-        replaced_instrument_uid=None,
-        proposal_hash=b"x" * 32,
-        payload=draft.payload,
-        created_at=now,
-        expires_at=draft.expires_at,
-    )
-    database = type(
-        "ConsentDatabase",
-        (),
-        {"has_legal_versions": lambda self, user_id, versions: True},
-    )()
-    with (
-        patch.object(app.state, "database", database, create=True),
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.portfolio_store") as store,
-        patch("omnicio.main.service") as auth,
-        patch("omnicio.main._live_balancing_for_user") as balancing,
-        patch("omnicio.main.build_proposal_draft") as builder,
-    ):
-        user.return_value.id = "server-user"
-        auth.return_value.legal_versions.return_value = {"terms": "current"}
-        balancing.return_value = {"status": "observed"}
-        builder.return_value = draft
-        store.return_value.create_proposal.return_value = proposal
-
-        rejected = TestClient(app).post(
-            "/api/portfolio/proposals",
-            json={"scenario_kind": "deploy_cash"},
-            headers={"Origin": "https://evil.example"},
-        )
-        assert rejected.status_code == 403
-
-        response = TestClient(app).post(
-            "/api/portfolio/proposals",
-            json={"scenario_kind": "deploy_cash"},
-            headers={"Origin": "https://omnicio.ru"},
-            cookies={"omnicio_session": "proposal-session-token"},
-        )
-
-    assert response.status_code == 201
-    assert response.headers["cache-control"] == "private, no-store"
-    assert response.json()["proposal"]["id"] == str(proposal_id)
-    assert response.json()["proposal"]["hash"] == (b"x" * 32).hex()
-    assert response.json()["execution_enabled"] is False
-    balancing.assert_called_once_with(
-        ANY,
-        "server-user",
-    )
-    store.return_value.create_proposal.assert_called_once()
-    call = store.return_value.create_proposal.call_args
-    assert call.args[0] == "server-user"
-    assert call.kwargs["account_id"] == "account-1"
-    assert len(call.kwargs["session_digest"]) == 32
-
-
-def test_proposal_decision_requires_exact_hash_and_never_calls_broker_execution() -> None:
-    now = datetime(2026, 10, 3, 8, 30, tzinfo=UTC)
-    proposal_id = UUID("22222222-2222-2222-2222-222222222222")
-    snapshot_id = UUID("11111111-1111-1111-1111-111111111111")
-    proposal = PortfolioProposalRecord(
-        id=proposal_id,
-        user_id=UUID("00000000-0000-0000-0000-000000000901"),
-        version=4,
-        source_snapshot_id=snapshot_id,
-        account_id="account-1",
-        profile_version=3,
-        policy_version=2,
-        scenario_kind="deploy_cash",
-        target_instrument_uid="candidate-1",
-        replaced_instrument_uid=None,
-        proposal_hash=b"y" * 32,
-        payload={"schema": "omnicio.portfolio.proposal.v1"},
-        created_at=now,
-        expires_at=now + timedelta(minutes=10),
-    )
-    action = PortfolioProposalActionRecord(
-        id=1,
-        proposal_id=proposal_id,
-        user_id=UUID("00000000-0000-0000-0000-000000000901"),
-        action="confirmed",
-        proposal_version=4,
-        proposal_hash=b"y" * 32,
-        reason="user_decision",
-        user_reason="",
-        deferred_until=None,
-        acted_at=now + timedelta(minutes=1),
-    )
-    database = type(
-        "ConsentDatabase",
-        (),
-        {"has_legal_versions": lambda self, user_id, versions: True},
-    )()
-    refreshed = ProposalDraft(
-        source_snapshot_id=snapshot_id,
-        account_id="account-1",
-        profile_version=3,
-        policy_version=2,
-        scenario_kind="deploy_cash",
-        target_instrument_uid="candidate-1",
-        replaced_instrument_uid=None,
-        payload={"schema": "omnicio.portfolio.proposal.v1"},
-        proposal_hash=b"z" * 32,
-        expires_at=now + timedelta(minutes=10),
-    )
-    with (
-        patch.object(app.state, "database", database, create=True),
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.portfolio_store") as store,
-        patch("omnicio.main.service") as auth,
-        patch("omnicio.main.broker_service") as broker,
-        patch("omnicio.main._live_balancing_for_user") as balancing,
-        patch("omnicio.main.build_proposal_draft") as builder,
-        patch("omnicio.main.proposal_generated_at") as generated_at,
-        patch("omnicio.main.proposal_material_hash") as material_hash,
-    ):
-        user.return_value.id = "server-user"
-        auth.return_value.legal_versions.return_value = {"terms": "current"}
-        store.return_value.proposal.return_value = proposal
-        store.return_value.decide_proposal.return_value = (proposal, action)
-        balancing.return_value = {"status": "observed"}
-        builder.return_value = refreshed
-        generated_at.return_value = now
-        material_hash.side_effect = [b"m" * 32, b"m" * 32]
-
-        response = TestClient(app).post(
-            f"/api/portfolio/proposals/{proposal_id}/decision",
-            json={
-                "action": "confirm",
-                "proposal_version": 4,
-                "proposal_hash": (b"y" * 32).hex(),
-            },
-            headers={"Origin": "https://omnicio.ru"},
-            cookies={"omnicio_session": "decision-session-token"},
-        )
-
-    assert response.status_code == 200
-    assert response.json()["proposal"]["status"] == "confirmed"
-    assert response.json()["execution_enabled"] is False
-    store.return_value.decide_proposal.assert_called_once()
-    call = store.return_value.decide_proposal.call_args
-    assert call.args[0] == "server-user"
-    assert call.kwargs["expected_version"] == 4
-    assert call.kwargs["expected_hash"] == b"y" * 32
-    assert call.kwargs["action"] == "confirmed"
-    assert len(call.kwargs["session_digest"]) == 32
-    assert call.kwargs["user_reason"] == ""
-    assert call.kwargs["deferred_until"] is None
-    assert call.kwargs["material_current"] is True
-    balancing.assert_called_once_with(ANY, "server-user")
-    builder.assert_called_once()
-    broker.assert_not_called()
-
-
-def test_proposal_confirmation_marks_materially_changed_live_package_stale() -> None:
-    now = datetime(2026, 10, 3, 8, 30, tzinfo=UTC)
-    proposal_id = UUID("22222222-2222-2222-2222-222222222223")
-    snapshot_id = UUID("11111111-1111-1111-1111-111111111111")
-    proposal = PortfolioProposalRecord(
-        id=proposal_id,
-        user_id=UUID("00000000-0000-0000-0000-000000000901"),
-        version=5,
-        source_snapshot_id=snapshot_id,
-        account_id="account-1",
-        profile_version=3,
-        policy_version=2,
-        scenario_kind="deploy_cash",
-        target_instrument_uid="candidate-1",
-        replaced_instrument_uid=None,
-        proposal_hash=b"a" * 32,
-        payload={"schema": "omnicio.portfolio.proposal.v1"},
-        created_at=now,
-        expires_at=now + timedelta(minutes=10),
-    )
-    revoked = replace(
-        proposal,
-        status="revoked",
-        decision_reason="proposal_material_changed",
-        decided_at=now + timedelta(minutes=1),
-    )
-    action = PortfolioProposalActionRecord(
-        id=2,
-        proposal_id=proposal_id,
-        user_id=proposal.user_id,
-        action="revoked",
-        proposal_version=5,
-        proposal_hash=b"a" * 32,
-        reason="proposal_material_changed",
-        user_reason="",
-        deferred_until=None,
-        acted_at=now + timedelta(minutes=1),
-    )
-    refreshed = ProposalDraft(
-        source_snapshot_id=snapshot_id,
-        account_id="account-1",
-        profile_version=3,
-        policy_version=2,
-        scenario_kind="deploy_cash",
-        target_instrument_uid="candidate-2",
-        replaced_instrument_uid=None,
-        payload={"schema": "omnicio.portfolio.proposal.v1", "changed": True},
-        proposal_hash=b"b" * 32,
-        expires_at=now + timedelta(minutes=10),
-    )
-    database = type(
-        "ConsentDatabase",
-        (),
-        {"has_legal_versions": lambda self, user_id, versions: True},
-    )()
-    with (
-        patch.object(app.state, "database", database, create=True),
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.portfolio_store") as store,
-        patch("omnicio.main.service") as auth,
-        patch("omnicio.main._live_balancing_for_user") as balancing,
-        patch("omnicio.main.build_proposal_draft") as builder,
-        patch("omnicio.main.proposal_generated_at", return_value=now),
-        patch("omnicio.main.proposal_material_hash") as material_hash,
-    ):
-        user.return_value.id = "server-user"
-        auth.return_value.legal_versions.return_value = {"terms": "current"}
-        store.return_value.proposal.return_value = proposal
-        store.return_value.decide_proposal.return_value = (revoked, action)
-        balancing.return_value = {"status": "observed"}
-        builder.return_value = refreshed
-        material_hash.side_effect = [b"old" * 10 + b"xx", b"new" * 10 + b"xx"]
-
-        response = TestClient(app).post(
-            f"/api/portfolio/proposals/{proposal_id}/decision",
-            json={
-                "action": "confirm",
-                "proposal_version": 5,
-                "proposal_hash": (b"a" * 32).hex(),
-            },
-            headers={"Origin": "https://omnicio.ru"},
-            cookies={"omnicio_session": "stale-session-token"},
-        )
-
-    assert response.status_code == 409
-    assert response.json()["proposal"]["status"] == "revoked"
-    assert response.json()["decision"]["reason"] == "proposal_material_changed"
-    call = store.return_value.decide_proposal.call_args
-    assert call.kwargs["material_current"] is False
-
-
-def test_proposal_reject_requires_reason_and_defer_requires_future_date() -> None:
-    proposal_id = "22222222-2222-2222-2222-222222222222"
-    database = type(
-        "ConsentDatabase",
-        (),
-        {"has_legal_versions": lambda self, user_id, versions: True},
-    )()
-    with (
-        patch.object(app.state, "database", database, create=True),
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.portfolio_store") as store,
-        patch("omnicio.main.service") as auth,
-    ):
-        user.return_value.id = "server-user"
-        auth.return_value.legal_versions.return_value = {"terms": "current"}
-        store.return_value.decide_proposal.side_effect = ValueError(
-            "proposal rejection reason is required"
-        )
-
-        rejected = TestClient(app).post(
-            f"/api/portfolio/proposals/{proposal_id}/decision",
-            json={
-                "action": "reject",
-                "proposal_version": 4,
-                "proposal_hash": (b"y" * 32).hex(),
-                "reason": "",
-            },
-            headers={"Origin": "https://omnicio.ru"},
-            cookies={"omnicio_session": "reject-session-token"},
-        )
-        assert rejected.status_code == 422
-
-        store.return_value.decide_proposal.side_effect = ValueError(
-            "proposal defer time must be in the future"
-        )
-        deferred = TestClient(app).post(
-            f"/api/portfolio/proposals/{proposal_id}/decision",
-            json={
-                "action": "defer",
-                "proposal_version": 4,
-                "proposal_hash": (b"y" * 32).hex(),
-                "deferred_until": "2020-01-01T00:00:00Z",
-            },
-            headers={"Origin": "https://omnicio.ru"},
-            cookies={"omnicio_session": "defer-session-token"},
-        )
-        assert deferred.status_code == 422
-
-
-def test_proposal_replay_conflict_is_not_silently_idempotent() -> None:
-    proposal_id = "22222222-2222-2222-2222-222222222222"
-    database = type(
-        "ConsentDatabase",
-        (),
-        {"has_legal_versions": lambda self, user_id, versions: True},
-    )()
-    with (
-        patch.object(app.state, "database", database, create=True),
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.portfolio_store") as store,
-        patch("omnicio.main.service") as auth,
-    ):
-        user.return_value.id = "server-user"
-        auth.return_value.legal_versions.return_value = {"terms": "current"}
-        store.return_value.decide_proposal.side_effect = ProposalStateError(
-            "proposal_already_decided"
-        )
-
-        response = TestClient(app).post(
-            f"/api/portfolio/proposals/{proposal_id}/decision",
-            json={
-                "action": "confirm",
-                "proposal_version": 4,
-                "proposal_hash": (b"y" * 32).hex(),
-            },
-            headers={"Origin": "https://omnicio.ru"},
-            cookies={"omnicio_session": "replay-session-token"},
-        )
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "proposal_already_decided"
-
-
-def test_live_mandate_http_rejects_sub_kopeck_caps_before_authority_checks() -> None:
-    response = TestClient(app).put(
-        "/api/portfolio/live-execution/mandate",
-        json={
-            "account_id": "production-account",
-            "max_order_notional_rub": "100.001",
-            "max_daily_notional_rub": "200.00",
-            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
-            "confirm_public_id": "000000001",
-            "confirm_live_execution": True,
-        },
-        headers={"Origin": "https://omnicio.ru"},
-    )
-
-    assert response.status_code == 422
-
-
-def test_execution_http_uses_session_tenant_and_keeps_live_dormant_by_config() -> None:
+def test_execution_history_uses_session_tenant_and_never_enables_new_orders() -> None:
     run = type(
         "Run",
         (),
@@ -1278,6 +668,7 @@ def test_execution_http_uses_session_tenant_and_keeps_live_dormant_by_config() -
         user.return_value.id = "server-user"
         store.return_value.executions.return_value = (run,)
         store.return_value.live_mandate.return_value = None
+        store.return_value.has_active_live_execution.return_value = False
         cfg.return_value.portfolio_live_execution_enabled = False
         response = TestClient(app).get(
             "/api/portfolio/executions?user_id=attacker"
@@ -1286,90 +677,10 @@ def test_execution_http_uses_session_tenant_and_keeps_live_dormant_by_config() -
     assert response.status_code == 200
     assert response.headers["cache-control"] == "private, no-store"
     payload = response.json()
-    assert payload["modes"] == ["shadow", "sandbox"]
-    assert payload["live_execution_enabled"] is False
+    assert payload["recovery_only"] is True
+    assert payload["new_orders_enabled"] is False
     assert payload["executions"][0]["account_id"] == "sandbox-account"
     store.return_value.executions.assert_called_once_with("server-user")
-
-
-def test_execution_create_accepts_only_proposal_identity_and_safe_mode() -> None:
-    proposal_id = "00000000-0000-0000-0000-000000000903"
-    base = {
-        "proposal_id": proposal_id,
-        "proposal_version": 4,
-        "proposal_hash": "ab" * 32,
-        "mode": "shadow",
-    }
-
-    extra_trade = TestClient(app).post(
-        "/api/portfolio/executions",
-        json={**base, "instrument_uid": "attacker", "lots": 999},
-        headers={"Origin": "https://omnicio.ru"},
-    )
-    assert extra_trade.status_code == 422
-
-    with (
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main._require_current_legal_consent"),
-        patch("omnicio.main.execution_service") as executor,
-    ):
-        user.return_value.id = "server-user"
-        executor.return_value.start.side_effect = ExecutionServiceError(
-            "live_execution_disabled"
-        )
-        live_mode = TestClient(app).post(
-            "/api/portfolio/executions",
-            json={**base, "mode": "live"},
-            headers={"Origin": "https://omnicio.ru"},
-            cookies={"omnicio_session": "live-session"},
-        )
-    assert live_mode.status_code == 409
-    assert live_mode.json()["detail"] == "live_execution_disabled"
-
-
-def test_execution_create_maps_active_live_run_to_conflict() -> None:
-    body = {
-        "proposal_id": "00000000-0000-0000-0000-000000000905",
-        "proposal_version": 2,
-        "proposal_hash": "ef" * 32,
-        "mode": "live",
-    }
-    with (
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main._require_current_legal_consent"),
-        patch("omnicio.main.execution_service") as executor,
-    ):
-        user.return_value.id = "server-user"
-        executor.return_value.start.side_effect = ExecutionLedgerError(
-            "live_execution_already_active"
-        )
-        response = TestClient(app).post(
-            "/api/portfolio/executions",
-            json=body,
-            headers={"Origin": "https://omnicio.ru"},
-            cookies={"omnicio_session": "live-session"},
-        )
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "live_execution_already_active"
-
-
-def test_execution_create_requires_origin_before_execution_service() -> None:
-    body = {
-        "proposal_id": "00000000-0000-0000-0000-000000000904",
-        "proposal_version": 1,
-        "proposal_hash": "cd" * 32,
-        "mode": "sandbox",
-    }
-    with patch("omnicio.main.execution_service") as executor:
-        response = TestClient(app).post(
-            "/api/portfolio/executions",
-            json=body,
-            headers={"Origin": "https://evil.example"},
-        )
-
-    assert response.status_code == 403
-    executor.assert_not_called()
 
 
 def test_execution_get_requires_session_before_touching_ledger() -> None:
@@ -1458,91 +769,6 @@ def test_account_delete_race_is_a_safe_conflict() -> None:
     assert response.json()["detail"] == "active_live_execution_must_be_reconciled"
 
 
-def test_intelligence_http_requires_session_before_touching_store() -> None:
-    with (
-        patch("omnicio.main.service") as auth,
-        patch("omnicio.main.portfolio_store") as store,
-    ):
-        auth.return_value.refresh_session.return_value = None
-        response = TestClient(app).get("/api/portfolio/intelligence")
-
-    assert response.status_code == 401
-    store.assert_not_called()
-
-
-def test_intelligence_http_is_private_tenant_scoped_and_read_only() -> None:
-    now = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
-    snapshot = {
-        "snapshot_id": "11111111-1111-1111-1111-111111111111",
-        "captured_at": now,
-        "snapshot_age_seconds": 0,
-        "snapshot_freshness": "fresh",
-        "analysis_status": "observed",
-        "execution_enabled": False,
-        "rating_feed_status": "data_missing",
-        "risks": [],
-        "payouts": [],
-        "sources": [],
-    }
-
-    with (
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.portfolio_store") as store,
-    ):
-        user.return_value.id = "server-resolved-user"
-        store.return_value.latest_intelligence.return_value = snapshot
-        response = TestClient(app).get(
-            "/api/portfolio/intelligence?user_id=attacker"
-        )
-
-    assert response.status_code == 200
-    assert response.headers["cache-control"] == "private, no-store"
-    assert response.json()["execution_enabled"] is False
-    assert response.json()["rating_feed_status"] == "data_missing"
-    assert {
-        item["id"] for item in response.json()["rating_sources"]
-    } == {
-        "cbr_rating_repository",
-        "expert_ra_rating_export",
-        "acra_rating_feed",
-    }
-    store.return_value.latest_intelligence.assert_called_once_with(
-        "server-resolved-user"
-    )
-
-    write_response = TestClient(app).post(
-        "/api/portfolio/intelligence",
-        json={"confirm": True},
-    )
-    assert write_response.status_code == 405
-
-
-def test_intelligence_http_pending_never_implies_execution() -> None:
-    with (
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.portfolio_store") as store,
-    ):
-        user.return_value.id = "server-resolved-user"
-        store.return_value.latest_intelligence.return_value = None
-        response = TestClient(app).get("/api/portfolio/intelligence")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["status"] == "pending"
-    assert payload["execution_enabled"] is False
-    assert payload["rating_feed_status"] == "data_missing"
-    assert {
-        item["id"] for item in payload["rating_sources"]
-    } == {
-        "cbr_rating_repository",
-        "expert_ra_rating_export",
-        "acra_rating_feed",
-    }
-    assert payload["risks"] == []
-    assert payload["payouts"] == []
-    assert payload["sources"] == []
-
-
 def test_anonymous_reference_is_broker_independent_and_validates_fixed_query() -> None:
     with (patch("omnicio.main.authenticated_user") as user,
           patch("omnicio.main.market_service") as market):
@@ -1559,3 +785,74 @@ def test_anonymous_reference_is_broker_independent_and_validates_fixed_query() -
     assert rejected.status_code == 422
     user.assert_not_called()
     market.return_value.public_reference.assert_called_once_with("USD", "1m")
+
+
+@pytest.mark.parametrize("method,path,expected", [
+    ("GET", "/api/portfolio/balancing", 404),
+    ("POST", "/api/portfolio/proposals", 405),
+    ("POST", "/api/portfolio/proposals/00000000-0000-0000-0000-000000000001/decision", 404),
+    ("POST", "/api/portfolio/executions", 405),
+    ("PUT", "/api/portfolio/live-execution/mandate", 405),
+    ("PUT", "/api/profile/investment", 405),
+    ("PUT", "/api/profile/balancing", 405),
+    ("GET", "/api/portfolio/intelligence", 404),
+    ("GET", "/api/broker/tbank/portfolio", 404),
+    ("POST", "/api/portfolio/executions/00000000-0000-0000-0000-000000000001/advance", 404),
+])
+def test_retired_endpoints_are_absent_without_accessing_broker_or_storage(method, path, expected):
+    with (
+        patch("omnicio.main.broker_service") as broker,
+        patch("omnicio.main.portfolio_store") as store,
+        patch("omnicio.main.execution_service") as execution,
+    ):
+        response = TestClient(app).request(method, path, json={})
+    assert response.status_code == expected
+    broker.assert_not_called()
+    store.assert_not_called()
+    execution.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ["reconcile", "cancel"])
+def test_execution_recovery_uses_session_owner_and_rechecks_before_response(action):
+    from test_execution_service import RUN_ID, USER_ID, _leg, _run
+
+    with (
+        patch("omnicio.main.authenticated_user") as auth,
+        patch("omnicio.main._require_current_legal_consent"),
+        patch("omnicio.main.execution_service") as execution,
+    ):
+        auth.return_value.id = USER_ID
+        operation = getattr(execution.return_value, action)
+        operation.return_value = (_run(), (_leg(status="submitted"),))
+        response = TestClient(app).post(
+            f"/api/portfolio/executions/{RUN_ID}/{action}?user_id=attacker",
+            headers={"Origin": "https://omnicio.ru"},
+        )
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json()["new_orders_enabled"] is False
+    assert response.json()["recovery_only"] is True
+    operation.assert_called_once_with(USER_ID, RUN_ID)
+    assert auth.call_count == 2
+    execution.return_value.start.assert_not_called()
+    execution.return_value.advance.assert_not_called()
+
+
+def test_execution_reconcile_cannot_release_data_after_the_session_changes():
+    from test_execution_service import RUN_ID, USER_ID, _leg, _run
+
+    with (
+        patch("omnicio.main.authenticated_user") as auth,
+        patch("omnicio.main._require_current_legal_consent"),
+        patch("omnicio.main.execution_service") as execution,
+    ):
+        auth.side_effect = [
+            type("User", (), {"id": USER_ID})(), type("Other", (), {"id": "other"})(),
+        ]
+        execution.return_value.reconcile.return_value = (_run(), (_leg(status="submitted"),))
+        response = TestClient(app).post(
+            f"/api/portfolio/executions/{RUN_ID}/reconcile",
+            headers={"Origin": "https://omnicio.ru"},
+        )
+    assert response.status_code == 409
+    assert "execution" not in response.json()

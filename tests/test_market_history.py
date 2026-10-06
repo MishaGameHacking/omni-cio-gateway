@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo
+from functools import partial
 from typing import Any
 from unittest.mock import Mock, patch
 from uuid import UUID
@@ -79,7 +80,8 @@ def test_all_history_uses_real_first_date_ten_year_chunks_and_unique_sorted_mont
     broker = history_broker(first)
 
     def read(owner: UUID, instrument: str, **window: Any) -> tuple[TBankHistoricCandle, ...]:
-        assert owner == OWNER.id and instrument == UID
+        assert owner == OWNER.id
+        assert instrument == UID
         # Exercise the real adapter window guard without any provider access.
         with patch.object(TBankInvestClient, "_post", return_value={"candles": []}):
             TBankInvestClient().get_exchange_candles("test-token", "prod", UID, **window)
@@ -90,9 +92,11 @@ def test_all_history_uses_real_first_date_ten_year_chunks_and_unique_sorted_mont
     broker.market_exchange_candles.side_effect = read
     with patch("omnicio.market.datetime", FixedDatetime):
         result = market(broker).instrument_snapshot(OWNER.id, UID, period="all")
-    assert result.period == "all" and result.interval == "CANDLE_INTERVAL_MONTH"
+    assert result.period == "all"
+    assert result.interval == "CANDLE_INTERVAL_MONTH"
     assert result.history_from == first.isoformat()
-    assert result.history_note and "без учёта выплат" in result.history_note
+    assert result.history_note
+    assert "без учёта выплат" in result.history_note
     calls = broker.market_exchange_candles.call_args_list
     assert len(calls) == 3
     assert [call.kwargs["from_at"] for call in calls] == [
@@ -103,7 +107,8 @@ def test_all_history_uses_real_first_date_ten_year_chunks_and_unique_sorted_mont
     assert calls[-1].kwargs["to_at"] == NOW
     dates = [item.time for item in result.candles]
     assert dates == sorted(set(dates))
-    assert len(dates) == 4 and max(dates) <= NOW.isoformat()
+    assert len(dates) == 4
+    assert max(dates) <= NOW.isoformat()
 
 
 def test_all_history_month_boundary_short_tail_stays_inside_provider_window() -> None:
@@ -142,8 +147,9 @@ def test_unknown_future_naive_or_over_budget_first_date_fails_before_candle_read
     first: datetime | None,
 ) -> None:
     broker = history_broker(first)
+    service = market(broker)
     with patch("omnicio.market.datetime", FixedDatetime), pytest.raises(TBankUnavailable):
-        market(broker).instrument_snapshot(OWNER.id, UID, period="all")
+        service.instrument_snapshot(OWNER.id, UID, period="all")
     broker.market_exchange_candles.assert_not_called()
     broker.market_last_price.assert_not_called()
 
@@ -158,12 +164,13 @@ def test_market_discards_every_result_if_account_changes_during_last_read(surfac
         return original
 
     broker.market_trading_status.side_effect = changed
+    service = market(broker)
+    if surface == "live":
+        operation = partial(service.instrument_live_state, OWNER.id, UID)
+    else:
+        operation = partial(service.instrument_snapshot, OWNER.id, UID, period=surface)
     with patch("omnicio.market.datetime", FixedDatetime), pytest.raises(BrokerConnectionError):
-        service = market(broker)
-        if surface == "live":
-            service.instrument_live_state(OWNER.id, UID)
-        else:
-            service.instrument_snapshot(OWNER.id, UID, period=surface)
+        operation()
 
 
 @pytest.mark.parametrize("fallback", [False, True])
@@ -197,11 +204,12 @@ def test_first_daily_candle_rejects_wrong_instrument_in_both_lookup_responses(
     values = (
         [{"instrument": {"uid": UID, "instrumentType": "bond"}}, wrong] if fallback else [wrong]
     )
+    tbank = TBankInvestClient()
     with (
         patch.object(TBankInvestClient, "_post", side_effect=values),
         pytest.raises(TBankUnavailable, match="identity"),
     ):
-        TBankInvestClient().first_daily_candle("test-token", "prod", UID)
+        tbank.first_daily_candle("test-token", "prod", UID)
 
 
 def test_first_candle_unknown_metadata_stays_unknown_and_month_window_limits_are_enforced() -> None:
@@ -212,9 +220,10 @@ def test_first_candle_unknown_metadata_stays_unknown_and_month_window_limits_are
     ) as read:
         assert TBankInvestClient().first_daily_candle("test-token", "prod", UID) is None
     read.assert_called_once()
+    tbank = TBankInvestClient()
     for window in (timedelta(days=27), timedelta(days=3661)):
         with patch.object(TBankInvestClient, "_post") as read, pytest.raises(ValueError):
-            TBankInvestClient().get_exchange_candles(
+            tbank.get_exchange_candles(
                 "test-token",
                 "prod",
                 UID,
@@ -260,17 +269,15 @@ def test_broker_history_reads_revalidate_saved_connection_after_provider_io(
 
     tbank.first_daily_candle.side_effect = tbank.get_exchange_candles.side_effect = changed
     broker = BrokerService(database, credential_key=key, tbank=tbank)
+    if surface == "first":
+        operation = partial(broker.market_history_start, OWNER.id, UID)
+    else:
+        operation = partial(
+            broker.market_exchange_candles, OWNER.id, UID,
+            from_at=NOW - timedelta(days=100), to_at=NOW, interval="CANDLE_INTERVAL_MONTH",
+        )
     with pytest.raises(BrokerConnectionError, match="connection changed"):
-        if surface == "first":
-            broker.market_history_start(OWNER.id, UID)
-        else:
-            broker.market_exchange_candles(
-                OWNER.id,
-                UID,
-                from_at=NOW - timedelta(days=100),
-                to_at=NOW,
-                interval="CANDLE_INTERVAL_MONTH",
-            )
+        operation()
 
 
 def test_all_history_http_is_valid_owner_bound_and_discards_revoked_session(
@@ -290,4 +297,48 @@ def test_all_history_http_is_valid_owner_bound_and_discards_revoked_session(
         assert all(call.args[0] == OWNER.id for call in broker.market_history_start.call_args_list)
         auth.refresh_session.side_effect = [OWNER, None]
         revoked = client.get(f"/api/market/instruments/{UID}?period=all")
-        assert revoked.status_code == 401 and "candles" not in revoked.json()
+        assert revoked.status_code == 401
+        assert "candles" not in revoked.json()
+
+
+def test_instrument_facts_http_keeps_owner_precondition_and_discards_revoked_response(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    client, auth, _, _ = workspace_http
+    broker = history_broker()
+    payload = {"instrument_uid": UID, "status": "partial", "metrics": []}
+    with (
+        patch.object(app.state, "broker_service", broker, create=True),
+        patch("omnicio.main.instrument_facts", return_value=payload) as read,
+    ):
+        response = client.get(f"/api/market/instruments/{UID}/facts?user_id=another-owner")
+        assert response.status_code == 200
+        assert response.json() == payload
+        assert response.headers["cache-control"] == "private, no-store"
+        read.assert_called_once_with(user_id=OWNER.id, instrument_uid=UID, broker=broker)
+        stale = client.get(
+            f"/api/market/instruments/{UID}/facts", headers={"X-Omnicio-Profile": "000000502"},
+        )
+        assert stale.status_code == 409
+        assert read.call_count == 1
+        auth.refresh_session.side_effect = [OWNER, None]
+        revoked = client.get(f"/api/market/instruments/{UID}/facts")
+        assert revoked.status_code == 401
+        assert "metrics" not in revoked.json()
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [(ValueError("invalid input"), 422), (TBankUnavailable("private provider detail"), 503)],
+)
+def test_instrument_facts_http_reports_bounded_errors_without_provider_details(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock], error: Exception, status: int,
+) -> None:
+    client, _, _, _ = workspace_http
+    with (
+        patch.object(app.state, "broker_service", history_broker(), create=True),
+        patch("omnicio.main.instrument_facts", side_effect=error),
+    ):
+        response = client.get(f"/api/market/instruments/{UID}/facts")
+    assert response.status_code == status
+    assert "private provider detail" not in response.text

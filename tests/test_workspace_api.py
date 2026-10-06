@@ -92,6 +92,88 @@ def test_workspace_reads_use_session_owner_and_never_query_identity(
     assert getattr(store, method).call_count == before
 
 
+def test_workspace_history_period_reaches_only_the_current_owner(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    client, _, store, _ = workspace_http
+    response = client.get(
+        "/api/workspace", params={"history_period": "1d", "user_id": str(OTHER.id)}
+    )
+    assert response.status_code == 200
+    store.dashboard.assert_called_once_with(OWNER.id, history_period="1d")
+    store.dashboard.reset_mock()
+    response = client.get("/api/workspace")
+    assert response.status_code == 200
+    store.dashboard.assert_called_once_with(OWNER.id, history_period="all")
+
+
+def test_workspace_invalid_history_period_does_not_read_storage(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    client, _, store, _ = workspace_http
+    response = client.get("/api/workspace", params={"history_period": "unbounded"})
+    assert response.status_code == 422
+    store.dashboard.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("path", "consumer"),
+    (("/api/workspace", "dashboard"), ("/api/preferences", "preferences"),
+     ("/api/goals", "goals"), ("/api/events", "events")),
+)
+@pytest.mark.parametrize(("replacement", "expected_status"), ((None, 401), (OTHER, 409)))
+def test_workspace_read_discards_private_payload_after_session_changes_during_storage(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock], path: str, consumer: str,
+    replacement: UserRecord | None, expected_status: int,
+) -> None:
+    client, auth, store, _ = workspace_http
+
+    def read(user_id: UUID, **kwargs: object) -> dict[str, str]:
+        assert user_id == OWNER.id
+        auth.refresh_session.side_effect = None
+        auth.refresh_session.return_value = replacement
+        return {"private_owner_payload": "synthetic"}
+
+    getattr(store, consumer).side_effect = read
+    response = client.get(path, headers=HEADERS)
+    assert response.status_code == expected_status
+    assert "private_owner_payload" not in response.text
+    assert response.headers["cache-control"] == "private, no-store"
+    assert getattr(store, consumer).call_count == 1
+    assert auth.refresh_session.call_count == 2
+
+
+@pytest.mark.parametrize(("method", "path", "body", "consumer"), WRITES)
+@pytest.mark.parametrize(("change", "expected_status"), (
+    ("logout", 401), ("profile", 409), ("consent", 409),
+))
+def test_workspace_write_rechecks_session_and_consent_before_returning_saved_data(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock], method: str, path: str,
+    body: dict[str, Any], consumer: str, change: str, expected_status: int,
+) -> None:
+    client, auth, store, database = workspace_http
+    saved_for: list[UUID] = []
+
+    def save(user_id: UUID, *args: object, **kwargs: object) -> dict[str, str] | bool:
+        # The initially authorized transaction may already have committed. A
+        # late revocation must discard its response, without replaying the write.
+        saved_for.append(user_id)
+        if change == "consent":
+            database.has_legal_versions.return_value = False
+        else:
+            auth.refresh_session.side_effect = None
+            auth.refresh_session.return_value = OTHER if change == "profile" else None
+        return True if consumer == "delete_goal" else {"private_owner_payload": "synthetic"}
+
+    getattr(store, consumer).side_effect = save
+    response = client.request(method, path, json=body, headers=HEADERS)
+    assert response.status_code == expected_status
+    assert "private_owner_payload" not in response.text
+    assert "deleted" not in response.json()
+    assert saved_for == [OWNER.id]
+    assert response.headers["cache-control"] == "private, no-store"
+
+
 @pytest.mark.parametrize(("method", "path", "body", "consumer"), WRITES)
 def test_workspace_writes_require_origin_active_session_and_viewed_profile(
     workspace_http: tuple[TestClient, Mock, Mock, Mock],

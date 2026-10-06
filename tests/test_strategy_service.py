@@ -346,6 +346,30 @@ def test_research_bounds_provider_load_even_with_a_large_catalog(runtime):
     assert len(broker.candidate_fundamentals.call_args.args[1]) == 12
 
 
+def test_fundamental_adapter_does_not_invent_percentage_units_or_publication_time(runtime):
+    from omnicio.strategy_service import _research_fundamentals
+    from omnicio.tbank import TBankAssetFundamental
+
+    _, broker = research_runtime(runtime)
+    observed = datetime.now(UTC)
+    fundamental = Mock(
+        spec=TBankAssetFundamental,
+        asset_uid="asset-0",
+        roe="0.15",
+        total_debt_to_ebitda_mrq="1.75",
+        free_cash_flow_ttm="-100",
+        net_income_ttm="500",
+        fiscal_period_end_date=observed - timedelta(days=365),
+    )
+    broker.candidate_fundamentals.return_value = (fundamental,)
+    result = _research_fundamentals(A, [{"asset_uid": "asset-0"}], broker, observed)
+    facts = result["asset-0"]
+    assert "roe_percent" not in facts
+    assert facts["debt_to_ebitda"].value == Decimal("1.75")
+    assert facts["free_cash_flow_ttm"].value == Decimal("-100")
+    assert all(fact.available_at == observed for fact in facts.values())
+
+
 @pytest.mark.parametrize("change", ["version", "document", "account"])
 def test_research_rechecks_exact_strategy_and_connection_after_provider_reads(runtime, change):
     from test_backtest import prices

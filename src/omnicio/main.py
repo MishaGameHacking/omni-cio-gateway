@@ -10,7 +10,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
@@ -26,7 +26,6 @@ from .assistant import (
     AssistantUnavailable,
     portfolio_context,
 )
-from .balancing_service import build_live_balancing_payload
 from .broker import (
     BrokerAccountNotAccessible,
     BrokerAssessmentBusy,
@@ -47,25 +46,17 @@ from .execution_store import (
 )
 from .freshness import PORTFOLIO_MAX_AGE, describe_freshness
 from .instrument_facts import instrument_facts
-from .intelligence import rating_source_references
 from .market import MarketService
 from .news import NewsClient, NewsUnavailable
+from .observer import PortfolioRefreshBusy, PortfolioRefreshCoordinator
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import (
-    BalancingPolicyInput,
     BalancingPolicyRecord,
     InvestmentProfileRecord,
     PortfolioStore,
-    ProposalStateError,
     SettingsVersionConflict,
 )
 from .proposals import (
-    ProposalBuildError,
-    build_proposal_draft,
-    parse_proposal_hash,
-    proposal_action_payload,
-    proposal_generated_at,
-    proposal_material_hash,
     proposal_payload,
 )
 from .recovery import recovery_status
@@ -119,7 +110,7 @@ class StrictRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class StartVKIDBody(StrictRequestBody):
+class StartOAuthBody(StrictRequestBody):
     accept_privacy: bool
     accept_personal_data: bool
     accept_terms: bool
@@ -140,51 +131,6 @@ class TBankConnectBody(TBankCredentialBody):
 class DeleteAccountBody(StrictRequestBody):
     confirm_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
     confirm_irreversible: bool
-
-
-class InvestmentProfileBody(StrictRequestBody):
-    expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
-    expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
-    reserve_rub: Decimal = Field(ge=0, le=1_000_000_000_000, allow_inf_nan=False)
-    planned_withdrawal_rub: Decimal = Field(
-        ge=0,
-        le=1_000_000_000_000,
-        allow_inf_nan=False,
-    )
-    horizon_months: int = Field(ge=1, le=1200)
-    max_drawdown_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    liquidity_horizon_days: int = Field(ge=0, le=36500)
-    allow_below_investment_grade: bool = False
-
-
-class BalancingPolicyBody(StrictRequestBody):
-    expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
-    expected_version: int = Field(ge=0, le=2_147_483_647, strict=True)
-    max_instrument_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    max_sector_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    max_issuer_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    max_group_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    max_share_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    max_bond_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    max_etf_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    max_below_grade_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    max_unknown_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    max_term_months: int = Field(ge=0, le=1200)
-    turnover_budget_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    max_daily_turnover_participation_percent: Decimal = Field(
-        ge=0,
-        le=100,
-        allow_inf_nan=False,
-    )
-    securities_tax_rate_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    uncertainty_haircut_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    credit_loss_haircut_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    no_trade_band_percent: Decimal = Field(ge=0, le=100, allow_inf_nan=False)
-    min_replace_benefit_rub: Decimal = Field(
-        ge=0,
-        le=1_000_000_000_000,
-        allow_inf_nan=False,
-    )
 
 
 class StrategyDraftBody(StrictRequestBody):
@@ -209,6 +155,10 @@ class StrategyResearchBody(StrictRequestBody):
     initial_capital_rub: Decimal = Field(
         gt=0, le=1_000_000_000_000, max_digits=24, decimal_places=8, allow_inf_nan=False,
     )
+
+
+class WorkspaceRefreshBody(StrictRequestBody):
+    expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
 
 
 class WorkspaceDocumentBody(StrictRequestBody):
@@ -237,49 +187,6 @@ class AssistantMessageBody(StrictRequestBody):
     message: str = Field(min_length=1, max_length=4000)
     context: Literal["general", "portfolio"] = "general"
     history: list[AssistantHistoryItem] = Field(default_factory=list, max_length=20)
-
-
-class PortfolioProposalBody(StrictRequestBody):
-    scenario_kind: Literal["deploy_cash", "replace"]
-    replaced_instrument_uid: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=128,
-    )
-
-
-class PortfolioExecutionBody(StrictRequestBody):
-    proposal_id: UUID
-    proposal_version: int = Field(ge=1)
-    proposal_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
-    mode: Literal["shadow", "sandbox", "live"]
-
-
-class PortfolioLiveMandateBody(StrictRequestBody):
-    account_id: str = Field(min_length=1, max_length=128)
-    max_order_notional_rub: Decimal = Field(
-        gt=0,
-        le=1_000_000_000_000,
-        decimal_places=2,
-        allow_inf_nan=False,
-    )
-    max_daily_notional_rub: Decimal = Field(
-        gt=0,
-        le=1_000_000_000_000,
-        decimal_places=2,
-        allow_inf_nan=False,
-    )
-    expires_at: datetime
-    confirm_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
-    confirm_live_execution: bool
-
-
-class PortfolioProposalDecisionBody(StrictRequestBody):
-    action: Literal["confirm", "reject", "defer"]
-    proposal_version: int = Field(ge=1)
-    proposal_hash: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
-    reason: str | None = Field(default=None, max_length=500)
-    deferred_until: datetime | None = None
 
 
 def client_ip(request: Request) -> str:
@@ -326,6 +233,10 @@ def workspace_store(request: Request) -> WorkspaceStore:
     return cast(WorkspaceStore, request.app.state.workspace_store)
 
 
+def portfolio_refresh(request: Request) -> PortfolioRefreshCoordinator:
+    return cast(PortfolioRefreshCoordinator, request.app.state.portfolio_refresh)
+
+
 def execution_store(request: Request) -> ExecutionStore:
     return cast(ExecutionStore, request.app.state.execution_store)
 
@@ -363,15 +274,6 @@ def authenticated_user(
     if expected is not None or request.method not in {"GET", "HEAD", "OPTIONS"}:
         _require_profile_context(user, expected)
     return user
-
-
-def authenticated_session_digest(session_token: str | None) -> bytes:
-    if not session_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="authentication required",
-        )
-    return session_digest(session_token)
 
 
 def callback_values(request: Request) -> dict[str, str]:
@@ -460,18 +362,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.execution_service = PortfolioExecutionService(
         store=execution_ledger,
         broker=broker,
-        live_execution_enabled=cfg.portfolio_live_execution_enabled,
-        live_max_order_rub=cfg.portfolio_live_max_order_rub,
-        live_max_daily_rub=cfg.portfolio_live_max_daily_rub,
     )
     app.state.market_service = MarketService(
         broker=broker,
         cbr=CBRClient(),
     )
+    refresh = PortfolioRefreshCoordinator(
+        app.state.portfolio_store, broker,
+        legal_versions=app.state.auth_service.legal_versions(),
+    )
+    app.state.portfolio_refresh = refresh
     try:
+        refresh.start()
         yield
     finally:
-        database.close()
+        try:
+            refresh.close()
+        finally:
+            database.close()
 
 
 app = FastAPI(
@@ -562,7 +470,7 @@ def auth_config(request: Request) -> dict[str, object]:
 
 
 def _start_oauth(
-    provider: str, body: StartVKIDBody, request: Request, response: Response,
+    provider: str, body: StartOAuthBody, request: Request, response: Response,
     session_token: str | None,
 ) -> dict[str, str]:
     require_same_origin(request)
@@ -597,10 +505,11 @@ def _start_oauth(
 
 @app.post("/api/auth/vkid/start", responses={
     400: {"description": "Required legal acknowledgments are missing"},
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
     503: {"description": "VK ID login is not configured"},
 })
 def start_vkid(
-    body: StartVKIDBody, request: Request, response: Response,
+    body: StartOAuthBody, request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, str]:
     return _start_oauth("vkid", body, request, response, session_token)
@@ -608,10 +517,11 @@ def start_vkid(
 
 @app.post("/api/auth/tid/start", responses={
     400: {"description": "Required legal acknowledgments are missing"},
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
     503: {"description": "T-ID login is not configured"},
 })
 def start_tid(
-    body: StartVKIDBody, request: Request, response: Response,
+    body: StartOAuthBody, request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, str]:
     return _start_oauth("tid", body, request, response, session_token)
@@ -712,7 +622,9 @@ def _oauth_callback(
     return response
 
 
-@app.get("/api/auth/vkid/callback")
+@app.get("/api/auth/vkid/callback", responses={
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+})
 def vkid_callback(
     request: Request,
     flow_cookie: str | None = Cookie(default=None, alias=VKID_FLOW_COOKIE),
@@ -721,7 +633,9 @@ def vkid_callback(
     return _oauth_callback("vkid", request, flow_cookie, session_token)
 
 
-@app.get("/api/auth/tid/callback")
+@app.get("/api/auth/tid/callback", responses={
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+})
 def tid_callback(
     request: Request,
     flow_cookie: str | None = Cookie(default=None, alias=TID_FLOW_COOKIE),
@@ -758,7 +672,9 @@ def me(
     }
 
 
-@app.get("/api/auth/identities")
+@app.get("/api/auth/identities", responses={
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+})
 def auth_identities(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -772,7 +688,9 @@ def auth_identities(
     }
 
 
-@app.get("/api/assistant/status")
+@app.get("/api/assistant/status", responses={
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+})
 def assistant_status(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -825,22 +743,71 @@ def assistant_message(
     return result
 
 
-@app.get("/api/workspace")
+@app.get("/api/workspace", responses={
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    422: {"description": "Portfolio history period is invalid"},
+})
 def get_workspace(
     request: Request,
+    history_period: Literal["1d", "1w", "1m", "3m", "1y", "all"] = Query(default="all"),
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, Any]:
     user = authenticated_user(request, session_token)
-    return workspace_store(request).dashboard(user.id)
+    payload = workspace_store(request).dashboard(user.id, history_period=history_period)
+    return _workspace_result(request, session_token, user, payload)
 
 
-@app.get("/api/preferences")
+@app.get(
+    "/api/workspace/refresh",
+    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+)
+def get_workspace_refresh(
+    request: Request, response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = authenticated_user(request, session_token)
+    payload = portfolio_refresh(request).status(user.id)
+    if authenticated_user(request, session_token).id != user.id:
+        raise HTTPException(status_code=409, detail="profile_context_changed")
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
+    return {**payload, "public_id": format_public_id(user.public_id)}
+
+
+@app.post(
+    "/api/workspace/refresh",
+    responses={
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        429: {"description": "Refresh admission slots are temporarily occupied"},
+    },
+)
+def request_workspace_refresh(
+    body: WorkspaceRefreshBody, request: Request, response: Response,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, object]:
+    user = _settings_editor_user(request, session_token, body.expected_public_id)
+    try:
+        payload = portfolio_refresh(request).request(user.id)
+    except PortfolioRefreshBusy as exc:
+        raise HTTPException(
+            status_code=429, detail="portfolio_refresh_busy", headers={"Retry-After": "2"},
+        ) from exc
+    current = _settings_editor_user(request, session_token, body.expected_public_id)
+    if current.id != user.id:
+        raise HTTPException(status_code=409, detail="profile_context_changed")
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
+    return {**payload, "public_id": format_public_id(user.public_id)}
+
+
+@app.get("/api/preferences", responses={
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+})
 def get_preferences(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, Any]:
     user = authenticated_user(request, session_token)
-    return workspace_store(request).preferences(user.id)
+    payload = workspace_store(request).preferences(user.id)
+    return _workspace_result(request, session_token, user, payload)
 
 
 def _workspace_editor(request: Request, session_token: str | None) -> UserRecord:
@@ -848,6 +815,21 @@ def _workspace_editor(request: Request, session_token: str | None) -> UserRecord
     user = authenticated_user(request, session_token)
     _require_current_legal_consent(request, user)
     return user
+
+
+def _workspace_result(
+    request: Request, session_token: str | None, user: UserRecord,
+    payload: dict[str, Any], *, write: bool = False,
+) -> dict[str, Any]:
+    # A write may already have committed. Revalidate before disclosing its
+    # result; an expired session must sign in and read back the actual version.
+    current = (
+        _workspace_editor(request, session_token)
+        if write else authenticated_user(request, session_token)
+    )
+    if current.id != user.id:
+        raise HTTPException(status_code=409, detail="profile_context_changed")
+    return payload
 
 
 @app.put("/api/preferences", responses={
@@ -860,25 +842,30 @@ def save_preferences(
 ) -> dict[str, Any]:
     user = _workspace_editor(request, session_token)
     try:
-        return workspace_store(request).save_preferences(
+        payload = workspace_store(request).save_preferences(
             user.id, body.document, expected_version=body.expected_version,
         )
     except SettingsVersionConflict:
         raise
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="workspace_document_invalid") from exc
+    return _workspace_result(request, session_token, user, payload, write=True)
 
 
-@app.get("/api/goals")
+@app.get("/api/goals", responses={
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+})
 def get_goals(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, Any]:
     user = authenticated_user(request, session_token)
-    return workspace_store(request).goals(user.id)
+    payload = workspace_store(request).goals(user.id)
+    return _workspace_result(request, session_token, user, payload)
 
 
 @app.post("/api/goals", status_code=201, responses={
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
     422: {"description": "Goal document or allocation is invalid"},
 })
 def create_goal(
@@ -887,9 +874,10 @@ def create_goal(
 ) -> dict[str, Any]:
     user = _workspace_editor(request, session_token)
     try:
-        return workspace_store(request).create_goal(user.id, body.document)
+        payload = workspace_store(request).create_goal(user.id, body.document)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="goal_document_invalid") from exc
+    return _workspace_result(request, session_token, user, payload, write=True)
 
 
 @app.put("/api/goals/{goal_id}", responses={
@@ -903,27 +891,33 @@ def update_goal(
 ) -> dict[str, Any]:
     user = _workspace_editor(request, session_token)
     try:
-        return workspace_store(request).update_goal(
+        payload = workspace_store(request).update_goal(
             user.id, goal_id, body.document, expected_version=body.expected_version,
         )
     except SettingsVersionConflict:
         raise
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="goal_document_invalid") from exc
+    return _workspace_result(request, session_token, user, payload, write=True)
 
 
-@app.delete("/api/goals/{goal_id}")
+@app.delete("/api/goals/{goal_id}", responses={
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+})
 def delete_goal(
     goal_id: UUID, body: WorkspaceVersionBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, bool]:
     user = _workspace_editor(request, session_token)
-    return {"deleted": workspace_store(request).delete_goal(
+    payload = {"deleted": workspace_store(request).delete_goal(
         user.id, goal_id, expected_version=body.expected_version,
     )}
+    return _workspace_result(request, session_token, user, payload, write=True)
 
 
-@app.get("/api/events")
+@app.get("/api/events", responses={
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+})
 def get_events(
     request: Request,
     limit: int = Query(default=50, ge=1, le=100),
@@ -932,12 +926,14 @@ def get_events(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, Any]:
     user = authenticated_user(request, session_token)
-    return workspace_store(request).events(
+    payload = workspace_store(request).events(
         user.id, limit=limit, unread_only=unread_only, category=category,
     )
+    return _workspace_result(request, session_token, user, payload)
 
 
 @app.post("/api/events/read", responses={
+    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
     422: {"description": "Event identifiers are invalid"},
 })
 def mark_events_read(
@@ -946,9 +942,10 @@ def mark_events_read(
 ) -> dict[str, Any]:
     user = _workspace_editor(request, session_token)
     try:
-        return workspace_store(request).mark_events_read(user.id, body.ids, read=body.read)
+        payload = workspace_store(request).mark_events_read(user.id, body.ids, read=body.read)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="event_ids_invalid") from exc
+    return _workspace_result(request, session_token, user, payload, write=True)
 
 
 @app.get(
@@ -977,7 +974,9 @@ def system_recovery(
     return recovery_status()
 
 
-@app.get("/api/public/news")
+@app.get("/api/public/news", responses={
+    503: {"description": "Public news sources are temporarily unavailable"},
+})
 def public_news(request: Request) -> dict[str, Any]:
     client: NewsClient = request.app.state.news_client
     try:
@@ -1561,31 +1560,6 @@ def research_strategy(
     return {**payload, "public_id": format_public_id(user.public_id)}
 
 
-@app.put(
-    "/api/profile/investment",
-    responses={409: {"description": "Settings owner/version conflict or updated consent required"}},
-)
-def save_investment_profile(
-    body: InvestmentProfileBody,
-    request: Request,
-    response: Response,
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
-    user = _settings_editor_user(request, session_token, body.expected_public_id)
-    profile = portfolio_store(request).save_profile(
-        user.id,
-        reserve_rub=body.reserve_rub,
-        planned_withdrawal_rub=body.planned_withdrawal_rub,
-        horizon_months=body.horizon_months,
-        max_drawdown_percent=body.max_drawdown_percent,
-        liquidity_horizon_days=body.liquidity_horizon_days,
-        allow_below_investment_grade=body.allow_below_investment_grade,
-        expected_version=body.expected_version,
-    )
-    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return {"public_id": format_public_id(user.public_id), "profile": _profile_payload(profile)}
-
-
 @app.get(
     "/api/profile/balancing",
     responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
@@ -1601,49 +1575,6 @@ def balancing_policy(
     return {
         "public_id": format_public_id(user.public_id),
         "policy": _balancing_policy_payload(policy) if policy is not None else None,
-    }
-
-
-@app.put(
-    "/api/profile/balancing",
-    responses={409: {"description": "Settings owner/version conflict or updated consent required"}},
-)
-def save_balancing_policy(
-    body: BalancingPolicyBody,
-    request: Request,
-    response: Response,
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
-    user = _settings_editor_user(request, session_token, body.expected_public_id)
-    policy = portfolio_store(request).save_balancing_policy(
-        user.id,
-        BalancingPolicyInput(
-            max_instrument_percent=body.max_instrument_percent,
-            max_sector_percent=body.max_sector_percent,
-            max_issuer_percent=body.max_issuer_percent,
-            max_group_percent=body.max_group_percent,
-            max_share_percent=body.max_share_percent,
-            max_bond_percent=body.max_bond_percent,
-            max_etf_percent=body.max_etf_percent,
-            max_below_grade_percent=body.max_below_grade_percent,
-            max_unknown_percent=body.max_unknown_percent,
-            max_term_months=body.max_term_months,
-            turnover_budget_percent=body.turnover_budget_percent,
-            max_daily_turnover_participation_percent=(
-                body.max_daily_turnover_participation_percent
-            ),
-            securities_tax_rate_percent=body.securities_tax_rate_percent,
-            uncertainty_haircut_percent=body.uncertainty_haircut_percent,
-            credit_loss_haircut_percent=body.credit_loss_haircut_percent,
-            no_trade_band_percent=body.no_trade_band_percent,
-            min_replace_benefit_rub=body.min_replace_benefit_rub,
-        ),
-        expected_version=body.expected_version,
-    )
-    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return {
-        "public_id": format_public_id(user.public_id),
-        "policy": _balancing_policy_payload(policy),
     }
 
 
@@ -1663,51 +1594,6 @@ def tbank_connection_status(
         "account_id": connection.account_id,
         "account_name": connection.account_name,
         "verified_at": connection.verified_at,
-    }
-
-
-@app.get(
-    "/api/broker/tbank/portfolio",
-    responses={
-        401: {"description": "Authenticated session required"},
-        409: {"description": "T-Invest connection requires attention"},
-        503: {"description": "T-Invest portfolio is temporarily unavailable"},
-    },
-)
-def tbank_portfolio(
-    request: Request,
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
-    user = authenticated_user(request, session_token)
-    try:
-        snapshot = broker_service(request).portfolio(user.id)
-    except BrokerNotConnected as exc:
-        raise HTTPException(status_code=409, detail=_TBANK_NOT_CONNECTED_DETAIL) from exc
-    except TBankTokenRejected as exc:
-        raise HTTPException(
-            status_code=409,
-            detail=_TBANK_CREDENTIAL_REJECTED_DETAIL,
-        ) from exc
-    except (TBankUnavailable, BrokerConnectionError, SecurityValueError) as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="T-Invest portfolio unavailable",
-        ) from exc
-
-    return {
-        "account_id": snapshot.account_id,
-        "account_name": snapshot.account_name,
-        "environment": snapshot.environment,
-        "refreshed_at": snapshot.refreshed_at,
-        "portfolio": asdict(snapshot.portfolio),
-        "cash": [asdict(item) for item in snapshot.positions.money],
-        "blocked_cash": [asdict(item) for item in snapshot.positions.blocked_money],
-        "limits_loading_in_progress": snapshot.positions.limits_loading_in_progress,
-        "freshness": asdict(describe_freshness(
-            snapshot.refreshed_at,
-            max_age=PORTFOLIO_MAX_AGE,
-            coverage="partial" if snapshot.positions.limits_loading_in_progress else "complete",
-        )),
     }
 
 
@@ -1754,20 +1640,6 @@ def tbank_analysis(
             coverage="complete" if snapshot.analysis.status == "observed" else "partial",
         )),
     }
-
-
-def _live_balancing_for_user(
-    request: Request,
-    user_id: UUID,
-) -> dict[str, object]:
-    store = portfolio_store(request)
-    return build_live_balancing_payload(
-        user_id=user_id,
-        profile=store.current_profile(user_id),
-        policy_record=store.current_balancing_policy(user_id),
-        context=store.latest_balancing_context(user_id),
-        broker=broker_service(request),
-    )
 
 
 @app.get(
@@ -1829,24 +1701,6 @@ def portfolio_instrument_visualization(
 
 
 @app.get(
-    "/api/portfolio/balancing",
-    responses={
-        401: {"description": "Authenticated session required"},
-        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-    },
-)
-def portfolio_balancing(
-    request: Request,
-    response: Response,
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
-    user = authenticated_user(request, session_token)
-    payload = _live_balancing_for_user(request, user.id)
-    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return payload
-
-
-@app.get(
     "/api/portfolio/proposals",
     responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
 )
@@ -1862,186 +1716,6 @@ def portfolio_proposals(
         "proposals": [proposal_payload(item) for item in proposals],
         "execution_enabled": False,
     }
-
-
-@app.post(
-    "/api/portfolio/proposals",
-    status_code=status.HTTP_201_CREATED,
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
-)
-def create_portfolio_proposal(
-    body: PortfolioProposalBody,
-    request: Request,
-    response: Response,
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
-    require_same_origin(request)
-    user = authenticated_user(request, session_token)
-    database: Database = request.app.state.database
-    if not database.has_legal_versions(user.id, service(request).legal_versions()):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
-        )
-
-    balancing = _live_balancing_for_user(request, user.id)
-    try:
-        draft = build_proposal_draft(
-            balancing,
-            scenario_kind=body.scenario_kind,
-            replaced_instrument_uid=body.replaced_instrument_uid,
-        )
-        proposal = portfolio_store(request).create_proposal(
-            user.id,
-            source_snapshot_id=draft.source_snapshot_id,
-            account_id=draft.account_id,
-            profile_version=draft.profile_version,
-            policy_version=draft.policy_version,
-            scenario_kind=draft.scenario_kind,
-            target_instrument_uid=draft.target_instrument_uid,
-            replaced_instrument_uid=draft.replaced_instrument_uid,
-            proposal_hash=draft.proposal_hash,
-            session_digest=authenticated_session_digest(session_token),
-            payload=draft.payload,
-            expires_at=draft.expires_at,
-        )
-    except (ProposalBuildError, ProposalStateError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=exc.code,
-        ) from exc
-
-    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return {
-        "proposal": proposal_payload(proposal),
-        "execution_enabled": False,
-    }
-
-
-def _proposal_decision_action(
-    action: str,
-) -> Literal["confirmed", "rejected", "deferred"]:
-    if action == "confirm":
-        return "confirmed"
-    if action == "reject":
-        return "rejected"
-    return "deferred"
-
-
-def _proposal_scenario_kind(
-    value: str,
-) -> Literal["deploy_cash", "replace"]:
-    if value == "deploy_cash":
-        return "deploy_cash"
-    if value == "replace":
-        return "replace"
-    raise ProposalBuildError("scenario_kind_invalid")
-
-
-def _proposal_material_is_current(
-    request: Request,
-    user_id: UUID,
-    proposal_id: UUID,
-    body: PortfolioProposalDecisionBody,
-    expected_hash: bytes,
-) -> bool:
-    if body.action != "confirm":
-        return True
-
-    store = portfolio_store(request)
-    current = store.proposal(user_id, proposal_id)
-    if current is None:
-        raise ProposalStateError("proposal_not_found")
-    if not (
-        current.status == "pending"
-        and current.version == body.proposal_version
-        and current.proposal_hash == expected_hash
-    ):
-        return True
-
-    try:
-        refreshed = build_proposal_draft(
-            _live_balancing_for_user(request, user_id),
-            scenario_kind=_proposal_scenario_kind(current.scenario_kind),
-            replaced_instrument_uid=current.replaced_instrument_uid,
-            now=proposal_generated_at(current),
-        )
-    except ProposalBuildError as exc:
-        if exc.code in {
-            "balancing_not_observed",
-            "live_evidence_not_received",
-        }:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="proposal_revalidation_unavailable",
-            ) from exc
-        return False
-
-    return (
-        proposal_material_hash(current.payload)
-        == proposal_material_hash(refreshed.payload)
-    )
-
-
-@app.post(
-    "/api/portfolio/proposals/{proposal_id}/decision",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
-)
-def decide_portfolio_proposal(
-    proposal_id: UUID,
-    body: PortfolioProposalDecisionBody,
-    request: Request,
-    response: Response,
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
-    require_same_origin(request)
-    user = authenticated_user(request, session_token)
-    database: Database = request.app.state.database
-    if not database.has_legal_versions(user.id, service(request).legal_versions()):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=_UPDATED_LEGAL_CONSENT_DETAIL,
-        )
-    try:
-        expected_hash = parse_proposal_hash(body.proposal_hash)
-        store = portfolio_store(request)
-        material_current = _proposal_material_is_current(
-            request,
-            user.id,
-            proposal_id,
-            body,
-            expected_hash,
-        )
-        proposal, decision = store.decide_proposal(
-            user.id,
-            proposal_id=proposal_id,
-            expected_version=body.proposal_version,
-            expected_hash=expected_hash,
-            action=_proposal_decision_action(body.action),
-            session_digest=authenticated_session_digest(session_token),
-            user_reason=body.reason or "",
-            deferred_until=body.deferred_until,
-            material_current=material_current,
-            now=datetime.now(UTC),
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
-    except ProposalStateError as exc:
-        http_status = (
-            status.HTTP_404_NOT_FOUND
-            if exc.code == "proposal_not_found"
-            else status.HTTP_409_CONFLICT
-        )
-        raise HTTPException(status_code=http_status, detail=exc.code) from exc
-
-    result = proposal_action_payload(proposal, decision)
-    if decision.action in {"expired", "revoked"}:
-        response.status_code = status.HTTP_409_CONFLICT
-    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return result
 
 
 def _execution_run_payload(
@@ -2171,106 +1845,15 @@ def portfolio_live_execution_mandate(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
-    cfg = settings(request)
     mandate = execution_store(request).live_mandate(user.id)
     broker_status = broker_service(request).status(user.id)
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
-        "operator_enabled": cfg.portfolio_live_execution_enabled,
-        "operator_max_order_notional_rub": cfg.portfolio_live_max_order_rub,
-        "operator_max_daily_notional_rub": cfg.portfolio_live_max_daily_rub,
+        "new_orders_enabled": False,
+        "recovery_only": True,
         "connected_environment": broker_status.environment,
         "connected_account_id": broker_status.account_id,
         "mandate": _live_mandate_payload(mandate),
-        "canary_scope": "deploy_cash_buy_only",
-    }
-
-
-@app.put(
-    "/api/portfolio/live-execution/mandate",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
-)
-def save_portfolio_live_execution_mandate(
-    body: PortfolioLiveMandateBody,
-    request: Request,
-    response: Response,
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
-    require_same_origin(request)
-    user = authenticated_user(request, session_token)
-    _require_current_legal_consent(request, user)
-    cfg = settings(request)
-    if not cfg.portfolio_live_execution_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="live_execution_disabled",
-        )
-    if not body.confirm_live_execution:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="live_execution_confirmation_required",
-        )
-    if body.confirm_public_id != format_public_id(user.public_id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="profile_id_confirmation_mismatch",
-        )
-    if body.max_daily_notional_rub < body.max_order_notional_rub:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="live_daily_cap_below_order_cap",
-        )
-    if (
-        body.max_order_notional_rub > cfg.portfolio_live_max_order_rub
-        or body.max_daily_notional_rub > cfg.portfolio_live_max_daily_rub
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="live_operator_cap_exceeded",
-        )
-    broker_status = broker_service(request).status(user.id)
-    if (
-        not broker_status.connected
-        or broker_status.environment != "prod"
-        or broker_status.account_id != body.account_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="live_account_mismatch",
-        )
-    try:
-        broker_service(request).live_account(user.id)
-        mandate = execution_store(request).create_live_mandate(
-            user.id,
-            account_id=body.account_id,
-            max_order_notional_rub=body.max_order_notional_rub,
-            max_daily_notional_rub=body.max_daily_notional_rub,
-            session_digest=authenticated_session_digest(session_token),
-            expires_at=body.expires_at,
-        )
-    except ExecutionLedgerError as exc:
-        raise _execution_error(exc) from exc
-    except BrokerConnectionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="live_write_access_required",
-        ) from exc
-    except TBankUnavailable as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="live_account_revalidation_unavailable",
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
-
-    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return {
-        "operator_enabled": True,
-        "mandate": _live_mandate_payload(mandate),
-        "canary_scope": "deploy_cash_buy_only",
     }
 
 
@@ -2303,17 +1886,14 @@ def portfolio_executions(
     user = authenticated_user(request, session_token)
     runs = execution_store(request).executions(user.id)
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    cfg = settings(request)
-    modes = ["shadow", "sandbox"]
-    if cfg.portfolio_live_execution_enabled:
-        modes.append("live")
     return {
         "executions": [_execution_run_payload(item) for item in runs],
-        "live_execution_enabled": cfg.portfolio_live_execution_enabled,
+        "new_orders_enabled": False,
+        "recovery_only": True,
+        "has_active_live_execution": execution_store(request).has_active_live_execution(user.id),
         "live_mandate": _live_mandate_payload(
             execution_store(request).live_mandate(user.id)
         ),
-        "modes": modes,
     }
 
 
@@ -2348,47 +1928,16 @@ def portfolio_execution(
             }
             for event in events
         ],
-        "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
+        "new_orders_enabled": False,
+        "recovery_only": True,
     }
 
 
 @app.post(
-    "/api/portfolio/executions",
-    status_code=status.HTTP_201_CREATED,
+    "/api/portfolio/executions/{run_id}/reconcile",
     responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
 )
-def create_portfolio_execution(
-    body: PortfolioExecutionBody,
-    request: Request,
-    response: Response,
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
-    require_same_origin(request)
-    user = authenticated_user(request, session_token)
-    _require_current_legal_consent(request, user)
-    try:
-        run, legs = execution_service(request).start(
-            user.id,
-            proposal_id=body.proposal_id,
-            proposal_version=body.proposal_version,
-            proposal_hash=parse_proposal_hash(body.proposal_hash),
-            mode=body.mode,
-            session_digest=authenticated_session_digest(session_token),
-        )
-    except (ExecutionLedgerError, ExecutionServiceError, ValueError) as exc:
-        raise _execution_error(exc) from exc
-    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return {
-        "execution": _execution_run_payload(run, legs),
-        "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
-    }
-
-
-@app.post(
-    "/api/portfolio/executions/{run_id}/advance",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
-)
-def advance_portfolio_execution(
+def reconcile_portfolio_execution(
     run_id: UUID,
     request: Request,
     response: Response,
@@ -2398,13 +1947,18 @@ def advance_portfolio_execution(
     user = authenticated_user(request, session_token)
     _require_current_legal_consent(request, user)
     try:
-        run, legs = execution_service(request).advance(user.id, run_id)
+        run, legs = execution_service(request).reconcile(user.id, run_id)
     except (ExecutionLedgerError, ExecutionServiceError, ValueError) as exc:
         raise _execution_error(exc) from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(status_code=409, detail=_TBANK_CREDENTIAL_REJECTED_DETAIL) from exc
+    if authenticated_user(request, session_token).id != user.id:
+        raise HTTPException(status_code=409, detail="execution_account_context_changed")
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
         "execution": _execution_run_payload(run, legs),
-        "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
+        "new_orders_enabled": False,
+        "recovery_only": True,
     }
 
 
@@ -2425,42 +1979,15 @@ def cancel_portfolio_execution(
         run, legs = execution_service(request).cancel(user.id, run_id)
     except (ExecutionLedgerError, ExecutionServiceError, ValueError) as exc:
         raise _execution_error(exc) from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(status_code=409, detail=_TBANK_CREDENTIAL_REJECTED_DETAIL) from exc
+    if authenticated_user(request, session_token).id != user.id:
+        raise HTTPException(status_code=409, detail="execution_account_context_changed")
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     return {
         "execution": _execution_run_payload(run, legs),
-        "live_execution_enabled": settings(request).portfolio_live_execution_enabled,
-    }
-
-
-@app.get(
-    "/api/portfolio/intelligence",
-    responses={
-        401: {"description": "Authenticated session required"},
-        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-    },
-)
-def portfolio_intelligence(
-    request: Request,
-    response: Response,
-    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> dict[str, object]:
-    user = authenticated_user(request, session_token)
-    snapshot = portfolio_store(request).latest_intelligence(user.id)
-    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    if snapshot is None:
-        return {
-            "status": "pending",
-            "execution_enabled": False,
-            "rating_feed_status": "data_missing",
-            "rating_sources": rating_source_references(),
-            "risks": [],
-            "payouts": [],
-            "sources": [],
-        }
-    return {
-        "status": "observed",
-        "rating_sources": rating_source_references(),
-        **snapshot,
+        "new_orders_enabled": False,
+        "recovery_only": True,
     }
 
 
@@ -2603,12 +2130,24 @@ def connect_tbank(
             detail="broker credential storage unavailable",
         ) from exc
 
+    current = authenticated_user(request, session_token)
+    if current.id != user.id:
+        raise HTTPException(status_code=409, detail="profile_context_changed")
+    _require_current_legal_consent(request, current)
+    try:
+        refresh = portfolio_refresh(request).request(user.id)
+    except PortfolioRefreshBusy:
+        # The connection was persisted successfully; admission saturation only
+        # postpones its initial read-only observation.
+        refresh = {"status": "busy", "retry_after_seconds": 2}
+
     return {
         "connected": connection.connected,
         "environment": connection.environment,
         "account_id": connection.account_id,
         "account_name": connection.account_name,
         "verified_at": connection.verified_at,
+        "refresh": refresh,
     }
 
 

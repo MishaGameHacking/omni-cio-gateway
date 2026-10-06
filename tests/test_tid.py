@@ -127,6 +127,7 @@ def test_tid_identity_comes_only_from_authenticated_userinfo_and_headers_are_bou
 
 @pytest.mark.parametrize("subject", [None, 701, "", " ", "bad\nsubject", "x" * 129])
 def test_tid_rejects_missing_or_unstable_provider_subject(subject: object) -> None:
+    client = provider()
     with (
         patch.object(
             TIDClient,
@@ -138,11 +139,12 @@ def test_tid_rejects_missing_or_unstable_provider_subject(subject: object) -> No
         ),
         pytest.raises(TIDRejected, match="tid_subject_invalid"),
     ):
-        provider().exchange_code(code="test-code", code_verifier="v" * 64)
+        client.exchange_code(code="test-code", code_verifier="v" * 64)
 
 
 @pytest.mark.parametrize("status", [302, 401, 500])
 def test_tid_never_follows_redirects_or_leaks_provider_error_body(status: int) -> None:
+    client = provider()
     response = Mock(status=status)
     response.read.return_value = b"private-provider-error-and-token"
     connection = Mock()
@@ -152,7 +154,7 @@ def test_tid_never_follows_redirects_or_leaks_provider_error_body(status: int) -
         patch("omnicio.tid.http.client.HTTPSConnection", return_value=connection) as factory,
         pytest.raises(expected) as error,
     ):
-        provider().exchange_code(code="test-code", code_verifier="v" * 64)
+        client.exchange_code(code="test-code", code_verifier="v" * 64)
     factory.assert_called_once()
     connection.request.assert_called_once()
     assert "private-provider" not in str(error.value)
@@ -160,6 +162,7 @@ def test_tid_never_follows_redirects_or_leaks_provider_error_body(status: int) -
 
 
 def test_tid_rejects_large_response_and_unconfigured_or_unregistered_callback() -> None:
+    client = provider()
     response = Mock(status=200)
     response.read.return_value = b"x" * 65537
     connection = Mock()
@@ -168,7 +171,7 @@ def test_tid_rejects_large_response_and_unconfigured_or_unregistered_callback() 
         patch("omnicio.tid.http.client.HTTPSConnection", return_value=connection),
         pytest.raises(TIDUnavailable, match="too_large"),
     ):
-        provider().exchange_code(code="test-code", code_verifier="v" * 64)
+        client.exchange_code(code="test-code", code_verifier="v" * 64)
     with patch("omnicio.tid.http.client.HTTPSConnection") as factory:
         for client in (
             replace(provider(), client_secret=""),
@@ -236,7 +239,8 @@ def auth_http() -> Iterator[AuthHTTP]:
     claimed: set[bytes] = set()
 
     def claim(digest: bytes, provider_name: str, ttl: int) -> bool:
-        assert provider_name in {"tid", "vkid"} and ttl == 600
+        assert provider_name in {"tid", "vkid"}
+        assert ttl == 600
         if digest in claimed:
             return False
         claimed.add(digest)
@@ -315,7 +319,8 @@ def test_oauth_callback_consumes_state_once_and_never_uses_browser_subject(
     first = callback(
         auth_http, state, cookie, provider_name=provider_name, extra={"sub": str(OTHER.id)}
     )
-    assert first.status_code == 303 and first.headers["location"] == "/?auth=success"
+    assert first.status_code == 303
+    assert first.headers["location"] == "/?auth=success"
     assert first.headers["referrer-policy"] == "no-referrer"
     assert first.cookies["omnicio_session"] == "new-session-token"
     complete = getattr(auth_http.auth, f"complete_{provider_name}_login")
