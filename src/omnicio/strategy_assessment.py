@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from .freshness import PORTFOLIO_MAX_AGE
 from .portfolio import PortfolioAnalysis, SecurityExposure
@@ -42,6 +43,8 @@ class IssuerEvidence:
     group_id: str
     source_url: str
     verified_at: datetime
+    mapping_source_url: str
+    group_source_url: str
 
 
 _METHOD_REQUIREMENTS: dict[str, tuple[str, ...]] = {
@@ -251,38 +254,63 @@ def _cash_checks(
     return cash, checks
 
 
+def _source_url(value: str) -> bool:
+    """Check stored provenance syntax, not assert that an arbitrary site is official."""
+    try:
+        url = urlsplit(value)
+        return (
+            url.scheme == "https"
+            and bool(url.hostname)
+            and url.port in {None, 443}
+            and url.username is None
+            and url.password is None
+        )
+    except ValueError:
+        return False
+
+
+def _verified_mappings(
+    mappings: Sequence[IssuerEvidence],
+    now: datetime,
+) -> dict[str, IssuerEvidence]:
+    seen: set[str] = set()
+    result = {}
+    for mapping in mappings:
+        if mapping.instrument_uid in seen:
+            raise ValueError("strategy_ambiguous_issuer")
+        seen.add(mapping.instrument_uid)
+        if (
+            mapping.issuer_id
+            and _source_url(mapping.source_url)
+            and _source_url(mapping.mapping_source_url)
+            and _fresh(mapping.verified_at, now, _IDENTITY_MAX_AGE)
+        ):
+            result[mapping.instrument_uid] = mapping
+    return result
+
+
 def _identity_totals(
     positions: Sequence[SecurityExposure],
     mappings: Sequence[IssuerEvidence],
     now: datetime,
 ) -> tuple[dict[str, Decimal], dict[str, Decimal], bool, bool]:
-    by_uid: dict[str, IssuerEvidence] = {}
-    for mapping in mappings:
-        if mapping.instrument_uid in by_uid:
-            raise ValueError("strategy_ambiguous_issuer")
-        if mapping.source_url.startswith("https://") and _fresh(
-            mapping.verified_at, now, _IDENTITY_MAX_AGE
-        ):
-            by_uid[mapping.instrument_uid] = mapping
+    by_uid = _verified_mappings(mappings, now)
     issuers: dict[str, Decimal] = defaultdict(Decimal)
     groups: dict[str, Decimal] = defaultdict(Decimal)
     issuer_complete = group_complete = True
     for item in positions:
-        if _amount(item.value_rub) == 0:
+        value = _amount(item.value_rub)
+        if value == 0:
             continue
         row = by_uid.get(item.uid)
-        if row is None or not row.issuer_id or item.instrument_type == "etf":
-            issuer_complete = group_complete = False
-            continue
-        value = _amount(item.value_rub)
-        if value is None:
+        if row is None or value is None or item.instrument_type == "etf":
             issuer_complete = group_complete = False
             continue
         issuers[row.issuer_id] += value
-        if not row.group_id:
-            group_complete = False
-        else:
+        if row.group_id and _source_url(row.group_source_url):
             groups[row.group_id] += value
+        else:
+            group_complete = False
     return dict(issuers), dict(groups), issuer_complete, group_complete
 
 
@@ -356,15 +384,11 @@ def rating_notch(rating: TBankRating, now: datetime) -> str | None:
     return level if level in RATING_LEVELS[:21] or level == "D" else None
 
 
-def _rating_checks(
-    data: Mapping[str, Any],
+def _rating_totals(
     positions: Sequence[SecurityExposure],
     ratings: Mapping[str, Sequence[TBankRating]],
-    *,
-    nav: Decimal,
-    complete: bool,
     now: datetime,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[dict[str, Decimal], list[dict[str, Any]]]:
     amounts = dict.fromkeys(RATING_LEVELS, _ZERO)
     rows: list[dict[str, Any]] = []
     for item in positions:
@@ -393,6 +417,19 @@ def _rating_checks(
                 ],
             }
         )
+    return amounts, rows
+
+
+def _rating_checks(
+    data: Mapping[str, Any],
+    positions: Sequence[SecurityExposure],
+    ratings: Mapping[str, Sequence[TBankRating]],
+    *,
+    nav: Decimal,
+    complete: bool,
+    now: datetime,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    amounts, rows = _rating_totals(positions, ratings, now)
     below = sum((amounts[key] for key in RATING_LEVELS[10:24]), _ZERO)
     policy = data["policy"]
     checks = [
@@ -416,15 +453,16 @@ def _rating_checks(
         ),
     ]
     allowed = data["profile"]["allow_below_investment_grade"]
+    permission_state: _State = "unknown"
+    if below > 0 and not allowed:
+        permission_state = "blocked"
+    elif complete and amounts["NR"] == 0:
+        permission_state = "evaluated"
     checks.append(
         _check(
             "allow_below_investment_grade",
             "Разрешение повышенного кредитного риска",
-            "blocked"
-            if below > 0 and not allowed
-            else "evaluated"
-            if complete and amounts["NR"] == 0
-            else "unknown",
+            permission_state,
             "Разрешение учитывается независимо от процентного лимита. Не включает торговые права.",
             value=allowed,
             limit=policy["max_below_grade_percent"],
@@ -446,13 +484,11 @@ def _rating_checks(
     return checks, rows
 
 
-def _term_checks(
-    data: Mapping[str, Any],
-    positions: Sequence[SecurityExposure],
+def _maturity_terms(
+    bonds: Sequence[SecurityExposure],
     metadata: Mapping[str, TBankInstrumentMetadata],
     now: datetime,
-) -> list[dict[str, Any]]:
-    bonds = [p for p in positions if p.instrument_type == "bond" and _amount(p.value_rub) != 0]
+) -> tuple[list[Decimal], bool]:
     terms = []
     covered = all(_amount(position.value_rub) is not None for position in bonds)
     for position in bonds:
@@ -461,40 +497,71 @@ def _term_checks(
             covered = False
             continue
         days = Decimal(str((info.maturity_date - now).total_seconds())) / Decimal("86400")
-        if days <= 0 or info.perpetual is not False:
-            covered = False
+        covered = covered and days > 0 and info.perpetual is False
         terms.append(days)
-    checks = []
-    for key, title in (("horizon_months", "Горизонт"), ("max_term_months", "Срок облигаций")):
-        section = "profile" if key == "horizon_months" else "policy"
-        months = _amount(data[section][key])
-        state: _State = "unknown"
-        detail = "Неизвестны срок или условия погашения. Дата погашения не обещает возврат денег."
-        if not bonds:
-            state, detail = "inapplicable", "Сейчас нет оценённых облигаций для сравнения срока."
-        elif months is not None:
-            # Compare calendar dates, not an invented 30-day financial month.
-            limit_month = now.year * 12 + now.month - 1 + int(months)
-            year, month0 = divmod(limit_month, 12)
-            if year <= 9999:
-                end = now.replace(
-                    year=year,
-                    month=month0 + 1,
-                    day=min(now.day, calendar.monthrange(year, month0 + 1)[1]),
-                )
-                max_days = Decimal(str((end - now).total_seconds())) / Decimal("86400")
-                if any(days > max_days for days in terms):
-                    state, detail = (
-                        "blocked",
-                        "Есть погашения позже выбранного срока. Продажа не выполняется.",
-                    )
-                elif covered:
-                    state, detail = (
-                        "evaluated",
-                        "Известные даты погашения укладываются в выбранный срок.",
-                    )
-        checks.append(_check(key, title, state, detail, limit=_text(months), sources=("catalog",)))
-    return checks
+    return terms, covered
+
+
+def _calendar_days(months: Decimal, now: datetime) -> Decimal | None:
+    limit_month = now.year * 12 + now.month - 1 + int(months)
+    year, month0 = divmod(limit_month, 12)
+    if year > 9999:
+        return None
+    end = now.replace(
+        year=year, month=month0 + 1, day=min(now.day, calendar.monthrange(year, month0 + 1)[1])
+    )
+    return Decimal(str((end - now).total_seconds())) / Decimal("86400")
+
+
+def _term_check(
+    key: str,
+    title: str,
+    months: Decimal | None,
+    terms: Sequence[Decimal],
+    *,
+    has_bonds: bool,
+    covered: bool,
+    now: datetime,
+) -> dict[str, Any]:
+    state: _State = "unknown"
+    detail = "Неизвестны срок или условия погашения. Дата погашения не обещает возврат денег."
+    max_days = _calendar_days(months, now) if months is not None else None
+    if not has_bonds:
+        state, detail = "inapplicable", "Сейчас нет оценённых облигаций для сравнения срока."
+    elif max_days is not None:
+        if any(days > max_days for days in terms):
+            state, detail = (
+                "blocked",
+                "Есть погашения позже выбранного срока. Продажа не выполняется.",
+            )
+        elif covered:
+            state, detail = "evaluated", "Известные даты погашения укладываются в выбранный срок."
+    return _check(key, title, state, detail, limit=_text(months), sources=("catalog",))
+
+
+def _term_checks(
+    data: Mapping[str, Any],
+    positions: Sequence[SecurityExposure],
+    metadata: Mapping[str, TBankInstrumentMetadata],
+    now: datetime,
+) -> list[dict[str, Any]]:
+    bonds = [p for p in positions if p.instrument_type == "bond" and _amount(p.value_rub) != 0]
+    terms, covered = _maturity_terms(bonds, metadata, now)
+    return [
+        _term_check(
+            key,
+            title,
+            _amount(data[section][key]),
+            terms,
+            has_bonds=bool(bonds),
+            covered=covered,
+            now=now,
+        )
+        for key, title, section in (
+            ("horizon_months", "Горизонт", "profile"),
+            ("max_term_months", "Срок облигаций", "policy"),
+        )
+    ]
 
 
 def _dependent_checks(data: Mapping[str, Any], nav: Decimal) -> list[dict[str, Any]]:
@@ -580,6 +647,67 @@ def _dependent_checks(data: Mapping[str, Any], nav: Decimal) -> list[dict[str, A
     return checks
 
 
+def _class_checks(
+    data: Mapping[str, Any],
+    totals: Mapping[str, Decimal],
+    nav: Decimal,
+    complete: bool,
+) -> list[dict[str, Any]]:
+    checks = []
+    for kind, key in _CLASS_CAP.items():
+        checks.append(
+            _ceiling(
+                key,
+                {"shares": "Акции", "bonds": "Облигации", "funds": "Фонды"}[kind],
+                totals[kind],
+                data["policy"][key],
+                nav=nav,
+                complete=complete,
+                sources=("portfolio",),
+            )
+        )
+        cap = _amount(data["policy"][key])
+        if cap is not None and Decimal(data["allocation"][kind]) > cap:
+            checks.append(
+                _check(
+                    "target_conflict." + kind,
+                    "Цель и верхний предел",
+                    "blocked",
+                    "Целевая доля выше максимальной. Система не изменяет ограничения за вас.",
+                    value=data["allocation"][kind],
+                    limit=data["policy"][key],
+                )
+            )
+    return checks
+
+
+def _flag_checks(
+    data: Mapping[str, Any],
+    totals: Mapping[str, Decimal],
+    complete: bool,
+) -> list[dict[str, Any]]:
+    checks = []
+    for key in ("locked", "excluded"):
+        state: _State = "evaluated" if complete else "unknown"
+        if key == "locked":
+            state = "inapplicable"
+        if key == "excluded" and any(totals[k] > 0 for k in data[key]):
+            state = "blocked"
+        checks.append(
+            _check(
+                key,
+                "Закреплённые доли" if key == "locked" else "Запрещённые классы",
+                state,
+                "Замки управляют редактированием долей, а не блокировкой бумаг у брокера."
+                if key == "locked"
+                else "Запрет относится к новым покупкам. Имеющиеся позиции не продаются.",
+                value=data[key],
+                sources=("saved_strategy", "portfolio"),
+            )
+        )
+    return checks
+
+
 def assess_strategy_account(
     document: object,
     *,
@@ -617,30 +745,7 @@ def assess_strategy_account(
     ]
     cash, cash_checks = _cash_checks(data, analysis, nav)
     checks.extend(cash_checks)
-    for kind, key in _CLASS_CAP.items():
-        checks.append(
-            _ceiling(
-                key,
-                {"shares": "Акции", "bonds": "Облигации", "funds": "Фонды"}[kind],
-                totals[kind],
-                data["policy"][key],
-                nav=nav,
-                complete=complete,
-                sources=("portfolio",),
-            )
-        )
-        cap = _amount(data["policy"][key])
-        if cap is not None and Decimal(data["allocation"][kind]) > cap:
-            checks.append(
-                _check(
-                    "target_conflict." + kind,
-                    "Цель и верхний предел",
-                    "blocked",
-                    "Целевая доля выше максимальной. Система не изменяет ограничения за вас.",
-                    value=data["allocation"][kind],
-                    limit=data["policy"][key],
-                )
-            )
+    checks.extend(_class_checks(data, totals, nav, complete))
     checks.extend(
         _concentration_checks(data, known, mappings, nav=nav, complete=complete, now=observed)
     )
@@ -658,24 +763,7 @@ def assess_strategy_account(
             sources=("portfolio",),
         )
     )
-    for key in ("locked", "excluded"):
-        state: _State = (
-            "inapplicable" if key == "locked" else "evaluated" if complete else "unknown"
-        )
-        if key == "excluded" and any(totals[k] > 0 for k in data[key]):
-            state = "blocked"
-        checks.append(
-            _check(
-                key,
-                "Закреплённые доли" if key == "locked" else "Запрещённые классы",
-                state,
-                "Замки управляют редактированием долей, а не блокировкой бумаг у брокера."
-                if key == "locked"
-                else "Запрет относится к новым покупкам. Имеющиеся позиции не продаются.",
-                value=data[key],
-                sources=("saved_strategy", "portfolio"),
-            )
-        )
+    checks.extend(_flag_checks(data, totals, complete))
     rating_checks, rating_rows = _rating_checks(
         data,
         known,

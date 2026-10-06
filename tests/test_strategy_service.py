@@ -180,7 +180,8 @@ def test_mutation_during_read_never_releases_stale_or_revoked_data(runtime, chan
     broker.strategy_observation.side_effect = read
     response = client().post(PATH, headers=ORIGIN, json=BODY)
     assert response.status_code in {401, 409, 503}
-    assert "nav_rub" not in response.text and "synthetic-a" not in response.text
+    assert "nav_rub" not in response.text
+    assert "synthetic-a" not in response.text
     assert response.headers["Cache-Control"] == "private, no-store"
 
 
@@ -199,7 +200,8 @@ def test_failure_is_safe_and_never_fabricates_zero(runtime, error, status):
     broker.strategy_observation.side_effect = error
     response = client().post(PATH, headers=ORIGIN, json=BODY)
     assert response.status_code == status
-    assert "hidden" not in response.text and "nav_rub" not in response.text
+    assert "hidden" not in response.text
+    assert "nav_rub" not in response.text
     if status == 429:
         assert response.headers["Retry-After"] == "10"
 
@@ -223,3 +225,46 @@ def test_missing_draft_has_no_network_or_default_save(runtime):
     assert result == {"status": "draft_required", "execution_enabled": False}
     broker.strategy_observation.assert_not_called()
     store.save_strategy_draft.assert_not_called()
+
+
+@pytest.mark.parametrize("prefix", ["issuer", "mapping", "group"])
+@pytest.mark.parametrize("bad", ["missing", "naive", "future", "stale"])
+def test_relationship_times_are_independent_and_never_borrowed(runtime, prefix, bad):
+    _, store, _, _, _ = runtime
+    now = datetime.now(UTC)
+    row = {"instrument_uid": "bond-a", "issuer_id": "issuer", "group_id": "group"}
+    for name in ("issuer", "mapping", "group"):
+        row[name + "_source_url"] = "https://issuer.example/" + name
+        row[name + "_verified_at"] = now
+        row[name + "_effective_at"] = now
+    invalid = {
+        "missing": None,
+        "naive": now.replace(tzinfo=None),
+        "future": now + timedelta(days=1),
+        "stale": now - timedelta(days=31),
+    }[bad]
+    row[prefix + "_verified_at"] = invalid
+    store.latest_balancing_context.return_value = {"account_id": "synthetic-a", "holdings": [row]}
+    response = client().post(PATH, headers=ORIGIN, json=BODY)
+    assert response.status_code == 200
+    values = {item["key"]: item["state"] for item in response.json()["checks"]}
+    assert values["max_group_percent"] == "unknown"
+    if prefix != "group":
+        assert values["max_issuer_percent"] == "unknown"
+
+
+def test_relationship_producer_preserves_three_sources(runtime):
+    from omnicio.strategy_service import _issuer_mappings
+
+    now = datetime.now(UTC)
+    row = {"instrument_uid": "bond-a", "issuer_id": "issuer", "group_id": "group"}
+    for name in ("issuer", "mapping", "group"):
+        row[name + "_source_url"] = "https://issuer.example/" + name
+        row[name + "_verified_at"] = now
+        row[name + "_effective_at"] = now
+    context = {"account_id": "synthetic-a", "holdings": [row]}
+    (mapping,) = _issuer_mappings(context, "synthetic-a")
+    assert mapping.source_url.endswith("/issuer")
+    assert mapping.mapping_source_url.endswith("/mapping")
+    assert mapping.group_source_url.endswith("/group")
+    assert _issuer_mappings(context, "synthetic-b") == ()

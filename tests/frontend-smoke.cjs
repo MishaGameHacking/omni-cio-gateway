@@ -883,6 +883,8 @@ const verifyAccountAssessment = async (send, evaluate, fixture) => {
   };
   const result = () => evaluate('document.querySelector("#strategy-account-result").textContent');
   const saved = async () => assert.equal(await waitUntil(() => evaluate('document.querySelector(".strategy-savebar [role=status]").textContent.includes("сохранён в аккаунте")')), true);
+  await click('[data-strategy-tab="0"]');
+  assert.equal(await waitUntil(() => evaluate('!document.querySelector("[data-choose-strategy=income]").disabled')), true);
   await click('[data-choose-strategy="income"]'); await saved();
   await click('[data-strategy-tab="4"]');
   const originalVersion = fixture.state.selection.version;
@@ -914,6 +916,18 @@ const verifyAccountAssessment = async (send, evaluate, fixture) => {
   await click('#strategy-check-account');
   assert.equal(await waitUntil(async () => (await result()).includes("Стоимость счёта")), true);
   assert.equal(fixture.state.accountReads.at(-1).expected_version, fixture.state.selection.version);
+  fixture.state.holdAssessment = true;
+  await click('#strategy-check-account');
+  assert.equal(await waitUntil(() => fixture.state.waitingAssessments.length === 1), true);
+  await click('[data-strategy-reload]');
+  assert.equal(await waitUntil(() => evaluate('document.querySelector(".strategy-savebar [role=status]").textContent.includes("загружен из аккаунта")')), true);
+  fixture.state.holdAssessment = false;
+  fixture.state.waitingAssessments.splice(0).forEach((release) => release());
+  assert.equal(await waitUntil(() => evaluate('!document.querySelector("#strategy-check-account").disabled')), true, "Reload during account read always restores the control");
+  assert.equal((await result()).includes("Стоимость счёта"), false, "Reload never promotes stale response");
+  await click('#strategy-check-account');
+  assert.equal(await waitUntil(async () => (await result()).includes("Стоимость счёта")), true);
+
   assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'), true, "Account assessment fits the viewport");
   console.log("Strategy real-account consumer: exact values, no client capital, no writes, failure/retry and late-reply invalidation verified");
 };
@@ -1029,7 +1043,7 @@ const run = async (url, width) => {
     await evaluate(`document.querySelector('[data-strategy-tab="0"]').click()`);
     await screenshot("strategy-catalog");
     const accountIdentity = "strategy-account-" + width;
-    await visit(url + "?synthetic=1&session=" + accountIdentity);
+    await visit(url + "?synthetic=1&catalog=1&session=" + accountIdentity);
     assert.equal(await waitUntil(() => evaluate('document.querySelectorAll("[data-choose-strategy]").length === 10')), true);
     await verifyAccountAssessment(send, evaluate, syntheticSessions.get(accountIdentity));
     await screenshot("strategy-account-assessment");

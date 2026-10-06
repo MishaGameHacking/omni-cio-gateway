@@ -153,9 +153,6 @@ class BrokerService:
         self.tbank = tbank
         self._instrument_evidence_lock = threading.Lock()
         self._next_instrument_evidence_at = 0.0
-        self._strategy_read_lock = threading.Lock()
-        self._strategy_reads: dict[UUID, float] = {}
-        self._strategy_inflight: set[UUID] = set()
 
     def preview_accounts(
         self,
@@ -710,20 +707,10 @@ class BrokerService:
         self, user_id: UUID,
     ) -> tuple[BrokerObservationBundle, dict[str, tuple[TBankRating, ...]]]:
         """One bounded read per owner; other owners cannot observe its results."""
-        with self._strategy_read_lock:
-            now = time.monotonic()
-            self._strategy_reads = {
-                owner: when for owner, when in self._strategy_reads.items() if now - when < 10
-            }
-            if user_id in self._strategy_inflight or user_id in self._strategy_reads:
+        with self.database.strategy_assessment_slot(user_id) as admitted:
+            if not admitted:
                 raise BrokerAssessmentBusy("strategy_assessment_busy")
-            self._strategy_reads[user_id] = now
-            self._strategy_inflight.add(user_id)
-        try:
             return self._strategy_observation(user_id)
-        finally:
-            with self._strategy_read_lock:
-                self._strategy_inflight.discard(user_id)
 
     def _strategy_observation(
         self, user_id: UUID,

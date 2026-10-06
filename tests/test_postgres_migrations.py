@@ -55,6 +55,7 @@ ACCEPTED_MIGRATION_SHA256 = {
     "0011_portfolio_live_execution.sql": (
         "9ce5a36321cb88542b46cca33e6ebe5e1a65f4bf84e0bf00598af262a5550dc8"
     ),
+    "0012_strategy_drafts.sql": "eb025bbd52f34398ed4d394b26639ffe82076f9a4b2826f56aa15fdff1df0dd5",
 }
 USER_ONE = UUID("00000000-0000-0000-0000-000000000101")
 USER_TWO = UUID("00000000-0000-0000-0000-000000000102")
@@ -172,7 +173,7 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     reason="ephemeral PostgreSQL is required for migration integration coverage",
 )
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0012_strategy_drafts.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0013_strategy_assessment_admission.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
@@ -186,6 +187,12 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
 
         admin.execute(
             (ROOT / "migrations" / "0012_strategy_drafts.sql").read_text(encoding="utf-8")
+        )
+
+        admin.execute(
+            (ROOT / "migrations" / "0013_strategy_assessment_admission.sql").read_text(
+                encoding="utf-8"
+            )
         )
 
         table_names = {

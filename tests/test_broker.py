@@ -4,6 +4,7 @@ import io
 import json
 import ssl
 import urllib.error
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
@@ -1969,6 +1970,11 @@ def _strategy_broker():
         user_id=user_id, credential="t.fake-owner-credential-1234567890",
         environment="prod", account_id="account-1", terms_version="2026-10-01-v2",
     )
+    @contextmanager
+    def slot(owner):
+        assert owner == user_id
+        yield True
+    database.strategy_assessment_slot = slot
     return service, database, broker, user_id
 
 
@@ -2020,23 +2026,29 @@ def test_strategy_rating_read_discards_changed_connection(monkeypatch, mutation)
     monkeypatch.setattr(service, "_paced_evidence_read", lambda fn, *args: fn(*args))
     with pytest.raises(BrokerConnectionError):
         service.strategy_observation(owner)
-    assert owner not in service._strategy_inflight
 
 
-def test_strategy_read_singleflight_is_per_owner_and_released_on_error(monkeypatch):
+def test_strategy_read_uses_shared_admission_and_releases_on_error(monkeypatch):
     from omnicio.broker import BrokerAssessmentBusy
 
-    service, _, _, owner = _strategy_broker()
-    def read(user):
-        with pytest.raises(BrokerAssessmentBusy):
-            service.strategy_observation(owner)
-        with pytest.raises(BrokerNotConnected):
-            service._connected_credential(UUID(int=2))
-        assert UUID(int=2) not in service._strategy_inflight
-        raise TBankUnavailable("synthetic failure")
+    service, database, _, owner = _strategy_broker()
+    state = {"admitted": False, "released": False}
+    @contextmanager
+    def slot(user):
+        assert user == owner
+        try:
+            yield state["admitted"]
+        finally:
+            state["released"] = True
+    database.strategy_assessment_slot = slot
+    read = Mock(side_effect=TBankUnavailable("synthetic failure"))
     monkeypatch.setattr(service, "_strategy_observation", read)
-    with pytest.raises(TBankUnavailable):
-        service.strategy_observation(owner)
-    assert owner not in service._strategy_inflight
     with pytest.raises(BrokerAssessmentBusy):
         service.strategy_observation(owner)
+    read.assert_not_called()
+    assert state["released"] is True
+    state.update(admitted=True, released=False)
+    with pytest.raises(TBankUnavailable):
+        service.strategy_observation(owner)
+    assert state["released"] is True
+    read.assert_called_once_with(owner)

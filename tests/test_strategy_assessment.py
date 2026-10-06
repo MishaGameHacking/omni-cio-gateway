@@ -180,13 +180,11 @@ def test_incoherent_snapshot_is_rejected(analysis):
 
 @pytest.mark.parametrize("age", [-1, 300, 3600])
 def test_future_and_stale_snapshots_cannot_be_refreshed_by_relabelling(age):
+    data = document()
+    analysis = snapshot(position())
+    captured = NOW - timedelta(seconds=age)
     with pytest.raises(ValueError, match="not_fresh"):
-        assess_strategy_account(
-            document(),
-            analysis=snapshot(position()),
-            captured_at=NOW - timedelta(seconds=age),
-            now=NOW,
-        )
+        assess_strategy_account(data, analysis=analysis, captured_at=captured, now=NOW)
 
 
 def test_zero_confirmed_capital_is_not_a_zero_division_or_a_purchase():
@@ -196,16 +194,26 @@ def test_zero_confirmed_capital_is_not_a_zero_division_or_a_purchase():
 
 
 def test_duplicate_positions_or_metadata_fail_closed():
+    duplicate = snapshot(position(), position(), cash="80000")
+    duplicate_metadata = (metadata(), metadata())
     with pytest.raises(ValueError, match="duplicate_position"):
-        run(analysis=snapshot(position(), position(), cash="80000"))
+        run(analysis=duplicate)
     with pytest.raises(ValueError, match="ambiguous_metadata"):
-        run(metadata=(metadata(), metadata()))
+        run(metadata=duplicate_metadata)
 
 
 def test_verified_same_issuer_and_group_are_aggregated_not_counted_as_diversification():
     positions = (position("a", value="4000"), position("b", value="4000"))
     mappings = tuple(
-        IssuerEvidence(uid, "issuer", "group", "https://issuer.example/report", NOW)
+        IssuerEvidence(
+            uid,
+            "issuer",
+            "group",
+            "https://issuer.example/report",
+            NOW,
+            "https://issuer.example/issue",
+            "https://issuer.example/group",
+        )
         for uid in ("a", "b")
     )
     result = run(analysis=snapshot(*positions, cash="92000"), mappings=mappings)
@@ -218,7 +226,15 @@ def test_verified_same_issuer_and_group_are_aggregated_not_counted_as_diversific
 
 @pytest.mark.parametrize("when", [NOW - timedelta(days=31), NOW + timedelta(seconds=1)])
 def test_missing_stale_and_future_mapping_never_pass_group_cap(when):
-    mapping = IssuerEvidence("bond-a", "issuer", "group", "https://issuer.example/report", when)
+    mapping = IssuerEvidence(
+        "bond-a",
+        "issuer",
+        "group",
+        "https://issuer.example/report",
+        when,
+        "https://issuer.example/issue",
+        "https://issuer.example/group",
+    )
     result = run(mappings=(mapping,))
     assert checks(result)["max_issuer_percent"]["state"] == "unknown"
     assert checks(result)["max_group_percent"]["state"] == "unknown"
@@ -339,3 +355,50 @@ def test_unvalued_bond_does_not_pass_term_check():
     )
     assert checks(result)["horizon_months"]["state"] == "unknown"
     assert checks(result)["max_term_months"]["state"] == "unknown"
+
+
+@pytest.mark.parametrize(
+    "field,issuer_state,group_state",
+    [
+        ("source_url", "unknown", "unknown"),
+        ("mapping_source_url", "unknown", "unknown"),
+        ("group_source_url", "evaluated", "unknown"),
+    ],
+)
+@pytest.mark.parametrize(
+    "url",
+    [
+        "",
+        "http://issuer.example/a",
+        "javascript:alert(1)",
+        "https://user:secret@issuer.example/a",
+        "https://x:bad/a",
+    ],
+)
+def test_each_relationship_requires_its_own_source(field, issuer_state, group_state, url):
+    data = document()
+    data["policy"]["max_issuer_percent"] = "20"
+    mapping = IssuerEvidence(
+        "bond-a",
+        "issuer",
+        "group",
+        "https://issuer.example/report",
+        NOW,
+        "https://issuer.example/issue",
+        "https://issuer.example/group",
+    )
+    result = run(data, mappings=(replace(mapping, **{field: url}),))
+    assert checks(result)["max_issuer_percent"]["state"] == issuer_state
+    assert checks(result)["max_group_percent"]["state"] == group_state
+
+
+def test_duplicate_mapping_with_invalid_source_is_still_ambiguous():
+    first = IssuerEvidence("bond-a", "issuer", "group", "", NOW, "", "")
+    duplicate = replace(
+        first,
+        source_url="https://issuer.example/report",
+        mapping_source_url="https://issuer.example/issue",
+    )
+    mappings = (first, duplicate)
+    with pytest.raises(ValueError, match="ambiguous_issuer"):
+        run(mappings=mappings)

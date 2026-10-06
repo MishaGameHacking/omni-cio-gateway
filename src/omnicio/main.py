@@ -1086,6 +1086,7 @@ def save_strategy_draft(
     "/api/profile/strategy/account-assessment",
     responses={
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        429: {"description": "An account assessment is already running or cooling down"},
         503: {"description": "Account evidence is unavailable or not coherent"},
     },
 )
@@ -1109,7 +1110,7 @@ def strategy_account_assessment(
         raise HTTPException(status_code=409, detail=_TBANK_NOT_CONNECTED_DETAIL) from exc
     except TBankTokenRejected as exc:
         raise HTTPException(status_code=409, detail=_TBANK_CREDENTIAL_REJECTED_DETAIL) from exc
-    except (BrokerConnectionError, TBankUnavailable, SecurityValueError, ValueError) as exc:
+    except (BrokerConnectionError, TBankUnavailable, ValueError) as exc:
         raise HTTPException(
             status_code=503, detail="strategy_account_evidence_unavailable",
         ) from exc

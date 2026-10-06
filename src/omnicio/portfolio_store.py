@@ -2594,6 +2594,8 @@ class PortfolioStore:
                     COALESCE(i.source_url, '') AS issuer_source_url,
                     i.verified_at AS issuer_verified_at,
                     i.effective_at AS issuer_effective_at,
+                    COALESCE(m.source_url, '') AS mapping_source_url,
+                    COALESCE(g.source_url, '') AS group_source_url,
                     m.verified_at AS mapping_verified_at,
                     m.effective_at AS mapping_effective_at,
                     g.verified_at AS group_verified_at,

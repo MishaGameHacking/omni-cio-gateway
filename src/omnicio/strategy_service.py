@@ -20,6 +20,37 @@ from .strategy import document_hash, normalize_document
 from .strategy_assessment import IssuerEvidence, assess_strategy_account
 
 
+def _identity_time(row: Mapping[str, Any], prefix: str, now: datetime) -> datetime | None:
+    verified = row.get(prefix + "_verified_at")
+    effective = row.get(prefix + "_effective_at")
+    if not (
+        isinstance(verified, datetime)
+        and verified.tzinfo is not None
+        and timedelta(0) <= now - verified < timedelta(days=30)
+    ):
+        return None
+    if not (isinstance(effective, datetime) and effective.tzinfo is not None and effective <= now):
+        return None
+    return verified
+
+
+def _issuer_mapping(row: Mapping[str, Any], now: datetime) -> IssuerEvidence | None:
+    issuer_time = _identity_time(row, "issuer", now)
+    mapping_time = _identity_time(row, "mapping", now)
+    if issuer_time is None or mapping_time is None:
+        return None
+    group_time = _identity_time(row, "group", now)
+    return IssuerEvidence(
+        instrument_uid=str(row.get("instrument_uid") or ""),
+        issuer_id=str(row.get("issuer_id") or ""),
+        group_id=str(row.get("group_id") or "") if group_time is not None else "",
+        source_url=str(row.get("issuer_source_url") or ""),
+        mapping_source_url=str(row.get("mapping_source_url") or ""),
+        group_source_url=str(row.get("group_source_url") or ""),
+        verified_at=min(issuer_time, mapping_time),
+    )
+
+
 def _issuer_mappings(
     context: Mapping[str, object] | None, account: str
 ) -> tuple[IssuerEvidence, ...]:
@@ -28,49 +59,9 @@ def _issuer_mappings(
     rows = context.get("holdings")
     if not isinstance(rows, (list, tuple)):
         return ()
-    result = []
     now = datetime.now(UTC)
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        times = [row.get(name) for name in ("issuer_verified_at", "mapping_verified_at")]
-        if not all(
-            isinstance(value, datetime)
-            and value.tzinfo is not None
-            and timedelta(0) <= now - value < timedelta(days=30)
-            for value in times
-        ):
-            continue
-        verified = min(value for value in times if isinstance(value, datetime))
-        group_time = row.get("group_verified_at")
-        group_id = str(row.get("group_id") or "")
-        if not (
-            isinstance(group_time, datetime)
-            and group_time.tzinfo is not None
-            and timedelta(0) <= now - group_time < timedelta(days=30)
-        ):
-            group_id = ""
-        effective = [row.get(name) for name in ("issuer_effective_at", "mapping_effective_at")]
-        if any(
-            isinstance(value, datetime) and (value.tzinfo is None or value > now)
-            for value in effective
-        ):
-            continue
-        group_effective = row.get("group_effective_at")
-        if isinstance(group_effective, datetime) and (
-            group_effective.tzinfo is None or group_effective > now
-        ):
-            group_id = ""
-        result.append(
-            IssuerEvidence(
-                instrument_uid=str(row.get("instrument_uid") or ""),
-                issuer_id=str(row.get("issuer_id") or ""),
-                group_id=group_id,
-                source_url=str(row.get("issuer_source_url") or ""),
-                verified_at=verified,
-            )
-        )
-    return tuple(result)
+    mappings = [_issuer_mapping(row, now) for row in rows if isinstance(row, dict)]
+    return tuple(item for item in mappings if item is not None)
 
 
 def current_account_assessment(

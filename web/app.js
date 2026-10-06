@@ -6338,7 +6338,7 @@
     let wrapperCap;
     let diagnosticResult;
     let accountResult;
-    let accountBusy = false;
+    let accountRequest = null;
     let accountRequested = false;
     let diagnosticRevision = 0;
     const clearDiagnostic = () => {
@@ -6580,14 +6580,15 @@
       accountResult.append(methods);
     };
     const calculateAccount = async (button) => {
-      if (accountBusy || !version || busy || dirty || blocked || loading || workspace.isDemo()) {
-        if (!accountBusy) accountResult.textContent = "Дождитесь сохранения выбранной стратегии. Реальный счёт не подменяется условной суммой.";
+      if (accountRequest || !version || busy || dirty || blocked || loading || workspace.isDemo()) {
+        if (!accountRequest) accountResult.textContent = "Дождитесь сохранения выбранной стратегии. Реальный счёт не подменяется условной суммой.";
         return;
       }
       const epoch = generation; const currentRevision = revision; const expected = version;
       const calculationRevision = ++diagnosticRevision;
       const owner = currentProfileId;
-      accountBusy = true; accountRequested = true; button.disabled = true;
+      const activeRequest = {button};
+      accountRequest = activeRequest; accountRequested = true; button.disabled = true;
       accountResult.textContent = "Получаем ваши позиции и деньги у Т-Банка. Проверяем сохранённые ограничения…";
       try {
         const data = await request("/api/profile/strategy/account-assessment", {method: "POST", body: JSON.stringify({expected_public_id: owner, expected_version: expected})}, 45000);
@@ -6603,7 +6604,10 @@
             : "Не удалось подтвердить данные счёта. Значения не заменены нулями или примером. Можно повторить проверку.";
         }
       } finally {
-        if (epoch === generation) { accountBusy = false; button.disabled = false; }
+        if (accountRequest === activeRequest) {
+          accountRequest = null;
+          button.disabled = false;
+        }
       }
     };
     const buildAccountAssessment = (parent) => {
@@ -6638,7 +6642,7 @@
       const toolbar = uiNode("div", undefined, "strategy-savebar");
       currentTitle = uiNode("strong"); saveStatus = uiNode("span", "Проверяем сохранённую версию…"); saveStatus.setAttribute("role", "status");
       retry = uiNode("button", "Проверить сохранение", "button button-secondary"); retry.type = "button"; retry.hidden = true; retry.addEventListener("click", () => { if (version === null) void load(); else void reconcile(); });
-      reload = uiNode("button", "Загрузить версию", "button button-secondary"); reload.type = "button"; reload.addEventListener("click", () => {
+      reload = uiNode("button", "Загрузить версию", "button button-secondary"); reload.type = "button"; reload.dataset.strategyReload = ""; reload.addEventListener("click", () => {
         if (busy || (dirty && !window.confirm("Заменить изменения на экране последней сохранённой копией?"))) return;
         dirty = false; version = null; void load();
       });
@@ -6753,6 +6757,7 @@
       notify("Загружаем сохранённую стратегию…");
       showInitialLoad();
       const epoch = ++generation;
+      clearDiagnostic();
       const owner = currentProfileId;
       const firstLoad = documentState === null;
       const initialProfile = investmentEditor.readDraft();
@@ -6833,7 +6838,8 @@
         clearTimers(); clearDiagnostic(); generation += 1;
         pendingRequests.forEach((controller) => controller.abort()); version = null; dirty = false; busy = false; blocked = false;
         documentState = null; customCopy = null; unacknowledged = null; revision = 0; loading = false;
-        accountBusy = false; accountRequested = false; accountResult?.replaceChildren();
+        if (accountRequest) accountRequest.button.disabled = false;
+        accountRequest = null; accountRequested = false; accountResult?.replaceChildren();
         if (loadNotice) loadNotice.hidden = true;
         ratingInputs.forEach((input) => { input.value = "0"; });
         if (yieldFloor) yieldFloor.checked = false;
