@@ -1,0 +1,26 @@
+name: Strategy candidate verification
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: [.github/workflows/strategy-candidate-check.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.event.pull_request.number == 751 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.author_association == 'OWNER'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 314b9d1715fbf7ed6ea53b7a0a1341d7fe16813a
+          persist-credentials: false
+          clean: true
+      - shell: cmd
+        run: git archive --format=zip --output=strategy-candidate.zip HEAD
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: strategy-candidate-source-751
+          path: strategy-candidate.zip
+          retention-days: 1
+          if-no-files-found: error
