@@ -21,13 +21,13 @@ jobs:
           clean: true
       - shell: cmd
         run: call .github\scripts\bootstrap_self_hosted_python.cmd
-      - name: Verify fixed source bytes without changing execution policy or refs
+      - name: Verify fixed canonical source without moving refs
         shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         run: >-
-          "%OMNICIO_PYTHON%" -c "import base64,hashlib,json,os,textwrap,time,urllib.error,urllib.request; sha='ceec8a68fe4cb75a14971e132decd57789c6b9b6'; req=urllib.request.Request('https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'User-Agent':'OmniCIO-source-verification'}); exec('for attempt in range(3):\n try:\n  with urllib.request.urlopen(req,timeout=30) as response:\n   raw=base64.b64decode(json.load(response)[\'content\'])\n  break\n except (urllib.error.URLError,ConnectionError,TimeoutError):\n  if attempt==2: raise\n  time.sleep(2**attempt)'); assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==sha; script=textwrap.dedent(raw.decode('utf-8').split('@'+chr(39)+'\n',1)[1].split(chr(39)+'@ | Set-Content',1)[0]); exec(compile(script,'verified-source-delivery','exec'))"
+          "%OMNICIO_PYTHON%" -c "import base64,hashlib,json,os,time,urllib.error,urllib.request; sha='ca1fe848509de31e2cf267cc326637530a7567cc'; req=urllib.request.Request('https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/git/blobs/'+sha,headers={'Authorization':'Bearer '+os.environ['GITHUB_TOKEN'],'User-Agent':'OmniCIO-source-verification'}); exec('for attempt in range(3):\n try:\n  with urllib.request.urlopen(req,timeout=30) as response:\n   raw=base64.b64decode(json.load(response)[\'content\'])\n  break\n except (urllib.error.URLError,ConnectionError,TimeoutError):\n  if attempt==2: raise\n  time.sleep(2**attempt)'); assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()==sha; exec(compile(raw.decode('utf-8'),'verified-source-delivery','exec'))"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: strategy-repair-source-identities
