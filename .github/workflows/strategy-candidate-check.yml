@@ -1,0 +1,116 @@
+name: Strategy candidate verification
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/strategy-candidate-check.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: strategy-candidate-verification
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: >-
+      github.repository == 'MishaGameHacking/omni-cio-gateway' &&
+      github.event.pull_request.head.ref == 'feature/strategy-account-assessment' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.author_association == 'OWNER'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact inspected candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 0148ab6ceb6d7c2cccda5123b214fd2bff32389c
+          persist-credentials: false
+          clean: true
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
+      - name: Select bootstrapped interpreter for the following step
+        shell: cmd
+        run: |
+          "%OMNICIO_PYTHON%" --version
+          if errorlevel 1 exit /b 1
+          for %%I in ("%OMNICIO_PYTHON%") do echo %%~dpI>>"%GITHUB_PATH%"
+      - name: Verify tested repair and publish immutable database source only
+        shell: python
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          import base64
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import subprocess
+          import time
+          import urllib.error
+          import urllib.request
+
+          base = '0148ab6ceb6d7c2cccda5123b214fd2bff32389c'
+          main = '0c0e2f71c6bacbd9a34fedba2262ce8f7efd8b38'
+          expected = os.environ['EXPECTED_HEAD']
+          api = 'https://api.github.com/repos/MishaGameHacking/omni-cio-gateway'
+          headers = {'Authorization': 'Bearer ' + os.environ['GITHUB_TOKEN'],
+                     'User-Agent': 'OmniCIO-reviewed-source-delivery',
+                     'Accept': 'application/vnd.github+json'}
+          def request(path, data=None):
+              payload = None if data is None else json.dumps(data).encode()
+              for attempt in range(3):
+                  req = urllib.request.Request(api + path, data=payload, headers=headers,
+                                               method='GET' if data is None else 'POST')
+                  try:
+                      with urllib.request.urlopen(req, timeout=20) as response:
+                          raw = response.read(2000000)
+                          assert len(raw) < 2000000
+                          return json.loads(raw)
+                  except urllib.error.HTTPError:
+                      raise
+                  except (urllib.error.URLError, TimeoutError, ConnectionError):
+                      if attempt == 2:
+                          raise
+                      time.sleep(2 ** attempt)
+          def gitsha(raw):
+              return hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+          def check_refs():
+              assert request('/git/ref/heads/main')['object']['sha'] == main
+              assert request('/git/ref/heads/feature/strategy-account-assessment')['object']['sha'] == expected
+
+          check_refs()
+          commit = request('/git/commits/' + expected)
+          assert [row['sha'] for row in commit['parents']] == [base]
+          path = 'src/omnicio/db.py'
+          original = subprocess.check_output(['git', 'show', base + ':' + path])
+          assert gitsha(original) == '63cd1dff725788d8e615934c5977f4afed1e4486'
+          source = original.decode('utf-8')
+          replacements = [
+              ('from datetime import datetime\n', 'from datetime import datetime\nfrom threading import BoundedSemaphore\n'),
+              ('        self.pool = ConnectionPool(\n', '        # Reserve at least six of the eight shared connections for ordinary and\n        # nested reads. Cross-process per-owner exclusion remains in PostgreSQL.\n        self._strategy_read_slots = BoundedSemaphore(2)\n        self.pool = ConnectionPool(\n'),
+              ('    @contextmanager\n    def strategy_assessment_slot(self, user_id: UUID) -> Iterator[bool]:\n        """Serialize account reads across processes, with a durable start cooldown.\n',
+               '    @contextmanager\n    def strategy_assessment_slot(self, user_id: UUID) -> Iterator[bool]:\n        """Bound shared-pool lock holders before acquiring a database connection."""\n        if not self._strategy_read_slots.acquire(blocking=False):\n            yield False\n            return\n        try:\n            with self._strategy_assessment_owner_slot(user_id) as admitted:\n                yield admitted\n        finally:\n            self._strategy_read_slots.release()\n\n    @contextmanager\n    def _strategy_assessment_owner_slot(self, user_id: UUID) -> Iterator[bool]:\n        """Serialize account reads across processes, with a durable start cooldown.\n'),
+          ]
+          for old, new in replacements:
+              assert source.count(old) == 1
+              source = source.replace(old, new, 1)
+          content = source.encode('utf-8')
+          assert gitsha(content) == '50245f5f85af8196569410fa07c9929e0acfb16a'
+          check_refs()
+          result = request('/git/blobs', {'content': base64.b64encode(content).decode(), 'encoding': 'base64'})
+          assert result['sha'] == gitsha(content)
+          published = {path: result['sha']}
+          pathlib.Path('candidate-blobs.json').write_text(json.dumps({'base': base, 'head': expected, 'files': published}, indent=2), encoding='utf-8')
+          print('Verified immutable repair files:', json.dumps(published, sort_keys=True))
+      - name: Preserve verified source identities
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: strategy-admission-blobs-751
+          path: candidate-blobs.json
+          retention-days: 1
+          if-no-files-found: error
