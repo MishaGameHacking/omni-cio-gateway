@@ -65,6 +65,9 @@ concurrency:
 
 jobs:
   tests:
+    permissions:
+      contents: read
+      checks: read
     if: >-
       github.event_name != 'pull_request' ||
       (github.event.pull_request.head.repo.full_name == github.repository &&
@@ -120,7 +123,10 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: frontend-screenshots
-          path: artifacts/frontend/*.png
+          path: |
+            artifacts/frontend/*.png
+            artifacts/frontend/failure-state.json
+            artifacts/frontend/layout-metrics.json
           if-no-files-found: warn
           retention-days: 7
 
@@ -135,6 +141,14 @@ jobs:
         shell: cmd
         run: >-
           "%OMNICIO_PYTHON%" -c "from pathlib import Path; text=Path('web/index.html').read_text(encoding='utf-8'); assert 'name=\"omni-cio-white-site\"' in text; assert r'\n' not in text"
+
+      - name: Report source-specific Sonar diagnostics
+        if: always()
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: '"%OMNICIO_PYTHON%" .github/scripts/report_sonar_annotations.py'
 
   deploy:
     permissions:
@@ -167,6 +181,14 @@ jobs:
       TARGET_LOCATION: ru-3
       TARGET_ZONE: msk-1
       VKID_APP_ID: ${{ vars.VKID_APP_ID }}
+      TID_CLIENT_ID: ${{ vars.TID_CLIENT_ID }}
+      TID_CLIENT_SECRET: ${{ secrets.TID_CLIENT_SECRET }}
+      TID_LOGIN_ENABLED: ${{ vars.TID_LOGIN_ENABLED }}
+      TID_PKCE_ENABLED: ${{ vars.TID_PKCE_ENABLED }}
+      ASSISTANT_BASE_URL: ${{ vars.ASSISTANT_BASE_URL }}
+      ASSISTANT_MODEL: ${{ vars.ASSISTANT_MODEL }}
+      ASSISTANT_API_KEY: ${{ secrets.ASSISTANT_API_KEY }}
+      ASSISTANT_ENABLED: ${{ vars.ASSISTANT_ENABLED }}
       REGISTRATION_ENABLED: "true"
       REGISTRATION_MAX_USERS: "2"
       MULTIUSER_LEGAL_APPROVED: "true"
@@ -175,9 +197,9 @@ jobs:
       LEGACY_PROFILE_RESET_ENABLED: "false"
       LEGAL_OPERATOR_NAME: "КЛИМАЧЕВ МИХАИЛ КОНСТАНТИНОВИЧ"
       LEGAL_OPERATOR_EMAIL: "omnicioinfo@gmail.com"
-      LEGAL_PRIVACY_VERSION: "2026-10-05-v8"
-      LEGAL_CONSENT_VERSION: "2026-10-02-v6"
-      LEGAL_TERMS_VERSION: "2026-10-02-v6"
+      LEGAL_PRIVACY_VERSION: "2026-10-06-v1.0.0"
+      LEGAL_CONSENT_VERSION: "2026-10-06-v1.0.0"
+      LEGAL_TERMS_VERSION: "2026-10-06-v1.0.0"
       SESSION_TTL_SECONDS: "34560000"
       PORTFOLIO_LIVE_EXECUTION_ENABLED: "false"
       PORTFOLIO_LIVE_MAX_ORDER_RUB: "10000"

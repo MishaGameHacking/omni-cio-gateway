@@ -28,7 +28,7 @@ def _bundle() -> BrokerObservationBundle:
         quantity="2",
         current_price=TBankMoney("RUB", "1000"),
         average_price=None,
-        expected_yield_percent="0",
+        expected_yield_amount="0",
         daily_yield=None,
         current_nkd=None,
         blocked=False,
@@ -171,7 +171,7 @@ def test_unknown_rating_stays_data_missing_even_with_fresh_fundamentals() -> Non
     assert facts["total_debt_to_ebitda_mrq"].currency is None
     assert facts["total_debt_to_ebitda_mrq"].unit == "ratio"
     assert facts["roe"].currency is None
-    assert facts["roe"].unit == "ratio"
+    assert facts["roe"].unit == "source_unit"
     assert assessments[0].state == "data_missing"
     assert assessments[0].rating_status == "data_missing"
     assert assessments[0].fundamental_status == "received"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import Mock
@@ -7,9 +8,8 @@ from uuid import UUID
 
 import pytest
 
-from omnicio.broker import BrokerConnectionStatus
+from omnicio.broker import BrokerConnectionStatus, BrokerService
 from omnicio.execution_service import (
-    SANDBOX_ORDER_TIMEOUT,
     ExecutionServiceError,
     PortfolioExecutionService,
 )
@@ -17,11 +17,8 @@ from omnicio.execution_store import ExecutionLegRecord, ExecutionRunRecord
 from omnicio.tbank import (
     TBankMoney,
     TBankNotFound,
-    TBankOrderPrice,
     TBankSandboxCancelResult,
-    TBankSandboxMaxLots,
     TBankSandboxOrderState,
-    TBankUnavailable,
 )
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000801")
@@ -83,17 +80,6 @@ def _leg(
     )
 
 
-def _price(total: str = "2200") -> TBankOrderPrice:
-    return TBankOrderPrice(
-        total_order_amount=TBankMoney("RUB", total),
-        initial_order_amount=TBankMoney("RUB", "2100"),
-        executed_commission_rub=TBankMoney("RUB", "10"),
-        service_commission=TBankMoney("RUB", "0"),
-        deal_commission=TBankMoney("RUB", "10"),
-        bond_aci_value=TBankMoney("RUB", "50"),
-    )
-
-
 def _provider_state(
     *,
     status: str = "EXECUTION_REPORT_STATUS_NEW",
@@ -121,53 +107,15 @@ def _provider_state(
 
 def _service() -> tuple[PortfolioExecutionService, Mock, Mock]:
     store = Mock()
-    broker = Mock()
+    broker = Mock(spec=BrokerService)
+    broker.status.return_value = BrokerConnectionStatus(
+        True, "sandbox", "sandbox-account", "Synthetic", NOW,
+    )
     service = PortfolioExecutionService(
         store=store,  # type: ignore[arg-type]
         broker=broker,  # type: ignore[arg-type]
     )
     return service, store, broker
-
-
-def test_preflight_blocks_overspend_before_any_sandbox_mutation() -> None:
-    service, store, broker = _service()
-    broker.sandbox_max_lots.return_value = TBankSandboxMaxLots(
-        buy_max_lots=10,
-        sell_max_lots=10,
-        buy_money_amount=TBankMoney("RUB", "10000"),
-        currency="RUB",
-    )
-    broker.sandbox_order_price.return_value = _price("2600")
-
-    run = _run()
-    leg = _leg()
-    with pytest.raises(ExecutionServiceError, match="would_overspend"):
-        service._submit_pending(USER_ID, run, leg, NOW)
-
-    broker.post_sandbox_order.assert_not_called()
-    store.transition_leg.assert_not_called()
-
-
-def test_ambiguous_submit_never_reposts_and_enters_reconciliation() -> None:
-    service, store, broker = _service()
-    broker.sandbox_max_lots.return_value = TBankSandboxMaxLots(
-        buy_max_lots=10,
-        sell_max_lots=10,
-        buy_money_amount=TBankMoney("RUB", "10000"),
-        currency="RUB",
-    )
-    broker.sandbox_order_price.return_value = _price()
-    broker.post_sandbox_order.side_effect = TBankUnavailable("timeout")
-
-    status = service._submit_pending(USER_ID, _run(), _leg(), NOW)
-
-    assert status == "reconciling"
-    broker.post_sandbox_order.assert_called_once()
-    store.transition_leg.assert_called_once()
-    assert store.transition_leg.call_args.kwargs["new_status"] == "submitting"
-    store.mark_run_reconciling.assert_called_once()
-    details = store.mark_run_reconciling.call_args.kwargs["details"]
-    assert details["retry_post_order"] is False
 
 
 def test_reconcile_not_found_keeps_same_request_id_without_post_retry() -> None:
@@ -187,7 +135,7 @@ def test_reconcile_not_found_keeps_same_request_id_without_post_retry() -> None:
         request_id=str(REQUEST_ID),
         price_type="point",
     )
-    broker.post_sandbox_order.assert_not_called()
+    assert {call[0] for call in broker.mock_calls} <= {"status", "sandbox_order_state"}
     details = store.mark_run_reconciling.call_args.kwargs["details"]
     assert details["retry_post_order"] is False
 
@@ -217,31 +165,6 @@ def test_partial_fill_is_persisted_without_advancing_next_leg() -> None:
     assert kwargs["executed_commission_rub"] == Decimal("5")
 
 
-def test_timeout_requests_cancel_using_persisted_request_id() -> None:
-    service, store, broker = _service()
-    broker.cancel_sandbox_order.return_value = TBankSandboxCancelResult(
-        cancelled_at=NOW
-    )
-    submitted = _leg(
-        status="submitted",
-        submitted_at=NOW - SANDBOX_ORDER_TIMEOUT,
-    )
-
-    service._request_cancel(USER_ID, _run(), submitted, NOW)
-
-    first = store.transition_leg.call_args
-    assert first.kwargs["new_status"] == "cancel_requested"
-    broker.cancel_sandbox_order.assert_called_once_with(
-        USER_ID,
-        request_id=str(REQUEST_ID),
-    )
-    store.mark_run_reconciling.assert_called_once()
-    assert (
-        store.mark_run_reconciling.call_args.kwargs["error_code"]
-        == "sandbox_cancel_acknowledged"
-    )
-
-
 def test_sandbox_account_must_match_persisted_execution_account() -> None:
     service, _store, broker = _service()
     broker.status.return_value = BrokerConnectionStatus(
@@ -255,3 +178,80 @@ def test_sandbox_account_must_match_persisted_execution_account() -> None:
     run = _run()
     with pytest.raises(ExecutionServiceError, match="sandbox_account_mismatch"):
         service._require_sandbox_account(USER_ID, run)
+
+
+@pytest.mark.parametrize("mode", ["sandbox", "live"])
+@pytest.mark.parametrize("leg_status", [
+    "submitting", "submitted", "partially_filled", "cancel_requested", "reconciling",
+])
+def test_reconcile_reads_one_old_request_and_never_posts_cancels_or_advances(mode, leg_status):
+    service, store, broker = _service()
+    environment = "prod" if mode == "live" else "sandbox"
+    run = replace(
+        _run(), mode=mode, provider_environment=environment,
+        live_mandate_id=UUID(int=71) if mode == "live" else None,
+    )
+    broker.status.return_value = BrokerConnectionStatus(
+        True, environment, run.account_id, "Synthetic", NOW,
+    )
+    leg = _leg(status=leg_status, submitted_at=NOW - timedelta(days=3))
+    pending = replace(_leg(), id=UUID(int=72), request_id=UUID(int=73), leg_index=1)
+    filled = replace(leg, status="filled", lots_executed=2)
+    store.execution.side_effect = [(run, (leg, pending), ()), (run, (filled, pending), ())]
+    reader = broker.live_order_state if mode == "live" else broker.sandbox_order_state
+    reader.return_value = _provider_state(status="EXECUTION_REPORT_STATUS_FILL", lots_executed=2)
+
+    result_run, result_legs = service.reconcile(USER_ID, RUN_ID, now=NOW)
+
+    assert result_run == run
+    assert result_legs == (filled, pending)
+    reader.assert_called_once_with(USER_ID, request_id=str(REQUEST_ID), price_type="point")
+    assert {call[0] for call in broker.mock_calls} <= {"status", mode + "_order_state"}
+    store.create_run.assert_not_called()
+    assert store.transition_leg.call_count == 1
+    assert store.transition_leg.call_args.kwargs["new_status"] == "filled"
+    assert store.transition_leg.call_args.kwargs["leg_id"] == LEG_ID
+
+
+@pytest.mark.parametrize("mode", ["shadow", "sandbox", "live"])
+def test_reconcile_pending_or_historical_shadow_never_invents_an_order(mode):
+    service, store, broker = _service()
+    run = replace(_run(), mode=mode)
+    leg = _leg()
+    store.execution.return_value = (run, (leg,), ())
+    assert service.reconcile(USER_ID, RUN_ID, now=NOW) == (run, (leg,))
+    assert broker.mock_calls == []
+    store.transition_leg.assert_not_called()
+    store.create_run.assert_not_called()
+
+
+def test_reconcile_connection_change_never_persists_another_account_state():
+    service, store, broker = _service()
+    run, leg = _run(), _leg(status="submitted")
+    store.execution.return_value = (run, (leg,), ())
+    broker.status.side_effect = [
+        BrokerConnectionStatus(True, "sandbox", run.account_id, "Synthetic", NOW),
+        BrokerConnectionStatus(True, "sandbox", "different-account", "Other", NOW),
+    ]
+    broker.sandbox_order_state.return_value = _provider_state()
+    with pytest.raises(ExecutionServiceError, match="account_mismatch"):
+        service.reconcile(USER_ID, RUN_ID, now=NOW)
+    store.transition_leg.assert_not_called()
+    store.mark_run_reconciling.assert_not_called()
+    assert {call[0] for call in broker.mock_calls} <= {"status", "sandbox_order_state"}
+
+
+@pytest.mark.parametrize("submitted", [False, True])
+def test_explicit_cancel_closes_old_plan_without_creating_another_order(submitted):
+    service, store, broker = _service()
+    leg = _leg(status="submitted" if submitted else "pending")
+    store.execution.return_value = (_run(), (leg,), ())
+    broker.cancel_sandbox_order.return_value = TBankSandboxCancelResult(cancelled_at=NOW)
+    service.cancel(USER_ID, RUN_ID, now=NOW)
+    assert {call[0] for call in broker.mock_calls} <= {"status", "cancel_sandbox_order"}
+    if submitted:
+        broker.cancel_sandbox_order.assert_called_once_with(USER_ID, request_id=str(REQUEST_ID))
+        store.mark_run_reconciling.assert_called_once()
+    else:
+        broker.cancel_sandbox_order.assert_not_called()
+        assert store.transition_leg.call_args.kwargs["new_status"] == "cancelled"

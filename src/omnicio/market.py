@@ -8,9 +8,9 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from .broker import BrokerService
+from .broker import BrokerConnectionError, BrokerService
 from .cbr import CBRClient, CBRRate, CBRUnavailable
-from .tbank import TBankLastPrice, TBankTradingStatus, TBankUnavailable
+from .tbank import TBankHistoricCandle, TBankLastPrice, TBankTradingStatus, TBankUnavailable
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +87,8 @@ class InstrumentMarketSnapshot:
     limit_order_available: bool
     market_order_available: bool
     candles: tuple[InstrumentMarketCandle, ...]
+    history_from: str | None = None
+    history_note: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,19 +239,29 @@ class MarketService:
         period: str,
     ) -> InstrumentMarketSnapshot:
         config = _MARKET_PERIODS.get(period)
-        if config is None:
+        if config is None and period != "all":
             raise ValueError("unsupported market period")
-        window, interval = config
+        connection = self.broker.status(user_id)
         requested_at = datetime.now(UTC)
-        candles = self.broker.market_exchange_candles(
-            user_id,
-            instrument_uid,
-            from_at=requested_at - window,
-            to_at=requested_at,
-            interval=interval,
-        )
+        history_from = None
+        history_note = None
+        if period == "all":
+            candles, interval, history_from = self._available_history(
+                user_id, instrument_uid, requested_at,
+            )
+            resolution = "месячные" if interval == "CANDLE_INTERVAL_MONTH" else "дневные"
+            history_note = f"Доступная история источника; {resolution} свечи без учёта выплат."
+        else:
+            assert config is not None
+            window, interval = config
+            candles = self.broker.market_exchange_candles(
+                user_id, instrument_uid, from_at=requested_at - window,
+                to_at=requested_at, interval=interval,
+            )
         price = self.broker.market_last_price(user_id, instrument_uid)
         trading = self.broker.market_trading_status(user_id, instrument_uid)
+        if self.broker.status(user_id) != connection:
+            raise BrokerConnectionError("market_account_changed")
         observed = datetime.now(UTC)
 
         live = _instrument_live_state(
@@ -286,15 +298,47 @@ class MarketService:
             limit_order_available=live.limit_order_available,
             market_order_available=live.market_order_available,
             candles=market_candles,
+            history_from=history_from,
+            history_note=history_note,
         )
+
+    def _available_history(
+        self, user_id: UUID, instrument_uid: str, requested_at: datetime,
+    ) -> tuple[tuple[TBankHistoricCandle, ...], str, str]:
+        connection = self.broker.status(user_id)
+        first = self.broker.market_history_start(user_id, instrument_uid)
+        cursor, interval, history_from = _available_history_window(first, requested_at)
+        history_floor = cursor
+        candles: dict[datetime, TBankHistoricCandle] = {}
+        reads = 0
+        while cursor < requested_at:
+            end = min(cursor.replace(year=cursor.year + 10), requested_at)
+            begin = cursor
+            if interval == "CANDLE_INTERVAL_MONTH" and end - begin < timedelta(days=28):
+                begin -= timedelta(days=31)
+            for candle in self.broker.market_exchange_candles(
+                user_id, instrument_uid, from_at=begin, to_at=end, interval=interval,
+            ):
+                if history_floor <= candle.time <= requested_at:
+                    candles[candle.time] = candle
+            reads += 1
+            cursor = end
+            if reads >= 8 and cursor < requested_at:
+                raise TBankUnavailable("instrument_history_exceeds_request_budget")
+        if self.broker.status(user_id) != connection:
+            raise BrokerConnectionError("market_account_changed")
+        return tuple(candles[key] for key in sorted(candles)), interval, history_from
 
     def instrument_live_state(
         self,
         user_id: UUID,
         instrument_uid: str,
     ) -> InstrumentLiveState:
+        connection = self.broker.status(user_id)
         price = self.broker.market_last_price(user_id, instrument_uid)
         trading = self.broker.market_trading_status(user_id, instrument_uid)
+        if self.broker.status(user_id) != connection:
+            raise BrokerConnectionError("market_account_changed")
         observed = datetime.now(UTC)
         return _instrument_live_state(
             instrument_uid,
@@ -303,6 +347,21 @@ class MarketService:
             trading=trading,
             live_after_seconds=self.live_after_seconds,
         )
+
+
+def _available_history_window(
+    first: datetime | None, requested_at: datetime,
+) -> tuple[datetime, str, str]:
+    if first is None or first.tzinfo is None or first > requested_at:
+        raise TBankUnavailable("instrument_history_start_unavailable")
+    if requested_at - first > timedelta(days=366 * 80):
+        raise TBankUnavailable("instrument_history_exceeds_request_budget")
+    cursor = first.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    interval = "CANDLE_INTERVAL_MONTH"
+    if requested_at - cursor < timedelta(days=28):
+        interval = "CANDLE_INTERVAL_DAY"
+        cursor = min(cursor, requested_at - timedelta(days=1))
+    return cursor, interval, first.isoformat()
 
 
 def _required_market_price(value: str | None) -> str:

@@ -42,23 +42,39 @@ def foundation(**changes: object) -> dict:
     return {
         "id": 20, "head_sha": SHA, "head_branch": "main", "event": "push",
         "path": gate.FOUNDATION_PATH, "repository": {"full_name": gate.REPOSITORY},
-        "status": "completed", "conclusion": "success", **changes,
+        "run_attempt": 1, "status": "completed", "conclusion": "success", **changes,
+    }
+
+
+def application(**changes: object) -> dict:
+    return foundation(**{"id": 30, "path": gate.APPLICATION_PATH, **changes})
+
+
+def application_test(**changes: object) -> dict:
+    return {
+        "id": 40, "run_id": 30, "head_sha": SHA, "head_branch": "main",
+        "name": gate.APPLICATION_TEST_JOB, "status": "completed", "conclusion": "success",
+        **changes,
     }
 
 
 def client_with_evidence() -> Mock:
     client = Mock(spec=gate.GitHubClient)
     client.get.return_value = copy.deepcopy(BRANCH)
-    client.collect.side_effect = [[sonar()], [foundation()]]
+    client.collect.side_effect = [
+        [sonar()], [foundation()], [application()], [application_test()], [application()],
+    ]
     return client
 
 
 class ReleaseEvidenceTests(unittest.TestCase):
-    def test_current_main_with_both_successful_checks_passes(self) -> None:
+    def test_current_main_with_all_successful_checks_passes(self) -> None:
         client = client_with_evidence()
         gate.verify(client, SHA)
         self.assertEqual(client.get.call_count, 2)
         self.assertIn("filter=all", client.collect.call_args_list[0].args[0])
+        self.assertEqual(client.collect.call_args_list[3].args,
+                         ("/actions/runs/30/attempts/1/jobs", "jobs"))
 
     def test_sonar_requires_zero_issue_summary_and_annotations(self) -> None:
         dirty_outputs = (
@@ -165,6 +181,14 @@ class ReleaseEvidenceTests(unittest.TestCase):
         with self.assertRaises(gate.PendingChecks):
             gate.require_foundation(pending, SHA)
 
+        for conclusion in ("failure", None):
+            rerun = foundation(run_attempt=2, conclusion=conclusion,
+                               status="completed" if conclusion else "queued")
+            error = gate.ReleaseBlocked if conclusion else gate.PendingChecks
+            runs = [rerun, foundation()]
+            with self.subTest(conclusion=conclusion), self.assertRaises(error):
+                gate.require_foundation(runs, SHA)
+
     def test_main_moving_before_or_during_verification_blocks_release(self) -> None:
         for responses in ([{"commit": {"sha": "b" * 40}}], [BRANCH, {"commit": {}}]):
             client = client_with_evidence()
@@ -201,7 +225,118 @@ class ReleaseEvidenceTests(unittest.TestCase):
             sleep.assert_not_called()
 
 
+class ApplicationPushEvidenceTests(unittest.TestCase):
+    def test_downstream_success_cannot_hide_exact_push_test_failure(self) -> None:
+        push = application(id=37499453831, conclusion="failure")
+        downstream = application(id=37500030438, event="workflow_run")
+        client = Mock(spec=gate.GitHubClient)
+        client.collect.side_effect = [
+            [push, downstream],
+            [application_test(run_id=push["id"], conclusion="failure")],
+        ]
+        with self.assertRaises(gate.ReleaseBlocked):
+            gate.require_application_tests(client, SHA)
+        self.assertEqual(client.collect.call_args.args,
+                         ("/actions/runs/37499453831/attempts/1/jobs", "jobs"))
+
+    def test_only_the_exact_main_push_can_supply_application_tests(self) -> None:
+        for change in (
+            {"event": "workflow_run"}, {"event": "workflow_dispatch"},
+            {"event": "pull_request"}, {"head_sha": "b" * 40},
+            {"head_branch": "feature"}, {"repository": {"full_name": "someone/else"}},
+            {"path": gate.FOUNDATION_PATH},
+        ):
+            client = Mock(spec=gate.GitHubClient)
+            client.collect.return_value = [application(**change)]
+            with self.subTest(change=change), self.assertRaises(gate.PendingChecks):
+                gate.require_application_tests(client, SHA)
+            self.assertEqual(client.collect.call_count, 1)
+
+    def test_latest_same_run_attempt_prevents_reusing_previous_green_jobs(self) -> None:
+        client = Mock(spec=gate.GitHubClient)
+        client.collect.side_effect = [
+            [application(run_attempt=2, conclusion="failure"), application()],
+            [application_test(conclusion="failure", run_attempt=2)],
+        ]
+        with self.assertRaises(gate.ReleaseBlocked):
+            gate.require_application_tests(client, SHA)
+        self.assertEqual(client.collect.call_args.args,
+                         ("/actions/runs/30/attempts/2/jobs", "jobs"))
+
+    def test_latest_push_run_controls_even_when_an_older_run_has_more_attempts(self) -> None:
+        client = Mock(spec=gate.GitHubClient)
+        client.collect.side_effect = [
+            [application(run_attempt=9), application(id=31, conclusion="failure")],
+            [application_test(run_id=31, conclusion="failure")],
+        ]
+        with self.assertRaises(gate.ReleaseBlocked):
+            gate.require_application_tests(client, SHA)
+        self.assertEqual(client.collect.call_args.args,
+                         ("/actions/runs/31/attempts/1/jobs", "jobs"))
+
+    def test_tests_must_succeed_and_other_workflow_jobs_are_not_a_dependency(self) -> None:
+        for state, conclusion in (("in_progress", None), ("completed", "failure")):
+            push = application(status=state, conclusion=conclusion)
+            client = Mock(spec=gate.GitHubClient)
+            client.collect.side_effect = [[push], [application_test()], [push]]
+            with self.subTest(state=state):
+                gate.require_application_tests(client, SHA)
+
+    def test_every_non_successful_terminal_test_outcome_blocks(self) -> None:
+        for conclusion in ("failure", "cancelled", "timed_out", "skipped", "neutral", None):
+            client = Mock(spec=gate.GitHubClient)
+            client.collect.side_effect = [
+                [application()], [application_test(conclusion=conclusion)],
+            ]
+            with self.subTest(conclusion=conclusion), self.assertRaises(gate.ReleaseBlocked):
+                gate.require_application_tests(client, SHA)
+
+    def test_pending_tests_or_missing_pending_jobs_wait_without_old_evidence(self) -> None:
+        for jobs in ([], [application_test(status="in_progress", conclusion=None)]):
+            client = Mock(spec=gate.GitHubClient)
+            client.collect.side_effect = [[application(status="in_progress")], jobs]
+            with self.subTest(jobs=jobs), self.assertRaises(gate.PendingChecks):
+                gate.require_application_tests(client, SHA)
+
+    def test_missing_misattributed_and_ambiguous_jobs_cannot_certify_tests(self) -> None:
+        invalid = (
+            [], [application_test(name="Deploy auth application")],
+            [application_test(run_id=31)], [application_test(head_sha="b" * 40)],
+            [application_test(head_branch="feature")], [application_test(run_attempt=2)],
+            [application_test(id=True)], [application_test(), application_test(id=41)],
+        )
+        for jobs in invalid:
+            client = Mock(spec=gate.GitHubClient)
+            client.collect.side_effect = [[application()], jobs]
+            with self.subTest(jobs=jobs), self.assertRaises(gate.ReleaseBlocked):
+                gate.require_application_tests(client, SHA)
+
+    def test_malformed_attempt_cannot_be_used_in_an_api_path(self) -> None:
+        for attempt in (None, 0, -1, True, "2"):
+            client = Mock(spec=gate.GitHubClient)
+            client.collect.return_value = [application(run_attempt=attempt)]
+            with self.subTest(attempt=attempt), self.assertRaises(gate.ReleaseBlocked):
+                gate.require_application_tests(client, SHA)
+            self.assertEqual(client.collect.call_count, 1)
+
+    def test_attempt_changing_during_job_verification_requires_fresh_evidence(self) -> None:
+        for current in (application(run_attempt=2), application(id=31)):
+            client = Mock(spec=gate.GitHubClient)
+            client.collect.side_effect = [[application()], [application_test()], [current]]
+            with self.subTest(current=current), self.assertRaises(gate.PendingChecks):
+                gate.require_application_tests(client, SHA)
+
+
 class SelfHostedCiPolicyTests(unittest.TestCase):
+    def test_application_gate_targets_the_existing_tests_job_only(self) -> None:
+        workflow = (pathlib.Path(__file__).resolve().parents[2] / gate.APPLICATION_PATH).read_text(
+            encoding="utf-8",
+        )
+        tests = workflow.split("\n  tests:\n", 1)[1].split("\n  deploy:\n", 1)[0]
+        self.assertIn("    name: " + gate.APPLICATION_TEST_JOB + "\n", tests)
+        self.assertIn("    needs: tests\n", workflow)
+        self.assertNotIn("    needs: deploy\n", tests)
+
     def test_owner_same_repo_prs_use_the_four_runner_pool(self) -> None:
         workflow = (
             pathlib.Path(__file__).resolve().parent.parent
@@ -288,6 +423,13 @@ class SonarScopePolicyTests(unittest.TestCase):
 
 
 class GitHubTransportTests(unittest.TestCase):
+    def test_attempt_jobs_pagination_adds_the_first_query_separator(self) -> None:
+        client = gate.GitHubClient("synthetic-test-token", deadline=100)
+        with patch.object(client, "get", return_value={"jobs": [application_test()]}) as get:
+            self.assertEqual(client.collect("/actions/runs/30/attempts/1/jobs", "jobs"),
+                             [application_test()])
+        get.assert_called_once_with("/actions/runs/30/attempts/1/jobs?per_page=100&page=1")
+
     def test_sonar_annotation_transport_retry_is_bounded_and_fail_closed(self) -> None:
         for error, recover in (
             (gate.PendingChecks("temporary annotation timeout"), True),

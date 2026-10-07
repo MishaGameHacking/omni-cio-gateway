@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#07111f">
-  <title>Нет сети · OmniCIO</title>
-  <style>
-    :root{font-family:system-ui,sans-serif;color-scheme:light dark;color:#121b2b;background:#f4f7fb}
-    *{box-sizing:border-box}body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px}
-    main{max-width:480px;border:1px solid #cbd5e1;border-radius:16px;background:#fff;padding:32px}
-    .brand{color:#245eea;font-size:18px;font-weight:700}h1{font-size:28px;line-height:36px;letter-spacing:-.04em;margin-top:32px}
-    p{font-size:16px;line-height:24px;color:#566275}a{display:inline-flex;min-height:44px;align-items:center;padding:10px 20px;background:#245eea;color:white;border-radius:10px;text-decoration:none;margin-top:16px}
-    a:focus-visible{outline:2px solid #245eea;outline-offset:4px}small{display:block;margin-top:24px;line-height:20px;color:#566275}
-    @media(prefers-color-scheme:dark){:root{background:#07111f;color:#f4f8ff}main{background:#0e1a2a;border-color:#3e526d}p,small{color:#adbacb}.brand{color:#70b7ff}a{background:#70b7ff;color:#07111f}}
-  </style>
+  <meta name="theme-color" content="#071421">
+  <link rel="stylesheet" href="/assets/app.css?build=__OMNICIO_BUILD__">
+  <title>Нет сети · OMNICIO</title>
 </head>
-<body><main><span class="brand">OmniCIO</span><h1>Подключимся, когда вернётся сеть</h1><p>Для портфеля, входа и подтверждения изменений нужно соединение с интернетом.</p><p>Ваши финансовые данные не сохраняются в общем офлайн-кэше.</p><a href="/">Попробовать снова</a><small>Офлайн-страница не отправляет заявки. Если соединение исчезло во время операции, после входа проверьте её статус.</small></main></body>
+<body class="offline-page">
+  <main class="offline-card">
+    <div class="brand"><span class="brand-ring" aria-hidden="true"></span>OMNICIO</div>
+    <h1>Вернёмся к данным,<br>когда появится сеть</h1>
+    <p>Для входа, портфеля и сохранения изменений необходимо соединение с интернетом.</p>
+    <a href="/" class="button primary">Попробовать снова</a>
+    <small>Финансовые данные и сообщения не хранятся в общем офлайн-кэше. Если соединение прервалось во время сохранения, после входа проверьте его результат.</small>
+  </main>
+</body>
 </html>

@@ -31,16 +31,13 @@ from .tbank import (
     TBankInvestClient,
     TBankLastPrice,
     TBankMarketYield,
-    TBankMaxLots,
     TBankOperationsPage,
     TBankOrderBook,
-    TBankOrderPrice,
     TBankOrderState,
     TBankPortfolio,
     TBankPositions,
     TBankRating,
     TBankSandboxCancelResult,
-    TBankSandboxMaxLots,
     TBankSandboxOrderState,
     TBankTradingStatus,
     TBankUnavailable,
@@ -274,6 +271,38 @@ class BrokerService:
             to_at=to_at,
         )
 
+    def market_history_start(self, user_id: UUID, instrument_uid: str) -> datetime | None:
+        record, credential, environment = self._connected_credential(user_id)
+        first = self.tbank.first_daily_candle(credential, environment, instrument_uid)
+        self._require_current_connection(record)
+        return first
+
+    def instrument_facts(
+        self, user_id: UUID, instrument_uid: str,
+    ) -> tuple[TBankInstrumentMetadata, TBankAssetFundamental | None]:
+        """One exact instrument read and at most one asset statistics read."""
+        record, credential, environment = self._connected_credential(user_id)
+        metadata = self.tbank.get_instrument_overview(credential, environment, instrument_uid)
+        self._require_current_connection(record)
+        if metadata.uid != instrument_uid.strip():
+            raise TBankUnavailable("instrument metadata identity mismatch")
+        fundamentals: tuple[TBankAssetFundamental, ...] = ()
+        if metadata.asset_uid:
+            try:
+                fundamentals = self.tbank.get_asset_fundamentals(
+                    credential, environment, (metadata.asset_uid,),
+                )
+            except TBankUnavailable:
+                # Keep the verified instrument card usable without supplying
+                # another asset's statistics or exposing provider error text.
+                fundamentals = ()
+        self._require_current_connection(record)
+        if len(fundamentals) > 1 or any(
+            value.asset_uid != metadata.asset_uid for value in fundamentals
+        ):
+            raise TBankUnavailable("instrument fundamental identity mismatch")
+        return metadata, next(iter(fundamentals), None)
+
     def market_exchange_candles(
         self,
         user_id: UUID,
@@ -283,8 +312,8 @@ class BrokerService:
         to_at: datetime,
         interval: str,
     ) -> tuple[TBankHistoricCandle, ...]:
-        _record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.get_exchange_candles(
+        record, credential, environment = self._connected_credential(user_id)
+        candles = self.tbank.get_exchange_candles(
             credential,
             environment,
             instrument_uid,
@@ -292,6 +321,8 @@ class BrokerService:
             to_at=to_at,
             interval=interval,
         )
+        self._require_current_connection(record)
+        return candles
 
     def market_trading_status(
         self,
@@ -413,93 +444,6 @@ class BrokerService:
             depth=depth,
         )
 
-    def candidate_order_price(
-        self,
-        user_id: UUID,
-        instrument_uid: str,
-        *,
-        price: str,
-        direction: str,
-        quantity_lots: int,
-    ) -> TBankOrderPrice:
-        record, credential, environment = self._connected_credential(user_id)
-        if direction not in {"buy", "sell"}:
-            raise ValueError("candidate order price direction is invalid")
-        return self.tbank.get_order_price(
-            credential,
-            environment,
-            record.account_id,
-            instrument_uid,
-            price=price,
-            direction=cast(Any, direction),
-            quantity_lots=quantity_lots,
-        )
-
-    def live_order_price(
-        self,
-        user_id: UUID,
-        instrument_uid: str,
-        *,
-        price: str,
-        direction: str,
-        quantity_lots: int,
-    ) -> TBankOrderPrice:
-        record, credential, environment = self._live_credential(user_id)
-        if direction not in {"buy", "sell"}:
-            raise ValueError("live order price direction is invalid")
-        return self.tbank.get_order_price(
-            credential,
-            environment,
-            record.account_id,
-            instrument_uid,
-            price=price,
-            direction=cast(Any, direction),
-            quantity_lots=quantity_lots,
-        )
-
-    def live_max_lots(
-        self,
-        user_id: UUID,
-        instrument_uid: str,
-        *,
-        price: str,
-    ) -> TBankMaxLots:
-        record, credential, environment = self._live_credential(user_id)
-        return self.tbank.get_max_lots(
-            credential,
-            environment,
-            record.account_id,
-            instrument_uid,
-            price=price,
-        )
-
-    def post_live_order(
-        self,
-        user_id: UUID,
-        instrument_uid: str,
-        *,
-        quantity_lots: int,
-        price: str,
-        direction: str,
-        request_id: str,
-        price_type: str,
-    ) -> TBankOrderState:
-        record, credential, environment = self._live_credential(user_id)
-        if direction not in {"buy", "sell"}:
-            raise ValueError("live order direction is invalid")
-        if price_type not in {"point", "currency"}:
-            raise ValueError("live order price type is invalid")
-        return self.tbank.post_order(
-            credential,
-            environment,
-            record.account_id,
-            instrument_uid,
-            quantity_lots=quantity_lots,
-            price=price,
-            direction=cast(Any, direction),
-            request_id=request_id,
-            price_type=cast(Any, price_type),
-        )
 
     def live_order_state(
         self,
@@ -514,13 +458,15 @@ class BrokerService:
         )
         if price_type not in {"point", "currency"}:
             raise ValueError("live order price type is invalid")
-        return self.tbank.get_order_state(
+        state = self.tbank.get_order_state(
             credential,
             environment,
             record.account_id,
             request_id=request_id,
             price_type=cast(Any, price_type),
         )
+        self._require_current_connection(record)
+        return state
 
     def cancel_live_order(
         self,
@@ -536,71 +482,6 @@ class BrokerService:
             request_id=request_id,
         )
 
-    def sandbox_order_price(
-        self,
-        user_id: UUID,
-        instrument_uid: str,
-        *,
-        price: str,
-        direction: str,
-        quantity_lots: int,
-    ) -> TBankOrderPrice:
-        record, credential, environment = self._sandbox_credential(user_id)
-        if direction not in {"buy", "sell"}:
-            raise ValueError("sandbox order price direction is invalid")
-        return self.tbank.get_order_price(
-            credential,
-            environment,
-            record.account_id,
-            instrument_uid,
-            price=price,
-            direction=cast(Any, direction),
-            quantity_lots=quantity_lots,
-        )
-
-    def sandbox_max_lots(
-        self,
-        user_id: UUID,
-        instrument_uid: str,
-        *,
-        price: str,
-    ) -> TBankSandboxMaxLots:
-        record, credential, environment = self._sandbox_credential(user_id)
-        return self.tbank.get_sandbox_max_lots(
-            credential,
-            environment,
-            record.account_id,
-            instrument_uid,
-            price=price,
-        )
-
-    def post_sandbox_order(
-        self,
-        user_id: UUID,
-        instrument_uid: str,
-        *,
-        quantity_lots: int,
-        price: str,
-        direction: str,
-        request_id: str,
-        price_type: str,
-    ) -> TBankSandboxOrderState:
-        record, credential, environment = self._sandbox_credential(user_id)
-        if direction not in {"buy", "sell"}:
-            raise ValueError("sandbox order direction is invalid")
-        if price_type not in {"point", "currency"}:
-            raise ValueError("sandbox order price type is invalid")
-        return self.tbank.post_sandbox_order(
-            credential,
-            environment,
-            record.account_id,
-            instrument_uid,
-            quantity_lots=quantity_lots,
-            price=price,
-            direction=cast(Any, direction),
-            request_id=request_id,
-            price_type=cast(Any, price_type),
-        )
 
     def sandbox_order_state(
         self,
@@ -612,13 +493,15 @@ class BrokerService:
         record, credential, environment = self._sandbox_credential(user_id)
         if price_type not in {"point", "currency"}:
             raise ValueError("sandbox order price type is invalid")
-        return self.tbank.get_sandbox_order_state(
+        state = self.tbank.get_sandbox_order_state(
             credential,
             environment,
             record.account_id,
             request_id=request_id,
             price_type=cast(Any, price_type),
         )
+        self._require_current_connection(record)
+        return state
 
     def cancel_sandbox_order(
         self,

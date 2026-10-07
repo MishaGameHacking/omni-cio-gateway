@@ -1,7902 +1,4691 @@
+"use strict";
+
 (() => {
   "use strict";
 
-  let workspace = null;
-  let hunterRequest = null;
-  let hunterGeneration = 0;
-
-  const requiredElement = (selector) => {
-    const element = document.querySelector(selector);
-    if (!element) {
-      throw new Error(`Required UI element is missing: ${selector}`);
-    }
-    return element;
+  const U = window.OmniUI;
+  const {
+    escape: esc,
+    icon,
+    money,
+    percent,
+    number,
+    date,
+    format,
+    button,
+    empty,
+    heading,
+    cardHeader,
+    chart,
+    periods,
+    field,
+    select,
+    help,
+    infoRows,
+    freshness
+  } = U;
+  const $ = (selector, parent = document) => parent.querySelector(selector);
+  const $$ = (selector, parent = document) => [...parent.querySelectorAll(selector)];
+  const clone = value => structuredClone(value);
+  const state = {
+    user: null,
+    config: null,
+    generation: 0,
+    locked: false,
+    tour: false,
+    view: "home",
+    route: {},
+    data: {},
+    errors: {},
+    loading: new Set(),
+    requests: new Set(),
+    resourceVersions: new Map(),
+    deletedGoalIds: new Set(),
+    homePeriod: "1m",
+    portfolioPeriod: "1y",
+    assetPeriod: "1m",
+    assetTab: "chart",
+    strategyPane: "catalog",
+    asset: null,
+    assetFilter: "all",
+    sort: "name",
+    sortDirection: 1,
+    eventFilter: "all",
+    eventQuery: "all",
+    searchQuery: "",
+    searchResults: [],
+    searchSequence: 0,
+    cbrCurrency: "USD",
+    cbrPeriod: "1m",
+    prefs: {
+      server: null,
+      draft: null,
+      revision: 0,
+      dirty: false,
+      busy: false,
+      error: null,
+      timer: null
+    },
+    strategy: {
+      server: null,
+      draft: null,
+      revision: 0,
+      dirty: false,
+      busy: false,
+      error: null,
+      intent: "edit",
+      timer: null,
+      assessment: null,
+      research: null
+    },
+    chat: [],
+    assistantBusy: false,
+    drawerReturn: null,
+    verifying: false,
+    authMode: "login"
   };
-
-  const authCard = document.querySelector("#auth-card");
-  const profilePanel = document.querySelector("#profile-panel");
-  const vkidForm = document.querySelector("#vkid-form");
-  const vkidLogin = document.querySelector("#vkid-login");
-  const authMessage = document.querySelector("#auth-message");
-  const accessEyebrow = document.querySelector("#access-eyebrow");
-  const accessLead = document.querySelector("#access-lead");
-  const accessScope = document.querySelector("#access-scope");
-  const homeLoginTitle = document.querySelector("#home-login-title");
-  const homeLoginNote = document.querySelector("#home-login-note");
-  const accountModeBadge = document.querySelector("#account-mode-badge");
-  const investmentProfileForm = document.querySelector("#investment-profile-form");
-  const investmentProfileVersion = document.querySelector("#investment-profile-version");
-  const investmentProfileCreated = document.querySelector("#investment-profile-created");
-  const investmentProfileMessage = document.querySelector("#investment-profile-message");
-  const investmentProfileSave = document.querySelector("#investment-profile-save");
-  const profileReserveRub = document.querySelector("#profile-reserve-rub");
-  const profileWithdrawalRub = document.querySelector("#profile-withdrawal-rub");
-  const profileHorizonMonths = document.querySelector("#profile-horizon-months");
-  const profileMaxDrawdown = document.querySelector("#profile-max-drawdown");
-  const profileLiquidityDays = document.querySelector("#profile-liquidity-days");
-  const profileAllowBelowGrade = document.querySelector("#profile-allow-below-grade");
-  const balancingPolicyForm = document.querySelector("#balancing-policy-form");
-  const balancingPolicyVersion = document.querySelector("#balancing-policy-version");
-  const balancingPolicyCreated = document.querySelector("#balancing-policy-created");
-  const balancingPolicyMessage = document.querySelector("#balancing-policy-message");
-  const balancingPolicySave = document.querySelector("#balancing-policy-save");
-  const balanceMaxInstrument = document.querySelector("#balance-max-instrument");
-  const balanceMaxSector = document.querySelector("#balance-max-sector");
-  const balanceMaxIssuer = document.querySelector("#balance-max-issuer");
-  const balanceMaxGroup = document.querySelector("#balance-max-group");
-  const balanceMaxShare = document.querySelector("#balance-max-share");
-  const balanceMaxBond = document.querySelector("#balance-max-bond");
-  const balanceMaxEtf = document.querySelector("#balance-max-etf");
-  const balanceMaxBelowGrade = document.querySelector("#balance-max-below-grade");
-  const balanceMaxUnknown = document.querySelector("#balance-max-unknown");
-  const balanceMaxTerm = document.querySelector("#balance-max-term");
-  const balanceTurnoverBudget = document.querySelector("#balance-turnover-budget");
-  const balanceDailyParticipation = document.querySelector("#balance-daily-participation");
-  const balanceTaxRate = document.querySelector("#balance-tax-rate");
-  const balanceUncertaintyHaircut = document.querySelector("#balance-uncertainty-haircut");
-  const balanceCreditHaircut = document.querySelector("#balance-credit-haircut");
-  const balanceNoTradeBand = document.querySelector("#balance-no-trade-band");
-  const balanceMinReplaceBenefit = document.querySelector("#balance-min-replace-benefit");
-
-  const profileId = document.querySelector("#profile-id");
-  const drawerProfileId = document.querySelector("#drawer-profile-id");
-  const profilePageId = document.querySelector("#profile-page-id");
-  const supportProfileId = document.querySelector("#support-profile-id");
-  const settingsProfileId = document.querySelector("#settings-profile-id");
-  const settingsProfileRole = document.querySelector("#settings-profile-role");
-  const settingsRegistrationState = document.querySelector("#settings-registration-state");
-  const logoutButton = document.querySelector("#logout");
-  const deleteAccountStart = document.querySelector("#delete-account-start");
-  const deleteAccountForm = document.querySelector("#delete-account-form");
-  const deleteAccountProfileId = document.querySelector("#delete-account-profile-id");
-  const deleteAccountConfirmation = document.querySelector("#delete-account-confirmation");
-  const deleteAccountIrreversible = document.querySelector("#delete-account-irreversible");
-  const deleteAccountCancel = document.querySelector("#delete-account-cancel");
-  const deleteAccountSubmit = document.querySelector("#delete-account-submit");
-  const deleteAccountMessage = document.querySelector("#delete-account-message");
-  const appBack = document.querySelector("#app-back");
-  const appMenuToggle = document.querySelector("#app-menu-toggle");
-  const appDrawer = document.querySelector("#app-drawer");
-  const drawerBackdrop = document.querySelector("#drawer-backdrop");
-  const drawerClose = document.querySelector("#drawer-close");
-  const fullscreenToggle = document.querySelector("#fullscreen-toggle");
-  const fullscreenStatus = document.querySelector("#fullscreen-status");
-  const copySupportDiagnostics = document.querySelector("#copy-support-diagnostics");
-  const supportCopyMessage = document.querySelector("#support-copy-message");
-
-  const tbankForm = document.querySelector("#tbank-form");
-  const tbankAccountForm = document.querySelector("#tbank-account-form");
-  const tbankEnvironmentSelect = requiredElement("#tbank-environment");
-  const tbankToken = document.querySelector("#tbank-token");
-  const tbankAccount = document.querySelector("#tbank-account");
-  const tbankTermsAck = document.querySelector("#tbank-terms-ack");
-  const tbankCheck = document.querySelector("#tbank-check");
-  const tbankConnect = document.querySelector("#tbank-connect");
-  const tbankConnected = document.querySelector("#tbank-connected");
-  const tbankDisconnect = document.querySelector("#tbank-disconnect");
-  const tbankAccountLabel = document.querySelector("#tbank-account-label");
-  const tbankMessage = document.querySelector("#tbank-message");
-  const tbankStatusBadge = document.querySelector("#tbank-status-badge");
-
-  const overviewAccount = document.querySelector("#overview-account");
-  const overviewConnectionText = document.querySelector("#overview-connection-text");
-  const homeConnectionCard = document.querySelector("#home-connection-card");
-  const homeTbankState = document.querySelector("#home-tbank-state");
-  const topConnectionIndicator = document.querySelector("#top-connection-indicator");
-  const topConnectionText = document.querySelector("#top-connection-text");
-  const homePortfolioState = document.querySelector("#home-portfolio-state");
-  const homeFxState = document.querySelector("#home-fx-state");
-  const recoveryState = requiredElement("#recovery-state");
-  const recoveryNote = requiredElement("#recovery-note");
-  const recoveryBackupAt = requiredElement("#recovery-backup-at");
-  const recoveryObservedAt = requiredElement("#recovery-observed-at");
-  const recoverySchedule = requiredElement("#recovery-schedule");
-  const recoveryWeekly = requiredElement("#recovery-weekly");
-  const recoveryWeeklyAt = requiredElement("#recovery-weekly-at");
-  const recoveryRefresh = requiredElement("#recovery-refresh");
-  const homePortfolioTotal = requiredElement("#home-portfolio-total");
-  const homeDailyChange = requiredElement("#home-daily-change");
-  const homeDailyRelative = requiredElement("#home-daily-relative");
-  const homeFreeCash = requiredElement("#home-free-cash");
-  const homePositionCount = requiredElement("#home-position-count");
-  const homeAttentionCount = requiredElement("#home-attention-count");
-  const homeSnapshotTime = requiredElement("#home-snapshot-time");
-  const homePortfolioSummaryState = requiredElement("#home-portfolio-summary-state");
-  const homeAllocation = requiredElement("#home-allocation");
-  const homeAttentionStateBadge = requiredElement("#home-attention-state");
-  const homeAttentionList = requiredElement("#home-attention-list");
-
-  const cbrMarketStrip = requiredElement("#cbr-market-strip");
-  const cbrMarketStripStatus = requiredElement("#cbr-market-strip-status");
-  const cbrValueElements = {
-    key_rate: [...document.querySelectorAll('[data-cbr-value="key_rate"]')],
-    usd_rub: [...document.querySelectorAll('[data-cbr-value="usd_rub"]')],
-    eur_rub: [...document.querySelectorAll('[data-cbr-value="eur_rub"]')],
+  state.formDrafts = {};
+  state.formBaselines = {};
+  state.refresh = {
+    sequence: 0,
+    timer: null,
+    busy: false
   };
-  const cbrItemElements = {
-    key_rate: [...document.querySelectorAll('[data-cbr-item="key_rate"]')],
-    usd_rub: [...document.querySelectorAll('[data-cbr-item="usd_rub"]')],
-    eur_rub: [...document.querySelectorAll('[data-cbr-item="eur_rub"]')],
+  state.recovery = {
+    id: null,
+    sequence: 0,
+    busy: false,
+    record: null,
+    uncertain: false
   };
-
-  const portfolioStateBadge = document.querySelector("#portfolio-state-badge");
-  const portfolioRefresh = document.querySelector("#portfolio-refresh");
-  const portfolioLoading = document.querySelector("#portfolio-loading");
-  const portfolioDisconnected = document.querySelector("#portfolio-disconnected");
-  const portfolioError = document.querySelector("#portfolio-error");
-  const portfolioErrorText = document.querySelector("#portfolio-error-text");
-  const portfolioDataNotice = requiredElement("#portfolio-data-notice");
-  const activityList = requiredElement("#activity-list");
-  const activityMessage = requiredElement("#activity-message");
-  const activityRefresh = requiredElement("#activity-refresh");
-  const supportRequestId = requiredElement("#support-request-id");
-  const portfolioContent = document.querySelector("#portfolio-content");
-  const portfolioTotal = document.querySelector("#portfolio-total");
-  const portfolioYield = document.querySelector("#portfolio-yield");
-  const portfolioDaily = document.querySelector("#portfolio-daily");
-  const portfolioDailyRelative = document.querySelector("#portfolio-daily-relative");
-  const portfolioPositionCount = document.querySelector("#portfolio-position-count");
-  const portfolioRefreshed = document.querySelector("#portfolio-refreshed");
-  const portfolioFreeCash = requiredElement("#portfolio-free-cash");
-  const assetAllocation = document.querySelector("#asset-allocation");
-  const portfolioAllocationNote = requiredElement("#portfolio-allocation-note");
-  const allocationViewButtons = [...document.querySelectorAll("[data-allocation-view]")];
-  const cashList = document.querySelector("#cash-list");
-  const cashLoadingNote = document.querySelector("#cash-loading-note");
-  const positionsList = document.querySelector("#positions-list");
-  const positionsTableBody = requiredElement("#positions-table-body");
-  const positionsFreshnessNote = requiredElement("#positions-freshness-note");
-  const portfolioRetry = document.querySelector("[data-portfolio-retry]");
-  const homeHistoryState = requiredElement("#home-history-state");
-  const homeHistoryChart = requiredElement("#home-portfolio-history-chart");
-  const homeHistoryFacts = requiredElement("#home-history-facts");
-  const homeHistoryNote = requiredElement("#home-history-note");
-  const portfolioHistoryState = requiredElement("#portfolio-history-state");
-  const portfolioHistoryPeriods = requiredElement("#portfolio-history-periods");
-  const portfolioHistoryPeriodButtons = [
-    ...portfolioHistoryPeriods.querySelectorAll("[data-portfolio-history-days]"),
-  ];
-  const portfolioHistoryChart = requiredElement("#portfolio-history-chart");
-  const portfolioHistoryFacts = requiredElement("#portfolio-history-facts");
-  const portfolioHistoryNote = requiredElement("#portfolio-history-note");
-  const portfolioDrawdownState = requiredElement("#portfolio-drawdown-state");
-  const portfolioDrawdownChart = requiredElement("#portfolio-drawdown-chart");
-  const portfolioDrawdownNote = requiredElement("#portfolio-drawdown-note");
-  const portfolioCoverageState = requiredElement("#portfolio-coverage-state");
-  const portfolioSectorCoverage = requiredElement("#portfolio-sector-coverage");
-  const portfolioValuedCount = requiredElement("#portfolio-valued-count");
-  const portfolioSnapshotStatus = requiredElement("#portfolio-snapshot-status");
-  const portfolioSnapshotTime = requiredElement("#portfolio-snapshot-time");
-  const instrumentDetail = requiredElement("#instrument-detail");
-  const instrumentDetailTitle = requiredElement("#instrument-detail-title");
-  const instrumentDetailSubtitle = requiredElement("#instrument-detail-subtitle");
-  const instrumentDetailClose = requiredElement("#instrument-detail-close");
-  const instrumentDetailLoading = requiredElement("#instrument-detail-loading");
-  const instrumentDetailContent = requiredElement("#instrument-detail-content");
-  const instrumentDetailValue = requiredElement("#instrument-detail-value");
-  const instrumentDetailWeight = requiredElement("#instrument-detail-weight");
-  const instrumentDetailPrice = requiredElement("#instrument-detail-price");
-  const instrumentDetailPriceTime = requiredElement("#instrument-detail-price-time");
-  const instrumentDetailQuantity = requiredElement("#instrument-detail-quantity");
-  const instrumentDetailBlocked = requiredElement("#instrument-detail-blocked");
-  const instrumentDetailPnl = requiredElement("#instrument-detail-pnl");
-  const instrumentDetailPnlTime = requiredElement("#instrument-detail-pnl-time");
-  const instrumentDetailRisk = requiredElement("#instrument-detail-risk");
-  const instrumentDetailRiskTime = requiredElement("#instrument-detail-risk-time");
-  const instrumentHistoryChart = requiredElement("#instrument-history-chart");
-  const instrumentHistoryNote = requiredElement("#instrument-history-note");
-  const instrumentEvidenceSummary = requiredElement("#instrument-evidence-summary");
-  const instrumentPayouts = requiredElement("#instrument-payouts");
-  const instrumentSources = requiredElement("#instrument-sources");
-  const instrumentDetailMessage = requiredElement("#instrument-detail-message");
-  const instrumentMarketState = requiredElement("#instrument-market-state");
-  const instrumentMarketRetry = requiredElement("#instrument-market-retry");
-  const instrumentMarketModeButtons = [
-    ...requiredElement("#instrument-market-modes").querySelectorAll("[data-market-mode]"),
-  ];
-  const instrumentMarketPeriodButtons = [
-    ...requiredElement("#instrument-market-periods").querySelectorAll("[data-market-period]"),
-  ];
-  const instrumentMarketChart = requiredElement("#instrument-market-chart");
-  const instrumentMarketScrubber = requiredElement("#instrument-market-scrubber");
-  const instrumentMarketTooltip = requiredElement("#instrument-market-tooltip");
-  const instrumentMarketLastPrice = requiredElement("#instrument-market-last-price");
-  const instrumentMarketQuoteTime = requiredElement("#instrument-market-quote-time");
-  const instrumentMarketTradingStatus = requiredElement("#instrument-market-trading-status");
-  const instrumentMarketSource = requiredElement("#instrument-market-source");
-  const instrumentMarketNote = requiredElement("#instrument-market-note");
-
-  const analysisRefresh = document.querySelector("#analysis-refresh");
-  const analysisStatus = document.querySelector("#analysis-status");
-  const analysisContent = document.querySelector("#analysis-content");
-  const analysisCash = document.querySelector("#analysis-cash");
-  const analysisCount = document.querySelector("#analysis-count");
-  const analysisCoverage = document.querySelector("#analysis-coverage");
-  const analysisObservations = document.querySelector("#analysis-observations");
-  const analysisClasses = document.querySelector("#analysis-classes");
-  const analysisSectors = document.querySelector("#analysis-sectors");
-  const analysisSecurities = document.querySelector("#analysis-securities");
-  const analysisSources = document.querySelector("#analysis-sources");
-  const intelligenceStatus = document.querySelector("#intelligence-status");
-  const intelligenceRisks = document.querySelector("#intelligence-risks");
-  const intelligencePayouts = document.querySelector("#intelligence-payouts");
-  const intelligenceSources = document.querySelector("#intelligence-sources");
-  const balancingStatus = document.querySelector("#balancing-status");
-  const balancingFreeCash = document.querySelector("#balancing-free-cash");
-  const balancingCandidateCount = document.querySelector("#balancing-candidate-count");
-  const balancingEligibleNote = document.querySelector("#balancing-eligible-note");
-  const balancingPolicyVersions = document.querySelector("#balancing-policy-versions");
-  const balancingScenarios = document.querySelector("#balancing-scenarios");
-  const balancingScreening = document.querySelector("#balancing-screening");
-  const proposalStatus = document.querySelector("#proposal-status");
-  const proposalCreateOptions = document.querySelector("#proposal-create-options");
-  const proposalHistory = requiredElement("#proposal-history");
-  const proposalMessage = document.querySelector("#proposal-message");
-  const executionStatus = requiredElement("#execution-status");
-  const executionRefresh = requiredElement("#execution-refresh");
-  const executionHistory = requiredElement("#execution-history");
-  const executionDetails = requiredElement("#execution-details");
-  const executionMessage = requiredElement("#execution-message");
-  const liveMandateStatus = requiredElement("#live-mandate-status");
-  const liveMandateSummary = requiredElement("#live-mandate-summary");
-  const liveMandateForm = requiredElement("#live-mandate-form");
-  const liveMaxOrder = requiredElement("#live-max-order");
-  const liveMaxDaily = requiredElement("#live-max-daily");
-  const liveExpiresAt = requiredElement("#live-expires-at");
-  const liveProfileId = requiredElement("#live-profile-id");
-  const liveConfirm = requiredElement("#live-confirm");
-  const liveMandateSave = requiredElement("#live-mandate-save");
-  const liveMandateRevoke = requiredElement("#live-mandate-revoke");
-  const liveMandateMessage = requiredElement("#live-mandate-message");
-
-  const owlState = document.querySelector("#owl-state");
-  const owlLastRefresh = document.querySelector("#owl-last-refresh");
-  const owlFxStatus = document.querySelector("#owl-fx-status");
-  const hunterForm = document.querySelector("#hunter-form");
-  const hunterQuery = document.querySelector("#hunter-query");
-  const hunterSearch = document.querySelector("#hunter-search");
-  const hunterMessage = document.querySelector("#hunter-message");
-  const hunterResults = document.querySelector("#hunter-results");
-  const guardState = document.querySelector("#guard-state");
-  const guardBlockedPositions = document.querySelector("#guard-blocked-positions");
-  const guardBlockedCash = document.querySelector("#guard-blocked-cash");
-  const guardLargestClass = document.querySelector("#guard-largest-class");
-
-  const viewTitle = document.querySelector("#view-title");
-  const desktopNavItems = [...document.querySelectorAll("[data-view]")];
-  const viewPanels = [...document.querySelectorAll("[data-view-panel]")];
-  const viewLinks = [...document.querySelectorAll("[data-go-view]")];
-
-  const themeButtons = [...document.querySelectorAll("[data-theme-option]")];
-  const themeMeta = document.querySelector('meta[name="theme-color"]');
-  const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
-  const THEME_KEY = "omnicio_theme_v2";
-
-  const installButton = document.querySelector("#install-app");
-  const installStatus = document.querySelector("#install-status");
-
-  const VIEW_TITLES = {
-    home: "Главная",
-    portfolio: "Портфель",
-    events: "События",
-    assets: "Поиск активов",
-    strategy: "Стратегия",
-    orders: "Сделки",
-    payouts: "Выплаты",
-    goals: "Цели",
-    assistant: "Ассистент",
-    notifications: "Уведомления",
-    decisions: "Решения",
-    system: "Система",
-    connections: "Подключения",
-    profile: "Профиль",
-    settings: "Настройки",
-    support: "Поддержка",
+  const views = new Set([...U.navigation.map(([key]) => key), "asset", "search"]);
+  const assetTypes = [["all", "Все"], ["share", "Акции"], ["bond", "Облигации"], ["etf", "Фонды"], ["currency", "Валюта"], ["other", "Другое"]];
+  const strategyIcons = {
+    balanced: ["portfolio", "#2b86ff"],
+    conservative: ["shield", "#8645d8"],
+    aggressive: ["analytics", "#f24964"],
+    income: ["wallet", "#ef9b32"],
+    growth: ["market", "#2f82ff"],
+    buffett: ["shield", "#27c963"],
+    bogle: ["building", "#af9a53"],
+    dalio: ["portfolio", "#a04eed"],
+    ladder: ["building", "#23ace9"],
+    dividends: ["wallet", "#f26333"]
   };
-
-  let currentView = "home";
-  let currentProfileId = "";
-  let strategyLibrary = null;
-  let profileContextLost = false;
-  let profileCheckInFlight = false;
-  let pendingTbankCredential = null;
-  let pendingTbankEnvironment = null;
-  let deferredInstallPrompt = null;
-  let tbankIsConnected = false;
-  let portfolioLoaded = false;
-  let portfolioRequestInFlight = false;
-  let lastPortfolioSnapshot = null;
-  let lastPortfolioLoadError = null;
-  let lastPortfolioRefreshAt = 0;
-  let portfolioGeneration = 0;
-  let portfolioFreshnessTimer = null;
-  let lastFailedRequestId = "";
-  let activityRequestInFlight = false;
-  let recoveryGeneration = 0;
-  let recoveryTimer = null;
-  let portfolioVisualizationLoaded = false;
-  let portfolioVisualizationInFlight = false;
-  let lastPortfolioVisualization = null;
-  let selectedAllocationView = "class";
-  let selectedPortfolioHistoryDays = 90;
-  let instrumentDetailRequestInFlight = false;
-  let instrumentDetailGeneration = 0;
-  let instrumentMarketGeneration = 0;
-  let instrumentMarketMode = "line";
-  let instrumentMarketPeriod = "1m";
-  let instrumentMarketPayload = null;
-  let instrumentMarketUid = "";
-  let instrumentMarketCurrency = "";
-  let instrumentMarketQuoteUnit = "money";
-  let instrumentMarketEventSource = null;
-  let instrumentMarketRetryTimer = null;
-  let instrumentMarketRetryCount = 0;
-  let analysisInFlight = false;
-  let analysisGeneration = 0;
-  let lastAnalysisAt = 0;
-  let proposalRequestInFlight = false;
-  let executionRequestInFlight = false;
-  let liveMandateRequestInFlight = false;
-  let liveOperatorEnabled = false;
-  let liveMandate = null;
-  let liveOperatorMaxOrder = 0;
-  let liveOperatorMaxDaily = 0;
-  let connectedTbankEnvironment = null;
-  let tbankAccountId = null;
-  let owlTimer = null;
-  let cbrIndicatorTimer = null;
-  let cbrIndicatorsLoaded = false;
-  let lastCbrIndicatorRefreshAt = 0;
-  let navigationDepth = 0;
-  const homeAttentionBuckets = {
-    connection: null,
-    portfolio: null,
-    proposals: null,
+  const strategyTaglines = {
+    balanced: "Сочетание риска и доходности",
+    conservative: "Сохранение капитала",
+    aggressive: "Потенциал роста",
+    income: "Регулярные выплаты",
+    growth: "Долгосрочный рост",
+    buffett: "Качество и устойчивость",
+    bogle: "Широкий рынок и издержки",
+    dalio: "Распределение рисков",
+    ladder: "Постепенное погашение",
+    dividends: "Источники выплат"
   };
-
-  const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-  const INSTRUMENT_MARKET_MAX_RETRIES = 6;
-
-  const apiPath = (path) => {
-    if (typeof path !== "string" || !path.startsWith("/api/")) {
-      throw new TypeError("API path must be same-origin and start with /api/");
-    }
-    const url = new URL(path, window.location.origin);
-    if (
-      url.origin !== window.location.origin
-      || !url.pathname.startsWith("/api/")
-      || url.hash
-    ) {
-      throw new TypeError("API path escaped the same-origin API boundary");
-    }
+  let themeChoice = "dark";
+  try {
+    const saved = localStorage.getItem("omnicio-theme");
+    if (["dark", "light", "system"].includes(saved)) themeChoice = saved;
+  } catch {/* Theme storage is optional; no private data is stored. */}
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+  const stableDocument = value => Array.isArray(value) ? value.map(stableDocument) : renderStableDocumentValue(value);
+  const same = (left, right) => JSON.stringify(stableDocument(left)) === JSON.stringify(stableDocument(right));
+  const contextError = () => Object.assign(new Error("profile_context_changed"), {
+    status: 409,
+    code: "profile_context_changed"
+  });
+  const safeSegment = value => {
+    const text = String(value ?? "");
+    if (!text || text.length > 128 || text !== text.trim() || /[\\/?#\u0000-\u001f\u007f]/u.test(text)) throw new Error("invalid_instrument");
+    return encodeURIComponent(text);
+  };
+  const apiPath = path => {
+    if (typeof path !== "string" || !path.startsWith("/api/")) throw new TypeError("Only same-origin API requests are supported");
+    const url = new URL(path, location.origin);
+    if (url.origin !== location.origin || !url.pathname.startsWith("/api/") || url.hash || url.username || url.password) throw new TypeError("Invalid API origin");
     return url;
   };
-
-  const uuidPathSegment = (value) => {
-    const segment = String(value || "");
-    if (!UUID_PATTERN.test(segment)) {
-      throw new TypeError("API path UUID is invalid");
-    }
-    return segment.toLowerCase();
+  const privateRequest = path => !["/api/auth/config", "/api/auth/vkid/start", "/api/auth/tid/start", "/api/strategy/catalog", "/api/public/market-reference", "/api/public/news"].includes(path.split("?")[0]);
+  const ensureResponseContext = ({
+    generation,
+    profile,
+    bootstrap
+  }) => {
+    if (generation !== state.generation) throw contextError();
+    if (profile && state.user?.public_id !== profile) throw contextError();
+    if (state.locked && !bootstrap) throw contextError();
   };
-
-  const instrumentPathSegment = (value) => {
-    const segment = String(value || "");
-    if (
-      segment.length < 1
-      || segment.length > 128
-      || segment !== segment.trim()
-      || /[\\/?#\u0000-\u001f\u007f]/u.test(segment)
-    ) {
-      throw new TypeError("Instrument path segment is invalid");
-    }
-    return encodeURIComponent(segment);
-  };
-
-  const executionActionSegment = (value) => {
-    if (!["advance", "cancel"].includes(value)) {
-      throw new TypeError("Execution action is invalid");
-    }
-    return value;
-  };
-
-  const apiErrorMessage = (response, body) => {
-    if (body && typeof body.detail === "string" && body.detail.trim()) {
-      return body.detail;
-    }
-    const fallbackByStatus = {
-      413: "Запрос слишком большой. Проверьте введённые данные и попробуйте снова.",
-      422: "Проверьте формат и допустимые значения полей. Изменения не применены.",
-      429: "Слишком много запросов. Подождите немного и повторите действие.",
-      502: "Сервис временно недоступен. Изменения не подтверждены.",
-      503: "Сервис временно перегружен. Изменения не подтверждены.",
-      504: "Сервис не успел ответить. Проверьте состояние перед повтором.",
-    };
-    return fallbackByStatus[response.status] || "Запрос не выполнен. Проверьте состояние и повторите.";
-  };
-
-  const profileContextError = () => Object.assign(new Error("profile_context_changed"), {status: 409});
-
-  const pauseProfileContext = () => {
-    if (profileContextLost) return;
-    profileContextLost = true;
-    resetTbankPreview();
-    tbankToken.value = "";
-    tbankTermsAck.checked = false;
-    stopCbrIndicators();
-    window.clearInterval(owlTimer);
-    clearTimeout(recoveryTimer);
-    recoveryGeneration += 1;
-    invalidatePortfolioRequest();
-    resetAnalysis();
-    closeDrawer();
-    profilePanel.inert = true;
-    profilePanel.classList.add("hidden");
-    authCard.classList.add("hidden");
-    requiredElement("#profile-context-panel").classList.remove("hidden");
-    requiredElement("#profile-context-reload").focus();
-  };
-
-  const requireServerMode = () => {
-    if (workspace?.isDemo()) throw Object.assign(new Error("demo_mode_no_server_access"), {status: 0});
-  };
-
-  const api = async (path, options = {}) => {
-    requireServerMode();
-    if (!navigator.onLine && !["GET", "HEAD"].includes(options.method || "GET")) throw Object.assign(new Error("Нет сети. Изменение не отправлено."), {status: 0});
-    if (profileContextLost) throw profileContextError();
-    const headers = new Headers(options.headers);
-    headers.set("Content-Type", "application/json");
-    if (currentProfileId) headers.set("X-Omnicio-Profile", currentProfileId);
-    const response = await fetch(apiPath(path), {
-      cache: "no-store",
-      credentials: "same-origin",
-      ...options,
-      headers,
+  const apiFailure = (response, payload, profile) => {
+    const code = typeof payload?.detail === "string" ? payload.detail : "request_failed";
+    const error = Object.assign(new Error(code), {
+      status: response.status,
+      code
     });
-    requireServerMode();
-    const body = response.status === 204 ? null : await response.json().catch(() => null);
-    if (profileContextLost) throw profileContextError();
-    if (!response.ok) {
-      const error = new Error(apiErrorMessage(response, body));
-      error.status = response.status;
-      const requestId = response.headers.get("X-Request-ID") || "";
-      error.requestId = /^[0-9a-f]{32}$/.test(requestId) ? requestId : "";
-      if (error.requestId) {
-        lastFailedRequestId = error.requestId;
-        supportRequestId.textContent = error.requestId;
-      }
-      if ((currentProfileId && error.status === 401)
-        || ["profile_context_changed", "profile_context_required", "settings_owner_conflict"].includes(error.message)) {
-        pauseProfileContext();
-        error.message = "profile_context_changed";
-        error.status = 409;
-      }
-      throw error;
+    const requestId = response.headers.get("X-Request-ID") || "";
+    if (/^[a-f0-9]{32}$/.test(requestId)) error.requestId = requestId;
+    const contextChanged = ["profile_context_changed", "profile_context_required", "settings_owner_conflict", "strategy_account_context_changed"].includes(code);
+    if (profile && (response.status === 401 || contextChanged)) {
+      lockSession(response.status === 401 ? "Сессия завершилась. Войдите снова, чтобы продолжить." : "Аккаунт в браузере изменился. Старые данные очищены. Проверьте текущую сессию.");
+      return contextError();
     }
-    return body;
+    return error;
   };
-
-  const errorReference = (error) => error?.requestId ? ` Код обращения: ${error.requestId}.` : "";
-
-  const ACTIVITY_LABELS = {
-    account_created: "Аккаунт создан",
-    login_succeeded: "Вход через VK ID",
-    tbank_connected: "Подключение T-Invest сохранено",
-    tbank_disconnected: "T-Invest отключён",
-    investment_profile_saved: "Профиль капитала сохранён",
-    balancing_policy_saved: "Лимиты портфеля сохранены",
-    support_sessions_revoked: "Сеансы входа завершены поддержкой",
-  };
-
-  const loadAccountActivity = async () => {
-    if (activityRequestInFlight || !currentProfileId) return;
-    activityRequestInFlight = true;
-    activityRefresh.disabled = true;
-    showMessage(activityMessage, "Загружаем действия…");
-    try {
-      const payload = await api("/api/me/activity", {method: "GET"});
-      activityList.replaceChildren();
-      (payload.events || []).forEach((event) => {
-        if (!Object.hasOwn(ACTIVITY_LABELS, event.event_type)) return;
-        const row = document.createElement("li");
-        const label = document.createElement("span");
-        label.textContent = ACTIVITY_LABELS[event.event_type];
-        const time = document.createElement("time");
-        time.dateTime = event.created_at;
-        time.textContent = formatDateTime(event.created_at);
-        row.append(label, time);
-        activityList.append(row);
-      });
-      showMessage(activityMessage, activityList.children.length ? "" : "Событий пока нет.");
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      showMessage(activityMessage, "Не удалось обновить журнал. Попробуйте позже." + errorReference(error), true);
-    } finally {
-      activityRequestInFlight = false;
-      activityRefresh.disabled = false;
+  const readApiResponse = async (response, context) => {
+    const payload = response.status === 204 ? null : await response.json().catch(() => null);
+    ensureResponseContext(context);
+    if (!response.ok) throw apiFailure(response, payload, context.profile);
+    if (payload?.public_id && context.profile && payload.public_id !== context.profile) {
+      lockSession("Сервер вернул другой аккаунт. Старые данные очищены; требуется проверка сессии.");
+      throw contextError();
     }
-  };
-
-  const showMessage = (element, text, isError = false) => {
-    element.textContent = text;
-    element.classList.toggle("error", isError);
-  };
-
-  const validateFormWithMessage = (form, messageElement, fallback) => {
-    if (form.checkValidity()) {
-      return true;
-    }
-    const invalid = form.querySelector(":invalid");
-    form.reportValidity();
-    const label = invalid?.labels?.[0]?.textContent
-      ?.replace(/\s+/g, " ")
-      .trim();
-    showMessage(
-      messageElement,
-      label ? `${fallback} Поле «${label}».` : fallback,
-      true,
-    );
-    invalid?.focus();
-    return false;
-  };
-
-  const localDateTimeInputValue = (date) => {
-    const pad = (value) => String(value).padStart(2, "0");
-    return [
-      date.getFullYear(),
-      "-",
-      pad(date.getMonth() + 1),
-      "-",
-      pad(date.getDate()),
-      "T",
-      pad(date.getHours()),
-      ":",
-      pad(date.getMinutes()),
-    ].join("");
-  };
-
-  const setStateBadge = (element, text, state) => {
-    element.textContent = text;
-    element.classList.remove("state-ok", "state-next", "state-error");
-    if (state) {
-      element.classList.add(state);
-    }
-  };
-
-  const renderReleaseInfo = () => {
-    const release = window.OMNICIO_RELEASE || {};
-    const version = typeof release.version === "string" && release.version ? release.version : "—";
-    const build = typeof release.build === "string" && release.build ? release.build : "—";
-
-    document.querySelectorAll("[data-app-version]").forEach((element) => {
-      element.textContent = version;
+    if (response.status !== 204 && (!payload || typeof payload !== "object")) throw Object.assign(new Error("invalid_server_response"), {
+      status: 502
     });
-    document.querySelectorAll("[data-app-build]").forEach((element) => {
-      element.textContent = build;
-    });
-  };
-
-  const RECOVERY_STATES = {
-    fresh: ["Копия создана", "Ежедневное копирование включено. Недельная копия за текущую неделю подтверждена.", "state-ok"],
-    missing: ["Копия не найдена", "Наличие готовой резервной копии пока не подтверждено.", "state-error"],
-    backup_stale: ["Копия устарела", "Последней подтверждённой копии больше суток. Требуется проверка сервиса.", "state-error"],
-    check_stale: ["Проверка устарела", "Состояние резервных копий давно не проверялось. Показаны последние известные даты.", "state-next"],
-    schedule_attention: ["Нужно внимание", "Копия есть, но ежедневное хранение семи копий не подтверждено.", "state-next"],
-    weekly_attention: ["Нужно внимание", "Свежая копия есть. Недельная история пока не подтверждена — требуется проверка сервиса.", "state-next"],
-    unavailable: ["Нет подтверждения", "Не удалось подтвердить состояние резервных копий. Попробуйте обновить статус позже.", "state-next"],
-  };
-
-  const loadRecoveryStatus = async () => {
-    if (!currentProfileId || profilePanel.classList.contains("hidden")) return;
-    const generation = ++recoveryGeneration;
-    clearTimeout(recoveryTimer);
-    recoveryRefresh.disabled = true;
-    setStateBadge(recoveryState, "Проверяем", "");
-    recoveryNote.textContent = "Проверяем состояние резервных копий…";
-    recoveryWeekly.textContent = "Проверяем…";
-    try {
-      const payload = await api("/api/system/recovery", {method: "GET"});
-      if (generation !== recoveryGeneration) return;
-      const state = Object.hasOwn(RECOVERY_STATES, payload.status) ? payload.status : "unavailable";
-      const [label, note, badge] = RECOVERY_STATES[state];
-      setStateBadge(recoveryState, label, badge);
-      recoveryNote.textContent = note;
-      recoveryBackupAt.textContent = formatDateTime(payload.backup?.observed_at);
-      recoveryObservedAt.textContent = formatDateTime(payload.freshness?.observed_at);
-      recoverySchedule.textContent = payload.daily_schedule === true
-        ? `Ежедневно · копий для хранения: ${payload.retention_copies}` : "Не подтверждено";
-      recoveryWeeklyAt.textContent = formatDateTime(payload.weekly?.observed_at);
-      const weeklyCopies = payload.weekly?.available_copies;
-      const weeklyConfirmed = Number.isInteger(weeklyCopies) && weeklyCopies >= 1 && weeklyCopies <= 4
-        && payload.weekly?.retention_copies === 4 && payload.weekly?.status === "fresh";
-      const weeklyProgress = weeklyCopies < 4 ? " История пополняется по неделям." : "";
-      recoveryWeekly.textContent = weeklyConfirmed
-        ? `Создано ${weeklyCopies} из 4.${weeklyProgress}`
-        : "Не подтверждено";
-      if (state === "fresh") {
-        const deadline = Math.min(Date.parse(payload.freshness?.valid_until),
-          Date.parse(payload.backup?.valid_until), Date.parse(payload.weekly?.valid_until));
-        const remaining = deadline - Date.parse(payload.checked_at);
-        if (Number.isFinite(remaining) && remaining > 0) {
-          recoveryTimer = window.setTimeout(() => { void loadRecoveryStatus(); }, Math.min(remaining + 50, 2147483647));
-        }
-      }
-    } catch (error) {
-      if (generation !== recoveryGeneration) return;
-      setStateBadge(recoveryState, "Нет подтверждения", "state-next");
-      recoveryNote.textContent = RECOVERY_STATES.unavailable[1] + errorReference(error);
-      recoveryBackupAt.textContent = "—";
-      recoveryObservedAt.textContent = "—";
-      recoverySchedule.textContent = "Не подтверждено";
-      recoveryWeekly.textContent = "Не подтверждено";
-      recoveryWeeklyAt.textContent = "—";
-    } finally {
-      if (generation === recoveryGeneration) recoveryRefresh.disabled = false;
-    }
-  };
-
-  const renderAccessMode = (config) => {
-    const registrationOpen = config?.registration_enabled === true;
-    const capacity = Number(config?.registration_max_users) || 1;
-    accessEyebrow.textContent = "Персональный инвестиционный кабинет";
-    accessLead.textContent = registrationOpen
-      ? `Новый пользователь, прошедший VK ID, занимает один из ${capacity} доступных пользовательских слотов. Данные и брокерские подключения изолированы по профилям.`
-      : "Регистрация новых аккаунтов закрыта. Уже зарегистрированный пользователь может продолжать вход через свой VK ID.";
-    accessScope.textContent = registrationOpen
-      ? `Регистрация: лимит ${capacity}`
-      : "Регистрация: закрыта";
-    homeLoginTitle.textContent = "Вход через VK ID";
-    homeLoginNote.textContent = "Только пользовательские права · защищённая сессия OmniCIO";
-    accountModeBadge.textContent = "User";
-    if (settingsRegistrationState) {
-      settingsRegistrationState.textContent = registrationOpen
-        ? `Открыта · лимит ${capacity}`
-        : "Закрыта";
-    }
-  };
-
-  const storedTheme = () => {
-    try {
-      const value = window.localStorage.getItem(THEME_KEY);
-      return ["light", "dark", "auto"].includes(value) ? value : "auto";
-    } catch {
-      return "auto";
-    }
-  };
-
-  const saveTheme = (theme) => {
-    try {
-      window.localStorage.setItem(THEME_KEY, theme);
-    } catch {
-      // Theme persistence is optional when storage is unavailable.
-    }
-  };
-
-  const resolveTheme = (preference) => {
-    if (preference === "auto") {
-      return systemDark.matches ? "dark" : "light";
-    }
-    return preference === "dark" ? "dark" : "light";
-  };
-
-  const applyTheme = (preference) => {
-    const resolved = resolveTheme(preference);
-    document.body.dataset.theme = resolved;
-    if (themeMeta) {
-      themeMeta.content = resolved === "dark" ? "#090b10" : "#f4f6fa";
-    }
-    themeButtons.forEach((button) => {
-      button.setAttribute("aria-pressed", String(button.dataset.themeOption === preference));
-    });
-  };
-
-  const mobileDrawerMode = () => window.matchMedia("(max-width: 1199px)").matches;
-
-  const closeDrawer = () => {
-    const hadFocus = appDrawer.contains(document.activeElement);
-    document.body.classList.remove("drawer-open");
-    appDrawer.inert = mobileDrawerMode();
-    drawerBackdrop.hidden = true;
-    if (hadFocus && mobileDrawerMode()) appMenuToggle.focus();
-    appMenuToggle.setAttribute("aria-expanded", "false");
-    if (mobileDrawerMode()) {
-      appDrawer.setAttribute("aria-hidden", "true");
-    } else {
-      appDrawer.removeAttribute("aria-hidden");
-    }
-  };
-
-  const openDrawer = () => {
-    if (!mobileDrawerMode()) {
-      return;
-    }
-    appDrawer.inert = false;
-    drawerBackdrop.hidden = false;
-    document.body.classList.add("drawer-open");
-    appMenuToggle.setAttribute("aria-expanded", "true");
-    appDrawer.setAttribute("aria-hidden", "false");
-    drawerClose.focus();
-  };
-
-  const refreshVisiblePortfolioHistory = (view) => {
-    if (["home", "portfolio"].includes(view) && lastPortfolioVisualization) {
-      renderPortfolioHistory(lastPortfolioVisualization.history || []);
-    }
-  };
-
-  const renderView = (view, {scroll = true} = {}) => {
-    if (!VIEW_TITLES[view]) {
-      return;
-    }
-
-    currentView = view;
-    document.title = `${VIEW_TITLES[view]} · OmniCIO`;
-    workspace?.onView(view);
-    viewTitle.textContent = VIEW_TITLES[view];
-
-  desktopNavItems.forEach((item) => {
-      const active = item.dataset.view === view;
-      item.classList.toggle("is-active", active);
-      if (active) {
-        item.setAttribute("aria-current", "page");
-      } else {
-        item.removeAttribute("aria-current");
-      }
-    });
-
-    viewPanels.forEach((panel) => {
-      panel.classList.toggle("hidden", panel.dataset.viewPanel !== view);
-    });
-
-    appBack.classList.toggle("hidden", view === "home" && navigationDepth === 0);
-    refreshVisiblePortfolioHistory(view);
-
-    if (view !== "portfolio") {
-      stopInstrumentMarketStream();
-    } else if (
-      instrumentMarketUid
-      && !instrumentDetail.classList.contains("hidden")
-      && document.visibilityState === "visible"
-    ) {
-      startInstrumentMarketStream();
-    }
-    if (scroll) {
-      window.scrollTo({top: 0, behavior: "auto"});
-    }
-
-    if (view === "portfolio" && tbankIsConnected && !portfolioLoaded) {
-      void loadPortfolioData();
-    } else if (view === "portfolio" && !portfolioVisualizationLoaded) {
-      void loadPortfolioVisualization();
-    }
-    if (view === "profile") void loadAccountActivity();
-    if (view === "settings") void loadRecoveryStatus();
-    if (
-      ["decisions", "events", "payouts"].includes(view)
-      && tbankIsConnected
-      && Date.now() - lastAnalysisAt >= 5 * 60 * 1000
-    ) {
-      void loadAnalysis();
-    }
-  };
-
-  const viewUrl = (view) => {
-    const url = new URL(location.href);
-    url.searchParams.delete("auth");
-    url.searchParams.delete("auth_error");
-    if (view === "home") {
-      url.searchParams.delete("view");
-    } else {
-      url.searchParams.set("view", view);
-    }
-    return `${url.pathname}${url.search}`;
-  };
-
-  const saveCurrentScrollState = () => {
-    if (!history.state?.omnicio) {
-      return;
-    }
-    history.replaceState(
-      {...history.state, scrollY: window.scrollY},
-      "",
-      location.href,
-    );
-  };
-
-  const navigateToView = (view, {replace = false} = {}) => {
-    if (!VIEW_TITLES[view]) {
-      return;
-    }
-    if (view === currentView && !replace) {
-      closeDrawer();
-      return;
-    }
-
-    saveCurrentScrollState();
-    const nextDepth = replace ? navigationDepth : navigationDepth + 1;
-    const state = {omnicio: true, view, depth: nextDepth, scrollY: 0};
-    if (replace) {
-      history.replaceState(state, "", viewUrl(view));
-    } else {
-      history.pushState(state, "", viewUrl(view));
-    }
-    navigationDepth = nextDepth;
-    renderView(view);
-    closeDrawer();
-    viewTitle.focus({preventScroll: true});
-  };
-
-  const initializeNavigation = () => {
-    const params = new URLSearchParams(location.search);
-    const requested = params.get("view");
-    const initialView = requested && VIEW_TITLES[requested] ? requested : "home";
-    const existingDepth = Number(history.state?.depth);
-    navigationDepth = history.state?.omnicio && Number.isFinite(existingDepth)
-      ? Math.max(0, existingDepth)
-      : 0;
-    history.replaceState(
-      {omnicio: true, view: initialView, depth: navigationDepth, scrollY: 0},
-      "",
-      viewUrl(initialView),
-    );
-    renderView(initialView, {scroll: false});
-    closeDrawer();
-  };
-
-  const goBack = () => {
-    closeDrawer();
-    if (navigationDepth > 0 && history.state?.omnicio) {
-      history.back();
-      return;
-    }
-    if (currentView !== "home") {
-      navigateToView("home", {replace: true});
-    }
-  };
-
-  const resetTbankPreview = () => {
-    pendingTbankCredential = null;
-    pendingTbankEnvironment = null;
-    tbankAccount.replaceChildren();
-    tbankAccountForm.classList.add("hidden");
-  };
-
-  const ASSET_LABELS = {
-    shares: "Акции",
-    bonds: "Облигации",
-    funds: "Фонды",
-    currencies: "Валюта и деньги",
-    futures: "Фьючерсы",
-    options: "Опционы",
-    structured_products: "Структурные продукты",
-    dfa: "ЦФА",
-  };
-
-  const INSTRUMENT_LABELS = {
-    share: "Акция",
-    bond: "Облигация",
-    etf: "Фонд",
-    currency: "Валюта",
-    futures: "Фьючерс",
-    option: "Опцион",
-    sp: "Структурный продукт",
-  };
-
-  const numericValue = (value) => {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : 0;
-  };
-
-  const formatMoney = (money, {sign = false} = {}) => {
-    if (!money || typeof money.value !== "string" || !money.currency) {
-      return "—";
-    }
-    const value = numericValue(money.value);
-    try {
-      const formatted = new Intl.NumberFormat("ru-RU", {
-        style: "currency",
-        currency: String(money.currency).toUpperCase(),
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 4,
-      }).format(value);
-      return sign && value > 0 ? `+${formatted}` : formatted;
-    } catch {
-      const formatted = new Intl.NumberFormat("ru-RU", {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 4,
-      }).format(value);
-      return `${sign && value > 0 ? "+" : ""}${formatted} ${money.currency}`;
-    }
-  };
-
-  const formatPercent = (value, {sign = false} = {}) => {
-    const number = numericValue(value);
-    const formatted = new Intl.NumberFormat("ru-RU", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
-    }).format(number);
-    return `${sign && number > 0 ? "+" : ""}${formatted}%`;
-  };
-
-  const formatQuantity = (value) => new Intl.NumberFormat("ru-RU", {
-    maximumFractionDigits: 8,
-  }).format(numericValue(value));
-
-  const formatDateTime = (value) => {
-    if (!value) {
-      return "—";
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return String(value);
-    }
-    return new Intl.DateTimeFormat("ru-RU", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
-  };
-
-  const formatExactDateTime = (value) => {
-    if (!value) {
-      return "—";
-    }
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return String(value);
-    }
-    return new Intl.DateTimeFormat("ru-RU", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(date);
-  };
-
-  const formatCalendarDate = (value) => {
-    if (!value) {
-      return "—";
-    }
-    const date = new Date(`${value}T00:00:00Z`);
-    if (Number.isNaN(date.getTime())) {
-      return String(value);
-    }
-    return new Intl.DateTimeFormat("ru-RU", {
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-      timeZone: "UTC",
-    }).format(date);
-  };
-
-  const formatCbrNumber = (
-    value,
-    {minimumFractionDigits = 2, maximumFractionDigits = 4} = {},
-  ) => {
-    const number = Number(value);
-    if (!Number.isFinite(number)) {
-      throw new TypeError("Bank of Russia indicator value is invalid");
-    }
-    return new Intl.NumberFormat("ru-RU", {
-      minimumFractionDigits,
-      maximumFractionDigits,
-    }).format(number);
-  };
-
-  const setCbrIndicator = (key, text, title) => {
-    for (const element of cbrValueElements[key] || []) {
-      element.textContent = text;
-    }
-    for (const element of cbrItemElements[key] || []) {
-      element.title = title;
-    }
-  };
-
-  const renderCbrIndicators = (snapshot) => {
-    const keyRate = snapshot?.key_rate;
-    const usd = snapshot?.usd_rub;
-    const eur = snapshot?.eur_rub;
-    if (!keyRate || !usd || !eur) {
-      throw new TypeError("Bank of Russia indicator payload is incomplete");
-    }
-
-    const keyRateText = `${formatCbrNumber(keyRate.value, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}%`;
-    const usdText = `${formatCbrNumber(usd.value)} ₽`;
-    const eurText = `${formatCbrNumber(eur.value)} ₽`;
-    const source = snapshot.source === "Bank of Russia" ? "Банк России" : "ЦБ РФ";
-
-    setCbrIndicator(
-      "key_rate",
-      keyRateText,
-      `${source} · действует с ${formatCalendarDate(keyRate.effective_date)}`,
-    );
-    setCbrIndicator(
-      "usd_rub",
-      usdText,
-      `${source} · официальный курс на ${formatCalendarDate(usd.effective_date)}`,
-    );
-    setCbrIndicator(
-      "eur_rub",
-      eurText,
-      `${source} · официальный курс на ${formatCalendarDate(eur.effective_date)}`,
-    );
-
-    const cached = snapshot.freshness === "cached";
-    if (!cached && snapshot.freshness !== "fresh") {
-      throw new TypeError("Bank of Russia indicator freshness is invalid");
-    }
-
-    cbrMarketStrip.classList.toggle("is-unavailable", cached);
-    cbrMarketStripStatus.textContent = cached
-      ? (
-        `Банк России временно недоступен. Последние значения: ставка ${keyRateText}, `
-        + `доллар ${usdText}, евро ${eurText}.`
-      )
-      : (
-        `Банк России: ключевая ставка ${keyRateText}, доллар ${usdText}, `
-        + `евро ${eurText}.`
-      );
-    setStateBadge(
-      homeFxState,
-      cached ? "Последние данные" : "Актуально",
-      cached ? "state-next" : "state-ok",
-    );
-    owlFxStatus.textContent = cached
-      ? `последние данные · ${formatCalendarDate(usd.effective_date)}`
-      : `ЦБ РФ · ${formatCalendarDate(usd.effective_date)}`;
-    cbrIndicatorsLoaded = true;
-    lastCbrIndicatorRefreshAt = Date.now();
-  };
-
-  const renderCbrIndicatorFailure = () => {
-    cbrMarketStrip.classList.add("is-unavailable");
-    if (cbrIndicatorsLoaded) {
-      cbrMarketStripStatus.textContent = (
-        "Банк России временно недоступен. Показаны последние успешно полученные значения."
-      );
-      setStateBadge(homeFxState, "Последние данные", "state-next");
-      owlFxStatus.textContent = "последние полученные данные";
-      return;
-    }
-
-    cbrMarketStripStatus.textContent = "Официальные показатели Банка России временно недоступны.";
-    setStateBadge(homeFxState, "Недоступно", "state-next");
-    owlFxStatus.textContent = "временно недоступно";
-  };
-
-  const loadCbrIndicators = async () => {
-    try {
-      const snapshot = await api("/api/market/cbr-indicators", {method: "GET"});
-      renderCbrIndicators(snapshot);
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      renderCbrIndicatorFailure();
-    }
-  };
-
-  const startCbrIndicators = () => {
-    void loadCbrIndicators();
-    if (cbrIndicatorTimer !== null) {
-      return;
-    }
-    cbrIndicatorTimer = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
-        void loadCbrIndicators();
-      }
-    }, 5 * 60 * 1000);
-  };
-
-  const stopCbrIndicators = () => {
-    if (cbrIndicatorTimer !== null) {
-      window.clearInterval(cbrIndicatorTimer);
-      cbrIndicatorTimer = null;
-    }
-  };
-
-  const applySignedClass = (element, value) => {
-    const number = numericValue(value);
-    element.classList.remove("value-positive", "value-negative");
-    if (number > 0) {
-      element.classList.add("value-positive");
-    } else if (number < 0) {
-      element.classList.add("value-negative");
-    }
-  };
-
-  const appendEmptyState = (container, text) => {
-    container.replaceChildren();
-    const empty = document.createElement("div");
-    empty.className = "portfolio-empty-inline";
-    empty.textContent = text;
-    container.append(empty);
-  };
-
-  const updateOwlState = (timestamp) => {
-    if (!tbankIsConnected) {
-      setStateBadge(owlState, "Нет подключения", "state-next");
-      owlLastRefresh.textContent = "—";
-      return;
-    }
-
-    if (!timestamp) {
-      setStateBadge(owlState, "Ожидает данных", "");
-      owlLastRefresh.textContent = "—";
-      return;
-    }
-
-    setStateBadge(owlState, "Снимок получен", "state-ok");
-    owlLastRefresh.textContent = formatDateTime(timestamp);
-  };
-
-  const updateGuard = (snapshot) => {
-    if (!snapshot?.portfolio) {
-      setStateBadge(guardState, "Ожидает данных", "");
-      guardBlockedPositions.textContent = "—";
-      guardBlockedCash.textContent = "—";
-      guardLargestClass.textContent = "—";
-      return;
-    }
-
-    const positions = snapshot.portfolio.positions || [];
-    const blockedPositions = positions.filter((position) => position.blocked).length;
-    const blockedCash = (snapshot.blocked_cash || []).filter(
-      (money) => numericValue(money.value) !== 0
-    );
-
-    const totals = (snapshot.portfolio.asset_totals || []).filter(
-      (item) => numericValue(item.money?.value) > 0
-    );
-    const total = totals.reduce((sum, item) => sum + numericValue(item.money.value), 0);
-    const largest = totals.reduce((current, item) => {
-      if (!current || numericValue(item.money.value) > numericValue(current.money.value)) {
-        return item;
-      }
-      return current;
-    }, null);
-
-    guardBlockedPositions.textContent = String(blockedPositions);
-    guardBlockedCash.textContent = String(blockedCash.length);
-    if (largest && total > 0) {
-      const share = (numericValue(largest.money.value) / total) * 100;
-      guardLargestClass.textContent = `${ASSET_LABELS[largest.kind] || largest.kind} · ${share.toFixed(1)}%`;
-    } else {
-      guardLargestClass.textContent = "Нет данных";
-    }
-    setStateBadge(guardState, "Контролирует", "state-ok");
-  };
-
-  const renderHunterResults = (items) => {
-    items = workspace?.filterAssets(items || []) || items;
-    hunterResults.replaceChildren();
-    if (!items?.length) {
-      appendEmptyState(hunterResults, "T-Invest не нашёл доступных инструментов по этому запросу.");
-      return;
-    }
-
-    items.forEach((instrument) => {
-      const card = document.createElement("article");
-      card.className = "hunter-result";
-
-      const main = document.createElement("div");
-      main.className = "hunter-result-main";
-
-      const identity = document.createElement("div");
-      identity.className = "hunter-result-identity";
-      const ticker = document.createElement("strong");
-      ticker.textContent = instrument.ticker || "—";
-      const name = document.createElement("span");
-      name.textContent = instrument.name || "Без названия";
-      identity.append(ticker, name);
-
-      const meta = document.createElement("div");
-      meta.className = "hunter-result-meta";
-      const type = document.createElement("span");
-      type.textContent = INSTRUMENT_LABELS[instrument.instrument_type]
-        || instrument.instrument_type
-        || "Инструмент";
-      const lot = document.createElement("span");
-      lot.textContent = `Лот: ${Number.isFinite(Number(instrument.lot)) ? instrument.lot : "—"}`;
-      meta.append(type, lot);
-
-      main.append(identity, meta);
-
-      const flags = document.createElement("div");
-      flags.className = "hunter-result-flags";
-      if (instrument.for_qual_investor) {
-        const flag = document.createElement("span");
-        flag.textContent = "Для квалифицированных инвесторов";
-        flags.append(flag);
-      }
-      if (instrument.for_iis) {
-        const flag = document.createElement("span");
-        flag.textContent = "Доступно для ИИС";
-        flags.append(flag);
-      }
-      if (instrument.weekend_trading) {
-        const flag = document.createElement("span");
-        flag.textContent = "Торги в выходные";
-        flags.append(flag);
-      }
-      if (!flags.childElementCount) {
-        const flag = document.createElement("span");
-        flag.textContent = "Доступен через T-Invest API";
-        flags.append(flag);
-      }
-
-      card.append(main, flags);
-      hunterResults.append(card);
-    });
-    workspace?.decorateAssets(items);
-  };
-
-  const searchHunter = async () => {
-    const query = hunterQuery.value.trim();
-    const generation = ++hunterGeneration;
-    hunterRequest?.abort();
-    hunterRequest = new AbortController();
-    hunterSearch.disabled = false;
-    hunterSearch.textContent = "Найти";
-    showMessage(hunterMessage, "");
-    if (workspace?.isDemo()) {
-      const items = workspace.demoSearch(query);
-      workspace.setCatalog(items);
-      renderHunterResults(items);
-      showMessage(hunterMessage, `Демонстрационные инструменты: ${items.length}. Данные вымышлены.`);
-      return;
-    }
-
-    if (!tbankIsConnected) {
-      showMessage(hunterMessage, "Сначала подключите T-Invest.", true);
-      return;
-    }
-    if (!query || query.length > 64) {
-      showMessage(hunterMessage, "Введите тикер или название инструмента.", true);
-      return;
-    }
-
-    hunterSearch.disabled = true;
-    hunterSearch.textContent = "Ищем…";
-    try {
-      const payload = await api(
-        `/api/broker/tbank/instruments/search?q=${encodeURIComponent(query)}`,
-        {method: "GET", signal: hunterRequest.signal},
-      );
-      if (generation !== hunterGeneration) return;
-      workspace?.setCatalog(payload.items || []);
-      renderHunterResults(payload.items || []);
-      showMessage(
-        hunterMessage,
-        payload.items?.length
-          ? `Найдено: ${payload.items.length}. Это поиск, а не инвестиционная рекомендация.`
-          : "Совпадений не найдено.",
-      );
-    } catch (error) {
-      if (error.name === "AbortError" || generation !== hunterGeneration) return;
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      if (error.status === 409) {
-        showMessage(hunterMessage, "Подключение T-Invest нужно обновить.", true);
-      } else {
-        showMessage(hunterMessage, "Поиск T-Invest временно недоступен.", true);
-      }
-    } finally {
-      if (generation === hunterGeneration) {
-        hunterSearch.disabled = false;
-        hunterSearch.textContent = "Найти";
-      }
-    }
-  };
-
-  const startOwl = () => {
-    if (owlTimer !== null) {
-      window.clearInterval(owlTimer);
-    }
-
-    owlTimer = window.setInterval(() => {
-      if (
-        document.visibilityState === "visible"
-        && tbankIsConnected
-        && !portfolioRequestInFlight
-      ) {
-        void loadPortfolioData({force: true});
-      }
-    }, 5 * 60 * 1000);
-  };
-
-  const renderAllocationRows = (
-    container,
-    totals,
-    {limit = null, emptyMessage = "T-Invest не вернул распределение по классам активов."} = {},
-  ) => {
-    container.replaceChildren();
-    const positive = (totals || []).filter((item) => numericValue(item.money?.value) > 0);
-    const sum = positive.reduce((total, item) => total + numericValue(item.money.value), 0);
-    if (!positive.length || sum <= 0) {
-      appendEmptyState(container, emptyMessage);
-      return;
-    }
-
-    const ordered = positive
-      .sort((left, right) => numericValue(right.money.value) - numericValue(left.money.value));
-    const visible = Number.isInteger(limit) && limit > 0 ? ordered.slice(0, limit) : ordered;
-
-    const complete = (totals || []).every((item) => finiteMarketNumber(item.money?.value) !== null
-      && finiteMarketNumber(item.money.value) >= 0 && item.money.currency === positive[0].money.currency);
-    if (complete) {
-      const colors = {shares: "var(--chart-shares)", bonds: "var(--chart-bonds)", funds: "var(--chart-funds)", currencies: "var(--chart-cash)"};
-      const ring = uiNode("div", undefined, "allocation-ring");
-      ring.setAttribute("aria-hidden", "true");
-      let angle = 0;
-      const stops = ordered.map((item) => {
-        const start = angle; angle += numericValue(item.money.value) / sum * 360;
-        return `${colors[item.kind] || "var(--chart-other)"} ${start}deg ${angle}deg`;
-      });
-      ring.style.background = `conic-gradient(${stops.join(",")})`;
-      ring.append(uiNode("span", "Состав")); container.append(ring);
-    } else container.append(uiNode("p", "Распределение предварительное: есть неизвестные, отрицательные или несопоставимые значения. Круговая диаграмма не строится.", "field-hint"));
-    visible.forEach((item) => {
-      const value = numericValue(item.money.value);
-      const share = Math.max(0, Math.min(100, (value / sum) * 100));
-
-      const row = document.createElement("div");
-      row.className = "allocation-row";
-      row.dataset.assetKind = String(item.kind);
-
-      const label = document.createElement("div");
-      label.className = "allocation-label";
-      const name = document.createElement("strong");
-      name.textContent = ASSET_LABELS[item.kind] || item.kind;
-      const percent = document.createElement("span");
-      percent.textContent = `${share.toFixed(1)}%`;
-      label.append(name, percent);
-
-      const track = document.createElement("div");
-      track.className = "allocation-track";
-      track.setAttribute("role", "img");
-      track.setAttribute(
-        "aria-label",
-        `${ASSET_LABELS[item.kind] || item.kind}: ${share.toFixed(1)}%`,
-      );
-      const fill = document.createElement("div");
-      fill.className = "allocation-fill";
-      fill.style.width = `${share}%`;
-      track.append(fill);
-
-      const amount = document.createElement("div");
-      amount.className = "allocation-value";
-      amount.textContent = formatMoney(item.money);
-
-      row.append(label, track, amount);
-      container.append(row);
-    });
-  };
-
-  const renderAllocation = (totals) => {
-    renderAllocationRows(assetAllocation, totals);
-  };
-
-  const renderCash = (cash, blockedCash, loadingLimits) => {
-    cashList.replaceChildren();
-    const blockedByCurrency = new Map(
-      (blockedCash || []).map((item) => [String(item.currency).toUpperCase(), item])
-    );
-    if (!cash?.length) {
-      appendEmptyState(cashList, "Денежные остатки отсутствуют или ещё не загружены.");
-    } else {
-      cash.forEach((item) => {
-        const currency = String(item.currency).toUpperCase();
-        const blocked = blockedByCurrency.get(currency);
-        const row = document.createElement("div");
-        row.className = "cash-row";
-
-        const label = document.createElement("div");
-        const title = document.createElement("strong");
-        title.textContent = currency;
-        const note = document.createElement("span");
-        note.textContent = blocked && numericValue(blocked.value) !== 0
-          ? `Заблокировано: ${formatMoney(blocked)}`
-          : "Доступно на счёте";
-        label.append(title, note);
-
-        const amount = document.createElement("div");
-        amount.className = "cash-value";
-        amount.textContent = formatMoney(item);
-
-        row.append(label, amount);
-        cashList.append(row);
-      });
-    }
-    cashLoadingNote.classList.toggle("hidden", !loadingLimits);
-  };
-
-  const storedMoney = (value, currency = "RUB") => {
-    const number = Number(value);
-    if (!Number.isFinite(number)) {
-      return "—";
-    }
-    return formatMoney({currency, value: String(number)});
-  };
-
-  const storedPercent = (value, {sign = false} = {}) => {
-    const number = Number(value);
-    return Number.isFinite(number) ? formatPercent(number, {sign}) : "—";
-  };
-
-  const riskStateLabel = (value) => ({
-    data_missing: "Данных недостаточно",
-    normal: "Норма",
-    watch: "Наблюдение",
-    elevated: "Повышенный риск",
-    critical: "Критический риск",
-    confirmed_default: "Подтверждённый дефолт",
-  }[value] || String(value || "Не подтверждено"));
-
-  const riskStateClass = (value) => {
-    if (value === "confirmed_default" || value === "critical") {
-      return "state-error";
-    }
-    if (value === "watch" || value === "elevated" || value === "data_missing") {
-      return "state-next";
-    }
-    return value === "normal" ? "state-ok" : "";
-  };
-
-  const setChartFacts = (container, history) => {
-    const values = history
-      .map((item) => ({
-        value: finiteMarketNumber(item.nav_rub),
-        capturedAt: item.captured_at,
-      }))
-      .filter((item) => Number.isFinite(item.value));
-    const cells = [...container.querySelectorAll("dd")];
-    if (!values.length || cells.length < 4) {
-      cells.forEach((cell) => {
-        cell.textContent = "—";
-      });
-      return;
-    }
-    const minimum = values.reduce(
-      (current, item) => item.value < current.value ? item : current,
-      values[0],
-    );
-    const maximum = values.reduce(
-      (current, item) => item.value > current.value ? item : current,
-      values[0],
-    );
-    const first = values[0];
-    const last = values[values.length - 1];
-    cells[0].textContent = `${storedMoney(first.value)} · ${formatDateTime(first.capturedAt)}`;
-    cells[1].textContent = storedMoney(minimum.value);
-    cells[2].textContent = storedMoney(maximum.value);
-    cells[3].textContent = `${storedMoney(last.value)} · ${formatDateTime(last.capturedAt)}`;
-  };
-
-  const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
-
-  const chartNode = (name, attributes = {}) => {
-    const node = document.createElementNS(SVG_NAMESPACE, name);
-    Object.entries(attributes).forEach(([key, value]) => {
-      node.setAttribute(key, String(value));
-    });
-    return node;
-  };
-
-  // Geometry is approximate pixels; inspected values retain the source decimal text.
-  const finiteMarketNumber = (value) => {
-    if ((typeof value !== "string" && typeof value !== "number")
-        || (typeof value === "string" && !value.trim())) return null;
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : null;
-  };
-
-  const chartDecimalText = (value, unit = "₽") => {
-    const text = String(value ?? "");
-    if (!/^-?\d+(?:\.\d+)?$/.test(text)) return "Нет значения";
-    const negative = text.startsWith("-");
-    const [whole, fraction = ""] = text.replace(/^-/, "").split(".");
-    return `${negative ? "−" : ""}${BigInt(whole).toLocaleString("ru-RU")}${fraction ? "," + fraction : ""}${unit ? " " + unit : ""}`;
-  };
-
-  const clearDataChart = (svg) => {
-    svg.replaceChildren();
-    if (svg.nextElementSibling?.dataset.chartOwner === svg.id) svg.nextElementSibling.remove();
-    svg.onpointermove = null;
-    svg.onclick = null;
-  };
-
-  const chartDimensions = (svg) => {
-    const width = Math.max(280, Math.round(svg.getBoundingClientRect().width || 720));
-    const height = svg.id === "instrument-market-chart" ? 320 : 240;
-    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-    return {width, height, left: 62, right: 18, top: 26, bottom: 30};
-  };
-
-  const chartText = (svg, text, x, y, anchor = "start") => {
-    const label = chartNode("text", {x, y, "text-anchor": anchor, class: "chart-axis-label"});
-    label.textContent = text;
-    svg.append(label);
-  };
-
-  const chartAxes = (svg, box, {minimum, maximum, first, last, unit, plotBottom, calendarDates = false}) => {
-    const compact = (value) => new Intl.NumberFormat("ru-RU", {
-      maximumFractionDigits: Math.abs(value) < 100 ? 4 : 2, notation: "compact",
-    }).format(value);
-    chartText(svg, unit, box.left, 14);
-    for (let index = 0; index < 4; index += 1) {
-      const y = box.top + (plotBottom - box.top) * index / 3;
-      svg.append(chartNode("line", {x1: box.left, y1: y, x2: box.width - box.right, y2: y, class: "portfolio-chart-grid"}));
-      chartText(svg, compact(maximum - (maximum - minimum) * index / 3), box.left - 8, y + 4, "end");
-    }
-    let timeOptions = {day: "2-digit", month: "short"};
-    if (calendarDates) timeOptions.timeZone = "UTC";
-    else if (last - first < 36 * 3600000) timeOptions = {hour: "2-digit", minute: "2-digit"};
-    const shortDate = (value) => new Intl.DateTimeFormat("ru-RU", timeOptions).format(new Date(value));
-    chartText(svg, shortDate(first), box.left, box.height - 6);
-    chartText(svg, shortDate(last), box.width - box.right, box.height - 6, "end");
-  };
-
-  const addChartInspector = (svg, points, x, unit, {interactive = true} = {}) => {
-    const wrapper = uiNode("div", undefined, "chart-inspector");
-    wrapper.dataset.chartOwner = svg.id;
-    if (svg.id !== "public-reference-chart") wrapper.dataset.private = "";
-    const output = uiNode("output", "Выберите точку для точного значения", "chart-selected-value");
-    const range = uiNode("input");
-    range.type = "range"; range.min = "0"; range.max = String(points.length - 1);
-    range.value = String(points.length - 1); range.step = "1";
-    range.setAttribute("aria-label", "Точка графика: дата и точное значение");
-    const selectPoint = (index) => {
-      const point = points[index];
-      if (!point) return;
-      range.value = String(index);
-      const dateLabel = point.calendarDate ? formatCalendarDate(point.calendarDate) : formatDateTime(point.time);
-      output.textContent = `${dateLabel} · ${chartDecimalText(point.raw, unit)}`;
-      range.setAttribute("aria-valuetext", output.textContent);
-      svg.querySelector(".chart-selected-marker")?.remove();
-      svg.append(chartNode("line", {x1: x(point.time), x2: x(point.time), y1: 22, y2: Number(svg.viewBox.baseVal.height) - 30, class: "chart-selected-marker"}));
-    };
-    if (interactive) {
-      range.addEventListener("input", () => selectPoint(Number(range.value)));
-      const inspect = (event) => {
-        const rect = svg.getBoundingClientRect();
-        if (!rect.width) return;
-        const value = (event.clientX - rect.left) * svg.viewBox.baseVal.width / rect.width;
-        let chosen = 0;
-        points.forEach((point, index) => { if (Math.abs(x(point.time) - value) < Math.abs(x(points[chosen].time) - value)) chosen = index; });
-        selectPoint(chosen);
-      };
-      svg.onpointermove = (event) => { if (event.pointerType === "mouse") inspect(event); };
-      svg.onclick = inspect;
-      wrapper.append(output, range);
-    }
-    const details = uiNode("details", undefined, "chart-data-table");
-    details.append(uiNode("summary", `Точные значения · ${points.length}`));
-    const table = uiNode("table");
-    const head = uiNode("thead"); const row = uiNode("tr");
-    for (const title of ["Дата источника", `Значение, ${unit}`]) { const cell = uiNode("th", title); cell.scope = "col"; row.append(cell); }
-    head.append(row); table.append(head);
-    const body = uiNode("tbody");
-    for (const point of points) {
-      const item = uiNode("tr");
-      const dateLabel = point.calendarDate ? formatCalendarDate(point.calendarDate) : formatDateTime(point.time);
-      item.append(uiNode("td", dateLabel), uiNode("td", chartDecimalText(point.raw, unit)));
-      body.append(item);
-    }
-    table.append(body); details.append(table); wrapper.append(details);
-    svg.after(wrapper);
-  };
-
-  const seriesPoint = (item, {valueKey, timeKey, calendarDates}) => {
-    const raw = item?.[valueKey];
-    const value = finiteMarketNumber(raw);
-    const rawTime = item?.[timeKey];
-    if (value === null || typeof rawTime !== "string") return null;
-    const coordinate = calendarDates ? `${rawTime}T00:00:00Z` : rawTime;
-    const time = new Date(coordinate).getTime();
-    if (!Number.isFinite(time)) return null;
-    // Calendar facts have no local time zone. UTC is only their plot coordinate.
-    if (calendarDates && (!/^\d{4}-\d{2}-\d{2}$/.test(rawTime)
-        || new Date(time).toISOString().slice(0, 10) !== rawTime)) return null;
-    return {time, value, raw, calendarDate: calendarDates ? rawTime : null};
-  };
-
-  const seriesSegments = (points, options) => {
-    const clean = [];
-    let segment = 0;
-    const observations = Array.isArray(points) ? points.slice(0, 3000) : [];
-    for (const item of observations) {
-      const point = seriesPoint(item, options);
-      // Invalid or absent observations break the line, never become zero.
-      if (!point) { segment += 1; continue; }
-      const previous = clean.at(-1);
-      if (previous && (point.time <= previous.time || point.time - previous.time > options.maxGapMs)) segment += 1;
-      clean.push({...point, segment});
-    }
-    return clean;
-  };
-
-  const seriesPath = (group, x, y, step) => group.map((point, index) => {
-    const horizontal = x(point.time).toFixed(2);
-    const vertical = y(point.value).toFixed(2);
-    if (index === 0) return `M ${horizontal} ${vertical}`;
-    if (step) return `H ${horizontal} V ${vertical}`;
-    return `L ${horizontal} ${vertical}`;
-  }).join(" ");
-
-  const drawSeriesSegments = (svg, clean, {x, y, step, zeroLine, plotBottom}) => {
-    const groups = new Map();
-    for (const item of clean) {
-      if (!groups.has(item.segment)) groups.set(item.segment, []);
-      groups.get(item.segment).push(item);
-    }
-    for (const group of groups.values()) {
-      const path = seriesPath(group, x, y, step);
-      if (!zeroLine && group.length > 1) svg.append(chartNode("path", {
-        d: `${path} L ${x(group.at(-1).time)} ${plotBottom} L ${x(group[0].time)} ${plotBottom} Z`, class: "portfolio-chart-area",
-      }));
-      svg.append(chartNode("path", {d: path, class: "portfolio-chart-line", fill: "none"}));
-      const endpoints = group.length > 1 ? [group[0], group.at(-1)] : [group[0]];
-      for (const point of endpoints) {
-        svg.append(chartNode("circle", {cx: x(point.time), cy: y(point.value), r: 3, class: "portfolio-chart-point"}));
-      }
-    }
-  };
-
-  const renderSeriesChart = (svg, points, {
-    valueKey = "value", timeKey = "captured_at", minimumPoints = 2,
-    zeroLine = false, unit = "₽", step = false, maxGapMs = 7 * 86400000, calendarDates = false,
-  } = {}) => {
-    clearDataChart(svg);
-    const clean = seriesSegments(points, {valueKey, timeKey, calendarDates, maxGapMs});
-    if (clean.length < minimumPoints) return false;
-    const box = chartDimensions(svg);
-    const lowTime = Math.min(...clean.map((item) => item.time));
-    const highTime = Math.max(...clean.map((item) => item.time));
-    let minimum = Math.min(...clean.map((item) => item.value), ...(zeroLine ? [0] : []));
-    let maximum = Math.max(...clean.map((item) => item.value), ...(zeroLine ? [0] : []));
-    if (minimum === maximum) { const pad = Math.max(Math.abs(minimum) * .01, .01); minimum -= pad; maximum += pad; }
-    const plotBottom = box.height - box.bottom;
-    const x = (time) => box.left + (time - lowTime) / Math.max(highTime - lowTime, 1) * (box.width - box.left - box.right);
-    const y = (value) => box.top + (maximum - value) / (maximum - minimum) * (plotBottom - box.top);
-    chartAxes(svg, box, {minimum, maximum, first: lowTime, last: highTime, unit, plotBottom, calendarDates});
-    drawSeriesSegments(svg, clean, {x, y, step, zeroLine, plotBottom});
-    addChartInspector(svg, clean, x, unit, {interactive: svg.id !== "instrument-market-chart"});
-    return true;
-  };
-
-  const renderReferenceHistory = (chart, series, currency) => {
-    clearDataChart(chart);
-    if (!Array.isArray(series?.points)) {
-      return "История ЦБ сейчас недоступна. График не заменён примером. Повторите получение позже.";
-    }
-    const shown = renderSeriesChart(chart, series.points, {
-      timeKey: "effective_date", calendarDates: true, unit: `₽ / ${currency}`,
-      step: true, maxGapMs: 10 * 86400000,
-    });
-    if (!shown) return "Источник не вернул достаточно наблюдений для линии. Значения не дорисованы.";
-    const stale = series.freshness === "cached"
-      ? " Обновление источника не удалось: показана сохранённая версия." : "";
-    return `Официальный курс за 1 ${currency}. Ступени — даты действия курса; это не биржевые сделки. Получено: ${formatDateTime(series.fetched_at)}.${stale}`;
-  };
-
-  const initializePublicReference = () => {
-    const card = requiredElement("#public-reference-card");
-    const chart = requiredElement("#public-reference-chart");
-    const status = requiredElement("#public-reference-status");
-    const note = requiredElement("#public-reference-note");
-    const currency = requiredElement("#public-reference-currency");
-    const period = requiredElement("#public-reference-period");
-    const refresh = requiredElement("#public-reference-refresh");
-    const indicators = requiredElement("#public-reference-indicators");
-    let controller = null;
-    let revision = 0;
-    let active = false;
-    let timer = null;
-    let payload = null;
-    const render = (data) => {
-      indicators.replaceChildren();
-      const series = data.history;
-      note.textContent = renderReferenceHistory(chart, series, data.currency);
-      const values = data.indicators;
-      for (const [key, title, unit] of [["key_rate", "Ключевая ставка", "%"], ["usd_rub", "Доллар · ЦБ", "₽"], ["eur_rub", "Евро · ЦБ", "₽"]]) {
-        const item = values?.[key];
-        const tile = uiNode("div", undefined, "public-reference-tile");
-        tile.append(uiNode("span", title), uiNode("strong", item ? chartDecimalText(item.value, unit) : "Нет данных"),
-          uiNode("small", item ? `Дата действия: ${item.effective_date}` : "Источник не ответил"));
-        indicators.append(tile);
-      }
-      const cached = series?.freshness === "cached" || values?.freshness === "cached";
-      const label = data.status === "available" && !cached ? "Данные источника" : "Неполные или сохранённые данные";
-      status.textContent = data.status === "unavailable" ? "Источник недоступен" : label;
-      card.dataset.state = data.status;
-    };
-    const cancel = () => {
-      revision += 1; controller?.abort(); controller = null;
-      clearTimeout(timer); timer = null; refresh.disabled = false;
-    };
-    const load = async () => {
-      if (!active || document.hidden || controller) return;
-      clearTimeout(timer);
-      const expected = ++revision;
-      const selectedCurrency = currency.value; const selectedPeriod = period.value;
-      controller = new AbortController();
-      const requestController = controller;
-      const deadline = setTimeout(() => requestController.abort(), 22000);
-      refresh.disabled = true; status.textContent = "Получаем данные ЦБ…";
-      try {
-        const response = await fetch(`/api/public/market-reference?currency=${encodeURIComponent(selectedCurrency)}&period=${encodeURIComponent(selectedPeriod)}`, {
-          credentials: "omit", cache: "no-store", signal: requestController.signal, headers: {Accept: "application/json"},
-        });
-        if (!response.ok) throw new Error("reference_unavailable");
-        const data = await response.json();
-        if (expected !== revision || !active) return;
-        if (data.personal_data !== false || data.source !== "Bank of Russia"
-          || data.currency !== selectedCurrency || data.period !== selectedPeriod
-          || !["available", "partial", "unavailable"].includes(data.status)) throw new Error("reference_contract");
-        payload = data; render(data);
-      } catch {
-        // Fetch, timeout and invalid-provider responses share this safe recovery
-        // state. Upstream details must not appear as financial observations.
-        if (expected !== revision || !active) return;
-        status.textContent = "Не удалось обновить";
-        note.textContent = payload
-          ? "Показан предыдущий ответ ЦБ с исходными датами. Новые значения не получены."
-          : "Источник недоступен. Данные не заменены нулём или примером. Нажмите «Обновить».";
-      } finally {
-        clearTimeout(deadline);
-        if (expected === revision) {
-          controller = null; refresh.disabled = false;
-          if (active && !document.hidden) timer = setTimeout(() => { void load(); }, 5 * 60 * 1000);
-        }
-      }
-    };
-    const change = () => { cancel(); payload = null; clearDataChart(chart); indicators.replaceChildren(); void load(); };
-    currency.addEventListener("change", change); period.addEventListener("change", change);
-    refresh.addEventListener("click", () => { void load(); });
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) cancel(); else if (active) void load();
-    });
-    const showLogin = () => {
-      authCard.dataset.surface = "login";
-      requiredElement("#login-title").focus({preventScroll: true});
-    };
-    requiredElement("#public-login").addEventListener("click", showLogin);
-    requiredElement("#public-back").addEventListener("click", () => {
-      authCard.dataset.surface = "public";
-      requiredElement("#auth-title").focus({preventScroll: true});
-    });
-    requiredElement("#public-theme").addEventListener("click", () => {
-      const next = document.body.dataset.theme === "dark" ? "light" : "dark";
-      saveTheme(next); applyTheme(next);
-    });
-    return {
-      start: () => {
-        active = true;
-        const params = new URLSearchParams(location.search);
-        if (params.has("login") || params.has("auth_error")) authCard.dataset.surface = "login";
-        void load();
-      },
-      stop: () => { active = false; cancel(); payload = null; clearDataChart(chart); indicators.replaceChildren(); },
-      enter: () => {
-        requiredElement("#home-public-reference").append(card);
-        active = true;
-        if (payload) render(payload); else void load();
-      },
-      redraw: () => { if (active && payload && card.getClientRects().length) render(payload); },
-    };
-  };
-
-  const marketPriceText = (value) => {
-    const numeric = finiteMarketNumber(value);
-    if (numeric === null) {
-      return "—";
-    }
-    const unit = instrumentMarketQuoteUnit === "point" ? "п." : instrumentMarketCurrency;
-    return chartDecimalText(value, unit === "RUB" ? "₽" : unit);
-  };
-
-  const cleanMarketCandles = (candles) => (Array.isArray(candles) ? candles : [])
-    .map((candle) => ({
-      ...candle,
-      timestamp: typeof candle?.time === "string" ? new Date(candle.time).getTime() : Number.NaN,
-      openValue: finiteMarketNumber(candle?.open),
-      highValue: finiteMarketNumber(candle?.high),
-      lowValue: finiteMarketNumber(candle?.low),
-      closeValue: finiteMarketNumber(candle?.close),
-    }))
-    .filter((candle) => (
-      Number.isFinite(candle.timestamp)
-      && candle.openValue !== null
-      && candle.highValue !== null
-      && candle.lowValue !== null
-      && candle.closeValue !== null
-      && candle.highValue >= candle.lowValue
-      && candle.openValue >= candle.lowValue
-      && candle.openValue <= candle.highValue
-      && candle.closeValue >= candle.lowValue
-      && candle.closeValue <= candle.highValue
-    ))
-    .sort((left, right) => left.timestamp - right.timestamp);
-
-  const renderMarketCandles = (svg, candles) => {
-    clearDataChart(svg);
-    const clean = cleanMarketCandles(candles);
-    if (!clean.length) return false;
-    const box = chartDimensions(svg);
-    const plotBottom = box.height - 102;
-    const plotWidth = box.width - box.left - box.right;
-    let minimum = Math.min(...clean.map((item) => item.lowValue));
-    let maximum = Math.max(...clean.map((item) => item.highValue));
-    if (minimum === maximum) { const pad = Math.max(Math.abs(minimum) * .01, .01); minimum -= pad; maximum += pad; }
-    const y = (value) => box.top + (maximum - value) / (maximum - minimum) * (plotBottom - box.top);
-    const step = plotWidth / clean.length;
-    const bodyWidth = Math.max(.6, Math.min(12, step * .62));
-    const unit = instrumentMarketQuoteUnit === "point" ? "п." : instrumentMarketCurrency || "цена";
-    chartAxes(svg, box, {minimum, maximum, first: clean[0].timestamp, last: clean.at(-1).timestamp, unit, plotBottom});
-    const volumes = clean.map((item) => finiteMarketNumber(item.volume_lots));
-    const maximumVolume = Math.max(0, ...volumes.filter((value) => value !== null && value >= 0));
-    chartText(svg, "Объём, лоты · от 0", box.left, plotBottom + 24);
-    clean.forEach((candle, index) => {
-      const x = box.left + step * (index + .5);
-      let direction = "market-candle-flat";
-      if (candle.closeValue > candle.openValue) direction = "market-candle-up";
-      else if (candle.closeValue < candle.openValue) direction = "market-candle-down";
-      const incomplete = candle.is_complete === false ? " market-candle-incomplete" : "";
-      svg.append(chartNode("line", {x1: x, y1: y(candle.highValue), x2: x, y2: y(candle.lowValue), class: `market-candle-wick ${direction}${incomplete}`}));
-      svg.append(chartNode("rect", {x: x - bodyWidth / 2, y: Math.min(y(candle.openValue), y(candle.closeValue)), width: bodyWidth,
-        height: Math.max(1, Math.abs(y(candle.openValue) - y(candle.closeValue))), rx: 1, class: `market-candle-body ${direction}${incomplete}`}));
-      const volume = volumes[index];
-      if (maximumVolume > 0 && volume !== null && volume >= 0) {
-        const height = 38 * volume / maximumVolume;
-        svg.append(chartNode("rect", {x: x - bodyWidth / 2, y: box.height - box.bottom - height, width: bodyWidth, height,
-          class: `market-volume-bar ${direction}`, "data-volume-lots": candle.volume_lots}));
-      }
-    });
-    return true;
-  };
-
-  const marketTradingStatusLabel = (value) => ({
-    SECURITY_TRADING_STATUS_NORMAL_TRADING: "Основные торги",
-    SECURITY_TRADING_STATUS_OPENING_PERIOD: "Открытие",
-    SECURITY_TRADING_STATUS_CLOSING_PERIOD: "Закрытие",
-    SECURITY_TRADING_STATUS_BREAK_IN_TRADING: "Перерыв",
-    SECURITY_TRADING_STATUS_NOT_AVAILABLE_FOR_TRADING: "Торги недоступны",
-    SECURITY_TRADING_STATUS_SESSION_ASSIGNED: "Сессия назначена",
-    SECURITY_TRADING_STATUS_SESSION_OPEN: "Сессия открыта",
-    SECURITY_TRADING_STATUS_SESSION_CLOSE: "Сессия закрыта",
-    SECURITY_TRADING_STATUS_DEALER_NORMAL_TRADING: "Дилерские торги",
-    SECURITY_TRADING_STATUS_DEALER_BREAK_IN_TRADING: "Дилерский перерыв",
-    SECURITY_TRADING_STATUS_DEALER_NOT_AVAILABLE_FOR_TRADING: "Дилерские торги недоступны",
-  }[value] || String(value || "Статус не подтверждён"));
-
-  const syncInstrumentMarketControls = () => {
-    instrumentMarketModeButtons.forEach((button) => {
-      button.setAttribute(
-        "aria-pressed",
-        String(button.dataset.marketMode === instrumentMarketMode),
-      );
-    });
-    instrumentMarketPeriodButtons.forEach((button) => {
-      button.setAttribute(
-        "aria-pressed",
-        String(button.dataset.marketPeriod === instrumentMarketPeriod),
-      );
-    });
-  };
-
-  const resetInstrumentMarket = (message = "Выберите инструмент для рыночного графика.") => {
-    instrumentMarketGeneration += 1;
-    instrumentMarketPayload = null;
-    clearDataChart(instrumentMarketChart);
-    instrumentMarketScrubber.min = "0";
-    instrumentMarketScrubber.max = "0";
-    instrumentMarketScrubber.value = "0";
-    instrumentMarketScrubber.disabled = true;
-    instrumentMarketTooltip.classList.add("hidden");
-    instrumentMarketTooltip.textContent = "";
-    instrumentMarketLastPrice.textContent = "—";
-    instrumentMarketQuoteTime.textContent = "—";
-    instrumentMarketTradingStatus.textContent = "—";
-    instrumentMarketSource.textContent = "—";
-    instrumentMarketNote.textContent = message;
-    setStateBadge(instrumentMarketState, "Нет данных", "state-next");
-    instrumentMarketRetry.classList.add("hidden");
-  };
-
-  const marketApiAvailabilityLabel = (availability) => {
-    if (availability === true) {
-      return "API: доступно";
-    }
-    if (availability === false) {
-      return "API: недоступно";
-    }
-    return "API: не подтверждено";
-  };
-
-  const instrumentMarketQuoteTimeText = (quoteTime, quoteAge) => {
-    if (!quoteTime) {
-      return "Последняя цена недоступна";
-    }
-    const parts = [formatExactDateTime(quoteTime)];
-    if (quoteAge !== null) {
-      parts.push(`возраст ${Math.max(0, Math.trunc(quoteAge))} с`);
-    }
-    return parts.join(" · ");
-  };
-
-  const renderInstrumentMarketLive = (payload) => {
-    const source = payload !== null && typeof payload === "object" ? payload : {};
-    const quoteStatus = String(source.quote_status || "missing");
-    const quoteAge = finiteMarketNumber(source.quote_age_seconds);
-    instrumentMarketLastPrice.textContent = marketPriceText(source.last_price);
-    instrumentMarketQuoteTime.textContent = instrumentMarketQuoteTimeText(
-      source.quote_time,
-      quoteAge,
-    );
-    const apiAvailability = marketApiAvailabilityLabel(source.api_trade_available);
-    instrumentMarketTradingStatus.textContent = [
-      marketTradingStatusLabel(source.trading_status),
-      apiAvailability,
-    ].join(" · ");
-
-    if (quoteStatus === "live") {
-      setStateBadge(instrumentMarketState, "Оперативно", "state-ok");
-    } else if (quoteStatus === "stale") {
-      setStateBadge(instrumentMarketState, "Котировка устарела", "state-next");
-    } else if (quoteStatus === "future") {
-      setStateBadge(instrumentMarketState, "Время котировки некорректно", "state-error");
-    } else {
-      setStateBadge(instrumentMarketState, "Цена недоступна", "state-next");
-    }
-
-    if (finiteMarketNumber(source.last_price) !== null) {
-      instrumentDetailPrice.textContent = marketPriceText(source.last_price);
-      instrumentDetailPriceTime.textContent = source.quote_time
-        ? `T-Invest quote: ${formatExactDateTime(source.quote_time)}`
-        : "T-Invest: время котировки не подтверждено";
-    }
-  };
-
-  const instrumentMarketCandleNote = (candles, incompleteCount) => {
-    if (!candles.length) {
-      return "T-Invest не вернул свечи для выбранного периода. Последняя цена показана отдельно.";
-    }
-    let completionNote = "Все показанные свечи завершены.";
-    if (incompleteCount) {
-      completionNote = `Незавершённых: ${incompleteCount}; они отмечены пунктиром.`;
-    }
-    return [
-      `Свечей: ${candles.length}.`,
-      completionNote,
-      "Время свечи и время загрузки — разные значения. Свечи расположены последовательно; пропущенные интервалы не дорисовываются. Объём — в лотах.",
-    ].join(" ");
-  };
-
-  const renderInstrumentMarketChart = (payload) => {
-    const source = payload !== null && typeof payload === "object" ? payload : {};
-    instrumentMarketPayload = source;
-    syncInstrumentMarketControls();
-    renderInstrumentMarketLive(source);
-    const candles = cleanMarketCandles(source.candles);
-    const inspectable = instrumentMarketMode === "candles"
-      ? candles.length > 0
-      : candles.length > 1;
-    instrumentMarketScrubber.min = "0";
-    instrumentMarketScrubber.max = String(Math.max(0, candles.length - 1));
-    instrumentMarketScrubber.value = String(Math.max(0, candles.length - 1));
-    instrumentMarketScrubber.disabled = !inspectable;
-    const rendered = instrumentMarketMode === "candles"
-      ? renderMarketCandles(instrumentMarketChart, candles)
-      : renderSeriesChart(
-          instrumentMarketChart,
-          candles.map((item) => ({
-            time: item.time,
-            value: item.close,
-          })),
-          {
-            timeKey: "time",
-            valueKey: "value",
-            minimumPoints: 2,
-            unit: instrumentMarketQuoteUnit === "point" ? "п." : instrumentMarketCurrency || "цена",
-          },
-        );
-    if (!rendered) {
-      clearDataChart(instrumentMarketChart);
-    }
-    const incompleteCount = candles.filter((candle) => candle.is_complete === false).length;
-    instrumentMarketSource.textContent = [
-      source.source || "T-Invest",
-      source.observed_at ? `загружено ${formatExactDateTime(source.observed_at)}` : "",
-    ].filter(Boolean).join(" · ");
-    instrumentMarketNote.textContent = instrumentMarketCandleNote(
-      candles,
-      incompleteCount,
-    );
-    instrumentMarketRetry.classList.add("hidden");
-  };
-
-  const removeInstrumentMarketCrosshair = () => {
-    instrumentMarketChart.querySelectorAll(".market-chart-crosshair").forEach((node) => {
-      node.remove();
-    });
-    instrumentMarketTooltip.classList.add("hidden");
-    instrumentMarketTooltip.textContent = "";
-  };
-
-  const instrumentMarketInspectionCandles = () => {
-    const candles = cleanMarketCandles(instrumentMarketPayload?.candles);
-    if (!candles.length || (instrumentMarketMode === "line" && candles.length < 2)) {
-      return [];
-    }
-    return candles;
-  };
-
-  const instrumentMarketChartSize = () => {
-    const viewBox = String(instrumentMarketChart.getAttribute("viewBox") || "0 0 900 320")
-      .split(/\s+/u)
-      .map(Number);
-    return {
-      width: Number.isFinite(viewBox[2]) && viewBox[2] > 0 ? viewBox[2] : 900,
-      height: Number.isFinite(viewBox[3]) && viewBox[3] > 0 ? viewBox[3] : 320,
-    };
-  };
-
-  const instrumentMarketInspectionX = (candles, index, width) => {
-    if (instrumentMarketMode === "candles") {
-      const padX = 62;
-      const plotWidth = width - padX - 18;
-      return padX + (plotWidth / candles.length) * (index + 0.5);
-    }
-
-    const first = candles.at(0);
-    const last = candles.at(-1);
-    const candle = candles.at(index);
-    if (!first || !last || !candle) {
-      return null;
-    }
-    const padX = 62;
-    const plotWidth = width - padX - 18;
-    const timeSpan = Math.max(last.timestamp - first.timestamp, 1);
-    return padX + ((candle.timestamp - first.timestamp) / timeSpan) * plotWidth;
-  };
-
-  const showInstrumentMarketInspection = (candles, index) => {
-    const candle = candles.at(index);
-    if (!candle) {
-      removeInstrumentMarketCrosshair();
-      return;
-    }
-    const {width, height} = instrumentMarketChartSize();
-    const x = instrumentMarketInspectionX(candles, index, width);
-    if (x === null) {
-      removeInstrumentMarketCrosshair();
-      return;
-    }
-
-    removeInstrumentMarketCrosshair();
-    instrumentMarketChart.append(chartNode("line", {
-      x1: x,
-      y1: 0,
-      x2: x,
-      y2: height,
-      class: "market-chart-crosshair",
-    }));
-    const volumeLots = finiteMarketNumber(candle.volume_lots);
-    instrumentMarketTooltip.textContent = [
-      formatExactDateTime(candle.time),
-      `O ${marketPriceText(candle.open)}`,
-      `H ${marketPriceText(candle.high)}`,
-      `L ${marketPriceText(candle.low)}`,
-      `C ${marketPriceText(candle.close)}`,
-      volumeLots === null
-        ? "объём не подтверждён"
-        : `объём ${new Intl.NumberFormat("ru-RU").format(volumeLots)} лот.`,
-      candle.is_complete === false ? "свеча не завершена" : "свеча завершена",
-    ].join(" · ");
-    instrumentMarketTooltip.classList.remove("hidden");
-  };
-
-  const inspectInstrumentMarketChart = () => {
-    const candles = instrumentMarketInspectionCandles();
-    if (!candles.length) {
-      removeInstrumentMarketCrosshair();
-      return;
-    }
-    const index = Math.max(
-      0,
-      Math.min(
-        candles.length - 1,
-        Number.parseInt(instrumentMarketScrubber.value, 10) || 0,
-      ),
-    );
-    showInstrumentMarketInspection(candles, index);
-  };
-
-  const stopInstrumentMarketStream = ({resetRetry = false} = {}) => {
-    if (instrumentMarketEventSource) {
-      instrumentMarketEventSource.close();
-      instrumentMarketEventSource = null;
-    }
-    if (instrumentMarketRetryTimer !== null) {
-      window.clearTimeout(instrumentMarketRetryTimer);
-      instrumentMarketRetryTimer = null;
-    }
-    if (resetRetry) {
-      instrumentMarketRetryCount = 0;
-    }
-  };
-
-  const scheduleInstrumentMarketReconnect = () => {
-    if (
-      !instrumentMarketUid
-      || currentView !== "portfolio"
-      || document.visibilityState !== "visible"
-    ) {
-      return;
-    }
-    if (instrumentMarketRetryCount >= INSTRUMENT_MARKET_MAX_RETRIES) {
-      setStateBadge(instrumentMarketState, "Поток остановлен", "state-next");
-      instrumentMarketNote.textContent = (
-        "Автоматическое переподключение остановлено после нескольких ошибок. "
-        + "Последние подтверждённые данные сохранены на экране."
-      );
-      instrumentMarketRetry.classList.remove("hidden");
-      return;
-    }
-    const delay = Math.min(1000 * (2 ** instrumentMarketRetryCount), 30000);
-    instrumentMarketRetryCount += 1;
-    instrumentMarketRetryTimer = window.setTimeout(() => {
-      instrumentMarketRetryTimer = null;
-      startInstrumentMarketStream();
-    }, delay);
-  };
-
-  const renderInstrumentMarketStreamStatus = (state) => {
-    const messages = {
-      disconnected: "T-Invest не подключён.",
-      reconnect: "Сохранённый T-Invest токен нужно переподключить.",
-      unavailable: "Поток T-Invest временно недоступен; последняя подтверждённая цена остаётся на экране.",
-      offline: "Автоматические запросы к T-Invest остановлены после нескольких ошибок. Нажмите «Повторить» для новой попытки.",
-      invalid: "Идентификатор инструмента не принят поставщиком.",
-    };
-    const badgeText = {
-      reconnect: "Нужен токен",
-      disconnected: "Нет подключения",
-      offline: "Поток остановлен",
-    }[state] || "Degraded";
-    setStateBadge(instrumentMarketState, badgeText, "state-next");
-    instrumentMarketNote.textContent = messages[state] || messages.unavailable;
-    if (state !== "unavailable") {
-      instrumentMarketRetry.classList.remove("hidden");
-    }
-  };
-
-  const instrumentMarketStreamCanStart = () => (
-    !profileContextLost
-    && Boolean(instrumentMarketUid)
-    && instrumentMarketEventSource === null
-    && instrumentMarketRetryTimer === null
-    && currentView === "portfolio"
-    && document.visibilityState === "visible"
-  );
-
-  const handleInstrumentMarketStreamFailure = (streamUid) => {
-    if (streamUid !== instrumentMarketUid) {
-      return;
-    }
-    stopInstrumentMarketStream();
-    void verifyProfileContext();
-    renderInstrumentMarketStreamStatus("unavailable");
-    scheduleInstrumentMarketReconnect();
-  };
-
-  const handleInstrumentMarketEvent = (event, streamUid) => {
-    if (streamUid !== instrumentMarketUid) {
-      return;
-    }
-    try {
-      const payload = JSON.parse(event.data);
-      if (!instrumentMarketPayloadMatches(payload, instrumentMarketUid)) {
-        throw new TypeError("Market stream instrument does not match");
-      }
-      instrumentMarketRetryCount = 0;
-      renderInstrumentMarketLive(payload);
-      instrumentMarketSource.textContent = [
-        "T-Invest · серверное обновление",
-        payload.observed_at ? `получено ${formatExactDateTime(payload.observed_at)}` : "",
-      ].filter(Boolean).join(" · ");
-    } catch {
-      handleInstrumentMarketStreamFailure(streamUid);
-    }
-  };
-
-  const handleInstrumentMarketStatusEvent = (event, streamUid) => {
-    if (streamUid !== instrumentMarketUid) {
-      return;
-    }
-    try {
-      const payload = JSON.parse(event.data);
-      const state = payload !== null && typeof payload === "object"
-        ? String(payload.state || "unavailable")
-        : "unavailable";
-      if (state === "profile_context_changed") {
-        pauseProfileContext();
-        return;
-      }
-      renderInstrumentMarketStreamStatus(state);
-      if (["disconnected", "reconnect", "invalid", "offline"].includes(state)) {
-        stopInstrumentMarketStream();
-      }
-    } catch {
-      handleInstrumentMarketStreamFailure(streamUid);
-    }
-  };
-
-  const startInstrumentMarketStream = () => {
-    if (!instrumentMarketStreamCanStart()) {
-      return;
-    }
-    if (!("EventSource" in window)) {
-      setStateBadge(instrumentMarketState, "Без live-потока", "state-next");
-      instrumentMarketNote.textContent = (
-        "Браузер не поддерживает EventSource. Историю и последнюю цену можно обновлять вручную."
-      );
-      instrumentMarketRetry.classList.remove("hidden");
-      return;
-    }
-
-    let segment;
-    try {
-      segment = instrumentPathSegment(instrumentMarketUid);
-    } catch {
-      renderInstrumentMarketStreamStatus("invalid");
-      return;
-    }
-
-    const streamUid = instrumentMarketUid;
-    const stream = new EventSource(`/api/market/instruments/${segment}/stream?profile_context=${encodeURIComponent(currentProfileId)}`);
-    instrumentMarketEventSource = stream;
-    stream.addEventListener("market", (event) => {
-      handleInstrumentMarketEvent(event, streamUid);
-    });
-    stream.addEventListener("status", (event) => {
-      handleInstrumentMarketStatusEvent(event, streamUid);
-    });
-    stream.onerror = () => {
-      handleInstrumentMarketStreamFailure(streamUid);
-    };
-  };
-
-  const displayedInstrumentMarketPeriod = (instrumentUid) => {
-    if (!instrumentMarketPayload || instrumentMarketUid !== instrumentUid) {
-      return null;
-    }
-    return typeof instrumentMarketPayload.period === "string"
-      ? instrumentMarketPayload.period
-      : null;
-  };
-
-  const instrumentMarketRequestIsCurrent = (generation, instrumentUid) => (
-    generation === instrumentMarketGeneration && instrumentUid === instrumentMarketUid
-  );
-
-  const instrumentMarketPayloadMatches = (payload, instrumentUid) => (
-    payload !== null
-    && typeof payload === "object"
-    && payload.instrument_uid === instrumentUid
-  );
-
-  const renderInstrumentMarketLoadFailure = (error) => {
-    if (error.status === 409) {
-      renderInstrumentMarketStreamStatus(
-        String(error.message || "").includes("not connected")
-          ? "disconnected"
-          : "reconnect",
-      );
-      return;
-    }
-    if (error.status === 422) {
-      renderInstrumentMarketStreamStatus("invalid");
-      return;
-    }
-    renderInstrumentMarketStreamStatus("unavailable");
-    instrumentMarketRetry.classList.remove("hidden");
-  };
-
-  const restoreDisplayedInstrumentMarketPeriod = (displayedPeriod) => {
-    if (!displayedPeriod || displayedPeriod === instrumentMarketPeriod) {
-      return;
-    }
-    instrumentMarketPeriod = displayedPeriod;
-    syncInstrumentMarketControls();
-  };
-
-  const fetchInstrumentMarketPayload = async (segment, instrumentUid, generation) => {
-    const payload = await api(
-      `/api/market/instruments/${segment}?period=${encodeURIComponent(instrumentMarketPeriod)}`,
-      {method: "GET"},
-    );
-    if (!instrumentMarketRequestIsCurrent(generation, instrumentUid)) {
-      return null;
-    }
-    if (!instrumentMarketPayloadMatches(payload, instrumentUid)) {
-      throw new TypeError("Instrument market response does not match request");
-    }
     return payload;
   };
-
-  const handleInstrumentMarketLoadError = (
-    error,
-    generation,
-    instrumentUid,
-    displayedPeriod,
-  ) => {
-    if (error.status === 401) {
-      location.reload();
-      return;
-    }
-    if (!instrumentMarketRequestIsCurrent(generation, instrumentUid)) {
-      return;
-    }
-    renderInstrumentMarketLoadFailure(error);
-    restoreDisplayedInstrumentMarketPeriod(displayedPeriod);
+  const apiTransportError = (error, {
+    timedOut,
+    method,
+    generation
+  }) => {
+    if (timedOut) return Object.assign(new Error("request_timeout"), {
+      status: 0,
+      uncertain: method !== "GET"
+    });
+    if (error?.name === "AbortError" && method !== "GET" && generation === state.generation) return Object.assign(new Error("request_interrupted"), {
+      status: 0,
+      uncertain: true
+    });
+    return error;
   };
-
-  const loadInstrumentMarket = async (instrumentUid, {force = false} = {}) => {
-    const displayedPeriod = displayedInstrumentMarketPeriod(instrumentUid);
-    let segment;
+  const api = async (path, {
+    method = "GET",
+    body,
+    timeout = 30000,
+    bootstrap = false
+  } = {}) => {
+    const url = apiPath(path);
+    if (state.locked && !bootstrap) throw contextError();
+    if (state.tour && privateRequest(path) && path !== "/api/me") throw Object.assign(new Error("tour_requires_login"), {
+      status: 401
+    });
+    if (!navigator.onLine && !["GET", "HEAD"].includes(method)) throw Object.assign(new Error("offline_write_not_sent"), {
+      status: 0,
+      definite: true
+    });
+    const context = {
+      generation: state.generation,
+      profile: state.user?.public_id,
+      bootstrap
+    };
+    const controller = new AbortController();
+    state.requests.add(controller);
+    let timedOut = false;
+    const timer = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeout);
+    const headers = new Headers({
+      Accept: "application/json"
+    });
+    if (body !== undefined) headers.set("Content-Type", "application/json");
+    if (context.profile && !bootstrap) headers.set("X-Omnicio-Profile", context.profile);
     try {
-      segment = instrumentPathSegment(instrumentUid);
-    } catch {
-      renderInstrumentMarketStreamStatus("invalid");
-      return;
-    }
-    if (
-      !force
-      && instrumentMarketPayload
-      && instrumentMarketUid === instrumentUid
-      && instrumentMarketPayload.period === instrumentMarketPeriod
-    ) {
-      startInstrumentMarketStream();
-      return;
-    }
-
-    const generation = ++instrumentMarketGeneration;
-    instrumentMarketUid = instrumentUid;
-    instrumentMarketRetry.classList.add("hidden");
-    setStateBadge(instrumentMarketState, "Загружаем", "");
-    instrumentMarketNote.textContent = "Получаем биржевые свечи, последнюю цену и торговый статус T-Invest.";
-    try {
-      const payload = await fetchInstrumentMarketPayload(segment, instrumentUid, generation);
-      if (payload === null) {
-        return;
-      }
-      renderInstrumentMarketChart(payload);
-      instrumentMarketRetryCount = 0;
-      startInstrumentMarketStream();
-    } catch (error) {
-      handleInstrumentMarketLoadError(
-        error,
-        generation,
-        instrumentUid,
-        displayedPeriod,
-      );
-    }
-  };
-
-  const historyTimestamp = (item) => {
-    const timestamp = new Date(item?.captured_at).getTime();
-    return Number.isFinite(timestamp) ? timestamp : null;
-  };
-
-  const historySpanDays = (history) => {
-    const times = (history || []).map(historyTimestamp).filter(Number.isFinite);
-    if (times.length < 2) {
-      return 0;
-    }
-    return (Math.max(...times) - Math.min(...times)) / (24 * 60 * 60 * 1000);
-  };
-
-  const historyForDays = (history, days) => {
-    if (!Number.isFinite(days) || days <= 0 || !history?.length) {
-      return history || [];
-    }
-    const latest = historyTimestamp(history[history.length - 1]);
-    if (latest === null) {
-      return history || [];
-    }
-    const cutoff = latest - days * 24 * 60 * 60 * 1000;
-    return history.filter((item) => {
-      const timestamp = historyTimestamp(item);
-      return timestamp !== null && timestamp >= cutoff;
-    });
-  };
-
-  const syncPortfolioHistoryPeriods = (history) => {
-    const span = historySpanDays(history);
-    const available = portfolioHistoryPeriodButtons
-      .map((button) => Number(button.dataset.portfolioHistoryDays))
-      .filter((days) => Number.isFinite(days) && span >= days);
-    portfolioHistoryPeriodButtons.forEach((button) => {
-      const days = Number(button.dataset.portfolioHistoryDays);
-      const visible = Number.isFinite(days) && span >= days;
-      button.classList.toggle("hidden", !visible);
-      button.setAttribute(
-        "aria-pressed",
-        String(visible && days === selectedPortfolioHistoryDays),
-      );
-    });
-    portfolioHistoryPeriods.classList.toggle("hidden", available.length === 0);
-    if (!available.includes(selectedPortfolioHistoryDays)) {
-      selectedPortfolioHistoryDays = available.length
-        ? Math.max(...available)
-        : Number.POSITIVE_INFINITY;
-    }
-    portfolioHistoryPeriodButtons.forEach((button) => {
-      const days = Number(button.dataset.portfolioHistoryDays);
-      button.setAttribute(
-        "aria-pressed",
-        String(!button.classList.contains("hidden") && days === selectedPortfolioHistoryDays),
-      );
-    });
-  };
-
-  const drawdownSeries = (history) => {
-    let peak = null;
-    return (history || [])
-      .map((item) => {
-        const value = finiteMarketNumber(item.nav_rub);
-        if (value === null || !Number.isFinite(value) || value < 0) {
-          return null;
-        }
-        peak = peak === null ? value : Math.max(peak, value);
-        const drawdown = peak > 0 ? ((value / peak) - 1) * 100 : 0;
-        return {
-          captured_at: item.captured_at,
-          drawdown_percent: drawdown.toFixed(4),
-        };
-      })
-      .filter(Boolean);
-  };
-
-  const renderPortfolioHistory = (history) => {
-    const allPoints = Array.isArray(history) ? history : [];
-    syncPortfolioHistoryPeriods(allPoints);
-    const points = historyForDays(allPoints, selectedPortfolioHistoryDays);
-    const chartPoints = points
-      .map((item) => ({
-        captured_at: item.captured_at,
-        value: item.nav_rub,
-      }));
-    const enough = renderSeriesChart(
-      portfolioHistoryChart,
-      chartPoints,
-      {minimumPoints: 2},
-    );
-    const homePoints = historyForDays(allPoints, 90);
-    const homeChartPoints = homePoints
-      .map((item) => ({
-        captured_at: item.captured_at,
-        value: item.nav_rub,
-      }));
-    const homeEnough = renderSeriesChart(
-      homeHistoryChart,
-      homeChartPoints,
-      {minimumPoints: 2},
-    );
-    setChartFacts(portfolioHistoryFacts, points);
-    setChartFacts(homeHistoryFacts, homePoints);
-
-    if (!enough) {
-      setStateBadge(portfolioHistoryState, "Недостаточно истории", "state-next");
-      portfolioHistoryNote.textContent = (
-        chartPoints.length === 1
-          ? "Есть один реальный снимок. Для линии нужно минимум два снимка того же счёта и окружения."
-          : "История появится после сохранения снимков вашего счёта портфеля."
-      );
-    } else {
-      setStateBadge(
-        portfolioHistoryState,
-        `Снимков: ${chartPoints.length}`,
-        "state-ok",
-      );
-      portfolioHistoryNote.textContent = (
-        "На графике указано время сохранения сводки, а не время сделки или биржевой котировки."
-      );
-    }
-
-    if (!homeEnough) {
-      setStateBadge(homeHistoryState, "Недостаточно истории", "state-next");
-      homeHistoryNote.textContent = (
-        homeChartPoints.length === 1
-          ? "За последние 90 дней сохранён только один реальный снимок."
-          : "За последние 90 дней недостаточно сохранённой истории для линии."
-      );
-    } else {
-      setStateBadge(homeHistoryState, `Снимков: ${homeChartPoints.length}`, "state-ok");
-      homeHistoryNote.textContent = (
-        "Главная показывает до 90 дней реальных сохранённых снимков текущего счёта и окружения."
-      );
-    }
-
-    const drawdowns = drawdownSeries(points);
-    const drawdownReady = drawdowns.length >= 5 && renderSeriesChart(
-      portfolioDrawdownChart,
-      drawdowns,
-      {
-        valueKey: "drawdown_percent",
-        minimumPoints: 5,
-        zeroLine: true,
-        unit: "%",
-      },
-    );
-    if (!drawdownReady) {
-      clearDataChart(portfolioDrawdownChart);
-      setStateBadge(portfolioDrawdownState, "Недостаточно истории", "state-next");
-      portfolioDrawdownNote.textContent = (
-        "Для drawdown нужно минимум пять подтверждённых снимков одного счёта."
-      );
-    } else {
-      const minimum = Math.min(
-        ...drawdowns.map((item) => Number(item.drawdown_percent)),
-      );
-      setStateBadge(portfolioDrawdownState, "История подтверждена", "state-ok");
-      portfolioDrawdownNote.textContent = (
-        `Максимальная наблюдавшаяся просадка: ${formatPercent(minimum)}. `
-        + "Снижение стоимости от её максимума по сохранённым снимкам. Пополнения и выводы не исключены; это не чистая доходность инвестиций."
-      );
-    }
-  };
-
-  const persistedPositionMap = () => {
-    const positions = lastPortfolioVisualization?.latest?.positions;
-    const result = new Map();
-    if (!Array.isArray(positions)) {
-      return result;
-    }
-    positions.forEach((item) => {
-      for (const key of [item.instrument_uid, item.figi, item.catalog_instrument_uid]) {
-        if (typeof key === "string" && key) {
-          result.set(key, item);
-        }
-      }
-    });
-    return result;
-  };
-
-  const livePositionIdentity = (position) => (
-    String(position?.instrument_uid || position?.figi || "")
-  );
-
-  const appendExposureRows = (container, rows, emptyMessage) => {
-    container.replaceChildren();
-    if (!rows.length) {
-      appendEmptyState(container, emptyMessage);
-      return;
-    }
-    rows.forEach((item) => {
-      const row = document.createElement("div");
-      row.className = "allocation-row";
-      const label = document.createElement("div");
-      label.className = "allocation-label";
-      const title = document.createElement("strong");
-      title.textContent = item.label;
-      const percent = document.createElement("span");
-      percent.textContent = Number.isFinite(item.percent)
-        ? formatPercent(item.percent)
-        : "Доля не подтверждена";
-      label.append(title, percent);
-
-      const track = document.createElement("div");
-      track.className = "allocation-track";
-      track.setAttribute("role", "img");
-      track.setAttribute(
-        "aria-label",
-        `${item.label}: ${Number.isFinite(item.percent) ? formatPercent(item.percent) : "доля не подтверждена"}`,
-      );
-      const fill = document.createElement("div");
-      fill.className = "allocation-fill";
-      fill.style.width = `${Math.max(0, Math.min(100, item.percent || 0))}%`;
-      track.append(fill);
-
-      const amount = document.createElement("div");
-      amount.className = "allocation-value";
-      amount.textContent = storedMoney(item.value);
-      row.append(label, track, amount);
-      container.append(row);
-    });
-  };
-
-  const visualizationExposureRows = (mode) => {
-    const latest = lastPortfolioVisualization?.latest;
-    const positions = Array.isArray(latest?.positions) ? latest.positions : [];
-    const nav = Number(latest?.nav_rub);
-    const valued = positions.filter((item) => {
-      const value = Number(item.value_rub);
-      return Number.isFinite(value) && value >= 0;
-    });
-    if (!valued.length) {
-      return [];
-    }
-
-    if (mode === "position") {
-      return valued
-        .map((item) => {
-          const value = Number(item.value_rub);
-          const percent = Number(item.nav_percent);
-          let resolvedPercent = percent;
-          if (!Number.isFinite(resolvedPercent)) {
-            resolvedPercent = nav > 0 ? value / nav * 100 : Number.NaN;
-          }
-          return {
-            label: item.ticker || item.name || item.instrument_uid || "Инструмент",
-            value,
-            percent: resolvedPercent,
-          };
-        })
-        .sort((left, right) => right.value - left.value)
-        .slice(0, 12);
-    }
-
-    const groups = new Map();
-    valued.forEach((item) => {
-      let key = "Не определено";
-      if (mode === "currency") {
-        key = String(item.currency || "Не определено").toUpperCase();
-      } else if (mode === "sector") {
-        key = String(item.sector || "Не определено");
-      }
-      groups.set(key, (groups.get(key) || 0) + Number(item.value_rub));
-    });
-    return [...groups.entries()]
-      .map(([label, value]) => ({
-        label,
-        value,
-        percent: nav > 0 ? value / nav * 100 : Number.NaN,
-      }))
-      .sort((left, right) => right.value - left.value);
-  };
-
-  const renderPortfolioAllocationView = () => {
-    allocationViewButtons.forEach((button) => {
-      button.setAttribute(
-        "aria-pressed",
-        String(button.dataset.allocationView === selectedAllocationView),
-      );
-    });
-
-    if (selectedAllocationView === "class") {
-      renderAllocation(lastPortfolioSnapshot?.portfolio?.asset_totals || []);
-      portfolioAllocationNote.textContent = (
-        "Классы активов — текущий ответ T-Invest. Сумма и доли могут включать денежные компоненты брокера."
-      );
-      return;
-    }
-
-    const rows = visualizationExposureRows(selectedAllocationView);
-    appendExposureRows(
-      assetAllocation,
-      rows,
-      "Для этого разреза нет подтверждённых оценённых позиций.",
-    );
-    const latest = lastPortfolioVisualization?.latest;
-    if (selectedAllocationView === "sector") {
-      const coverage = Number(latest?.sector_coverage_percent);
-      portfolioAllocationNote.textContent = Number.isFinite(coverage)
-        ? `Секторное покрытие сохранённого снимка: ${formatPercent(coverage)}. Неизвестные сектора остаются отдельной категорией.`
-        : "Секторное покрытие не подтверждено; неизвестные сектора не распределяются по догадке.";
-    } else if (selectedAllocationView === "currency") {
-      portfolioAllocationNote.textContent = (
-        "Валютный разрез показывает валюту инструмента для оценённых позиций; неоценённые позиции не перераспределяются."
-      );
-    } else {
-      portfolioAllocationNote.textContent = (
-        "Показаны крупнейшие оценённые позиции по сохранённому снимку. Доля относится к NAV этого snapshot."
-      );
-    }
-  };
-
-  const renderPortfolioCoverage = (latest) => {
-    if (!latest) {
-      portfolioSectorCoverage.textContent = "—";
-      portfolioValuedCount.textContent = "—";
-      portfolioSnapshotStatus.textContent = "—";
-      portfolioSnapshotTime.textContent = "—";
-      setStateBadge(portfolioCoverageState, "Нет снимка", "state-next");
-      return;
-    }
-    const coverage = Number(latest.sector_coverage_percent);
-    const valued = Number(latest.valued_security_count);
-    const total = Number(latest.security_count);
-    portfolioSectorCoverage.textContent = Number.isFinite(coverage)
-      ? formatPercent(coverage)
-      : "Не подтверждено";
-    portfolioValuedCount.textContent = Number.isFinite(valued) && Number.isFinite(total)
-      ? `${valued} из ${total}`
-      : "—";
-    portfolioSnapshotStatus.textContent = {
-      observed: "Наблюдается",
-      partial: "Частичное покрытие",
-      needs_reconciliation: "Требуется сверка",
-    }[latest.analysis_status] || String(latest.analysis_status || "Не подтверждено");
-    portfolioSnapshotTime.textContent = formatDateTime(latest.captured_at);
-
-    if (latest.analysis_status === "needs_reconciliation") {
-      setStateBadge(portfolioCoverageState, "Нужна сверка", "state-error");
-    } else if (latest.snapshot_freshness === "stale" || latest.analysis_status === "partial") {
-      setStateBadge(portfolioCoverageState, "Неполные данные", "state-next");
-    } else {
-      setStateBadge(portfolioCoverageState, "Снимок получен", "state-ok");
-    }
-  };
-
-  const positionRiskBadge = (persisted) => {
-    const badge = document.createElement("span");
-    const state = persisted?.risk_state || "data_missing";
-    badge.className = "state-badge position-risk-badge";
-    badge.textContent = riskStateLabel(state);
-    const stateClass = riskStateClass(state);
-    if (stateClass) {
-      badge.classList.add(stateClass);
-    }
-    return badge;
-  };
-
-  const positionDetailButton = (position) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "button button-secondary position-detail-button";
-    button.textContent = "Детали";
-    button.dataset.instrumentDetail = livePositionIdentity(position);
-    if (!button.dataset.instrumentDetail) {
-      button.disabled = true;
-      button.title = "T-Invest не вернул стабильный идентификатор инструмента.";
-    }
-    return button;
-  };
-
-  const renderPositions = (positions) => {
-    positionsList.replaceChildren();
-    positionsTableBody.replaceChildren();
-    if (!positions?.length) {
-      appendEmptyState(positionsList, "В портфеле нет инструментов.");
-      const row = document.createElement("tr");
-      const cell = document.createElement("td");
-      cell.colSpan = 7;
-      cell.textContent = "В портфеле нет инструментов.";
-      row.append(cell);
-      positionsTableBody.append(row);
-      return;
-    }
-
-    const persisted = persistedPositionMap();
-    const snapshotAt = lastPortfolioVisualization?.latest?.captured_at;
-    positionsFreshnessNote.textContent = [
-      lastPortfolioSnapshot?.refreshed_at
-        ? `Цена/доходность: чтение T-Invest ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
-        : "",
-      snapshotAt
-        ? `оценка/доля/risk: snapshot ${formatDateTime(snapshotAt)}`
-        : "оценка/доля/risk: сохранённый snapshot пока недоступен",
-    ].filter(Boolean).join(" · ");
-
-    positions.forEach((position) => {
-      const identity = livePositionIdentity(position);
-      const stored = persisted.get(identity) || persisted.get(position.figi) || null;
-      const titleText = position.ticker || stored?.name || position.figi || "Инструмент";
-      const typeText = INSTRUMENT_LABELS[position.instrument_type]
-        || position.instrument_type
-        || "Инструмент";
-      const valueText = storedMoney(stored?.value_rub);
-      const weightText = storedPercent(stored?.nav_percent);
-      const priceText = formatMoney(position.current_price);
-      const yieldText = formatPercent(position.expected_yield_percent, {sign: true});
-      const blockedLots = numericValue(position.blocked_lots);
-
-      const tableRow = document.createElement("tr");
-      const instrumentCell = document.createElement("td");
-      const tableTitle = document.createElement("strong");
-      tableTitle.textContent = titleText;
-      const tableMeta = document.createElement("small");
-      tableMeta.textContent = [
-        stored?.name && stored.name !== titleText ? stored.name : "",
-        typeText,
-        formatQuantity(position.quantity) + " шт.",
-      ].filter(Boolean).join(" · ");
-      instrumentCell.append(tableTitle, tableMeta);
-
-      const valueCell = document.createElement("td");
-      valueCell.textContent = valueText;
-      const weightCell = document.createElement("td");
-      weightCell.textContent = weightText;
-      const priceCell = document.createElement("td");
-      priceCell.textContent = priceText;
-      const yieldCell = document.createElement("td");
-      yieldCell.textContent = yieldText;
-      applySignedClass(yieldCell, position.expected_yield_percent);
-      const stateCell = document.createElement("td");
-      stateCell.append(positionRiskBadge(stored));
-      if (position.blocked || blockedLots > 0) {
-        const blocked = document.createElement("small");
-        blocked.className = "position-blocked";
-        blocked.textContent = blockedLots > 0
-          ? `Блокировка: ${formatQuantity(position.blocked_lots)}`
-          : "Есть блокировка";
-        stateCell.append(blocked);
-      }
-      const actionCell = document.createElement("td");
-      actionCell.append(positionDetailButton(position));
-      tableRow.append(
-        instrumentCell,
-        valueCell,
-        weightCell,
-        priceCell,
-        yieldCell,
-        stateCell,
-        actionCell,
-      );
-      positionsTableBody.append(tableRow);
-
-      const card = document.createElement("article");
-      card.className = "position-row portfolio-position-card";
-      const name = document.createElement("div");
-      name.className = "position-name";
-      const ticker = document.createElement("strong");
-      ticker.textContent = titleText;
-      const type = document.createElement("span");
-      type.textContent = [
-        stored?.name && stored.name !== titleText ? stored.name : "",
-        typeText,
-      ].filter(Boolean).join(" · ");
-      name.append(ticker, type, positionRiskBadge(stored));
-      if (position.blocked || blockedLots > 0) {
-        const blocked = document.createElement("em");
-        blocked.className = "position-blocked";
-        blocked.textContent = blockedLots > 0
-          ? `Есть блокировка · заявками: ${formatQuantity(position.blocked_lots)}`
-          : "Есть биржевая блокировка";
-        name.append(blocked);
-      }
-
-      const cards = [
-        ["Количество", formatQuantity(position.quantity)],
-        ["Оценка", valueText],
-        ["Доля", weightText],
-        ["Текущая цена", priceText],
-        ["Доходность", yieldText],
-      ];
-      card.append(name);
-      cards.forEach(([labelText, value]) => {
-        const cell = document.createElement("div");
-        cell.className = "position-cell";
-        const label = document.createElement("span");
-        label.textContent = labelText;
-        const strong = document.createElement("strong");
-        strong.textContent = value;
-        if (labelText === "Доходность") {
-          applySignedClass(strong, position.expected_yield_percent);
-        }
-        cell.append(label, strong);
-        card.append(cell);
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        credentials: "same-origin",
+        cache: "no-store",
+        redirect: "error",
+        signal: controller.signal
       });
-      const action = document.createElement("div");
-      action.className = "position-card-action";
-      action.append(positionDetailButton(position));
-      card.append(action);
-      positionsList.append(card);
-    });
-  };
-
-  const resetPortfolioVisualization = (message = "История портфеля пока недоступна.") => {
-    portfolioVisualizationLoaded = false;
-    lastPortfolioVisualization = null;
-    clearDataChart(portfolioHistoryChart);
-    clearDataChart(homeHistoryChart);
-    clearDataChart(portfolioDrawdownChart);
-    setChartFacts(portfolioHistoryFacts, []);
-    setChartFacts(homeHistoryFacts, []);
-    setStateBadge(portfolioHistoryState, "Нет истории", "state-next");
-    setStateBadge(homeHistoryState, "Нет истории", "state-next");
-    setStateBadge(portfolioDrawdownState, "Недостаточно истории", "state-next");
-    portfolioHistoryNote.textContent = message;
-    homeHistoryNote.textContent = message;
-    portfolioDrawdownNote.textContent = "Для drawdown нужно минимум пять подтверждённых снимков одного счёта.";
-    renderPortfolioCoverage(null);
-    if (lastPortfolioSnapshot) {
-      renderPositions(lastPortfolioSnapshot.portfolio?.positions || []);
-      renderPortfolioAllocationView();
-    }
-  };
-
-  const renderPortfolioVisualization = (payload) => {
-    lastPortfolioVisualization = payload;
-    portfolioVisualizationLoaded = true;
-    const history = Array.isArray(payload?.history) ? payload.history : [];
-    renderPortfolioHistory(history);
-    renderPortfolioCoverage(payload?.latest || null);
-    renderPortfolioAllocationView();
-    if (lastPortfolioSnapshot) {
-      renderPositions(lastPortfolioSnapshot.portfolio?.positions || []);
-    }
-  };
-
-  const loadPortfolioVisualization = async ({force = false} = {}) => {
-    if (!tbankIsConnected || portfolioVisualizationInFlight
-      || (portfolioVisualizationLoaded && !force)) {
-      return;
-    }
-    const generation = portfolioGeneration;
-    portfolioVisualizationInFlight = true;
-    if (!lastPortfolioVisualization) {
-      setStateBadge(portfolioHistoryState, "Загружаем", "");
-      setStateBadge(homeHistoryState, "Загружаем", "");
-    }
-    try {
-      const payload = await api(
-        "/api/portfolio/visualization?history_limit=365",
-        {method: "GET"},
-      );
-      if (generation !== portfolioGeneration || !tbankIsConnected) return;
-      if (payload.latest && !matchesConnectedAccount(payload.latest)) return;
-      renderPortfolioVisualization(payload);
+      return await readApiResponse(response, context);
     } catch (error) {
-      if (generation !== portfolioGeneration) return;
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      if (lastPortfolioVisualization) {
-        setStateBadge(portfolioHistoryState, "История устарела", "state-next");
-        setStateBadge(homeHistoryState, "История устарела", "state-next");
-        portfolioHistoryNote.textContent = (
-          "Не удалось обновить сохранённую историю. Показаны последние подтверждённые точки."
-        );
-        homeHistoryNote.textContent = portfolioHistoryNote.textContent;
-      } else {
-        resetPortfolioVisualization(
-          "Не удалось получить сохранённую историю. Live-портфель остаётся доступен отдельно.",
-        );
-      }
+      throw apiTransportError(error, {
+        timedOut,
+        method,
+        generation: context.generation
+      });
     } finally {
-      if (generation === portfolioGeneration) portfolioVisualizationInFlight = false;
+      clearTimeout(timer);
+      state.requests.delete(controller);
     }
   };
-
-  const livePositionForIdentity = (identity) => (
-    (lastPortfolioSnapshot?.portfolio?.positions || []).find((position) => (
-      position?.instrument_uid === identity || position?.figi === identity
-    )) || null
-  );
-
-  const renderInstrumentDetailOverview = (latest, payload, livePosition) => {
-    instrumentDetailTitle.textContent = (
-      latest.ticker || latest.name || latest.instrument_uid || "Инструмент"
-    );
-    instrumentDetailSubtitle.textContent = [
-      latest.name && latest.name !== latest.ticker ? latest.name : "",
-      INSTRUMENT_LABELS[latest.instrument_type] || latest.instrument_type,
-      latest.sector || "Сектор не подтверждён",
-      payload.snapshot_freshness === "stale" ? "snapshot устарел" : "",
-    ].filter(Boolean).join(" · ");
-    instrumentDetailValue.textContent = storedMoney(latest.value_rub);
-    instrumentDetailWeight.textContent = Number.isFinite(Number(latest.nav_percent))
-      ? `Доля NAV: ${formatPercent(latest.nav_percent)}`
-      : "Доля NAV не подтверждена";
-
-    const livePrice = livePosition?.current_price;
-    instrumentDetailPrice.textContent = livePrice
-      ? formatMoney(livePrice)
-      : storedMoney(
-          latest.current_price_value,
-          latest.current_price_currency || latest.currency || "RUB",
-        );
-    instrumentDetailPriceTime.textContent = livePosition && lastPortfolioSnapshot?.refreshed_at
-      ? `T-Invest: ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
-      : `snapshot: ${formatDateTime(latest.captured_at)}`;
-    instrumentDetailQuantity.textContent = livePosition
-      ? formatQuantity(livePosition.quantity)
-      : formatQuantity(latest.quantity);
-    instrumentDetailBlocked.textContent = latest.blocked || Number(latest.blocked_lots) > 0
-      ? `Есть блокировка · лотов: ${formatQuantity(latest.blocked_lots)}`
-      : "Блокировок не зафиксировано";
+  const recoveryErrorReason = code => {
+    const suffix = String(code || "").replace(/^(live|sandbox)_/, "");
+    const reasons = {
+      cancel_ambiguous: "Ответ брокера на отмену не получен. Обновите состояние заявки; отмена пока не подтверждена.",
+      order_not_found_yet: "Брокер пока не вернул заявку по её сохранённому номеру. Повторите сверку позднее.",
+      cancel_order_not_found: "Брокер не подтвердил заявку при отмене. Обновите её состояние; успешная отмена не подтверждена.",
+      reconcile_unavailable: "Состояние у брокера временно недоступно. Дождитесь восстановления связи и повторите сверку.",
+      account_mismatch: "Подключён другой счёт. Для сверки требуется счёт, к которому относится запись."
+    };
+    if (["request_id_mismatch", "instrument_mismatch", "lot_count_mismatch", "direction_mismatch", "order_type_mismatch"].includes(suffix)) return "Ответ брокера не совпадает с сохранённой заявкой. Автоматическое подтверждение остановлено; проверьте заявку у брокера.";
+    return reasons[suffix] || null;
   };
-
-  const renderInstrumentDetailPnl = (livePosition) => {
-    if (!livePosition) {
-      instrumentDetailPnl.textContent = "—";
-      instrumentDetailPnl.classList.remove("value-positive", "value-negative");
-      instrumentDetailPnlTime.textContent = "Live P&L не подтверждён";
-      return;
+  const humanError = error => {
+    const reasons = {
+      offline_write_not_sent: "Нет сети. Изменение не отправлено. Подключитесь к интернету и повторите.",
+      request_timeout: "Сервер не успел ответить. Проверьте сохранённое состояние перед повтором.",
+      request_interrupted: "Отправка прервана. Проверьте сохранённое состояние перед повтором: сервер мог уже принять изменение.",
+      invalid_server_response: "Получен неполный ответ сервера. Повторите загрузку.",
+      tour_requires_login: "Для этого действия войдите в личный аккаунт.",
+      profile_context_changed: "Сессия изменилась. Подтвердите текущий аккаунт.",
+      settings_version_conflict: "Сохранённая версия изменилась. Загрузите актуальные данные перед следующей правкой.",
+      strategy_assessment_busy: "Расчёт уже выполняется. Подождите и повторите через несколько секунд.",
+      strategy_account_evidence_unavailable: "Не удалось получить согласованные данные счёта. Обновите подключение и повторите расчёт.",
+      assistant_not_configured: "ИИ-провайдер ещё не подключён.",
+      assistant_unavailable: "ИИ-провайдер сейчас не отвечает. Сообщение не получило ответа.",
+      "T-Invest is not connected": "Подключите свой счёт T-Invest в настройках.",
+      "stored T-Invest credential was rejected": "Срок действия API-токена истёк или доступ отозван. Проверьте подключение.",
+      "T-Invest token rejected": "API-токен не прошёл проверку. Проверьте значение и выбранную среду.",
+      "legal acknowledgments are required": "Подтвердите ознакомление с документами.",
+      updated_legal_consent_required: "Условия сервиса обновились. Войдите повторно и подтвердите актуальные документы.",
+      goal_allocation_exceeded: "Сумма долей активных целей превышает 100%. Уменьшите долю этой цели.",
+      active_live_execution_must_be_reconciled: "Есть незавершённое исполнение. Откройте Настройки → Ранее начатые исполнения и сверьте заявку перед отключением или удалением аккаунта."
+    };
+    const fallback = error?.status === 422 ? "Проверьте поля и допустимые значения. Сервер не принял изменение." : renderHumanErrorValue3(error);
+    const code = error?.code || error?.message;
+    return reasons[code] || recoveryErrorReason(code) || fallback;
+  };
+  const isCancelled = error => error?.name === "AbortError" || error?.message === "profile_context_changed";
+  const toast = (message, isError = false) => {
+    const item = document.createElement("div");
+    item.className = `toast${isError ? " error" : ""}`;
+    item.textContent = message;
+    $("#toast-region").append(item);
+    window.setTimeout(() => item.remove(), isError ? 7000 : 4200);
+  };
+  const showMessage = (element, text, isError = false) => {
+    if (!element) return;
+    element.textContent = text;
+    element.classList.toggle("error", isError);
+    element.classList.toggle("success", !isError && Boolean(text));
+  };
+  const openDialog = (title, content) => {
+    state.recovery.id = null;
+    state.recovery.record = null;
+    state.recovery.uncertain = false;
+    state.recovery.sequence += 1;
+    const dialog = $("#workspace-dialog");
+    $("#dialog-title").textContent = title;
+    $("#dialog-content").innerHTML = content;
+    if (!dialog.open) dialog.showModal();
+    U.bindCharts(dialog);
+    return dialog;
+  };
+  const requireUser = () => {
+    if (!state.user || state.tour) {
+      openAuth();
+      return false;
     }
-
-    instrumentDetailPnl.textContent = formatPercent(
-      livePosition.expected_yield_percent,
-      {sign: true},
-    );
-    applySignedClass(instrumentDetailPnl, livePosition.expected_yield_percent);
-    const dailyYield = formatMoney(livePosition.daily_yield, {sign: true});
-    instrumentDetailPnlTime.textContent = [
-      dailyYield !== "—" ? `сегодня ${dailyYield}` : "",
-      lastPortfolioSnapshot?.refreshed_at
-        ? `T-Invest ${formatDateTime(lastPortfolioSnapshot.refreshed_at)}`
-        : "",
-    ].filter(Boolean).join(" · ") || "Текущий ответ T-Invest";
+    return !state.locked;
   };
-
-  const renderInstrumentDetailRisk = (latest) => {
-    instrumentDetailRisk.textContent = riskStateLabel(latest.risk_state);
-    instrumentDetailRisk.classList.remove("value-positive", "value-negative");
-    if (["critical", "confirmed_default"].includes(latest.risk_state)) {
-      instrumentDetailRisk.classList.add("value-negative");
-    }
-    instrumentDetailRiskTime.textContent = latest.assessed_at
-      ? `оценено ${formatDateTime(latest.assessed_at)} · ${latest.assessment_freshness || "freshness unknown"}`
-      : "Risk assessment отсутствует";
+  const clearPrivateState = () => {
+    state.generation += 1;
+    for (const controller of state.requests) controller.abort();
+    state.requests.clear();
+    state.resourceVersions.clear();
+    state.deletedGoalIds.clear();
+    state.loading.clear();
+    clearTimeout(state.prefs.timer);
+    clearTimeout(state.strategy.timer);
+    clearTimeout(state.refresh.timer);
+    state.refresh = {
+      sequence: state.refresh.sequence + 1,
+      timer: null,
+      busy: false
+    };
+    state.recovery = {
+      id: null,
+      sequence: state.recovery.sequence + 1,
+      busy: false,
+      record: null,
+      uncertain: false
+    };
+    state.user = null;
+    state.data = {};
+    state.errors = {};
+    state.formDrafts = {};
+    state.formBaselines = {};
+    state.chat = [];
+    state.asset = null;
+    state.strategyPane = "catalog";
+    state.searchResults = [];
+    state.prefs = {
+      server: null,
+      draft: null,
+      revision: 0,
+      dirty: false,
+      busy: false,
+      error: null,
+      timer: null
+    };
+    state.strategy = {
+      server: null,
+      draft: null,
+      revision: 0,
+      dirty: false,
+      busy: false,
+      error: null,
+      intent: "edit",
+      timer: null,
+      assessment: null,
+      research: null
+    };
+    state.assistantBusy = false;
+    state.brokerPreview = null;
+    state.brokerSequence = (state.brokerSequence || 0) + 1;
+    U.setPrivacy(false);
+    U.clearCharts();
+    for (const view of $$(".view")) view.replaceChildren();
+    $("#profile-name").textContent = "Мой профиль";
+    $("#profile-avatar").textContent = "О";
+    $("#global-search").value = "";
+    $("#dialog-content").replaceChildren();
+    $("#toast-region").replaceChildren();
+    for (const dialog of $$("dialog[open]")) dialog.close();
+    closeDrawer(false);
+    $("#profile-menu").hidden = true;
   };
-
-  const renderInstrumentDetailHistory = (payload) => {
-    const history = Array.isArray(payload?.history) ? payload.history : [];
-    const historyReady = renderSeriesChart(
-      instrumentHistoryChart,
-      history,
-      {valueKey: "value_rub", minimumPoints: 2},
-    );
-    instrumentHistoryNote.textContent = historyReady
-      ? `Снимков позиции: ${history.length}. Время точки — captured_at snapshot, не биржевой timestamp.`
-      : "Недостаточно сохранённых оценок позиции для линии.";
+  const lockSession = message => {
+    if (state.locked) return;
+    clearPrivateState();
+    state.locked = true;
+    state.tour = false;
+    $("#app-shell").hidden = true;
+    $("#public-site").hidden = false;
+    $("#session-message").textContent = message;
+    $("#session-dialog").showModal();
   };
-
-  const renderInstrumentDetailEvidence = (latest) => {
-    instrumentEvidenceSummary.replaceChildren();
-    const reasons = Array.isArray(latest.risk_reasons) && latest.risk_reasons.length
-      ? latest.risk_reasons.join(" · ")
-      : "Нет подтверждённых причин";
-    const evidenceItems = [
-      ["Risk state", riskStateLabel(latest.risk_state)],
-      ["Рейтинг", riskStateLabel(latest.rating_status)],
-      ["Фундаментальные данные", riskStateLabel(latest.fundamental_status)],
-      ["Источник risk", String(latest.source_status || "Не подтверждено")],
-      ["Причины", reasons],
-    ];
-    evidenceItems.forEach(([labelText, valueText]) => {
-      const row = document.createElement("div");
-      const label = document.createElement("span");
-      label.textContent = labelText;
-      const value = document.createElement("strong");
-      value.textContent = valueText;
-      row.append(label, value);
-      instrumentEvidenceSummary.append(row);
-    });
-  };
-
-  const renderInstrumentDetailPayouts = (payload) => {
-    instrumentPayouts.replaceChildren();
-    (payload?.payouts || []).forEach((event) => {
-      const row = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = {
-        dividend: "Дивиденд",
-        coupon: "Купон",
-        bond_event: "Событие облигации",
-      }[event.event_type] || String(event.event_type || "Событие");
-      const details = document.createElement("small");
-      const amount = event.amount === null || event.amount === undefined
-        ? ""
-        : storedMoney(event.amount, event.currency || "RUB");
-      details.textContent = [
-        event.status || "статус не подтверждён",
-        amount,
-        event.expected_at ? `ожидается ${formatDateTime(event.expected_at)}` : "",
-        event.actual_at ? `факт ${formatDateTime(event.actual_at)}` : "",
-      ].filter(Boolean).join(" · ");
-      row.append(title, details);
-      instrumentPayouts.append(row);
-    });
-    if (!instrumentPayouts.childElementCount) {
-      appendEmptyState(instrumentPayouts, "Подтверждённых выплат или событий нет.");
-    }
-  };
-
-  const renderInstrumentDetailSources = (payload) => {
-    instrumentSources.replaceChildren();
-    (payload?.sources || []).forEach((source) => {
-      const row = document.createElement("div");
-      const title = analysisSourceNode({
-        name: [source.provider, source.document_type].filter(Boolean).join(" · ") || "Источник",
-        url: source.source_url || "",
-      });
-      const details = document.createElement("small");
-      details.textContent = [
-        source.freshness_status || "freshness unknown",
-        source.retrieved_at ? `получено ${formatDateTime(source.retrieved_at)}` : "",
-        Number.isFinite(Number(source.versions)) ? `версий: ${source.versions}` : "",
-      ].filter(Boolean).join(" · ");
-      row.append(title, details);
-      instrumentSources.append(row);
-    });
-    if (!instrumentSources.childElementCount) {
-      appendEmptyState(instrumentSources, "Evidence sources ещё не сохранены.");
-    }
-  };
-
-  const renderInstrumentDetail = (payload, requestedIdentity) => {
-    const latest = payload?.latest || {};
-    const livePosition = livePositionForIdentity(requestedIdentity);
-    instrumentMarketCurrency = String(
-      livePosition?.current_price?.currency
-      || latest.current_price_currency
-      || latest.currency
-      || "",
-    ).toUpperCase();
-    instrumentMarketQuoteUnit = ["bond", "futures", "future"].includes(
-      latest.instrument_type,
-    )
-      ? "point"
-      : "money";
-    renderInstrumentDetailOverview(latest, payload, livePosition);
-    renderInstrumentDetailPnl(livePosition);
-    renderInstrumentDetailRisk(latest);
-    renderInstrumentDetailHistory(payload);
-    renderInstrumentDetailEvidence(latest);
-    renderInstrumentDetailPayouts(payload);
-    renderInstrumentDetailSources(payload);
-  };
-
-  const openInstrumentDetail = async (instrumentUid) => {
-    if (workspace?.isDemo()) { workspace.openDemoInstrument(instrumentUid); return; }
-    if (instrumentDetailRequestInFlight) {
-      return;
-    }
-    let segment;
+  const applyTheme = choice => {
+    if (!["dark", "light", "system"].includes(choice)) return;
+    themeChoice = choice;
+    const actual = choice === "system" ? renderApplyThemeValue() : choice;
+    document.documentElement.dataset.theme = actual;
+    $("meta[name=theme-color]").content = actual === "dark" ? "#071421" : "#eff4fa";
+    for (const item of $$("[data-theme-choice]")) item.setAttribute("aria-pressed", String(item.dataset.themeChoice === choice));
     try {
-      segment = instrumentPathSegment(instrumentUid);
-    } catch {
-      showMessage(
-        instrumentDetailMessage,
-        "T-Invest не вернул допустимый идентификатор инструмента.",
-        true,
-      );
+      localStorage.setItem("omnicio-theme", choice);
+    } catch {/* Display preference only. */}
+  };
+  const renderNav = () => {
+    $("#sidebar-nav").innerHTML = U.navigation.map(([key, title]) => `<a class="nav-link" href="#${key}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
+    $("#mobile-nav").innerHTML = [["home", "Главная"], ["market", "Рынок"], ["assistant", "ИИ"], ["strategies", "Стратегии"]].map(([key, title]) => `<a href="#${key}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
+  };
+  const openDrawer = () => {
+    state.drawerReturn = $("#app-menu-toggle");
+    $("#app-sidebar").inert = false;
+    $("#app-sidebar").dataset.open = "true";
+    $("#drawer-backdrop").hidden = false;
+    $("#app-menu-toggle").setAttribute("aria-expanded", "true");
+    $(".app-main").inert = true;
+    $("#mobile-nav").inert = true;
+    document.body.classList.add("drawer-open");
+    $("#drawer-close").focus();
+  };
+  function closeDrawer(restore = true) {
+    delete $("#app-sidebar").dataset.open;
+    $("#app-sidebar").inert = window.innerWidth <= 960;
+    $("#drawer-backdrop").hidden = true;
+    $("#app-menu-toggle").setAttribute("aria-expanded", "false");
+    $(".app-main").inert = false;
+    $("#mobile-nav").inert = false;
+    document.body.classList.remove("drawer-open");
+    if (restore && state.drawerReturn?.isConnected) state.drawerReturn.focus();
+    state.drawerReturn = null;
+  }
+  const parseRoute = () => {
+    const hash = location.hash.slice(1);
+    const [name, query] = hash.split("?");
+    const params = new URLSearchParams(query || "");
+    return {
+      view: views.has(name) ? name : "home",
+      uid: params.get("uid") || "",
+      q: params.get("q") || ""
+    };
+  };
+  const updateRouteHistory = (view, detail, {
+    replace,
+    fromHistory
+  }) => {
+    const query = new URLSearchParams();
+    if (view === "asset" && detail.uid) query.set("uid", detail.uid);
+    if (view === "search" && detail.q) query.set("q", detail.q);
+    const hash = `#${view}${query.size ? renderNavigateFragment(query) : ""}`;
+    if (!fromHistory && location.hash !== hash) history[replace ? "replaceState" : "pushState"]({
+      view
+    }, "", hash);
+  };
+  const navigate = (view, detail = {}, {
+    replace = false,
+    fromHistory = false
+  } = {}) => {
+    if (!views.has(view)) return;
+    if (!state.user && !state.tour) {
+      openAuth();
       return;
     }
-    const generation = ++instrumentDetailGeneration;
-    instrumentDetailRequestInFlight = true;
-    stopInstrumentMarketStream({resetRetry: true});
-    instrumentMarketUid = instrumentUid;
-    instrumentMarketCurrency = "";
-    instrumentMarketQuoteUnit = "money";
-    resetInstrumentMarket("Загружаем рыночные данные выбранного инструмента.");
-    instrumentDetail.classList.remove("hidden");
-    instrumentDetailLoading.classList.remove("hidden");
-    instrumentDetailContent.classList.add("hidden");
-    showMessage(instrumentDetailMessage, "");
-    instrumentDetail.scrollIntoView({block: "start", behavior: "auto"});
+    closeDrawer(false);
+    $("#profile-menu").hidden = true;
+    $("#profile-button").setAttribute("aria-expanded", "false");
+    if (state.view === "settings" && view !== "settings") {
+      resetBrokerPreview();
+      const credential = $('#broker-form [name="credential"]');
+      if (credential) credential.value = "";
+    }
+    state.view = view;
+    state.route = detail;
+    updateRouteHistory(view, detail, {
+      replace,
+      fromHistory
+    });
+    for (const element of $$("[data-view]")) element.hidden = element.dataset.view !== view;
+    document.title = `${U.navigation.find(([key]) => key === view)?.[1] || (view === "asset" ? "Актив" : "Поиск")} · OMNICIO`;
+    renderNav();
+    renderCurrent();
+    void loadForView(view, detail);
+    $("#main-content").focus({
+      preventScroll: true
+    });
+    window.scrollTo({
+      top: 0,
+      behavior: "instant"
+    });
+  };
+  const showApp = (tour = false) => {
+    state.tour = tour;
+    $("#public-site").hidden = true;
+    $("#app-shell").hidden = false;
+    $("#tour-notice").hidden = !tour;
+    updateIdentity();
+    const route = parseRoute();
+    navigate(route.view, route, {
+      replace: true
+    });
+    if (!tour) void resumeWorkspaceRefresh();
+  };
+  const loadResource = async (name, path, {
+    force = false,
+    ...options
+  } = {}) => {
+    if (!force && state.data[name] !== undefined) return state.data[name];
+    if (state.loading.has(name) && !force) return null;
+    const sequence = (state.resourceVersions.get(name) || 0) + 1;
+    state.resourceVersions.set(name, sequence);
+    const generation = state.generation;
+    const goalsSequence = state.resourceVersions.get("goals") || 0;
+    state.loading.add(name);
+    delete state.errors[name];
     try {
-      const payload = await api(
-        `/api/portfolio/instruments/${segment}/visualization?history_limit=90`,
-        {method: "GET"},
-      );
-      if (generation !== instrumentDetailGeneration) {
-        return;
-      }
-      renderInstrumentDetail(payload, instrumentUid);
-      instrumentDetailLoading.classList.add("hidden");
-      instrumentDetailContent.classList.remove("hidden");
-      void loadInstrumentMarket(instrumentUid, {force: true});
+      const payload = await api(path, options);
+      if (generation !== state.generation || state.resourceVersions.get(name) !== sequence) return null;
+      state.data[name] = name === "goals" ? mergeGoalList(payload) : payload;
+      adoptLoadedResource(name, payload, goalsSequence);
+      return payload;
     } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      if (generation !== instrumentDetailGeneration) {
-        return;
-      }
-      instrumentDetailLoading.classList.add("hidden");
-      showMessage(
-        instrumentDetailMessage,
-        error.status === 404
-          ? "Для этой позиции ещё нет сохранённой tenant-scoped истории."
-          : "Не удалось загрузить детали инструмента. Торговые действия не выполнялись.",
-        true,
-      );
+      if (generation === state.generation && state.resourceVersions.get(name) === sequence && !isCancelled(error)) state.errors[name] = error;
+      return null;
     } finally {
-      if (generation === instrumentDetailGeneration) {
-        instrumentDetailRequestInFlight = false;
+      if (generation === state.generation && state.resourceVersions.get(name) === sequence) state.loading.delete(name);
+    }
+  };
+  const adoptWorkspace = (payload, goalsSequence) => {
+    if (payload.preferences) adoptPreferences(payload.preferences);
+    if (payload.goals && goalsSequence === (state.resourceVersions.get("goals") || 0)) state.data.goals = mergeGoalList(payload.goals);
+    if (payload.events) state.data.events = payload.events;
+    if (payload.connection) state.data.connection = payload.connection;
+    $("#workspace-freshness").textContent = payload.overview?.observed_at ? `T-Invest · ${date(payload.overview.observed_at, true)} МСК · Стоимость по последнему наблюдению` : renderAdoptWorkspaceValue(payload);
+  };
+  const adoptLoadedResource = (name, payload, goalsSequence) => {
+    if (name === "workspace") adoptWorkspace(payload, goalsSequence);
+    if (name === "preferences") adoptPreferences(payload);
+    if (name === "strategy") adoptStrategy(payload);
+  };
+  const workspacePeriod = (view = state.view) => {
+    if (view === "home") return state.homePeriod;
+    if (["portfolio", "analytics"].includes(view)) return state.portfolioPeriod;
+    return "all";
+  };
+  const workspacePath = () => `/api/workspace?history_period=${workspacePeriod()}`;
+  const viewResources = [{
+    name: "news",
+    views: ["home", "market", "events", "asset", "search"],
+    path: "/api/public/news",
+    public: true
+  }, {
+    name: "identities",
+    views: ["profile"],
+    path: "/api/auth/identities"
+  }, {
+    name: "workspace",
+    views: ["home", "portfolio", "analytics", "goals", "events", "settings", "profile"],
+    path: workspacePath
+  }, {
+    name: "visualization",
+    views: ["home", "portfolio", "analytics", "market"],
+    path: "/api/portfolio/visualization?history_limit=365"
+  }, {
+    name: "strategy",
+    views: ["home", "strategies", "analytics"],
+    path: "/api/profile/strategy"
+  }, {
+    name: "catalog",
+    views: ["home", "strategies", "analytics"],
+    path: "/api/strategy/catalog",
+    public: true
+  }, {
+    name: "investmentProfile",
+    views: ["strategies"],
+    path: "/api/profile/investment"
+  }, {
+    name: "balancingPolicy",
+    views: ["strategies"],
+    path: "/api/profile/balancing"
+  }, {
+    name: "marketReference",
+    views: ["home", "market"],
+    path: () => `/api/public/market-reference?currency=${state.cbrCurrency}&period=${state.cbrPeriod}`,
+    public: true
+  }, {
+    name: "preferences",
+    views: ["market", "asset", "settings", "profile"],
+    path: "/api/preferences"
+  }, {
+    name: "connection",
+    views: ["market", "asset", "settings", "profile"],
+    path: "/api/broker/tbank"
+  }, {
+    name: "executions",
+    views: ["settings"],
+    path: "/api/portfolio/executions"
+  }, {
+    name: "assistantStatus",
+    views: ["assistant"],
+    path: "/api/assistant/status"
+  }, {
+    name: "events",
+    views: ["events"],
+    path: "/api/events?limit=50&category=all"
+  }, {
+    name: "goals",
+    views: ["goals"],
+    path: "/api/goals"
+  }, {
+    name: "analysis",
+    views: ["analytics"],
+    path: "/api/broker/tbank/analysis",
+    timeout: 45000
+  }];
+  const loadAssetView = async (uid, force) => {
+    try {
+      await loadAsset(uid, force);
+    } catch (error) {
+      if (!isCancelled(error) && state.view === "asset") {
+        state.asset = null;
+        $("#view-asset").innerHTML = empty("Некорректный инструмент", "Откройте актив из портфеля или результатов поиска.", "", "", "info", true);
       }
     }
   };
-
-  const closeInstrumentDetail = () => {
-    instrumentDetailGeneration += 1;
-    instrumentMarketGeneration += 1;
-    instrumentDetailRequestInFlight = false;
-    stopInstrumentMarketStream({resetRetry: true});
-    instrumentMarketUid = "";
-    instrumentMarketCurrency = "";
-    instrumentMarketQuoteUnit = "money";
-    resetInstrumentMarket();
-    clearDataChart(instrumentHistoryChart);
-    instrumentDetail.classList.add("hidden");
-    instrumentDetailLoading.classList.add("hidden");
-    instrumentDetailContent.classList.add("hidden");
-    showMessage(instrumentDetailMessage, "");
-  };
-
-  const showPortfolioMode = (mode) => {
-    portfolioLoading.classList.toggle("hidden", mode !== "loading");
-    portfolioDisconnected.classList.toggle("hidden", mode !== "disconnected");
-    portfolioError.classList.toggle("hidden", mode !== "error");
-    portfolioContent.classList.toggle("hidden", mode !== "content");
-  };
-
-  const singleRubAmount = (items) => {
-    const rubItems = (items || []).filter(
-      (item) => String(item?.currency || "").toUpperCase() === "RUB",
-    );
-    if (rubItems.length === 0) {
-      return 0;
-    }
-    if (rubItems.length !== 1) {
-      return null;
-    }
-    const value = Number(rubItems[0].value);
-    return Number.isFinite(value) && value >= 0 ? value : null;
-  };
-
-  const homeUnblockedRub = (snapshot) => {
-    if (snapshot?.limits_loading_in_progress === true) {
-      return null;
-    }
-    const cash = singleRubAmount(snapshot?.cash);
-    const blocked = singleRubAmount(snapshot?.blocked_cash);
-    if (cash === null || blocked === null || blocked > cash) {
-      return null;
-    }
-    return cash - blocked;
-  };
-
-  const homePortfolioAttention = (snapshot, {stale = false, failed = false, expired = false} = {}) => {
-    const items = [];
-    if (failed) {
-      items.push({
-        severity: "error",
-        title: "Портфель не подтверждён",
-        detail: "T-Invest не вернул актуальный снимок. До успешного обновления не полагайтесь на значения портфеля.",
-        view: "portfolio",
+  const loadForView = async (view, detail = {}, force = false) => {
+    const generation = state.generation;
+    const resources = viewResources.filter(resource => resource.views.includes(view) && (!state.tour || resource.public));
+    await Promise.allSettled(resources.map(resource => {
+      const historyChanged = resource.name === "workspace" && state.data.workspace?.overview?.history_coverage?.period !== workspacePeriod(view);
+      return loadResource(resource.name, typeof resource.path === "function" ? resource.path() : resource.path, {
+        force: force || historyChanged,
+        timeout: resource.timeout || 30000
       });
-      return items;
-    }
-    if (!snapshot?.portfolio) {
-      return items;
-    }
-    if (stale) {
-      items.push({
-        severity: "warning",
-        title: "Данные портфеля устарели",
-        detail: expired
-          ? "Срок актуальности снимка истёк. Обновите данные перед принятием решения."
-          : "Последний подтверждённый снимок сохранён на экране, но новое чтение T-Invest завершилось ошибкой.",
-        view: "portfolio",
-      });
-    }
-    if (snapshot.limits_loading_in_progress === true) {
-      items.push({
-        severity: "warning",
-        title: "T-Invest обновляет денежные лимиты",
-        detail: "Незаблокированные RUB пока не считаются подтверждёнными.",
-        view: "portfolio",
-      });
-    }
-    const positions = snapshot.portfolio.positions || [];
-    const blockedPositions = positions.filter((position) => position.blocked).length;
-    if (blockedPositions > 0) {
-      items.push({
-        severity: "warning",
-        title: `Заблокированные позиции: ${blockedPositions}`,
-        detail: "Откройте портфель, чтобы увидеть конкретные инструменты и состояние блокировки.",
-        view: "portfolio",
-      });
-    }
-    const blockedCash = (snapshot.blocked_cash || []).filter((money) => {
-      const value = Number(money?.value);
-      return Number.isFinite(value) && value !== 0;
-    });
-    if (blockedCash.length > 0) {
-      items.push({
-        severity: "warning",
-        title: "Есть заблокированные денежные остатки",
-        detail: `Валют с ненулевой блокировкой: ${blockedCash.length}.`,
-        view: "portfolio",
-      });
-    }
-    return items;
-  };
-
-  const attentionMarkerText = (severity) => {
-    if (severity === "error") {
-      return "×";
-    }
-    if (severity === "warning") {
-      return "!";
-    }
-    return "i";
-  };
-
-  const renderHomeAttention = () => {
-    const pending = Object.values(homeAttentionBuckets).includes(null);
-    const items = Object.values(homeAttentionBuckets)
-      .filter(Array.isArray)
-      .flat()
-      .sort((left, right) => {
-        const rank = {error: 0, warning: 1, info: 2};
-        return (rank[left.severity] ?? 3) - (rank[right.severity] ?? 3);
-      });
-
-    homeAttentionList.replaceChildren();
-    homeAttentionCount.textContent = pending && items.length === 0 ? "—" : String(items.length);
-
-    if (!items.length) {
-      appendEmptyState(
-        homeAttentionList,
-        pending
-          ? "Проверяем подключение, портфель и активные планы."
-          : "Подтверждённых событий, требующих действия, сейчас нет.",
-      );
-      setStateBadge(
-        homeAttentionStateBadge,
-        pending ? "Проверяем" : "Спокойно",
-        pending ? "" : "state-ok",
-      );
+    }));
+    if (generation !== state.generation || state.view !== view) return;
+    if (view === "asset" && detail.uid && !state.tour) {
+      if (detail.uid === state.route.uid) await loadAssetView(detail.uid, force);
       return;
     }
-
-    items.slice(0, 4).forEach((item) => {
-      const row = document.createElement("article");
-      row.className = `attention-item attention-${item.severity || "info"}`;
-
-      const marker = document.createElement("span");
-      marker.className = "attention-marker";
-      marker.setAttribute("aria-hidden", "true");
-      marker.textContent = attentionMarkerText(item.severity);
-
-      const copy = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = item.title;
-      const detail = document.createElement("span");
-      detail.textContent = item.detail;
-      copy.append(title, detail);
-      row.append(marker, copy);
-
-      if (item.view && VIEW_TITLES[item.view]) {
-        const action = document.createElement("button");
-        action.type = "button";
-        action.className = "attention-action";
-        action.dataset.homeAttentionView = item.view;
-        action.textContent = "Открыть";
-        row.append(action);
-      }
-      homeAttentionList.append(row);
-    });
-
-    const hasError = items.some((item) => item.severity === "error");
-    setStateBadge(
-      homeAttentionStateBadge,
-      pending ? `${items.length} · проверяем` : String(items.length),
-      hasError ? "state-error" : "state-next",
-    );
-  };
-
-  const setHomeAttentionBucket = (name, items) => {
-    if (!(name in homeAttentionBuckets)) {
+    if (view === "search") {
+      await runSearch(detail.q || "");
       return;
     }
-    let bucket = [];
-    if (items === null) {
-      bucket = null;
-    } else if (Array.isArray(items)) {
-      bucket = items;
+    renderCurrent();
+  };
+  const dataError = (name, label = "Не удалось загрузить данные") => state.errors[name] ? `<div class="notice error"><strong>${esc(label)}</strong><p>${esc(humanError(state.errors[name]))}</p>${button("Повторить загрузку", "refresh", {
+    small: true
+  })}</div>` : "";
+  const updateIdentity = () => {
+    const name = state.prefs.draft?.display_name?.trim() || (state.tour ? "Знакомство" : "Мой профиль");
+    $("#profile-name").textContent = name;
+    $("#profile-avatar").textContent = name[0]?.toLocaleUpperCase("ru-RU") || "О";
+    const unread = number(state.data.events?.unread_count) || 0;
+    $("#notification-dot").hidden = unread === 0 || state.tour || Boolean(state.data.events?.alerts_suppressed);
+    $("#notifications-button").setAttribute("aria-label", unread ? `Уведомления: ${unread} непрочитанных` : "Уведомления");
+  };
+  const refreshActive = result => ["queued", "running"].includes(result?.status);
+  const refreshContext = () => ({
+    generation: state.generation,
+    sequence: ++state.refresh.sequence
+  });
+  const currentRefresh = context => context.generation === state.generation && context.sequence === state.refresh.sequence && Boolean(state.user) && !state.locked;
+  const refreshUnavailable = () => {
+    if (state.refresh.busy) return true;
+    if (state.errors.refreshStatus) return false;
+    const connected = state.data.connection?.connected || state.data.workspace?.connection?.connected;
+    return refreshActive(state.data.refreshStatus) || Boolean(connected && state.data.refreshStatus?.can_refresh === false);
+  };
+  const updateRefreshControls = () => {
+    const unavailable = refreshUnavailable();
+    const collecting = state.refresh.busy || refreshActive(state.data.refreshStatus);
+    for (const control of $$('[data-action="workspace-refresh"]')) {
+      control.disabled = unavailable;
+      control.setAttribute("aria-busy", String(collecting));
     }
-    homeAttentionBuckets[name] = bucket;
-    renderHomeAttention();
-  };
-
-  const resetHomePortfolioSummary = (message = "Ожидаем данные T-Invest") => {
-    homePortfolioTotal.textContent = "—";
-    homeDailyChange.textContent = "—";
-    homeDailyRelative.textContent = "—";
-    homeFreeCash.textContent = "—";
-    homePositionCount.textContent = "—";
-    homeSnapshotTime.textContent = message;
-    homeDailyChange.classList.remove("value-positive", "value-negative");
-    homeDailyRelative.classList.remove("value-positive", "value-negative");
-    homeAllocation.replaceChildren();
-    appendEmptyState(homeAllocation, message);
-    setStateBadge(homePortfolioSummaryState, "Нет данных", "state-next");
-  };
-
-  const renderHomePortfolioSummary = (snapshot) => {
-    const portfolio = snapshot.portfolio;
-    homePortfolioTotal.textContent = formatMoney(portfolio.total);
-    homeDailyChange.textContent = formatMoney(portfolio.daily_yield, {sign: true});
-    applySignedClass(homeDailyChange, portfolio.daily_yield?.value);
-    homeDailyRelative.textContent = formatPercent(portfolio.daily_yield_percent, {sign: true});
-    applySignedClass(homeDailyRelative, portfolio.daily_yield_percent);
-    homePositionCount.textContent = String(portfolio.positions?.length || 0);
-    homeSnapshotTime.textContent = `Проверено ${formatDateTime(snapshot.refreshed_at)}`;
-
-    const unblockedRub = homeUnblockedRub(snapshot);
-    homeFreeCash.textContent = unblockedRub === null
-      ? "Не подтверждены"
-      : formatMoney({currency: "RUB", value: String(unblockedRub)});
-    homeFreeCash.classList.toggle("value-unconfirmed", unblockedRub === null);
-
-    renderAllocationRows(
-      homeAllocation,
-      portfolio.asset_totals,
-      {
-        limit: 4,
-        emptyMessage: "T-Invest не вернул распределение по классам активов.",
-      },
-    );
-    setStateBadge(homePortfolioSummaryState, "Проверено", "state-ok");
-    setHomeAttentionBucket("portfolio", homePortfolioAttention(snapshot));
-  };
-
-  const clearPortfolioFreshnessTimer = () => {
-    if (portfolioFreshnessTimer !== null) {
-      window.clearTimeout(portfolioFreshnessTimer);
-      portfolioFreshnessTimer = null;
+    if (!["home", "portfolio", "analytics", "settings"].includes(state.view)) return;
+    for (const control of $$('[data-view="' + state.view + '"] [data-action="refresh"]')) {
+      control.disabled = unavailable;
+      control.setAttribute("aria-busy", String(collecting));
     }
   };
-
-  const renderPortfolioDataStatus = () => {
-    clearPortfolioFreshnessTimer();
-    const snapshot = lastPortfolioSnapshot;
-    if (!snapshot) return;
-    const error = lastPortfolioLoadError;
-    const freshness = snapshot.freshness;
-    const validUntil = Date.parse(freshness?.valid_until || "");
-    const expired = Number.isFinite(validUntil) && Date.now() >= validUntil;
-    let state = freshness?.status || "unavailable";
-    if (error || expired) state = "stale";
+  const workspaceRefreshText = () => {
+    const result = state.data.refreshStatus;
+    if (state.errors.refreshStatus) return humanError(state.errors.refreshStatus);
+    if (state.refresh.busy && !refreshActive(result)) return "Запрашиваем обновление у сервера…";
     const labels = {
-      fresh: "Данные получены",
-      partial: "Часть данных уточняется",
-      stale: "Нужно обновить",
-      unavailable: "Время не подтверждено",
+      queued: "Обновление поставлено в очередь. Источник данных подключён; ожидаем начало сбора.",
+      running: "Получаем портфель и историю операций из T-Invest. Показатели обновятся после сохранения наблюдения.",
+      degraded: "Наблюдение обновлено частично. Полнота истории операций проверяется отдельно; недоступные показатели не рассчитываются.",
+      failed: "Обновление не завершилось. Сохранённые ранее данные остаются отмечены временем наблюдения."
     };
-    const label = labels[state] || labels.unavailable;
-    [portfolioStateBadge, homePortfolioState, homePortfolioSummaryState, owlState].forEach(
-      (badge) => setStateBadge(badge, label, state === "fresh" ? "state-ok" : "state-next"),
-    );
-    const received = formatDateTime(freshness?.observed_at || snapshot.refreshed_at);
-    let note = `Снимок получен из T-Invest: ${received}. Это время чтения данных, а не время всех котировок.`;
-    if (state === "stale") {
-      note = error
-        ? `Обновление не удалось. Показан последний снимок от ${received}.` + errorReference(error)
-        : `Снимок от ${received} требует обновления. Нажмите «Обновить данные».`;
-      setHomeAttentionBucket("portfolio", homePortfolioAttention(snapshot, {stale: true, expired: !error}));
-    } else if (state === "partial") {
-      note += " Денежные лимиты ещё уточняются; доступная сумма не подтверждена.";
-    } else if (state === "unavailable") {
-      note = "Время данных не подтверждено. Обновите снимок перед принятием решения.";
-    }
-    portfolioDataNotice.textContent = note;
-    if (state !== "fresh") {
-      portfolioFreeCash.textContent = "Не подтверждены";
-      homeFreeCash.textContent = "Не подтверждены";
-      homeFreeCash.classList.add("value-unconfirmed");
-      setStateBadge(guardState, "Нужны свежие данные", "state-next");
-    }
-    if (!error && !expired && Number.isFinite(validUntil)) {
-      portfolioFreshnessTimer = window.setTimeout(
-        () => renderPortfolioDataStatus(), Math.min(2147483647, Math.max(1, validUntil - Date.now() + 50)),
-      );
-    }
-  };
-
-  const invalidatePortfolioRequest = () => {
-    portfolioGeneration += 1;
-    portfolioRequestInFlight = false;
-    portfolioVisualizationInFlight = false;
-    closeInstrumentDetail();
-    clearPortfolioFreshnessTimer();
-  };
-
-  const renderPortfolio = (snapshot) => {
-    const portfolio = snapshot.portfolio;
-    lastPortfolioSnapshot = snapshot;
-    lastPortfolioLoadError = null;
-    portfolioTotal.textContent = formatMoney(portfolio.total);
-    portfolioYield.textContent = formatPercent(portfolio.expected_yield_percent, {sign: true});
-    applySignedClass(portfolioYield, portfolio.expected_yield_percent);
-    portfolioDaily.textContent = formatMoney(portfolio.daily_yield, {sign: true});
-    applySignedClass(portfolioDaily, portfolio.daily_yield?.value);
-    portfolioDailyRelative.textContent = formatPercent(portfolio.daily_yield_percent, {sign: true});
-    portfolioPositionCount.textContent = String(portfolio.positions?.length || 0);
-    portfolioRefreshed.textContent = `Обновлено ${formatDateTime(snapshot.refreshed_at)}`;
-    const unblockedRub = homeUnblockedRub(snapshot);
-    portfolioFreeCash.textContent = unblockedRub === null
-      ? "Не подтверждены"
-      : storedMoney(unblockedRub);
-
-    renderPortfolioAllocationView();
-    renderCash(snapshot.cash, snapshot.blocked_cash, snapshot.limits_loading_in_progress);
-    renderPositions(portfolio.positions);
-    renderHomePortfolioSummary(snapshot);
-
-    lastPortfolioRefreshAt = Date.now();
-    portfolioLoaded = true;
-    updateOwlState(snapshot.refreshed_at);
-    updateGuard(snapshot);
-    showPortfolioMode("content");
-    setStateBadge(portfolioStateBadge, "Данные получены", "state-ok");
-    setStateBadge(homePortfolioState, "Работает", "state-ok");
-    renderPortfolioDataStatus();
-    workspace?.setSnapshot(snapshot);
-  };
-
-  const renderDisconnectedPortfolio = () => {
-    clearPortfolioFreshnessTimer();
-    portfolioLoaded = false;
-    lastPortfolioSnapshot = null;
-    lastPortfolioLoadError = null;
-    lastPortfolioRefreshAt = 0;
-    resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
-    portfolioFreeCash.textContent = "—";
-    updateOwlState(null);
-    updateGuard(null);
-    resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
-    setHomeAttentionBucket("portfolio", []);
-    showPortfolioMode("disconnected");
-    setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
-    setStateBadge(homePortfolioState, "Нет подключения", "state-next");
-  };
-
-  const renderPortfolioLoadFailure = (error, hadPortfolio) => {
-    lastPortfolioLoadError = error;
-    const needsReconnect = error.status === 409;
-    if (hadPortfolio && lastPortfolioSnapshot) {
-      portfolioLoaded = true;
-      showPortfolioMode("content");
-      setStateBadge(portfolioStateBadge, "Данные устарели", "state-next");
-      setStateBadge(homePortfolioState, "Данные устарели", "state-next");
-      setStateBadge(homePortfolioSummaryState, "Данные устарели", "state-next");
-      setHomeAttentionBucket(
-        "portfolio",
-        homePortfolioAttention(lastPortfolioSnapshot, {stale: true}),
-      );
-      renderPortfolioDataStatus();
-      return;
-    }
-
-    portfolioLoaded = false;
-    portfolioFreeCash.textContent = "—";
-    showPortfolioMode("error");
-    portfolioErrorText.textContent = needsReconnect
-      ? "Подключение T-Invest устарело или токен больше не действует. Переподключите счёт."
-      : "T-Invest временно не отдал данные портфеля. Попробуйте повторить запрос.";
-    portfolioErrorText.textContent += errorReference(error);
-    setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
-    setStateBadge(homePortfolioState, "Ошибка", "state-error");
-    setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
-    resetHomePortfolioSummary("Портфель не подтверждён.");
-    setStateBadge(homePortfolioSummaryState, "Ошибка", "state-error");
-    setHomeAttentionBucket("portfolio", homePortfolioAttention(null, {failed: true}));
-    setStateBadge(owlState, "Ошибка", "state-error");
-    updateGuard(null);
-  };
-
-  const matchesConnectedAccount = (snapshot) => {
-    if (snapshot.account_id === tbankAccountId
-      && snapshot.environment === connectedTbankEnvironment) return true;
-    renderTbankFailure();
-    if (typeof snapshot.account_id === "string" && snapshot.account_id
-      && ["prod", "sandbox"].includes(snapshot.environment)) void loadTbankStatus();
-    return false;
-  };
-
-  const loadPortfolioData = async ({force = false} = {}) => {
-    if (!tbankIsConnected) {
-      renderDisconnectedPortfolio();
-      return;
-    }
-    if (portfolioRequestInFlight || (portfolioLoaded && !force)) {
-      return;
-    }
-
-    const hadPortfolio = portfolioLoaded;
-    const generation = portfolioGeneration;
-    portfolioRequestInFlight = true;
-    portfolioRefresh.disabled = true;
-    if (!hadPortfolio) {
-      showPortfolioMode("loading");
-      setStateBadge(homePortfolioSummaryState, "Загружаем", "");
-      setHomeAttentionBucket("portfolio", null);
-    } else {
-      setStateBadge(homePortfolioSummaryState, "Обновляем", "");
-    }
-    setStateBadge(portfolioStateBadge, "Обновляем", "");
-    setStateBadge(homePortfolioState, hadPortfolio ? "Обновляем" : "Загружаем", "");
-
-    try {
-      const snapshot = await api("/api/broker/tbank/portfolio", {method: "GET"});
-      if (generation !== portfolioGeneration || !tbankIsConnected) return;
-      if (!matchesConnectedAccount(snapshot)) return;
-      renderPortfolio(snapshot);
-      void loadPortfolioVisualization({force});
-    } catch (error) {
-      if (generation !== portfolioGeneration) return;
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-
-      renderPortfolioLoadFailure(error, hadPortfolio);
-    } finally {
-      if (generation === portfolioGeneration) {
-        portfolioRequestInFlight = false;
-        portfolioRefresh.disabled = false;
-      }
-    }
-  };
-
-  const resetAnalysis = () => {
-    analysisGeneration += 1;
-    analysisInFlight = false;
-    analysisRefresh.disabled = false;
-    lastAnalysisAt = 0;
-    analysisContent.classList.add("hidden");
-    [
-      analysisObservations,
-      analysisClasses,
-      analysisSectors,
-      analysisSecurities,
-      analysisSources,
-      intelligenceRisks,
-      intelligencePayouts,
-      intelligenceSources,
-    ].forEach((element) => element.replaceChildren());
-    setStateBadge(intelligenceStatus, "Ожидает ежедневный снимок", "state-next");
-    analysisStatus.textContent = "Обновите анализ после проверки подключения T-Invest.";
-    renderBalancing({status: "pending", reason: "Обновите данные выбранного счёта"});
-    renderProposalCreateOptions(null);
-  };
-
-  const renderAnalysisAllocations = (container, allocations) => {
-    container.replaceChildren();
-    if (!allocations?.length) {
-      appendEmptyState(container, "Для этого распределения пока нет оценённых данных.");
-      return;
-    }
-
-    allocations.forEach((item) => {
-      const row = document.createElement("div");
-      row.className = "allocation-row analysis-allocation-row";
-
-      const label = document.createElement("div");
-      label.className = "allocation-label";
-      const name = document.createElement("strong");
-      name.textContent = item.label;
-      const percent = document.createElement("span");
-      percent.textContent = item.nav_percent === null
-        ? "—"
-        : formatPercent(item.nav_percent);
-      label.append(name, percent);
-
-      const amount = document.createElement("div");
-      amount.className = "allocation-value";
-      amount.textContent = formatMoney({currency: "RUB", value: item.value_rub});
-
-      row.append(label, amount);
-      container.append(row);
-    });
-  };
-
-  const EVIDENCE_SOURCE_HOSTS = new Set([
-    "developer.tbank.ru",
-    "cbr.ru",
-    "www.cbr.ru",
-    "ratings.cbr.ru",
-    "raexpert.ru",
-    "acra-ratings.ru",
-    "www.raexpert.ru",
-    "www.acra-ratings.ru",
-  ]);
-
-  const analysisSourceNode = (source) => {
-    const label = typeof source.name === "string" && source.name
-      ? source.name
-      : "Источник";
-    try {
-      const url = new URL(source.url);
-      const tbankPathAllowed = url.hostname !== "developer.tbank.ru"
-        || url.pathname.startsWith("/invest/");
-      if (
-        url.protocol === "https:"
-        && EVIDENCE_SOURCE_HOSTS.has(url.hostname)
-        && tbankPathAllowed
-      ) {
-        const link = document.createElement("a");
-        link.textContent = label;
-        link.href = url.href;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        return link;
-      }
-    } catch {
-      // A malformed source URL is rendered as inert text, never as a link.
-    }
-    const text = document.createElement("span");
-    text.textContent = label;
+    let text = labels[result?.status] || "";
+    const reasons = {
+      consent_required: "Примите актуальные документы, повторно выполнив вход в аккаунт.",
+      worker_interrupted: "Сбор данных прерван перезапуском сервиса; его можно повторить.",
+      observation_context_changed: "Подключение или разрешения изменились. Проверьте настройки источника.",
+      observation_interrupted: "Подключение или разрешения изменились. Проверьте настройки источника.",
+      ObservationCancelled: "Подключение или разрешения изменились. Проверьте настройки источника.",
+      TBankUnavailable: "Источник T-Invest временно недоступен.",
+      TBankTokenRejected: "Источник перестал принимать токен. Проверьте подключение.",
+      BrokerConnectionError: "Подключение изменилось. Проверьте источник данных.",
+      BrokerNotConnected: "Источник данных сейчас не подключён.",
+      ValueError: "Ответ источника не прошёл проверку согласованности."
+    };
+    if (reasons[result?.reason]) text += " " + reasons[result.reason];
+    if (result?.history_status === "continuation_pending") text += " Получена часть истории операций; следующее обновление продолжит сбор.";
+    if (["opened_date_missing", "opened_date_invalid"].includes(result?.history_status)) text += " Источник не подтвердил дату открытия счёта; полнота истории пока неизвестна.";
+    if (result?.reason === "refresh_cooldown") text += ` Следующее обновление доступно через ${format(result.retry_after_seconds, 0)} с.`;
+    if (text && result?.observed_at) text += ` Последнее наблюдение: ${date(result.observed_at, true)} МСК.`;
     return text;
   };
-
-  const renderAnalysis = (snapshot) => {
-    workspace?.setAnalysis(snapshot);
-    const report = snapshot.analysis;
-    const sourceItems = Array.isArray(snapshot.sources) ? snapshot.sources : [];
-    const sources = new Map(sourceItems.map((source) => [source.id, source]));
-
-    analysisCash.textContent = report.rub_cash_unblocked === null
-      ? "Не подтверждены"
-      : formatMoney({currency: "RUB", value: report.rub_cash_unblocked});
-    analysisCount.textContent = String(report.security_count);
-    analysisCoverage.textContent = report.sector_coverage_percent === null
-      ? "Не определено"
-      : formatPercent(report.sector_coverage_percent);
-
-    analysisObservations.replaceChildren();
-    (report.observations || []).forEach((observation) => {
-      const card = document.createElement("article");
-      card.className = "analysis-observation";
-      card.dataset.priority = String(observation.priority);
-
-      const title = document.createElement("h4");
-      title.textContent = observation.title;
-      const detail = document.createElement("p");
-      detail.textContent = observation.detail;
-      const references = document.createElement("div");
-      references.className = "analysis-references";
-
-      (observation.source_ids || []).forEach((id) => {
-        const source = sources.get(id);
-        if (source) {
-          references.append(analysisSourceNode(source));
+  const scheduleRefreshPoll = (context, delay) => {
+    clearTimeout(state.refresh.timer);
+    state.refresh.timer = window.setTimeout(() => {
+      if (currentRefresh(context)) void pollWorkspaceRefresh(context);
+    }, delay);
+  };
+  const repaintRefreshedWorkspace = () => {
+    if (["home", "portfolio", "analytics", "goals", "events"].includes(state.view)) renderCurrent();else {
+      updateIdentity();
+      renderConnectionBanner();
+      if (state.view === "settings") {
+        const target = $("#broker-settings");
+        if (target) target.innerHTML = `<h2 class="panel-title">Подключение T-Invest</h2>${brokerSettingsHTML()}`;
+      }
+    }
+    updateRefreshControls();
+  };
+  const reloadWorkspaceObservation = async context => {
+    const resources = [["workspace", workspacePath()], ["visualization", "/api/portfolio/visualization?history_limit=365"]];
+    if (state.view === "analytics") resources.push(["analysis", "/api/broker/tbank/analysis"]);else delete state.data.analysis;
+    await Promise.allSettled(resources.map(([name, path]) => loadResource(name, path, {
+      force: true,
+      timeout: 45000
+    })));
+    if (!currentRefresh(context)) return;
+    state.strategy.assessment = null;
+    repaintRefreshedWorkspace();
+  };
+  const adoptRefreshStatus = async (result, context) => {
+    if (!currentRefresh(context)) return;
+    const previous = state.data.refreshStatus;
+    state.data.refreshStatus = result;
+    delete state.errors.refreshStatus;
+    renderConnectionBanner();
+    updateRefreshControls();
+    const changedObservation = result.observed_at && result.observed_at !== state.data.workspace?.overview?.observed_at;
+    const finished = (refreshActive(previous) || state.refresh.busy) && !refreshActive(result);
+    if (changedObservation || finished) await reloadWorkspaceObservation(context);
+    if (!currentRefresh(context)) return;
+    if (refreshActive(result)) scheduleRefreshPoll(context, 2500);else if (!result.can_refresh && result.retry_after_seconds > 0) scheduleRefreshPoll(context, Math.min(60000, result.retry_after_seconds * 1000));
+  };
+  const refreshFailed = (error, context) => {
+    if (!currentRefresh(context) || isCancelled(error)) return;
+    state.errors.refreshStatus = error;
+    renderConnectionBanner();
+    updateRefreshControls();
+  };
+  const pollWorkspaceRefresh = async context => {
+    if (!currentRefresh(context)) return;
+    try {
+      await adoptRefreshStatus(await api("/api/workspace/refresh"), context);
+    } catch (error) {
+      refreshFailed(error, context);
+    }
+  };
+  const resumeWorkspaceRefresh = async () => {
+    if (!state.user || state.tour || state.locked || state.refresh.busy) return;
+    const context = refreshContext();
+    clearTimeout(state.refresh.timer);
+    await pollWorkspaceRefresh(context);
+  };
+  const requestWorkspaceRefresh = async () => {
+    if (!requireUser() || state.refresh.busy) return;
+    const context = refreshContext();
+    clearTimeout(state.refresh.timer);
+    state.refresh.busy = true;
+    delete state.errors.refreshStatus;
+    renderConnectionBanner();
+    updateRefreshControls();
+    try {
+      const result = await api("/api/workspace/refresh", {
+        method: "POST",
+        body: {
+          expected_public_id: state.user.public_id
         }
       });
-
-      card.append(title, detail);
-      if (references.childElementCount) {
-        card.append(references);
-      }
-      analysisObservations.append(card);
-    });
-    if (!analysisObservations.childElementCount) {
-      appendEmptyState(
-        analysisObservations,
-        "Дополнительных наблюдений по текущему снимку нет.",
-      );
-    }
-
-    renderAnalysisAllocations(analysisClasses, report.classes);
-    renderAnalysisAllocations(analysisSectors, report.sectors);
-
-    analysisSecurities.replaceChildren();
-    (report.securities || []).forEach((security) => {
-      const row = document.createElement("tr");
-
-      const instrument = document.createElement("td");
-      const name = document.createElement("strong");
-      name.textContent = security.name;
-      const note = document.createElement("small");
-      note.textContent = [
-        security.ticker || security.uid,
-        INSTRUMENT_LABELS[security.instrument_type] || security.instrument_type,
-        security.blocked ? "Есть блокировка" : "",
-        security.for_qual_investor === true ? "Для квалифицированных инвесторов" : "",
-      ].filter(Boolean).join(" · ");
-      instrument.append(name, note);
-
-      const sector = document.createElement("td");
-      sector.textContent = security.sector || "Не определён";
-
-      const value = document.createElement("td");
-      value.textContent = security.value_rub === null
-        ? "Нет подтверждённой оценки в ₽"
-        : formatMoney({currency: "RUB", value: security.value_rub});
-
-      const weight = document.createElement("td");
-      weight.textContent = security.nav_percent === null
-        ? "—"
-        : formatPercent(security.nav_percent);
-
-      row.append(instrument, sector, value, weight);
-      analysisSecurities.append(row);
-    });
-
-    if (!analysisSecurities.childElementCount) {
-      const row = document.createElement("tr");
-      const empty = document.createElement("td");
-      empty.colSpan = 4;
-      empty.textContent = "Ненулевых позиций в инструментах пока нет.";
-      row.append(empty);
-      analysisSecurities.append(row);
-    }
-
-    analysisSources.replaceChildren();
-    sourceItems.forEach((source) => {
-      const row = document.createElement("div");
-      const details = document.createElement("small");
-      const state = {
-        received: "Получено",
-        partial: "Часть данных недоступна",
-        not_requested: "Не запрашивалось",
-      }[source.status] || "Не подтверждено";
-      details.textContent = [
-        state,
-        formatDateTime(source.retrieved_at),
-        Array.isArray(source.methods) ? source.methods.join(", ") : "",
-      ].filter(Boolean).join(" · ");
-      row.append(analysisSourceNode(source), details);
-      analysisSources.append(row);
-    });
-
-    const analysisState = {
-      needs_reconciliation: "Нужна сверка счёта",
-      partial: "Частичное покрытие",
-      observed: "Структура получена; проверка эмитентов не завершена",
-    }[report.status] || "Статус анализа не подтверждён";
-    const environment = snapshot.environment === "sandbox" ? "Песочница" : "Биржа";
-    analysisStatus.textContent = [
-      analysisState,
-      environment,
-      snapshot.account_name,
-      formatDateTime(snapshot.refreshed_at),
-    ].filter(Boolean).join(" · ");
-
-    analysisContent.classList.remove("hidden");
-    lastAnalysisAt = Date.now();
-  };
-
-  const RISK_REASON_LABELS = {
-    tbank_bond_event_contains_default_date: "T-Invest содержит подтверждённую дату дефолта",
-    credit_rating_feed_not_verified: "Разрешённый источник кредитного рейтинга не подключён",
-    fundamental_data_missing: "Фундаментальные показатели отсутствуют",
-    fundamental_data_stale: "Фундаментальные показатели устарели",
-    provider_evidence_stale: "Доказательства давно не обновлялись",
-    provider_evidence_partial: "Часть доказательных источников недоступна",
-    fund_look_through_not_verified: "Состав фонда не подтверждён",
-    fixed_charge_coverage_ratio_below_one: "FCCR ниже 1",
-    ebitda_negative: "EBITDA отрицательная",
-    free_cash_flow_negative_with_debt: "Свободный денежный поток отрицательный при наличии долга",
-    current_ratio_below_one: "Коэффициент текущей ликвидности ниже 1",
-    net_interest_margin_mrq_negative: "Чистая процентная маржа отрицательная",
-    roe_negative: "ROE отрицательный",
-    roa_negative: "ROA отрицательный",
-  };
-
-  const metricProfileLabel = (value) => ({
-    corporate: "корпоративные метрики",
-    bank_like: "bank-like метрики",
-    unknown: "профиль метрик не определён",
-  }[value] || "");
-
-  const intelligenceLabel = (value) => ({
-    data_missing: "Данных недостаточно",
-    normal: "Норма",
-    watch: "Наблюдение",
-    elevated: "Повышенный риск",
-    critical: "Критический риск",
-    confirmed_default: "Подтверждённый дефолт",
-    received: "Получено",
-    fresh: "Актуально",
-    stale: "Устарело",
-    not_applicable: "Не применяется",
-    partial: "Частично",
-    unavailable: "Недоступно",
-    announced: "Объявлено",
-    scheduled: "Запланировано",
-    cancelled: "Отменено",
-    paid: "Исполнено",
-    defaulted: "Дефолт",
-    observed: "Наблюдается",
-  }[value] || String(value || "—"));
-
-  const renderIntelligence = (snapshot) => {
-    workspace?.setPayouts(snapshot.payouts || []);
-    intelligenceRisks.replaceChildren();
-    (snapshot.risks || []).forEach((risk) => {
-      const row = document.createElement("tr");
-      const instrument = document.createElement("td");
-      const title = document.createElement("strong");
-      title.textContent = risk.ticker || risk.instrument_uid || "Инструмент";
-      const detail = document.createElement("small");
-      const reasons = Array.isArray(risk.reasons)
-        ? risk.reasons.map((reason) => RISK_REASON_LABELS[reason] || reason).join(" · ")
-        : "";
-      detail.textContent = [
-        INSTRUMENT_LABELS[risk.instrument_type] || risk.instrument_type,
-        risk.sector || "Сектор не подтверждён",
-        metricProfileLabel(risk.evidence?.metric_profile),
-        reasons,
-      ].filter(Boolean).join(" · ");
-      instrument.append(title, detail);
-
-      const state = document.createElement("td");
-      state.textContent = intelligenceLabel(risk.state || "data_missing");
-      const rating = document.createElement("td");
-      rating.textContent = intelligenceLabel(risk.rating_status || "data_missing");
-      const fundamentals = document.createElement("td");
-      fundamentals.textContent = intelligenceLabel(risk.fundamental_status || "data_missing");
-      row.append(instrument, state, rating, fundamentals);
-      intelligenceRisks.append(row);
-    });
-    if (!intelligenceRisks.childElementCount) {
-      const row = document.createElement("tr");
-      const empty = document.createElement("td");
-      empty.colSpan = 4;
-      empty.textContent = "Risk assessment появится после ежедневного доказательного снимка.";
-      row.append(empty);
-      intelligenceRisks.append(row);
-    }
-
-    intelligencePayouts.replaceChildren();
-    (snapshot.payouts || []).forEach((event) => {
-      const row = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = [
-        event.instrument_uid || "Инструмент",
-        {
-          dividend: "дивиденд",
-          coupon: "купон",
-          bond_event: "событие облигации",
-        }[event.event_type] || event.event_type,
-      ].filter(Boolean).join(" · ");
-      const details = document.createElement("small");
-      const amount = event.amount === null || event.amount === undefined
-        ? ""
-        : formatMoney({currency: event.currency || "", value: event.amount});
-      details.textContent = [
-        intelligenceLabel(event.status),
-        amount,
-        event.expected_at ? "ожидается " + formatDateTime(event.expected_at) : "",
-        event.actual_at ? "факт " + formatDateTime(event.actual_at) : "",
-        event.record_at ? "реестр " + formatDateTime(event.record_at) : "",
-      ].filter(Boolean).join(" · ");
-      row.append(title, details);
-      intelligencePayouts.append(row);
-    });
-    if (!intelligencePayouts.childElementCount) {
-      appendEmptyState(
-        intelligencePayouts,
-        "В сохранённом окне нет подтверждённых календарных событий.",
-      );
-    }
-
-    intelligenceSources.replaceChildren();
-    (snapshot.sources || []).forEach((source) => {
-      const row = document.createElement("div");
-      const titleText = (source.provider || "Источник")
-        + " · "
-        + (source.document_type || "document");
-      const title = analysisSourceNode({
-        name: titleText,
-        url: source.source_url || "",
-      });
-      const details = document.createElement("small");
-      details.textContent = [
-        intelligenceLabel(source.freshness_status),
-        source.retrieved_at ? "получено " + formatDateTime(source.retrieved_at) : "",
-        Number.isFinite(Number(source.versions)) ? "версий: " + source.versions : "",
-      ].filter(Boolean).join(" · ");
-      row.append(title, details);
-      intelligenceSources.append(row);
-    });
-    (snapshot.rating_sources || []).forEach((source) => {
-      const row = document.createElement("div");
-      const title = analysisSourceNode({
-        name: source.name || "Официальный источник рейтингов",
-        url: source.url || "",
-      });
-      const details = document.createElement("small");
-      details.textContent = source.access === "public_reference"
-        ? "Открытый официальный источник · автоматическое извлечение не подтверждено"
-        : "Официальный структурированный feed · требуется отдельный доступ/подписка";
-      row.append(title, details);
-      intelligenceSources.append(row);
-    });
-    if (!intelligenceSources.childElementCount) {
-      appendEmptyState(intelligenceSources, "Evidence ещё не сохранён.");
-    }
-
-    const missing = (snapshot.risks || []).filter((item) => item.state === "data_missing").length;
-    const defaults = (snapshot.risks || []).filter(
-      (item) => item.state === "confirmed_default"
-    ).length;
-    if (defaults > 0) {
-      setStateBadge(
-        intelligenceStatus,
-        "Подтверждённый дефолт: " + defaults,
-        "state-error",
-      );
-    } else if (snapshot.snapshot_freshness === "stale") {
-      setStateBadge(intelligenceStatus, "Доказательства устарели", "state-next");
-    } else if (missing > 0 || snapshot.rating_feed_status === "data_missing") {
-      setStateBadge(intelligenceStatus, "Неполные данные: " + missing, "state-next");
-    } else if (snapshot.status === "pending") {
-      setStateBadge(intelligenceStatus, "Ожидает ежедневный снимок", "state-next");
-    } else {
-      setStateBadge(intelligenceStatus, "Доказательства получены", "state-ok");
-    }
-  };
-
-  const BALANCING_REASON_LABELS = {
-    profile_required: "Сначала заполните профиль капитала",
-    balancing_policy_required: "Сохраните явные лимиты балансировки",
-    snapshot_required: "Нет сохранённого снимка портфеля",
-    snapshot_time_missing: "Время снимка не подтверждено",
-    snapshot_time_in_future: "Время снимка некорректно",
-    snapshot_stale: "Снимок портфеля устарел",
-    snapshot_not_observed: "Снимок требует сверки",
-    broker_limits_loading: "T-Invest ещё обновляет лимиты",
-    nav_unavailable: "NAV портфеля не подтверждён",
-    free_cash_unavailable: "Свободные рубли не подтверждены",
-    critical_evidence_missing: "Критичные доказательства неполны",
-    instrument_structure_not_supported: "Структура инструмента пока не поддерживается",
-    api_trade_unavailable: "Инструмент недоступен через API",
-    buy_unavailable: "Покупка инструмента недоступна",
-    required_tests_missing: "Есть непройденные тесты брокера",
-    qualification_required: "Требуется статус квалифицированного инвестора",
-    iis_not_allowed: "Инструмент недоступен для этого типа ИИС",
-    issuer_identity_not_verified: "Юридический эмитент не подтверждён",
-    issuer_group_not_verified: "Группа связанных компаний не подтверждена",
-    fund_look_through_missing: "Состав фонда не подтверждён",
-    catalog_stale: "Каталог инструмента устарел",
-    account_access_stale: "Права счёта нужно обновить",
-    candidate_risk_assessment_missing: "Risk assessment кандидата ещё не получен",
-    quote_missing: "Свежая котировка отсутствует",
-    missing_lot_cost: "Стоимость целого лота не рассчитана",
-    liquidity_evidence_missing: "Ликвидность не подтверждена",
-    provider_liquidity_flag_false: "Provider пометил ликвидность как недоступную",
-    provider_liquidity_flag_missing: "Provider не подтвердил ликвидность",
-    expected_return_model_missing: "Сценарная доходность ещё не рассчитана",
-    bond_ytw_missing: "Yield-to-worst не подтверждён",
-    bond_duration_missing: "Дюрация не подтверждена",
-    bond_term_missing: "Срок облигации не подтверждён",
-    bond_structure_missing: "Структура облигации неполна",
-    rating_state_not_allowed: "Риск-состояние не допускается",
-    risk_state_not_allowed: "Risk state не допускает новую позицию",
-    below_grade_not_allowed: "Policy запрещает новый below-grade риск",
-    unknown_rating_not_allowed: "Policy запрещает новый актив с неподтверждённым рейтингом",
-    order_book_unusable: "Свежий согласованный стакан недоступен",
-    live_asset_class_not_supported: "Live-enrichment этого класса актива ещё не поддерживается",
-    live_enrichment_not_selected: "Инструмент не вошёл в ограниченный live-screening этого цикла",
-    live_candidate_evidence_unavailable: "Live evidence кандидата временно недоступен",
-    bond_option_events_unsupported: "Есть будущая оферта/call/конвертация · YTW для этой структуры пока fail-closed",
-    candidate_confirmed_default: "Provider evidence подтверждает дефолт · новая покупка запрещена",
-    tbank_shortlist_signal_unavailable: "Broker yield signal для shortlist временно недоступен",
-    issuer_group_unverified: "Корпоративная группа не подтверждена",
-    asset_class_not_allowed: "Класс актива запрещён policy",
-    currency_not_allowed: "Валюта запрещена policy",
-    liquidity_limit: "Не проходит лимит ликвидности",
-    term_limit: "Не проходит лимит срока",
-    asset_class_cap_missing: "Нет лимита класса актива",
-    currency_cap_missing: "Нет лимита валюты",
-    invalid_lot_size: "Некорректная лотность",
-    replacement_cost_model_missing: "Налоги и издержки продажи ещё не подтверждены",
-    no_eligible_positive_candidate: "Нет допустимого кандидата с положительным net-сценарием",
-    integer_lot_or_policy_limits_block_all_buys: "Целые лоты или лимиты блокируют покупку",
-    reserve_or_withdrawal_consumes_free_cash: "Резерв и снятия используют свободные деньги",
-    no_replacement_clears_costs_and_no_trade_band: "Замена не перекрывает издержки и no-trade band",
-    no_eligible_replacement: "Нет допустимой замены",
-    holding_blocked: "Позиция заблокирована",
-    hold_baseline: "Ничего не менять",
-    integer_lot_allocation: "Распределение целыми лотами",
-    net_improvement_after_costs: "Улучшение после издержек",
-  };
-
-  const BALANCING_NOTE_LABELS = {
-    shortlisted_by_tbank_market_yield_signal: "Shortlist: broker yield signal; решение пересчитывается по contractual cash-flow",
-    issuer_identity_from_verified_mapping: "Эмитент подтверждён сохранённой verified mapping",
-    issuer_group_from_verified_mapping: "Группа взята из проверенной связи инструмента с эмитентом",
-    issuer_ratings_from_tinvest_bond_by: "Кредитные рейтинги эмитента: T-Invest BondBy",
-    issuer_rating_missing: "T-Invest не вернул действующий рейтинг эмитента",
-    issuer_rating_time_invalid: "Дата рейтинга некорректна · рейтинг не используется",
-    issuer_rating_level_unrecognized: "Шкала рейтинга не распознана · используется unknown bucket",
-    issuer_rating_under_watch: "Рейтинг эмитента находится под наблюдением · новый вход блокируется",
-    buy_cost_from_tinvest_get_order_price: "Покупка: комиссия и НКД из T-Invest GetOrderPrice",
-    ytw_from_tinvest_fixed_cashflows: "YTW: T-Invest купоны + погашение; будущих call/convert событий нет",
-    liquidity_from_tinvest_exchange_candles: "Ликвидность: завершённые биржевые дневные свечи T-Invest",
-    no_future_call_or_conversion_events: "BondEvents: будущие call/convert события отсутствуют",
-    expected_gain_from_contractual_cashflows: "Доход: договорные купоны + номинал минус стоимость входа",
-    tax_not_applied_to_new_buy: "Налог к новой покупке не начисляется в сценарии",
-  };
-
-  const balancingReason = (value) => (
-    BALANCING_REASON_LABELS[value] || String(value || "—")
-  );
-
-  const balancingNote = (value) => {
-    const text = String(value || "—");
-    if (BALANCING_NOTE_LABELS[text]) {
-      return BALANCING_NOTE_LABELS[text];
-    }
-    if (text.startsWith("issuer_rating:")) {
-      const [, agency, level, date] = text.split(":");
-      return ["Рейтинг", agency, level, date].filter(Boolean).join(" · ");
-    }
-    return text;
-  };
-
-  const renderBalancing = (payload) => {
-    balancingScenarios.replaceChildren();
-    balancingScreening.replaceChildren();
-    balancingFreeCash.textContent = payload.free_cash_rub
-      ? formatMoney({currency: "RUB", value: payload.free_cash_rub})
-      : "—";
-    balancingCandidateCount.textContent = Number.isFinite(Number(payload.candidate_count))
-      ? String(payload.candidate_count)
-      : "—";
-    balancingEligibleNote.textContent = Number.isFinite(Number(payload.eligible_candidate_count))
-      ? `Допустимых сейчас: ${payload.eligible_candidate_count}`
-      : "Допустимость ещё не рассчитана";
-    balancingPolicyVersions.textContent = payload.profile_version && payload.policy_version
-      ? `v${payload.profile_version} · v${payload.policy_version}`
-      : "—";
-
-    if (payload.status !== "observed") {
-      const reason = balancingReason(payload.reason || payload.status);
-      appendEmptyState(balancingScenarios, reason);
-      appendEmptyState(
-        balancingScreening,
-        "Screening начнётся после выполнения обязательных условий.",
-      );
-      setStateBadge(balancingStatus, reason, "state-next");
-      return;
-    }
-
-    const scenarioEntries = [];
-    if (payload.scenarios?.hold) {
-      scenarioEntries.push(["Hold", payload.scenarios.hold]);
-    }
-    if (payload.scenarios?.deploy_cash) {
-      scenarioEntries.push(["Новые деньги", payload.scenarios.deploy_cash]);
-    }
-    (payload.scenarios?.replacements || []).forEach((scenario, index) => {
-      scenarioEntries.push([`Замена ${index + 1}`, scenario]);
-    });
-    scenarioEntries.forEach(([label, scenario]) => {
-      const row = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = `${label} · ${scenario.status === "feasible" ? "допустим" : "заблокирован"}`;
-      const details = document.createElement("small");
-      const tradeCount = Array.isArray(scenario.trades) ? scenario.trades.length : 0;
-      const tradeSummary = (scenario.trades || []).map((trade) => {
-        const direction = trade.action === "sell" ? "продать" : "купить";
-        const ytw = trade.ytw_percent === null || trade.ytw_percent === undefined
-          ? ""
-          : `YTW ${trade.ytw_percent}%`;
-        const tax = Number(trade.tax_rub) > 0
-          ? `налог-сценарий ${formatMoney({currency: "RUB", value: trade.tax_rub})}`
-          : "";
-        const cost = Number(trade.estimated_cost_rub) > 0
-          ? `издержки ${formatMoney({currency: "RUB", value: trade.estimated_cost_rub})}`
-          : "";
-        return [
-          `${direction} ${trade.ticker || trade.instrument_uid}: ${trade.lots} лот.`,
-          ytw,
-          cost,
-          tax,
-        ].filter(Boolean).join(", ");
-      }).join(" · ");
-      details.textContent = [
-        balancingReason(scenario.reason),
-        `сделок: ${tradeCount}`,
-        tradeSummary,
-        scenario.turnover_rub !== undefined
-          ? `оборот: ${formatMoney({currency: "RUB", value: scenario.turnover_rub})}`
-          : "",
-        scenario.residual_cash_rub !== undefined
-          ? `остаток: ${formatMoney({currency: "RUB", value: scenario.residual_cash_rub})}`
-          : "",
-      ].filter(Boolean).join(" · ");
-      row.append(title, details);
-      balancingScenarios.append(row);
-    });
-    if (!balancingScenarios.childElementCount) {
-      appendEmptyState(balancingScenarios, "Сценарии ещё не рассчитаны.");
-    }
-
-    (payload.screening || []).slice(0, 30).forEach((item) => {
-      const row = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = [
-        item.ticker || item.instrument_uid || "Инструмент",
-        item.eligible ? "допустим" : "не допущен",
-      ].join(" · ");
-      const details = document.createElement("small");
-      const blockers = (item.reasons || []).map(balancingReason);
-      const evidenceNotes = (item.notes || []).map(balancingNote);
-      const metrics = [
-        item.ytw_percent !== null && item.ytw_percent !== undefined
-          ? `YTW: ${item.ytw_percent}%`
-          : "",
-        item.duration_years !== null && item.duration_years !== undefined
-          ? `дюрация: ${Number(item.duration_years).toFixed(2)} г.`
-          : "",
-        Number.isFinite(Number(item.liquidity_days))
-          ? `ликвидность: ~${item.liquidity_days} дн.`
-          : "",
-        Number.isFinite(Number(item.max_liquid_lots))
-          ? `лимит ликвидности: ${item.max_liquid_lots} лот.`
-          : "",
-        Number(item.transaction_cost_rub_per_lot) > 0
-          ? `вход за лот: ${formatMoney({currency: "RUB", value: item.transaction_cost_rub_per_lot})}`
-          : "",
-        Number(item.expected_net_gain_rub_per_lot) !== 0
-          ? `net-сценарий/лот: ${formatMoney({currency: "RUB", value: item.expected_net_gain_rub_per_lot})}`
-          : "",
-      ].filter(Boolean);
-      const explanation = [...blockers, ...metrics, ...evidenceNotes];
-      details.textContent = explanation.length
-        ? explanation.join(" · ")
-        : "Все текущие проверки кандидатов пройдены";
-      row.append(title, details);
-      balancingScreening.append(row);
-    });
-    if (!balancingScreening.childElementCount) {
-      appendEmptyState(
-        balancingScreening,
-        "Каталог кандидатов пуст или ещё не прошёл доказательный screening.",
-      );
-    }
-
-    if (payload.live_status === "degraded") {
-      setStateBadge(balancingStatus, "Live evidence временно недоступен", "state-error");
-    } else if (Number(payload.eligible_candidate_count) > 0) {
-      setStateBadge(
-        balancingStatus,
-        `Read-only · допустимых: ${payload.eligible_candidate_count}`,
-        "state-ok",
-      );
-    } else {
-      setStateBadge(balancingStatus, "Read-only · все кандидаты заблокированы", "state-next");
-    }
-  };
-
-  const PROPOSAL_STATUS_LABELS = {
-    pending: "Ожидает решения",
-    confirmed: "План подтверждён",
-    rejected: "Отклонено",
-    deferred: "Отложено",
-    superseded: "Заменено новой версией",
-    revoked: "Отозвано из-за изменения исходных данных",
-    expired: "Срок действия истёк",
-  };
-
-  const proposalStatusLabel = (value) => (
-    PROPOSAL_STATUS_LABELS[value] || String(value || "—")
-  );
-
-  const proposalScenarioLabel = (value) => (
-    value === "replace" ? "Замена позиции" : "Размещение свободных денег"
-  );
-
-  const proposalTradeBoundText = (trade) => {
-    if (trade.action === "sell") {
-      return trade.min_proceeds_rub
-        ? `min proceeds ${formatMoney({currency: "RUB", value: trade.min_proceeds_rub})}`
-        : "";
-    }
-    return trade.max_spend_rub
-      ? `max spend ${formatMoney({currency: "RUB", value: trade.max_spend_rub})}`
-      : "";
-  };
-
-  const proposalTradeSummary = (trade) => {
-    const action = trade.action === "sell" ? "продать" : "купить";
-    const priceType = trade.limit_price_type === "point" ? "пункты" : "₽";
-    const bound = proposalTradeBoundText(trade);
-    return [
-      `${action} ${trade.ticker || trade.instrument_uid}: ${trade.lots} лот.`,
-      trade.limit_price ? `limit ${trade.limit_price} ${priceType}` : "",
-      bound,
-    ].filter(Boolean).join(" · ");
-  };
-
-  const renderProposalCreateOptions = (payload) => {
-    proposalCreateOptions.replaceChildren();
-    if (payload?.status !== "observed" || payload.live_status !== "received") {
-      appendEmptyState(
-        proposalCreateOptions,
-        "Сначала нужен свежий полностью подтверждённый сценарий балансировки.",
-      );
-      return;
-    }
-
-    const addOption = (label, scenarioKind, scenario, replacedUid = null) => {
-      if (
-        scenario?.status !== "feasible"
-        || !Array.isArray(scenario.trades)
-        || !scenario.trades.length
-        || !scenario.before_after
-      ) {
-        return;
-      }
-      const row = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = label;
-      const details = document.createElement("small");
-      details.textContent = [
-        balancingReason(scenario.reason),
-        ...scenario.trades.map(proposalTradeSummary),
-        `expiry будет 10 мин. после фиксации`,
-      ].filter(Boolean).join(" · ");
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "button button-primary";
-      button.textContent = "Зафиксировать exact версию";
-      button.dataset.proposalCreate = scenarioKind;
-      if (replacedUid) {
-        button.dataset.replacedInstrumentUid = replacedUid;
-      }
-      row.append(title, details, button);
-      proposalCreateOptions.append(row);
-    };
-
-    addOption(
-      "Новые деньги",
-      "deploy_cash",
-      payload.scenarios?.deploy_cash,
-    );
-    (payload.scenarios?.replacements || []).forEach((scenario) => {
-      addOption(
-        `Замена ${scenario.replaced_instrument_uid || "позиции"}`,
-        "replace",
-        scenario,
-        scenario.replaced_instrument_uid || null,
-      );
-    });
-
-    if (!proposalCreateOptions.childElementCount) {
-      appendEmptyState(
-        proposalCreateOptions,
-        "Нет завершённого feasible-пакета, который можно зафиксировать.",
-      );
-    }
-  };
-
-  const proposalBeforeAfterText = (proposal) => {
-    const before = proposal.payload?.scenario?.before_after?.before;
-    const after = proposal.payload?.scenario?.before_after?.after;
-    if (!before || !after) {
-      return "Before/after отсутствует";
-    }
-    return [
-      `NAV: ${formatMoney({currency: "RUB", value: before.nav_rub})} → ${formatMoney({currency: "RUB", value: after.nav_rub})}`,
-      `cash: ${formatMoney({currency: "RUB", value: before.cash_rub})} → ${formatMoney({currency: "RUB", value: after.cash_rub})}`,
-    ].join(" · ");
-  };
-
-  const proposalDecisionControls = (proposal) => {
-    const controls = document.createElement("div");
-    controls.className = "proposal-decision-controls";
-
-    const rejectReason = document.createElement("input");
-    rejectReason.type = "text";
-    rejectReason.maxLength = 500;
-    rejectReason.placeholder = "Причина отклонения (обязательно для «Отклонить»)";
-    rejectReason.dataset.proposalRejectReason = proposal.id;
-
-    const deferAt = document.createElement("input");
-    deferAt.type = "datetime-local";
-    deferAt.dataset.proposalDeferAt = proposal.id;
-    deferAt.min = localDateTimeInputValue(new Date(Date.now() + 60_000));
-    deferAt.setAttribute("aria-label", "Отложить предложение до даты и времени");
-    deferAt.title = "Выберите будущие дату и время";
-
-    const actions = document.createElement("div");
-    actions.className = "proposal-decision-actions";
-    for (const [action, label, className] of [
-      ["confirm", "Подтвердить план", "button button-primary"],
-      ["reject", "Отклонить", "button button-danger-secondary"],
-      ["defer", "Отложить до даты", "button button-secondary"],
-    ]) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = className;
-      button.textContent = label;
-      button.dataset.proposalDecision = action;
-      button.dataset.proposalId = proposal.id;
-      button.dataset.proposalVersion = String(proposal.version);
-      button.dataset.proposalHash = proposal.hash;
-      actions.append(button);
-    }
-
-    controls.append(rejectReason, deferAt, actions);
-    return controls;
-  };
-
-  const EXECUTION_STATUS_LABELS = {
-    created: "Создан",
-    running: "Выполняется",
-    reconciling: "Требует сверки",
-    succeeded: "Завершён",
-    cancelled: "Отменён",
-    failed: "Ошибка",
-  };
-
-  const EXECUTION_ERROR_MESSAGES = {
-    proposal_not_found: "Предложение больше недоступно. Обновите список решений.",
-    proposal_not_confirmed: "Сначала подтвердите exact-версию предложения.",
-    proposal_version_mismatch: "Версия предложения изменилась. Обновите список решений.",
-    proposal_hash_mismatch: "Hash предложения не совпадает. Не повторяйте старое действие; обновите данные.",
-    proposal_expired: "Срок действия предложения истёк. Постройте и подтвердите новую версию.",
-    proposal_snapshot_stale: "Портфель изменился после предложения. Нужен новый snapshot и новое решение.",
-    proposal_profile_stale: "Профиль капитала изменился. Пересчитайте предложение.",
-    proposal_policy_stale: "Лимиты балансировки изменились. Пересчитайте предложение.",
-    sandbox_account_mismatch: "Подключите тот же Sandbox-счёт, для которого было создано предложение.",
-    sandbox_buy_lots_exceed_available: "Песочница не разрешает запрошенное количество лотов для покупки.",
-    sandbox_sell_lots_exceed_available: "Песочница не подтверждает нужное количество лотов для продажи.",
-    sandbox_buy_would_overspend: "Предварительная стоимость превышает max spend предложения. Заявка не отправлена.",
-    sandbox_sell_below_min_proceeds: "Предварительная сумма ниже min proceeds предложения. Заявка не отправлена.",
-    sandbox_submit_ambiguous: "Ответ на отправку неоднозначен. Повторная заявка запрещена; используйте «Сверить Sandbox».",
-    sandbox_order_not_found_yet: "Заявка пока не найдена по сохранённому request ID. Повторная отправка запрещена.",
-    sandbox_reconcile_unavailable: "T-Invest временно недоступен. Run сохранён для повторной сверки.",
-    sandbox_cancel_ambiguous: "Отмена не подтверждена однозначно. Run оставлен на сверке.",
-    sandbox_request_id_mismatch: "Provider вернул другой request ID. Run остановлен для безопасной сверки.",
-    sandbox_instrument_mismatch: "Provider вернул другой инструмент. Run остановлен для безопасной сверки.",
-    sandbox_lot_count_mismatch: "Provider вернул другое количество лотов. Run остановлен для безопасной сверки.",
-    sandbox_direction_mismatch: "Provider вернул другое направление сделки. Run остановлен для безопасной сверки.",
-    sandbox_order_type_mismatch: "Provider вернул не limit-заявку. Run остановлен для безопасной сверки.",
-    sandbox_provider_overspend_detected: "Provider сообщил сумму выше max spend. Следующие действия остановлены.",
-    sandbox_provider_min_proceeds_breach: "Provider сообщил сумму ниже min proceeds. Следующие действия остановлены.",
-    live_execution_disabled: "Production live сейчас выключен server-side. Реальная заявка не отправлена.",
-    live_mandate_required: "Для live-run требуется активное разрешение на exact production-счёт.",
-    live_execution_already_active: "На этом production-счёте уже есть незавершённый Live-run. Сначала сверьте или отмените его; новая реальная заявка не создана.",
-    live_mandate_inactive: "Live-разрешение отозвано или истекло. Новая заявка запрещена; уже отправленную можно только сверить или отменить.",
-    live_account_mismatch: "Подключите exact production-счёт, для которого создано предложение и live-разрешение.",
-    live_write_access_required: "T-Invest не подтвердил полный доступ к выбранному production-счёту.",
-    live_canary_deploy_cash_only: "Реальное исполнение допускает только сценарий размещения свободных средств.",
-    live_canary_buy_only: "Реальное исполнение пока допускает только покупки; замена и продажа остаются заблокированы.",
-    live_order_notional_cap_exceeded: "Предварительная стоимость превышает лимит одной live-заявки. Заявка не отправлена.",
-    live_daily_notional_cap_exceeded: "Дневной live-лимит исчерпан. Заявка не отправлена.",
-    live_buy_lots_exceed_available: "T-Invest не подтверждает доступное количество лотов для live-покупки.",
-    live_buy_would_overspend: "Предварительная стоимость превышает max spend подтверждённого предложения.",
-    live_submit_ambiguous: "Ответ production PostOrder неоднозначен. Повторная отправка запрещена; используйте сверку по сохранённому request ID.",
-    live_order_not_found_yet: "Production-заявка пока не найдена по request ID. Новая заявка не отправляется.",
-    live_reconcile_unavailable: "T-Invest временно недоступен. Live-run сохранён для безопасной повторной сверки.",
-    live_cancel_ambiguous: "Отмена production-заявки не подтверждена. Run остаётся на сверке.",
-    live_request_id_mismatch: "T-Invest вернул другой request ID. Live-run остановлен для безопасной сверки.",
-    live_instrument_mismatch: "T-Invest вернул другой инструмент. Live-run остановлен.",
-    live_lot_count_mismatch: "T-Invest вернул другое количество лотов. Live-run остановлен.",
-    live_direction_mismatch: "T-Invest вернул другое направление сделки. Live-run остановлен.",
-    live_order_type_mismatch: "T-Invest вернул не limit-заявку. Live-run остановлен.",
-    live_provider_overspend_detected: "Фактическая production-сумма выше max spend. Следующие действия остановлены.",
-  };
-
-  const executionErrorMessage = (error, fallback) => (
-    EXECUTION_ERROR_MESSAGES[String(error?.message || "")] || fallback
-  );
-
-  const executionStatusLabel = (value) => (
-    EXECUTION_STATUS_LABELS[value] || String(value || "—")
-  );
-
-  const EXECUTION_MODE_LABELS = {
-    shadow: "Shadow",
-    sandbox: "Sandbox",
-    live: "Live canary",
-  };
-
-  const executionModeLabel = (value) => (
-    EXECUTION_MODE_LABELS[value] || String(value || "—")
-  );
-
-  const executionAdvanceLabel = (run) => {
-    if (run.mode === "live") {
-      return run.status === "created"
-        ? "Отправить реальную limit-заявку"
-        : "Сверить Live по request ID";
-    }
-    return run.status === "created"
-      ? "Отправить следующую Sandbox limit-заявку"
-      : "Сверить Sandbox";
-  };
-
-  const executionStartSuccessMessage = (mode) => {
-    if (mode === "shadow") {
-      return "Shadow-репетиция записана. Broker mutation не выполнялась.";
-    }
-    if (mode === "sandbox") {
-      return "Sandbox state machine запущена. Production-заявка не создавалась.";
-    }
-    return (
-      "Live-canary run создан. Реальная заявка ещё не отправлена: "
-      + "проверьте детали и нажмите отдельную кнопку отправки."
-    );
-  };
-
-  const executionMutationSuccessMessage = (mode, action) => {
-    if (mode === "live") {
-      return action === "cancel"
-        ? "Live cancel/reconciliation записан в immutable журнал."
-        : "Live состояние сверено по сохранённому request ID.";
-    }
-    return action === "cancel"
-      ? "Sandbox cancel/reconciliation записан в immutable журнал."
-      : "Состояние Sandbox сверено по сохранённому request ID.";
-  };
-
-  const terminalExecutionStatus = (value) => (
-    ["succeeded", "cancelled", "failed"].includes(value)
-  );
-
-  const renderLiveMandate = (payload) => {
-    const source = (
-      payload !== null
-      && typeof payload === "object"
-    ) ? payload : {};
-    liveOperatorEnabled = source.operator_enabled === true;
-    liveOperatorMaxOrder = Number(source.operator_max_order_notional_rub) || 0;
-    liveOperatorMaxDaily = Number(source.operator_max_daily_notional_rub) || 0;
-    liveMandate = (
-      source.mandate !== null
-      && typeof source.mandate === "object"
-    ) ? source.mandate : null;
-
-    if (
-      !(liveMaxOrder instanceof HTMLInputElement)
-      || !(liveMaxDaily instanceof HTMLInputElement)
-      || !(liveExpiresAt instanceof HTMLInputElement)
-      || !(liveProfileId instanceof HTMLInputElement)
-      || !(liveConfirm instanceof HTMLInputElement)
-    ) {
-      throw new TypeError("Live mandate form has invalid controls");
-    }
-
-    liveMaxOrder.max = String(liveOperatorMaxOrder || 1);
-    liveMaxDaily.max = String(liveOperatorMaxDaily || 1);
-    const now = Date.now();
-    liveExpiresAt.min = localDateTimeInputValue(new Date(now + 5 * 60 * 1000));
-    liveExpiresAt.max = localDateTimeInputValue(new Date(now + 24 * 60 * 60 * 1000));
-    liveProfileId.placeholder = currentProfileId || "000000001";
-
-    if (!liveOperatorEnabled) {
-      liveMandateForm.classList.add("hidden");
-      liveMandateRevoke.classList.add("hidden");
-      setStateBadge(liveMandateStatus, "Выключен server-side", "state-next");
-      liveMandateSummary.textContent = (
-         "Реальное исполнение технически подготовлено, но не активировано: "
-        + "опубликованные legal-документы v6 описывают режим без реальных поручений. "
-        + "Shadow и Sandbox продолжают работать."
-      );
-      syncExecutionControls();
-      return;
-    }
-
-    const connectedProduction = (
-      source.connected_environment === "prod"
-      && typeof source.connected_account_id === "string"
-      && source.connected_account_id !== ""
-    );
-    liveMandateForm.classList.toggle("hidden", !connectedProduction);
-    if (!connectedProduction) {
-      setStateBadge(liveMandateStatus, "Нужен production-счёт", "state-next");
-      liveMandateSummary.textContent = (
-        "Live gate включён, но сначала подключите exact production T-Invest счёт. "
-        + "Sandbox-счёт не может получить production authority."
-      );
-      syncExecutionControls();
-      return;
-    }
-
-    if (liveMandate) {
-      setStateBadge(liveMandateStatus, "Mandate активен", "state-ok");
-      liveMandateSummary.textContent = [
-        "Разрешение действует до " + formatDateTime(liveMandate.expires_at),
-        "лимит одной заявки " + formatRub(liveMandate.max_order_notional_rub),
-        "дневной лимит " + formatRub(liveMandate.max_daily_notional_rub),
-      ].join(" · ");
-      liveMaxOrder.disabled = true;
-      liveMaxDaily.disabled = true;
-      liveExpiresAt.disabled = true;
-      liveProfileId.disabled = true;
-      liveConfirm.disabled = true;
-      liveMandateSave.classList.add("hidden");
-      liveMandateRevoke.classList.remove("hidden");
-    } else {
-      setStateBadge(liveMandateStatus, "Разрешение не создано", "state-next");
-      liveMandateSummary.textContent = (
-        "Production live остаётся без authority, пока вы явно не зададите caps, "
-        + "срок и ID профиля. Создание mandate само по себе не отправляет заявку."
-      );
-      liveMaxOrder.disabled = false;
-      liveMaxDaily.disabled = false;
-      liveExpiresAt.disabled = false;
-      liveProfileId.disabled = false;
-      liveConfirm.disabled = false;
-      liveMandateSave.classList.remove("hidden");
-      liveMandateRevoke.classList.add("hidden");
-    }
-    syncExecutionControls();
-  };
-
-  const loadLiveMandate = async () => {
-    try {
-      const payload = await api("/api/portfolio/live-execution/mandate", {
-        method: "GET",
-      });
-      renderLiveMandate(payload);
+      await adoptRefreshStatus(result, context);
     } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      liveOperatorEnabled = false;
-      liveMandate = null;
-      liveMandateForm.classList.add("hidden");
-      setStateBadge(liveMandateStatus, "Не удалось проверить gate", "state-error");
-      liveMandateSummary.textContent = (
-        "Live authority не считается активной без успешной server-side проверки."
-      );
-    }
-  };
-
-  const saveLiveMandate = async () => {
-    if (liveMandateRequestInFlight) {
-      return;
-    }
-    if (!liveOperatorEnabled) {
-      showMessage(
-        liveMandateMessage,
-        "Production live выключен server-side. Разрешение не создано.",
-        true,
-      );
-      return;
-    }
-    if (!validateFormWithMessage(
-      liveMandateForm,
-      liveMandateMessage,
-      "Проверьте параметры live-разрешения.",
-    )) {
-      return;
-    }
-    const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
-    const maxOrder = Number(liveMaxOrder.value);
-    const maxDaily = Number(liveMaxDaily.value);
-    const expires = new Date(liveExpiresAt.value);
-    const now = Date.now();
-    if (
-      !connectedAccountId
-      || connectedTbankEnvironment !== "prod"
-      || !Number.isFinite(maxOrder)
-      || !Number.isFinite(maxDaily)
-      || maxOrder <= 0
-      || maxDaily < maxOrder
-      || maxOrder > liveOperatorMaxOrder
-      || maxDaily > liveOperatorMaxDaily
-      || Number.isNaN(expires.getTime())
-      || expires.getTime() <= now
-      || expires.getTime() > now + 24 * 60 * 60 * 1000
-      || liveProfileId.value.trim() !== currentProfileId
-      || !liveConfirm.checked
-    ) {
-      showMessage(
-        liveMandateMessage,
-        "Проверьте exact production-счёт, caps, срок до 24 часов, ID профиля и явное подтверждение.",
-        true,
-      );
-      return;
-    }
-    if (!window.confirm(
-      "Создать краткоживущее разрешение на реальные заявки? Это не отправляет поручение само по себе, но позволит отдельно запустить подтверждённый Live-canary пакет.",
-    )) {
-      return;
-    }
-
-    liveMandateRequestInFlight = true;
-    liveMandateSave.disabled = true;
-    try {
-      await api("/api/portfolio/live-execution/mandate", {
-        method: "PUT",
-        body: JSON.stringify({
-          account_id: connectedAccountId,
-          max_order_notional_rub: String(maxOrder),
-          max_daily_notional_rub: String(maxDaily),
-          expires_at: expires.toISOString(),
-          confirm_public_id: liveProfileId.value.trim(),
-          confirm_live_execution: true,
-        }),
-      });
-      showMessage(
-        liveMandateMessage,
-        "Live-разрешение создано. Реальная заявка не отправлялась.",
-      );
-      await loadLiveMandate();
-      await loadProposals();
-      await loadExecutions();
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      showMessage(
-        liveMandateMessage,
-        executionErrorMessage(
-          error,
-          "Live-разрешение не создано. Production authority не изменилась.",
-        ),
-        true,
-      );
+      refreshFailed(error, context);
     } finally {
-      liveMandateSave.disabled = false;
-      liveMandateRequestInFlight = false;
+      if (currentRefresh(context)) {
+        state.refresh.busy = false;
+        renderConnectionBanner();
+        updateRefreshControls();
+      }
     }
   };
-
-  const revokeLiveMandate = async () => {
-    if (liveMandateRequestInFlight || !liveMandate) {
-      return;
-    }
-    if (!window.confirm(
-      "Включить kill switch? Новые production-заявки будут запрещены. Уже отправленные заявки останутся в журнале для сверки/отмены.",
-    )) {
-      return;
-    }
-    liveMandateRequestInFlight = true;
-    liveMandateRevoke.disabled = true;
-    try {
-      await api("/api/portfolio/live-execution/mandate", {method: "DELETE"});
-      showMessage(
-        liveMandateMessage,
-        "Kill switch включён: новые live-заявки запрещены.",
-      );
-      await loadLiveMandate();
-      await loadProposals();
-      await loadExecutions({inspectLatest: true});
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      showMessage(
-        liveMandateMessage,
-        "Не удалось подтвердить отзыв разрешения. До успешной проверки не считайте kill switch применённым.",
-        true,
-      );
-    } finally {
-      liveMandateRevoke.disabled = false;
-      liveMandateRequestInFlight = false;
-    }
-  };
-
-  const syncExecutionControls = () => {
-    const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
-    const sandboxConnected = tbankIsConnected && connectedTbankEnvironment === "sandbox";
-    const liveConnected = tbankIsConnected && connectedTbankEnvironment === "prod";
-    const activeMandateId = String(liveMandate?.id || "");
-    const activeMandateAccount = String(liveMandate?.account_id || "");
-
-    proposalHistory.querySelectorAll("button[data-execution-start]").forEach((element) => {
-      if (!(element instanceof HTMLButtonElement)) {
-        return;
-      }
-      const mode = element.dataset.executionStart || "";
-      const proposalAccountId = element.dataset.proposalAccountId || "";
-      const scenarioKind = element.dataset.proposalScenarioKind || "";
-      if (mode === "sandbox") {
-        const accountMatches = (
-          sandboxConnected
-          && connectedAccountId !== ""
-          && proposalAccountId === connectedAccountId
-        );
-        element.disabled = !accountMatches;
-        element.title = accountMatches
-          ? "Создать run для exact-пакета этого Sandbox-счёта"
-          : "Sandbox требует тот же счёт, для которого создан подтверждённый план.";
-        return;
-      }
-      if (mode !== "live") {
-        return;
-      }
-      element.classList.toggle("hidden", !liveOperatorEnabled);
-      const ready = (
-        liveOperatorEnabled
-        && liveConnected
-        && activeMandateId !== ""
-        && activeMandateAccount === connectedAccountId
-        && proposalAccountId === connectedAccountId
-        && scenarioKind === "deploy_cash"
-      );
-      element.disabled = !ready;
-      element.title = ready
-        ? "Создать live-run. Реальная заявка появится только после отдельного действия «Отправить»."
-        : "Live требует active mandate, exact production account и deploy_cash canary.";
-    });
-
-    executionHistory.querySelectorAll("button[data-execution-action]").forEach((element) => {
-      if (!(element instanceof HTMLButtonElement)) {
-        return;
-      }
-      const mode = element.dataset.executionMode || "";
-      const executionAccountId = element.dataset.executionAccountId || "";
-      if (mode === "sandbox") {
-        const accountMatches = (
-          sandboxConnected
-          && connectedAccountId !== ""
-          && executionAccountId === connectedAccountId
-        );
-        element.disabled = !accountMatches;
-        element.title = accountMatches
-          ? ""
-          : "Для управления run подключите тот же exact Sandbox-счёт.";
-        return;
-      }
-      if (mode !== "live") {
-        return;
-      }
-
-      const accountMatches = (
-        liveConnected
-        && connectedAccountId !== ""
-        && executionAccountId === connectedAccountId
-      );
-      if (!accountMatches) {
-        element.disabled = true;
-        element.title = "Для recovery подключите тот же exact production-счёт.";
-        return;
-      }
-
-      const needsSubmissionAuthority = (
-        element.dataset.executionAction === "advance"
-        && element.dataset.executionStatus === "created"
-      );
-      const submissionAuthorityReady = (
-        liveOperatorEnabled
-        && activeMandateId !== ""
-        && element.dataset.executionMandateId === activeMandateId
-      );
-      element.disabled = needsSubmissionAuthority && !submissionAuthorityReady;
-      element.title = element.disabled
-        ? "Kill switch/expiry блокирует отправку. Pending run можно безопасно завершить кнопкой «Отменить Live»."
-        : "";
-    });
-  };
-
-  const proposalExecutionControls = (proposal) => {
-    const controls = document.createElement("div");
-    controls.className = "proposal-decision-actions";
-
-    const shadow = document.createElement("button");
-    shadow.type = "button";
-    shadow.className = "button button-secondary";
-    shadow.textContent = "Shadow-репетиция";
-    shadow.dataset.executionStart = "shadow";
-
-    const sandbox = document.createElement("button");
-    sandbox.type = "button";
-    sandbox.className = "button button-secondary";
-    sandbox.textContent = "Создать Sandbox-run";
-    sandbox.dataset.executionStart = "sandbox";
-
-    const live = document.createElement("button");
-    live.type = "button";
-    live.className = "button button-danger-secondary hidden";
-    live.textContent = "Создать Live-canary run";
-    live.dataset.executionStart = "live";
-
-    const proposalId = String(proposal?.id || "");
-    const proposalVersion = String(proposal?.version || "");
-    const proposalHash = String(proposal?.hash || "");
-    const proposalAccountId = String(proposal?.account_id || "");
-    const proposalScenarioKind = String(proposal?.scenario_kind || "");
-
-    for (const button of [shadow, sandbox, live]) {
-      button.dataset.proposalId = proposalId;
-      button.dataset.proposalVersion = proposalVersion;
-      button.dataset.proposalHash = proposalHash;
-      button.dataset.proposalAccountId = proposalAccountId;
-      button.dataset.proposalScenarioKind = proposalScenarioKind;
-      controls.append(button);
-    }
-    return controls;
-  };
-
-  const renderProposals = (items) => {
-    proposalHistory.replaceChildren();
-    const proposals = Array.isArray(items) ? items : [];
-    const pending = proposals.filter((item) => item.status === "pending");
-
-    proposals.slice(0, 12).forEach((proposal) => {
-      const row = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = [
-        `v${proposal.version}`,
-        proposalScenarioLabel(proposal.scenario_kind),
-        proposalStatusLabel(proposal.status),
-      ].join(" · ");
-
-      const details = document.createElement("small");
-      const trades = proposal.payload?.scenario?.trades || [];
-      details.textContent = [
-        `счёт: ${proposal.account_id || "—"}`,
-        `hash: ${String(proposal.hash || "").slice(0, 16)}…`,
-        `до: ${formatDateTime(proposal.expires_at)}`,
-        proposalBeforeAfterText(proposal),
-        ...trades.map(proposalTradeSummary),
-        proposal.decision_user_reason
-          ? `причина: ${proposal.decision_user_reason}`
-          : "",
-        proposal.deferred_until
-          ? `отложено до: ${formatDateTime(proposal.deferred_until)}`
-          : "",
-      ].filter(Boolean).join(" · ");
-      row.append(title, details);
-
-      if (proposal.status === "pending") {
-        row.append(proposalDecisionControls(proposal));
-      } else if (proposal.status === "confirmed") {
-        row.append(proposalExecutionControls(proposal));
-      }
-      proposalHistory.append(row);
-    });
-
-    if (!proposalHistory.childElementCount) {
-      appendEmptyState(
-        proposalHistory,
-        "Immutable proposals ещё не создавались.",
-      );
-    }
-
-    if (pending.length) {
-      const firstPending = pending[0];
-      setHomeAttentionBucket("proposals", [{
-        severity: "warning",
-        title: pending.length === 1
-          ? `План v${firstPending.version} ожидает решения`
-          : `Планов ожидает решения: ${pending.length}`,
-        detail: `Текущая версия действует до ${formatDateTime(firstPending.expires_at)}.`,
-        view: "decisions",
-      }]);
-      setStateBadge(
-        proposalStatus,
-        `Ожидает решения: v${pending[0].version}`,
-        "state-next",
-      );
-    } else if (proposals.length) {
-      setHomeAttentionBucket("proposals", []);
-      setStateBadge(
-        proposalStatus,
-        proposalStatusLabel(proposals[0].status),
-        proposals[0].status === "confirmed" ? "state-ok" : "state-next",
-      );
-    } else {
-      setHomeAttentionBucket("proposals", []);
-      setStateBadge(proposalStatus, "Нет активного предложения", "state-next");
-    }
-    syncExecutionControls();
-  };
-
-  const loadProposals = async () => {
-    try {
-      const result = await api("/api/portfolio/proposals", {method: "GET"});
-      renderProposals(result.proposals || []);
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      proposalHistory.replaceChildren();
-      appendEmptyState(proposalHistory, "Не удалось загрузить версии предложений.");
-      setHomeAttentionBucket("proposals", [{
-        severity: "warning",
-        title: "Статус планов не подтверждён",
-        detail: "Не удалось прочитать сохранённые версии предложений. Торговое действие не выполнялось.",
-        view: "decisions",
-      }]);
-      setStateBadge(proposalStatus, "Ошибка чтения proposals", "state-error");
-    }
-  };
-
-  const createProposal = async (button) => {
-    if (proposalRequestInFlight) {
-      return;
-    }
-    proposalRequestInFlight = true;
-    showMessage(proposalMessage, "");
-    button.disabled = true;
-    try {
-      const body = {
-        scenario_kind: button.dataset.proposalCreate,
-        replaced_instrument_uid: button.dataset.replacedInstrumentUid || null,
-      };
-      const result = await api("/api/portfolio/proposals", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      showMessage(
-        proposalMessage,
-        `Зафиксирована immutable версия v${result.proposal.version}. Подтверждение не отправляет заявки брокеру.`,
-      );
-      await loadProposals();
-      await loadExecutions();
-    } catch (error) {
-      showMessage(
-        proposalMessage,
-        error.status === 409
-          ? "Сценарий изменился или устарел. Обновите балансировку и зафиксируйте новую версию."
-          : "Не удалось зафиксировать предложение. Предыдущие версии не изменены.",
-        true,
-      );
-      if (error.status === 401) {
-        location.reload();
-      }
-    } finally {
-      button.disabled = false;
-      proposalRequestInFlight = false;
-    }
-  };
-
-  const decideProposal = async (button) => {
-    if (proposalRequestInFlight) {
-      return;
-    }
-    const proposalId = button.dataset.proposalId;
-    const action = button.dataset.proposalDecision;
-    const reason = proposalHistory.querySelector(
-      `[data-proposal-reject-reason="${proposalId}"]`,
-    );
-    const deferAt = proposalHistory.querySelector(
-      `[data-proposal-defer-at="${proposalId}"]`,
-    );
-
-    const rejectReason = reason?.value.trim() || "";
-    if (action === "reject" && !rejectReason) {
-      showMessage(proposalMessage, "Для отклонения укажите причину.", true);
-      reason?.focus();
-      return;
-    }
-
-    let deferredUntil = null;
-    if (action === "defer") {
-      const deferValue = deferAt?.value || "";
-      if (!deferValue) {
-        showMessage(proposalMessage, "Для отсрочки выберите дату и время.", true);
-        deferAt?.focus();
-        return;
-      }
-      const deferredDate = new Date(deferValue);
-      if (
-        Number.isNaN(deferredDate.getTime())
-        || deferredDate.getTime() <= Date.now()
-      ) {
-        showMessage(
-          proposalMessage,
-          "Дата отсрочки должна быть в будущем. Выберите новую дату и время.",
-          true,
-        );
-        deferAt?.focus();
-        return;
-      }
-      deferredUntil = deferredDate.toISOString();
-    }
-
-    proposalRequestInFlight = true;
-    showMessage(proposalMessage, "");
-    button.disabled = true;
-    try {
-      const body = {
-        action,
-        proposal_version: Number(button.dataset.proposalVersion),
-        proposal_hash: button.dataset.proposalHash,
-        reason: action === "reject" ? rejectReason : null,
-        deferred_until: deferredUntil,
-      };
-      const result = await api(
-        `/api/portfolio/proposals/${uuidPathSegment(proposalId)}/decision`,
-        {method: "POST", body: JSON.stringify(body)},
-      );
-      showMessage(
-        proposalMessage,
-        `${proposalStatusLabel(result.proposal.status)}. Broker execution выключен.`,
-      );
-      await loadProposals();
-      await loadExecutions();
-    } catch (error) {
-      showMessage(
-        proposalMessage,
-        error.status === 409
-          ? "Эта версия уже решена, истекла или её исходные данные изменились."
-          : "Не удалось записать решение. Повторная торговая операция не создавалась.",
-        true,
-      );
-      if (error.status === 401) {
-        location.reload();
-      }
-    } finally {
-      button.disabled = false;
-      proposalRequestInFlight = false;
-    }
-  };
-
-  const renderExecutionDetails = (payload) => {
-    executionDetails.replaceChildren();
-    const run = (
-      payload !== null
-      && typeof payload === "object"
-      && payload.execution !== null
-      && typeof payload.execution === "object"
-    ) ? payload.execution : null;
-    if (!run) {
-      appendEmptyState(executionDetails, "Выберите запуск из журнала.");
-      return;
-    }
-
-    const summary = document.createElement("div");
-    const title = document.createElement("strong");
-    title.textContent = [
-      executionModeLabel(run.mode),
-      executionStatusLabel(run.status),
-      `proposal v${run.proposal_version}`,
-    ].join(" · ");
-    const details = document.createElement("small");
-    details.textContent = [
-      `run: ${String(run.id || "").slice(0, 8)}…`,
-      `account: ••••${String(run.account_id || "").slice(-6)}`,
-      run.error_code ? `код: ${run.error_code}` : "",
-      `создан: ${formatDateTime(run.created_at)}`,
-    ].filter(Boolean).join(" · ");
-    summary.append(title, details);
-    executionDetails.append(summary);
-
-    const legs = Array.isArray(run.legs) ? run.legs : [];
-    legs.forEach((leg) => {
-      if (leg === null || typeof leg !== "object") {
-        return;
-      }
-      const row = document.createElement("div");
-      const legTitle = document.createElement("strong");
-      legTitle.textContent = [
-        `#${Number(leg.leg_index) + 1}`,
-        leg.action === "buy" ? "BUY" : "SELL",
-        executionStatusLabel(leg.status),
-      ].join(" · ");
-      const legDetails = document.createElement("small");
-      legDetails.textContent = [
-        `UID: ${String(leg.instrument_uid || "").slice(0, 16)}…`,
-        `лоты: ${leg.lots_executed}/${leg.lots_requested}`,
-        `limit: ${leg.limit_price} (${leg.limit_price_type})`,
-        `request: ${String(leg.request_id || "").slice(0, 8)}…`,
-        `сумма: ${formatMoney({currency: "RUB", value: leg.executed_amount_rub})}`,
-        `комиссия: ${formatMoney({currency: "RUB", value: leg.executed_commission_rub})}`,
-      ].join(" · ");
-      row.append(legTitle, legDetails);
-      executionDetails.append(row);
-    });
-
-    const events = Array.isArray(payload.events) ? payload.events : [];
-    events.slice(-12).forEach((event) => {
-      if (event === null || typeof event !== "object") {
-        return;
-      }
-      const row = document.createElement("div");
-      const eventTitle = document.createElement("strong");
-      eventTitle.textContent = `Событие · ${event.event_type || "unknown"}`;
-      const eventDetails = document.createElement("small");
-      eventDetails.textContent = formatDateTime(event.created_at);
-      row.append(eventTitle, eventDetails);
-      executionDetails.append(row);
-    });
-  };
-
-  const loadExecutionDetails = async (runId) => {
-    if (typeof runId !== "string" || runId.length === 0) {
-      executionDetails.replaceChildren();
-      appendEmptyState(executionDetails, "Не удалось определить запуск для просмотра.");
-      return;
-    }
-    try {
-      const payload = await api(`/api/portfolio/executions/${uuidPathSegment(runId)}`, {method: "GET"});
-      renderExecutionDetails(payload);
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      executionDetails.replaceChildren();
-      appendEmptyState(executionDetails, "Не удалось загрузить состояние запуска.");
-    }
-  };
-
-  const renderExecutions = (items) => {
-    executionHistory.replaceChildren();
-    const runs = Array.isArray(items)
-      ? items.filter((item) => item !== null && typeof item === "object")
-      : [];
-
-    runs.slice(0, 12).forEach((run) => {
-      const row = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = [
-        executionModeLabel(run.mode),
-        executionStatusLabel(run.status),
-        `proposal v${run.proposal_version}`,
-      ].join(" · ");
-      const details = document.createElement("small");
-      details.textContent = [
-        `run: ${String(run.id || "").slice(0, 8)}…`,
-        `создан: ${formatDateTime(run.created_at)}`,
-        run.error_code ? `код: ${run.error_code}` : "",
-      ].filter(Boolean).join(" · ");
-
-      const actions = document.createElement("div");
-      actions.className = "proposal-decision-actions";
-
-      const inspect = document.createElement("button");
-      inspect.type = "button";
-      inspect.className = "button button-secondary";
-      inspect.textContent = "Детали";
-      inspect.dataset.executionInspect = String(run.id || "");
-      actions.append(inspect);
-
-      if (
-        ["sandbox", "live"].includes(run.mode)
-        && !terminalExecutionStatus(run.status)
-      ) {
-        const advance = document.createElement("button");
-        advance.type = "button";
-        advance.className = "button button-primary";
-        advance.textContent = executionAdvanceLabel(run);
-        advance.dataset.executionAction = "advance";
-        advance.dataset.executionId = String(run.id || "");
-        advance.dataset.executionAccountId = String(run.account_id || "");
-        advance.dataset.executionMode = String(run.mode || "");
-        advance.dataset.executionStatus = String(run.status || "");
-        advance.dataset.executionMandateId = String(run.live_mandate_id || "");
-
-        const cancel = document.createElement("button");
-        cancel.type = "button";
-        cancel.className = "button button-danger-secondary";
-        cancel.textContent = run.mode === "live" ? "Отменить Live" : "Отменить Sandbox";
-        cancel.dataset.executionAction = "cancel";
-        cancel.dataset.executionId = String(run.id || "");
-        cancel.dataset.executionAccountId = String(run.account_id || "");
-        cancel.dataset.executionMode = String(run.mode || "");
-        cancel.dataset.executionStatus = String(run.status || "");
-        cancel.dataset.executionMandateId = String(run.live_mandate_id || "");
-
-        actions.append(advance, cancel);
-      }
-
-      row.append(title, details, actions);
-      executionHistory.append(row);
-    });
-
-    if (!executionHistory.childElementCount) {
-      appendEmptyState(
-        executionHistory,
-        "Проверка исполнения ещё не запускалась. Сначала подтвердите план.",
-      );
-      executionDetails.replaceChildren();
-      appendEmptyState(executionDetails, "Состояние запуска появится после shadow/sandbox.");
-      setStateBadge(
-        executionStatus,
-        liveOperatorEnabled ? "Live gate доступен · запусков нет" : "Live выключен · запусков нет",
-        "state-next",
-      );
-      return;
-    }
-
-    const active = runs.find((run) => !terminalExecutionStatus(run.status));
-    if (active) {
-      setStateBadge(
-        executionStatus,
-        `${executionModeLabel(active.mode)} · ${executionStatusLabel(active.status)}`,
-        active.status === "reconciling" ? "state-error" : "state-next",
-      );
-      return;
-    }
-    setStateBadge(
-      executionStatus,
-      liveOperatorEnabled ? "Live gate доступен · журнал готов" : "Live выключен · журнал готов",
-      "state-ok",
-    );
-  };
-
-  const loadExecutions = async ({inspectLatest = false} = {}) => {
-    try {
-      const result = await api("/api/portfolio/executions", {method: "GET"});
-      const runs = (
-        result !== null
-        && typeof result === "object"
-        && Array.isArray(result.executions)
-      ) ? result.executions : [];
-      renderExecutions(runs);
-      const latestRun = runs[0];
-      const latestRunId = typeof latestRun?.id === "string" ? latestRun.id : "";
-      if (inspectLatest && latestRunId) {
-        await loadExecutionDetails(latestRunId);
-      }
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      executionHistory.replaceChildren();
-      executionDetails.replaceChildren();
-      appendEmptyState(executionHistory, "Не удалось загрузить журнал исполнения.");
-      setStateBadge(executionStatus, "Ошибка чтения исполнения", "state-error");
-    }
-  };
-
-  const executionStartBlocker = (mode, proposalAccountId) => {
-    const connectedAccountId = typeof tbankAccountId === "string" ? tbankAccountId : "";
-    if (
-      mode === "sandbox"
-      && (
-        connectedTbankEnvironment !== "sandbox"
-        || !connectedAccountId
-        || proposalAccountId !== connectedAccountId
-      )
-    ) {
-      return (
-        "Sandbox-run требует тот же exact Sandbox account_id, "
-        + "из которого построено подтверждённое предложение."
-      );
-    }
-    if (
-      mode === "live"
-      && (
-        !liveOperatorEnabled
-        || connectedTbankEnvironment !== "prod"
-        || !connectedAccountId
-        || proposalAccountId !== connectedAccountId
-        || liveMandate?.account_id !== connectedAccountId
-      )
-    ) {
-      return (
-        "Live-run заблокирован: нужен active mandate "
-        + "и тот же exact production account_id."
-      );
-    }
+  const connectionStatusText = (connection, workspace) => {
+    if (state.errors.workspace) return humanError(state.errors.workspace);
+    const refreshText = workspaceRefreshText();
+    if (refreshText) return refreshText;
+    if (connection && !connection.connected) return "Подключите T-Invest, чтобы увидеть стоимость, состав и аналитику своего портфеля.";
+    if (connection?.connected && workspace && !workspace.overview?.observed_at) return "Счёт подключён. Подтверждённое наблюдение пока не получено. Запустите обновление: история начнётся с реальных данных источника.";
+    if (connection?.environment === "sandbox") return "Подключена тестовая среда T-Invest. Эти данные относятся к тестовому счёту.";
+    if (workspace?.overview?.status === "stale") return "Последнее наблюдение устарело. Значения помечены временем получения; обновите данные.";
+    if (workspace?.overview?.status === "partial") return "Получена только часть данных счёта. Некоторые показатели пока не рассчитаны.";
     return "";
   };
-
-  const confirmLiveRunCreation = (mode) => (
-    mode !== "live"
-    || window.confirm(
-      "Создать Live-canary run? Это ещё не отправляет заявку. "
-      + "Реальное поручение потребует отдельного нажатия "
-      + "«Отправить реальную limit-заявку».",
-    )
-  );
-
-  const startExecution = async (button) => {
-    if (!(button instanceof HTMLButtonElement) || executionRequestInFlight) {
+  const renderConnectionBanner = () => {
+    const banner = $("#connection-banner");
+    const ws = state.data.workspace;
+    const connection = state.data.connection || ws?.connection;
+    if (state.tour || state.locked) {
+      banner.hidden = true;
       return;
     }
-
-    const mode = button.dataset.executionStart || "";
-    const proposalId = button.dataset.proposalId || "";
-    const proposalHash = button.dataset.proposalHash || "";
-    const proposalAccountId = button.dataset.proposalAccountId || "";
-    const proposalVersion = Number(button.dataset.proposalVersion);
-    if (
-      !["shadow", "sandbox", "live"].includes(mode)
-      || !UUID_PATTERN.test(proposalId)
-      || !/^[0-9a-fA-F]{64}$/.test(proposalHash)
-      || !Number.isInteger(proposalVersion)
-      || proposalVersion < 1
-    ) {
-      showMessage(
-        executionMessage,
-        "Параметры запуска повреждены. Обновите страницу и выберите предложение заново.",
-        true,
-      );
-      return;
-    }
-
-    const blocker = executionStartBlocker(mode, proposalAccountId);
-    if (blocker) {
-      showMessage(executionMessage, blocker, true);
-      return;
-    }
-    if (!confirmLiveRunCreation(mode)) {
-      return;
-    }
-
-    executionRequestInFlight = true;
-    showMessage(executionMessage, "");
-    button.disabled = true;
-    try {
-      const result = await api("/api/portfolio/executions", {
-        method: "POST",
-        body: JSON.stringify({
-          proposal_id: proposalId,
-          proposal_version: proposalVersion,
-          proposal_hash: proposalHash,
-          mode,
-        }),
-      });
-      const runId = typeof result?.execution?.id === "string"
-        ? result.execution.id
-        : "";
-      if (!UUID_PATTERN.test(runId)) {
-        throw new TypeError("execution response is missing a valid run id");
-      }
-
-      showMessage(executionMessage, executionStartSuccessMessage(mode));
-      await loadExecutions();
-      await loadExecutionDetails(runId);
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      showMessage(
-        executionMessage,
-        executionErrorMessage(
-          error,
-          error.status === 409
-            ? "Запуск заблокирован: предложение устарело или контур счёта изменился."
-            : "Проверка исполнения не запущена. Production-заявка не создавалась.",
-        ),
-        true,
-      );
-    } finally {
-      button.disabled = false;
-      executionRequestInFlight = false;
-      syncExecutionControls();
-    }
+    const text = connectionStatusText(connection, ws);
+    banner.hidden = !text;
+    banner.classList.toggle("error", Boolean(state.errors.workspace || state.errors.refreshStatus) || state.data.refreshStatus?.status === "failed");
+    banner.innerHTML = text ? `<span>${esc(text)}</span>${button(renderConnectionBannerValue(connection), renderConnectionBannerValue2(connection), {
+      small: true,
+      extra: renderConnectionBannerValue3(connection)
+    })}` : "";
   };
-
-  const mutateExecution = async (button) => {
-    if (!(button instanceof HTMLButtonElement) || executionRequestInFlight) {
-      return;
-    }
-    const runId = button.dataset.executionId || "";
-    const action = button.dataset.executionAction || "";
-    const mode = button.dataset.executionMode || "";
-    if (
-      !UUID_PATTERN.test(runId)
-      || !["advance", "cancel"].includes(action)
-      || !["sandbox", "live"].includes(mode)
-    ) {
-      showMessage(
-        executionMessage,
-        "Действие запуска повреждено. Обновите журнал перед повтором.",
-        true,
-      );
-      return;
-    }
-
-    executionRequestInFlight = true;
-    showMessage(executionMessage, "");
-    button.disabled = true;
-    try {
-      await api(`/api/portfolio/executions/${uuidPathSegment(runId)}/${executionActionSegment(action)}`, {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-      showMessage(executionMessage, executionMutationSuccessMessage(mode, action));
-      await loadExecutions();
-      await loadExecutionDetails(runId);
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      showMessage(
-        executionMessage,
-        executionErrorMessage(
-          error,
-          error.status === 503
-            ? "Provider недоступен. Run оставлен в безопасном состоянии для последующей сверки."
-            : "Действие исполнения не выполнено. Запуск не продвинут в небезопасное состояние.",
-        ),
-        true,
-      );
-    } finally {
-      button.disabled = false;
-      executionRequestInFlight = false;
-      syncExecutionControls();
-    }
-  };
-
-  const loadBalancing = async () => {
-    if (!tbankIsConnected) return;
-    const generation = portfolioGeneration;
-    try {
-      const payload = await api("/api/portfolio/balancing", {method: "GET"});
-      if (generation !== portfolioGeneration || !tbankIsConnected) return;
-      renderBalancing(payload);
-      renderProposalCreateOptions(payload);
-    } catch (error) {
-      if (generation !== portfolioGeneration) return;
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      balancingScenarios.replaceChildren();
-      balancingScreening.replaceChildren();
-      renderProposalCreateOptions(null);
-      appendEmptyState(balancingScenarios, "Сценарий балансировки временно недоступен.");
-      setStateBadge(balancingStatus, "Ошибка preview", "state-error");
-    }
-  };
-
-  const loadIntelligence = async () => {
-    if (!tbankIsConnected) return;
-    const generation = portfolioGeneration;
-    try {
-      const snapshot = await api("/api/portfolio/intelligence", {method: "GET"});
-      if (generation !== portfolioGeneration || !tbankIsConnected) return;
-      renderIntelligence(snapshot);
-    } catch (error) {
-      if (generation !== portfolioGeneration) return;
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      intelligenceRisks.replaceChildren();
-      intelligencePayouts.replaceChildren();
-      intelligenceSources.replaceChildren();
-      setStateBadge(intelligenceStatus, "Evidence временно недоступен", "state-error");
-    }
-  };
-
-  const loadAnalysis = async () => {
-    if (!tbankIsConnected) {
-      resetAnalysis();
-      analysisStatus.textContent = "Подключите счёт T-Invest для живого анализа.";
-      void loadIntelligence();
-      void loadBalancing();
-      return;
-    }
-    void loadIntelligence();
-    void loadBalancing();
-    if (analysisInFlight) {
-      return;
-    }
-
-    const generation = analysisGeneration;
-    analysisInFlight = true;
-    analysisRefresh.disabled = true;
-    analysisStatus.textContent = "Проверяем позиции, деньги и справочники T-Invest…";
-
-    try {
-      const snapshot = await api("/api/broker/tbank/analysis", {method: "GET"});
-      if (generation === analysisGeneration && tbankIsConnected) {
-        if (!matchesConnectedAccount(snapshot)) return;
-        renderAnalysis(snapshot);
-      }
-    } catch (error) {
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      if (generation === analysisGeneration) {
-        resetAnalysis();
-        analysisStatus.textContent = error.status === 409
-          ? "Проверьте подключение и действительность токена T-Invest."
-          : "Анализ не получен. Данные не подтверждены; попробуйте обновить позже.";
-      }
-    } finally {
-      if (generation === analysisGeneration) {
-        analysisInFlight = false;
-        analysisRefresh.disabled = false;
-      }
-    }
-  };
-
-  const renderTbankSummary = (status) => {
-    invalidatePortfolioRequest();
-    resetAnalysis();
-    const accountChanged = tbankAccountId !== String(status.account_id || "")
-      || connectedTbankEnvironment !== status.environment;
-    if (accountChanged) renderDisconnectedPortfolio();
-    homeConnectionCard.classList.remove("is-offline", "is-error");
-    topConnectionIndicator.classList.remove("is-offline", "is-error");
-    tbankIsConnected = Boolean(status.connected);
-    connectedTbankEnvironment = status.connected ? status.environment : null;
-    tbankAccountId = status.connected ? String(status.account_id || "") : null;
-    syncExecutionControls();
-
-    if (!status.connected) {
-      setHomeAttentionBucket("connection", [{
-        severity: "warning",
-        title: "T-Invest не подключён",
-        detail: "Подключите собственный счёт, чтобы командный центр показывал подтверждённые данные.",
-        view: "connections",
-      }]);
-      setHomeAttentionBucket("portfolio", []);
-      resetHomePortfolioSummary("Подключите T-Invest для данных портфеля.");
-      portfolioLoaded = false;
-      lastPortfolioSnapshot = null;
-      lastPortfolioLoadError = null;
-      resetPortfolioVisualization("Подключите T-Invest для сохранённой истории портфеля.");
-      portfolioFreeCash.textContent = "—";
-      lastPortfolioRefreshAt = 0;
-      overviewAccount.textContent = "T-Invest не подключён";
-      overviewConnectionText.textContent = "Подключите read-only API-токен в разделе «Подключения».";
-      homeConnectionCard.classList.add("is-offline");
-      topConnectionIndicator.classList.add("is-offline");
-      topConnectionText.textContent = "T-Invest не подключён";
-      setStateBadge(homeTbankState, "Не подключено", "state-next");
-      setStateBadge(homePortfolioState, "Нет подключения", "state-next");
-      setStateBadge(portfolioStateBadge, "Нет подключения", "state-next");
-      updateOwlState(null);
-      updateGuard(null);
-      hunterResults.replaceChildren();
-      showMessage(hunterMessage, "Подключите T-Invest, чтобы искать инструменты.");
-      showPortfolioMode("disconnected");
-      return;
-    }
-
-    setHomeAttentionBucket("connection", []);
-    setHomeAttentionBucket("portfolio", portfolioLoaded ? homeAttentionBuckets.portfolio : null);
-    const environment = status.environment === "sandbox" ? "Песочница" : "Биржа";
-    const accountName = status.account_name || "Брокерский счёт";
-    overviewAccount.textContent = accountName;
-    overviewConnectionText.textContent = `${environment} · соединение подтверждено`;
-    topConnectionText.textContent = "T-Invest подключён";
-    setStateBadge(homeTbankState, "Работает", "state-ok");
-    showMessage(hunterMessage, "");
-    if (!portfolioLoaded) {
-      setStateBadge(homePortfolioState, "Загружаем", "");
-      setStateBadge(portfolioStateBadge, "Загружаем", "");
-      updateOwlState(null);
-      updateGuard(null);
-    } else {
-      renderPortfolioDataStatus();
-    }
-  };
-
-  const renderTbankStatus = (status) => {
-    resetTbankPreview();
-    tbankToken.value = "";
-    renderTbankSummary(status);
-
-    if (!status.connected) {
-      tbankConnected.classList.add("hidden");
-      tbankForm.classList.remove("hidden");
-      setStateBadge(tbankStatusBadge, "Не подключён", "state-next");
-      return;
-    }
-
-    const environment = status.environment === "sandbox" ? "Песочница" : "Биржа";
-    const accountName = status.account_name || "Брокерский счёт";
-    const accountSuffix = status.account_id
-      ? ` · ••••${String(status.account_id).slice(-6)}`
-      : "";
-
-    tbankAccountLabel.textContent = `${environment} · ${accountName}${accountSuffix}`;
-    tbankForm.classList.add("hidden");
-    tbankConnected.classList.remove("hidden");
-    setStateBadge(tbankStatusBadge, "Подключено", "state-ok");
-  };
-
-  const renderTbankFailure = () => {
-    invalidatePortfolioRequest();
-    resetAnalysis();
-    setHomeAttentionBucket("connection", [{
-      severity: "error",
-      title: "Не удалось проверить T-Invest",
-      detail: "Состояние подключения не подтверждено. Обновите страницу или попробуйте позже.",
-      view: "connections",
-    }]);
-    setHomeAttentionBucket("portfolio", []);
-    resetHomePortfolioSummary("Состояние T-Invest не подтверждено.");
-    resetPortfolioVisualization("Состояние T-Invest не подтверждено; история не обновлялась.");
-    portfolioFreeCash.textContent = "—";
-    overviewAccount.textContent = "Не удалось проверить подключение";
-    overviewConnectionText.textContent = "Обновите страницу или попробуйте позже.";
-    homeConnectionCard.classList.add("is-error");
-    topConnectionIndicator.classList.add("is-error");
-    topConnectionText.textContent = "Ошибка T-Invest";
-    tbankIsConnected = false;
-    connectedTbankEnvironment = null;
-    tbankAccountId = null;
-    syncExecutionControls();
-    portfolioLoaded = false;
-    lastPortfolioSnapshot = null;
-    lastPortfolioLoadError = null;
-    lastPortfolioRefreshAt = 0;
-    setStateBadge(homeTbankState, "Ошибка", "state-error");
-    setStateBadge(homePortfolioState, "Ошибка", "state-error");
-    setStateBadge(tbankStatusBadge, "Ошибка", "state-error");
-    setStateBadge(portfolioStateBadge, "Ошибка", "state-error");
-    setStateBadge(owlState, "Ошибка", "state-error");
-    setStateBadge(guardState, "Ошибка", "state-error");
-    owlLastRefresh.textContent = "—";
-    guardBlockedPositions.textContent = "—";
-    guardBlockedCash.textContent = "—";
-    guardLargestClass.textContent = "—";
-  };
-
-  const loadTbankStatus = async () => {
-    const generation = portfolioGeneration;
-    showMessage(tbankMessage, "");
-    try {
-      const status = await api("/api/broker/tbank", {method: "GET"});
-      if (generation !== portfolioGeneration) return;
-      renderTbankStatus(status);
-      if (status.connected) {
-        void loadPortfolioData();
-      }
-    } catch (error) {
-      if (generation !== portfolioGeneration) return;
-      if (error.status === 401) {
-        location.reload();
-        return;
-      }
-      renderTbankFailure();
-      showMessage(tbankMessage, "Не удалось проверить подключение T-Invest.", true);
-    }
-  };
-
-  const renderInvestmentProfile = (profile) => {
-    showMessage(investmentProfileMessage, "");
-    if (!profile) {
-      investmentProfileVersion.textContent = "Не заполнен";
-      investmentProfileCreated.textContent = "Версия ещё не сохранена";
-      return;
-    }
-
-    investmentProfileVersion.textContent = `v${profile.version}`;
-    investmentProfileCreated.textContent = `Сохранено: ${formatDateTime(profile.created_at)}`;
-    profileReserveRub.value = String(profile.reserve_rub);
-    profileWithdrawalRub.value = String(profile.planned_withdrawal_rub);
-    profileHorizonMonths.value = String(profile.horizon_months);
-    profileMaxDrawdown.value = String(profile.max_drawdown_percent);
-    profileLiquidityDays.value = String(profile.liquidity_horizon_days);
-    profileAllowBelowGrade.checked = profile.allow_below_investment_grade === true;
-  };
-
-  const renderBalancingPolicy = (policy) => {
-    showMessage(balancingPolicyMessage, "");
-    if (!policy) {
-      balancingPolicyVersion.textContent = "Не заполнена";
-      balancingPolicyCreated.textContent = "Версия ещё не сохранена";
-      return;
-    }
-
-    balancingPolicyVersion.textContent = `v${policy.version}`;
-    balancingPolicyCreated.textContent = `Сохранено: ${formatDateTime(policy.created_at)}`;
-    balanceMaxInstrument.value = String(policy.max_instrument_percent);
-    balanceMaxSector.value = String(policy.max_sector_percent);
-    balanceMaxIssuer.value = String(policy.max_issuer_percent);
-    balanceMaxGroup.value = String(policy.max_group_percent);
-    balanceMaxShare.value = String(policy.max_share_percent);
-    balanceMaxBond.value = String(policy.max_bond_percent);
-    balanceMaxEtf.value = String(policy.max_etf_percent);
-    balanceMaxBelowGrade.value = String(policy.max_below_grade_percent);
-    balanceMaxUnknown.value = String(policy.max_unknown_percent);
-    balanceMaxTerm.value = String(policy.max_term_months);
-    balanceTurnoverBudget.value = String(policy.turnover_budget_percent);
-    balanceDailyParticipation.value = String(
-      policy.max_daily_turnover_participation_percent
-    );
-    balanceTaxRate.value = String(policy.securities_tax_rate_percent);
-    balanceUncertaintyHaircut.value = String(policy.uncertainty_haircut_percent);
-    balanceCreditHaircut.value = String(policy.credit_loss_haircut_percent);
-    balanceNoTradeBand.value = String(policy.no_trade_band_percent);
-    balanceMinReplaceBenefit.value = String(policy.min_replace_benefit_rub);
-  };
-
-  // Starter values are editable, unconfirmed examples, never loaded personal facts.
-  const STARTER_DRAFTS = Object.freeze({
-    "investment-profile": ["100000", "0", "60", "20", "5", false],
-    "balancing-policy": ["5", "25", "5", "10", "50", "80", "30", "0", "0", "120",
-      "10", "5", "13", "10", "20", "1", "1000"],
-  });
-  const SETTING_HELP = Object.freeze({
-    "profile-reserve-rub": ["Неприкосновенный резерв", "₽", {"summary": "Сколько свободных рублей не использовать для новых покупок в расчёте. Чем больше резерв, тем меньше денег остаётся на такие покупки. На отдельный счёт эта сумма не переводится.", "sections": [["Что означает", "Это часть свободных рублей на брокерском счёте, которую вы хотите оставить деньгами. Расчёт сначала вычитает её из доступной суммы. Резерв задаётся в рублях, а не в процентах и не в количестве бумаг."], ["Что меняется при настройке", "Увеличите резерв — расчёт сможет распределить меньше свободных денег. Уменьшите — больше, если остальные ограничения это допускают. Если резерва и планируемых снятий больше, чем свободных рублей, новые покупки на этот остаток не рассчитываются."], ["Пример на условных суммах", "Свободно 100 000 ₽. Резерв — 30 000 ₽, планируемые снятия — 10 000 ₽. Остаётся 60 000 ₽ до расходов и других ограничений. Если поднять резерв до 50 000 ₽, останется 40 000 ₽."], ["Важно знать", "Это правило для расчёта, а не банковская блокировка денег. Оно не продаёт бумаги, чтобы пополнить резерв. Резерв в процентах в верхнем черновике — отдельная настройка. Не указывайте одну и ту же сумму и здесь, и в снятиях: расчёт вычтет обе. «Не знаю» не означает ноль."]]}, ["10000", "50000", "100000"]],
-    "profile-withdrawal-rub": ["Планируемые снятия", "₽", {"summary": "Деньги, которые вы планируете забрать со счёта. Расчёт не предлагает использовать эту сумму для новых покупок. Сам вывод денег не выполняется.", "sections": [["Что означает", "Укажите общую сумму предстоящих снятий, которую нужно оставить свободной сверх резерва. В этой форме нет даты вывода: весь указанный объём исключается из бюджета новых покупок, а не только сумма на ближайшую дату."], ["Что меняется при настройке", "Больше планируемых снятий — меньше денег участвует в расчёте покупок. Меньше снятий — больше денег может участвовать. Ноль означает, что вы сейчас не закладываете снятия; это не то же самое, что неизвестная сумма."], ["Пример на условных суммах", "На счёте свободно 80 000 ₽. Резерв — 20 000 ₽. При снятиях 15 000 ₽ остаётся 45 000 ₽ до расходов. При снятиях 30 000 ₽ остаётся 30 000 ₽."], ["Важно знать", "Сохранение не отправляет перевод, не назначает дату снятия и не продаёт активы для его оплаты. Если деньги уже включены в резерв, не учитывайте их второй раз. Пример не определяет, сколько лично вам нужно вывести."]]}, ["0", "10000", "50000"]],
-    "profile-horizon-months": ["Срок планирования", "мес.", {"summary": "На какой срок вы планируете оставлять деньги во вложениях. Сейчас этот срок ограничивает допустимый срок облигаций в расчёте. Он не назначает дату продажи.", "sections": [["Что означает", "Это ваш срок планирования в полных месяцах: 12 — один год, 36 — три года, 60 — пять лет. Он описывает вашу задачу, а не срок работы аккаунта и не обязательство держать каждую бумагу до конца."], ["Что меняется при настройке", "Более короткий срок исключает из расчёта облигации с более поздним погашением. Более длинный может расширить выбор, но только до отдельного ограничения «Срок облигаций». Из этих двух сроков применяется меньший."], ["Пример на условных суммах", "Вы выбрали 36 месяцев, а в лимитах облигаций — 60. В расчёте предел будет 36 месяцев. Облигация со сроком 48 месяцев его не проходит. Если увеличить ваш срок до 84 месяцев, предел всё равно останется 60."], ["Важно знать", "Изменение не включает автоматическую продажу через указанное время и не обещает прибыль к этой дате. Срок до погашения не гарантирует, что деньги вернутся: важны условия бумаги и способность заёмщика платить."]]}, ["12", "36", "60", "120"]],
-    "profile-max-drawdown": ["Допустимое снижение", "%", {"summary": "Какое падение стоимости портфеля вы считаете для себя нежелательным. Это записанное предпочтение, а не защита от убытков и не команда продать бумаги при достижении процента.", "sections": [["Что означает", "Процент помогает выразить вашу готовность видеть снижение капитала. Например, 10% — это потеря 10 из каждых условных 100 рублей. Здесь вы выбираете границу для своего профиля, а не прогноз будущего рынка."], ["Что меняется при настройке", "Меньшее значение обозначает меньшую готовность к потерям; большее — большую. В проверенном текущем расчёте перестройки этот процент сохраняется среди условий, но по нему не вычисляется будущая просадка и не ограничивается автоматически состав покупок."], ["Пример на условных суммах", "Для условного портфеля 100 000 ₽ падение на 10% — это 10 000 ₽, до 90 000 ₽. Падение на 20% — это 20 000 ₽, до 80 000 ₽. Это объяснение масштаба, не расчёт вашего портфеля."], ["Важно знать", "Даже при выбранных 5% реальный убыток может быть больше. Здесь не создаётся стоп-приказ, страховка или гарантированный предел потерь. Ноль тоже не делает инвестиции безрисковыми. Не выбирайте число только потому, что оно стоит в примере."]]}, ["5", "10", "20", "30"]],
-    "profile-liquidity-days": ["Срок выхода из позиции", "дн.", {"summary": "Сколько дней торгов можно учитывать, оценивая допустимый размер позиции. Более длинный срок может допустить больший объём. Это не обещание продать всё за столько дней.", "sections": [["Что означает", "Расчёт смотрит на подтверждённый средний дневной объём торгов и берёт только выбранную вами часть этого объёма. Затем умножает результат на число дней здесь. Так получается ограничение размера позиции с учётом возможности её продать."], ["Что меняется при настройке", "Увеличите число дней — по этому ограничению можно рассмотреть больше бумаг. Уменьшите — меньше. Параметр работает вместе с «Долей дневного объёма торгов». Ноль не означает мгновенную продажу: он не даёт доступного объёма для новых покупок по этому расчёту."], ["Пример на условных суммах", "Средний объём — 1 000 000 ₽ в день. Вы разрешили учитывать 1%: это 10 000 ₽ в день. За 5 дней расчётный предел — 50 000 ₽, за 10 — 100 000 ₽. Затем учитываются целые торговые лоты и другие лимиты."], ["Важно знать", "Лот — количество бумаг, которое продают или покупают одним минимальным пакетом. Объём прошлых торгов не гарантирует будущих покупателей, прежнюю цену или исполнение. При нехватке данных система не должна считать весь рынок доступным вам."]]}, ["1", "5", "10", "30"]],
-    "balance-max-instrument": ["Один инструмент", "%", {"summary": "Верхний предел доли одной конкретной бумаги или одного фонда. Например, 5% — не больше 5 из каждых 100 рублей портфеля. Это потолок, а не цель, которую нужно заполнить.", "sections": [["Что означает", "Один инструмент — например, акции одного вида или один выпуск облигаций. Все имеющиеся бумаги этого инструмента учитываются вместе. Два разных выпуска облигаций одной компании — разные инструменты, но у них общий эмитент."], ["Что меняется при настройке", "Меньший предел оставляет меньше места для одной бумаги. Больший позволяет более крупную долю, но сильнее связывает результат с ней. Для расчёта новой покупки из допустимой доли вычитается уже имеющаяся стоимость этого инструмента."], ["Пример на условных суммах", "Условный портфель — 100 000 ₽, предел — 5%: максимум 5 000 ₽ в одном инструменте. Если он уже занимает 4 000 ₽, остаётся 1 000 ₽ по этому лимиту. Если минимальный лот дороже, новая покупка не помещается."], ["Важно знать", "Также проверяются пределы компании, группы, отрасли и класса: применяется более строгое ограничение. Ноль не оставляет места для покупки, а 100% не отменяет остальные проверки. Снижение лимита не продаёт уже купленные бумаги и не устраняет риск потерь."]]}, ["5", "10", "15", "25"]],
-    "balance-max-sector": ["Один сектор", "%", {"summary": "Сколько всего может приходиться на одну отрасль, например банки или нефтегаз. Активы одной отрасли складываются, даже если выпущены разными компаниями.", "sections": [["Что означает", "Сектор — это отрасль бизнеса. У нескольких компаний могут быть разные названия, но похожие причины роста и падения. Лимит помогает не сосредоточивать слишком большую часть расчётного портфеля в одной такой отрасли."], ["Что меняется при настройке", "Уменьшите предел — для новых покупок в уже большой отрасли останется меньше места. Увеличите — больше. Сам параметр не распределяет деньги поровну между всеми отраслями и не заставляет покупать отсутствующие сектора."], ["Пример на условных суммах", "Портфель — 100 000 ₽. При лимите 25% на банки может приходиться до 25 000 ₽. Если два банка уже занимают 12 000 ₽ и 10 000 ₽, остаётся 3 000 ₽ для всей отрасли, а не для каждого банка."], ["Важно знать", "Предел считается от стоимости всего портфеля, а не только акций. Используется доступная классификация; неизвестная отрасль не становится автоматически безопасной. При лимите 0% новые покупки по этому ограничению не помещаются. Сохранение не запускает продажу."]]}, ["10", "20", "25", "40"]],
-    "balance-max-issuer": ["Один эмитент", "%", {"summary": "Общий предел для бумаг одной компании или другого заёмщика, который их выпустил. Разные выпуски его облигаций суммируются, а не получают отдельный лимит каждый.", "sections": [["Что означает", "Эмитент — тот, кто выпустил ценную бумагу: компания, государство или другой заёмщик. Несколько облигаций одной компании могут зависеть от её способности вернуть один и тот же долг, поэтому смотреть только на число выпусков недостаточно."], ["Что меняется при настройке", "Меньший предел сокращает допустимую зависимость от одного эмитента. Больший допускает более крупную общую долю. При покупке расчёт учитывает уже имеющиеся бумаги, которые относятся к этому эмитенту по проверенным данным."], ["Пример на условных суммах", "При портфеле 100 000 ₽ и лимите 10% общий потолок — 10 000 ₽. Первый выпуск компании занимает 6 000 ₽, второй — 3 000 ₽. Остаток для её бумаг — 1 000 ₽, а не ещё 10 000 ₽."], ["Важно знать", "Лимит одной бумаги и лимит эмитента действуют вместе. Поиск связи с эмитентом опирается на данные, а не на похожее название. Ноль не оставляет места для новой покупки. Изменение не продаёт активы и не гарантирует возврат денег."]]}, ["5", "10", "15", "25"]],
-    "balance-max-group": ["Одна группа компаний", "%", {"summary": "Общий предел для связанных компаний. Он нужен, чтобы несколько разных названий внутри одного бизнеса не выглядели как полностью независимые вложения.", "sections": [["Что означает", "Группа — связанные компании, которые могут зависеть от общего владельца или бизнеса. У каждой может быть свой эмитент, но проблемы одной части группы способны затронуть другие. Для объединения нужны подтверждённые связи."], ["Что меняется при настройке", "Меньший предел уменьшает место для группы в расчёте новых покупок. Больший допускает большую суммарную долю. Предел не заменяет ограничения каждой компании и каждого инструмента."], ["Пример на условных суммах", "Портфель — 100 000 ₽, предел группы — 15%, то есть 15 000 ₽. Компания А занимает 8 000 ₽, связанная с ней Б — 6 000 ₽. По групповому лимиту остаётся 1 000 ₽."], ["Важно знать", "Если связь компаний неизвестна, нельзя считать, что проверка всех пересечений выполнена. Эта настройка сама не изучает владельцев компаний и не раскрывает состав фондов. Ноль запрещает новые покупки по этому лимиту; существующие вложения не продаются автоматически."]]}, ["10", "15", "25", "40"]],
-    "balance-max-share": ["Все акции", "%", {"summary": "Максимальная доля всех акций вместе. Этот предел не равен желаемой доле акций в черновике распределения и не означает команду купить акции до указанного процента.", "sections": [["Что означает", "Суммируются позиции, которые данные брокера относят к акциям. Процент считается от общей стоимости портфеля. Акции внутри фонда не становятся здесь отдельными прямыми позициями: фонд учитывается как фонд."], ["Что меняется при настройке", "Меньший предел сокращает место для новых покупок акций. Больший допускает большую долю, но не делает её обязательной. При 0% новые покупки акций по этому ограничению не проходят; уже имеющиеся акции остаются на счёте."], ["Пример на условных суммах", "Портфель — 100 000 ₽, предел акций — 40%: максимум 40 000 ₽. Если акции уже стоят 35 000 ₽, по этому ограничению остаётся 5 000 ₽. Другие лимиты могут уменьшить эту сумму ещё сильнее."], ["Важно знать", "Пределы акций, облигаций и фондов не обязаны складываться в 100%: это независимые потолки. Повышение не обещает рост дохода; стоимость акций может падать. Сохранение не покупает и не продаёт бумаги."]]}, ["0", "20", "50", "100"]],
-    "balance-max-bond": ["Все облигации", "%", {"summary": "Максимальная доля всех облигаций вместе. Это ограничение суммы, а не обещание надёжности, дохода или возврата денег.", "sections": [["Что означает", "Облигация — ценная бумага с обязательствами заёмщика по выплатам. Для этого лимита суммируются прямые позиции в облигациях. Их количество и число выпусков не отменяют общие риски одного заёмщика."], ["Что меняется при настройке", "Уменьшите предел — для новых облигаций останется меньше места. Увеличите — больше, если проходят остальные проверки. При 0% новые покупки облигаций не помещаются по этому лимиту."], ["Пример на условных суммах", "Портфель — 100 000 ₽, максимум облигаций — 70 000 ₽. Если они уже стоят 65 000 ₽, остаётся 5 000 ₽ по этому ограничению. Это не обещание, что найдётся подходящий выпуск или лот."], ["Важно знать", "Отдельно важны срок, рейтинг, отрасль, компания и возможность продажи. Облигации тоже могут дешеветь, а заёмщик может не выполнить выплаты. Ползунок не меняет купон уже купленной бумаги и не создаёт сделки."]]}, ["0", "50", "80", "100"]],
-    "balance-max-etf": ["Все фонды", "%", {"summary": "Максимальная доля всех фондов вместе. Фонд учитывается целиком; эта настройка сама не раскрывает, какие акции или облигации находятся внутри него.", "sections": [["Что означает", "Покупая пай фонда, инвестор получает долю в общем наборе вложений. В этом разделе лимит относится к стоимости самих паёв. Он не заменяет отдельное изучение состава и правил фонда."], ["Что меняется при настройке", "Меньший предел оставляет меньше места для новых фондов; больший допускает больше. При 0% новые покупки фондов по этому ограничению не проходят. Остальные ограничения продолжают действовать."], ["Пример на условных суммах", "Портфель — 100 000 ₽, предел фондов — 30%, то есть 30 000 ₽. Два фонда занимают 12 000 ₽ и 13 000 ₽. На все новые покупки фондов остаётся 5 000 ₽ по этому лимиту."], ["Важно знать", "Два фонда могут владеть одними и теми же компаниями или быть сосредоточены в одной отрасли. Поэтому наличие фондов само по себе не означает отсутствие риска. Лимит не меняет состав фонда и не означает гарантированный доход."]]}, ["0", "10", "30", "100"]],
-    "balance-max-below-grade": ["Ниже инвестиционного уровня", "%", {"summary": "Верхний предел для бумаг, отнесённых к категории с более низким кредитным рейтингом. Он работает только вместе с отдельным разрешением в профиле и остальными проверками.", "sections": [["Что означает", "Кредитный рейтинг — оценка способности заёмщика выполнять долговые обязательства. «Ниже инвестиционного уровня» — категория с более высоким кредитным риском по используемой шкале. Это не обещание высокой доходности."], ["Что меняется при настройке", "Ноль не допускает новые покупки этой категории. Большее значение только оставляет место в пределах лимита. Сначала должно быть включено отдельное разрешение в профиле. Даже вместе они не отменяют проверку состояния бумаги: текущий расчёт допускает только обычное состояние риска."], ["Пример на условных суммах", "Портфель — 100 000 ₽, предел — 5%: теоретический потолок категории 5 000 ₽. Но при выключенном разрешении в профиле фактически действует ноль. Нельзя обойти этот запрет, поставив здесь 50%."], ["Важно знать", "Рейтинг может измениться и не гарантирует выплат. Значение не даёт прав брокеру, не снимает требования к доступности и не продаёт уже имеющиеся бумаги. Более высокий лимит не делает низкорейтинговые бумаги подходящими лично вам."]]}, ["0", "5", "10"]],
-    "balance-max-unknown": ["Без подтверждённого рейтинга", "%", {"summary": "Верхний предел для бумаг, у которых система не смогла подтвердить кредитный рейтинг. «Неизвестно» не означает ни хороший, ни плохой рейтинг.", "sections": [["Что означает", "Причиной может быть отсутствие рейтинга, недостаток данных или невозможность подтвердить его актуальность. Это отдельная категория, а не замена низкого рейтинга. Там, где рейтинг к виду актива не применяется, используется отдельное состояние."], ["Что меняется при настройке", "При 0% новая покупка с неизвестным рейтингом не допускается этим правилом. При большем значении появляется только допустимая доля категории. Отсутствующие важные данные или другие запреты всё равно могут исключить бумагу."], ["Пример на условных суммах", "Портфель — 100 000 ₽, лимит — 5%: до 5 000 ₽ по этому ограничению. Если такие позиции уже занимают 4 000 ₽, остаётся 1 000 ₽. Это не подтверждение, что покупка безопасна или вообще доступна."], ["Важно знать", "Настройка не придумывает рейтинг и не заставляет систему считать неизвестный риск нормальным. Если связь или данные неполны, это должно быть видно. Сохранение не меняет рейтинг бумаги, не продаёт её и не гарантирует возврат средств."]]}, ["0", "5", "10"]],
-    "balance-max-term": ["Срок облигаций", "мес.", {"summary": "Самый длинный срок до погашения облигации, допустимый для расчёта. Используется меньший из этого значения и вашего срока планирования в профиле.", "sections": [["Что означает", "Погашение — предусмотренное условиями облигации возвращение основной суммы долга. Здесь учитывается оставшийся срок в месяцах, а не возраст бумаги с даты выпуска. Условия и фактические выплаты нужно проверять отдельно."], ["Что меняется при настройке", "Уменьшите предел — выпуски с более далёким погашением не пройдут расчёт. Увеличите — выбор может расшириться, но не за ваш срок планирования. Ноль не означает «без ограничений»: положительный оставшийся срок его не проходит."], ["Пример на условных суммах", "Ваш срок планирования — 60 месяцев, лимит облигаций — 36. В расчёте действует 36. Выпуск с погашением через 48 месяцев исключается. Если поставить 120, всё равно сработает более короткий срок профиля — 60."], ["Важно знать", "Поле не заставляет продать уже купленную облигацию и не гарантирует возврат денег в срок. Оно также не равно сроку, за который можно продать позицию на бирже: для этого есть отдельная настройка ликвидности."]]}, ["12", "36", "60", "120"]],
-    "balance-turnover-budget": ["Бюджет перестройки", "%", {"summary": "Какую сумму покупок и продаж можно рассмотреть в одном расчёте перестройки. Процент берётся от стоимости всего портфеля. Продажа и последующая покупка считаются отдельно.", "sections": [["Что означает", "Перестройка — изменение набора вложений. Оборот здесь означает суммарную стоимость рассматриваемых покупок и продаж, а не прибыль, количество сделок или месячный расход на сервис. NAV в старой подписи — стоимость портфеля, которую использует расчёт."], ["Что меняется при настройке", "Меньший бюджет ограничивает размер изменений; больший допускает более крупную перестройку. Ноль не оставляет бюджета на новые покупки в этом расчёте. Лимит не резервирует деньги и не означает обязательство его потратить."], ["Пример на условных суммах", "Портфель — 100 000 ₽, бюджет — 10%: оборот до 10 000 ₽. Условная продажа на 5 000 ₽ и покупка на 5 000 ₽ уже дают 10 000 ₽. Комиссии и другие расходы проверяются дополнительно."], ["Важно знать", "Это лимит одного рассматриваемого варианта, не гарантированный общий лимит всех ваших сделок за день или месяц. Он не отменяет резерв и другие ограничения. Сохранение не отправляет эти сделки брокеру."]]}, ["0", "5", "10", "20"]],
-    "balance-daily-participation": ["Доля дневного объёма торгов", "%", {"summary": "Какую часть обычного дневного объёма торгов система может учитывать для вашей позиции. Это доля рынка конкретной бумаги, а не процент вашего портфеля.", "sections": [["Что означает", "Если за день бумагой обычно торгуют на определённую сумму, нельзя считать, что весь этот объём доступен одному инвестору. Настройка задаёт, какую часть подтверждённого среднего объёма разрешено использовать в оценке."], ["Что меняется при настройке", "Меньший процент даёт меньшую дневную расчётную вместимость. Больший — большую. Затем эта сумма умножается на «Срок выхода из позиции». Ноль не даёт доступного объёма для покупки по такому расчёту."], ["Пример на условных суммах", "Средний оборот бумаги — 1 000 000 ₽ в день. При 1% учитывается 10 000 ₽ в день; при 5% — 50 000 ₽. Если срок выхода 5 дней, получаются 50 000 ₽ и 250 000 ₽ до округления по лотам и других ограничений."], ["Важно знать", "Объёмы прошлых торгов не обещают исполнение завтра. Параметр не размещает заявку в очереди и не позволяет продать по любой цене. При недостатке подтверждённой истории повышение процента не заменяет недостающие данные."]]}, ["1", "5", "10"]],
-    "balance-tax-rate": ["Налог в сценарии", "%", {"summary": "Процент налога, который вы задаёте как предположение для сценария. Он не определяет ваш настоящий налог. В текущем расчёте новых покупок налог не вычитается из будущих выплат.", "sections": [["Что означает", "Это записываемое допущение, а не ставка, полученная из вашей налоговой истории. Реальный налог зависит от операции и применимых условий. Стоящие в примере 13% не означают, что именно столько должны платить вы."], ["Что меняется при настройке", "Изменение меняет сохранённое предположение. Нельзя обещать, что оно сейчас пересчитает все выплаты, стоимость портфеля или итог после налога: текущий расчёт новых покупок этого не делает. Там, где налог при продаже известен отдельно, используется соответствующая оценка расходов."], ["Пример на условных суммах", "Только для понимания процента: от условной облагаемой прибыли 1 000 ₽ ставка 13% даёт 130 ₽. От суммы продажи 100 000 ₽ тот же налог автоматически считать нельзя. Этот пример не является расчётом вашей обязанности."], ["Важно знать", "Параметр не меняет налог у брокера и ничего не перечисляет в бюджет. Ноль — не доказательство освобождения от налога. Если значение неизвестно, выберите «Не знаю»: форма потребует уточнения перед сохранением всех лимитов."]]}, ["0", "13", "15"]],
-    "balance-uncertainty-haircut": ["Поправка на неопределённость", "%", {"summary": "Условный вычет из расчётной выгоды покупки, чтобы не полагаться на слишком оптимистичную оценку. В текущем коде процент берётся от полной расчётной стоимости покупки, а не от ожидаемой прибыли.", "sections": [["Что означает", "Поправка на неопределённость — выбранный вами запас осторожности. Английское haircut здесь означает уменьшение оценки. Это не деньги, которые спишут, не комиссия и не измеренная вероятность убытка."], ["Что меняется при настройке", "Больше процент — больше вычет и меньше расчётная выгода кандидата. Вариант может перестать проходить отбор. Меньше процент — меньше запас осторожности. Ноль убирает только эту поправку, но не устраняет неизвестность."], ["Пример на условных суммах", "Полная расчётная стоимость одного лота — 10 000 ₽. Поправка 10% даёт вычет 1 000 ₽. Если до этой поправки выгода была 1 500 ₽, останется 500 ₽; затем могут учитываться другие вычеты. Это условные числа."], ["Важно знать", "Вычет уменьшает оценку выгоды, а не отображаемый реальный остаток на счёте. Он складывается с отдельной кредитной поправкой. Даже большой процент не заменяет отсутствующие обязательные данные и не гарантирует, что расчёт окажется верным."]]}, ["0", "5", "10", "20"]],
-    "balance-credit-haircut": ["Кредитный стресс", "%", {"summary": "Дополнительный условный вычет из расчётной выгоды покупки на случай проблем с выплатами у заёмщика. Это размер выбранного вычета, а не вероятность таких проблем.", "sections": [["Что означает", "Кредитный риск — возможность того, что заёмщик не выполнит обязательства. В текущем расчёте этот процент от полной стоимости покупки вычитается из её ожидаемой выгоды. Он задаётся пользователем, а не вычисляется как вероятность неплатежа."], ["Что меняется при настройке", "Увеличите процент — расчётная выгода станет меньше; больше кандидатов может не пройти отбор. Уменьшите — вычет станет меньше. Ноль не означает, что заёмщик обязательно заплатит."], ["Пример на условных суммах", "При полной расчётной стоимости лота 10 000 ₽ значение 20% даёт вычет 2 000 ₽. Если поправка на неопределённость ещё 10%, отдельно вычитается 1 000 ₽. Вместе — 3 000 ₽ из оценки выгоды, а не со счёта."], ["Важно знать", "Здесь 20% не означает «вероятность дефолта 20%» и не означает гарантированную потерю 20%. Реальный ущерб может быть другим. Настройка не делает бумагу с плохими данными допустимой и не включает автоматическую продажу."]]}, ["0", "10", "20", "50"]],
-    "balance-no-trade-band": ["Порог выгоды замены, % позиции", "%", {"summary": "Процентный порог выгоды, выше которого стоит рассматривать замену позиции. Это не отклонение её доли от цели. Процент считается от стоимости заменяемой позиции, а не всего портфеля.", "sections": [["Что означает", "Старая подпись «Зона без перестройки» могла вводить в заблуждение. В текущем коде правило сравнивает пользу замены с сохранением прежней позиции: дополнительная расчётная выгода после учтённых расходов должна быть достаточно большой."], ["Что меняется при настройке", "Больше процент — более заметная выгода требуется для замены, поэтому подходящих вариантов может быть меньше. Меньше — порог ниже. Одновременно действует «Минимальная выгода замены» в рублях: расчёт берёт больший из двух порогов."], ["Пример на условных суммах", "Заменяемая позиция стоит 20 000 ₽. Порог 3% — это 600 ₽. Если рублёвый минимум 1 000 ₽, нужна выгода строго больше 1 000 ₽. Ровно 1 000 ₽ не проходит. При процентном пороге 10% потребуется больше 2 000 ₽."], ["Важно знать", "Это не настройка «продавать при отклонении доли на 3%». Она относится к проверке рассматриваемых замен, а не ко всем изменениям рынка. При нуле остаются рублёвый минимум и другие проверки. Выгода расчётная, не обещанная; сделка не создаётся."]]}, ["0", "1", "3", "5"]],
-    "balance-min-replace-benefit": ["Минимальная выгода замены", "₽", {"summary": "Минимальная дополнительная выгода в рублях, ради которой расчёт рассматривает замену одной позиции на другую. Она сравнивается с вариантом оставить прежнюю позицию.", "sections": [["Что означает", "Это не минимальная сумма сделки и не ожидаемый доход всего портфеля. Расчёт сравнивает две оценки: оставить текущую позицию или заменить её, учитывая доступные расходы на продажу и покупку, а также налог при продаже, если он определён."], ["Что меняется при настройке", "Больше минимум — меньше небольших замен проходят проверку. Меньше — могут пройти варианты с меньшим преимуществом. Одновременно применяется процентный порог от стоимости позиции; используется больший из двух."], ["Пример на условных суммах", "Минимум — 1 000 ₽. Процентный порог для данной позиции — 600 ₽. Дополнительная выгода 900 ₽ не проходит, 1 000 ₽ тоже: нужно строго больше. 1 200 ₽ проходит только этот порог, но не заменяет остальные проверки."], ["Важно знать", "Если сравнение или необходимые расходы неизвестны, нельзя объявлять замену выгодной. Ноль не означает «заменять всегда». Сохранение не поручает продажу брокеру. Фактический результат может отличаться от расчётной оценки."]]}, ["100", "500", "1000", "5000"]],
-  });
-  const settingsUIs = new Map();
-  const controlTitles = new Map();
-  const uiNode = (tag, text, className) => {
-    const element = document.createElement(tag);
-    if (text !== undefined) element.textContent = text;
-    if (className) element.className = className;
-    return element;
-  };
-  const uiButton = (text, action, className = "filter-chip") => {
-    const element = uiNode("button", text, className);
-    element.type = "button";
-    element.addEventListener("click", action);
-    return element;
-  };
-  // Preserve database decimals (including exponent notation) without Number arithmetic.
-  const plainDecimal = (value) => {
-    const match = /^(\d+)(?:\.(\d*))?(?:e([+-]?\d{1,2}))?$/i.exec(String(value).trim().replace(",", "."));
-    if (!match) return null;
-    const exponent = Number(match[3] || 0);
-    if (Math.abs(exponent) > 24) return null;
-    const digits = match[1] + (match[2] || "");
-    const point = match[1].length + exponent;
-    let expanded = digits.slice(0, point) + "." + digits.slice(point);
-    if (point <= 0) expanded = "0." + "0".repeat(-point) + digits;
-    if (point >= digits.length) expanded = digits + "0".repeat(point - digits.length);
-    return expanded.replace(/^0+(?=\d)/, "");
-  };
-  const scaledInteger = (value, scale) => {
-    const normalized = plainDecimal(value);
-    if (normalized === null) return null;
-    const [whole, fraction = ""] = normalized.split(".");
-    if (fraction.length > scale) return null;
-    return BigInt(whole) * (10n ** BigInt(scale)) + BigInt(fraction.padEnd(scale, "0") || "0");
-  };
-  const trimFractionZeros = (value) => {
-    let end = value.length;
-    while (end > 0 && value[end - 1] === "0") end -= 1;
-    return value.slice(0, end);
-  };
-  const decimalString = (value, scale) => {
-    const factor = 10n ** BigInt(scale);
-    const fraction = trimFractionZeros(String(value % factor).padStart(scale, "0"));
-    return fraction ? `${value / factor}.${fraction}` : String(value / factor);
-  };
-  const exactLabel = (value, unit = "") => {
-    const normalized = plainDecimal(value);
-    if (normalized === null) return "Не задано";
-    const [whole, fraction] = normalized.split(".");
-    return BigInt(whole).toLocaleString("ru-RU")
-      + (fraction ? "," + fraction : "") + (unit ? " " + unit : "");
-  };
-  const adjustExactInput = (input, direction, increment) => {
-    if (input.disabled) return;
-    const parts = [input.value || input.min, increment, input.min, input.max].map(plainDecimal);
-    if (parts.includes(null)) return;
-    const scale = Math.max(...parts.map((part) => (part.split(".")[1] || "").length));
-    const [current, step, minimum, maximum] = parts.map((part) => scaledInteger(part, scale));
-    const next = current + step * BigInt(direction);
-    let bounded = next;
-    if (bounded < minimum) bounded = minimum;
-    if (bounded > maximum) bounded = maximum;
-    input.value = decimalString(bounded, scale);
-    input.dispatchEvent(new Event("input", {bubbles: true}));
-  };
-
-  const enhanceSettingsForm = (form) => {
-    if (settingsUIs.has(form)) return settingsUIs.get(form);
-    const controls = [];
-    form.querySelectorAll('.field > input[type="number"]').forEach((input) => {
-      const spec = SETTING_HELP[input.id];
-      if (!spec) return;
-      const [title, unit, helpText, choices] = spec;
-      const field = input.closest(".field");
-      const label = field.querySelector("label");
-      const decimal = input.step !== "1";
-      const originalStep = input.step;
-      if (decimal) input.step = "any"; // Saved precision must not fail a coarse UI step.
-      controlTitles.set(input, {title, unit});
-      field.classList.add("touch-setting");
-      label.textContent = title;
-      const heading = uiNode("div", undefined, "setting-label");
-      label.before(heading);
-      heading.append(label);
-      workspace.attachHelp(heading, `Справка: ${title}`, () => ({...helpText,
-        current: input.value === "" ? "Не знаю — значение нужно уточнить. Это не ноль."
-          : `${exactLabel(input.value, unit)} в открытой форме. Числа в примере ниже условные и не являются данными вашего счёта.`,
-      }));
-      const hint = field.querySelector(".field-hint") || uiNode("p", undefined, "field-hint");
-      hint.id ||= input.id + "-hint";
-      hint.textContent = helpText.summary;
-      hint.classList.add("setting-hint");
-      input.setAttribute("aria-describedby", hint.id);
-      input.hidden = true;
-      const output = uiNode("output", undefined, "setting-value");
-      output.setAttribute("for", input.id);
-      output.tabIndex = -1;
-      const steps = {
-        "₽": ["0.00000001", "0.0001", "0.01", "1", "1000", "10000", "100000", "1000000", "100000000", "1000000000000"],
-        "%": ["0.0001", "0.1", "1", "5", "10"],
-      }[unit] || ["1", "5", "12", "30", "100"];
-      const increment = uiNode("select");
-      increment.setAttribute("aria-label", `Шаг изменения: ${title}`);
-      steps.forEach((value) => {
-        const option = uiNode("option", exactLabel(value, unit));
-        option.value = value;
-        option.defaultSelected = value === (unit === "₽" ? "1000" : "1");
-        increment.append(option);
-      });
-      increment.value = unit === "₽" ? "1000" : "1";
-      const stepLabel = uiNode("label", undefined, "setting-step-label");
-      stepLabel.append(uiNode("span", "Шаг ±"), increment);
-      const decrease = uiButton("−", () => adjustExactInput(input, -1, increment.value), "step-button");
-      const increase = uiButton("+", () => adjustExactInput(input, 1, increment.value), "step-button");
-      decrease.dataset.stepDirection = "-1";
-      increase.dataset.stepDirection = "1";
-      const control = uiNode("div", undefined, "precise-control");
-      control.append(decrease, stepLabel, increase);
-      input.before(output, control);
-      const exact = uiButton("Точный ввод", () => {
-        input.hidden = !input.hidden;
-        exact.setAttribute("aria-expanded", String(!input.hidden));
-        if (!input.hidden) input.focus();
-      }, "setting-text-button");
-      exact.setAttribute("aria-expanded", "false");
-      exact.setAttribute("aria-controls", input.id);
-      exact.setAttribute("aria-label", `Точный ввод: ${title}`);
-      const unknown = uiButton("Не знаю", () => {
-        input.value = "";
-        input.dispatchEvent(new Event("input", {bubbles: true}));
-      }, "setting-text-button");
-      unknown.setAttribute("aria-label", `Не знаю: ${title}`);
-      const tools = uiNode("div", undefined, "setting-tools");
-      tools.append(exact, unknown);
-      const controlsHelp = uiNode("span", "Как менять", "setting-control-help");
-      tools.append(controlsHelp);
-      workspace.attachHelp(controlsHelp, `Как настроить: ${title}`, () => ({
-        summary: "Кнопки −/+ меняют число на выбранный шаг. Быстрое значение заменяет число целиком. Рабочий черновик сохраняется автоматически после загрузки; подтверждённые условия и сделки сами не меняются.",
-        current: `Шаг сейчас: ${exactLabel(increment.value, unit)}. Допустимое значение: от ${exactLabel(input.min, unit)} до ${exactLabel(input.max, unit)}.`,
-        sections: [
-          ["Кнопки − и +", `Одно нажатие вычитает или прибавляет ${exactLabel(increment.value, unit)}. Например, при шаге 1 переход с 20 на 21 — одно нажатие. На границе диапазона число останавливается. Это меняет настройку «${title}», а не деньги на счёте.`],
-          ["Выбор шага", "Шаг определяет только величину следующего нажатия −/+. Сам выбор шага не меняет число. Маленький шаг удобен для точной поправки, большой — чтобы не нажимать много раз."],
-          ["Ползунок и быстрые значения", "Если есть ползунок, он задаёт число в пределах диапазона. Кнопка с готовым числом подставляет именно это число, а не прибавляет его. Готовые значения — примеры для ввода, не рекомендации."],
-          ["Точный ввод", "Открывает обычное поле с клавиатурой как дополнительный способ. Можно не пользоваться им: кнопки и выбор шага остаются доступны. В процентах переход с 10% на 11% — прибавление одного процентного пункта, не одного процента от 10."],
-          ["Не знаю", "Убирает число только из открытой формы. Сохранённая версия не удаляется. Пока обязательное значение неизвестно, форма не позволит подтвердить всю группу настроек. Выберите число позже, когда сможете его обосновать."],
-          ["Когда будет запись", "Черновик меняется сразу и сохраняется автоматически. Статус над вкладками показывает результат записи. Проверка и отдельное подтверждение нужны для применения профиля или лимитов; отмена не применяет их. В автономном примере копия относится только к этому браузеру."],
-        ],
-      }));
-      const chips = uiNode("div", undefined, "setting-choices");
-      chips.setAttribute("role", "group");
-      chips.setAttribute("aria-label", `Примеры значений: ${title}`);
-      const quick = choices.map((value) => {
-        const chip = uiButton(exactLabel(value, unit), () => {
-          input.value = value;
-          input.dispatchEvent(new Event("input", {bubbles: true}));
-        });
-        chip.dataset.quickValue = value;
-        chips.append(chip);
-        return chip;
-      });
-      let range = null;
-      if (Number(input.max) <= 1200) {
-        range = uiNode("input", undefined, "setting-range");
-        range.type = "range";
-        range.min = input.min;
-        range.max = input.max;
-        range.setAttribute("aria-label", title);
-        range.setAttribute("aria-describedby", hint.id);
-        range.addEventListener("input", (event) => {
-          event.stopPropagation();
-          input.value = range.value;
-          input.dispatchEvent(new Event("input", {bubbles: true}));
-        });
-        field.append(range);
-      }
-      field.append(chips, tools, hint);
-      // One description covers the slider, quick choices, step size and exact/unknown buttons.
-      for (const element of [output, decrease, increase, increment, exact, unknown, ...quick]) {
-        element.setAttribute("aria-describedby", hint.id);
-      }
-      const sync = () => {
-        output.textContent = input.value === "" ? "Не знаю · уточнить" : exactLabel(input.value, unit);
-        output.classList.toggle("is-unknown", input.value === "");
-        field.classList.toggle("is-disabled", input.disabled);
-        [increment, exact, unknown, ...quick].forEach((element) => { element.disabled = input.disabled; });
-        decrease.disabled = input.disabled || (input.value !== "" && Number(input.value) <= Number(input.min));
-        increase.disabled = input.disabled || (input.value !== "" && Number(input.value) >= Number(input.max));
-        decrease.setAttribute("aria-label", `Уменьшить ${title} на ${exactLabel(increment.value, unit)}`);
-        increase.setAttribute("aria-label", `Увеличить ${title} на ${exactLabel(increment.value, unit)}`);
-        quick.forEach((chip) => chip.setAttribute("aria-pressed", String(input.value !== "" && Number(input.value) === Number(chip.dataset.quickValue))));
-        unknown.setAttribute("aria-pressed", String(input.value === ""));
-        if (range) {
-          const fraction = Math.max((originalStep.split(".")[1] || "").length, (plainDecimal(input.value)?.split(".")[1] || "").length);
-          range.step = fraction ? "0." + "0".repeat(fraction - 1) + "1" : "1";
-          range.value = input.value || input.min;
-          range.disabled = input.disabled;
-          range.setAttribute("aria-valuetext", output.textContent);
-          range.style.setProperty("--range-progress", `${100 * (Number(range.value) - Number(range.min)) / (Number(range.max) - Number(range.min))}%`);
-        }
-      };
-      input.addEventListener("input", sync);
-      increment.addEventListener("change", sync);
-      controls.push({input, sync, output, field, exact});
-      sync();
-    });
-    const checkbox = form.querySelector('input[type="checkbox"]');
-    if (checkbox) {
-      const label = checkbox.closest("label");
-      label.classList.add("toggle-row");
-      checkbox.setAttribute("role", "switch");
-      const span = label.querySelector("span");
-      const text = "Разрешить рассмотрение бумаг ниже инвестиционного уровня";
-      span.textContent = text;
-      controlTitles.set(checkbox, {title: text, unit: ""});
-      const helpHolder = uiNode("div", undefined, "setting-toggle-help");
-      label.after(helpHolder);
-      helpHolder.append(uiNode("span", "Повышенный кредитный риск · по умолчанию выключено"));
-      workspace.attachHelp(helpHolder, "Справка: бумаги ниже инвестиционного уровня", () => ({"summary": "Отдельное разрешение рассматривать бумаги с более низкой оценкой способности заёмщика платить. По умолчанию выключено. Одного включения недостаточно, чтобы бумага прошла расчёт.", "sections": [["Что означает", "Ниже инвестиционного уровня — категория более высокого кредитного риска по используемой шкале рейтинга. Переключатель записывает ваше разрешение учитывать такую категорию, а не ваше согласие купить конкретную бумагу."], ["Что меняется при настройке", "Выключено — для этой категории применяется нулевой лимит, даже если в лимитах распределения введён больший процент. Включено — используется выбранный лимит категории, но остаются все проверки данных, доступности и риска."], ["Пример на условных суммах", "В лимитах выбрано 5%, но переключатель выключен: новые покупки этой категории не допускаются. После включения 5% становится только верхним пределом. Текущий расчёт всё равно не допускает кандидата с неподходящим состоянием риска."], ["Важно знать", "Кредитный рейтинг не гарантирует выплаты и может меняться. Эта кнопка не включает торговлю, не снимает ограничения брокера и не продаёт старые позиции. Разрешение — не обещание, что появятся доступные варианты."]], current: checkbox.checked ? "Включено в открытой форме. Сохранение требует отдельного подтверждения." : "Выключено в открытой форме. Разрешение не выдано."}));
-    }
-    const actionsHelp = uiNode("div", "Загрузка, проверка и сохранение", "setting-toggle-help");
-    form.append(actionsHelp);
-    workspace.attachHelp(actionsHelp, "Справка: работа с версиями настроек", {
-      summary: "Рабочий черновик сохраняется автоматически. Загрузка в этой форме читает подтверждённый профиль или лимиты. Проверка показывает изменения, а отдельное подтверждение применяет их к расчётам. Это разные состояния.",
-      sections: [
-        ["Загрузить сохранённую версию", "Читает настройки этого аккаунта и заполняет форму. Если вы уже меняли числа, сначала появится вопрос о замене несохранённого черновика. При отказе ваши изменения останутся; при подтверждении успешная загрузка заменит их. Это не отмена сделок."],
-        ["Проверить и сохранить", "Открывает окно с точными значениями. Изменённые числа показаны рядом с предыдущими. Нажатие ещё ничего не записывает. Неизвестное обязательное значение нужно сначала уточнить."],
-        ["Подтверждение в окне", "Галочка означает, что вы проверили показанные настройки. Затем кнопка «Сохранить новую версию» отправляет именно их. Нажатие на справку или отмену не означает согласия и не отправляет запись."],
-        ["Пример", "Вы поменяли резерв с 30 000 ₽ на 40 000 ₽. До подтверждения в расчётах остаётся 30 000 ₽. Отмена окна оставляет 40 000 ₽ в рабочем черновике, который сохраняется отдельно. Загрузка после вашего разрешения вернёт последнюю сохранённую сумму."],
-        ["Ошибки и границы", "Дождитесь сообщения об успешном сохранении. При ошибке значения остаются на экране, но запись не подтверждена. Если версия изменилась в другой вкладке, сначала сравните данные заново. В автономном примере реальный аккаунт не меняется. Возможность восстановления демонстрационной копии зависит от хранилища браузера."],
-      ],
-    });
-    const interfaceState = {
-      sync: () => controls.forEach((item) => item.sync()),
-      reveal: (input) => {
-        const item = controls.find((entry) => entry.input === input);
-        if (!item) return;
-        const group = item.field.closest("details");
-        if (group) group.open = true;
-        item.field.scrollIntoView({block: "center", behavior: "instant"});
-        item.output.focus({preventScroll: true});
-      },
-      reset: () => controls.forEach(({input, exact}) => {
-        input.hidden = true;
-        exact.setAttribute("aria-expanded", "false");
-      }),
-    };
-    settingsUIs.set(form, interfaceState);
-    return interfaceState;
-  };
-
-  const groupSettingsForm = (form, groups) => {
-    const grid = form.querySelector(".constraint-form-grid");
-    const fields = [...grid.children];
-    if (fields.some((field) => field.tagName === "DETAILS")) return;
-    grid.replaceChildren();
-    groups.forEach(({title, note, indexes, open}) => {
-      const panel = uiNode("details", undefined, "settings-disclosure");
-      panel.open = open;
-      const summary = uiNode("summary");
-      const heading = uiNode("span", undefined, "settings-group-heading");
-      const count = uiNode("span", undefined, "settings-group-count");
-      heading.append(uiNode("strong", title), uiNode("small", note));
-      summary.append(heading, count);
-      const body = uiNode("div", undefined, "constraint-form-grid settings-group-grid");
-      indexes.forEach((index) => body.append(fields[index]));
-      panel.append(summary, body);
-      grid.append(panel);
-      const update = () => {
-        const inputs = [...body.querySelectorAll('.touch-setting input[type="number"]')];
-        count.textContent = `${inputs.filter((input) => input.value !== "").length}/${inputs.length}`;
-        summary.setAttribute("aria-label", `${title}. ${count.textContent} значений задано. ${note}`);
-      };
-      form.addEventListener("input", update);
-      form.addEventListener("settings:sync", update);
-      update();
-    });
-  };
-
-  // Drafts live only in this page. Never put personal settings in shared browser storage.
-  const createSettingsEditor = ({form, save, message, prefix, path, key, render, payload}) => {
-    const status = requiredElement(`#${prefix}-draft-status`);
-    const reload = requiredElement(`#${prefix}-reload`);
-    const inputs = Array.from(form.querySelectorAll("input"));
-    let version = null;
-    let baseline = "";
-    let busy = false;
-    let saving = false;
-    let conflicted = false;
-    let generation = 0;
-    const values = () => JSON.stringify(inputs.map((input) => (
-      input.type === "checkbox" ? input.checked : input.value
-    )));
-    const dirty = () => version !== null && values() !== baseline;
-    let reviewed = null;
-    let reviewAction = null;
-    const invalidateReview = () => {
-      reviewed = null;
-      if (reviewAction?.isConnected) workspace.closeDialog();
-      reviewAction = null;
-    };
-    const sync = () => {
-      inputs.forEach((input) => { input.disabled = busy || version === null; });
-      settingsUIs.get(form)?.sync();
-      form.dispatchEvent(new Event("settings:sync"));
-      save.disabled = busy || version === null || conflicted;
-      save.textContent = saving ? "Сохраняем…" : "Проверить и сохранить";
-      reload.disabled = busy;
-      form.setAttribute("aria-busy", String(busy));
-    };
-    const accept = (record) => {
-      if (record !== null && (!record || !Number.isSafeInteger(record.version)
-          || record.version < 1)) {
-        throw new Error("Invalid saved settings version");
-      }
-      invalidateReview();
-      form.reset();
-      render(record);
-      if (record === null) {
-        inputs.forEach((input, index) => {
-          const starter = STARTER_DRAFTS[prefix][index];
-          if (input.type === "checkbox") input.checked = starter === true;
-          else input.value = String(starter);
-        });
-      }
-      version = record?.version ?? 0;
-      if (record === null) requiredElement(`#${prefix}-version`).textContent = "Черновик";
-      baseline = values();
-      settingsUIs.get(form)?.reset();
-      conflicted = false;
-      status.textContent = record ? "Все изменения сохранены" :
-        "Стартовый черновик: проверьте каждое допущение. Он не сохранён и не является персональной рекомендацией.";
-      strategyLibrary?.acceptExternal();
-    };
-    const load = async ({confirmDiscard = false} = {}) => {
-      if (busy) return;
-      if (dirty() && (!confirmDiscard || !window.confirm(
-        "Заменить ваши несохранённые значения последней сохранённой версией?"
-      ))) return;
-      invalidateReview();
-      const requestGeneration = ++generation;
-      busy = true;
-      sync();
-      showMessage(message, "");
-      status.textContent = "Загружаем сохранённые параметры…";
-      try {
-        const result = await api(path, {method: "GET"});
-        if (requestGeneration !== generation) return;
-        if (!result || !(key in result)) throw new Error("Missing saved settings");
-        if (result.public_id !== currentProfileId) {
-          conflicted = true;
-          throw new Error("settings_owner_conflict");
-        }
-        accept(result[key]);
-      } catch (error) {
-        if (requestGeneration !== generation) return;
-        status.textContent = "Не удалось проверить сохранённую версию";
-        showMessage(message, error.message === "settings_owner_conflict"
-          ? "Аккаунт изменился в другой вкладке. Обновите страницу перед редактированием."
-          : "Проверьте соединение и нажмите «Загрузить сохранённую версию»."
-            + errorReference(error), true);
-      } finally {
-        if (requestGeneration === generation) { busy = false; saving = false; sync(); }
-      }
-    };
-    const showSaveFailure = (error) => {
-      status.textContent = "Изменения на экране не подтверждены";
-      if (error.status === 409 && error.message === "settings_version_conflict") {
-        conflicted = true;
-        showMessage(message, "Параметры уже изменены в другой вкладке или на другом устройстве. "
-          + "Ваш черновик остался на экране. Загрузите сохранённую версию перед новой правкой.", true);
-      } else if (error.status === 409 && error.message === "settings_owner_conflict") {
-        conflicted = true;
-        showMessage(message, "Аккаунт изменился в другой вкладке. "
-          + "Скопируйте нужные значения и обновите страницу перед редактированием.", true);
-      } else if (error.status === 409) {
-        showMessage(message, "Для сохранения нужно принять актуальные документы. "
-          + "Черновик останется здесь, пока вы не закроете страницу.", true);
-      } else if (error.status === 401) {
-        showMessage(message, "Сессия завершена. Скопируйте нужные значения перед повторным входом.", true);
-      } else if (error.status === 422) {
-        showMessage(message, "Проверьте допустимые значения. Сервер отклонил изменения.", true);
-      } else {
-        showMessage(message, "Сохранение не подтверждено. Ваши значения остались на экране. "
-          + "Повторите сохранение или загрузите сохранённую версию." + errorReference(error), true);
-      }
-    };
-    const commitReviewed = async (candidate, serializedValues) => {
-      if (busy || !reviewed || reviewed !== JSON.stringify(candidate)
-          || values() !== serializedValues || version !== candidate.expected_version
-          || currentProfileId !== candidate.expected_public_id || conflicted) {
-        invalidateReview();
-        return;
-      }
-      // Capture exactly what was reviewed before closing the shared dialog.
-      const body = reviewed;
-      invalidateReview();
-      const requestGeneration = ++generation;
-      busy = true;
-      saving = true;
-      sync();
-      status.textContent = "Сохраняем… Дождитесь подтверждения";
-      showMessage(message, "");
-      try {
-        const result = await api(path, {method: "PUT", body});
-        if (requestGeneration !== generation) return;
-        if (!result?.[key]) throw new Error("Missing save confirmation");
-        if (result.public_id !== currentProfileId) {
-          conflicted = true;
-          const error = new Error("settings_owner_conflict");
-          error.status = 409;
-          throw error;
-        }
-        accept(result[key]);
-        showMessage(message, "Сохранение подтверждено. Параметры применены к вашему профилю.");
-      } catch (error) {
-        if (requestGeneration !== generation) return;
-        showSaveFailure(error);
-      } finally {
-        if (requestGeneration === generation) { busy = false; saving = false; sync(); }
-      }
-    };
-    const saveDraft = (event) => {
-      event.preventDefault();
-      if (busy || version === null || conflicted) return;
-      const invalid = inputs.find((input) => !input.validity.valid);
-      if (invalid) {
-        settingsUIs.get(form)?.reveal(invalid);
-        showMessage(message, `Уточните «${controlTitles.get(invalid)?.title || invalid.id}». `
-          + "Выберите значение кнопками или ползунком. Неизвестное значение не равно нулю.", true);
-        return;
-      }
-      const candidate = Object.freeze({...payload(), expected_version: version, expected_public_id: currentProfileId});
-      const serializedValues = values();
-      reviewed = JSON.stringify(candidate);
-      const body = workspace.openDialog(prefix === "investment-profile" ? "Проверить профиль капитала" : "Проверить лимиты распределения");
-      body.append(uiNode("p", version === 0
-        ? "Стартовый пример ещё не был сохранён. Проверьте, что каждое значение подходит вашей задаче. Это не определённые системой личные данные."
-        : `Сохранённая версия v${version} останется в истории. Проверьте изменения перед созданием новой версии.`, "inline-note"));
-      const list = uiNode("dl", undefined, "settings-review");
-      const before = JSON.parse(baseline);
-      inputs.forEach((input, index) => {
-        const {title, unit} = controlTitles.get(input) || {title: input.id, unit: ""};
-        const display = (value) => {
-          if (input.type !== "checkbox") return exactLabel(value, unit);
-          return value ? "Разрешено" : "Выключено";
-        };
-        const current = input.type === "checkbox" ? input.checked : input.value;
-        const row = uiNode("div", undefined, "settings-review-row");
-        const term = uiNode("dt", title);
-        row.append(term);
-        const fieldHelp = SETTING_HELP[input.id]?.[2];
-        if (fieldHelp) workspace.attachHelp(term, `Справка: ${title}`, {
-          ...fieldHelp,
-          current: `${display(current)} показано для подтверждения. Пример ниже использует условные суммы, не данные вашего счёта.`,
-        });
-        const value = uiNode("dd");
-        if (version > 0 && current !== before[index]) {
-          value.append(uiNode("span", display(before[index]), "settings-review-before"), uiNode("span", " → "));
-          row.classList.add("is-changed");
-        }
-        value.append(uiNode("strong", display(current)));
-        row.append(value);
-        list.append(row);
-      });
-      body.append(list, uiNode("p", "Сохранение настроек не создаёт сделок. Налог и стресс-поправки — выбранные допущения, не прогнозы. Целевые доли из черновика распределения этим действием не сохраняются.", "field-hint"));
-      const consent = uiNode("label", undefined, "check review-consent");
-      const acknowledgement = uiNode("input");
-      acknowledgement.type = "checkbox";
-      acknowledgement.id = "settings-review-confirmation";
-      consent.append(acknowledgement, uiNode("span", "Я проверил(а) значения и подтверждаю именно эти настройки"));
-      body.append(consent);
-      const actions = uiNode("div", undefined, "settings-review-actions");
-      const cancel = uiButton("Вернуться к настройке", () => {
-        invalidateReview();
-        status.textContent = "Сохранение отменено. Черновик остался на экране.";
-      }, "button button-secondary");
-      const apply = uiButton("Сохранить новую версию", () => {
-        if (acknowledgement.checked) void commitReviewed(candidate, serializedValues);
-      }, "button button-primary");
-      reviewAction = apply;
-      apply.id = "settings-review-save";
-      apply.disabled = true;
-      acknowledgement.addEventListener("change", () => { apply.disabled = !acknowledgement.checked || reviewed === null; });
-      actions.append(cancel, apply);
-      body.append(actions);
-      const helpHolder = uiNode("div", "Что произойдёт после подтверждения?", "setting-toggle-help");
-      body.prepend(helpHolder);
-      workspace.attachHelp(helpHolder, "Справка: подтверждение настроек", {"summary": "Вы проверяете точные значения перед записью новой версии настроек. Открытие окна ничего не сохраняет. Подтверждение сохраняет настройки, но не покупает и не продаёт активы.", "sections": [["Что означает", "В таблице показано, что будет записано. Для изменённых сохранённых значений видны старое и новое. При первом сохранении числа являются выбранными примерами, а не фактами, определёнными системой."], ["Что меняется при настройке", "Подтвердите только после проверки всех строк. Изменения относятся к текущей группе: профилю капитала или лимитам. Черновик распределения долей этим действием не записывается в серверные настройки."], ["Пример на условных суммах", "Вы меняете резерв с 30 000 ₽ на 40 000 ₽. После успешного сохранения расчёт будет оставлять на 10 000 ₽ больше вне покупок при прочих равных. Но уже купленные бумаги от этого не продаются."], ["Важно знать", "«Отменить» закрывает проверку без записи. Ошибка связи не означает успешное сохранение. При конфликте версий нужно заново сверить настройки, а не затирать более новую запись. В автономном примере сохранение существует только в памяти страницы."]]});
-      requiredElement("#workspace-dialog").addEventListener("close", () => {
-        if (reviewAction === apply) { reviewed = null; reviewAction = null; }
-      }, {once: true});
-    };
-    const reset = () => {
-      invalidateReview();
-      generation += 1;
-      busy = false;
-      saving = false;
-      version = null;
-      conflicted = false;
-      form.reset();
-      settingsUIs.get(form)?.reset();
-      render(null);
-      requiredElement(`#${prefix}-version`).textContent = "Проверяем";
-      requiredElement(`#${prefix}-created`).textContent = "Сохранённая версия ещё не получена";
-      baseline = "";
-      status.textContent = "Проверяем сохранённые параметры…";
-      sync();
-    };
-    form.addEventListener("input", (event) => {
-      if (!inputs.includes(event.target)) return;
-      invalidateReview();
-      if (busy || conflicted) return;
-      if (dirty()) {
-        status.textContent = "Рабочие изменения отличаются от подтверждённых параметров. Статус автосохранения — над вкладками стратегии.";
-        return;
-      }
-      status.textContent = version === 0 ? "Стартовый пример · ещё не сохранён. Проверьте допущения." : "Значения соответствуют сохранённой версии";
-    });
-    form.addEventListener("submit", saveDraft);
-    reload.addEventListener("click", () => { void load({confirmDiscard: true}); });
-    reset();
-    const fieldNames = Object.keys(payload());
-    const readDraft = () => Object.fromEntries(inputs.map((input, index) => {
-      const value = input.type === "checkbox" ? input.checked : input.value;
-      return [fieldNames[index], value === "" ? null : value];
+  const portfolioRows = () => {
+    const stored = state.data.visualization?.latest?.positions;
+    return (Array.isArray(stored) ? stored : []).map(item => ({
+      ...item,
+      uid: item.instrument_uid,
+      name: item.name || item.ticker || item.instrument_uid,
+      price: item.current_price_value,
+      currency: String(item.current_price_currency || item.currency || "").toUpperCase(),
+      change: item.daily_change_percent ?? null
     }));
-    const writeDraft = (draft) => {
-      if (version === null || busy) return;
-      invalidateReview();
-      inputs.forEach((input, index) => {
-        if (input.type === "checkbox") input.checked = draft[fieldNames[index]] === true;
-        else input.value = draft[fieldNames[index]] ?? "";
-      });
-      settingsUIs.get(form)?.sync();
-      form.dispatchEvent(new Event("settings:sync"));
-      status.textContent = "Рабочий черновик. Подтверждённые параметры изменятся только после проверки и применения.";
-    };
-    return {load, reset, readDraft, writeDraft, isReady: () => version !== null && !busy,
-      savedVersion: () => version, isDirty: dirty, hasPending: () => saving || (dirty() && !strategyLibrary?.isCurrentSaved())};
   };
-
-  const investmentEditor = createSettingsEditor({
-    form: investmentProfileForm, save: investmentProfileSave, message: investmentProfileMessage,
-    prefix: "investment-profile", path: "/api/profile/investment", key: "profile",
-    render: renderInvestmentProfile,
-    payload: () => ({
-      reserve_rub: profileReserveRub.value,
-      planned_withdrawal_rub: profileWithdrawalRub.value,
-      horizon_months: Number(profileHorizonMonths.value),
-      max_drawdown_percent: profileMaxDrawdown.value,
-      liquidity_horizon_days: Number(profileLiquidityDays.value),
-      allow_below_investment_grade: profileAllowBelowGrade.checked,
-    }),
-  });
-  const balancingEditor = createSettingsEditor({
-    form: balancingPolicyForm, save: balancingPolicySave, message: balancingPolicyMessage,
-    prefix: "balancing-policy", path: "/api/profile/balancing", key: "policy",
-    render: renderBalancingPolicy,
-    payload: () => ({
-      max_instrument_percent: balanceMaxInstrument.value,
-      max_sector_percent: balanceMaxSector.value,
-      max_issuer_percent: balanceMaxIssuer.value,
-      max_group_percent: balanceMaxGroup.value,
-      max_share_percent: balanceMaxShare.value,
-      max_bond_percent: balanceMaxBond.value,
-      max_etf_percent: balanceMaxEtf.value,
-      max_below_grade_percent: balanceMaxBelowGrade.value,
-      max_unknown_percent: balanceMaxUnknown.value,
-      max_term_months: Number(balanceMaxTerm.value),
-      turnover_budget_percent: balanceTurnoverBudget.value,
-      max_daily_turnover_participation_percent: balanceDailyParticipation.value,
-      securities_tax_rate_percent: balanceTaxRate.value,
-      uncertainty_haircut_percent: balanceUncertaintyHaircut.value,
-      credit_loss_haircut_percent: balanceCreditHaircut.value,
-      no_trade_band_percent: balanceNoTradeBand.value,
-      min_replace_benefit_rub: balanceMinReplaceBenefit.value,
-    }),
-  });
-  // A durable working copy is separate from the reviewed profile/policy authority.
-  const createStrategyLibrary = () => {
-    const host = requiredElement('[data-view-panel="strategy"]');
-    const sectionNames = ["Подход", "Доли", "Капитал", "Лимиты", "Проверка"];
-    const clone = (value) => structuredClone(value);
-    const pendingRequests = new Set();
-    const request = async (path, options, timeoutMs = 15000) => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      pendingRequests.add(controller);
-      try { return await api(path, {...options, signal: controller.signal}); }
-      finally { clearTimeout(timeout); pendingRequests.delete(controller); }
-    };
-    const canonical = (value) => {
-      if (Array.isArray(value)) return value.map(canonical);
-      if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort((a, b) => a.localeCompare(b)).map((key) => [key, canonical(value[key])]));
-      if (typeof value === "string" && /^\d+(?:\.\d*)?$/.test(value)) {
-        const [whole, fraction = ""] = value.split(".");
-        const trimmed = trimFractionZeros(fraction);
-        return whole.replace(/^0+(?=\d)/, "") + (trimmed ? "." + trimmed : "");
-      }
-      return value;
-    };
-    const equal = (left, right) => JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
-    let catalog = null;
-    let documentState = null;
-    let customCopy = null;
-    let unacknowledged = null;
-    let loading = false;
-    let loadNotice;
-    let loadMessage;
-    let loadRetry;
-    const initialControls = [...host.querySelectorAll(":scope > .strategy-layout, :scope > .strategy-live-settings, :scope > .strategy-jump")];
-    const showInitialLoad = (failed = false) => {
-      if (built) return;
-      if (!loadNotice) {
-        loadNotice = uiNode("div", undefined, "inline-note strategy-load-status");
-        loadMessage = uiNode("p"); loadMessage.setAttribute("role", "status");
-        loadRetry = uiNode("button", "Повторить загрузку", "button button-secondary");
-        loadRetry.type = "button";
-        loadRetry.addEventListener("click", () => {
-          void Promise.all([investmentEditor.load(), balancingEditor.load()]).then(() => load());
-        });
-        loadNotice.append(loadMessage, loadRetry);
-        host.querySelector(".page-heading").after(loadNotice);
-      }
-      loadNotice.hidden = false;
-      loadRetry.hidden = !failed;
-      loadRetry.disabled = loading;
-      loadMessage.textContent = failed
-        ? "Не удалось загрузить вашу стратегию. Настройки ниже недоступны: их сохранение не подтверждено. Сохранённые значения не заменены."
-        : "Загружаем вашу стратегию. Пока загрузка не завершена, изменения и автосохранение недоступны.";
-      initialControls.forEach((element) => { element.inert = true; });
-    };
-    let version = null;
-    let generation = 0;
-    let revision = 0;
-    let dirty = false;
-    let busy = false;
-    let blocked = false;
-    let intent = "edit";
-    let timer = null;
-    let maximumWait = null;
-    let saveStatus;
-    let currentTitle;
-    let cards;
-    let restore;
-    let retry;
-    let reload;
-    let category = "Все";
-    let panels = [];
-    const ratingInputs = new Map();
-    let yieldFloor;
-    let yieldMargin;
-    let wrapperCap;
-    let diagnosticResult;
-    let accountResult;
-    let accountRequest = null;
-    let accountRequested = false;
-    let diagnosticRevision = 0;
-    const clearDiagnostic = () => {
-      diagnosticRevision += 1;
-      diagnosticResult?.replaceChildren();
-      if (accountResult && accountRequested) accountResult.textContent = "Настройки изменились. Проверка счёта требует обновления.";
-    };
-    let built = false;
-    const notify = (message) => { if (saveStatus) saveStatus.textContent = message; };
-    const setButtonState = () => {
-      if (!built) return;
-      host.querySelectorAll("[data-choose-strategy]").forEach((button) => { button.disabled = dirty || busy || blocked || version === null; });
-      restore.disabled = !customCopy || dirty || busy || blocked || version === null || loading;
-      retry.hidden = !blocked;
-      reload.disabled = busy || loading;
-      retry.disabled = busy || loading;
-      panels.forEach((panel) => { panel.inert = version === null || loading; });
-      host.dataset.strategyCustomized = String(Boolean(documentState?.customized));
-      if (!documentState) currentTitle.textContent = "Стратегия: проверяем аккаунт";
-      if (documentState) {
-        const preset = catalog.presets.find((item) => item.id === documentState.base_preset_id);
-        currentTitle.textContent = documentState.customized ? `Пользовательская · на основе «${preset.title}»` : preset.title;
-      }
-    };
-    const clearTimers = () => { clearTimeout(timer); clearTimeout(maximumWait); timer = null; maximumWait = null; };
-    const snapshot = () => ({
-      ...documentState,
-      allocation: workspace.readAllocation().allocation,
-      locked: workspace.readAllocation().locked,
-      excluded: workspace.readAllocation().excluded,
-      profile: investmentEditor.readDraft(), policy: balancingEditor.readDraft(),
-      rules: {
-        rating_caps: Object.fromEntries([...ratingInputs].map(([key, input]) => [key, input.value])),
-        yield_floor: yieldFloor.checked ? "key_rate" : "none",
-        yield_margin_pp: yieldMargin.value, fund_wrapper_cap_percent: wrapperCap.value,
-      },
+  const filteredRows = () => {
+    const matching = portfolioRows().filter(item => state.assetFilter === "all" || (state.assetFilter === "other" ? !["share", "bond", "etf", "currency"].includes(item.instrument_type) : item.instrument_type === state.assetFilter));
+    return matching.sort((a, b) => {
+      if (state.sort === "name") return state.sortDirection * a.name.localeCompare(b.name, "ru");
+      const key = {
+        price: "price",
+        change: "change",
+        share: "nav_percent",
+        value: "value_rub"
+      }[state.sort];
+      const left = number(a[key]);
+      const right = number(b[key]);
+      if (left === null) return right === null ? 0 : 1;
+      if (right === null) return -1;
+      return state.sortDirection * (left - right);
     });
-    const checkRecord = (payload) => {
-      if (payload?.public_id !== currentProfileId) throw new Error("strategy_owner_changed");
-      const record = payload.selection;
-      if (record !== null && (!record || !Number.isSafeInteger(record.version) || record.version < 1
-        || !(catalog.compatible_document_versions || [catalog.version]).includes(record.document?.catalog_version)
-        || !catalog.presets.some((item) => item.id === record.document.base_preset_id))) throw new Error("strategy_record_invalid");
-      return record;
-    };
-    const flush = async () => {
-      clearTimers();
-      if (!dirty || busy || blocked || version === null || !currentProfileId || workspace.isDemo()) return;
-      const epoch = generation;
-      const sentRevision = revision;
-      const sent = clone(documentState);
-      const expected = version;
-      const sentIntent = intent;
-      unacknowledged = {document: sent, version: expected, revision: sentRevision};
-      busy = true;
-      notify("Сохраняем черновик в аккаунте…");
-      setButtonState();
-      try {
-        const payload = await request("/api/profile/strategy", {method: "PUT", keepalive: true, body: JSON.stringify({
-          expected_public_id: currentProfileId, expected_version: expected, intent: sentIntent, document: sent,
-        })});
-        if (epoch !== generation) return;
-        const record = checkRecord(payload);
-        if (!record || !equal(record.document, sent)) throw new Error("strategy_save_mismatch");
-        version = record.version;
-        unacknowledged = null;
-        customCopy = record.custom_document || null;
-        if (sentRevision === revision) {
-          dirty = false;
-          workspace.markAllocationSaved();
-          notify("Черновик сохранён в аккаунте · " + new Date(record.updated_at).toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit"}));
-        }
-      } catch (error) {
-        if (epoch !== generation) return;
-        blocked = true;
-        notify(error.status === 409 ? "Конфликт версий. Ваши изменения остались на экране; чужая версия не перезаписана."
-          : "Сохранение не подтверждено. Изменения остаются на экране. Проверьте статус перед выходом.");
-      } finally {
-        if (epoch === generation) {
-          busy = false;
-          setButtonState();
-          if (dirty && !blocked) void flush();
-        }
+  };
+  const filtersHTML = (scope = "assets") => `<div class="filters" aria-label="Тип актива">${assetTypes.map(([key, title]) => renderFiltersHTMLFilterButton(key, scope, title)).join("")}</div>`;
+  const assetsTable = (compact = true) => {
+    if (state.tour) return empty("Ваши активы будут здесь", "Войдите и подключите свой счёт. Цены и доли появятся из источника.", "login", "Войти");
+    if (state.errors.visualization) return dataError("visualization");
+    const rows = filteredRows();
+    if (!rows.length) return empty(portfolioRows().length ? "Нет активов этого типа" : "Активы пока не получены", portfolioRows().length ? "Выберите другой фильтр." : "Состав счёта появится после подключения и первого наблюдения.", portfolioRows().length ? "" : "connect", "Подключить счёт");
+    const headers = [["name", "Название"], ["price", "Цена"], ["change", "Изменение"], ["share", "Доля"]];
+    return `<div class="table-scroll"><table class="asset-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${compact ? "" : '<th class="hide-on-mobile" scope="col">Стоимость</th><th scope="col"><span class="sr-only">Избранное</span></th>'}</tr></thead><tbody>${(compact ? rows.slice(0, 5) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div>`;
+  };
+  const selectedPreset = (document = state.strategy.draft) => {
+    const id = document?.base_preset_id;
+    const catalog = state.data.catalog;
+    const current = catalog?.presets?.find(item => item.id === id);
+    if (current) return current;
+    const legacy = catalog?.legacy_presets?.[id];
+    return legacy ? {
+      id,
+      ...legacy
+    } : undefined;
+  };
+  const strategyTitle = () => state.strategy.draft?.customized ? "Моя настройка" : selectedPreset()?.title || "Выберите стратегию";
+  const strategyEditorTitle = () => {
+    const title = selectedPreset()?.title || "Сохранённые условия";
+    if (state.strategy.draft?.customized) return "Моя настройка · основа: " + title;
+    return "Готовая стратегия · " + title;
+  };
+  const homeStrategy = () => {
+    const document = state.strategy.draft;
+    const horizon = number(document?.profile?.horizon_months);
+    return `${cardHeader("Моя стратегия")}<div class="strategy-current">${icon("strategies")}<strong>${esc(strategyTitle())}</strong><button class="icon-button" data-route="strategies" aria-label="Настройки стратегии">${icon("settings", true)}</button></div><div class="strategy-chips"><span class="chip">${document ? renderHomeStrategyFragment(document) : "Ваши условия"}</span><span class="chip">${horizon ? renderHomeStrategyFragment2(horizon) : "Ваш горизонт"}</span></div><p class="strategy-note">${document ? "Проверка состава и ограничений на данных вашего счёта." : "Выберите подход и уточните личные параметры, чтобы начать расчёты."}</p><button class="button secondary full" data-route="strategies">Настроить стратегию ${icon("arrow", true)}</button>`;
+  };
+  const eventItems = () => {
+    const news = (state.data.news?.items || []).map(item => ({
+      ...item,
+      occurred_at: item.published_at,
+      news: true,
+      read_at: item.published_at,
+      severity: "info"
+    }));
+    const rows = [...(state.data.events?.items || []), ...news].sort((a, b) => (new Date(b.occurred_at).getTime() || 0) - (new Date(a.occurred_at).getTime() || 0));
+    if (state.eventFilter === "important") return rows.filter(item => ["warning", "critical", "high"].includes(item.severity));
+    if (state.eventFilter === "assets") return rows.filter(item => ["portfolio", "payments"].includes(item.category));
+    if (state.eventFilter === "market") return rows.filter(item => item.category === "market");
+    return rows;
+  };
+  const eventsHTML = (compact = true) => {
+    const rows = eventItems();
+    if (!rows.length) return empty(state.eventFilter === "market" ? "Новостной источник не подключён" : "Нет новых событий", state.eventFilter === "market" ? "Система не подставляет заголовки. События счёта появятся после подключения данных." : "Подтверждённые события портфеля и целей появятся здесь.", "", "", "events");
+    return `<div class="event-list">${(compact ? rows.slice(0, 4) : rows).map(item => renderEventsHTMLEventItem(item, compact)).join("")}</div>`;
+  };
+  const goalPreview = goal => `<article class="goal-preview"><span class="event-icon">${icon(goal.kind === "income" ? "wallet" : "building", true)}</span><div class="goal-preview-body"><h3>${esc(goal.title)}</h3><p>${esc(money(goal.progress?.amount_rub))} из ${esc(money(goal.target_amount_rub))}</p>${U.progress(goal.progress?.percent)}</div></article>`;
+  const homeGoals = () => {
+    const goals = (state.data.goals?.items || []).filter(item => item.status === "active");
+    return `${cardHeader("Цели", "goals", "")}${goals.length ? renderHomeGoalsGoalsPreviewList(goals) : empty("Начните с цели", "Укажите сумму и срок. Прогресс рассчитывается по выбранному источнику.", "goal-create", "Добавить цель", "goals")}<button class="button secondary full" data-route="goals">Все цели ${icon("arrow", true)}</button>`;
+  };
+  const portfolioHistory = (overview, period) => {
+    if (overview.history_coverage?.period !== period) return [];
+    return overview.history || [];
+  };
+  const navCoverageHTML = (overview, period) => {
+    const coverage = overview.history_coverage;
+    if (!coverage || coverage.period !== period) return '<p class="data-footnote">Покрытие выбранного периода ещё не получено.</p>';
+    if (coverage.status === "empty") return '<p class="data-footnote">В выбранном периоде нет сохранённых наблюдений.</p>';
+    const range = date(coverage.returned_from, true) + " — " + date(coverage.returned_to, true) + " МСК";
+    const observations = coverage.status === "sampled" ? `${format(coverage.returned_observations, 0)} из ${format(coverage.total_observations, 0)} реальных наблюдений за период` : `${format(coverage.returned_observations, 0)} реальных наблюдений`;
+    return `<p class="data-footnote" data-history-period="${esc(period)}">${esc(range)}<br>${esc(observations)}. ${coverage.status === "sampled" ? "На графике показаны последние точки временных интервалов; расчёты используют полную сохранённую историю." : "Глубина истории зависит от сохранённых данных."}</p>`;
+  };
+  const renderHome = () => {
+    const ws = state.data.workspace;
+    const overview = ws?.overview || {};
+    const performance = ws?.performance || {};
+    const income = ws?.income || {};
+    const monthly = Array.isArray(income.by_month) ? income.by_month : [];
+    const latestMonth = monthly.at(-1);
+    const incomeCurve = monthly.map(item => ({
+      ...item,
+      time: `${item.month}-01`
+    }));
+    const history = portfolioHistory(overview, state.homePeriod);
+    const result = number(performance.investment_result_rub);
+    const resultText = result === null ? "Полная история для расчёта ещё не получена" : `${money(result)} · ${date(performance.from)} — ${date(performance.to)}`;
+    $("#view-home").innerHTML = `<h1 class="sr-only">Главная — обзор портфеля</h1><div class="dashboard-top"><section class="card summary-card"><p class="card-label">Общая стоимость</p><p class="main-value">${esc(money(overview.nav_rub))}</p><div class="value-change ${result === null ? "" : renderHomeValue(result)}">${esc(resultText)}</div>${overview.observed_at ? renderHomeDataFootnote(overview) : ""}${chart(history, {
+      label: "Стоимость портфеля",
+      compact: true
+    })}${periods("home", state.homePeriod)}${navCoverageHTML(overview, state.homePeriod)}</section><section class="card allocation-card">${cardHeader("Структура портфеля")}${U.allocation(overview.allocations, overview.nav_rub)}</section><div class="metric-stack"><section class="card metric-card"><p class="card-label">Доходность</p><p class="main-value">${esc(percent(performance.return_percent, true))}</p><p class="metric-note">${performance.return_percent === null || performance.return_percent === undefined ? "Для процента нужна подтверждённая методика и полная история потоков." : renderHomeFragment(performance)}</p>${result !== null ? renderHomeMetricNote(result) : ""}</section><section class="card metric-card secondary-metric"><p class="card-label">Пассивный доход</p><p class="main-value">${esc(money(latestMonth?.total_rub))}</p><p class="metric-note">${latestMonth ? renderHomeFragment3(latestMonth) : "Выплаты до налоговых списаний: данных пока нет"}</p>${incomeCurve.length > 1 ? chart(incomeCurve, {
+      timeKey: "time",
+      valueKey: "total_rub",
+      label: "Полученные выплаты по месяцам",
+      tone: "purple",
+      compact: true
+    }) : ""}</section></div><section class="card strategy-card">${homeStrategy()}</section></div><div class="dashboard-bottom"><section class="card">${cardHeader("Мои активы", "portfolio")}${filtersHTML()}${assetsTable()}<p class="data-footnote">${state.data.visualization?.latest?.captured_at ? renderHomeFragment4() : "Только данные вашего подключённого счёта"}</p></section><section class="card">${cardHeader("Новости и события", "events", "")}${eventFilters()}${eventsHTML()}</section><section class="card goals-overview">${homeGoals()}</section></div>${!ws && state.loading.has("workspace") ? U.loading("Получаем состояние вашего кабинета…") : ""}`;
+  };
+  const eventFilters = () => `<div class="filters" aria-label="Фильтр событий">${[["important", "Важное"], ["assets", "Мои активы"], ["market", "Рынок"], ["all", "Все"]].map(([key, title]) => renderEventFiltersFilterButton(key, title)).join("")}</div>`;
+  const renderPortfolio = () => {
+    const overview = state.data.workspace?.overview || {};
+    const performance = state.data.workspace?.performance || {};
+    $("#view-portfolio").innerHTML = `${heading("Портфель", state.data.connection?.account_name || "Стоимость, структура и активы вашего счёта", button("Обновить", "refresh", {
+      small: true
+    }) + button("Подключение", "connect", {
+      small: true
+    }))}<div class="metric-grid">${[["Стоимость портфеля", money(overview.nav_rub)], ["Свободные средства", money(overview.free_cash_rub)], ["Результат за период", money(performance.investment_result_rub)], ["Активов", portfolioRows().length ? String(portfolioRows().length) : "—"]].map(([title, value]) => renderPortfolioCard(title, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader("Стоимость портфеля")}${chart(portfolioHistory(overview, state.portfolioPeriod))}${periods("portfolio", state.portfolioPeriod)}${navCoverageHTML(overview, state.portfolioPeriod)}<p class="data-footnote">График стоимости включает пополнения и выводы. Он не является графиком доходности.</p></section><section class="card">${cardHeader("Структура портфеля")}${U.allocation(overview.allocations, overview.nav_rub)}${freshness("T-Invest", overview.observed_at, overview.status)}</section></div><section class="card section-gap">${cardHeader("Мои активы")}${filtersHTML()}${assetsTable(false)}</section>${dataError("workspace")}`;
+  };
+  const newsHTML = () => {
+    const rows = state.data.news?.items || [];
+    if (!rows.length) return empty("Новостной источник пока недоступен", "Повторите обновление. Заголовки не заменяются примерами.", "", "", "events");
+    return `<div class="event-list">${rows.slice(0, 8).map(item => renderNewsHTMLEventItem(item)).join("")}</div>${freshness("Официальная лента Банка России", state.data.news.fetched_at, state.data.news.freshness === "cached" ? "Сохранённый ответ источника" : "")}`;
+  };
+  const indicatorCards = reference => {
+    const data = reference?.indicators;
+    return `<div class="market-indicators">${[["key_rate", "Ключевая ставка", "%"], ["usd_rub", "Доллар США", "₽"], ["eur_rub", "Евро", "₽"]].map(([key, title, unit]) => renderIndicatorCardsCard(title, data, key, unit)).join("")}</div>`;
+  };
+  const watchlist = () => state.prefs.draft?.watchlist || [];
+  const isWatched = uid => watchlist().some(item => item.instrument_uid === uid);
+  const watchButton = item => `<button class="icon-button" data-watch="${esc(item.uid || item.instrument_uid)}" data-watch-name="${esc(item.name || item.ticker || "Актив")}" data-watch-ticker="${esc(item.ticker || "")}" aria-label="${isWatched(item.uid || item.instrument_uid) ? "Удалить из избранного" : "Добавить в избранное"}" aria-pressed="${isWatched(item.uid || item.instrument_uid)}">${icon("star", true)}</button>`;
+  const renderMarket = () => {
+    const reference = state.data.marketReference;
+    $("#view-market").innerHTML = `${heading("Рынок", "Официальные показатели и инструменты из подключённого источника", button("Обновить", "refresh", {
+      small: true
+    }))}${indicatorCards(reference)}<div class="two-column section-gap"><section class="card">${cardHeader("Курсы Банка России")}<div class="button-group">${select("cbr_currency", "Валюта", [["USD", "Доллар США"], ["EUR", "Евро"], ["CNY", "Китайский юань"]], state.cbrCurrency)}${select("cbr_period", "Период", [["1m", "Месяц"], ["3m", "Три месяца"], ["1y", "Год"]], state.cbrPeriod)}</div>${chart(reference?.history?.points, {
+      timeKey: "effective_date",
+      valueKey: "value",
+      label: renderMarketFragment(),
+      personal: false
+    })}${freshness("Банк России · официальный курс", reference?.history?.fetched_at || reference?.indicators?.fetched_at)}<p class="data-footnote">Официальный справочный курс отличается от биржевой котировки.</p></section><section class="card">${cardHeader("Избранное")}${watchlist().length ? renderMarketSearchResults() : empty("Сохраните интересные активы", "Найдите компанию или тикер через поиск и нажмите звёздочку. Избранное сохраняется в аккаунте.", "", "", "star")}${!state.data.connection?.connected ? renderMarketNotice() : ""}</section></div><section class="card section-gap">${cardHeader("Активы вашего счёта")}${filtersHTML()}${assetsTable(false)}</section>${dataError("marketReference")}<section class="card section-gap">${cardHeader("Новости Банка России")}${newsHTML()}</section>`;
+  };
+  const runSearch = async query => {
+    const trimmed = String(query).trim().slice(0, 64);
+    state.searchQuery = trimmed;
+    $("#global-search").value = trimmed;
+    const sequence = ++state.searchSequence;
+    const generation = state.generation;
+    if (!trimmed) {
+      state.searchResults = [];
+      renderSearch();
+      return;
+    }
+    if (state.tour) {
+      renderSearch();
+      return;
+    }
+    state.loading.add("search");
+    delete state.errors.search;
+    renderSearch();
+    try {
+      const payload = await api(`/api/broker/tbank/instruments/search?q=${encodeURIComponent(trimmed)}`);
+      if (sequence !== state.searchSequence || generation !== state.generation) return;
+      state.searchResults = Array.isArray(payload.items) ? payload.items : [];
+    } catch (error) {
+      if (!isCancelled(error) && sequence === state.searchSequence && generation === state.generation) state.errors.search = error;
+    } finally {
+      if (sequence === state.searchSequence && generation === state.generation) {
+        state.loading.delete("search");
+        if (state.view === "search") renderSearch();
       }
+    }
+  };
+  const renderSearch = () => {
+    const query = state.searchQuery.toLocaleLowerCase("ru-RU");
+    const localEvents = query ? (state.data.events?.items || []).filter(item => `${item.title} ${item.detail}`.toLocaleLowerCase("ru-RU").includes(query)) : [];
+    const localNews = query ? (state.data.news?.items || []).filter(item => `${item.title} ${item.source}`.toLocaleLowerCase("ru-RU").includes(query)) : [];
+    const localMatches = `${localEvents.map(item => renderSearchSearchResult(item)).join("")}${localNews.map(item => renderSearchSearchResult2(item)).join("")}`;
+    let content;
+    if (state.tour) content = `${empty("Поиск инструментов доступен после входа", "Результаты по инструментам приходят из API вашего подключённого источника.", "login", "Войти", "search", true)}${localMatches}`;else if (state.loading.has("search")) content = `${U.loading("Ищем инструменты…")}${localMatches}`;else if (state.errors.search) content = `<div class="notice error">Поиск инструментов: ${esc(humanError(state.errors.search))}<div class="form-actions">${button("Проверить подключение", "connect", {
+      small: true
+    })}</div></div>${localMatches}`;else if (!state.searchQuery) content = empty("Что найдём?", "Введите название компании, тикер или слово из события в строке поиска.", "", "", "search", true);else if (!state.searchResults.length && !localEvents.length && !localNews.length) content = empty("Ничего не найдено", "Уточните название или попробуйте биржевой тикер.", "", "", "search", true);else content = `<div class="search-results">${state.searchResults.map(item => renderSearchSearchResult3(item)).join("")}${localMatches}</div>`;
+    $("#view-search").innerHTML = `${heading("Поиск", state.searchQuery ? renderSearchFragment() : "Инструменты, компании и события")}<section class="card">${content}</section>`;
+  };
+  const loadAsset = async (uid, force = false) => {
+    const segment = safeSegment(uid);
+    const generation = state.generation;
+    const asset = state.asset?.uid === uid ? state.asset : {
+      uid,
+      name: portfolioRows().find(item => item.uid === uid)?.name || watchlist().find(item => item.instrument_uid === uid)?.name || state.searchResults.find(item => (item.uid || item.instrument_uid) === uid)?.name || "Инструмент",
+      ticker: portfolioRows().find(item => item.uid === uid)?.ticker || watchlist().find(item => item.instrument_uid === uid)?.ticker || state.searchResults.find(item => (item.uid || item.instrument_uid) === uid)?.ticker || "",
+      market: null,
+      details: null
     };
-    const schedule = (immediate = false) => {
-      clearTimeout(timer);
-      if (blocked) { setButtonState(); return; }
-      timer = setTimeout(() => { void flush(); }, immediate ? 0 : 500);
-      if (!maximumWait) maximumWait = setTimeout(() => { void flush(); }, 4000);
-      notify("Изменено · ожидает автосохранения");
-      setButtonState();
-    };
-    const edited = () => {
-      if (!documentState || version === null || workspace.isDemo()) return;
-      const next = snapshot();
-      if (equal(next, documentState)) return;
-      clearDiagnostic();
-      next.customized = true;
-      documentState = next;
-      intent = "edit";
-      dirty = true;
-      revision += 1;
-      renderCards();
-      schedule();
-    };
-    const selectExact = (input, value) => {
-      const text = String(value);
-      if (![...input.options].some((option) => option.value === text)) {
-        const option = uiNode("option", text + " " + (input.dataset.strategyUnit || "%")); option.value = text; input.append(option);
+    state.asset = asset;
+    asset.loading = true;
+    asset.error = null;
+    renderAsset();
+    const requestedPeriod = state.assetPeriod;
+    const sequence = (state.resourceVersions.get("asset") || 0) + 1;
+    state.resourceVersions.set("asset", sequence);
+    const requests = [{
+      key: "market",
+      promise: api(`/api/market/instruments/${segment}?period=${encodeURIComponent(requestedPeriod)}`)
+    }];
+    if (!asset.details || force) requests.push({
+      key: "details",
+      promise: api(`/api/portfolio/instruments/${segment}/visualization?history_limit=365`)
+    });
+    if (!asset.facts || force) requests.push({
+      key: "facts",
+      promise: api(`/api/market/instruments/${segment}/facts`)
+    });
+    const results = await Promise.allSettled(requests.map(request => request.promise));
+    if (generation !== state.generation || state.resourceVersions.get("asset") !== sequence || state.asset?.uid !== uid || state.assetPeriod !== requestedPeriod) return;
+    results.forEach((result, index) => {
+      const key = requests[index].key;
+      if (result.status === "fulfilled") {
+        asset[key] = result.value;
+        asset[`${key}Error`] = null;
+      } else if (!isCancelled(result.reason)) {
+        asset[key] = null;
+        asset[`${key}Error`] = result.reason;
+        if (key === "market") asset.error = result.reason;
       }
-      input.value = text;
+    });
+    asset.name = asset.facts?.name || asset.details?.latest?.name || asset.name;
+    asset.ticker = asset.facts?.ticker || asset.details?.latest?.ticker || asset.ticker;
+    asset.loading = false;
+    if (state.view === "asset") {
+      renderAsset();
+      U.bindCharts($("#view-asset"));
+    }
+  };
+  const fundamentalMetricsHTML = (asset, compact = false) => {
+    const facts = asset.facts;
+    if (!facts) return asset.factsError ? `<div class="notice error">Финансовые показатели не загрузились. ${esc(humanError(asset.factsError))}${button("Повторить", "asset-refresh", {
+      small: true
+    })}</div>` : U.loading("Получаем подтверждённые показатели…");
+    const metrics = (facts.metrics || []).filter(item => number(item.value) !== null);
+    return `<h3 class="panel-title">Финансовые показатели</h3>${metrics.length ? renderFundamentalMetricsHTMLInfoList(metrics, compact) : '<p class="notice">Источник не предоставил подтверждённые финансовые показатели этого инструмента.</p>'}${freshness("Финансовые данные T-Invest", facts.observed_at)}${!compact && facts.metrics?.length ? renderFundamentalMetricsHTMLSourceList(facts) : ""}${!compact && facts.missing_requirements?.length ? renderFundamentalMetricsHTMLDetailsSummary(facts) : ""}${!compact && facts.limitations?.length ? renderFundamentalMetricsHTMLFinePrint(facts) : ""}`;
+  };
+  const assetPricing = asset => {
+    const market = asset.market;
+    const details = asset.details;
+    const latest = details?.latest || {};
+    const candles = Array.isArray(market?.candles) ? market.candles : [];
+    const current = number(market?.last_price);
+    const initial = number(candles[0]?.open);
+    const change = current !== null && initial !== null && initial !== 0 ? current - initial : null;
+    const changePercent = change !== null ? change / initial * 100 : null;
+    const searched = state.searchResults.find(item => (item.uid || item.instrument_uid) === asset.uid);
+    const currency = String([asset.facts?.currency, latest.current_price_currency, latest.currency, market?.currency, searched?.currency].find(Boolean) || "").toUpperCase();
+    const highs = candles.map(item => number(item.high)).filter(item => item !== null);
+    const lows = candles.map(item => number(item.low)).filter(item => item !== null);
+    return {
+      asset,
+      market,
+      details,
+      latest,
+      candles,
+      current,
+      change,
+      changePercent,
+      currency,
+      high: highs.length ? Math.max(...highs) : null,
+      low: lows.length ? Math.min(...lows) : null
     };
-    const renderDocument = () => {
-      clearDiagnostic();
-      investmentEditor.writeDraft(documentState.profile);
-      balancingEditor.writeDraft(documentState.policy);
-      workspace.writeAllocation(documentState);
-      for (const [key, input] of ratingInputs) selectExact(input, documentState.rules.rating_caps[key]);
-      yieldFloor.checked = documentState.rules.yield_floor === "key_rate";
-      selectExact(yieldMargin, documentState.rules.yield_margin_pp);
-      selectExact(wrapperCap, documentState.rules.fund_wrapper_cap_percent);
-      setButtonState();
+  };
+  const assetChartHTML = ({
+    asset,
+    market,
+    candles,
+    current,
+    change,
+    changePercent,
+    currency
+  }) => {
+    const changeLabel = change === null ? "Изменение за период не рассчитано" : renderAssetFragment(change, currency, changePercent);
+    const chartMarkup = asset.loading ? U.loading("Загружаем биржевой график…") : chart(candles, {
+      timeKey: "time",
+      valueKey: "close",
+      label: renderAssetFragment2(asset),
+      personal: false,
+      currency
+    });
+    const notes = [currency ? "" : "Валюта цены не получена от источника.", market?.trading_status ? renderAssetFragment3(market) : "", state.assetPeriod === "all" ? "Доступная история источника." : "", esc(market?.history_note || ""), "График показывает цены закрытия свечей."].filter(Boolean).join(" ");
+    return `<div class="main-value">${esc(money(current, 2, currency, false))}</div><p class="value-change ${change === null ? "" : renderAssetValue(change)}">${changeLabel}</p>${periods("asset", state.assetPeriod, true)}${chartMarkup}${freshness(market?.source || "T-Invest", market?.quote_time || market?.observed_at, market?.quote_status)}<p class="data-footnote">${notes}</p>`;
+  };
+  const assetHoldingNote = ({
+    asset,
+    details,
+    latest
+  }) => {
+    if (details) return renderAssetDataFootnote(latest);
+    if (asset.detailsError && asset.detailsError.status !== 404) return `<p class="notice error">Данные позиции не загрузились: ${esc(humanError(asset.detailsError))}</p>`;
+    if (asset.loading) return U.loading("Проверяем состав вашего счёта…");
+    return '<p class="notice">Инструмент не найден в истории вашего счёта. Биржевой график доступен независимо от наличия позиции.</p>';
+  };
+  const assetOverviewHTML = context => {
+    const {
+      asset,
+      latest
+    } = context;
+    const type = {
+      share: "Акция",
+      bond: "Облигация",
+      etf: "Фонд",
+      currency: "Валюта"
+    }[asset.facts?.instrument_type || latest.instrument_type] || "Не получен";
+    return `${infoRows([["Название", asset.name], ["Тикер", asset.ticker || "—"], ["Тип", type], ["Биржа", asset.facts?.exchange || "—"], ["Размер лота", format(asset.facts?.lot, 0)], ["В портфеле", money(latest.value_rub)], ["Доля", percent(latest.nav_percent)], ["Количество", format(latest.quantity, 8)]])}${assetHoldingNote(context)}`;
+  };
+  const assetMetricsHTML = ({
+    asset,
+    market,
+    candles,
+    current,
+    currency,
+    high,
+    low
+  }) => {
+    const quoteTime = market?.quote_time ? renderAssetFragment4(market) : "—";
+    const rows = [["Открытие периода", money(candles[0]?.open, 2, currency, false)], ["Максимум периода", money(high, 2, currency, false)], ["Минимум периода", money(low, 2, currency, false)], ["Последняя цена", money(current, 2, currency, false)], ["Время цены", quoteTime], ["Свечей в периоде", candles.length ? String(candles.length) : "—"], ["Режим торгов", tradingLabel(market?.trading_status)]];
+    return `${infoRows(rows)}<p class="data-footnote">Ценовые показатели рассчитаны только по полученным свечам выбранного периода.</p><div class="section-gap">${fundamentalMetricsHTML(asset)}</div>`;
+  };
+  const assetNewsHTML = ({
+    details
+  }) => `${details?.sources?.length ? renderAssetDetailsSummary(details) : ""}<h3 class="panel-title section-gap">Общерыночные новости Банка России</h3><p class="fine-print">Это официальный общий источник, а не лента отдельного эмитента.</p>${newsHTML()}`;
+  const assetSideHTML = ({
+    asset,
+    latest,
+    candles,
+    currency,
+    high,
+    details
+  }) => {
+    const rows = [["Открытие", money(candles[0]?.open, 2, currency, false)], ["Максимум", money(high, 2, currency, false)], ["Стоимость в портфеле", money(latest.value_rub)], ["Доля портфеля", percent(latest.nav_percent)], ["Заблокировано лотов", latest.blocked_lots === undefined ? "—" : format(latest.blocked_lots)]];
+    const risk = latest.risk_state ? riskLabel(latest.risk_state) : "Для оценки риска нужны данные об эмитенте и инструменте.";
+    return `${cardHeader("Основные показатели")}${infoRows(rows)}<p class="notice">${esc(risk)}</p><div class="section-gap">${fundamentalMetricsHTML(asset, true)}</div>${details?.payouts?.length ? renderAssetDetailsSummary2(details) : ""}`;
+  };
+  const assetFrameHTML = (context, content) => {
+    const {
+      asset
+    } = context;
+    const tabs = [["overview", "Обзор"], ["chart", "График"], ["metrics", "Показатели"], ["news", "Новости"]].map(([key, label]) => renderAssetTabButton(key, label)).join("");
+    return `<div class="breadcrumb"><button class="icon-button" data-action="asset-back" aria-label="Назад к рынку">${icon("back")}</button><span>График актива</span></div><div class="asset-detail-header"><span class="asset-logo">${esc((asset.ticker || asset.name).slice(0, 1))}</span><div><h1>${esc(asset.name)}</h1><p>${esc(asset.ticker || "Инструмент T-Invest")}</p></div>${watchButton(asset)}</div><div class="asset-detail-layout"><section class="card asset-chart-card"><div class="tab-bar" role="tablist" aria-label="Карточка актива">${tabs}</div><div class="asset-tab-content" role="tabpanel">${asset.error ? renderAssetNotice(asset) : ""}${content}</div></section><section class="card">${assetSideHTML(context)}</section></div>`;
+  };
+  const renderAsset = () => {
+    const container = $("#view-asset");
+    if (state.tour) {
+      container.innerHTML = empty("Карточка инструмента", "Войдите и подключите источник, чтобы получить цену, историю и финансовые показатели.", "login", "Войти", "market", true);
+      return;
+    }
+    const asset = state.asset;
+    if (!asset || asset.uid !== state.route.uid) {
+      container.innerHTML = U.loading("Получаем данные актива…");
+      return;
+    }
+    const context = assetPricing(asset);
+    const renderers = {
+      chart: assetChartHTML,
+      overview: assetOverviewHTML,
+      metrics: assetMetricsHTML,
+      news: assetNewsHTML
     };
-    const select = (id) => {
-      if (busy || dirty || blocked || version === null) return;
-      const selected = id === "custom" ? clone(customCopy) : clone(catalog.presets.find((item) => item.id === id).document);
-      if (!selected) return;
-      if (id !== "custom") {
-        for (const [section, key] of [["profile", "reserve_rub"], ["profile", "planned_withdrawal_rub"], ["policy", "securities_tax_rate_percent"]]) {
-          selected[section][key] = documentState[section][key];
-        }
-      }
-      if (equal(selected, documentState)) return;
-      documentState = selected;
-      intent = id === "custom" ? "edit" : "select";
-      dirty = true;
-      revision += 1;
-      renderDocument();
-      renderCards();
-      schedule(true);
-    };
-    const tab = (index, focus = false) => {
-      workspace.closeDialog();
-      panels.forEach((panel, i) => { panel.hidden = i !== index; });
-      [...host.querySelectorAll("[data-strategy-tab]")].forEach((button, i) => {
-        button.setAttribute("aria-selected", String(i === index)); button.tabIndex = i === index ? 0 : -1;
-        if (focus && i === index) button.focus();
+    const renderer = renderers[state.assetTab] || assetChartHTML;
+    container.innerHTML = assetFrameHTML(context, renderer(context));
+  };
+  const tradingLabel = value => ({
+    SECURITY_TRADING_STATUS_NORMAL_TRADING: "Основная сессия",
+    SECURITY_TRADING_STATUS_NOT_AVAILABLE_FOR_TRADING: "Торги недоступны",
+    SECURITY_TRADING_STATUS_CLOSING_PERIOD: "Закрытие сессии",
+    SECURITY_TRADING_STATUS_BREAK_IN_TRADING: "Перерыв в торгах",
+    SECURITY_TRADING_STATUS_OPENING_AUCTION_PERIOD: "Аукцион открытия",
+    SECURITY_TRADING_STATUS_CLOSING_AUCTION: "Аукцион закрытия"
+  })[value] || (value ? "Режим получен от биржи" : "Нет данных");
+  const riskLabel = value => ({
+    data_missing: "Недостаточно данных для полной оценки риска.",
+    restricted: "Для инструмента действуют ограничения. Проверьте условия доступа.",
+    observed: "Показаны фактические данные инструмента.",
+    review_required: "Требуется дополнительная проверка данных."
+  })[value] || "Оценка требует проверки исходных данных.";
+  const validRecord = record => record && Number.isInteger(record.version) && record.version >= 0 && record.document && typeof record.document === "object";
+  const editablePreferenceForms = new Set(["preferences-form", "profile-form"]);
+  const hasFormDrafts = () => Object.keys(state.formDrafts).length > 0;
+  const formValues = form => Object.fromEntries(Array.from(form.elements).filter(input => input.name).map(input => [input.name, input.type === "checkbox" ? input.checked : input.value]));
+  const restoreEditableForm = formId => {
+    const form = $("#" + formId);
+    if (!form) return;
+    state.formBaselines[formId] = formValues(form);
+    const values = state.formDrafts[formId];
+    if (!values) return;
+    for (const [name, value] of Object.entries(values)) {
+      const input = form.elements.namedItem(name);
+      if (!input) continue;
+      if (input.type === "checkbox") input.checked = value;else input.value = value;
+    }
+  };
+  const captureFormDraft = input => {
+    const form = input.closest("form");
+    if (!form || !editablePreferenceForms.has(form.id) || !state.prefs.server) return false;
+    const values = formValues(form);
+    if (same(values, state.formBaselines[form.id])) delete state.formDrafts[form.id];else state.formDrafts[form.id] = values;
+    updateSaveStatus("prefs");
+    return true;
+  };
+  const acceptFormSubmission = form => {
+    state.formBaselines[form.id] = formValues(form);
+    delete state.formDrafts[form.id];
+    updateSaveStatus("prefs");
+  };
+  function adoptPreferences(payload) {
+    if (!validRecord(payload)) return;
+    const slot = state.prefs;
+    if (slot.dirty || slot.busy || hasFormDrafts() || slot.server && slot.server.version > payload.version) return;
+    slot.server = clone(payload);
+    slot.draft = clone(payload.document);
+    slot.error = null;
+    U.setPrivacy(Boolean(payload.document.mask_balances));
+    U.setLocale?.(payload.document.locale);
+    applyTheme(payload.document.theme);
+    updateIdentity();
+  }
+  function adoptStrategy(payload) {
+    const selection = payload?.selection;
+    const slot = state.strategy;
+    if (slot.dirty || slot.busy) return;
+    if (selection !== null && selection !== undefined && !validRecord(selection)) return;
+    if (slot.server && (selection?.version || 0) < slot.server.version) return;
+    slot.server = selection ? clone(selection) : null;
+    slot.draft = selection ? clone(selection.document) : null;
+    slot.error = null;
+  }
+  const updateStrategySaveControls = slot => {
+    const unavailable = !slot.server || slot.dirty || slot.busy || Boolean(slot.error);
+    const assess = $('[data-action="assess-strategy"]');
+    if (assess) assess.disabled = unavailable || state.loading.has("assessment");
+    const research = $('#research-form [type="submit"]');
+    if (research) research.disabled = unavailable || state.loading.has("research");
+    const title = $(".strategy-heading h2");
+    if (title) title.textContent = strategyEditorTitle();
+    for (const option of $$("[data-select-strategy]")) option.setAttribute("aria-pressed", String(!slot.draft?.customized && option.dataset.selectStrategy === slot.draft?.base_preset_id));
+    updateCustomStrategyControls();
+  };
+  const updateSaveStatus = kind => {
+    const slot = state[kind];
+    const status = slot.error ? renderUpdateSaveStatusValue(slot) : renderUpdateSaveStatusValue4(slot);
+    const text = {
+      conflict: "Конфликт версий",
+      error: "Изменения не подтверждены",
+      saving: "Сохраняем…",
+      pending: "Есть несохранённые изменения",
+      saved: "Сохранено на сервере",
+      empty: "Пока не сохранено"
+    }[status];
+    for (const element of $$(`[data-save-status="${kind}"]`)) {
+      const formId = element.closest("form")?.id;
+      const unsubmitted = kind === "prefs" && Boolean(state.formDrafts[formId]);
+      element.dataset.state = unsubmitted && !slot.error ? "pending" : status;
+      element.textContent = unsubmitted && !slot.error ? "Изменения формы не отправлены" : text;
+    }
+    if (kind === "strategy") updateStrategySaveControls(slot);
+    for (const element of $$(`[data-save-error="${kind}"]`)) {
+      element.hidden = !slot.error;
+      element.innerHTML = slot.error ? `<p>${esc(humanError(slot.error))}</p><div class="button-group">${button("Загрузить сохранённое", renderUpdateSaveStatusFragment(kind), {
+        small: true
+      })}${renderUpdateSaveStatusValue5(slot, kind)}</div>` : "";
+    }
+  };
+  const applySavedEffects = kind => {
+    if (kind === "prefs") {
+      U.setPrivacy(Boolean(state.prefs.draft?.mask_balances));
+      U.setLocale?.(state.prefs.draft?.locale);
+      updateIdentity();
+    }
+    updateSaveStatus(kind);
+  };
+  const writePayload = (kind, version, document, intent) => kind === "strategy" ? {
+    expected_public_id: state.user.public_id,
+    expected_version: version,
+    intent,
+    document
+  } : {
+    expected_version: version,
+    document
+  };
+  const recordFrom = (kind, payload) => kind === "strategy" ? payload?.selection : payload;
+  const acceptWrite = (kind, slot, saved, revision) => {
+    if (!validRecord(saved)) throw Object.assign(new Error("invalid_server_response"), {
+      status: 502
+    });
+    slot.server = clone(saved);
+    if (slot.revision === revision) {
+      slot.draft = clone(saved.document);
+      slot.dirty = false;
+    }
+    slot.error = null;
+    applySavedEffects(kind);
+  };
+  const currentWrite = context => context.generation === state.generation && state[context.kind] === context.slot;
+  const reconcileVersionedWrite = async context => {
+    try {
+      const payload = await api(context.path);
+      if (!currentWrite(context)) return;
+      const actual = recordFrom(context.kind, payload);
+      if (!validRecord(actual) || actual.version <= context.expected) return;
+      if (same(actual.document, context.document)) acceptWrite(context.kind, context.slot, actual, context.revision);else context.slot.error = Object.assign(new Error("settings_version_conflict"), {
+        status: 409
       });
+    } catch (error) {
+      if (isCancelled(error)) return;
+    }
+  };
+  const attemptVersionedWrite = async context => {
+    const {
+      kind,
+      slot,
+      path
+    } = context;
+    const attempt = {
+      ...context,
+      revision: slot.revision,
+      document: clone(slot.draft),
+      expected: slot.server?.version || 0
     };
-    const help = (holder, title, summary, sections = []) => workspace.attachHelp(holder, "Справка: " + title, {summary, sections});
-    const renderCards = () => {
-      if (!cards) return;
-      cards.replaceChildren();
-      for (const preset of catalog.presets.filter((item) => category === "Все" || item.category === category)) {
-        const card = uiNode("article", undefined, "strategy-preset-card");
-        card.dataset.strategyId = preset.id;
-        const selected = documentState?.base_preset_id === preset.id && !documentState?.customized;
-        card.classList.toggle("is-selected", selected);
-        const title = uiNode("h3", preset.title);
-        const proportions = Object.values(preset.document.allocation);
-        const summary = uiNode("p", `Акции ${proportions[0]}% · облигации ${proportions[1]}% · фонды ${proportions[2]}% · деньги ${proportions[3]}%`, "preset-proportions");
-        const actions = uiNode("div", undefined, "preset-actions");
-        const choose = uiNode("button", selected ? "Выбрано" : "Выбрать", "button button-primary");
-        choose.type = "button"; choose.dataset.chooseStrategy = preset.id; choose.setAttribute("aria-pressed", String(selected));
-        choose.addEventListener("click", () => select(preset.id));
-        const more = uiNode("button", "Подробнее", "button button-secondary");
-        more.type = "button";
-        more.addEventListener("click", () => {
-          const body = workspace.openDialog(preset.title);
-          body.append(uiNode("p", preset.description), uiNode("p", preset.risk, "inline-note"),
-            uiNode("p", preset.parameter_basis), uiNode("p", "Историческая проверка на рынке РФ и вероятность прибыли пока не подтверждены. Значения можно использовать как редактируемые условия, не как обещание результата."));
-          const sourceTitle = uiNode("h4", "Основания подхода"); body.append(sourceTitle);
-          for (const sourceId of preset.source_ids) {
-            const source = catalog.sources.find((item) => item.id === sourceId);
-            if (!source?.url?.startsWith("https://")) continue;
-            const link = uiNode("a", source.title); link.href = source.url; link.target = "_blank"; link.rel = "noopener noreferrer"; body.append(link);
-          }
-          body.append(uiNode("p", "Именные варианты — адаптации принципов, не оригинальные портфели авторов и не их рекомендации для РФ.", "field-hint"));
-        });
-        actions.append(choose, more);
-        card.append(uiNode("span", preset.category, "card-label"), title, uiNode("p", preset.description), summary, actions);
-        cards.append(card);
+    try {
+      const result = await api(path, {
+        method: "PUT",
+        body: writePayload(kind, attempt.expected, attempt.document, slot.intent || "edit")
+      });
+      if (!currentWrite(context)) return false;
+      const saved = recordFrom(kind, result);
+      if (!validRecord(saved) || saved.version <= attempt.expected) throw Object.assign(new Error("invalid_server_response"), {
+        status: 502
+      });
+      acceptWrite(kind, slot, saved, attempt.revision);
+    } catch (error) {
+      if (!currentWrite(context) || isCancelled(error)) return false;
+      slot.error = error;
+      if (!error.definite && (!error.status || error.status >= 500)) await reconcileVersionedWrite(attempt);
+    }
+    return !slot.error;
+  };
+  const canSaveVersioned = (kind, slot) => {
+    if (slot.busy || !slot.dirty || slot.error || !slot.draft || !state.user || state.locked) return false;
+    if (kind === "prefs" && !slot.server) return false;
+    const activeForm = $(`#${kind === "strategy" ? "strategy-form" : "preferences-form"}`);
+    if (activeForm && !activeForm.checkValidity()) {
+      slot.error = Object.assign(new Error("invalid_values"), {
+        status: 422
+      });
+      updateSaveStatus(kind);
+      return false;
+    }
+    return true;
+  };
+  const finishVersionedSave = context => {
+    if (!currentWrite(context)) return;
+    const {
+      slot,
+      kind
+    } = context;
+    slot.busy = false;
+    updateSaveStatus(kind);
+    if (slot.error && kind === "prefs" && !["profile", "settings"].includes(state.view)) toast(`Настройки не сохранены: ${humanError(slot.error)} Откройте Настройки, чтобы проверить серверную версию.`, true);
+  };
+  const saveVersioned = async kind => {
+    const slot = state[kind];
+    if (!canSaveVersioned(kind, slot)) return;
+    const context = {
+      kind,
+      slot,
+      generation: state.generation,
+      path: kind === "strategy" ? "/api/profile/strategy" : "/api/preferences"
+    };
+    slot.busy = true;
+    updateSaveStatus(kind);
+    try {
+      while (slot.dirty && !slot.error && currentWrite(context)) {
+        if (!(await attemptVersionedWrite(context))) break;
       }
-      setButtonState();
-    };
-    const percentControl = (parent, label, value, onChange, unit = "%") => {
-      const row = uiNode("label", undefined, "strategy-rule-row");
-      const name = uiNode("span", label);
-      const selectBox = uiNode("select");
-      selectBox.setAttribute("aria-label", label);
-      selectBox.dataset.strategyUnit = unit;
-      // Every integer percent is reachable without typing; saved fractional caps
-      // have their exact value added, never rounded into a nearby option.
-      for (let n = 0; n <= 100; n += 1) { const option = uiNode("option", n + " " + unit); option.value = String(n); selectBox.append(option); }
-      if (![...selectBox.options].some((item) => item.value === value)) { const option = uiNode("option", value + " " + unit); option.value = value; selectBox.append(option); }
-      selectBox.value = value;
-      selectBox.addEventListener("change", onChange);
-      row.append(name, selectBox); parent.append(row);
-      return selectBox;
-    };
-    const exactAmount = (value) => {
-      if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?$/.test(value)) return "неизвестно";
-      const [whole, fraction = ""] = value.split(".");
-      const grouped = BigInt(whole).toLocaleString("ru-RU");
-      return grouped + (fraction ? "," + fraction : "") + " ₽";
-    };
-    const renderAccountAssessment = (data) => {
-      const names = {shares: "Акции", bonds: "Облигации", funds: "Фонды", cash: "Рубли"};
-      accountResult.replaceChildren(
-        uiNode("p", `Стоимость счёта: ${exactAmount(data.nav_rub)}. Получено у брокера: ${formatDateTime(data.captured_at)}.`, "inline-note"),
-        uiNode("p", `Для расчёта распределения: ${exactAmount(data.cash?.allocation_capacity_rub)}. Это не разрешение на покупку и не сумма после будущих комиссий.`, "field-hint")
-      );
-      const allocation = uiNode("div", undefined, "strategy-account-allocation");
-      for (const row of data.allocation) {
-        allocation.append(uiNode("p", `${names[row.key] || row.key}: сейчас ${exactAmount(row.current_rub)}, цель ${row.target_percent}% (${exactAmount(row.target_rub)}).${row.complete ? "" : " Покрытие неполное."}`));
+    } finally {
+      finishVersionedSave(context);
+    }
+  };
+  const scheduleSave = kind => {
+    const slot = state[kind];
+    clearTimeout(slot.timer);
+    updateSaveStatus(kind);
+    slot.timer = window.setTimeout(() => {
+      void saveVersioned(kind);
+    }, 600);
+  };
+  const editPreferences = change => {
+    if (!requireUser()) return false;
+    if (!state.prefs.server || !state.prefs.draft) {
+      toast("Сначала загрузите настройки с сервера. Начальные значения не будут сохранены поверх неизвестных данных.", true);
+      return false;
+    }
+    if (state.prefs.error?.status === 409) {
+      toast(humanError(state.prefs.error), true);
+      return false;
+    }
+    const draft = clone(state.prefs.draft);
+    change(draft);
+    if (same(draft, state.prefs.draft)) return true;
+    state.prefs.draft = draft;
+    state.prefs.revision += 1;
+    state.prefs.dirty = true;
+    state.prefs.error = null;
+    applySavedEffects("prefs");
+    scheduleSave("prefs");
+    return true;
+  };
+  const reloadVersioned = async (kind, discard = false) => {
+    const slot = state[kind];
+    if (slot.busy) {
+      toast("Дождитесь завершения отправленного изменения.");
+      return;
+    }
+    if ((slot.dirty || kind === "prefs" && hasFormDrafts()) && !discard) {
+      openDialog("Загрузить сохранённые данные?", `<p class="help-copy">Правки этой вкладки будут заменены текущей серверной версией.</p><div class="form-actions">${button("Загрузить с сервера", renderReloadVersionedFragment(kind), {
+        primary: true
+      })}<button class="button secondary" data-close-dialog>Отмена</button></div>`);
+      return;
+    }
+    try {
+      const generation = state.generation;
+      const payload = await api(kind === "strategy" ? "/api/profile/strategy" : "/api/preferences");
+      if (generation !== state.generation) return;
+      if (kind === "prefs" && !validRecord(payload)) throw Object.assign(new Error("invalid_server_response"), {
+        status: 502
+      });
+      slot.dirty = false;
+      slot.error = null;
+      slot.revision += 1;
+      if (kind === "strategy") {
+        adoptStrategy(payload);
+        state.data.strategy = payload;
+        slot.assessment = null;
+        slot.research = null;
+      } else {
+        state.formDrafts = {};
+        state.formBaselines = {};
+        adoptPreferences(payload);
       }
-      accountResult.append(allocation);
-      const titles = {evaluated: "Проверено", blocked: "Есть ограничение", unknown: "Не хватает данных", inapplicable: "В этой проверке не применяется"};
-      const summary = uiNode("p", `Проверено правил: ${data.checks.filter((item) => item.state === "evaluated").length}. Ограничений: ${data.checks.filter((item) => item.state === "blocked").length}.`, "field-hint");
-      accountResult.append(summary);
-      for (const state of ["blocked", "unknown", "evaluated", "inapplicable"]) {
-        const checks = data.checks.filter((item) => item.state === state);
-        if (!checks.length) continue;
-        const group = uiNode("details", undefined, "settings-disclosure");
-        group.append(uiNode("summary", titles[state] + " · " + checks.length));
-        for (const check of checks) {
-          const line = uiNode("p");
-          line.append(uiNode("strong", check.title + ". "), document.createTextNode(check.detail));
-          if (check.limit !== null && check.limit !== undefined) line.append(document.createTextNode(" Выбрано: " + String(check.limit) + "."));
-          group.append(line);
+      renderCurrent();
+    } catch (error) {
+      if (!isCancelled(error)) toast(humanError(error), true);
+    }
+  };
+  const retryVersioned = async kind => {
+    const slot = state[kind];
+    if (slot.busy || !slot.draft) return;
+    try {
+      const generation = state.generation;
+      const payload = await api(kind === "strategy" ? "/api/profile/strategy" : "/api/preferences");
+      if (generation !== state.generation) return;
+      const actual = recordFrom(kind, payload);
+      if ((actual?.version || 0) !== (slot.server?.version || 0)) {
+        if (validRecord(actual) && same(actual.document, slot.draft)) {
+          acceptWrite(kind, slot, actual, slot.revision);
+          return;
         }
-        accountResult.append(group);
-      }
-      const methods = uiNode("details", undefined, "settings-disclosure");
-      methods.append(uiNode("summary", "Что ещё нужно для подбора активов"));
-      for (const item of data.method_requirements) methods.append(uiNode("p", item));
-      methods.append(uiNode("p", data.scope));
-      accountResult.append(methods);
-    };
-    const calculateAccount = async (button) => {
-      if (accountRequest || !version || busy || dirty || blocked || loading || workspace.isDemo()) {
-        if (!accountRequest) accountResult.textContent = "Дождитесь сохранения выбранной стратегии. Реальный счёт не подменяется условной суммой.";
+        slot.error = Object.assign(new Error("settings_version_conflict"), {
+          status: 409
+        });
+        updateSaveStatus(kind);
         return;
       }
-      const epoch = generation; const currentRevision = revision; const expected = version;
-      const calculationRevision = ++diagnosticRevision;
-      const owner = currentProfileId;
-      const activeRequest = {button};
-      accountRequest = activeRequest; accountRequested = true; button.disabled = true;
-      accountResult.textContent = "Получаем ваши позиции и деньги у Т-Банка. Проверяем сохранённые ограничения…";
-      try {
-        const data = await request("/api/profile/strategy/account-assessment", {method: "POST", body: JSON.stringify({expected_public_id: owner, expected_version: expected})}, 45000);
-        if (epoch !== generation || currentRevision !== revision || version !== expected || calculationRevision !== diagnosticRevision || owner !== currentProfileId) return;
-        if (data?.public_id !== owner || data?.strategy_version !== expected || data?.status !== "assessed"
-          || !Array.isArray(data.allocation) || !Array.isArray(data.checks) || !Array.isArray(data.method_requirements)
-          || data.execution_enabled !== false || data.candidate_selection_ready !== false) throw new Error("strategy_account_mismatch");
-        renderAccountAssessment(data);
-      } catch (error) {
-        if (epoch === generation && currentRevision === revision && calculationRevision === diagnosticRevision) {
-          accountResult.textContent = error.status === 409
-            ? "Проверьте подключение Т-Банка и актуальную версию стратегии. Ваши настройки не изменены."
-            : "Не удалось подтвердить данные счёта. Значения не заменены нулями или примером. Можно повторить проверку.";
-        }
-      } finally {
-        if (accountRequest === activeRequest) {
-          accountRequest = null;
-          button.disabled = false;
-        }
+      slot.error = null;
+      await saveVersioned(kind);
+    } catch (error) {
+      if (!isCancelled(error)) {
+        slot.error = error;
+        updateSaveStatus(kind);
       }
-    };
-    const buildAccountAssessment = (parent) => {
-      const panel = uiNode("section", undefined, "strategy-diagnostic");
-      const title = uiNode("h4", "Мой счёт и моя стратегия");
-      const button = uiNode("button", "Проверить мой счёт", "button button-primary");
-      button.type = "button"; button.id = "strategy-check-account";
-      accountResult = uiNode("div"); accountResult.id = "strategy-account-result";
-      accountResult.setAttribute("role", "status");
-      button.addEventListener("click", () => { void calculateAccount(button); });
-      panel.append(title, uiNode("p", "Позиции, стоимость и рубли — из вашего подключённого счёта. Сравнение использует сохранённую версию стратегии, а не капитал примера. Эта проверка сравнивает текущий состав; полный подбор новых покупок ещё не подключён.", "field-hint"), button, accountResult);
-      help(title, "Проверка моего счёта", "Сравнивает ваши текущие позиции с выбранными долями и пределами. Денег не переводит и заявок не отправляет.", [
-        ["Что проверяется", "Целевые доли, денежный остаток после резерва и снятий, известные доли компаний, секторов и рейтингов, сроки погашения. Неизвестный параметр не объявляется пройденным."],
-        ["Почему может не хватать данных", "Для полного подбора нужны сведения о связанных компаниях, составе фондов, доступности покупки и расходах. Система не придумывает их из названия бумаги."],
-        ["После изменения", "Прежняя проверка убирается, потому что она относилась к другой версии ваших правил. Повторная проверка читает новые сохранённые настройки."]
-      ]);
-      parent.append(panel);
-    };
-    const build = () => {
-      if (built) return;
-      built = true;
-      if (loadNotice) loadNotice.hidden = true;
-      initialControls.forEach((element) => { element.inert = false; });
-      host.classList.add("strategy-compact");
-      const heading = host.querySelector(".page-heading");
-      heading.querySelector("h2").textContent = "Моя стратегия";
-      heading.querySelector("p:last-child").textContent = "10 готовых подходов или ваши правила. Изменения автоматически сохраняются как черновик; сделки не создаются.";
-      const oldJump = host.querySelector(".strategy-jump");
-      if (oldJump.nextElementSibling?.classList.contains("setting-toggle-help")) oldJump.nextElementSibling.remove();
-      oldJump.remove();
-      const navigation = uiNode("div", undefined, "strategy-tabs"); navigation.setAttribute("role", "tablist"); navigation.setAttribute("aria-label", "Настройки стратегии");
-      const toolbar = uiNode("div", undefined, "strategy-savebar");
-      currentTitle = uiNode("strong"); saveStatus = uiNode("span", "Проверяем сохранённую версию…"); saveStatus.setAttribute("role", "status");
-      retry = uiNode("button", "Проверить сохранение", "button button-secondary"); retry.type = "button"; retry.hidden = true; retry.addEventListener("click", () => { if (version === null) void load(); else void reconcile(); });
-      reload = uiNode("button", "Загрузить версию", "button button-secondary"); reload.type = "button"; reload.dataset.strategyReload = ""; reload.addEventListener("click", () => {
-        if (busy || (dirty && !window.confirm("Заменить изменения на экране последней сохранённой копией?"))) return;
-        dirty = false; version = null; void load();
-      });
-      restore = uiNode("button", "Мой вариант", "button button-secondary"); restore.type = "button"; restore.id = "strategy-restore-custom"; restore.addEventListener("click", () => select("custom"));
-      toolbar.append(currentTitle, saveStatus, restore, retry, reload);
-      heading.after(toolbar, navigation);
-      panels = sectionNames.map((name, index) => {
-        const panel = uiNode("div", undefined, "strategy-tab-panel"); panel.id = "strategy-panel-" + index; panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-labelledby", "strategy-tab-" + index);
-        const button = uiNode("button", name, "strategy-tab"); button.type = "button"; button.id = "strategy-tab-" + index; button.dataset.strategyTab = String(index); button.setAttribute("role", "tab"); button.setAttribute("aria-controls", panel.id);
-        button.addEventListener("click", () => tab(index));
-        button.addEventListener("keydown", (event) => {
-          const next = {ArrowRight: (index + 1) % 5, ArrowLeft: (index + 4) % 5, Home: 0, End: 4}[event.key];
-          if (next !== undefined) { event.preventDefault(); tab(next, true); }
-        });
-        navigation.append(button); host.append(panel); return panel;
-      });
-      const layout = host.querySelector(".strategy-layout"); panels[1].append(layout);
-      const live = host.querySelector(".strategy-live-settings");
-      panels[2].append(investmentProfileForm.closest("article")); panels[3].append(balancingPolicyForm.closest("article"));
-      live.remove();
-      host.querySelector(":scope > .section-heading")?.remove();
-      const group = layout.querySelector(".strategy-preset-group");
-      if (group?.previousElementSibling?.classList.contains("setting-toggle-help")) group.previousElementSibling.remove();
-      group?.nextElementSibling?.remove(); group?.remove();
-      layout.querySelector(".strategy-summary .inline-note").textContent = "Доли сохраняются в черновике. Подтверждённые профиль и лимиты пока применяются отдельно; черновик не является торговым поручением.";
-      const filters = uiNode("div", undefined, "chip-group"); filters.setAttribute("role", "group"); filters.setAttribute("aria-label", "Категории подходов");
-      for (const label of ["Все", "Базовые", "По задачам", "Именные"]) {
-        const button = uiNode("button", label, "filter-chip"); button.type = "button"; button.setAttribute("aria-pressed", String(label === category));
-        button.addEventListener("click", () => { category = label; [...filters.children].forEach((item) => item.setAttribute("aria-pressed", String(item === button))); renderCards(); }); filters.append(button);
+    }
+  };
+  const saveErrorHTML = kind => `<div class="notice error" data-save-error="${kind}"${state[kind].error ? "" : " hidden"}></div>`;
+  const preservePersonal = document => {
+    const current = state.strategy.draft;
+    const profile = current ? current.profile : state.data.investmentProfile?.profile;
+    const policy = current ? current.policy : state.data.balancingPolicy?.policy;
+    for (const key of ["reserve_rub", "planned_withdrawal_rub"]) document.profile[key] = profile?.[key] ?? null;
+    document.policy.securities_tax_rate_percent = policy?.securities_tax_rate_percent ?? null;
+    return document;
+  };
+  const chooseStrategy = id => {
+    if (!requireUser()) return;
+    if (state.loading.has("strategy") || state.loading.has("investmentProfile") || state.loading.has("balancingPolicy") || state.errors.strategy || state.errors.investmentProfile || state.errors.balancingPolicy || !Object.hasOwn(state.data, "strategy")) {
+      toast("Сначала должны загрузиться сохранённая стратегия и личные условия. Повторите загрузку.", true);
+      return;
+    }
+    if (state.strategy.error?.status === 409) {
+      toast(humanError(state.strategy.error), true);
+      return;
+    }
+    const preset = state.data.catalog?.presets?.find(item => item.id === id);
+    if (!preset) return;
+    const document = preservePersonal(clone(preset.document));
+    if (same(document, state.strategy.draft)) return;
+    const slot = state.strategy;
+    slot.draft = document;
+    slot.dirty = true;
+    slot.intent = "select";
+    slot.revision += 1;
+    slot.error = null;
+    slot.assessment = null;
+    slot.research = null;
+    renderStrategies();
+    scheduleSave("strategy");
+  };
+  const customizeStrategy = () => {
+    if (!requireUser()) return;
+    if (customStrategyStatus().disabled) return;
+    const slot = state.strategy;
+    const custom = slot.server?.custom_document || slot.draft;
+    slot.draft = preservePersonal(clone(custom));
+    slot.draft.customized = true;
+    slot.intent = "edit";
+    slot.revision += 1;
+    slot.dirty = true;
+    slot.error = null;
+    slot.assessment = null;
+    slot.research = null;
+    renderStrategies();
+    scheduleSave("strategy");
+  };
+  const setStrategyPane = pane => {
+    if (!["catalog", "custom"].includes(pane)) return;
+    state.strategyPane = pane;
+    for (const value of ["catalog", "custom"]) {
+      const selected = value === pane;
+      const tab = $("#strategy-tab-" + value);
+      const panel = $("#strategy-panel-" + value);
+      if (tab) {
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
       }
-      cards = uiNode("div", undefined, "strategy-catalog"); panels[0].append(filters, cards);
-      const ratingPanel = uiNode("details", undefined, "settings-disclosure"); const ratingTitle = uiNode("summary", "Рейтинги: отдельные ограничения");
-      const ratingBody = uiNode("div", undefined, "strategy-rating-grid"); ratingPanel.append(ratingTitle, uiNode("p", "Пределы считаются от всего капитала. Они не обязаны суммироваться до 100%. Нулевой предел запрещает новые покупки этой категории. Разные шкалы не равны по риску.", "field-hint"), ratingBody);
-      help(ratingTitle, "Пределы рейтингов", "Это максимальные доли, а не обязательное количество бумаг и не вероятность возврата денег.", [["Пример", "При капитале 100 000 ₽ предел 5% для BBB разрешает не более 5 000 ₽ в этой категории, если остальные ограничения соблюдены."], ["Что не включается автоматически", "Низкие рейтинги не разрешаются одним положительным лимитом: разрешение повышенного риска остаётся отдельным. Дефолтные бумаги, неизвестные данные и неподдержанные условия не становятся доступными из-за высокого процента."], ["Подключение", "Эти детальные правила сохраняются в рабочей копии. Их применение в серверном подборе требует расширения проверенного финансового контура; текущий экран этого не обещает."]]);
-      for (const level of catalog.rating_levels) {
-        const input = percentControl(ratingBody, level === "NR" ? "Без рейтинга" : level, documentState.rules.rating_caps[level], edited);
-        ratingInputs.set(level, input);
-        workspace.attachHelp(input.parentElement, "Справка: предел " + level, () => ({
-          summary: "Верхняя доля этой категории от всего капитала. Это не обязательная покупка и не оценка вероятности возврата денег.",
-          current: `${input.value}% выбрано в рабочем черновике.`,
-          sections: [["Если увеличить", "Вы расширяете допустимое место для категории, но не улучшаете качество компаний. Данные, связанные компании и остальные ограничения всё равно нужны."],
-            ["Если уменьшить", "Для новых покупок этой категории остаётся меньше места. Ноль запрещает такие покупки по этому правилу. Уже купленные бумаги не продаются."],
-            ["Условный пример", "Предел 5% при капитале 100 000 ₽ соответствует 5 000 ₽. Все выпуски в категории складываются, а не получают по 5 000 ₽ каждый."],
-            ["Источник и применение", "Буквы без агентства, шкалы, даты и объекта рейтинга не подтверждают надёжность. Сейчас детальные категории сохраняются в черновике; они ещё не подключены к действующему подбору."]],
-        }));
-      }
-      panels[3].append(ratingPanel);
-      const rules = uiNode("div", undefined, "settings-card");
-      const floorLabel = uiNode("label", undefined, "check"); yieldFloor = uiNode("input"); yieldFloor.type = "checkbox"; yieldFloor.addEventListener("change", edited); floorLabel.append(yieldFloor, uiNode("span", "Порог: не ниже ключевой ставки")); rules.append(floorLabel);
-      help(floorLabel, "Порог доходности", "Фильтр для сопоставимой рублёвой доходности по денежным потокам, а не для купонного процента.", [["При нехватке данных", "Без подтверждённой ставки, цены и условий доходность неизвестна; покупать ради процента нельзя."], ["Без подходящих бумаг", "Деньги остаются нераспределёнными. Кредитные ограничения не ослабляются автоматически."], ["Применение", "Сейчас правило сохраняется в черновике для расширенного подбора. Сам переключатель не изменяет прежний серверный расчёт."]]);
-      yieldMargin = percentControl(rules, "Надбавка к порогу, п.п.", "0", edited, "п.п.");
-      help(yieldMargin.parentElement, "Надбавка к порогу", "На сколько процентных пунктов выбранный минимум выше подтверждённой ключевой ставки.", [["Пример", "При условной ставке 10% надбавка 2 п.п. означает минимум 12%, а не 10,2%. Это пример, не текущая ставка ЦБ."], ["Влияние", "Более высокий порог обычно оставляет меньше подходящих вариантов. Он не разрешает слабые компании. Правило пока сохраняется для расширенного подбора."]]);
-      wrapperCap = percentControl(rules, "Один фонд: внешний предел", "20", edited);
-      help(wrapperCap.parentElement, "Один фонд", "Верхняя доля одного фонда отдельно от компаний внутри него. Нужен раскрытый состав, чтобы проверить пересечения с прямыми бумагами.", [["Пример", "Два фонда с одинаковыми акциями не становятся независимыми наборами компаний."], ["Важно", "Без данных о составе подтверждать диверсификацию нельзя. Расширенное правило пока относится к сохраняемому черновику."]]);
-      panels[3].append(rules);
-      const checkCard = uiNode("article", undefined, "settings-card");
-      checkCard.append(uiNode("h3", "Что уже проверено, а что неизвестно"), uiNode("p", "Сумма целевых долей — 100%. Черновик сохраняется отдельно от подтверждённых параметров. Ни один подход не имеет доказанной вероятности прибыли 99,9%.", "inline-note"), uiNode("p", "Предыдущие подтверждённые профиль и лимиты остаются действующими. Чтобы применить их изменения, откройте «Капитал» или «Лимиты» и проверьте точные значения перед подтверждением."));
-      help(checkCard.querySelector("h3"), "Границы проверки", "Работоспособность кнопок и сохранения — не подтверждение доходности стратегии.", [["Проверяемые расчёты", "Стоимость лотов, сумма долей, пределы концентрации и результаты явно заданных стрессов можно воспроизвести."], ["Чего пока нет", "Нет проверенной истории всех нужных активов и откалиброванных вероятностей. Именные принципы не становятся оригинальными стратегиями авторов от смены названия."], ["Почему не 99,9%", "Даже много удачных сценариев внутри модели не исключают неизвестные рынку события. Доверительный уровень расчёта — не обещанная вероятность прибыли."]]);
-      buildAccountAssessment(checkCard);
-      const diagnostic = uiNode("div", undefined, "strategy-diagnostic");
-      diagnostic.append(uiNode("h4", "Проверить на условной сумме"), uiNode("p", "Это проверка лота и заданных изменений цен, а не прогноз по вашему счёту.", "field-hint"));
-      const capital = uiNode("select"); capital.setAttribute("aria-label", "Условный капитал, рубли");
-      for (const value of [1000, 3000, 10000, 50000, 100000, 1000000]) { const option = uiNode("option", new Intl.NumberFormat("ru-RU").format(value) + " ₽"); option.value = String(value); capital.append(option); }
-      capital.value = "100000";
-      capital.addEventListener("change", clearDiagnostic);
-      const amountLabel = uiNode("label", "Капитал примера", "strategy-rule-row"); amountLabel.append(capital);
-      const calculate = uiNode("button", "Проверить пример", "button button-secondary"); calculate.type = "button";
-      const result = uiNode("div"); result.setAttribute("role", "status");
-      diagnosticResult = result;
-      calculate.addEventListener("click", async () => {
-        if (!version || busy || dirty || blocked) { result.textContent = "Сначала выберите подход или измените параметр и дождитесь автосохранения черновика."; return; }
-        const epoch = generation; const currentRevision = revision; const expected = version;
-        const calculationRevision = ++diagnosticRevision;
-        calculate.disabled = true; result.textContent = "Считаем условный пример…";
-        try {
-          const data = await request("/api/profile/strategy/feasibility", {method: "POST", body: JSON.stringify({expected_public_id: currentProfileId, expected_version: expected, nav_rub: capital.value, lot_cost_rub: "1000.01"})});
-          if (epoch !== generation || currentRevision !== revision || version !== expected || calculationRevision !== diagnosticRevision) return;
-          if (data?.strategy_version !== expected || data?.public_id !== currentProfileId) throw new Error("strategy_diagnostic_mismatch");
-          result.replaceChildren(uiNode("p", `Условный лот с расходами: 1 000,01 ₽. Предел одной компании: ${data.issuer_budget_rub ?? "не задан"} ₽. Помещается лотов: ${data.lots_per_issuer ?? "неизвестно"}.`));
-          if (data.stress) {
-            for (const row of data.stress.scenarios) result.append(uiNode("p", `${row.title}: ${row.portfolio_change_percent}% (${row.change_rub} ₽).`, "field-hint"));
-            result.append(uiNode("p", data.stress.scope, "field-hint"));
-          }
-          result.append(uiNode("p", data.note || "Не хватает заданного предела компании.", "field-hint"));
-        } catch { if (epoch === generation && currentRevision === revision && calculationRevision === diagnosticRevision) result.textContent = "Расчёт не подтверждён. Проверьте соединение и версию черновика."; }
-        finally { calculate.disabled = false; }
-      });
-      diagnostic.append(amountLabel, calculate, result);
-      checkCard.append(diagnostic);
-      panels[4].append(checkCard);
-      host.addEventListener("input", (event) => { if (event.target.closest("#investment-profile-form, #balancing-policy-form")) edited(); });
-      document.addEventListener("strategy:allocation", edited);
-      for (const name of ["change", "pointerup"]) host.addEventListener(name, () => { if (dirty) schedule(true); });
-      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") void flush(); });
-      window.addEventListener("pagehide", () => { void flush(); });
-      tab(0);
-      renderCards();
+      if (panel) panel.hidden = !selected;
+    }
+  };
+  const customStrategyStatus = () => {
+    const slot = state.strategy;
+    const saved = slot.server?.custom_document;
+    const label = saved ? "Применить мою настройку" : "Создать из текущей";
+    const blocked = detail => ({
+      label,
+      detail,
+      disabled: true
+    });
+    if (!state.user || state.tour || state.locked) return blocked("Войдите в личный аккаунт, чтобы сохранять и применять свою настройку.");
+    const resources = ["strategy", "investmentProfile", "balancingPolicy"];
+    if (resources.some(key => state.loading.has(key))) return blocked("Получаем сохранённую стратегию и личные условия…");
+    if (resources.some(key => state.errors[key]) || !Object.hasOwn(state.data, "strategy")) return blocked("Сохранённые условия не загружены. Повторите загрузку перед применением настройки.");
+    if (slot.error) return blocked("Применение остановлено: " + humanError(slot.error));
+    if (slot.busy || slot.dirty) return blocked("Дождитесь подтверждения текущих изменений перед применением другой настройки.");
+    if (!slot.draft) return blocked("Сначала выберите готовую стратегию: из неё можно создать личную настройку.");
+    if (!saved) return {
+      label,
+      disabled: false,
+      detail: "Отдельная личная настройка ещё не сохранена. Создайте её из текущей стратегии, затем измените параметры в редакторе."
     };
-    const preserveEditor = (name, editor, initial, record, firstLoad) => {
-      const values = editor.readDraft();
-      const changed = editor.isDirty() && (firstLoad || !equal(values, initial));
-      if ((!record && editor.savedVersion() > 0) || changed) {
-        documentState[name] = values;
-        documentState.customized = true;
-      }
-      return changed;
-    };
-    const load = async () => {
-      if (loading || busy || dirty || !currentProfileId || workspace.isDemo() || version !== null) return;
-      loading = true;
-      setButtonState();
-      notify("Загружаем сохранённую стратегию…");
-      showInitialLoad();
-      const epoch = ++generation;
-      clearDiagnostic();
-      const owner = currentProfileId;
-      const firstLoad = documentState === null;
-      const initialProfile = investmentEditor.readDraft();
-      const initialPolicy = balancingEditor.readDraft();
-      const initialAllocation = workspace.readAllocation();
-      try {
-        const data = await request("/api/strategy/catalog", {method: "GET"});
-        if (epoch !== generation || currentProfileId !== owner) return;
-        if (!data || data.presets?.length !== 10 || !data.version) throw new Error("strategy_catalog_invalid");
-        catalog = data;
-        const payload = await request("/api/profile/strategy", {method: "GET"});
-        if (epoch !== generation || currentProfileId !== owner) return;
-        const record = checkRecord(payload);
-        if (!investmentEditor.isReady() || !balancingEditor.isReady()) throw new Error("strategy_unverified_profile");
-        documentState = record?.document || clone(catalog.presets.find((item) => item.id === catalog.default_id).document);
-        const profileChanged = preserveEditor("profile", investmentEditor, initialProfile, record, firstLoad);
-        const policyChanged = preserveEditor("policy", balancingEditor, initialPolicy, record, firstLoad);
-        let preserveEdits = profileChanged || policyChanged;
-        const allocation = workspace.readAllocation();
-        if (!equal(allocation, initialAllocation)) {
-          Object.assign(documentState, allocation, {customized: true}); preserveEdits = true;
-        }
-        customCopy = record?.custom_document || null;
-        version = record?.version ?? 0; unacknowledged = null; blocked = false; dirty = preserveEdits;
-        build(); renderDocument(); renderCards();
-        notify(record ? "Черновик загружен из аккаунта" : "Исходный черновик · ещё не сохранён. Неизвестные личные суммы не подставлены.");
-        if (record && !preserveEdits) workspace.markAllocationSaved();
-        if (preserveEdits) { intent = "edit"; revision += 1; schedule(); }
-      } catch {
-        if (epoch !== generation) return;
-        blocked = true;
-        notify("Не удалось проверить сохранённый черновик. Ранее подтверждённые параметры не заменены.");
-        loading = false;
-        showInitialLoad(true);
-        setButtonState();
-      } finally {
-        if (epoch === generation) { loading = false; setButtonState(); }
-      }
-    };
-    const reconcile = async () => {
-      if (busy || !currentProfileId || !catalog) return;
-      const epoch = generation;
-      try {
-        const payload = await request("/api/profile/strategy", {method: "GET"});
-        if (epoch !== generation) return;
-        const record = checkRecord(payload);
-        const currentMatches = record && equal(record.document, documentState);
-        const sentMatches = record && unacknowledged
-          && record.version === unacknowledged.version + 1
-          && equal(record.document, unacknowledged.document);
-        if (currentMatches || sentMatches) {
-          version = record.version; customCopy = record.custom_document;
-          unacknowledged = null; blocked = false;
-          if (currentMatches) {
-            dirty = false;
-            workspace.markAllocationSaved();
-            notify("Сохранение черновика подтверждено сервером");
-          } else {
-            // The server acknowledged the earlier snapshot. Keep newer edits
-            // visible and send them against that version, never discard them.
-            dirty = true;
-            schedule(true);
-          }
-        } else if ((record?.version ?? 0) === version) {
-          blocked = false; schedule(true);
-        } else {
-          notify("На сервере другая версия. Загрузите её явно; ваши текущие значения пока остались на экране.");
-        }
-      } catch { if (epoch === generation) notify("Сервер пока недоступен. Сохранение не подтверждено."); }
-      if (epoch === generation) setButtonState();
+    const base = selectedPreset(saved)?.title || "сохранённые условия";
+    const current = preservePersonal(clone(saved));
+    current.customized = true;
+    if (same(current, slot.draft)) return {
+      label: "Уже применяется",
+      disabled: true,
+      detail: "Сохранённая личная настройка уже применяется. Основа: «" + base + "». Её параметры доступны в редакторе."
     };
     return {
-      load, acceptExternal: edited,
-      prepare: () => { if (version === null) { showInitialLoad(); setButtonState(); } },
-      hasPending: () => dirty || busy,
-      isCurrentSaved: () => built && version > 0 && !dirty && !busy && !blocked,
-      reset: () => {
-        clearTimers(); clearDiagnostic(); generation += 1;
-        pendingRequests.forEach((controller) => controller.abort()); version = null; dirty = false; busy = false; blocked = false;
-        documentState = null; customCopy = null; unacknowledged = null; revision = 0; loading = false;
-        if (accountRequest) accountRequest.button.disabled = false;
-        accountRequest = null; accountRequested = false; accountResult?.replaceChildren();
-        if (loadNotice) loadNotice.hidden = true;
-        ratingInputs.forEach((input) => { input.value = "0"; });
-        if (yieldFloor) yieldFloor.checked = false;
-        if (yieldMargin) yieldMargin.value = "0";
-        if (wrapperCap) wrapperCap.value = "0";
-        notify("Проверяем аккаунт…"); setButtonState();
-      },
+      label,
+      disabled: false,
+      detail: "Личная настройка сохранена на сервере. Основа: «" + base + "». Применение сделает её текущей стратегией и сохранит ваши актуальные личные суммы."
     };
   };
-
-  const settingsEditors = [investmentEditor, balancingEditor];
-  window.addEventListener("beforeunload", (event) => {
-    if (settingsEditors.some((editor) => editor.hasPending())) {
-      event.preventDefault();
+  const updateCustomStrategyControls = () => {
+    const status = customStrategyStatus();
+    const text = $("#strategy-custom-status");
+    const control = $('[data-action="strategy-apply-custom"]');
+    if (text) text.textContent = status.detail;
+    if (control) {
+      control.disabled = status.disabled;
+      control.textContent = status.label;
     }
-  });
-
-  const showProfile = (profile) => {
-    if (profileContextLost || workspace?.isDemo()) return;
-    publicReference.stop();
-    workspace?.setSession();
-    if (currentProfileId && currentProfileId !== profile.public_id) {
-      pauseProfileContext();
+  };
+  const strategyTabsHTML = () => {
+    const tabs = [["catalog", "Готовые стратегии"], ["custom", "Моя настройка"]];
+    return '<div class="tab-bar" role="tablist" aria-label="Источник стратегии">' + tabs.map(([key, label]) => {
+      const selected = state.strategyPane === key;
+      return `<button type="button" id="strategy-tab-${key}" class="tab-button" role="tab" data-action="strategy-${key}" aria-controls="strategy-panel-${key}" aria-selected="${selected}" tabindex="${selected ? 0 : -1}">${label}</button>`;
+    }).join("") + "</div>";
+  };
+  const policyFields = [["max_instrument_percent", "Один инструмент", "%", 100, "Максимальная доля одного инструмента. Превышение отмечается в проверке состава; это не предел убытка."], ["max_sector_percent", "Один сектор", "%", 100, "Ограничение концентрации в одном секторе. Нужны данные о секторе каждого инструмента."], ["max_issuer_percent", "Один эмитент", "%", 100, "Суммарная доля бумаг одного эмитента. Малый лимит требует большего числа доступных инструментов."], ["max_group_percent", "Одна группа компаний", "%", 100, "Доля связанных эмитентов. Без подтверждённых связей полная проверка невозможна."], ["max_share_percent", "Акции — предел", "%", 100, "Верхняя граница доли акций. Целевые доли задаются отдельно в распределении."], ["max_bond_percent", "Облигации — предел", "%", 100, "Верхняя граница доли облигаций. Кредитный и процентный риски сохраняются."], ["max_etf_percent", "Фонды — предел", "%", 100, "Верхняя граница доли фондов. Состав фонда проверяется отдельно при наличии данных."], ["max_below_grade_percent", "Ниже инвест. уровня", "%", 100, "Максимальная доля бумаг ниже выбранного рейтингового уровня. Рейтинг не является вероятностью прибыли."], ["max_unknown_percent", "Неизвестные данные", "%", 100, "Допустимая доля инструментов с неполной классификацией. Неизвестное не означает безопасное."], ["max_term_months", "Срок инструментов", "мес.", 1200, "Предельный срок до погашения в условиях модели. Для проверки нужна дата погашения."], ["turnover_budget_percent", "Оборот портфеля", "%", 100, "Предел оборота в расчётном предложении. Сам по себе не включает исполнение сделок."], ["max_daily_turnover_participation_percent", "Участие в обороте", "%", 100, "Ограничение доли заявки в наблюдаемом дневном обороте. Требует данных ликвидности."], ["securities_tax_rate_percent", "Личная налоговая ставка", "%", 100, "Укажите ставку, применимую к вашей ситуации. Неизвестная ставка остаётся пустой и не заменяется предположением."], ["uncertainty_haircut_percent", "Запас на неопределённость", "%", 100, "Заданный запас в модели, а не статистически доказанная вероятность или гарантия."], ["credit_loss_haircut_percent", "Запас на кредитный риск", "%", 100, "Пользовательский параметр допустимого сценария потерь. Без данных эмитента это не прогноз дефолта."], ["no_trade_band_percent", "Порог отклонения долей", "%", 100, "Небольшие отклонения можно не перестраивать. Увеличение порога уменьшает частоту расчётной ребалансировки."], ["min_replace_benefit_rub", "Минимальный эффект замены", "₽", 1000000000000, "Минимальный расчётный эффект после заданных затрат. Сохранение значения не создаёт сделки."]];
+  const strategyField = (section, key, title, unit, max, helpText, value) => {
+    const name = `strategy.${section}.${key}`;
+    const step = key.includes("months") || key.includes("days") ? "1" : "any";
+    return `<div class="field"><span>${esc(title)}${help(title, helpText)}</span><div class="touch-input"><button type="button" class="step-button" data-step-field="${name}" data-step-direction="-1" aria-label="Уменьшить: ${esc(title)}">−</button><input name="${name}" aria-label="${esc(title)}, ${esc(unit)}" type="number" inputmode="decimal" min="${key === "horizon_months" ? "1" : "0"}" max="${max}" step="${step}" value="${esc(value ?? "")}" placeholder="Не указано"><button type="button" class="step-button" data-step-field="${name}" data-step-direction="1" aria-label="Увеличить: ${esc(title)}">+</button><small>${esc(unit)}</small></div></div>`;
+  };
+  const strategyEditorHTML = ({
+    document,
+    preset,
+    slot,
+    catalog
+  }) => {
+    let editor;
+    if (!document) editor = `<section class="card">${state.errors.strategy ? dataError("strategy") : empty("Выберите свой подход", "Изучите описание и выберите стратегию. Личные суммы не подставляются из шаблона; их задаёте вы.", renderStrategiesValue(), "Войти", "strategies", true)}<p class="notice">Расчёты проверяют условия на данных, доступных системе. Ни одна стратегия не гарантирует сохранность капитала или прибыль.</p></section>`;else editor = `<div class="strategy-editor"><section class="card"><div class="strategy-heading"><h2>${esc(strategyEditorTitle())}</h2><span class="save-status" data-save-status="strategy"></span></div><p class="strategy-note section-gap">${esc(preset?.description || "Ваши сохранённые параметры стратегии")}</p>${saveErrorHTML("strategy")}<form id="strategy-form"><div class="allocation-sliders">${[["shares", "Акции"], ["bonds", "Облигации"], ["funds", "Фонды"], ["cash", "Деньги"]].map(([key, label], index) => renderStrategiesRangeRow(key, index, label, document)).join("")}</div><p class="data-footnote">Сумма долей всегда 100%. Изменение одной доли пропорционально перераспределяет остальные незакреплённые доли.</p><details><summary class="details-summary">Закрепить или исключить классы</summary><div class="allocation-flags">${[["shares", "Акции"], ["bonds", "Облигации"], ["funds", "Фонды"], ["cash", "Деньги"]].map(([key, label]) => renderStrategiesAllocationFlagRow(label, key, document)).join("")}</div></details><h3 class="panel-title section-gap">Ваши условия</h3><div class="field-grid">${strategyField("profile", "reserve_rub", "Резерв вне инвестиций", "₽", 1000000000000, "Личная сумма, которую следует сохранить доступной. Укажите реальное значение; пустое поле означает неизвестные условия.", document.profile.reserve_rub)}${strategyField("profile", "planned_withdrawal_rub", "Планируемый вывод", "₽", 1000000000000, "Запланированная потребность в деньгах. При смене готовой стратегии эта сумма сохраняется.", document.profile.planned_withdrawal_rub)}${strategyField("profile", "horizon_months", "Инвестиционный горизонт", "мес.", 1200, "Срок вашей цели. Более длинный срок не исключает убытки и потребность в резерве.", document.profile.horizon_months)}${strategyField("profile", "max_drawdown_percent", "Допустимая просадка", "%", 100, "Ваша готовность к временному снижению капитала. Это условие модели, а не гарантированный предел потерь.", document.profile.max_drawdown_percent)}${strategyField("profile", "liquidity_horizon_days", "Срок доступности денег", "дней", 36500, "За сколько дней вам могут понадобиться деньги. Фактическая ликвидность инструментов проверяется отдельно.", document.profile.liquidity_horizon_days)}</div><label class="check-field section-gap"><input type="checkbox" name="strategy.profile.allow_below_investment_grade"${document.profile.allow_below_investment_grade ? " checked" : ""}><span>Рассматривать бумаги ниже инвестиционного рейтинга. Это повышенный кредитный риск.</span></label><details><summary class="details-summary">Ограничения портфеля</summary><div class="field-grid">${policyFields.map(([key, title, unit, max, detail]) => strategyField("policy", key, title, unit, max, detail, document.policy[key])).join("")}</div></details><details><summary class="details-summary">Рейтинги и условия доходности</summary><p class="fine-print">Доли по рейтинговым категориям — верхние границы. Рейтинговый уровень не равен вероятности успеха.</p><div class="field-grid">${select("strategy.rules.yield_floor", "Условие доходности", [["none", "Не задавать"], ["key_rate", "От ключевой ставки"]], document.rules.yield_floor, "Порог применяется только при наличии сопоставимых данных о доходности инструмента и ключевой ставке.")}${strategyField("rules", "yield_margin_pp", "Надбавка к ставке", "п.п.", 100, "Заданная надбавка к официальной ключевой ставке для фильтра условий. Это не обещание доходности.", document.rules.yield_margin_pp)}${strategyField("rules", "fund_wrapper_cap_percent", "Доля одного фонда", "%", 100, "Дополнительный предел для отдельного фонда. Не отменяет проверки его состава.", document.rules.fund_wrapper_cap_percent)}${(catalog.rating_levels || []).map(grade => field({
+      name: renderStrategiesFragment(grade),
+      label: renderStrategiesFragment2(grade),
+      type: "number",
+      min: 0,
+      max: 100,
+      step: "0.01",
+      required: true,
+      value: document.rules.rating_caps[grade]
+    })).join("")}</div></details></form><details><summary class="details-summary">Методика и источники</summary><p class="help-copy">${esc(preset?.risk || "Проверяйте ограничения и полноту данных.")}</p><ul class="source-list">${(catalog.sources || []).filter(item => !preset?.source_ids || preset.source_ids.includes(item.id)).map(item => renderStrategiesLi(item)).join("")}</ul></details></section><section class="card"><div class="card-header"><h2>Проверка на вашем счёте</h2>${button("Рассчитать", "assess-strategy", {
+      primary: true,
+      small: true,
+      extra: state.loading.has("assessment") || slot.busy || slot.dirty ? "disabled" : ""
+    })}</div><p class="fine-print">Проверяются распределение и ограничения по фактическому составу. Расчёт не сохраняет новые условия и не создаёт сделки.</p><div id="strategy-assessment">${renderAssessment()}</div></section><section class="card"><h3 class="panel-title">Исследование на истории</h3><p class="fine-print">Задайте период, расчётный капитал и издержки. Система использует полученные наблюдения и отделяет проверочный период. Вероятность будущей прибыли из результата не выводится.</p>${researchForm()}<div id="strategy-research">${renderResearch()}</div></section></div>`;
+    return editor;
+  };
+  const renderStrategies = () => {
+    const catalog = state.data.catalog;
+    const slot = state.strategy;
+    const document = slot.draft;
+    const preset = selectedPreset();
+    if (!catalog) {
+      $("#view-strategies").innerHTML = `${heading("Стратегии", "Выбор подхода и личные ограничения")}${state.errors.catalog ? dataError("catalog") : U.loading("Получаем каталог стратегий…")}`;
       return;
     }
-    if (currentProfileId !== profile.public_id) {
-      settingsEditors.forEach((editor) => editor.reset());
-    }
-    currentProfileId = profile.public_id;
-    profileId.textContent = profile.public_id;
-    drawerProfileId.textContent = profile.public_id;
-    profilePageId.textContent = profile.public_id;
-    supportProfileId.textContent = profile.public_id;
-    settingsProfileId.textContent = profile.public_id;
-    deleteAccountProfileId.textContent = profile.public_id;
-    settingsProfileRole.textContent = profile.role === "user" ? "Пользователь" : profile.role;
-    authCard.classList.add("hidden");
-    profilePanel.classList.remove("hidden");
-    initializeNavigation();
-    startCbrIndicators();
-    void loadTbankStatus();
-    strategyLibrary?.prepare();
-    void Promise.all([investmentEditor.load(), balancingEditor.load()]).then(() => strategyLibrary?.load());
-    void loadLiveMandate().then(() => {
-      void loadProposals();
-      void loadExecutions({inspectLatest: true});
+    const list = `<aside class="card strategy-catalog"><h2>Выбор стратегии</h2>${strategyTabsHTML()}<div id="strategy-panel-catalog" role="tabpanel" aria-labelledby="strategy-tab-catalog" tabindex="0"${state.strategyPane === "catalog" ? "" : " hidden"}>${catalog.presets.map(item => {
+      const [symbol] = strategyIcons[item.id] || ["strategies"];
+      return renderStrategiesStrategyOption(item, document, symbol);
+    }).join("")}</div><div id="strategy-panel-custom" role="tabpanel" aria-labelledby="strategy-tab-custom" tabindex="0"${state.strategyPane === "custom" ? "" : " hidden"}><output id="strategy-custom-status" class="fine-print"></output><div class="form-actions"><button type="button" class="button secondary" data-action="strategy-apply-custom" disabled>Создать из текущей</button></div></div></aside>`;
+    const editor = strategyEditorHTML({
+      document,
+      preset,
+      slot,
+      catalog
     });
+    $("#view-strategies").innerHTML = `${heading("Стратегии", "Десять подходов. Ваши цели, ограничения и данные.", button("Обновить", "refresh", {
+      small: true
+    }))}<div class="strategy-layout">${list}${editor}</div>${dataError("investmentProfile")}${dataError("balancingPolicy")}`;
+    updateSaveStatus("strategy");
+    U.bindCharts($("#view-strategies"));
   };
-
-  const showAuth = () => {
-    if (profileContextLost || workspace?.isDemo()) return;
-    recoveryGeneration += 1;
-    clearTimeout(recoveryTimer);
-    settingsEditors.forEach((editor) => editor.reset());
-    profilePanel.classList.add("hidden");
-    authCard.classList.remove("hidden");
-    publicReference.start();
+  const documentChanged = () => {
+    const slot = state.strategy;
+    slot.draft.customized = true;
+    slot.intent = "edit";
+    slot.revision += 1;
+    slot.dirty = true;
+    if (slot.error?.status !== 409) slot.error = null;
+    slot.assessment = null;
+    slot.research = null;
+    updateSaveStatus("strategy");
+    scheduleSave("strategy");
   };
-
-  const showCallbackResult = () => {
-    const params = new URLSearchParams(location.search);
-    const authError = params.get("auth_error");
-
-    if (authError === "registration") {
-      showMessage(authMessage, "Регистрация новых аккаунтов сейчас закрыта. Уже зарегистрированный пользователь может войти через свой VK ID.", true);
-    } else if (authError === "capacity") {
-      showMessage(authMessage, "Свободных пользовательских аккаунтов сейчас нет: текущий лимит регистрации уже заполнен.", true);
-    } else if (authError === "provider") {
-      showMessage(authMessage, "VK ID временно недоступен. Попробуйте позже.", true);
-    } else if (authError === "account") {
-      showMessage(authMessage, "Личный аккаунт OmniCIO заблокирован.", true);
-    } else if (authError) {
-      showMessage(authMessage, "Авторизация VK ID не завершена. Попробуйте ещё раз.", true);
-    }
-
-    if (params.has("auth") || params.has("auth_error")) {
-      history.replaceState(null, "", location.pathname);
-    }
-  };
-
-  const loadState = async () => {
-    let config = null;
-    try {
-      config = await api("/api/auth/config", {method: "GET"});
-      renderAccessMode(config);
-    } catch {
-      // A valid existing session can still be rendered if public config is temporarily unavailable.
-    }
-
-    try {
-      const me = await api("/api/me", {method: "GET"});
-      showProfile(me);
-      return;
-    } catch (error) {
-      if (error.status !== 401) {
-        showMessage(authMessage, "Не удалось проверить сессию. Обновите страницу.", true);
-      }
-    }
-
-    if (workspace?.isDemo()) return;
-    showAuth();
-    showCallbackResult();
-
-    if (!config) {
-      vkidLogin.disabled = true;
-      showMessage(authMessage, "Сервис авторизации временно недоступен.", true);
-      return;
-    }
-
-    if (config.auth_provider !== "vkid" || !config.login_enabled) {
-      vkidLogin.disabled = true;
-      showMessage(
-        authMessage,
-        "VK ID ещё не настроен для текущего режима доступа.",
-        true,
-      );
-    }
-  };
-
-  const fullscreenDisplayMode = () => (
-    window.matchMedia("(display-mode: fullscreen)").matches
-  );
-
-  const verifyProfileContext = async () => {
-    if (!currentProfileId || profileContextLost || profileCheckInFlight
-      || document.visibilityState !== "visible") return;
-    profileCheckInFlight = true;
-    try {
-      await api("/api/me", {method: "GET"});
-    } catch {
-      // api pauses on identity changes. A network failure grants no new authority.
-    } finally {
-      profileCheckInFlight = false;
-    }
-  };
-
-  window.addEventListener("focus", () => { void verifyProfileContext(); });
-  window.addEventListener("pageshow", (event) => {
-    if (event.persisted) void verifyProfileContext();
-  });
-  requiredElement("#profile-context-reload").addEventListener("click", () => {
-    if (settingsEditors.some((editor) => editor.hasPending()) && !window.confirm(
-      "Обновить страницу? Несохранённые изменения этой вкладки будут потеряны."
-    )) return;
-    settingsEditors.forEach((editor) => editor.reset());
-    location.reload();
-  });
-
-  const standaloneMode = () => (
-    fullscreenDisplayMode()
-    || window.matchMedia("(display-mode: standalone)").matches
-    || window.navigator.standalone === true
-  );
-
-  const refreshScreenState = () => {
-    if (fullscreenDisplayMode()) {
-      fullscreenStatus.textContent = "Полноэкранный режим приложения";
-      fullscreenToggle.classList.add("hidden");
-      return;
-    }
-    if (document.fullscreenElement) {
-      fullscreenStatus.textContent = "Полноэкранный режим браузера";
-      fullscreenToggle.textContent = "Выйти из полного экрана";
-      fullscreenToggle.classList.remove("hidden");
-      return;
-    }
-    if (document.fullscreenEnabled && document.documentElement.requestFullscreen) {
-      fullscreenStatus.textContent = standaloneMode()
-        ? "Режим приложения · можно скрыть системные панели"
-        : "Браузер · полный экран включается по нажатию";
-      fullscreenToggle.textContent = "На весь экран";
-      fullscreenToggle.classList.remove("hidden");
-      return;
-    }
-    fullscreenStatus.textContent = standaloneMode()
-      ? "Режим приложения"
-      : "Полный экран недоступен в этом браузере";
-    fullscreenToggle.classList.add("hidden");
-  };
-
-  const refreshInstallState = () => {
-    if (standaloneMode()) {
-      installStatus.textContent = fullscreenDisplayMode()
-        ? "Установлено · полноэкранный режим"
-        : "Установлено и открыто как приложение";
-      installButton.classList.add("hidden");
-      refreshScreenState();
-      return;
-    }
-
-    if (deferredInstallPrompt) {
-      installStatus.textContent = "Можно установить без адресной строки браузера";
-      installButton.classList.remove("hidden");
-      refreshScreenState();
-      return;
-    }
-
-    installStatus.textContent = "Открыто в браузере";
-    installButton.classList.add("hidden");
-    refreshScreenState();
-  };
-
-  let searchDebounce;
-  hunterQuery.addEventListener("input", () => {
-    clearTimeout(searchDebounce);
-    hunterRequest?.abort();
-    hunterGeneration += 1;
-    if (hunterQuery.value.trim()) searchDebounce = setTimeout(() => { void searchHunter(); }, 250);
-    else { hunterResults.replaceChildren(); workspace?.setCatalog([]); hunterSearch.disabled = false; hunterSearch.textContent = "Найти"; }
-  });
-
-  hunterForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    void searchHunter();
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") {
-      return;
-    }
-    void verifyProfileContext();
-
-    if (lastPortfolioSnapshot) renderPortfolioDataStatus();
-
-    const cbrStale = Date.now() - lastCbrIndicatorRefreshAt >= 5 * 60 * 1000;
-    if (cbrStale) {
-      void loadCbrIndicators();
-    }
-
-    const portfolioStale = Date.now() - lastPortfolioRefreshAt >= 5 * 60 * 1000;
-    if (tbankIsConnected && portfolioStale && !portfolioRequestInFlight) {
-      void loadPortfolioData({force: true});
-    }
-  });
-
-  portfolioRefresh.addEventListener("click", () => {
-    void loadPortfolioData({force: true});
-  });
-  activityRefresh.addEventListener("click", () => { void loadAccountActivity(); });
-  recoveryRefresh.addEventListener("click", () => { void loadRecoveryStatus(); });
-
-  portfolioRetry.addEventListener("click", () => {
-    void loadPortfolioData({force: true});
-  });
-
-  analysisRefresh.addEventListener("click", () => {
-    void loadAnalysis();
-  });
-
-  const closestButtonTarget = (event, selector) => {
-    const target = event.target;
-    if (!(target instanceof Element)) {
-      return null;
-    }
-    const button = target.closest(selector);
-    return button instanceof HTMLButtonElement ? button : null;
-  };
-
-  portfolioHistoryPeriodButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      if (button.classList.contains("hidden") || !lastPortfolioVisualization) {
-        return;
-      }
-      const days = Number(button.dataset.portfolioHistoryDays);
-      if (!Number.isFinite(days)) {
-        return;
-      }
-      selectedPortfolioHistoryDays = days;
-      renderPortfolioHistory(lastPortfolioVisualization.history || []);
+  const redistribute = (document, key, requested) => {
+    const keys = ["shares", "bonds", "funds", "cash"];
+    const others = keys.filter(item => item !== key && !document.locked.includes(item) && !document.excluded.includes(item));
+    const fixed = keys.filter(item => item !== key && !others.includes(item)).reduce((sum, item) => sum + document.allocation[item], 0);
+    const target = Math.max(0, Math.min(100 - fixed, Math.round(requested)));
+    if (!others.length && target !== 100 - fixed) return false;
+    document.allocation[key] = target;
+    const remaining = 100 - fixed - target;
+    const weight = others.reduce((sum, item) => sum + document.allocation[item], 0);
+    const rows = others.map(item => ({
+      key: item,
+      value: weight ? document.allocation[item] / weight * remaining : remaining / others.length
+    }));
+    rows.forEach(item => {
+      document.allocation[item.key] = Math.floor(item.value);
     });
-  });
-
-  allocationViewButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const view = button.dataset.allocationView;
-      if (!["class", "currency", "sector", "position"].includes(view)) {
-        return;
-      }
-      selectedAllocationView = view;
-      renderPortfolioAllocationView();
+    const rest = 100 - keys.reduce((sum, item) => sum + document.allocation[item], 0);
+    rows.sort((a, b) => b.value % 1 - a.value % 1 || a.key.localeCompare(b.key));
+    rows.slice(0, rest).forEach(item => {
+      document.allocation[item.key] += 1;
     });
-  });
-
-  positionsList.addEventListener("click", (event) => {
-    const button = closestButtonTarget(event, "[data-instrument-detail]");
-    if (button?.dataset.instrumentDetail) {
-      void openInstrumentDetail(button.dataset.instrumentDetail);
-    }
-  });
-
-  positionsTableBody.addEventListener("click", (event) => {
-    const button = closestButtonTarget(event, "[data-instrument-detail]");
-    if (button?.dataset.instrumentDetail) {
-      void openInstrumentDetail(button.dataset.instrumentDetail);
-    }
-  });
-
-  instrumentDetailClose.addEventListener("click", closeInstrumentDetail);
-
-  instrumentMarketModeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const mode = button.dataset.marketMode;
-      if (!["line", "candles"].includes(mode)) {
-        return;
-      }
-      instrumentMarketMode = mode;
-      syncInstrumentMarketControls();
-      if (instrumentMarketPayload) {
-        renderInstrumentMarketChart(instrumentMarketPayload);
-      }
-    });
-  });
-
-  instrumentMarketPeriodButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const period = button.dataset.marketPeriod;
-      if (!["1d", "1w", "1m", "3m", "1y"].includes(period)) {
-        return;
-      }
-      instrumentMarketPeriod = period;
-      syncInstrumentMarketControls();
-      if (instrumentMarketUid) {
-        void loadInstrumentMarket(instrumentMarketUid, {force: true});
-      }
-    });
-  });
-
-  instrumentMarketRetry.addEventListener("click", () => {
-    if (!instrumentMarketUid) {
+    return true;
+  };
+  const updateAllocation = (key, value) => {
+    const slot = state.strategy;
+    if (!slot.draft || slot.error?.status === 409) return;
+    const before = clone(slot.draft.allocation);
+    if (!redistribute(slot.draft, key, value)) {
+      toast("Все остальные доли закреплены. Сначала освободите одну из них.");
       return;
     }
-    stopInstrumentMarketStream({resetRetry: true});
-    void loadInstrumentMarket(instrumentMarketUid, {force: true});
-  });
-
-  instrumentMarketScrubber.addEventListener("input", inspectInstrumentMarketChart);
-  instrumentMarketScrubber.addEventListener("blur", removeInstrumentMarketCrosshair);
-
-  homeAttentionList.addEventListener("click", (event) => {
-    const button = closestButtonTarget(event, "[data-home-attention-view]");
-    const view = button?.dataset.homeAttentionView;
-    if (view && VIEW_TITLES[view]) {
-      navigateToView(view);
+    if (same(before, slot.draft.allocation)) return;
+    for (const input of $$("[data-allocation]")) {
+      input.value = slot.draft.allocation[input.dataset.allocation];
+      input.nextElementSibling.textContent = `${input.value}%`;
     }
-  });
-
-  proposalCreateOptions.addEventListener("click", (event) => {
-    const button = closestButtonTarget(event, "[data-proposal-create]");
-    if (button) {
-      void createProposal(button);
+    documentChanged();
+  };
+  const strategyMethodLabels = {
+    inverse_volatility: "По прошлому риску",
+    short_quality: "Качество и короткий срок",
+    positive_momentum: "Положительная динамика",
+    risk_adjusted_momentum: "Динамика с учётом риска",
+    documented_cashflow: "Подтверждённый денежный поток",
+    quality_value: "Качество бизнеса и стоимость",
+    index_cost: "Состав и расходы индексных фондов",
+    regime_risk: "Баланс экономических режимов",
+    maturity_ladder: "Ступени погашений",
+    covered_dividends: "Покрытие дивидендов",
+    floating_cashflow: "Плавающий купон"
+  };
+  const factLabels = {
+    maturity_date: "дата погашения",
+    maturity_limit: "предельный срок",
+    rating: "кредитный рейтинг",
+    max_unknown_percent: "лимит бумаг без рейтинга",
+    max_below_grade_percent: "лимит низких рейтингов",
+    finite_bond_term: "конечный срок облигации",
+    coupon_formula: "формула купона",
+    roe_percent: "рентабельность капитала",
+    debt_to_ebitda: "долг к EBITDA",
+    free_cashflow_yield_percent: "доходность свободного денежного потока",
+    expense_ratio_percent: "расходы фонда",
+    index_tracking: "следование индексу",
+    fund_constituents: "полный состав фонда",
+    growth_beta: "чувствительность к росту",
+    inflation_beta: "чувствительность к инфляции",
+    factor_observations: "наблюдения факторов",
+    volatility_percent: "волатильность",
+    dividend_yield_percent: "дивидендная доходность",
+    payout_ratio_percent: "доля прибыли на дивиденды",
+    dividend_decision: "решение о дивидендах",
+    dividend_declared: "подтверждение дивидендов",
+    net_yield_percent: "доходность после издержек",
+    key_rate_percent: "ключевая ставка",
+    cashflow_yield_percent: "доходность денежного потока",
+    historical_return_percent: "изменение на истории",
+    training_observations: "наблюдения обучающего периода",
+    max_drawdown_percent: "историческая просадка",
+    price_rub: "рублёвая цена",
+    average_daily_volume_rub: "средний оборот",
+    lot_size: "размер лота",
+    issuer_id: "эмитент",
+    group_id: "группа компаний",
+    sector: "сектор",
+    issuer: "эмитент",
+    group: "группа компаний",
+    floating_coupon: "плавающий купон",
+    coupon_formula_verified: "проверенная формула купона",
+    perpetual: "бессрочная облигация",
+    price_earnings_ttm: "P/E за последние 12 месяцев",
+    market_capitalization: "капитализация"
+  };
+  const selectionReasonLabels = {
+    insufficient_training_history: "Недостаточная история для обучающего периода",
+    price_or_liquidity_missing: "Нет подтверждённых цены или ликвидности",
+    invalid_risk_metric: "Показатель риска не прошёл проверку",
+    historical_drawdown_limit: "Историческая просадка превышает условие",
+    positive_documented_cashflow_required: "Нет положительного подтверждённого денежного потока",
+    floating_coupon_required: "Нужен плавающий купон",
+    return_on_equity_limit: "Рентабельность капитала не отвечает условию",
+    debt_limit: "Долговая нагрузка не отвечает условию",
+    cashflow_value_limit: "Денежный поток не отвечает условию стоимости",
+    fund_too_concentrated: "Недостаточное число эмитентов в фонде",
+    fund_constituent_limit: "Доля эмитента внутри фонда превышает предел",
+    fund_expense_limit: "Расходы фонда превышают предел",
+    insufficient_factor_history: "Недостаточная история экономических факторов",
+    factor_exposure_not_identified: "Влияние экономических факторов не установлено",
+    dividends_not_cashflow_covered: "Дивиденды не подтверждены денежным потоком",
+    payout_limit: "Доля прибыли на дивиденды не отвечает условию",
+    positive_dividend_required: "Нет подтверждённой положительной дивидендной доходности",
+    net_yield_floor: "Доходность после издержек ниже заданного порога",
+    historical_volatility_limit: "Историческая волатильность превышает предел",
+    momentum_not_positive: "Нет положительной динамики на прошлом периоде",
+    unsupported_asset_class: "Класс актива не поддержан этим методом",
+    asset_class_excluded: "Класс актива исключён настройками",
+    non_ruble_series: "Нет сопоставимого рублёвого ряда",
+    lot_size_missing: "Не подтверждён размер лота",
+    maturity_limit: "Срок погашения не отвечает условию",
+    rating_excluded: "Рейтинговая категория исключена",
+    below_grade_not_allowed: "Низкий кредитный рейтинг не разрешён настройками",
+    minimum_rating: "Рейтинг ниже заданного порога",
+    max_unknown_percent_excluded: "Бумаги без рейтинга исключены",
+    max_below_grade_percent_excluded: "Низкие рейтинги исключены",
+    four_economic_regimes: "Не покрыты все четыре экономических режима"
+  };
+  const allocationRequirement = (key, prefix, name) => {
+    const assetClass = {
+      shares: "акций",
+      bonds: "облигаций",
+      funds: "фондов"
+    }[name || key.replace("eligible_", "")];
+    if (key.startsWith("eligible_") && assetClass) return `Нет подходящих ${assetClass} с подтверждёнными данными.`;
+    if (prefix === "unfilled_target" && assetClass) return `Целевая доля ${assetClass} заполнена частично.`;
+    if (prefix === "target_above_class_cap" && assetClass) return `Целевая доля ${assetClass} выше ограничения.`;
+    return null;
+  };
+  const humanRequirement = value => {
+    if (value && typeof value === "object") return humanRequirement(value.title || value.reason || "");
+    const key = String(value || "");
+    if (/[А-Яа-яЁё]/.test(key)) return key;
+    if (selectionReasonLabels[key]) return selectionReasonLabels[key];
+    const [prefix, name] = key.split(":");
+    if (["missing", "unverified"].includes(prefix)) return factLabels[name] ? `Не подтверждены данные: ${factLabels[name]}.` : "Не подтверждён необходимый показатель источника.";
+    const allocationReason = allocationRequirement(key, prefix, name);
+    if (allocationReason) return allocationReason;
+    if (key.startsWith("policy.")) return "Не указан необходимый предел в настройках портфеля.";
+    if (factLabels[key]) return `Не получены данные: ${factLabels[key]}.`;
+    return "Требуется проверка условий и полноты исходных данных.";
+  };
+  const assessmentValue = (value, key = "") => {
+    if (value === null || value === undefined) return "—";
+    if (Array.isArray(value)) return value.map(item => assessmentValue(item)).join(", ") || "—";
+    if (typeof value === "boolean") return value ? "Да" : "Нет";
+    if (typeof value === "object") {
+      const labels = {
+        rub: "Сумма",
+        percent: "Доля",
+        complete: "Полное покрытие",
+        total_rub: "Всего",
+        blocked_rub: "Заблокировано",
+        unblocked_rub: "Доступно",
+        reserve_rub: "Резерв",
+        withdrawals_rub: "Выводы",
+        target_rub: "Денежная доля",
+        allocation_capacity_rub: "Для распределения",
+        shortfall_rub: "Дефицит",
+        executable_budget: "Разрешает сделку",
+        unclassified_rub: "Не классифицировано",
+        shares: "Акции",
+        bonds: "Облигации",
+        funds: "Фонды",
+        cash: "Деньги"
+      };
+      return Object.entries(value).filter(([name]) => labels[name]).map(([name, item]) => `${labels[name]}: ${assessmentValue(item, name)}`).join(" · ") || "Проверено в составе условия";
     }
-  });
-
-  proposalHistory.addEventListener("click", (event) => {
-    const decisionButton = closestButtonTarget(event, "[data-proposal-decision]");
-    if (decisionButton) {
-      void decideProposal(decisionButton);
+    if (key === "rub" || key.endsWith("_rub")) return money(value);
+    if (key === "percent" || key.endsWith("_percent")) return percent(value);
+    return {
+      shares: "Акции",
+      bonds: "Облигации",
+      funds: "Фонды",
+      cash: "Деньги"
+    }[value] || String(value);
+  };
+  const selectionHTML = (selection, title = "Подбор по подтверждённым данным") => {
+    if (!selection) return "";
+    const selected = Array.isArray(selection.selected) ? selection.selected : [];
+    const candidates = Array.isArray(selection.candidates) ? selection.candidates : [];
+    return `<details class="section-gap"><summary class="details-summary">${esc(title)}</summary><p class="fine-print">${esc(strategyMethodLabels[selection.method] || "Проверка условий стратегии")} · ${esc({
+      ready: "Данные для корзины подтверждены",
+      partial: "Частичное покрытие",
+      insufficient_data: "Недостаточно данных"
+    }[selection.status] || "Ожидается проверка")} · на ${esc(date(selection.as_of, true))} МСК</p>${selection.scope ? renderSelectionHTMLNotice(selection) : ""}${selected.length ? renderSelectionHTMLPanelTitle(selected) : '<p class="fine-print">Корзина из подтверждённых инструментов пока не сформирована.</p>'}${infoRows([["Остаток расчётной доли деньгами", percent(selection.cash_weight_percent)]])}${selection.missing_requirements?.length ? renderSelectionHTMLRiskList(selection) : ""}${candidates.length ? renderSelectionHTMLDetailsSummary2(candidates) : ""}</details>`;
+  };
+  const renderAssessment = () => {
+    if (state.loading.has("assessment")) return U.loading("Проверяем данные и ограничения счёта…");
+    if (state.errors.assessment) return `<div class="notice error">${esc(humanError(state.errors.assessment))}</div>`;
+    const result = state.strategy.assessment;
+    if (!result) return empty("Проверка ещё не выполнена", "Сохраните параметры и запустите расчёт. Неполные данные будут отмечены отдельно.", "", "", "analytics");
+    return `${freshness("Состав T-Invest", result.captured_at)}<div class="assessment-metrics section-gap"><div class="assessment-metric"><span>Стоимость счёта</span><strong>${esc(money(result.nav_rub))}</strong></div><div class="assessment-metric"><span>Проверок</span><strong>${result.checks?.length || 0}</strong></div><div class="assessment-metric"><span>Вероятность прибыли</span><strong>—</strong></div></div><p class="fine-print section-gap">${esc(result.probability_reason || "Проверка ограничений не оценивает вероятность будущей прибыли.")}</p>${(result.checks || []).map(item => renderAssessmentDetailsSummary(item)).join("")}${selectionHTML(result.selection)}`;
+  };
+  const assessStrategy = async () => {
+    if (!requireUser() || state.loading.has("assessment")) return;
+    const slot = state.strategy;
+    if (!slot.server || slot.dirty || slot.busy || slot.error) {
+      toast("Сначала дождитесь подтверждённого сохранения стратегии.", true);
       return;
     }
-    const executionButton = closestButtonTarget(event, "[data-execution-start]");
-    if (executionButton) {
-      void startExecution(executionButton);
-    }
-  });
-
-  executionHistory.addEventListener("click", (event) => {
-    const inspect = closestButtonTarget(event, "[data-execution-inspect]");
-    if (inspect) {
-      void loadExecutionDetails(inspect.dataset.executionInspect);
-      return;
-    }
-    const action = closestButtonTarget(event, "[data-execution-action]");
-    if (action) {
-      void mutateExecution(action);
-    }
-  });
-
-  executionRefresh.addEventListener("click", () => {
-    void loadExecutions({inspectLatest: true});
-  });
-
-  liveMandateForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    void saveLiveMandate();
-  });
-
-  liveMandateRevoke.addEventListener("click", () => {
-    void revokeLiveMandate();
-  });
-
-  desktopNavItems.forEach((item) => {
-    item.addEventListener("click", () => navigateToView(item.dataset.view));
-  });
-
-  viewLinks.forEach((item) => {
-    item.addEventListener("click", () => navigateToView(item.dataset.goView));
-  });
-
-  appMenuToggle.addEventListener("click", () => {
-    if (document.body.classList.contains("drawer-open")) {
-      closeDrawer();
-    } else {
-      openDrawer();
-    }
-  });
-
-  drawerClose.addEventListener("click", closeDrawer);
-  drawerBackdrop.addEventListener("click", closeDrawer);
-  appBack.addEventListener("click", goBack);
-
-  window.addEventListener("resize", () => {
-    if (!mobileDrawerMode()) {
-      closeDrawer();
-    }
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "visible") {
-      stopInstrumentMarketStream();
-      return;
-    }
-    if (
-      currentView === "portfolio"
-      && instrumentMarketUid
-      && !instrumentDetail.classList.contains("hidden")
-    ) {
-      startInstrumentMarketStream();
-    }
-  });
-
-  window.addEventListener("popstate", (event) => {
-    const state = event.state;
-    if (!state?.omnicio || !VIEW_TITLES[state.view]) {
-      return;
-    }
-    navigationDepth = Math.max(0, Number(state.depth) || 0);
-    renderView(state.view, {scroll: false});
-    closeDrawer();
-    window.requestAnimationFrame(() => {
-      window.scrollTo({top: Math.max(0, Number(state.scrollY) || 0), behavior: "auto"});
-    });
-  });
-
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && document.body.classList.contains("drawer-open")) {
-      closeDrawer();
-      appMenuToggle.focus();
-    }
-  });
-
-  themeButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      const preference = button.dataset.themeOption;
-      saveTheme(preference);
-      applyTheme(preference);
-    });
-  });
-
-  systemDark.addEventListener("change", () => {
-    if (storedTheme() === "auto") {
-      applyTheme("auto");
-    }
-  });
-
-  window.addEventListener("beforeinstallprompt", (event) => {
-    event.preventDefault();
-    deferredInstallPrompt = event;
-    refreshInstallState();
-  });
-
-  window.addEventListener("appinstalled", () => {
-    deferredInstallPrompt = null;
-    refreshInstallState();
-  });
-
-  fullscreenToggle.addEventListener("click", async () => {
-    fullscreenToggle.disabled = true;
+    const version = slot.server.version;
+    const revision = slot.revision;
+    const generation = state.generation;
+    state.loading.add("assessment");
+    delete state.errors.assessment;
+    slot.assessment = null;
+    updateSaveStatus("strategy");
+    $("#strategy-assessment").innerHTML = renderAssessment();
     try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      } else if (document.fullscreenEnabled && document.documentElement.requestFullscreen) {
-        try {
-          await document.documentElement.requestFullscreen({navigationUI: "hide"});
-        } catch {
-          await document.documentElement.requestFullscreen();
-        }
-      }
-    } catch {
-      fullscreenStatus.textContent = "Браузер не разрешил полноэкранный режим";
-    } finally {
-      fullscreenToggle.disabled = false;
-      refreshScreenState();
-    }
-  });
-
-  document.addEventListener("fullscreenchange", refreshScreenState);
-
-  copySupportDiagnostics.addEventListener("click", async () => {
-    const release = window.OMNICIO_RELEASE || {};
-    const diagnostic = [
-      `OmniCIO v${release.version || "—"}`,
-      `build ${release.build || "—"}`,
-      `profile ${currentProfileId || "—"}`,
-      `request ${lastFailedRequestId || "нет ошибок в этой вкладке"}`,
-    ].join("\n");
-
-    try {
-      await navigator.clipboard.writeText(diagnostic);
-      showMessage(supportCopyMessage, "Диагностика скопирована.");
-    } catch {
-      showMessage(supportCopyMessage, "Не удалось скопировать. Укажите ID профиля вручную.", true);
-    }
-  });
-
-  installButton.addEventListener("click", async () => {
-    if (!deferredInstallPrompt) {
-      return;
-    }
-
-    const promptEvent = deferredInstallPrompt;
-    deferredInstallPrompt = null;
-    installButton.disabled = true;
-    try {
-      await promptEvent.prompt();
-      await promptEvent.userChoice;
-    } finally {
-      installButton.disabled = false;
-      refreshInstallState();
-    }
-  });
-
-  vkidForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    showMessage(authMessage, "");
-
-    const payload = {
-      accept_privacy: document.querySelector("#accept-privacy").checked,
-      accept_personal_data: document.querySelector("#accept-pd").checked,
-      accept_terms: document.querySelector("#accept-terms").checked,
-      confirm_age_18: document.querySelector("#confirm-age-18").checked,
-    };
-
-    if (!Object.values(payload).every(Boolean)) {
-      showMessage(authMessage, "Подтвердите все четыре пункта перед входом.", true);
-      return;
-    }
-
-    vkidLogin.disabled = true;
-    try {
-      const result = await api("/api/auth/vkid/start", {
+      const result = await api("/api/profile/strategy/account-assessment", {
         method: "POST",
-        body: JSON.stringify(payload),
+        timeout: 60000,
+        body: {
+          expected_public_id: state.user.public_id,
+          expected_version: version
+        }
       });
-      if (!result.authorize_url) {
-        throw new Error("VK ID URL is missing");
-      }
-      location.assign(result.authorize_url);
+      if (generation !== state.generation || version !== slot.server?.version || revision !== slot.revision) return;
+      slot.assessment = result;
     } catch (error) {
-      vkidLogin.disabled = false;
-      if (error.status === 503) {
-        showMessage(authMessage, "VK ID ещё не настроен или временно недоступен.", true);
-      } else {
-        showMessage(authMessage, "Не удалось начать авторизацию через VK ID.", true);
+      if (generation === state.generation && !isCancelled(error)) state.errors.assessment = error;
+    } finally {
+      if (generation === state.generation) {
+        state.loading.delete("assessment");
+        updateSaveStatus("strategy");
+        const container = $("#strategy-assessment");
+        if (container) container.innerHTML = renderAssessment();
       }
     }
+  };
+  const researchForm = () => `<form id="research-form" class="research-form"><div class="field-grid">${field({
+    name: "from_at",
+    label: "Начало периода",
+    type: "date",
+    required: true
+  })}${field({
+    name: "to_at",
+    label: "Конец периода",
+    type: "date",
+    required: true
+  })}${field({
+    name: "initial_capital_rub",
+    label: "Расчётный капитал, ₽",
+    type: "number",
+    min: ".01",
+    max: 1000000000000,
+    step: ".01",
+    required: true,
+    helpText: "Капитал для исторического исследования. Это явно заданное условие расчёта, а не сумма реальных денег на вашем счёте."
+  })}${field({
+    name: "commission_bps",
+    label: "Комиссия, базисных пунктов",
+    type: "number",
+    min: "0",
+    max: "10000",
+    step: ".01",
+    required: true,
+    helpText: "Один базисный пункт равен 0,01%. Укажите фактические или исследуемые издержки; значение не подставляется автоматически."
+  })}${field({
+    name: "slippage_bps",
+    label: "Проскальзывание, базисных пунктов",
+    type: "number",
+    min: "0",
+    max: "10000",
+    step: ".01",
+    required: true,
+    helpText: "Дополнительная разница между наблюдаемой и расчётной ценой. Реальное проскальзывание заранее неизвестно."
+  })}</div><div class="form-actions"><button class="button primary" type="submit"${state.strategy.dirty || state.strategy.busy || state.loading.has("research") ? " disabled" : ""}>Проверить на истории</button></div><output id="research-message" class="form-message"></output></form>`;
+  const researchMetricLabels = {
+    net_return_percent: "Результат за период",
+    max_drawdown_percent: "Максимальная просадка",
+    annualized_volatility_percent: "Волатильность, годовая",
+    var_95_percent: "VaR, уровень 95%",
+    expected_shortfall_95_percent: "Средние потери в хвосте 5%",
+    transaction_costs_rub: "Заданные издержки",
+    trades: "Расчётных сделок",
+    ending_cash_rub: "Остаток средств"
+  };
+  const renderResearch = () => {
+    if (state.loading.has("research")) return U.loading("Исследуем доступную историю…");
+    const result = state.strategy.research;
+    if (!result) return "";
+    if (result.status !== "computed") return `<div class="notice warning"><strong>Недостаточно данных для исследования</strong><p>${esc(result.reason || (result.limitations || []).join(" ") || "Не получена достаточная история цен и доступности инструментов.")}</p></div>`;
+    return `<div class="section-gap"><h3 class="panel-title">${esc(result.return_label || "Результат исторического исследования")}</h3>${result.complete_strategy_coverage === false ? renderResearchNotice(result) : ""}<p class="research-period">${esc(date(result.period?.from))} — ${esc(date(result.period?.to))} · ${esc(format(result.period?.observations, 0))} наблюдений</p><div class="assessment-metrics">${Object.entries(researchMetricLabels).map(([key, label]) => renderResearchAssessmentMetric(label, key, result)).join("")}</div>${chart(result.equity_curve, {
+      timeKey: "time",
+      valueKey: "nav_rub",
+      label: "Расчётная стоимость на исторических данных",
+      personal: false
+    })}<p class="notice">${esc(result.probability_reason || "Результат на прошлом периоде не оценивает вероятность будущей прибыли.")}</p>${result.period?.test_from ? renderResearchFinePrint(result) : ""}${result.benchmark ? renderResearchDetailsSummary(result) : ""}${result.missing_requirements?.length ? renderResearchRiskList(result) : ""}${selectionHTML(result.selection, "Корзина по данным обучающего периода")}${selectionHTML(result.current_selection, "Отдельный подбор по сегодняшним данным")}${result.limitations?.length ? renderResearchDetailsSummary2(result) : ""}${result.sources?.length ? renderResearchSourceList(result) : ""}</div>`;
+  };
+  const goalReason = goal => {
+    const source = {
+      portfolio: "Выделенная доля портфеля",
+      income: "Полученные выплаты до налоговых списаний",
+      manual: "Сумма указана вами"
+    }[goal.progress_source] || "Источник прогресса";
+    return number(goal.progress?.amount_rub) === null ? "Источник ещё не предоставил данные для расчёта прогресса." : source;
+  };
+  const renderGoals = () => {
+    const goals = state.data.goals?.items || [];
+    $("#view-goals").innerHTML = `${heading("Цели", "Капитал, сроки и прогресс из выбранного источника", button("Добавить цель", "goal-create", {
+      primary: true
+    }) + button("Обновить", "refresh", {
+      small: true
+    }))}${state.errors.goals ? dataError("goals") : renderGoalsValue6(goals)}<p class="notice section-gap">Доли активных целей проверяет сервер. Прогресс по портфелю зависит от стоимости счёта; выплаты учитываются до отдельных налоговых списаний.</p>`;
+  };
+  const localToday = () => new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
+  const goalDocument = goal => goal ? Object.fromEntries(["title", "kind", "target_amount_rub", "target_date", "start_date", "progress_source", "allocation_percent", "manual_amount_rub", "status"].map(key => [key, goal[key]])) : {
+    title: "",
+    kind: "capital",
+    target_amount_rub: "",
+    target_date: null,
+    start_date: localToday(),
+    progress_source: "portfolio",
+    allocation_percent: "",
+    manual_amount_rub: null,
+    status: "active"
+  };
+  const openGoal = (id = "") => {
+    if (!requireUser()) return;
+    const goal = (state.data.goals?.items || []).find(item => item.id === id);
+    if (id && !goal) {
+      toast("Цель не найдена. Обновите список.", true);
+      return;
+    }
+    const document = goalDocument(goal);
+    openDialog(goal ? "Настройка цели" : "Новая цель", `<form id="goal-form" class="goal-form" data-goal-id="${esc(id)}" data-goal-version="${goal?.version || 0}">${field({
+      name: "title",
+      label: "Название цели",
+      value: document.title,
+      required: true,
+      placeholder: "Что вы хотите осуществить?"
+    })}<div class="field-grid">${select("kind", "Тип цели", [["capital", "Накопить капитал"], ["income", "Получить выплаты"]], document.kind)}${field({
+      name: "target_amount_rub",
+      label: "Целевая сумма, ₽",
+      type: "number",
+      min: ".00000001",
+      max: "1000000000000",
+      step: "any",
+      value: document.target_amount_rub,
+      required: true
+    })}${field({
+      name: "start_date",
+      label: "Начало отсчёта",
+      type: "date",
+      value: document.start_date,
+      required: true
+    })}${field({
+      name: "target_date",
+      label: "Плановая дата",
+      type: "date",
+      value: document.target_date || "",
+      hint: "Можно оставить пустой"
+    })}${select("progress_source", "Источник прогресса", [[document.kind === "income" ? "income" : "portfolio", document.kind === "income" ? "Полученные выплаты" : "Часть портфеля"], ["manual", "Указать вручную"]], document.progress_source)}${select("status", "Состояние", [["active", "Активная"], ["completed", "Завершена"], ["archived", "В архиве"]], document.status)}${field({
+      name: "allocation_percent",
+      label: "Доля источника, %",
+      type: "number",
+      min: ".00000001",
+      max: "100",
+      step: "any",
+      value: document.allocation_percent || "",
+      helpText: "Какая доля портфеля или подтверждённых выплат относится к этой цели. Общая доля активных целей не может превышать 100%."
+    })}${field({
+      name: "manual_amount_rub",
+      label: "Уже накоплено вручную, ₽",
+      type: "number",
+      min: "0",
+      max: "1000000000000",
+      step: "any",
+      value: document.manual_amount_rub ?? "",
+      helpText: "Сумма, которую вы подтверждаете сами. Она не выдаётся за полученную из брокерского API."
+    })}</div><p id="goal-source-note" class="fine-print"></p><div class="form-actions"><button class="button primary" type="submit">${goal ? "Сохранить цель" : "Создать цель"}</button><button class="button secondary" type="button" data-close-dialog>Отмена</button></div><output id="goal-message" class="form-message"></output></form>`);
+    updateGoalFields();
+  };
+  const updateGoalFields = (kindChanged = false) => {
+    const form = $("#goal-form");
+    if (!form) return;
+    const kind = form.elements.kind.value;
+    const source = form.elements.progress_source;
+    if (kindChanged) {
+      const isManual = source.value === "manual";
+      source.innerHTML = `<option value="${kind === "income" ? "income" : "portfolio"}">${kind === "income" ? "Полученные выплаты" : "Часть портфеля"}</option><option value="manual">Указать вручную</option>`;
+      if (isManual) source.value = "manual";
+    }
+    const manual = source.value === "manual";
+    form.elements.allocation_percent.disabled = manual;
+    form.elements.allocation_percent.required = !manual;
+    form.elements.manual_amount_rub.disabled = !manual;
+    form.elements.manual_amount_rub.required = manual;
+    $("#goal-source-note").textContent = manual ? "Вы явно задаёте накопленную сумму. Её можно обновить в любое время." : renderUpdateGoalFieldsValue(kind);
+  };
+  const goalWriteNeedsReadback = error => (error.code || error.message) === "updated_legal_consent_required" || !error.definite && (!error.status || error.status >= 500);
+  const reportGoalSaveError = (form, error) => {
+    if (!isCancelled(error)) {
+      const message = form.querySelector("#goal-message");
+      if (!message) return;
+      showMessage(message, humanError(error), true);
+      if (goalWriteNeedsReadback(error)) {
+        form.dataset.uncertain = "true";
+        message.innerHTML = `${esc(humanError(error))}<p>Результат сохранения не подтверждён. Проверьте список целей перед повтором.</p><div class="form-actions">${button("Проверить список", "goal-reconcile", {
+          small: true
+        })}</div><p data-goal-readback-status></p>`;
+      }
+    }
+  };
+  const mergeGoalList = payload => {
+    if (!Array.isArray(payload?.items)) throw Object.assign(new Error("invalid_server_response"), {
+      status: 502
+    });
+    return {
+      ...payload,
+      items: U.mergeGoals(payload.items, state.data.goals?.items || [], state.deletedGoalIds)
+    };
+  };
+  const replaceGoalList = items => {
+    state.resourceVersions.set("goals", (state.resourceVersions.get("goals") || 0) + 1);
+    state.loading.delete("goals");
+    delete state.errors.goals;
+    state.data.goals = mergeGoalList({
+      items
+    });
+  };
+  const acceptSavedGoal = (saved, form) => {
+    const id = form.dataset.goalId;
+    if (typeof saved?.id !== "string" || !saved.id || id && saved.id !== id || !Number.isInteger(saved.version) || saved.version <= Number(form.dataset.goalVersion)) throw Object.assign(new Error("invalid_server_response"), {
+      status: 502
+    });
+    if (state.deletedGoalIds.has(saved.id)) return false;
+    const current = state.data.goals?.items || [];
+    if (current.some(goal => goal.id === saved.id && goal.version > saved.version)) return false;
+    const items = current.map(goal => goal.id === saved.id ? saved : goal);
+    if (!current.some(goal => goal.id === saved.id)) items.push(saved);
+    replaceGoalList(items);
+    return true;
+  };
+  const renderGoalConsumers = () => {
+    if (["goals", "home"].includes(state.view)) renderCurrent();
+  };
+  const refreshGoalList = async generation => {
+    await loadResource("goals", "/api/goals", {
+      force: true
+    });
+    if (generation === state.generation) renderGoalConsumers();
+  };
+  const reconcileGoals = async control => {
+    if (!requireUser() || control.disabled) return;
+    const generation = state.generation;
+    const dialog = $("#workspace-dialog");
+    const status = control.closest("output")?.querySelector("[data-goal-readback-status]");
+    const label = control.textContent;
+    control.disabled = true;
+    control.textContent = "Проверяем…";
+    showMessage(status, "");
+    try {
+      const payload = await loadResource("goals", "/api/goals", {
+        force: true
+      });
+      if (generation !== state.generation || !control.isConnected || !dialog.open) return;
+      if (!payload) {
+        const error = state.errors.goals;
+        showMessage(status, error ? humanError(error) : "Проверка списка не завершена. Повторите чтение.", true);
+        return;
+      }
+      renderGoalConsumers();
+      dialog.close();
+      navigate("goals");
+    } finally {
+      if (generation === state.generation && control.isConnected) {
+        control.disabled = false;
+        control.textContent = label;
+      }
+    }
+  };
+  const writeGoalDocument = (form, document) => {
+    const id = form.dataset.goalId;
+    const path = id ? `/api/goals/${safeSegment(id)}` : "/api/goals";
+    return api(path, {
+      method: id ? "PUT" : "POST",
+      body: id ? {
+        expected_version: Number(form.dataset.goalVersion),
+        document
+      } : {
+        document
+      }
+    });
+  };
+  const saveGoal = async form => {
+    if (!requireUser() || form.dataset.busy === "true" || form.dataset.uncertain === "true" || !form.reportValidity()) return;
+    const controls = form.elements;
+    const source = controls.progress_source.value;
+    const document = {
+      title: controls.title.value.trim(),
+      kind: controls.kind.value,
+      target_amount_rub: controls.target_amount_rub.value,
+      target_date: controls.target_date.value || null,
+      start_date: controls.start_date.value,
+      progress_source: source,
+      allocation_percent: source === "manual" ? null : controls.allocation_percent.value,
+      manual_amount_rub: source === "manual" ? controls.manual_amount_rub.value : null,
+      status: controls.status.value
+    };
+    if (document.target_date && document.target_date < document.start_date) {
+      showMessage($("#goal-message"), "Плановая дата не может быть раньше начала отсчёта.", true);
+      return;
+    }
+    const submit = form.querySelector("[type=submit]");
+    submit.disabled = true;
+    form.dataset.busy = "true";
+    const generation = state.generation;
+    try {
+      const saved = await writeGoalDocument(form, document);
+      if (generation !== state.generation) return;
+      const accepted = acceptSavedGoal(saved, form);
+      renderGoalConsumers();
+      if (form.isConnected) $("#workspace-dialog").close();
+      if (accepted) toast("Цель сохранена на сервере.");
+      await refreshGoalList(generation);
+    } catch (error) {
+      reportGoalSaveError(form, error);
+    } finally {
+      delete form.dataset.busy;
+      if (form.isConnected && generation === state.generation) submit.disabled = form.dataset.uncertain === "true";
+    }
+  };
+  const confirmGoalDelete = id => {
+    if (!requireUser()) return;
+    const goal = state.data.goals?.items?.find(item => item.id === id);
+    if (!goal) return;
+    openDialog("Удалить цель?", `<p class="help-copy">Цель «${esc(goal.title)}» будет удалена из вашего аккаунта. Данные брокерского счёта это действие не изменяет.</p><div class="form-actions"><button class="button danger" data-goal-delete-confirm="${esc(goal.id)}" data-version="${goal.version}">Удалить цель</button><button class="button secondary" data-close-dialog>Отмена</button></div><output id="goal-delete-message" class="form-message"></output>`);
+  };
+  const reportGoalDeleteError = (control, error) => {
+    if (!control.isConnected || isCancelled(error)) return;
+    const message = $("#goal-delete-message");
+    if (!message) return;
+    showMessage(message, humanError(error), true);
+    control.disabled = !error.definite;
+    if (!error.definite) message.innerHTML = `${esc(humanError(error))}<div class="form-actions">${button("Проверить список", "goal-reconcile", {
+      small: true
+    })}</div><p data-goal-readback-status></p>`;
+  };
+  const renderEvents = () => {
+    const data = state.data.events;
+    const unread = number(data?.unread_count) || 0;
+    $("#view-events").innerHTML = `${heading("События", "Подтверждённые изменения портфеля, выплат и целей", button("Обновить", "refresh", {
+      small: true
+    }) + (unread ? button("Прочитать все", "events-read-all", {
+      small: true
+    }) : ""))}<section class="card"><div class="card-header"><h2>Лента событий</h2><span class="chip">${unread} непрочитанных</span></div>${eventFilters()}${state.errors.events ? dataError("events") : eventsHTML(false)}</section>${data?.alerts_suppressed ? '<p class="notice section-gap">Сейчас действуют тихие часы. События доступны в ленте; уведомления подавлены вашими настройками.</p>' : ""}<div class="notice section-gap">Уведомления показываются внутри OMNICIO. Email, SMS и push-доставка не подключены. Категории, дайджест и тихие часы настраиваются в аккаунте.<div class="form-actions">${button("Настроить уведомления", "settings", {
+      route: true,
+      small: true
+    })}</div></div>${data?.digest?.frequency && data.digest.frequency !== "off" ? renderEventsCard(data) : ""}`;
+  };
+  const markEvents = async ids => {
+    if (!requireUser() || !ids.length) return;
+    const generation = state.generation;
+    try {
+      const result = await api("/api/events/read", {
+        method: "POST",
+        body: {
+          ids,
+          read: true
+        }
+      });
+      if (generation !== state.generation) return;
+      state.data.events = result;
+      updateIdentity();
+      if (["events", "home"].includes(state.view)) renderCurrent();
+    } catch (error) {
+      if (!isCancelled(error)) toast(humanError(error), true);
+    }
+  };
+  const openEvent = id => {
+    const event = state.data.events?.items?.find(item => item.id === id);
+    if (!event) return;
+    const rawTarget = typeof event.target === "string" ? event.target.replace(/^#/, "") : "";
+    const target = rawTarget === "income" ? "analytics" : rawTarget;
+    openDialog(event.title, `<p class="help-copy">${esc(event.detail || "Подтверждённое событие вашего аккаунта.")}</p><p class="fine-print">${esc(date(event.occurred_at, true))} МСК${typeof event.source === "string" ? renderOpenEventFragment(event) : ""}</p>${views.has(target) ? button("Открыть раздел", target, {
+      route: true,
+      primary: true
+    }) : ""}`);
+    if (!event.read_at) void markEvents([id]);
+  };
+  const renderAnalytics = () => {
+    const ws = state.data.workspace;
+    const performance = ws?.performance || {};
+    const income = ws?.income || {};
+    const analysis = state.data.analysis?.analysis;
+    const result = number(performance.investment_result_rub);
+    $("#view-analytics").innerHTML = `${heading("Аналитика", "Результат, денежные потоки и полнота исходных данных", button("Обновить", "refresh", {
+      small: true
+    }))}<div class="metric-grid">${[["Финансовый результат", money(result)], ["Чистые пополнения", money(performance.net_contributions_rub)], ["Полученные выплаты", money(income.total_rub)], ["Налоги", money(performance.taxes_rub)]].map(([label, value]) => renderAnalyticsCard(label, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader("Стоимость по наблюдениям")}${chart(ws?.overview?.history)}${freshness("T-Invest", ws?.overview?.observed_at, ws?.overview?.status)}<p class="data-footnote">Изменение стоимости включает движение денег. Доходность не выводится из разницы крайних точек.</p></section><section class="card">${cardHeader("Из чего складывается результат")}${infoRows([["Стоимость в начале", money(performance.start_nav_rub)], ["Стоимость в конце", money(performance.end_nav_rub)], ["Изменение стоимости", money(performance.nav_change_rub)], ["Чистые пополнения / выводы", money(performance.net_contributions_rub)], ["Результат после внешних потоков", money(performance.investment_result_rub)], ["Комиссии за период", money(performance.fees_rub)], ["Налоговые списания", money(performance.taxes_rub)]])}<p class="data-footnote">${performance.from ? renderAnalyticsFragment(performance) : ""}Метод: изменение стоимости минус внешние денежные потоки. Комиссии и налоги уже отражаются в результате; повторно они не вычитаются.</p></section></div><div class="two-column section-gap"><section class="card">${cardHeader("Выплаты до налоговых списаний")}${income.by_month?.length ? chart(income.by_month.map(item => ({
+      ...item,
+      time: renderAnalyticsFragment2(item)
+    })), {
+      timeKey: "time",
+      valueKey: "total_rub",
+      label: "Подтверждённые выплаты по месяцам",
+      tone: "purple"
+    }) : empty("История выплат пока недоступна", "Для расчёта нужны подтверждённые операции брокера.", "", "", "wallet")}${infoRows([["Купоны", money(income.coupons_rub)], ["Дивиденды", money(income.dividends_rub)], ["Прочие доходы", money(income.other_income_rub)], ["Погашения капитала", money(income.redemptions_rub)]])}<p class="data-footnote">Погашение возвращает капитал и не включается в доход. Налоговые списания учитываются отдельно в финансовом результате.</p></section><section class="card">${cardHeader("Полнота данных и риски")}${analysis ? renderAnalyticsFragment3(analysis) : empty("Анализ ещё не получен", "Проверьте подключение счёта и наличие наблюдений.", "connect", "Проверить подключение", "analytics")}${dataError("analysis")}</section></div>${performance.status === "unavailable" ? '<p class="notice section-gap">Финансовый результат не рассчитан: недостаточно подтверждённых снимков или истории денежных потоков. Пропуски не заменяются нулями.</p>' : ""}<section class="card section-gap">${cardHeader("Проверка выбранной стратегии", "strategies", "Открыть")}<p class="fine-print">${esc(strategyTitle())}. Подробные ограничения, проверка состава и исследование на истории находятся в разделе стратегий.</p></section>`;
+  };
+  const renderProfile = () => {
+    if (state.tour) {
+      $("#view-profile").innerHTML = `${heading("Профиль")}<section class="card">${empty("Ваш личный аккаунт", "Войдите через T-ID или VK ID, чтобы настроить профиль.", "login", "Войти", "profile", true)}</section>`;
+      return;
+    }
+    const prefs = state.prefs.draft;
+    const user = state.user;
+    $("#view-profile").innerHTML = `${heading("Профиль", "Личные настройки и доступ к аккаунту")}<div class="settings-layout"><section class="card"><div class="profile-summary"><span class="avatar">${esc((prefs?.display_name || "О").slice(0, 1).toUpperCase())}</span><div><h2>${esc(prefs?.display_name || "Мой профиль")}</h2><p>Профиль ${esc(user?.public_id)} · ${user?.role === "owner" ? "Владелец" : "Пользователь"}</p></div></div>${prefs ? renderProfileForm(prefs) : renderProfileFragment()}<div class="form-actions"><button class="button secondary" data-action="copy-profile">${icon("copy", true)}Копировать ID профиля</button></div></section><section class="card"><h2 class="panel-title">Способы входа</h2>${infoRows([["T-ID", state.data.identities?.providers?.includes("tid") ? "Привязан к аккаунту" : renderProfileValue()], ["VK ID", state.data.identities?.providers?.includes("vkid") ? "Привязан к аккаунту" : renderProfileValue2()], ["Подключённый счёт", state.data.connection?.account_name || "Нет подключения"]])}<p class="fine-print section-gap">Вход подтверждает личный аккаунт OMNICIO. Подключение брокерских данных настраивается отдельно.</p><div class="form-actions">${button("Подключить способ входа", "link-identity", {
+      small: true
+    })}${button("Настройки", "settings", {
+      route: true,
+      small: true
+    })}${button("Выйти", "logout", {
+      small: true
+    })}</div></section><section class="card wide"><h2 class="panel-title">Удаление аккаунта</h2><p class="fine-print">Удаляются профиль OMNICIO, его настройки, сессии и сохранённое подключение. Операция требует подтверждения ID вашего профиля.</p><button class="button danger" data-action="delete-account">Удалить аккаунт</button></section></div>`;
+    restoreEditableForm("profile-form");
+    updateSaveStatus("prefs");
+  };
+  const executionActive = execution => ["created", "running", "reconciling"].includes(execution?.status) && ["live", "sandbox"].includes(execution?.mode);
+  const activeExecutionExists = () => Boolean(state.data.executions?.has_active_live_execution || state.data.executions?.executions?.some(executionActive));
+  const disconnectBlocked = () => !state.data.executions || Boolean(state.errors.executions) || activeExecutionExists();
+  const executionStatus = status => ({
+    created: "План создан",
+    running: "Есть незавершённые шаги",
+    reconciling: "Требуется сверка",
+    succeeded: "Завершено",
+    cancelled: "Отменено",
+    failed: "Ошибка",
+    pending: "Не отправлено",
+    submitting: "Результат отправки уточняется",
+    submitted: "Заявка у брокера",
+    partially_filled: "Исполнена частично",
+    filled: "Исполнена",
+    cancel_requested: "Отмена запрошена",
+    rejected: "Отклонена",
+    shadow_filled: "Запись исторического расчёта"
+  })[status] || "Статус требует проверки";
+  const executionMode = mode => ({
+    live: "Основной счёт",
+    sandbox: "Тестовый счёт",
+    shadow: "История расчёта"
+  })[mode] || "Среда не подтверждена";
+  const executionRow = execution => `<button class="recovery-row" data-action="recovery-open" data-recovery-id="${esc(execution.id)}"><span><strong>${esc(executionStatus(execution.status))}</strong><small>${esc(executionMode(execution.mode))} · ${esc(date(execution.updated_at, true))} МСК</small><small>Счёт ${esc(execution.account_id)}</small></span>${icon("arrow", true)}</button>`;
+  const mandateHTML = mandate => {
+    if (!mandate) return "";
+    return `<div class="notice section-gap"><strong>Ранее выданное разрешение</strong>${infoRows([["Счёт", mandate.account_id], ["Действует до", date(mandate.expires_at, true) + " МСК"], ["Лимит заявки", money(mandate.max_order_notional_rub)], ["Дневной лимит", money(mandate.max_daily_notional_rub)]])}<div class="form-actions">${button("Отозвать разрешение", "mandate-revoke", {
+      small: true
+    })}</div></div>`;
+  };
+  const recoveryPanelHTML = () => {
+    if (state.errors.executions) return `<section class="card section-gap"><h2 class="panel-title">Ранее начатые исполнения</h2>${dataError("executions", "История исполнений недоступна")}<p class="fine-print">Перед отключением источника требуется проверить незавершённые заявки.</p></section>`;
+    const data = state.data.executions;
+    if (!data) return `<section class="card section-gap">${U.loading("Проверяем ранее начатые исполнения…")}</section>`;
+    if (!data.executions.length && !data.live_mandate) return `<section class="card section-gap"><h2 class="panel-title">Ранее начатые исполнения</h2><p class="fine-print">В сохранённой истории нет исполнений прежней версии и активного разрешения.</p>${button("Проверить историю", "recovery-reload", {
+      small: true
+    })}</section>`;
+    return `<section class="card section-gap"><div class="card-header"><h2>Ранее начатые исполнения</h2>${button("Обновить", "recovery-reload", {
+      small: true
+    })}</div><p class="fine-print">История и восстановление заявок прежней версии. Сверка читает состояние ранее отправленной заявки. Новые заявки из этого раздела не создаются.</p><div class="recovery-list">${data.executions.map(executionRow).join("")}</div>${mandateHTML(data.live_mandate)}<output id="recovery-list-message" class="form-message"></output></section>`;
+  };
+  const repaintRecoveryPanel = () => {
+    const panel = $("#recovery-settings");
+    if (panel) panel.innerHTML = recoveryPanelHTML();
+    const broker = $("#broker-settings");
+    if (broker && state.data.connection?.connected) broker.innerHTML = `<h2 class="panel-title">Подключение T-Invest</h2>${brokerSettingsHTML()}`;
+  };
+  const reloadRecovery = async () => {
+    await loadResource("executions", "/api/portfolio/executions", {
+      force: true
+    });
+    if (state.user && !state.locked) repaintRecoveryPanel();
+  };
+  const nextExecutionLeg = execution => execution.legs?.find(leg => !["filled", "shadow_filled", "cancelled", "rejected", "failed"].includes(leg.status));
+  const recoveryButtons = execution => {
+    if (!executionActive(execution)) return "";
+    const next = nextExecutionLeg(execution);
+    if (!next) return "";
+    const pending = next.status === "pending";
+    const reconcile = pending ? "" : button("Сверить исполнение", "recovery-reconcile", {
+      small: true
+    });
+    return `<div class="form-actions">${reconcile}${button(pending ? "Закрыть неотправленный план" : "Отменить заявку", "recovery-cancel", {
+      small: true
+    })}</div>`;
+  };
+  const executionLegHTML = leg => {
+    const action = {
+      buy: "Покупка",
+      sell: "Продажа"
+    }[leg.action] || "Действие не определено";
+    return `<article class="recovery-leg"><h3>${esc(action)} · ${esc(executionStatus(leg.status))}</h3>${infoRows([["Инструмент", leg.instrument_uid], ["Запрошено лотов", format(leg.lots_requested, 0)], ["Исполнено лотов", format(leg.lots_executed, 0)], ["ID запроса", leg.request_id || "Не получен"], ["ID заявки брокера", leg.provider_order_id || "Не подтверждён"], ["Статус брокера", leg.provider_status || "Не получен"], ["Последняя сверка", leg.last_checked_at ? date(leg.last_checked_at, true) + " МСК" : "Ещё не выполнена"]])}</article>`;
+  };
+  const storedExecutionErrorHTML = code => `<p class="notice error">${esc(recoveryErrorReason(code) || "Ранее получена ошибка. Сверьте состояние заявки перед следующим действием.")}</p>`;
+  const recoveryDetailsHTML = execution => `${infoRows([["Состояние", executionStatus(execution.status)], ["Среда", executionMode(execution.mode)], ["Счёт", execution.account_id], ["ID исполнения", execution.id], ["Обновлено", date(execution.updated_at, true) + " МСК"]])}${execution.error_code ? storedExecutionErrorHTML(execution.error_code) : ""}<div class="recovery-legs">${(execution.legs || []).map(executionLegHTML).join("")}</div>${recoveryButtons(execution)}<div id="recovery-confirmation"></div><output id="recovery-message" class="form-message"></output><p class="fine-print section-gap">Отмена относится к ближайшему незавершённому шагу. Запрошенная отмена подтверждается состоянием брокера; фактически исполненные лоты остаются исполненными.</p>`;
+  const recoveryStatusButton = () => button("Обновить статус", "recovery-detail-reload", {
+    small: true
   });
-
-  tbankForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    showMessage(tbankMessage, "");
-    resetTbankPreview();
-
-    const credential = tbankToken.value.trim();
-    const environment = tbankEnvironmentSelect.value;
-
-    if (credential.length < 20) {
-      showMessage(tbankMessage, "Вставьте полный API-токен T-Invest.", true);
+  const updateRecoveryControls = () => {
+    for (const control of $$('#dialog-content [data-action^="recovery-"]')) {
+      const needsConfirmation = control.dataset.action !== "recovery-detail-reload";
+      control.disabled = state.recovery.busy || state.recovery.uncertain && needsConfirmation;
+    }
+  };
+  const recoveryContext = () => ({
+    id: state.recovery.id,
+    sequence: state.recovery.sequence,
+    generation: state.generation
+  });
+  const currentRecovery = context => context.generation === state.generation && context.sequence === state.recovery.sequence && context.id === state.recovery.id && $("#workspace-dialog").open;
+  const readRecoveryDetails = async context => {
+    try {
+      const result = await api(`/api/portfolio/executions/${safeSegment(context.id)}`);
+      if (!currentRecovery(context)) return;
+      state.recovery.record = result.execution;
+      state.recovery.uncertain = false;
+      $("#dialog-content").innerHTML = recoveryDetailsHTML(result.execution) + recoveryStatusButton();
+      updateRecoveryControls();
+    } catch (error) {
+      if (!currentRecovery(context) || isCancelled(error)) return;
+      $("#dialog-content").innerHTML = `<div class="notice error">${esc(humanError(error))}</div>${button("Повторить загрузку", "recovery-detail-reload", {
+        small: true
+      })}`;
+    }
+  };
+  const reloadRecoveryDetails = () => {
+    if (!state.recovery.id || state.recovery.busy) return;
+    state.recovery.sequence += 1;
+    return readRecoveryDetails(recoveryContext());
+  };
+  const openRecovery = async control => {
+    if (!requireUser()) return;
+    const id = control.dataset.recoveryId;
+    if (!state.data.executions?.executions.some(item => item.id === id)) return;
+    openDialog("Ранее начатое исполнение", U.loading("Читаем сохранённое состояние…"));
+    state.recovery.id = id;
+    await readRecoveryDetails(recoveryContext());
+  };
+  const askRecoveryCancellation = () => {
+    const execution = state.recovery.record;
+    if (!executionActive(execution) || state.recovery.busy || state.recovery.uncertain) return;
+    const pending = nextExecutionLeg(execution)?.status === "pending";
+    const description = pending ? "Неотправленный шаг будет закрыт в сохранённом плане. Брокерская заявка для него не создаётся." : "Сервер запросит отмену существующей заявки. Уже исполненные лоты отменить этим действием нельзя. После запроса проверьте ответ брокера.";
+    $("#recovery-confirmation").innerHTML = `<div class="notice section-gap"><p>${esc(description)}</p><div class="form-actions">${button("Подтвердить отмену", "recovery-cancel-confirm", {
+      small: true
+    })}${button("Продолжить просмотр", "recovery-cancel-dismiss", {
+      small: true
+    })}</div></div>`;
+    $('[data-action="recovery-cancel-confirm"]').focus();
+  };
+  const mutateRecovery = async action => {
+    if (!requireUser() || state.recovery.busy || state.recovery.uncertain || !executionActive(state.recovery.record)) return;
+    const context = recoveryContext();
+    state.recovery.busy = true;
+    for (const control of $$('#dialog-content [data-action^="recovery-"]')) control.disabled = true;
+    try {
+      const result = await api(`/api/portfolio/executions/${safeSegment(context.id)}/${action}`, {
+        method: "POST",
+        body: {}
+      });
+      if (currentRecovery(context)) {
+        state.recovery.record = result.execution;
+        $("#dialog-content").innerHTML = recoveryDetailsHTML(result.execution) + recoveryStatusButton();
+        showMessage($("#recovery-message"), "Состояние получено с сервера: " + executionStatus(result.execution.status));
+      }
+      if (context.generation === state.generation) await reloadRecovery();
+    } catch (error) {
+      if (currentRecovery(context) && !isCancelled(error)) {
+        state.recovery.uncertain = true;
+        showMessage($("#recovery-message"), humanError(error) + " Обновите состояние перед повтором.", true);
+      }
+    } finally {
+      if (context.generation === state.generation) state.recovery.busy = false;
+      if (currentRecovery(context)) updateRecoveryControls();
+    }
+  };
+  const askMandateRevoke = () => {
+    if (!requireUser() || !state.data.executions?.live_mandate) return;
+    openDialog("Отозвать ранее выданное разрешение?", `<p class="help-copy">Разрешение будет отозвано на сервере. Состояние уже отправленных заявок проверяется отдельно в истории исполнений.</p><div class="form-actions">${button("Отозвать разрешение", "mandate-revoke-confirm", {
+      small: true
+    })}<button class="button secondary" data-close-dialog>Отмена</button></div><output id="mandate-message" class="form-message"></output>`);
+  };
+  const revokeMandate = async control => {
+    if (!requireUser() || !state.data.executions?.live_mandate) return;
+    const generation = state.generation;
+    control.disabled = true;
+    try {
+      await api("/api/portfolio/live-execution/mandate", {
+        method: "DELETE",
+        body: {}
+      });
+      if (generation !== state.generation) return;
+      $("#workspace-dialog").close();
+      await reloadRecovery();
+      if (generation === state.generation) toast("Разрешение отозвано на сервере.");
+    } catch (error) {
+      if (generation === state.generation && !isCancelled(error)) {
+        showMessage($("#mandate-message"), humanError(error) + " Проверьте текущее разрешение перед повтором.", true);
+        control.disabled = false;
+      }
+    }
+  };
+  const brokerDisconnectDescription = () => {
+    if (activeExecutionExists()) return "Есть незавершённое исполнение. Сначала проверьте заявки в панели ниже; источник нужен для их сверки и отмены.";
+    if (disconnectBlocked()) return "Перед отключением проверяем ранее начатые исполнения. Если проверка не завершится, обновите историю ниже.";
+    return "Токен хранится на сервере и не возвращается в браузер. Для замены счёта сначала отключите текущее подключение.";
+  };
+  const renderSettings = () => {
+    if (state.tour) {
+      $("#view-settings").innerHTML = `${heading("Настройки")}<section class="card">${empty("Настройки сохраняются в аккаунте", "Для источников данных, уведомлений и личных предпочтений войдите в OMNICIO.", "login", "Войти", "settings", true)}</section>`;
       return;
     }
-    if (!tbankTermsAck.checked) {
-      showMessage(tbankMessage, "Подтвердите правила и риски подключения T-Invest.", true);
+    const prefs = state.prefs.draft;
+    const timezones = [["Europe/Moscow", "Москва · UTC+3"], ["Etc/UTC", "UTC"]];
+    if (prefs?.quiet_hours?.timezone && !timezones.some(([value]) => value === prefs.quiet_hours.timezone)) timezones.push([prefs.quiet_hours.timezone, prefs.quiet_hours.timezone]);
+    const preferences = prefs ? `<form id="preferences-form"><section class="card"><div class="card-header"><h2>Оформление и приватность</h2><span class="save-status" data-save-status="prefs"></span></div><div class="field-grid">${select("theme", "Тема", [["system", "Как на устройстве"], ["dark", "Тёмная"], ["light", "Светлая"]], prefs.theme)}${select("locale", "Формат чисел и дат", [["ru", "Русский · 1 234,56"], ["en", "English · 1,234.56"]], prefs.locale, "Меняется только формат чисел и дат. Язык интерфейса — русский.")}</div>${U.switchControl("mask_balances", "Скрывать личные суммы", "Маскирует баланс, суммы целей и персональные графики на экране.", prefs.mask_balances)}</section><section class="card section-gap"><h2 class="panel-title">Уведомления в кабинете</h2>${U.switchControl("notify_portfolio", "Портфель", "Изменения и состояния подключённого счёта.", prefs.notifications.portfolio)}${U.switchControl("notify_payments", "Выплаты", "Подтверждённые купоны, дивиденды и другие поступления.", prefs.notifications.payments)}${U.switchControl("notify_goals", "Цели", "Прогресс и события ваших целей.", prefs.notifications.goals)}${U.switchControl("notify_system", "Система", "Подключение данных и важные состояния сервиса.", prefs.notifications.system)}<p class="notice">Настройки управляют событиями внутри OMNICIO. Внешняя доставка email, SMS и push пока не подключена.</p><div class="field-grid section-gap">${select("digest_frequency", "Дайджест в кабинете", [["off", "Выключен"], ["daily", "За день"], ["weekly", "За неделю"]], prefs.digest_frequency)}${select("quiet_timezone", "Часовой пояс тихих часов", timezones, prefs.quiet_hours.timezone)}</div>${U.switchControl("quiet_enabled", "Тихие часы", "События остаются в ленте, но не выделяются как новые уведомления в заданное время.", prefs.quiet_hours.enabled)}<div class="field-grid">${field({
+      name: "quiet_start",
+      label: "Начало",
+      type: "time",
+      value: prefs.quiet_hours.start,
+      required: true
+    })}${field({
+      name: "quiet_end",
+      label: "Конец",
+      type: "time",
+      value: prefs.quiet_hours.end,
+      required: true
+    })}</div><div class="form-actions"><button class="button primary" type="submit">Сохранить настройки</button><span class="save-status" data-save-status="prefs"></span></div>${saveErrorHTML("prefs")}</section></form>` : `<section class="card">${renderSettingsValue2()}</section>`;
+    $("#view-settings").innerHTML = `${heading("Настройки", "Источники, оформление и события — под вашим контролем", button("Обновить", "refresh", {
+      small: true
+    }))}<div class="settings-layout"><div>${preferences}</div><div><section class="card" id="broker-settings"><h2 class="panel-title">Подключение T-Invest</h2>${brokerSettingsHTML()}</section><div id="recovery-settings">${recoveryPanelHTML()}</div><section class="card section-gap"><h2 class="panel-title">Персональный ИИ</h2><p class="fine-print">Статус и интерфейс ИИ находятся в отдельном разделе. Переписка текущего сеанса хранится только в памяти вкладки.</p>${button("Открыть ИИ-помощника", "assistant", {
+      route: true,
+      small: true
+    })}</section><section class="card section-gap"><h2 class="panel-title">О приложении</h2>${infoRows([["Версия", $("[data-release-version]").textContent], ["Сборка", window.OMNICIO_RELEASE?.build || "Не получена"], ["Язык интерфейса", "Русский"]])}<div class="form-actions">${button("Условия использования", "legal", {
+      small: true
+    })}${button("Мой профиль", "profile", {
+      route: true,
+      small: true
+    })}</div></section></div></div>`;
+    restoreEditableForm("preferences-form");
+    updateSaveStatus("prefs");
+  };
+  const brokerSettingsHTML = () => {
+    const connection = state.data.connection;
+    if (!connection) return state.errors.connection ? dataError("connection") : U.loading("Проверяем подключение…");
+    if (connection.connected) return `<div class="connection-state"><span class="provider-mark">T</span><div><strong>${esc(connection.account_name || "Счёт T-Invest")}</strong><small>${connection.environment === "sandbox" ? "Тестовая среда" : "Основной счёт"}</small></div><span class="status-dot"></span></div>${infoRows([["ID счёта", connection.account_id], ["Проверен", connection.verified_at ? renderBrokerSettingsHTMLFragment(connection) : "—"]])}<p class="fine-print section-gap">${esc(brokerDisconnectDescription())}</p><div class="form-actions">${button("Обновить данные", "refresh", {
+      small: true
+    })}${button("Отключить", "disconnect-start", {
+      small: true,
+      extra: disconnectBlocked() ? " disabled" : ""
+    })}</div>`;
+    return `<p class="fine-print">Добавьте личный токен API T-Invest. Проверка покажет доступные счета; затем вы явно выберете нужный.</p><form id="broker-form" class="connection-steps"><label class="field"><span>API-токен ${help("API-токен", "Создайте токен в личном кабинете T-Invest для чтения данных. Токен вводится только после входа в OMNICIO, проверяется сервером и хранится зашифрованным. Не передавайте его в переписке.")}</span><input type="password" name="credential" autocomplete="off" minlength="20" maxlength="4096" required placeholder="Вставьте токен" spellcheck="false"></label>${select("environment", "Среда источника", [["prod", "Основной счёт"], ["sandbox", "Тестовая среда"]], "prod")}<label class="check-field"><input type="checkbox" name="accept_personal_terms" required><span>Подтверждаю доступ к своим данным на условиях <a href="/legal/terms.html" target="_blank" rel="noopener">использования сервиса</a>.</span></label><button class="button primary" type="submit">Проверить токен</button><div id="broker-accounts"></div><output id="broker-message" class="form-message"></output></form>`;
+  };
+  const renderAssistant = () => {
+    const status = state.data.assistantStatus;
+    const configured = Boolean(status?.configured);
+    const chat = state.chat.map(item => `<article class="chat-message ${item.role === "user" ? "user" : ""}"><small>${item.role === "user" ? "Вы" : "OMNICIO · ИИ"}</small>${esc(item.content)}${item.sources?.length ? renderAssistantSourceList(item) : ""}</article>`).join("");
+    $("#view-assistant").innerHTML = `${heading("ИИ-помощник", "Объяснения, контекст портфеля и ваши вопросы", button("Проверить подключение", "refresh", {
+      small: true
+    }))}<div class="assistant-layout"><section class="card chat-card"><div class="assistant-status">${icon("assistant")}<strong>Персональный помощник</strong><span class="chip">${configured ? "Подключён" : "Не подключён"}</span>${configured ? renderAssistantFinePrint(status) : ""}</div><div id="chat-messages" class="chat-messages" role="log" aria-label="Переписка с ИИ">${chat || empty(configured ? "Что вы хотите понять?" : "Подключите ИИ-провайдера", configured ? "Задайте вопрос о понятиях или выберите контекст своего портфеля." : "Интерфейс готов к работе. Ответы появятся после настройки настоящего провайдера на сервере.", "", "", "assistant", true)}${state.assistantBusy ? U.loading("Помощник готовит ответ…") : ""}</div><form id="assistant-form"><div class="assistant-context">${select("context", "Контекст вопроса", [["general", "Общий вопрос"], ["portfolio", "Данные моего портфеля"]], "general")}<p class="fine-print">Контекст портфеля отправляется только по вашему выбору. Переписка доступна до перезагрузки вкладки и очищается при выходе.</p></div><div class="chat-compose"><textarea name="message" aria-label="Сообщение помощнику" maxlength="4000" required placeholder="Задайте свой вопрос…"${!configured || state.assistantBusy || state.tour ? " disabled" : ""}></textarea><button class="button primary" type="submit" aria-label="Отправить сообщение"${!configured || state.assistantBusy || state.tour ? " disabled" : ""}>${icon("arrow")}<span>Отправить</span></button></div><output id="assistant-message" class="form-message chat-form-message"></output></form>${dataError("assistantStatus")}</section><aside class="card assistant-side"><h2 class="panel-title">Начать с вопроса</h2><div class="assistant-prompts">${["Как читать структуру моего портфеля?", "Что означает просадка?", "Какие данные нужны для оценки стратегии?"].map(text => renderAssistantButton(text, configured)).join("")}</div><p class="section-gap">ИИ помогает разбираться в данных. Его ответ не подтверждает цену, результат расчёта или исполнение сделки.</p>${state.chat.length ? button("Очистить переписку", "chat-clear", {
+      small: true,
+      extra: renderAssistantValue()
+    }) : ""}</aside></div>`;
+  };
+  const reportAssistantError = (error, generation) => {
+    if (generation !== state.generation || isCancelled(error)) return;
+    state.assistantBusy = false;
+    if (state.view === "assistant") {
+      renderAssistant();
+      showMessage($("#assistant-message"), humanError(error), true);
+    } else toast(humanError(error), true);
+  };
+  const sendAssistant = async form => {
+    if (!requireUser() || state.assistantBusy || !state.data.assistantStatus?.configured) return;
+    const message = form.elements.message.value.trim();
+    if (!message) return;
+    const context = form.elements.context.value;
+    const history = state.chat.slice(-20).map(({
+      role,
+      content
+    }) => ({
+      role,
+      content
+    }));
+    while (history.reduce((sum, item) => sum + item.content.length, 0) > 24000) history.shift();
+    const generation = state.generation;
+    state.chat.push({
+      role: "user",
+      content: message
+    });
+    state.assistantBusy = true;
+    renderAssistant();
+    try {
+      const result = await api("/api/assistant/messages", {
+        method: "POST",
+        timeout: 120000,
+        body: {
+          message,
+          context,
+          history
+        }
+      });
+      if (generation !== state.generation) return;
+      if (typeof result.reply !== "string" || !result.reply.trim()) throw Object.assign(new Error("invalid_server_response"), {
+        status: 502
+      });
+      state.chat.push({
+        role: "assistant",
+        content: result.reply,
+        sources: result.sources || []
+      });
+      state.assistantBusy = false;
+      if (state.view === "assistant") {
+        renderAssistant();
+        $("#chat-messages").scrollTop = $("#chat-messages").scrollHeight;
+      }
+    } catch (error) {
+      reportAssistantError(error, generation);
+    }
+  };
+  const renderCurrent = () => {
+    if (state.locked || !state.user && !state.tour) return;
+    updateIdentity();
+    renderConnectionBanner();
+    const renderers = {
+      home: renderHome,
+      portfolio: renderPortfolio,
+      market: renderMarket,
+      strategies: renderStrategies,
+      assistant: renderAssistant,
+      goals: renderGoals,
+      analytics: renderAnalytics,
+      events: renderEvents,
+      profile: renderProfile,
+      settings: renderSettings,
+      asset: renderAsset,
+      search: renderSearch
+    };
+    renderers[state.view]?.();
+    updateRefreshControls();
+    U.bindCharts($(`#view-${state.view}`));
+  };
+  const renderPublicCatalog = catalog => {
+    const target = $("#public-strategy-list");
+    if (!catalog?.presets) {
+      target.innerHTML = '<p class="muted">Каталог временно не загрузился. Повторите открытие страницы.</p>';
       return;
     }
-
-    tbankCheck.disabled = true;
+    target.innerHTML = catalog.presets.map(item => {
+      const [symbol] = strategyIcons[item.id] || ["strategies"];
+      return `<button class="public-strategy-card" data-public-strategy="${esc(item.id)}">${icon(symbol)}<strong>${esc(item.title)}</strong><small>${esc(strategyTaglines[item.id] || item.description)}</small></button>`;
+    }).join("");
+  };
+  const renderAuthConfig = () => {
+    const config = state.config;
+    const vkEnabled = Boolean(config?.vkid_enabled);
+    const tidEnabled = Boolean(config?.tid_enabled);
+    $("#tid-login").disabled = !tidEnabled;
+    $("#vkid-login").disabled = !vkEnabled;
+    $("#tid-state").textContent = tidEnabled ? "" : "T-ID ещё не подключён на сервере";
+    $("#vkid-state").textContent = vkEnabled ? "" : "VK ID временно недоступен";
+    const registration = !config ? "Не удалось проверить доступность регистрации." : renderAuthConfigValue(config);
+    $("#registration-state").textContent = registration;
+    $("#public-access-status").textContent = registration;
+  };
+  function openAuth(mode = "login", linkCurrent = false) {
+    closeDrawer(false);
+    state.authMode = mode;
+    state.authLink = Boolean(linkCurrent && state.user);
+    for (const dialog of $$("dialog[open]")) if (dialog.id !== "auth-dialog" && dialog.id !== "session-dialog") dialog.close();
+    $("#auth-title").innerHTML = state.authLink ? "Подключите ещё один<br>способ входа" : renderOpenAuthValue(mode);
+    $("#auth-explanation").textContent = state.authLink ? "Подтвердите вторую учётную запись у провайдера. Она будет связана с текущим профилем OMNICIO." : renderOpenAuthValue2(mode);
+    for (const tab of $$("[data-auth-mode]")) tab.setAttribute("aria-selected", String(tab.dataset.authMode === mode));
+    renderAuthConfig();
+    showMessage($("#auth-message"), "");
+    if (!$("#auth-dialog").open) $("#auth-dialog").showModal();
+  }
+  const startAuth = async (form, provider) => {
+    if (!["tid", "vkid"].includes(provider) || !form.reportValidity()) return;
+    const payload = Object.fromEntries(["accept_privacy", "accept_personal_data", "accept_terms", "confirm_age_18"].map(key => [key, form.elements[key].checked]));
+    if (!Object.values(payload).every(Boolean)) return;
+    if (state.authLink) payload.link_current_account = true;
+    $("#tid-login").disabled = true;
+    $("#vkid-login").disabled = true;
+    showMessage($("#auth-message"), "Переходим к подтверждению личности…");
+    try {
+      const result = await api(`/api/auth/${provider}/start`, {
+        method: "POST",
+        body: payload
+      });
+      const url = new URL(result.authorize_url);
+      const host = provider === "tid" ? "id.tbank.ru" : "id.vk.ru";
+      if (url.protocol !== "https:" || url.hostname !== host || url.port && url.port !== "443" || url.username || url.password) throw new Error("invalid_authorization_url");
+      location.assign(url.href);
+    } catch (error) {
+      if (!isCancelled(error)) {
+        renderAuthConfig();
+        showMessage($("#auth-message"), error?.message === "invalid_authorization_url" ? "Адрес авторизации не прошёл проверку. Вход остановлен." : humanError(error), true);
+      }
+    }
+  };
+  const verifySession = async () => {
+    if (!state.user || state.locked || state.verifying || document.visibilityState !== "visible") return;
+    state.verifying = true;
+    try {
+      await api("/api/me");
+    } catch (error) {
+      if (!isCancelled(error) && error?.status !== 401) {
+        const banner = $("#connection-banner");
+        banner.hidden = false;
+        banner.textContent = "Не удалось повторно проверить сессию. Изменения будут подтверждаться сервером.";
+      }
+    } finally {
+      state.verifying = false;
+    }
+  };
+  const callbackMessage = () => {
+    const params = new URLSearchParams(location.search);
+    const code = params.get("auth_error");
+    if (params.has("auth") || code) history.replaceState(history.state, "", `${location.pathname}${location.hash}`);
+    if (!code) return;
+    const labels = {
+      registration: "Регистрация новых аккаунтов сейчас закрыта.",
+      capacity: "Свободных мест для новых аккаунтов пока нет.",
+      provider: "Провайдер входа временно недоступен. Повторите позже.",
+      account: "Этот аккаунт сейчас недоступен.",
+      identity_conflict: "Этот способ входа уже связан с другим аккаунтом.",
+      link_conflict: "Эта учётная запись уже привязана к другому профилю."
+    };
+    openAuth();
+    showMessage($("#auth-message"), labels[code] || "Авторизация не завершена. Попробуйте ещё раз.", true);
+  };
+  const bootstrap = async () => {
+    const generation = state.generation;
+    const results = await Promise.allSettled([api("/api/auth/config", {
+      bootstrap: true
+    }), api("/api/me", {
+      bootstrap: true
+    }), api("/api/strategy/catalog", {
+      bootstrap: true
+    })]);
+    if (generation !== state.generation) return;
+    if (results[0].status === "fulfilled") state.config = results[0].value;
+    renderAuthConfig();
+    if (results[2].status === "fulfilled") {
+      state.data.catalog = results[2].value;
+      renderPublicCatalog(results[2].value);
+    } else renderPublicCatalog(null);
+    if (results[1].status === "fulfilled" && /^\d{9}$/.test(results[1].value.public_id)) {
+      state.locked = false;
+      state.user = results[1].value;
+      showApp();
+    } else if (!state.tour) {
+      $("#public-site").hidden = false;
+      $("#app-shell").hidden = true;
+      if (results[1].status === "rejected" && results[1].reason?.status !== 401) $("#public-access-status").textContent = "Сессию не удалось проверить. Повторите вход после восстановления соединения.";
+    }
+    callbackMessage();
+  };
+  const resetBrokerPreview = () => {
+    state.brokerPreview = null;
+    state.brokerSequence = (state.brokerSequence || 0) + 1;
+    const container = $("#broker-accounts");
+    if (container) container.replaceChildren();
+  };
+  const previewBroker = async form => {
+    if (!requireUser() || !form.reportValidity()) return;
+    resetBrokerPreview();
+    const credential = form.elements.credential.value.trim();
+    const environment = form.elements.environment.value;
+    const sequence = state.brokerSequence;
+    const generation = state.generation;
+    const submit = form.querySelector("[type=submit]");
+    submit.disabled = true;
+    showMessage($("#broker-message"), "Проверяем токен и список счетов…");
     try {
       const result = await api("/api/broker/tbank/accounts", {
         method: "POST",
-        body: JSON.stringify({
+        timeout: 45000,
+        body: {
           credential,
           environment,
-          accept_personal_terms: tbankTermsAck.checked,
-        }),
+          accept_personal_terms: true
+        }
       });
-
-      if (!result.accounts || result.accounts.length === 0) {
-        showMessage(tbankMessage, "У токена нет доступных открытых счетов.", true);
+      if (generation !== state.generation || sequence !== state.brokerSequence || !form.isConnected || credential !== form.elements.credential.value.trim() || environment !== form.elements.environment.value) return;
+      const accounts = Array.isArray(result.accounts) ? result.accounts : [];
+      state.brokerPreview = {
+        credential,
+        environment,
+        accounts
+      };
+      $("#broker-accounts").innerHTML = accounts.length ? `${select("account_id", "Ваш счёт", [["", "Выберите счёт"], ...accounts.map(item => [item.id, renderPreviewBrokerFragment(item)])], "")}<div class="form-actions">${button("Подключить выбранный счёт", "broker-connect", {
+        primary: true
+      })}</div>` : '<p class="notice">У токена нет доступных счетов.</p>';
+      showMessage($("#broker-message"), accounts.length ? "Токен проверен. Выберите счёт для подключения." : "Доступные счета не получены.", !accounts.length);
+    } catch (error) {
+      if (!isCancelled(error)) showMessage($("#broker-message"), humanError(error), true);
+    } finally {
+      if (form.isConnected && generation === state.generation) submit.disabled = false;
+    }
+  };
+  const brokerConnectionInput = () => {
+    const form = $("#broker-form");
+    const preview = state.brokerPreview;
+    if (!form || !preview || preview.credential !== form.elements.credential.value.trim() || preview.environment !== form.elements.environment.value || !form.elements.accept_personal_terms.checked) {
+      resetBrokerPreview();
+      showMessage($("#broker-message"), "Данные изменились. Проверьте токен повторно.", true);
+      return null;
+    }
+    const accountId = form.elements.account_id?.value;
+    if (!preview.accounts.some(item => item.id === accountId)) {
+      showMessage($("#broker-message"), "Выберите один из доступных счетов.", true);
+      return null;
+    }
+    return {
+      form,
+      preview,
+      accountId
+    };
+  };
+  const writeBrokerConnection = async ({
+    preview,
+    accountId
+  }) => {
+    try {
+      return await api("/api/broker/tbank", {
+        method: "PUT",
+        timeout: 45000,
+        body: {
+          credential: preview.credential,
+          environment: preview.environment,
+          account_id: accountId,
+          accept_personal_terms: true
+        }
+      });
+    } catch (error) {
+      if (isCancelled(error) || error.definite || error.status && error.status < 500) throw error;
+      const current = await api("/api/broker/tbank");
+      if (current.connected && current.account_id === accountId && current.environment === preview.environment) return current;
+      throw error;
+    }
+  };
+  const adoptBrokerConnection = async ({
+    form,
+    generation
+  }, connected) => {
+    if (generation !== state.generation) return;
+    form.elements.credential.value = "";
+    resetBrokerPreview();
+    state.data.connection = connected;
+    delete state.data.workspace;
+    delete state.data.visualization;
+    delete state.data.analysis;
+    toast("Счёт подключён. Загружаем реальные данные.");
+    renderSettings();
+    await requestWorkspaceRefresh();
+    if (generation !== state.generation) return;
+    await loadResource("workspace", workspacePath(), {
+      force: true
+    });
+    if (generation === state.generation && state.view === "settings") renderCurrent();
+  };
+  const connectBroker = async control => {
+    if (!requireUser()) return;
+    const input = brokerConnectionInput();
+    if (!input) return;
+    const context = {
+      ...input,
+      generation: state.generation
+    };
+    control.disabled = true;
+    try {
+      await adoptBrokerConnection(context, await writeBrokerConnection(context));
+    } catch (error) {
+      if (!isCancelled(error) && context.generation === state.generation) {
+        showMessage($("#broker-message"), humanError(error), true);
+        control.disabled = false;
+      }
+    }
+  };
+  const clearBrokerState = async () => {
+    const user = state.user;
+    const config = state.config;
+    clearPrivateState();
+    state.user = user;
+    state.config = config;
+    state.locked = false;
+    state.tour = false;
+    showApp();
+  };
+  const hasPending = () => state.prefs.dirty || state.prefs.busy || state.strategy.dirty || state.strategy.busy || hasFormDrafts();
+  const logout = async () => {
+    if (!state.user) {
+      state.tour = false;
+      clearPrivateState();
+      $("#app-shell").hidden = true;
+      $("#public-site").hidden = false;
+      return;
+    }
+    if (hasPending() && !window.confirm("Есть несохранённые изменения. Выйти и закрыть их?")) return;
+    try {
+      await api("/api/auth/logout", {
+        method: "POST"
+      });
+      clearPrivateState();
+      state.tour = false;
+      state.locked = false;
+      $("#app-shell").hidden = true;
+      $("#public-site").hidden = false;
+      history.replaceState(null, "", "/");
+      sessionChannel?.postMessage({
+        type: "session-cleared"
+      });
+      await bootstrap();
+    } catch (error) {
+      if (!isCancelled(error)) toast(humanError(error), true);
+    }
+  };
+  const showAccountDeletion = () => {
+    if (!requireUser()) return;
+    openDialog("Удаление аккаунта", `<p class="help-copy">Для удаления введите ID текущего профиля: <strong>${esc(state.user.public_id)}</strong>.</p><form id="delete-account-form">${field({
+      name: "confirm_public_id",
+      label: "ID вашего профиля",
+      required: true
+    })}<label class="check-field section-gap"><input type="checkbox" name="confirm_irreversible" required><span>Подтверждаю удаление профиля и понимаю, что восстановление через интерфейс недоступно.</span></label><div class="form-actions"><button class="button danger" type="submit">Удалить аккаунт</button><button class="button secondary" type="button" data-close-dialog>Отмена</button></div><output id="delete-account-message" class="form-message"></output></form>`);
+  };
+  const toggleWatch = control => {
+    const uid = control.dataset.watch;
+    if (!uid) return;
+    const updated = editPreferences(document => {
+      const existing = document.watchlist.findIndex(item => item.instrument_uid === uid);
+      if (existing >= 0) document.watchlist.splice(existing, 1);else document.watchlist.push({
+        instrument_uid: uid,
+        ticker: control.dataset.watchTicker || "",
+        name: control.dataset.watchName || uid
+      });
+    });
+    if (updated) {
+      for (const element of $$("[data-watch]")) if (element.dataset.watch === uid) {
+        element.setAttribute("aria-pressed", String(isWatched(uid)));
+        element.setAttribute("aria-label", isWatched(uid) ? "Удалить из избранного" : "Добавить в избранное");
+      }
+      if (state.view === "market") {
+        renderMarket();
+        U.bindCharts($("#view-market"));
+      }
+    }
+  };
+  const updateStrategyField = input => {
+    const slot = state.strategy;
+    if (!slot.draft || slot.error?.status === 409) return;
+    const path = input.name.split(".").slice(1);
+    if (path.length < 2 || path.length > 3 || !["profile", "policy", "rules"].includes(path[0])) return;
+    let parent = slot.draft;
+    for (const key of path.slice(0, -1)) {
+      if (!Object.hasOwn(parent, key) || !parent[key] || typeof parent[key] !== "object") return;
+      parent = parent[key];
+    }
+    const key = path.at(-1);
+    if (!Object.hasOwn(parent, key)) return;
+    const value = input.type === "checkbox" ? input.checked : renderUpdateStrategyFieldValue(input);
+    if (parent[key] === value) return;
+    parent[key] = value;
+    documentChanged();
+  };
+  const stepField = control => {
+    const input = document.getElementsByName(control.dataset.stepField)[0];
+    if (!input || input.disabled) return;
+    const value = input.value;
+    if (value === "") {
+      input.focus();
+      toast("Сначала укажите исходное значение. Неизвестная сумма не заменяется нулём.");
+      return;
+    }
+    if (!/^\d+(\.\d{1,8})?$/.test(value)) {
+      input.focus();
+      return;
+    }
+    const [whole, fraction = ""] = value.split(".");
+    const precise = BigInt(whole) * 100000000n + BigInt(fraction.padEnd(8, "0"));
+    const amount = input.name.endsWith("_rub") ? 1000n : renderStepFieldValue(input);
+    const adjusted = precise + BigInt(control.dataset.stepDirection) * amount * 100000000n;
+    const maximum = BigInt(Math.trunc(Number(input.max || "1000000000000"))) * 100000000n;
+    const minimum = BigInt(input.min || "0") * 100000000n;
+    const bounded = adjusted < minimum ? minimum : renderStepFieldValue2(adjusted, maximum);
+    const decimal = String(bounded % 100000000n).padStart(8, "0").replace(/0{1,8}$/, "");
+    input.value = `${bounded / 100000000n}${decimal ? renderStepFieldFragment(decimal) : ""}`;
+    input.dispatchEvent(new Event("input", {
+      bubbles: true
+    }));
+  };
+  const finishResearch = (generation, submit) => {
+    if (generation === state.generation) {
+      state.loading.delete("research");
+      if (submit.isConnected) submit.disabled = false;
+      const target = $("#strategy-research");
+      if (target) {
+        target.innerHTML = renderResearch();
+        U.bindCharts(target);
+      }
+    }
+  };
+  const runResearch = async form => {
+    if (!requireUser() || state.loading.has("research") || !form.reportValidity()) return;
+    const slot = state.strategy;
+    if (!slot.server || slot.dirty || slot.busy || slot.error) {
+      showMessage($("#research-message"), "Дождитесь сохранения выбранной стратегии.", true);
+      return;
+    }
+    const from = form.elements.from_at.value;
+    const to = form.elements.to_at.value;
+    if (from >= to) {
+      showMessage($("#research-message"), "Конец периода должен быть позже начала.", true);
+      return;
+    }
+    const generation = state.generation;
+    const revision = slot.revision;
+    const version = slot.server.version;
+    state.loading.add("research");
+    slot.research = null;
+    const submit = form.querySelector("[type=submit]");
+    submit.disabled = true;
+    $("#strategy-research").innerHTML = renderResearch();
+    showMessage($("#research-message"), "");
+    try {
+      const result = await api("/api/profile/strategy/research", {
+        method: "POST",
+        timeout: 120000,
+        body: {
+          expected_public_id: state.user.public_id,
+          expected_version: version,
+          from_at: `${from}T00:00:00Z`,
+          to_at: `${to}T23:59:59Z`,
+          initial_capital_rub: form.elements.initial_capital_rub.value,
+          commission_bps: form.elements.commission_bps.value,
+          slippage_bps: form.elements.slippage_bps.value
+        }
+      });
+      if (generation !== state.generation || revision !== slot.revision || slot.server?.version !== version) return;
+      slot.research = result;
+    } catch (error) {
+      if (generation === state.generation && !isCancelled(error)) showMessage($("#research-message"), humanError(error), true);
+    } finally {
+      finishResearch(generation, submit);
+    }
+  };
+  const actions = {
+    login: () => openAuth(),
+    register: () => openAuth("register"),
+    tour: () => showApp(true),
+    "leave-tour": () => {
+      clearPrivateState();
+      state.tour = false;
+      $("#app-shell").hidden = true;
+      $("#public-site").hidden = false;
+      history.replaceState(null, "", "#welcome");
+      void bootstrap();
+    },
+    connect: () => {
+      if (requireUser()) {
+        navigate("settings");
+        window.setTimeout(() => $("#broker-settings")?.scrollIntoView({
+          block: "start",
+          behavior: "smooth"
+        }), 100);
+      }
+    },
+    refresh: async () => {
+      if (hasPending()) {
+        toast("Сначала завершите сохранение или загрузите серверную версию через сообщение об ошибке.", true);
         return;
       }
-
-      pendingTbankCredential = credential;
-      pendingTbankEnvironment = environment;
-      tbankToken.value = "";
-
-      result.accounts.forEach((account) => {
-        const option = document.createElement("option");
-        option.value = account.id;
-        const name = account.name || "Брокерский счёт";
-        option.textContent = `${name} · ••••${String(account.id).slice(-6)}`;
-        tbankAccount.append(option);
-      });
-
-      tbankAccountForm.classList.remove("hidden");
-      showMessage(tbankMessage, "Токен проверен. Выберите счёт для подключения.");
-    } catch (error) {
-      resetTbankPreview();
-      if (error.status === 400) {
-        showMessage(tbankMessage, "T-Invest отклонил токен. Проверьте его и попробуйте снова.", true);
-      } else if (error.status === 503) {
-        showMessage(tbankMessage, "T-Invest API временно недоступен.", true);
-      } else {
-        showMessage(tbankMessage, "Не удалось проверить токен.", true);
+      if (["home", "portfolio", "analytics", "settings"].includes(state.view) && (state.data.connection?.connected || state.data.workspace?.connection?.connected)) await requestWorkspaceRefresh();else await loadForView(state.view, state.route, true);
+    },
+    "workspace-refresh": requestWorkspaceRefresh,
+    "recovery-open": openRecovery,
+    "recovery-reload": reloadRecovery,
+    "recovery-detail-reload": reloadRecoveryDetails,
+    "recovery-reconcile": () => mutateRecovery("reconcile"),
+    "recovery-cancel": askRecoveryCancellation,
+    "recovery-cancel-confirm": () => mutateRecovery("cancel"),
+    "recovery-cancel-dismiss": () => {
+      $("#recovery-confirmation").replaceChildren();
+    },
+    "mandate-revoke": askMandateRevoke,
+    "mandate-revoke-confirm": revokeMandate,
+    language: () => openDialog("Язык интерфейса", '<p class="help-copy">Русский</p><p class="fine-print">Формат чисел и дат можно изменить в настройках личного аккаунта.</p>'),
+    premium: () => openDialog("Возможности вашего плана", `<p class="help-copy">Сейчас доступен личный кабинет OMNICIO: портфель, стратегии, цели, аналитика, события и настройки.</p><p class="notice">Платный тариф и приём оплаты ещё не подключены. Интерфейс не принимает платёжные данные.</p><div class="form-actions">${button("Открыть настройки", "settings", {
+      route: true,
+      primary: true
+    })}</div>`),
+    legal: () => openDialog("Документы", '<ul class="source-list"><li><a href="/legal/terms.html" target="_blank" rel="noopener">Условия использования</a></li><li><a href="/legal/privacy.html" target="_blank" rel="noopener">Политика конфиденциальности</a></li><li><a href="/legal/consent.html" target="_blank" rel="noopener">Обработка персональных данных</a></li></ul>'),
+    "goal-create": () => openGoal(),
+    "goal-reconcile": reconcileGoals,
+    "events-read-all": () => markEvents((state.data.events?.items || []).filter(item => !item.read_at).map(item => item.id)),
+    "strategy-custom": () => setStrategyPane("custom"),
+    "strategy-catalog": () => setStrategyPane("catalog"),
+    "strategy-apply-custom": customizeStrategy,
+    "assess-strategy": assessStrategy,
+    "strategy-reload": () => reloadVersioned("strategy"),
+    "strategy-discard": () => {
+      $("#workspace-dialog").close();
+      return reloadVersioned("strategy", true);
+    },
+    "strategy-retry": () => retryVersioned("strategy"),
+    "prefs-reload": () => reloadVersioned("prefs"),
+    "prefs-discard": () => {
+      $("#workspace-dialog").close();
+      return reloadVersioned("prefs", true);
+    },
+    "prefs-retry": () => retryVersioned("prefs"),
+    "broker-connect": connectBroker,
+    "disconnect-start": () => {
+      if (!requireUser()) return;
+      if (disconnectBlocked()) {
+        toast("Сначала проверьте ранее начатые исполнения в настройках.", true);
+        return;
       }
-    } finally {
-      tbankCheck.disabled = false;
-    }
-  });
-
-  tbankAccountForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    showMessage(tbankMessage, "");
-
-    if (!pendingTbankCredential || !pendingTbankEnvironment || !tbankAccount.value) {
-      showMessage(tbankMessage, "Сначала заново проверьте API-токен.", true);
-      resetTbankPreview();
-      return;
-    }
-
-    tbankConnect.disabled = true;
-    try {
-      const status = await api("/api/broker/tbank", {
-        method: "PUT",
-        body: JSON.stringify({
-          credential: pendingTbankCredential,
-          environment: pendingTbankEnvironment,
-          account_id: tbankAccount.value,
-          accept_personal_terms: tbankTermsAck.checked,
-        }),
-      });
-      renderTbankStatus(status);
-      portfolioLoaded = false;
-      void loadPortfolioData({force: true});
-      void loadLiveMandate();
-      showMessage(tbankMessage, "T-Invest подключён. Токен сохранён в зашифрованном виде.");
-    } catch (error) {
-      resetTbankPreview();
-      tbankForm.classList.remove("hidden");
-      if (error.status === 400) {
-        showMessage(tbankMessage, "Не удалось подключить выбранный счёт. Проверьте токен.", true);
-      } else if (error.status === 409) {
-        showMessage(tbankMessage, error.message === "broker_disconnect_required"
-          ? "Сначала отключите текущий счёт кнопкой «Отключить T-Invest», затем подключите другой. Текущее подключение сохранено."
-          : "Подключение не изменено. Проверьте состояние счёта и незавершённые заявки.", true);
-      } else if (error.status === 503) {
-        showMessage(tbankMessage, "T-Invest API временно недоступен.", true);
-      } else {
-        showMessage(tbankMessage, "Подключение не сохранено.", true);
+      if (hasPending()) {
+        toast("Перед отключением завершите сохранение настроек.", true);
+        return;
       }
-    } finally {
-      tbankConnect.disabled = false;
-    }
-  });
-
-  tbankDisconnect.addEventListener("click", async () => {
-    const confirmed = window.confirm(
-      "Отключить T-Invest? Токен, сохранённая история портфеля и связанные расчёты будут удалены из OmniCIO. Настройки стратегии сохранятся. Активы и счёт у брокера останутся без изменений."
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    tbankDisconnect.disabled = true;
-    try {
-      await api("/api/broker/tbank", {method: "DELETE"});
-      renderTbankStatus({connected: false});
-      portfolioLoaded = false;
-      tbankTermsAck.checked = false;
-      void loadLiveMandate();
-      showMessage(tbankMessage, "T-Invest отключён.");
-    } catch (error) {
-      showMessage(
-        tbankMessage,
-        error.status === 409
-          ? "T-Invest нельзя отключить, пока Live-run не завершён: сначала сверите или отмените реальную заявку."
-          : "Не удалось удалить подключение.",
-        true,
-      );
-    } finally {
-      tbankDisconnect.disabled = false;
-    }
-  });
-
-  const closeDeleteAccountForm = () => {
-    deleteAccountForm.classList.add("hidden");
-    deleteAccountStart.setAttribute("aria-expanded", "false");
-    deleteAccountConfirmation.value = "";
-    deleteAccountIrreversible.checked = false;
-    deleteAccountSubmit.disabled = false;
-    deleteAccountCancel.disabled = false;
-    showMessage(deleteAccountMessage, "");
+      openDialog("Отключить T-Invest?", `<p class="help-copy">Токен подключения будет удалён. Новые данные счёта перестанут поступать. Для восстановления потребуется повторное подключение.</p><div class="form-actions">${button("Отключить источник", "disconnect-confirm", {
+        primary: true
+      })}<button class="button secondary" data-close-dialog>Отмена</button></div><output id="disconnect-message" class="form-message"></output>`);
+    },
+    "disconnect-confirm": async control => {
+      if (disconnectBlocked()) return;
+      control.disabled = true;
+      try {
+        await api("/api/broker/tbank", {
+          method: "DELETE"
+        });
+        await clearBrokerState();
+        toast("Источник отключён.");
+      } catch (error) {
+        if (!isCancelled(error)) {
+          showMessage($("#disconnect-message"), humanError(error), true);
+          control.disabled = false;
+        }
+      }
+    },
+    "asset-refresh": () => state.asset && loadAsset(state.asset.uid, true),
+    "asset-back": () => {
+      if (history.state?.view === "asset" && history.length > 1) history.back();else navigate("market");
+    },
+    "copy-profile": async () => {
+      if (!state.user) return;
+      try {
+        await navigator.clipboard.writeText(state.user.public_id);
+        toast("ID профиля скопирован.");
+      } catch {
+        openDialog("ID профиля", `<p class="help-copy">${esc(state.user.public_id)}</p>`);
+      }
+    },
+    "delete-account": showAccountDeletion,
+    logout,
+    "chat-clear": () => {
+      state.chat = [];
+      renderAssistant();
+    },
+    "link-identity": () => openAuth("login", true)
   };
-
-  deleteAccountStart.addEventListener("click", () => {
-    const opening = deleteAccountForm.classList.contains("hidden");
-    if (!opening) {
-      closeDeleteAccountForm();
+  const clickHandlers = [{
+    matches: ({
+      control
+    }) => control.dataset.closeDialog !== undefined,
+    run: handleClickCloseDialog
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.help,
+    run: handleClickHelp
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.themeChoice,
+    run: handleClickTheme
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.publicOpen,
+    run: handleClickPublicView
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.route,
+    run: handleClickRoute
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.authMode,
+    run: handleClickAuthMode
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.asset,
+    run: handleClickAsset
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.assetTab,
+    run: handleClickAssetTab
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.watch,
+    run: handleClickWatchlist
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.assetFilter,
+    run: handleClickAssetFilter
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.sort,
+    run: handleClickSort
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.period,
+    run: handleClickPeriod
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.eventFilter,
+    run: handleClickEventFilter
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.eventOpen,
+    run: handleClickEventOpen
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.eventRead,
+    run: handleClickEventRead
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.goalEdit,
+    run: handleClickGoalEdit
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.goalDelete,
+    run: handleClickGoalDelete
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.goalDeleteConfirm,
+    run: handleClickGoalDeleteConfirm
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.selectStrategy,
+    run: handleClickStrategy
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.publicStrategy,
+    run: handleClickPublicStrategy
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.stepField,
+    run: handleClickStep
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.chatPrompt,
+    run: handleClickChatPrompt
+  }, {
+    matches: ({
+      control
+    }) => control.dataset.action && actions[control.dataset.action],
+    run: handleClickAction
+  }];
+  document.addEventListener("click", async event => {
+    const control = event.target.closest("button,a[data-route],a[data-public-open]");
+    if (!control || control.disabled) return;
+    try {
+      const context = {
+        control,
+        event
+      };
+      const handler = clickHandlers.find(candidate => candidate.matches(context));
+      if (handler) {
+        await handler.run(context);
+      }
+    } catch (error) {
+      if (!isCancelled(error)) toast(humanError(error), true);
+    }
+  });
+  document.addEventListener("input", event => {
+    const input = event.target;
+    if (captureFormDraft(input)) return;
+    if (input.dataset.allocation) {
+      updateAllocation(input.dataset.allocation, Number(input.value));
       return;
     }
-
-    deleteAccountForm.classList.remove("hidden");
-    deleteAccountStart.setAttribute("aria-expanded", "true");
-    showMessage(deleteAccountMessage, "");
-    deleteAccountConfirmation.focus();
+    if (input.name?.startsWith("strategy.") && input.type !== "checkbox") {
+      updateStrategyField(input);
+      return;
+    }
+    if (input.closest("#broker-form") && ["credential", "environment"].includes(input.name)) resetBrokerPreview();
   });
-
-  deleteAccountCancel.addEventListener("click", () => {
-    closeDeleteAccountForm();
-    deleteAccountStart.focus();
+  const changeHandlers = [{
+    matches: ({
+      input
+    }) => input.name?.startsWith("strategy."),
+    run: handleChangeStrategyField
+  }, {
+    matches: ({
+      input
+    }) => input.dataset.allocationLock || input.dataset.allocationExclude,
+    run: handleChangeAllocationFlag
+  }, {
+    matches: ({
+      input
+    }) => input.closest("#goal-form") && ["kind", "progress_source"].includes(input.name),
+    run: handleChangeGoalSource
+  }, {
+    matches: ({
+      input
+    }) => input.closest("#broker-form") && input.name === "environment",
+    run: handleChangeBrokerEnvironment
+  }, {
+    matches: ({
+      input
+    }) => ["cbr_currency", "cbr_period"].includes(input.name),
+    run: handleChangeMarketReference
+  }];
+  document.addEventListener("change", async event => {
+    const input = event.target;
+    if (captureFormDraft(input)) return;
+    const context = {
+      input,
+      event
+    };
+    const handler = changeHandlers.find(candidate => candidate.matches(context));
+    if (handler) {
+      await handler.run(context);
+    }
   });
-
-  deleteAccountForm.addEventListener("submit", async (event) => {
+  const submitHandlers = [{
+    matches: ({
+      form
+    }) => form.id === "auth-form",
+    run: handleSubmitAuth
+  }, {
+    matches: ({
+      form
+    }) => form.id === "global-search-form",
+    run: handleSubmitSearch
+  }, {
+    matches: ({
+      form
+    }) => form.id === "strategy-form",
+    run: handleSubmitStrategy
+  }, {
+    matches: ({
+      form
+    }) => form.id === "goal-form",
+    run: handleSubmitGoal
+  }, {
+    matches: ({
+      form
+    }) => form.id === "profile-form",
+    run: handleSubmitProfile
+  }, {
+    matches: ({
+      form
+    }) => form.id === "preferences-form",
+    run: handleSubmitPreferences
+  }, {
+    matches: ({
+      form
+    }) => form.id === "broker-form",
+    run: handleSubmitBroker
+  }, {
+    matches: ({
+      form
+    }) => form.id === "assistant-form",
+    run: handleSubmitAssistant
+  }, {
+    matches: ({
+      form
+    }) => form.id === "research-form",
+    run: handleSubmitResearch
+  }, {
+    matches: ({
+      form
+    }) => form.id === "delete-account-form",
+    run: handleSubmitAccountDeletion
+  }];
+  document.addEventListener("submit", async event => {
+    const form = event.target;
+    if (!form.id || !["auth-form", "global-search-form", "strategy-form", "goal-form", "profile-form", "preferences-form", "broker-form", "assistant-form", "research-form", "delete-account-form"].includes(form.id)) return;
     event.preventDefault();
-    showMessage(deleteAccountMessage, "");
-
-    const confirmation = deleteAccountConfirmation.value.trim();
-    if (confirmation !== currentProfileId) {
-      showMessage(
-        deleteAccountMessage,
-        "ID профиля не совпадает. Введите текущий девятизначный ID полностью.",
-        true,
-      );
+    try {
+      const context = {
+        form,
+        event
+      };
+      const handler = submitHandlers.find(candidate => candidate.matches(context));
+      if (handler) {
+        await handler.run(context);
+      }
+    } catch (error) {
+      if (!isCancelled(error)) toast(humanError(error), true);
+    }
+  });
+  $("#app-menu-toggle").addEventListener("click", openDrawer);
+  $("#drawer-close").addEventListener("click", () => closeDrawer());
+  $("#drawer-backdrop").addEventListener("click", () => closeDrawer());
+  $("#notifications-button").addEventListener("click", () => navigate("events"));
+  $("#profile-button").addEventListener("click", () => {
+    const menu = $("#profile-menu");
+    menu.hidden = !menu.hidden;
+    $("#profile-button").setAttribute("aria-expanded", String(!menu.hidden));
+    if (!menu.hidden) $("[role=menuitem]", menu).focus();
+  });
+  $("#public-menu-toggle").addEventListener("click", () => {
+    const nav = $(".public-nav");
+    const expanded = nav.dataset.open !== "true";
+    nav.dataset.open = String(expanded);
+    $("#public-menu-toggle").setAttribute("aria-expanded", String(expanded));
+  });
+  $(".public-nav").addEventListener("click", event => {
+    if (event.target.closest("a")) {
+      delete $(".public-nav").dataset.open;
+      $("#public-menu-toggle").setAttribute("aria-expanded", "false");
+    }
+  });
+  $("#session-reload").addEventListener("click", async () => {
+    $("#session-dialog").close();
+    state.locked = false;
+    await bootstrap();
+  });
+  $("#session-dialog").addEventListener("cancel", event => event.preventDefault());
+  $("#auth-dialog").addEventListener("close", () => {
+    $("#auth-form").reset();
+  });
+  document.addEventListener("pointerdown", event => {
+    if (!event.target.closest("#profile-menu,#profile-button")) {
+      $("#profile-menu").hidden = true;
+      $("#profile-button").setAttribute("aria-expanded", "false");
+    }
+  });
+  document.addEventListener("keydown", event => {
+    handleSearchShortcut({
+      event
+    });
+    handleEscape({
+      event
+    });
+    handleDrawerFocus({
+      event
+    });
+    const tab = event.target.closest('[role="tab"]');
+    handleTabFocus({
+      tab,
+      event
+    });
+    handleProfileFocus({
+      event
+    });
+  });
+  const historyNavigation = () => {
+    if (!state.user && !state.tour) return;
+    const route = parseRoute();
+    if (route.view !== state.view || route.uid !== (state.route.uid || "") || route.q !== (state.route.q || "")) navigate(route.view, route, {
+      fromHistory: true
+    });
+  };
+  window.addEventListener("popstate", historyNavigation);
+  window.addEventListener("hashchange", historyNavigation);
+  window.addEventListener("focus", () => {
+    void verifySession();
+  });
+  window.addEventListener("pageshow", event => {
+    if (event.persisted) {
+      void verifySession();
+      void resumeWorkspaceRefresh();
+    }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void verifySession();
+  });
+  window.addEventListener("beforeunload", event => {
+    if (hasPending()) {
+      event.preventDefault();
+    }
+  });
+  window.addEventListener("pagehide", () => {
+    const pendingGoal = $("#goal-form");
+    if (pendingGoal?.dataset.busy === "true") reportGoalSaveError(pendingGoal, Object.assign(new Error("request_interrupted"), {
+      status: 0
+    }));
+    clearTimeout(state.refresh.timer);
+    state.refresh.sequence += 1;
+    state.refresh.busy = false;
+    for (const controller of state.requests) controller.abort();
+    resetBrokerPreview();
+    const input = $('#broker-form [name="credential"]');
+    if (input) input.value = "";
+  });
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 960 && !$("#drawer-backdrop").hidden) closeDrawer(false);
+    $("#app-sidebar").inert = window.innerWidth <= 960 && $("#drawer-backdrop").hidden;
+  });
+  window.addEventListener("offline", () => toast("Нет соединения. Новые данные и изменения требуют сети.", true));
+  window.addEventListener("online", () => {
+    toast("Соединение восстановлено. Обновите данные, чтобы проверить состояние.");
+    void verifySession();
+  });
+  prefersDark.addEventListener("change", () => {
+    if (themeChoice === "system") applyTheme("system");
+  });
+  let sessionChannel = null;
+  try {
+    sessionChannel = new BroadcastChannel("omnicio-session");
+    sessionChannel.addEventListener("message", event => {
+      if (event.data?.type === "session-cleared" && state.user) lockSession("Сессия завершена в другой вкладке. Данные очищены.");
+    });
+  } catch {/* Server profile preconditions remain authoritative without BroadcastChannel. */}
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      const build = new URL(document.querySelector('script[src*="app.js"]').src).searchParams.get("build") || "";
+      void navigator.serviceWorker.register(`/sw.js?build=${encodeURIComponent(build)}`).catch(() => {/* Network use remains available without offline assets. */});
+    });
+  }
+  if (window.OMNICIO_RELEASE && /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(window.OMNICIO_RELEASE.version)) {
+    for (const element of $$("[data-release-version]")) element.textContent = window.OMNICIO_RELEASE.version;
+    for (const element of $$("[data-app-build]")) element.textContent = window.OMNICIO_RELEASE.build || "";
+  }
+  $("#app-sidebar").inert = window.innerWidth <= 960;
+  applyTheme(themeChoice);
+  renderNav();
+  void bootstrap();
+  function renderStableDocumentValue(value) {
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.keys(value).sort((left, right) => left.localeCompare(right)).map(key => [key, stableDocument(value[key])]));
+    }
+    return value;
+  }
+  function renderHumanErrorValue(error) {
+    if (error?.status === 401) {
+      return "Войдите в личный аккаунт.";
+    }
+    return "Не удалось получить подтверждение сервера. Проверьте соединение и повторите загрузку.";
+  }
+  function renderHumanErrorValue2(error) {
+    if (error?.status === 409) {
+      return "Сохранённое состояние изменилось. Обновите данные перед повтором.";
+    }
+    return renderHumanErrorValue(error);
+  }
+  function renderHumanErrorValue3(error) {
+    if (error?.status === 429) {
+      return "Слишком много запросов. Подождите немного и повторите.";
+    }
+    return renderHumanErrorValue2(error);
+  }
+  function renderApplyThemeValue() {
+    if (prefersDark.matches) {
+      return "dark";
+    }
+    return "light";
+  }
+  function renderNavigateFragment(query) {
+    return `?${query}`;
+  }
+  function renderAdoptWorkspaceValue(payload) {
+    if (payload.connection?.connected) {
+      return "Счёт подключён · Ожидаем первое подтверждённое наблюдение.";
+    }
+    return "Подключите данные счёта, чтобы увидеть свой портфель.";
+  }
+  function renderConnectionBannerValue(connection) {
+    if (connection?.connected) {
+      return "Обновить";
+    }
+    return "Подключить";
+  }
+  function renderConnectionBannerValue2(connection) {
+    if (connection?.connected) {
+      return "workspace-refresh";
+    }
+    return "connect";
+  }
+  function renderFiltersHTMLFilterButton(key, scope, title) {
+    return `<button class="filter-button" data-asset-filter="${key}" data-filter-scope="${scope}" aria-pressed="${state.assetFilter === key}">${title}</button>`;
+  }
+  function renderAssetsTableValue() {
+    if (state.sortDirection > 0) {
+      return "ascending";
+    }
+    return "descending";
+  }
+  function renderAssetsTableFragment() {
+    return ` aria-sort="${renderAssetsTableValue()}"`;
+  }
+  function renderAssetsTableTh(key, label) {
+    return `<th scope="col"${key === state.sort ? renderAssetsTableFragment() : ""}><button data-sort="${key}">${label}${key === state.sort ? icon("down", true) : ""}</button></th>`;
+  }
+  function renderAssetsTableAssetTicker(item) {
+    return `<small class="asset-ticker">${esc(item.ticker || item.instrument_type)}</small>`;
+  }
+  function renderAssetsTableValue2(item) {
+    if (number(item.change) >= 0) {
+      return "positive";
+    }
+    return "negative";
+  }
+  function renderAssetsTableHideOnMobile(item) {
+    return `<td class="hide-on-mobile">${esc(money(item.value_rub))}</td><td>${watchButton(item)}</td>`;
+  }
+  function renderAssetsTableAssetName(item, compact) {
+    return `<tr><td><button class="asset-name" data-asset="${esc(item.uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}${compact ? "" : renderAssetsTableAssetTicker(item)}</span></button></td><td>${esc(money(item.price, 2, item.currency, false))}</td><td class="${number(item.change) === null ? "muted" : renderAssetsTableValue2(item)}" title="${item.change === null ? "Изменение цены за день не получено от источника" : "Изменение цены за день"}">${esc(percent(item.change, true))}</td><td>${esc(percent(item.nav_percent))}</td>${compact ? "" : renderAssetsTableHideOnMobile(item)}</tr>`;
+  }
+  function renderHomeStrategyFragment(document) {
+    return `Просадка: ${esc(percent(document.profile.max_drawdown_percent))}`;
+  }
+  function renderHomeStrategyFragment2(horizon) {
+    return `${esc(format(horizon / 12, 1))} лет`;
+  }
+  function renderEventsHTMLEventTitleButton(item) {
+    return `<button class="event-title-button" data-event-open="${esc(item.id)}">${esc(item.title)}</button>`;
+  }
+  function renderEventsHTMLP(item) {
+    return `<p>${esc(item.detail)}</p>`;
+  }
+  function renderEventsHTMLSpan(item) {
+    return `<span>· ${esc(item.source)}</span>`;
+  }
+  function renderEventsHTMLIconButton(item) {
+    return `<button class="icon-button" data-event-read="${esc(item.id)}" aria-label="Отметить прочитанным">${icon("check", true)}</button>`;
+  }
+  function renderEventsHTMLEventItem(item, compact) {
+    return `<article class="event-item${item.read_at ? "" : " unread"}"><span class="event-icon">${icon({
+      payments: "wallet",
+      goals: "goals",
+      portfolio: "market"
+    }[item.category] || "events", true)}</span><div class="event-item-body"><h3>${item.news ? U.sourceLink(item.url, item.title) : renderEventsHTMLEventTitleButton(item)}</h3>${!compact && item.detail ? renderEventsHTMLP(item) : ""}<div class="event-meta"><span>${esc(date(item.occurred_at, true))}</span>${item.news && state.data.news?.freshness === "cached" ? "<span>· сохранённый ответ источника</span>" : ""}${typeof item.source === "string" ? renderEventsHTMLSpan(item) : ""}${item.read_at ? "" : '<span class="status-dot"></span>'}</div></div>${!compact && !item.read_at ? renderEventsHTMLIconButton(item) : ""}</article>`;
+  }
+  function renderHomeGoalsGoalsPreviewList(goals) {
+    return `<div class="goals-preview-list">${goals.slice(0, 2).map(goalPreview).join("")}</div>`;
+  }
+  function renderHomeValue(result) {
+    if (result >= 0) {
+      return "positive";
+    }
+    return "negative";
+  }
+  function renderHomeDataFootnote(overview) {
+    return `<p class="data-footnote">T-Invest · ${esc(date(overview.observed_at, true))} МСК</p>`;
+  }
+  function renderHomeFragment(performance) {
+    return `${esc(date(performance.from))} — ${esc(date(performance.to))}`;
+  }
+  function renderHomeMetricNote(result) {
+    return `<p class="metric-note">Результат: <span class="${renderHomeValue(result)}">${esc(money(result))}</span></p>`;
+  }
+  function renderHomeFragment2(latestMonth) {
+    return `${latestMonth.month}-01`;
+  }
+  function renderHomeFragment3(latestMonth) {
+    return `Получено до налоговых списаний · ${esc(date(renderHomeFragment2(latestMonth)))}`;
+  }
+  function renderHomeFragment4() {
+    return `T-Invest · ${esc(date(state.data.visualization.latest.captured_at, true))} МСК`;
+  }
+  function renderEventFiltersFilterButton(key, title) {
+    return `<button class="filter-button" data-event-filter="${key}" aria-pressed="${state.eventFilter === key}">${title}</button>`;
+  }
+  function renderPortfolioCard(title, value) {
+    return `<article class="card"><p class="card-label">${title}</p><strong class="main-value">${esc(value)}</strong></article>`;
+  }
+  function renderNewsHTMLEventItem(item) {
+    return `<article class="event-item"><span class="event-icon">${icon("events", true)}</span><div class="event-item-body"><h3>${U.sourceLink(item.url, item.title)}</h3><span class="event-meta">Банк России · ${esc(date(item.published_at, true))}</span></div></article>`;
+  }
+  function renderIndicatorCardsValue(key) {
+    if (key === "key_rate") {
+      return 2;
+    }
+    return 4;
+  }
+  function renderIndicatorCardsFragment(data, key, unit) {
+    return `${esc(format(data[key].value, renderIndicatorCardsValue(key)))} ${unit}`;
+  }
+  function renderIndicatorCardsFragment2(data, key) {
+    return `Действует с ${esc(date(data[key].effective_date))}`;
+  }
+  function renderIndicatorCardsCard(title, data, key, unit) {
+    return `<article class="card"><p class="card-label">${title}</p><strong class="indicator-value">${data?.[key] ? renderIndicatorCardsFragment(data, key, unit) : "—"}</strong><p class="indicator-date">${data?.[key]?.effective_date ? renderIndicatorCardsFragment2(data, key) : "Нет данных от источника"}</p></article>`;
+  }
+  function renderMarketFragment() {
+    return `Официальный курс ${state.cbrCurrency}`;
+  }
+  function renderMarketSearchResult(item) {
+    return `<div class="search-result"><button class="asset-name" data-asset="${esc(item.instrument_uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}<small class="asset-ticker">${esc(item.ticker)}</small></span></button>${watchButton(item)}</div>`;
+  }
+  function renderMarketSearchResults() {
+    return `<div class="search-results">${watchlist().map(item => renderMarketSearchResult(item)).join("")}</div>`;
+  }
+  function renderMarketNotice() {
+    return `<div class="notice">Для поиска инструментов и биржевых графиков подключите T-Invest.<div class="form-actions">${button("Подключить источник", "connect", {
+      primary: true,
+      small: true
+    })}</div></div>`;
+  }
+  function renderSearchSearchResult(item) {
+    return `<button class="search-result" data-event-open="${esc(item.id)}">${icon("events")}<span><strong>${esc(item.title)}</strong><small>Событие · ${esc(date(item.occurred_at))}</small></span>${icon("chevron", true)}</button>`;
+  }
+  function renderSearchSearchResult2(item) {
+    return `<article class="search-result">${icon("events")}<span><strong>${U.sourceLink(item.url, item.title)}</strong><small>${esc(item.source)} · ${esc(date(item.published_at))}</small></span></article>`;
+  }
+  function renderSearchSearchResult3(item) {
+    return `<button class="search-result" data-asset="${esc(item.uid || item.instrument_uid)}" data-asset-name="${esc(item.name)}" data-asset-ticker="${esc(item.ticker)}"><span class="asset-logo">${esc((item.ticker || item.name || "А").slice(0, 1))}</span><span><strong>${esc(item.name)}</strong><small>${esc(item.ticker)} · ${esc({
+      share: "Акция",
+      bond: "Облигация",
+      etf: "Фонд",
+      currency: "Валюта"
+    }[item.instrument_type] || item.instrument_type || "Инструмент")}</small></span>${icon("chevron", true)}</button>`;
+  }
+  function renderSearchFragment() {
+    return `Результаты для «${state.searchQuery}»`;
+  }
+  function renderFundamentalMetricsHTMLValue(compact, metrics) {
+    if (compact) {
+      return 5;
+    }
+    return metrics.length;
+  }
+  function renderFundamentalMetricsHTMLDataFootnote(item) {
+    return `<small class="data-footnote">${esc(item.period)}</small>`;
+  }
+  function renderFundamentalMetricsHTMLValue2(item) {
+    if (item.period) {
+      return renderFundamentalMetricsHTMLDataFootnote(item);
+    }
+    return "";
+  }
+  function renderFundamentalMetricsHTMLFragment(item) {
+    return ` ${esc(item.unit)}`;
+  }
+  function renderFundamentalMetricsHTMLValue3(item) {
+    if (item.unit) {
+      return renderFundamentalMetricsHTMLFragment(item);
+    }
+    return "";
+  }
+  function renderFundamentalMetricsHTMLInfoRow(item) {
+    return `<div class="info-row"><dt>${esc(item.label)}${renderFundamentalMetricsHTMLValue2(item)}</dt><dd>${esc(format(item.value, 2))}${renderFundamentalMetricsHTMLValue3(item)}</dd></div>`;
+  }
+  function renderFundamentalMetricsHTMLInfoList(metrics, compact) {
+    return `<dl class="info-list">${metrics.slice(0, renderFundamentalMetricsHTMLValue(compact, metrics)).map(item => renderFundamentalMetricsHTMLInfoRow(item)).join("")}</dl>`;
+  }
+  function renderFundamentalMetricsHTMLLi(url) {
+    return `<li>${U.sourceLink(url, "Методика и данные источника")}</li>`;
+  }
+  function renderFundamentalMetricsHTMLSourceList(facts) {
+    return `<ul class="source-list">${[...new Set(facts.metrics.map(item => item.source_url).filter(Boolean))].map(url => renderFundamentalMetricsHTMLLi(url)).join("")}</ul>`;
+  }
+  function renderFundamentalMetricsHTMLLi2(item) {
+    return `<li>${esc(humanRequirement(item))}</li>`;
+  }
+  function renderFundamentalMetricsHTMLDetailsSummary(facts) {
+    return `<details><summary class="details-summary">Недостающие данные</summary><ul class="risk-list">${facts.missing_requirements.map(item => renderFundamentalMetricsHTMLLi2(item)).join("")}</ul></details>`;
+  }
+  function renderFundamentalMetricsHTMLFinePrint(facts) {
+    return `<p class="fine-print">${facts.limitations.map(item => esc(item)).join(" ")}</p>`;
+  }
+  function renderAssetValue(change) {
+    if (change >= 0) {
+      return "positive";
+    }
+    return "negative";
+  }
+  function renderAssetFragment(change, currency, changePercent) {
+    return `${esc(money(change, 2, currency, false))} (${esc(percent(changePercent, true))}) за выбранный период`;
+  }
+  function renderAssetFragment2(asset) {
+    return `Цена ${asset.name}`;
+  }
+  function renderAssetFragment3(market) {
+    return `Режим торгов: ${esc(tradingLabel(market.trading_status))}. `;
+  }
+  function renderAssetDataFootnote(latest) {
+    return `<p class="data-footnote">Данные позиции · ${esc(date(latest.captured_at, true))} МСК</p>`;
+  }
+  function renderAssetFragment4(market) {
+    return `${date(market.quote_time, true)} МСК`;
+  }
+  function renderAssetLi(item) {
+    return `<li>${U.sourceLink(item.source_url, item.document_type || item.provider || "Источник")}<p class="data-footnote">${esc(date(item.retrieved_at, true))}</p></li>`;
+  }
+  function renderAssetDetailsSummary(details) {
+    return `<details><summary class="details-summary">Документы инструмента</summary><ul class="source-list">${details.sources.map(item => renderAssetLi(item)).join("")}</ul></details>`;
+  }
+  function renderAssetTabButton(key, label) {
+    return `<button class="tab-button" role="tab" data-asset-tab="${key}" aria-selected="${state.assetTab === key}">${label}</button>`;
+  }
+  function renderAssetNotice(asset) {
+    return `<div class="notice error">${esc(humanError(asset.error))}${button("Повторить", "asset-refresh", {
+      small: true
+    })}</div>`;
+  }
+  function renderAssetFinePrint(item) {
+    return `<p class="fine-print">${esc(item.event_type || "Выплата")} · ${esc(date(item.payment_date || item.effective_at))}</p>`;
+  }
+  function renderAssetDetailsSummary2(details) {
+    return `<details><summary class="details-summary">Подтверждённые события выплат</summary>${details.payouts.slice(0, 12).map(item => renderAssetFinePrint(item)).join("")}</details>`;
+  }
+  function renderUpdateSaveStatusValue(slot) {
+    if (slot.error.status === 409) {
+      return "conflict";
+    }
+    return "error";
+  }
+  function renderUpdateSaveStatusValue2(slot) {
+    if (slot.server) {
+      return "saved";
+    }
+    return "empty";
+  }
+  function renderUpdateSaveStatusValue3(slot) {
+    if (slot.dirty) {
+      return "pending";
+    }
+    return renderUpdateSaveStatusValue2(slot);
+  }
+  function renderUpdateSaveStatusValue4(slot) {
+    if (slot.busy) {
+      return "saving";
+    }
+    return renderUpdateSaveStatusValue3(slot);
+  }
+  function renderUpdateSaveStatusFragment(kind) {
+    return `${kind}-reload`;
+  }
+  function renderUpdateSaveStatusFragment2(kind) {
+    return `${kind}-retry`;
+  }
+  function renderUpdateSaveStatusValue5(slot, kind) {
+    if (slot.error.status === 409) {
+      return "";
+    }
+    return button("Проверить и повторить", renderUpdateSaveStatusFragment2(kind), {
+      small: true
+    });
+  }
+  function renderReloadVersionedFragment(kind) {
+    return `${kind}-discard`;
+  }
+  function renderStrategiesStrategyOption(item, document, symbol) {
+    return `<button class="strategy-option" data-select-strategy="${esc(item.id)}" aria-pressed="${document?.base_preset_id === item.id && !document?.customized}"><span class="strategy-icon" data-preset="${esc(item.id)}">${icon(symbol)}</span><span class="strategy-option-body"><strong>${esc(item.title)}</strong><small>${esc(strategyTaglines[item.id] || item.description)}</small></span>${icon(document?.base_preset_id === item.id && !document?.customized ? "check" : "chevron", true)}</button>`;
+  }
+  function renderStrategiesValue() {
+    if (state.tour) {
+      return "login";
+    }
+    return "";
+  }
+  function renderStrategiesRangeRow(key, index, label, document) {
+    return `<div class="range-row"><label class="range-label" for="allocation-${key}"><i class="legend-dot" data-color="${index}"></i>${label}</label><input id="allocation-${key}" type="range" min="0" max="100" step="1" value="${document.allocation[key]}" data-allocation="${key}"${document.locked.includes(key) || document.excluded.includes(key) ? " disabled" : ""}><output for="allocation-${key}">${document.allocation[key]}%</output></div>`;
+  }
+  function renderStrategiesAllocationFlagRow(label, key, document) {
+    return `<div class="allocation-flag-row"><span>${label}</span><label><input type="checkbox" data-allocation-lock="${key}"${document.locked.includes(key) ? " checked" : ""}${document.excluded.includes(key) ? " disabled" : ""}>Закрепить</label><label><input type="checkbox" data-allocation-exclude="${key}"${document.excluded.includes(key) ? " checked" : ""}>Исключить</label></div>`;
+  }
+  function renderStrategiesFragment(grade) {
+    return `strategy.rules.rating_caps.${grade}`;
+  }
+  function renderStrategiesFragment2(grade) {
+    return `Рейтинг ${grade}, максимум %`;
+  }
+  function renderStrategiesLi(item) {
+    return `<li>${U.sourceLink(item.url, item.title)}</li>`;
+  }
+  function renderSelectionHTMLNotice(selection) {
+    return `<p class="notice">${esc(selection.scope)}</p>`;
+  }
+  function renderSelectionHTMLPanelTitle(selected) {
+    return `<h4 class="panel-title section-gap">Расчётные доли инструментов</h4>${infoRows(selected.map(item => [item.ticker || item.instrument_uid, percent(item.target_weight_percent)]))}`;
+  }
+  function renderSelectionHTMLRiskList(selection) {
+    return `<ul class="risk-list">${selection.missing_requirements.map(item => renderFundamentalMetricsHTMLLi2(item)).join("")}</ul>`;
+  }
+  function renderSelectionHTMLValue(item) {
+    if (item.eligible) {
+      return "Прошёл условия отбора";
+    }
+    return "Не прошёл условия";
+  }
+  function renderSelectionHTMLLi2(reason) {
+    return `<li>${esc(humanRequirement(reason))}</li>`;
+  }
+  function renderSelectionHTMLRiskList2(item) {
+    return `<ul class="risk-list">${item.reasons.map(reason => renderSelectionHTMLLi2(reason)).join("")}</ul>`;
+  }
+  function renderSelectionHTMLValue2(item) {
+    if (item.reasons?.length) {
+      return renderSelectionHTMLRiskList2(item);
+    }
+    return "";
+  }
+  function renderSelectionHTMLFinePrint(item) {
+    return `<p class="fine-print">Оценка для ранжирования: ${esc(format(item.score, 4))}. Это не вероятность прибыли.</p>`;
+  }
+  function renderSelectionHTMLValue3(item) {
+    if (number(item.score) !== null) {
+      return renderSelectionHTMLFinePrint(item);
+    }
+    return "";
+  }
+  function renderSelectionHTMLLi3(key, fact) {
+    return `<li>${esc(factLabels[key] || "Показатель источника")}: ${esc(assessmentValue(fact.value, key))} · ${esc(date(fact.available_at))} ${U.sourceLink(fact.source_url, "Источник")}</li>`;
+  }
+  function renderSelectionHTMLSourceList(item) {
+    return `<ul class="source-list">${Object.entries(item.facts).map(([key, fact]) => renderSelectionHTMLLi3(key, fact)).join("")}</ul>`;
+  }
+  function renderSelectionHTMLValue4(item) {
+    if (Object.keys(item.facts || {}).length) {
+      return renderSelectionHTMLSourceList(item);
+    }
+    return '<p class="fine-print">Нет датированных фактов источника.</p>';
+  }
+  function renderSelectionHTMLDetailsSummary(item) {
+    return `<details><summary class="details-summary">${esc(item.ticker || item.instrument_uid)} · ${renderSelectionHTMLValue(item)}</summary>${renderSelectionHTMLValue2(item)}${renderSelectionHTMLValue3(item)}${renderSelectionHTMLValue4(item)}</details>`;
+  }
+  function renderSelectionHTMLDetailsSummary2(candidates) {
+    return `<details><summary class="details-summary">Проверенные инструменты · ${candidates.length}</summary>${candidates.map(item => renderSelectionHTMLDetailsSummary(item)).join("")}</details>`;
+  }
+  function renderAssessmentValue(item) {
+    if (item.state === "fail" || item.state === "breach") {
+      return "negative";
+    }
+    return "muted";
+  }
+  function renderAssessmentDetailsSummary(item) {
+    return `<details><summary class="details-summary"><span class="${item.state === "pass" || item.state === "within_limit" || item.state === "evaluated" ? "positive" : renderAssessmentValue(item)}">${esc(item.title)}</span> · ${esc({
+      pass: "Соответствует",
+      within_limit: "В пределах",
+      breach: "Превышение",
+      fail: "Не соответствует",
+      unknown: "Недостаточно данных",
+      data_missing: "Нет данных",
+      blocked: "Ограничение",
+      missing: "Нет данных",
+      not_applicable: "Не применяется",
+      evaluated: "Проверено",
+      inapplicable: "Не применяется"
+    }[item.state] || "Требует проверки")}</summary><p class="fine-print">${esc(item.detail)}</p>${infoRows([["Наблюдаемое значение", assessmentValue(item.value, item.key)], ["Ограничение", assessmentValue(item.limit, item.key)]])}</details>`;
+  }
+  function renderResearchNotice(result) {
+    return `<p class="notice warning">Покрыта часть стратегии: ${esc(percent(result.research_asset_weight_percent))} в инструментах. Остаток расчётного капитала сохранён деньгами.</p>`;
+  }
+  function renderResearchValue(key, result) {
+    if (key.endsWith("_rub")) {
+      return money(result.metrics?.[key], 0, "RUB", false);
+    }
+    return format(result.metrics?.[key], 0);
+  }
+  function renderResearchAssessmentMetric(label, key, result) {
+    return `<div class="assessment-metric"><span>${label}</span><strong>${esc(key.endsWith("_percent") ? percent(result.metrics?.[key]) : renderResearchValue(key, result))}</strong></div>`;
+  }
+  function renderResearchFinePrint(result) {
+    return `<p class="fine-print">Проверочный период начинается ${esc(date(result.period.test_from))}. В нём ${esc(format(result.period.test_observations, 0))} наблюдений.</p>`;
+  }
+  function renderResearchValue2(key, result) {
+    if (key.endsWith("_percent")) {
+      return percent(result.benchmark.metrics[key]);
+    }
+    return format(result.benchmark.metrics[key], 2);
+  }
+  function renderResearchDetailsSummary(result) {
+    return `<details><summary class="details-summary">Сравнение: ${esc(result.benchmark.name)}</summary>${infoRows(Object.entries(researchMetricLabels).filter(([key]) => result.benchmark.metrics?.[key] !== undefined).map(([key, label]) => [label, renderResearchValue2(key, result)]))}</details>`;
+  }
+  function renderResearchRiskList(result) {
+    return `<ul class="risk-list">${result.missing_requirements.map(item => renderFundamentalMetricsHTMLLi2(item)).join("")}</ul>`;
+  }
+  function renderResearchLi2(item) {
+    return `<li>${esc(item)}</li>`;
+  }
+  function renderResearchDetailsSummary2(result) {
+    return `<details open><summary class="details-summary">Границы результата</summary><ul class="risk-list">${result.limitations.map(item => renderResearchLi2(item)).join("")}</ul></details>`;
+  }
+  function renderResearchLi3(item) {
+    return `<li>${U.sourceLink(item.url || item.source_url, item.label || item.title || item.provider || "Источник")}</li>`;
+  }
+  function renderResearchSourceList(result) {
+    return `<ul class="source-list">${result.sources.map(item => renderResearchLi3(item)).join("")}</ul>`;
+  }
+  function renderGoalsValue(goal) {
+    if (goal.kind === "income") {
+      return "wallet";
+    }
+    return "building";
+  }
+  function renderGoalsValue2(goal) {
+    if (goal.kind === "income") {
+      return " полученных выплат";
+    }
+    return "";
+  }
+  function renderGoalsFragment(goal) {
+    return ` · ${esc(percent(goal.allocation_percent))}`;
+  }
+  function renderGoalsValue3(goal) {
+    if (goal.allocation_percent) {
+      return renderGoalsFragment(goal);
+    }
+    return "";
+  }
+  function renderGoalsFragment2(goal) {
+    return `К ${esc(date(goal.target_date))}`;
+  }
+  function renderGoalsValue4(goal) {
+    if (goal.target_date) {
+      return renderGoalsFragment2(goal);
+    }
+    return "Без фиксированного срока";
+  }
+  function renderGoalsDataFootnote(goal) {
+    return `<p class="data-footnote">${esc(date(goal.progress.as_of, true))} МСК</p>`;
+  }
+  function renderGoalsValue5(goal) {
+    if (goal.progress?.as_of) {
+      return renderGoalsDataFootnote(goal);
+    }
+    return "";
+  }
+  function renderGoalsCard(goal) {
+    return `<article class="card goal-card" data-goal-id="${esc(goal.id)}"><div class="card-header"><span class="event-icon">${icon(renderGoalsValue(goal), true)}</span><span class="chip">${esc({
+      active: "Активная",
+      completed: "Завершена",
+      archived: "В архиве"
+    }[goal.status])}</span></div><h2 class="panel-title">${esc(goal.title)}</h2><strong class="goal-amount">${esc(money(goal.progress?.amount_rub))}</strong><p class="value-subtitle">из ${esc(money(goal.target_amount_rub))}${renderGoalsValue2(goal)}</p>${U.progress(goal.progress?.percent)}<p class="fine-print">${esc(goalReason(goal))}${renderGoalsValue3(goal)}</p><div class="goal-footer"><span>${renderGoalsValue4(goal)}</span><div class="goal-actions"><button class="icon-button" data-goal-edit="${esc(goal.id)}" aria-label="Изменить цель ${esc(goal.title)}">${icon("settings", true)}</button><button class="icon-button" data-goal-delete="${esc(goal.id)}" aria-label="Удалить цель ${esc(goal.title)}">${icon("trash", true)}</button></div></div>${renderGoalsValue5(goal)}</article>`;
+  }
+  function renderGoalsGoalGrid(goals) {
+    return `<div class="goal-grid">${goals.map(goal => renderGoalsCard(goal)).join("")}</div>`;
+  }
+  function renderGoalsCard2() {
+    return `<section class="card">${empty("У каждой цели есть первый шаг", "Задайте сумму и срок. Можно выделить часть портфеля, учитывать реальные выплаты или внести накопленную сумму вручную.", "goal-create", "Создать первую цель", "goals", true)}</section>`;
+  }
+  function renderGoalsValue6(goals) {
+    if (goals.length) {
+      return renderGoalsGoalGrid(goals);
+    }
+    return renderGoalsCard2();
+  }
+  function renderUpdateGoalFieldsValue(kind) {
+    if (kind === "income") {
+      return "Прогресс — фактически полученные выплаты с даты начала, до отдельных налоговых списаний, умноженные на выбранную долю.";
+    }
+    return "Прогресс — выбранная доля наблюдаемой стоимости портфеля. Он меняется вместе с рынком и движением денег.";
+  }
+  function renderEventsValue(data) {
+    if (data.digest.frequency === "daily") {
+      return "Дневной";
+    }
+    return "Недельный";
+  }
+  function renderEventsCard(data) {
+    return `<section class="card section-gap"><h2 class="panel-title">${renderEventsValue(data)} дайджест</h2><p class="fine-print">С ${esc(date(data.digest.from))}: ${esc(format(data.digest.count, 0))} событий. Дайджест доступен в кабинете.</p>${infoRows(Object.entries(data.digest.by_category || {}).map(([key, value]) => [{
+      portfolio: "Портфель",
+      payments: "Выплаты",
+      goals: "Цели",
+      system: "Система"
+    }[key] || key, format(value, 0)]))}</section>`;
+  }
+  function renderOpenEventFragment(event) {
+    return ` · ${esc(event.source)}`;
+  }
+  function renderAnalyticsCard(label, value) {
+    return `<section class="card"><p class="card-label">${label}</p><p class="main-value">${esc(value)}</p></section>`;
+  }
+  function renderAnalyticsFragment(performance) {
+    return `${esc(date(performance.from))} — ${esc(date(performance.to))}. `;
+  }
+  function renderAnalyticsFragment2(item) {
+    return `${item.month}-01`;
+  }
+  function renderAnalyticsDetailsSummary(item) {
+    return `<details><summary class="details-summary">${esc(item.title)}</summary><p class="fine-print">${esc(item.detail)}</p></details>`;
+  }
+  function renderAnalyticsFragment3(analysis) {
+    return `${infoRows([["Инструментов", format(analysis.security_count, 0)], ["Оценены по стоимости", format(analysis.valued_security_count, 0)], ["Покрытие по секторам", percent(analysis.sector_coverage_percent)]])}${(analysis.observations || []).map(item => renderAnalyticsDetailsSummary(item)).join("")}`;
+  }
+  function renderProfileForm(prefs) {
+    return `<form id="profile-form">${field({
+      name: "display_name",
+      label: "Как к вам обращаться",
+      value: prefs.display_name || "",
+      placeholder: "Ваше имя"
+    })}<div class="form-actions"><button class="button primary" type="submit">Сохранить имя</button><span class="save-status" data-save-status="prefs"></span></div>${saveErrorHTML("prefs")}</form>`;
+  }
+  function renderProfileFragment() {
+    return `${U.loading("Загружаем профиль…")}${dataError("preferences")}`;
+  }
+  function renderProfileValue() {
+    if (state.config?.tid_enabled) {
+      return "Можно подключить";
+    }
+    return "Не подключён на сервере";
+  }
+  function renderProfileValue2() {
+    if (state.config?.vkid_enabled) {
+      return "Можно подключить";
+    }
+    return "Не подключён на сервере";
+  }
+  function renderSettingsValue() {
+    if (state.errors.preferences) {
+      return "preferences";
+    }
+    return "workspace";
+  }
+  function renderSettingsValue2() {
+    if (state.errors.preferences || state.errors.workspace) {
+      return dataError(renderSettingsValue());
+    }
+    return U.loading("Загружаем сохранённые настройки…");
+  }
+  function renderBrokerSettingsHTMLFragment(connection) {
+    return `${date(connection.verified_at, true)} МСК`;
+  }
+  function renderAssistantLi(source) {
+    return `<li>${U.sourceLink(source.url, source.label)}</li>`;
+  }
+  function renderAssistantSourceList(item) {
+    return `<ul class="source-list">${item.sources.map(source => renderAssistantLi(source)).join("")}</ul>`;
+  }
+  function renderAssistantFinePrint(status) {
+    return `<span class="fine-print">${esc(status.model)}</span>`;
+  }
+  function renderAssistantButton(text, configured) {
+    return `<button class="button secondary" data-chat-prompt="${esc(text)}"${!configured ? " disabled" : ""}>${esc(text)}</button>`;
+  }
+  function renderAssistantValue() {
+    if (state.assistantBusy) {
+      return "disabled";
+    }
+    return "";
+  }
+  function renderAuthConfigValue(config) {
+    if (config.registration_enabled) {
+      return "Новый аккаунт создаётся после подтверждения личности, если регистрация доступна.";
+    }
+    return "Регистрация новых аккаунтов сейчас закрыта. Существующие пользователи могут войти.";
+  }
+  function renderOpenAuthValue(mode) {
+    if (mode === "register") {
+      return "Добро пожаловать!<br>Создайте аккаунт";
+    }
+    return "Добро пожаловать!<br>Войдите в аккаунт";
+  }
+  function renderOpenAuthValue2(mode) {
+    if (mode === "register") {
+      return "Подтвердите личность через T-ID или VK ID. Создание аккаунта зависит от доступности регистрации.";
+    }
+    return "Используйте свой T-ID или VK ID, чтобы открыть личный кабинет.";
+  }
+  function renderPreviewBrokerFragment(item) {
+    return `${item.name} · ${item.id}`;
+  }
+  function renderUpdateStrategyFieldValue(input) {
+    if (input.value === "") {
+      return null;
+    }
+    return input.value;
+  }
+  function renderStepFieldValue(input) {
+    if (input.name.endsWith("horizon_months")) {
+      return 12n;
+    }
+    return 1n;
+  }
+  function renderStepFieldValue2(adjusted, maximum) {
+    if (adjusted > maximum) {
+      return maximum;
+    }
+    return adjusted;
+  }
+  function renderStepFieldFragment(decimal) {
+    return `.${decimal}`;
+  }
+  function renderViewValue(event) {
+    if (event.key === "ArrowRight") {
+      return 1;
+    }
+    return -1;
+  }
+  function renderViewValue2(event, tabs, index) {
+    if (event.key === "End") {
+      return tabs.length - 1;
+    }
+    return (index + renderViewValue(event) + tabs.length) % tabs.length;
+  }
+  function renderViewValue3(event) {
+    if (event.key === "ArrowDown") {
+      return 1;
+    }
+    return -1;
+  }
+  function renderViewValue4(event, items, index) {
+    if (event.key === "End") {
+      return items.length - 1;
+    }
+    return (index + renderViewValue3(event) + items.length) % items.length;
+  }
+  async function handleClickCloseDialog({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    control.closest("dialog")?.close();
+  }
+  async function handleClickHelp({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    $("#help-title").textContent = control.dataset.helpTitle;
+    $("#help-content").textContent = control.dataset.help;
+    $("#help-dialog").showModal();
+  }
+  async function handleClickTheme({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    const choice = control.dataset.themeChoice;
+    if (state.user && !state.tour) {
+      if (editPreferences(document => {
+        document.theme = choice;
+      })) applyTheme(choice);
+    } else applyTheme(choice);
+  }
+  async function handleClickPublicView({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    showApp(true);
+    navigate(control.dataset.publicOpen);
+  }
+  async function handleClickRoute({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    for (const dialog of $$("dialog[open]")) if (dialog.id !== "session-dialog") dialog.close();
+    navigate(control.dataset.route);
+  }
+  async function handleClickAuthMode({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    openAuth(control.dataset.authMode, state.authLink);
+  }
+  async function handleClickAsset({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    state.assetPeriod = "1m";
+    state.assetTab = "chart";
+    navigate("asset", {
+      uid: control.dataset.asset
+    });
+  }
+  async function handleClickAssetTab({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    state.assetTab = control.dataset.assetTab;
+    renderAsset();
+    U.bindCharts($("#view-asset"));
+  }
+  async function handleClickWatchlist({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    toggleWatch(control);
+  }
+  async function handleClickAssetFilter({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    state.assetFilter = control.dataset.assetFilter;
+    renderCurrent();
+  }
+  async function handleClickSort({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    if (state.sort === control.dataset.sort) state.sortDirection *= -1;else {
+      state.sort = control.dataset.sort;
+      state.sortDirection = 1;
+    }
+    renderCurrent();
+    $(`[data-sort="${state.sort}"]`, $(`#view-${state.view}`))?.focus({
+      preventScroll: true
+    });
+  }
+  async function handleClickPeriod({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    const scope = control.dataset.periodScope;
+    if (scope === "asset") {
+      state.assetPeriod = control.dataset.period;
+      if (state.asset) await loadAsset(state.asset.uid);
+    } else if (["home", "portfolio"].includes(scope)) {
+      state[`${scope}Period`] = control.dataset.period;
+      renderCurrent();
+      if (!state.tour) {
+        await loadResource("workspace", workspacePath(), {
+          force: true
+        });
+        if (state.view === scope) renderCurrent();
+      }
+    }
+  }
+  async function handleClickEventFilter({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    state.eventFilter = control.dataset.eventFilter;
+    renderCurrent();
+  }
+  async function handleClickEventOpen({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    openEvent(control.dataset.eventOpen);
+  }
+  async function handleClickEventRead({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    await markEvents([control.dataset.eventRead]);
+  }
+  async function handleClickGoalEdit({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    openGoal(control.dataset.goalEdit);
+  }
+  async function handleClickGoalDelete({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    confirmGoalDelete(control.dataset.goalDelete);
+  }
+  async function handleClickGoalDeleteConfirm({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    control.disabled = true;
+    const generation = state.generation;
+    const id = control.dataset.goalDeleteConfirm;
+    try {
+      const result = await api(`/api/goals/${safeSegment(id)}`, {
+        method: "DELETE",
+        body: {
+          expected_version: Number(control.dataset.version)
+        }
+      });
+      if (generation !== state.generation) return;
+      if (result !== null && result?.deleted !== true) throw Object.assign(new Error("invalid_server_response"), {
+        status: 502
+      });
+      state.deletedGoalIds.add(id);
+      replaceGoalList((state.data.goals?.items || []).filter(goal => goal.id !== id));
+      renderGoalConsumers();
+      if (control.isConnected) $("#workspace-dialog").close();
+      toast("Цель удалена.");
+      await refreshGoalList(generation);
+    } catch (error) {
+      if (generation === state.generation) reportGoalDeleteError(control, error);
+    }
+  }
+  async function handleClickStrategy({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    chooseStrategy(control.dataset.selectStrategy);
+  }
+  async function handleClickPublicStrategy({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    const preset = state.data.catalog?.presets?.find(item => item.id === control.dataset.publicStrategy);
+    if (!preset) return;
+    openDialog(preset.title, `<p class="help-copy">${esc(preset.description)}</p><p class="notice">${esc(preset.risk)}</p><p class="fine-print">Параметры подхода можно изменить после входа. Название не является обещанием результата.</p><div class="form-actions">${button("Открыть личный кабинет", "login", {
+      primary: true
+    })}</div>`);
+  }
+  async function handleClickStep({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    stepField(control);
+  }
+  async function handleClickChatPrompt({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    const input = $("#assistant-form")?.elements.message;
+    if (input && !input.disabled) {
+      input.value = control.dataset.chatPrompt;
+      input.focus();
+    }
+  }
+  async function handleClickAction({
+    event,
+    control
+  }) {
+    event.preventDefault();
+    await actions[control.dataset.action](control);
+  }
+  async function handleChangeStrategyField({
+    input
+  }) {
+    updateStrategyField(input);
+  }
+  async function handleChangeAllocationFlag({
+    input
+  }) {
+    const document = state.strategy.draft;
+    if (!document) return;
+    const key = input.dataset.allocationLock || input.dataset.allocationExclude;
+    const fieldName = input.dataset.allocationLock ? "locked" : "excluded";
+    if (input.checked) {
+      if (fieldName === "excluded") {
+        const next = clone(document);
+        next.locked = next.locked.filter(item => item !== key);
+        if (!redistribute(next, key, 0)) {
+          input.checked = false;
+          toast("Освободите другую долю, прежде чем исключать этот класс.");
+          return;
+        }
+        document.allocation = next.allocation;
+        document.locked = next.locked;
+      }
+      if (!document[fieldName].includes(key)) document[fieldName].push(key);
+    } else document[fieldName] = document[fieldName].filter(item => item !== key);
+    documentChanged();
+    renderStrategies();
+  }
+  async function handleChangeGoalSource({
+    input
+  }) {
+    updateGoalFields(input.name === "kind");
+  }
+  async function handleChangeBrokerEnvironment({}) {
+    resetBrokerPreview();
+  }
+  async function handleChangeMarketReference({
+    input
+  }) {
+    if (input.name === "cbr_currency") state.cbrCurrency = input.value;else state.cbrPeriod = input.value;
+    await loadResource("marketReference", `/api/public/market-reference?currency=${state.cbrCurrency}&period=${state.cbrPeriod}`, {
+      force: true
+    });
+    if (state.view === "market") {
+      renderMarket();
+      U.bindCharts($("#view-market"));
+    }
+  }
+  async function handleSubmitAuth({
+    form,
+    event
+  }) {
+    await startAuth(form, event.submitter?.value || "vkid");
+  }
+  async function handleSubmitSearch({
+    form
+  }) {
+    navigate("search", {
+      q: form.elements.q.value.trim().slice(0, 64)
+    });
+  }
+  async function handleSubmitStrategy({}) {
+    await saveVersioned("strategy");
+  }
+  async function handleSubmitGoal({
+    form
+  }) {
+    await saveGoal(form);
+  }
+  async function handleSubmitProfile({
+    form
+  }) {
+    const value = form.elements.display_name.value.trim();
+    if (value.length > 80) {
+      toast("Имя должно быть не длиннее 80 символов.", true);
       return;
     }
-    if (!deleteAccountIrreversible.checked) {
-      showMessage(
-        deleteAccountMessage,
-        "Подтвердите, что понимаете необратимость удаления.",
-        true,
-      );
+    const accepted = editPreferences(document => {
+      document.display_name = value;
+    });
+    if (accepted) acceptFormSubmission(form);
+  }
+  async function handleSubmitPreferences({
+    form
+  }) {
+    if (!form.reportValidity()) return;
+    const controls = form.elements;
+    const changed = editPreferences(document => {
+      document.theme = controls.theme.value;
+      document.locale = controls.locale.value;
+      document.mask_balances = controls.mask_balances.checked;
+      document.digest_frequency = controls.digest_frequency.value;
+      document.quiet_hours = {
+        enabled: controls.quiet_enabled.checked,
+        start: controls.quiet_start.value,
+        end: controls.quiet_end.value,
+        timezone: controls.quiet_timezone.value
+      };
+      for (const key of ["portfolio", "payments", "goals", "system"]) document.notifications[key] = controls[`notify_${key}`].checked;
+    });
+    if (changed) {
+      acceptFormSubmission(form);
+      applyTheme(controls.theme.value);
+    }
+  }
+  async function handleSubmitBroker({
+    form
+  }) {
+    await previewBroker(form);
+  }
+  async function handleSubmitAssistant({
+    form
+  }) {
+    await sendAssistant(form);
+  }
+  async function handleSubmitResearch({
+    form
+  }) {
+    await runResearch(form);
+  }
+  async function handleSubmitAccountDeletion({
+    form
+  }) {
+    if (!requireUser() || !form.reportValidity()) return;
+    const confirmation = form.elements.confirm_public_id.value.trim();
+    if (confirmation !== state.user.public_id) {
+      showMessage($("#delete-account-message"), "ID не совпадает с текущим профилем.", true);
       return;
     }
-
-    deleteAccountSubmit.disabled = true;
-    deleteAccountCancel.disabled = true;
-    deleteAccountStart.disabled = true;
-    stopCbrIndicators();
-
+    const submit = form.querySelector("[type=submit]");
+    submit.disabled = true;
     try {
       await api("/api/account/delete", {
         method: "POST",
-        body: JSON.stringify({
+        body: {
           confirm_public_id: confirmation,
-          confirm_irreversible: true,
-        }),
+          confirm_irreversible: form.elements.confirm_irreversible.checked
+        }
       });
-      pendingTbankCredential = null;
-      location.replace("/");
+      clearPrivateState();
+      state.tour = false;
+      state.locked = false;
+      $("#app-shell").hidden = true;
+      $("#public-site").hidden = false;
+      sessionChannel?.postMessage({
+        type: "session-cleared"
+      });
+      toast("Аккаунт удалён.");
+      await bootstrap();
     } catch (error) {
-      deleteAccountSubmit.disabled = false;
-      deleteAccountCancel.disabled = false;
-      deleteAccountStart.disabled = false;
-      if (error.status === 401) {
-        location.reload();
-        return;
+      if (!isCancelled(error)) {
+        showMessage($("#delete-account-message"), humanError(error), true);
+        submit.disabled = false;
       }
-      if (error.status === 400) {
-        showMessage(
-          deleteAccountMessage,
-          "Подтверждение не принято. Проверьте ID профиля и попробуйте снова.",
-          true,
-        );
-        return;
+    }
+  }
+  function handleSearchShortcut({
+    event
+  }) {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k" && !$("#app-shell").hidden) {
+      event.preventDefault();
+      $("#global-search").focus();
+    }
+  }
+  function handleEscape({
+    event
+  }) {
+    if (event.key === "Escape") {
+      if (!$("#drawer-backdrop").hidden) {
+        event.preventDefault();
+        closeDrawer();
       }
-      showMessage(
-        deleteAccountMessage,
-        error.status === 409
-          ? "Аккаунт нельзя удалить, пока Live-run не завершён. Сначала сверите или отмените реальную заявку."
-          : "Аккаунт не удалён. Обновите страницу и повторите попытку.",
-        true,
-      );
+      if (!$("#profile-menu").hidden) {
+        $("#profile-menu").hidden = true;
+        $("#profile-button").setAttribute("aria-expanded", "false");
+        $("#profile-button").focus();
+      }
+      delete $(".public-nav").dataset.open;
+      $("#public-menu-toggle").setAttribute("aria-expanded", "false");
     }
-  });
-
-  logoutButton.addEventListener("click", async () => {
-    if (settingsEditors.some((editor) => editor.hasPending()) && !window.confirm(
-      "Выйти из аккаунта? Несохранённые изменения профиля и лимитов будут потеряны."
-    )) return;
-    settingsEditors.forEach((editor) => editor.reset());
-    stopCbrIndicators();
-    try {
-      await api("/api/auth/logout", {method: "POST"});
-    } catch (error) {
-      if (!profileContextLost) throw error;
-    } finally {
-      pendingTbankCredential = null;
-      if (!profileContextLost) location.reload();
+  }
+  function handleDrawerFocus({
+    event
+  }) {
+    if (!$("#drawer-backdrop").hidden && event.key === "Tab") {
+      const focusable = $$("a[href],button:not([disabled])", $("#app-sidebar")).filter(element => element.getClientRects().length);
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
-  });
-
-  const enterDemoWorkspace = () => {
-    stopCbrIndicators();
-    window.clearInterval(owlTimer);
-    invalidatePortfolioRequest();
-    settingsEditors.forEach((editor) => editor.reset());
-    authCard.classList.add("hidden");
-    profilePanel.classList.remove("hidden");
-    currentProfileId = "";
-    tbankIsConnected = false;
-    portfolioVisualizationLoaded = true;
-    for (const element of [profileId, drawerProfileId, profilePageId, supportProfileId, settingsProfileId]) element.textContent = "Гость";
-    initializeNavigation();
-    resetPortfolioVisualization("Войдите и подключите свой счёт: чужая или вымышленная история не используется.");
-    homeSnapshotTime.textContent = "Личный счёт не подключён";
-    topConnectionText.textContent = "Без аккаунта";
-    overviewAccount.textContent = "Открытый обзор OmniCIO";
-    overviewConnectionText.textContent = "Официальные справочные данные доступны без входа. Для портфеля нужен ваш счёт.";
-    for (const badge of [homePortfolioState, homePortfolioSummaryState, owlState, portfolioStateBadge]) setStateBadge(badge, "Нужен вход", "state-next");
-    portfolioDataNotice.textContent = "Данные портфеля недоступны без входа и подключения. Нулевой или примерный баланс не подставляется.";
-    for (const form of [tbankForm, tbankAccountForm, liveMandateForm, deleteAccountForm]) {
-      form.querySelectorAll("input,select,button").forEach((control) => { control.disabled = true; });
+  }
+  function handleTabFocus({
+    tab,
+    event
+  }) {
+    if (tab && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+      const tabs = $$('[role="tab"]', tab.closest('[role="tablist"]'));
+      const index = tabs.indexOf(tab);
+      const next = event.key === "Home" ? 0 : renderViewValue2(event, tabs, index);
+      event.preventDefault();
+      tabs[next].focus();
+      tabs[next].click();
     }
-    for (const control of [portfolioRefresh, analysisRefresh, tbankDisconnect, logoutButton, deleteAccountStart, executionRefresh]) control.disabled = true;
-    showMessage(tbankMessage, "Для подключения своего счёта сначала войдите через VK ID.");
-    showMessage(executionMessage, "Без аккаунта заявки недоступны и не отправляются.");
-    showMessage(analysisStatus, "Для персонального анализа нужен вход и подключение собственного счёта.");
-    publicReference.enter();
-  };
-
-  workspace = window.OmniWorkspace.init({
-    navigate: navigateToView,
-    openInstrument: openInstrumentDetail,
-    renderAssets: renderHunterResults,
-    enterDemo: enterDemoWorkspace,
-    theme: (preference) => { saveTheme(preference); applyTheme(preference); },
-    hasPending: () => settingsEditors.some((editor) => editor.hasPending()) || executionRequestInFlight || liveMandateRequestInFlight || proposalRequestInFlight,
-    refreshAnalysis: () => {
-      if (tbankIsConnected) void loadAnalysis();
-      else workspace.toast("Подключите свой счёт для подтверждённых событий.");
-    },
-  });
-  enhanceSettingsForm(investmentProfileForm);
-  enhanceSettingsForm(balancingPolicyForm);
-  groupSettingsForm(investmentProfileForm, [
-    {title: "Основное · капитал и время", note: "Резерв, снятия и горизонт", indexes: [0, 1, 2], open: true},
-    {title: "Расширенное · риск и ликвидность", note: "Просадка и срок выхода", indexes: [3, 4], open: false},
-  ]);
-  groupSettingsForm(balancingPolicyForm, [
-    {title: "Концентрация", note: "Одна бумага, эмитент, группа и сектор", indexes: [0, 1, 2, 3], open: false},
-    {title: "Классы активов", note: "Верхние лимиты, а не целевые доли", indexes: [4, 5, 6], open: false},
-    {title: "Расширенное · ликвидность и оборот", note: "Рейтинг, срок и доступный объём", indexes: [7, 8, 9, 10, 11], open: false},
-    {title: "Расширенное · сценарные допущения", note: "Налог, поправки и пороги выгоды", indexes: [12, 13, 14, 15, 16], open: false},
-  ]);
-
-
-  strategyLibrary = createStrategyLibrary();
-  settingsEditors.push(strategyLibrary);
-
-  document.addEventListener("keydown", (event) => {
-    if (event.key !== "Tab" || !document.body.classList.contains("drawer-open")) return;
-    const focusable = [...appDrawer.querySelectorAll("button:not(:disabled), a[href]")].filter((item) => item.getClientRects().length);
-    const first = focusable[0];
-    const last = focusable.at(-1);
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-  });
-
-  const publicReference = initializePublicReference();
-  let chartResizeTimer;
-  window.addEventListener("resize", () => {
-    clearTimeout(chartResizeTimer);
-    chartResizeTimer = setTimeout(() => {
-      publicReference.redraw();
-      if (profileContextLost) return;
-      if (lastPortfolioVisualization) renderPortfolioHistory(lastPortfolioVisualization.history || []);
-      if (instrumentMarketPayload && currentView === "portfolio") renderInstrumentMarketChart(instrumentMarketPayload);
-    }, 180);
-  });
-  renderReleaseInfo();
-  applyTheme(storedTheme());
-  refreshInstallState();
-  startOwl();
-  void loadState();
+  }
+  function handleProfileFocus({
+    event
+  }) {
+    if (!$("#profile-menu").hidden && ["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+      const items = $$('[role="menuitem"]', $("#profile-menu"));
+      const index = items.indexOf(document.activeElement);
+      const next = event.key === "Home" ? 0 : renderViewValue4(event, items, index);
+      event.preventDefault();
+      items[next].focus();
+    }
+  }
+  function renderConnectionBannerValue3(connection) {
+    if (connection?.connected && refreshUnavailable()) {
+      return " disabled";
+    }
+    return "";
+  }
 })();

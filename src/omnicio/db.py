@@ -148,6 +148,11 @@ class Database:
                     AND to_regclass('public.sessions') IS NOT NULL
                     AND to_regclass('public.legal_acceptances') IS NOT NULL
                     AND to_regclass('public.vkid_identities') IS NOT NULL
+                    AND to_regclass('public.tid_identities') IS NOT NULL
+                    AND to_regclass('public.oauth_flow_claims') IS NOT NULL
+                    AND to_regclass('public.workspace_preferences') IS NOT NULL
+                    AND to_regclass('public.investment_goals') IS NOT NULL
+                    AND to_regclass('public.workspace_events') IS NOT NULL
                     AND to_regclass('public.tbank_connection') IS NOT NULL
                     AND to_regclass('public.instrument_catalog') IS NOT NULL
                     AND to_regclass('public.account_instrument_access') IS NOT NULL
@@ -156,6 +161,30 @@ class Database:
                     AND to_regclass('public.instrument_issuer_map') IS NOT NULL
                     AND to_regclass('public.investment_profile_versions') IS NOT NULL
                     AND to_regclass('public.job_runs') IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conrelid = to_regclass('public.job_runs')
+                          AND conname = 'job_runs_user_id_job_type_scheduled_for_key'
+                          AND contype = 'u'
+                    )
+                    AND to_regclass('public.job_runs_refresh_active_idx') IS NOT NULL
+                    AND to_regclass('public.job_runs_refresh_requested_idx') IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'job_runs'
+                          AND column_name = 'requested_at' AND is_nullable = 'NO'
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'job_runs'
+                          AND column_name = 'scheduled_for' AND is_nullable = 'YES'
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conrelid = to_regclass('public.job_runs')
+                          AND conname = 'job_runs_schedule_kind_consistent'
+                          AND contype = 'c' AND convalidated
+                    )
                     AND to_regclass('public.portfolio_snapshots') IS NOT NULL
                     AND to_regclass('public.portfolio_snapshot_positions') IS NOT NULL
                     AND to_regclass('public.operation_observations') IS NOT NULL
@@ -230,7 +259,7 @@ class Database:
                           )
                     )
                     AND (
-                        SELECT count(*) = 15
+                        SELECT count(*) = 19
                         FROM pg_class AS c
                         JOIN pg_namespace AS n ON n.oid = c.relnamespace
                         WHERE n.nspname = 'public'
@@ -250,7 +279,11 @@ class Database:
                                   'portfolio_execution_runs',
                                   'portfolio_execution_legs',
                                   'portfolio_execution_events',
-                                  'portfolio_live_execution_mandates'
+                                  'portfolio_live_execution_mandates',
+                                  'strategy_drafts',
+                                  'workspace_preferences',
+                                  'investment_goals',
+                                  'workspace_events'
                               ]
                           )
                           AND c.relrowsecurity
@@ -266,138 +299,165 @@ class Database:
             return bool(row["ready"])
 
     def complete_vkid_login(
-        self,
-        *,
-        vk_user_id: str,
-        client_ip_hash: bytes,
-        session_token_digest: bytes,
-        session_ttl_seconds: int,
-        legal_versions: dict[str, str],
-        registration_enabled: bool,
-        registration_max_users: int,
+        self, *, vk_user_id: str, **context: Any,
     ) -> tuple[UserRecord, bool]:
-        """Resolve one VK ID identity and create its isolated application session."""
+        return self._complete_identity_login(provider="vkid", subject=vk_user_id, **context)
 
-        with (
-            self.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
+    def complete_tid_login(
+        self, *, tid_subject: str, **context: Any,
+    ) -> tuple[UserRecord, bool]:
+        return self._complete_identity_login(provider="tid", subject=tid_subject, **context)
+
+    def claim_oauth_flow(self, state_digest: bytes, provider: str, ttl_seconds: int) -> bool:
+        """Consume a verified browser-bound state exactly once across processes."""
+        if provider not in {"vkid", "tid"} or len(state_digest) != 32:
+            raise ValueError("oauth_flow_invalid")
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            cur.execute("DELETE FROM oauth_flow_claims WHERE expires_at < now()")
             cur.execute(
-                _ADVISORY_LOCK_SQL,
-                (vk_user_id,),
+                "INSERT INTO oauth_flow_claims (state_digest, provider, expires_at) "
+                "VALUES (%s, %s, now() + make_interval(secs => %s)) "
+                "ON CONFLICT (state_digest) DO NOTHING RETURNING state_digest",
+                (state_digest, provider, ttl_seconds),
             )
-            cur.execute(
-                """
-                SELECT u.id, u.public_id, u.status, u.role
-                FROM users AS u
-                JOIN vkid_identities AS v ON v.user_id = u.id
-                WHERE v.vk_user_id = %s
-                """,
-                (vk_user_id,),
+            return cur.fetchone() is not None
+
+    def _complete_identity_login(
+        self, *, provider: str, subject: str,
+        client_ip_hash: bytes, session_token_digest: bytes, session_ttl_seconds: int,
+        legal_versions: dict[str, str], registration_enabled: bool,
+        registration_max_users: int, link_user_id: UUID | None = None,
+        link_session_digest: bytes | None = None,
+    ) -> tuple[UserRecord, bool]:
+        """Resolve a verified identity; linking never guesses a tenant from email."""
+        lookup = {
+            "vkid": "SELECT u.id, u.public_id, u.status, u.role FROM users AS u "
+                    "JOIN vkid_identities AS v ON v.user_id = u.id "
+                    "WHERE v.vk_user_id = %s FOR UPDATE OF u",
+            "tid": "SELECT u.id, u.public_id, u.status, u.role FROM users AS u "
+                   "JOIN tid_identities AS v ON v.user_id = u.id "
+                   "WHERE v.tid_subject = %s FOR UPDATE OF u",
+        }
+        insert_identity = {
+            "vkid": "INSERT INTO vkid_identities (user_id, vk_user_id, verified_at) "
+                    "VALUES (%s, %s, now())",
+            "tid": "INSERT INTO tid_identities (user_id, tid_subject, verified_at) "
+                   "VALUES (%s, %s, now())",
+        }
+        if provider not in lookup:
+            raise ValueError("oauth_provider_invalid")
+        if (link_user_id is None) != (link_session_digest is None):
+            raise PermissionError("oauth_link_session_required")
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            if link_user_id is not None:
+                cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(link_user_id),))
+            cur.execute(_ADVISORY_LOCK_SQL, (f"identity:{provider}:{subject}",))
+            if link_user_id is not None:
+                cur.execute(
+                    "SELECT 1 FROM sessions WHERE user_id = %s AND token_digest = %s "
+                    "AND revoked_at IS NULL AND expires_at > now() FOR UPDATE",
+                    (link_user_id, link_session_digest),
+                )
+                if cur.fetchone() is None:
+                    raise PermissionError("oauth_link_session_expired")
+            cur.execute(lookup[provider], (subject,))
+            fetched = cur.fetchone()
+            user, created = self._identity_login_user(
+                cur, fetched, provider=provider, link_user_id=link_user_id,
+                registration_enabled=registration_enabled,
+                registration_max_users=registration_max_users,
             )
-            fetched_user = cur.fetchone()
-            created = False
-            linked = False
-
-            if fetched_user is None:
-                if not registration_enabled:
-                    raise RegistrationClosedError("registration is closed")
-
-                cur.execute(
-                    _ADVISORY_LOCK_SQL,
-                    ("omnicio-registration-capacity",),
-                )
-                cur.execute(
-                    """
-                    SELECT count(*) AS total
-                    FROM users
-                    WHERE status <> 'deleted'
-                    """
-                )
-                count_row = cur.fetchone()
-                if count_row is None:
-                    raise RuntimeError("registration capacity query returned no row")
-                total = int(cast(dict[str, Any], count_row)["total"])
-                if total >= registration_max_users:
-                    raise RegistrationCapacityError("registration capacity reached")
-
-                cur.execute(
-                    "INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status, role"
-                )
-                inserted = cur.fetchone()
-                if inserted is None:
-                    raise RuntimeError("user insert returned no row")
-                user = _user(cast(dict[str, Any], inserted))
-                created = True
-
-                cur.execute(
-                    """
-                    INSERT INTO vkid_identities (user_id, vk_user_id, verified_at)
-                    VALUES (%s, %s, now())
-                    """,
-                    (user.id, vk_user_id),
-                )
-                linked = True
-            else:
-                user = _user(cast(dict[str, Any], fetched_user))
-
+            linked = fetched is None
+            if linked:
+                cur.execute(insert_identity[provider], (user.id, subject))
             if user.status != "active":
                 raise PermissionError("account is not active")
-
             for document_type, version in legal_versions.items():
                 cur.execute(
-                    """
-                    INSERT INTO legal_acceptances (
-                        user_id,
-                        document_type,
-                        document_version,
-                        client_ip_hash
-                    )
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (
-                        user_id,
-                        document_type,
-                        document_version
-                    ) DO NOTHING
-                    """,
+                    "INSERT INTO legal_acceptances "
+                    "(user_id, document_type, document_version, client_ip_hash) "
+                    "VALUES (%s, %s, %s, %s) "
+                    "ON CONFLICT (user_id, document_type, document_version) DO NOTHING",
                     (user.id, document_type, version, client_ip_hash),
                 )
-
             cur.execute(
-                """
-                INSERT INTO sessions (
-                    user_id,
-                    token_digest,
-                    client_ip_hash,
-                    expires_at
-                )
-                VALUES (
-                    %s,
-                    %s,
-                    %s,
-                    now() + make_interval(secs => %s)
-                )
-                """,
-                (
-                    user.id,
-                    session_token_digest,
-                    client_ip_hash,
-                    session_ttl_seconds,
-                ),
+                "INSERT INTO sessions (user_id, token_digest, client_ip_hash, expires_at) "
+                "VALUES (%s, %s, %s, now() + make_interval(secs => %s))",
+                (user.id, session_token_digest, client_ip_hash, session_ttl_seconds),
             )
             cur.execute(
-                """
-                INSERT INTO audit_events (user_id, event_type, metadata)
-                VALUES (%s, %s, %s::jsonb)
-                """,
-                (
-                    user.id,
-                    "account_created" if created else "login_succeeded",
-                    json.dumps({"method": "vkid", "identity_linked": linked}),
-                ),
+                "INSERT INTO audit_events (user_id, event_type, metadata) "
+                "VALUES (%s, %s, %s::jsonb)",
+                (user.id, "account_created" if created else "login_succeeded",
+                 json.dumps({"method": provider, "identity_linked": linked})),
             )
             return user, created
+
+    @staticmethod
+    def _identity_login_user(
+        cur: Any, fetched: Any, *, provider: str, link_user_id: UUID | None,
+        registration_enabled: bool, registration_max_users: int,
+    ) -> tuple[UserRecord, bool]:
+        if fetched is not None:
+            user = _user(cast(dict[str, Any], fetched))
+            if link_user_id is not None and user.id != link_user_id:
+                raise PermissionError("identity_already_linked")
+            return user, False
+        if link_user_id is not None:
+            return Database._active_identity_link_target(cur, provider, link_user_id), False
+        return Database._register_identity_user(
+            cur, registration_enabled=registration_enabled,
+            registration_max_users=registration_max_users,
+        ), True
+
+    @staticmethod
+    def _active_identity_link_target(cur: Any, provider: str, user_id: UUID) -> UserRecord:
+        cur.execute(
+            "SELECT id, public_id, status, role FROM users "
+            "WHERE id = %s AND status = 'active' FOR UPDATE", (user_id,),
+        )
+        active = cur.fetchone()
+        if active is None:
+            raise PermissionError("link_account_inactive")
+        user = _user(cast(dict[str, Any], active))
+        # Each provider is linked once. Do not silently replace it.
+        existing_query = (
+            "SELECT 1 FROM vkid_identities WHERE user_id = %s" if provider == "vkid"
+            else "SELECT 1 FROM tid_identities WHERE user_id = %s"
+        )
+        cur.execute(existing_query, (user.id,))
+        if cur.fetchone() is not None:
+            raise PermissionError("provider_already_linked")
+        return user
+
+    @staticmethod
+    def _register_identity_user(
+        cur: Any, *, registration_enabled: bool, registration_max_users: int,
+    ) -> UserRecord:
+        if not registration_enabled:
+            raise RegistrationClosedError("registration is closed")
+        cur.execute(_ADVISORY_LOCK_SQL, ("omnicio-registration-capacity",))
+        cur.execute("SELECT count(*) AS total FROM users WHERE status <> 'deleted'")
+        count = cur.fetchone()
+        if count is None:
+            raise RuntimeError("registration_capacity_unavailable")
+        if int(cast(dict[str, Any], count)["total"]) >= registration_max_users:
+            raise RegistrationCapacityError("registration capacity reached")
+        cur.execute("INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status, role")
+        inserted = cur.fetchone()
+        if inserted is None:
+            raise RuntimeError("user_creation_unavailable")
+        return _user(cast(dict[str, Any], inserted))
+
+    def identity_providers(self, user_id: UUID) -> list[str]:
+        """Expose provider names only, never external identifiers."""
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT 'vkid' AS provider FROM vkid_identities WHERE user_id = %s "
+                "UNION ALL SELECT 'tid' AS provider FROM tid_identities WHERE user_id = %s",
+                (user_id, user_id),
+            )
+            return [str(row["provider"]) for row in cast(list[dict[str, Any]], cur.fetchall())]
 
     def refresh_session_digest(
         self,
@@ -405,7 +465,7 @@ class Database:
         *,
         session_ttl_seconds: int,
     ) -> UserRecord | None:
-        """Validate an active VK ID session and extend its rolling expiry."""
+        """Validate an active identity-backed session and extend its rolling expiry."""
 
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
@@ -414,9 +474,10 @@ class Database:
                 SET
                     last_seen_at = now(),
                     expires_at = now() + make_interval(secs => %s)
-                FROM users AS u, vkid_identities AS v
+                FROM users AS u
                 WHERE s.user_id = u.id
-                  AND v.user_id = u.id
+                  AND (EXISTS (SELECT 1 FROM vkid_identities AS v WHERE v.user_id = u.id)
+                       OR EXISTS (SELECT 1 FROM tid_identities AS t WHERE t.user_id = u.id))
                   AND s.token_digest = %s
                   AND s.revoked_at IS NULL
                   AND s.expires_at > now()
@@ -477,31 +538,31 @@ class Database:
             )
             cur.execute(
                 """
-                SELECT vk_user_id
-                FROM vkid_identities
-                WHERE user_id = %s
+                SELECT 'vkid' AS provider, vk_user_id AS subject
+                FROM vkid_identities WHERE user_id = %s
+                UNION ALL
+                SELECT 'tid' AS provider, tid_subject AS subject
+                FROM tid_identities WHERE user_id = %s
+                ORDER BY provider, subject
                 """,
-                (user_id,),
+                (user_id, user_id),
             )
-            identity = cur.fetchone()
-            if identity is None:
+            identities = cast(list[dict[str, Any]], cur.fetchall())
+            if not identities:
                 return False
-
-            vk_user_id = str(cast(dict[str, Any], identity)["vk_user_id"])
-            cur.execute(
-                _ADVISORY_LOCK_SQL,
-                (vk_user_id,),
-            )
+            for identity in identities:
+                cur.execute(
+                    _ADVISORY_LOCK_SQL,
+                    (f"identity:{identity['provider']}:{identity['subject']}",),
+                )
             cur.execute(
                 """
                 SELECT u.id, u.public_id, u.status, u.role
                 FROM users AS u
-                JOIN vkid_identities AS v ON v.user_id = u.id
                 WHERE u.id = %s
-                  AND v.vk_user_id = %s
                 FOR UPDATE
                 """,
-                (user_id, vk_user_id),
+                (user_id,),
             )
             fetched = cur.fetchone()
             if fetched is None:
@@ -758,7 +819,7 @@ class Database:
                 """
                 DELETE FROM job_runs
                 WHERE user_id = %s
-                  AND job_type = 'portfolio_daily'
+                  AND job_type IN ('portfolio_daily', 'portfolio_refresh')
                 """,
                 (user_id,),
             )

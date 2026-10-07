@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="OMNICIO">
+  <defs>
+    <linearGradient id="ring" x1=".15" y1=".12" x2=".84" y2=".92" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#92d6ff"/>
+      <stop offset=".34" stop-color="#246dff"/>
+      <stop offset=".62" stop-color="#183f98"/>
+      <stop offset=".81" stop-color="#9adcff"/>
+      <stop offset="1" stop-color="#287bfc"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#061321"/>
+  <circle cx="256" cy="256" r="152" fill="none" stroke="url(#ring)" stroke-width="76"/>
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#95c4ff" stroke-opacity=".35" stroke-width="2"/>
+</svg>

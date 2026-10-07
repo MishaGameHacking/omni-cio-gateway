@@ -1,16 +1,14 @@
-"""R6/R7 execution orchestration with fail-closed production canary authority."""
+"""Recover existing execution records without creating or submitting orders."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
-from zoneinfo import ZoneInfo
 
 from .broker import BrokerConnectionError, BrokerService
 from .execution import (
     ExecutionLegStatus,
-    ExecutionMode,
     ExecutionStateError,
     provider_leg_status,
 )
@@ -20,16 +18,11 @@ from .execution_store import (
     ExecutionStore,
 )
 from .tbank import (
-    TBankMaxLots,
     TBankMoney,
     TBankNotFound,
     TBankOrderState,
     TBankUnavailable,
 )
-
-ORDER_TIMEOUT = timedelta(minutes=2)
-SANDBOX_ORDER_TIMEOUT = ORDER_TIMEOUT
-MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 
 class ExecutionServiceError(RuntimeError):
@@ -44,55 +37,9 @@ class PortfolioExecutionService:
         *,
         store: ExecutionStore,
         broker: BrokerService,
-        live_execution_enabled: bool = False,
-        live_max_order_rub: int = 10_000,
-        live_max_daily_rub: int = 20_000,
     ) -> None:
-        if live_max_order_rub <= 0 or live_max_daily_rub < live_max_order_rub:
-            raise ValueError("live execution operator caps are invalid")
         self.store = store
         self.broker = broker
-        self.live_execution_enabled = live_execution_enabled
-        self.live_max_order_rub = Decimal(live_max_order_rub)
-        self.live_max_daily_rub = Decimal(live_max_daily_rub)
-
-    def start(
-        self,
-        user_id: UUID,
-        *,
-        proposal_id: UUID,
-        proposal_version: int,
-        proposal_hash: bytes,
-        mode: ExecutionMode,
-        session_digest: bytes,
-        now: datetime | None = None,
-    ) -> tuple[ExecutionRunRecord, tuple[ExecutionLegRecord, ...]]:
-        if mode == "live":
-            if not self.live_execution_enabled:
-                raise ExecutionServiceError("live_execution_disabled")
-            try:
-                self.broker.live_account(user_id)
-            except BrokerConnectionError as exc:
-                raise ExecutionServiceError("live_account_mismatch") from exc
-        run, legs = self.store.create_run(
-            user_id,
-            proposal_id=proposal_id,
-            expected_version=proposal_version,
-            expected_hash=proposal_hash,
-            mode=mode,
-            session_digest=session_digest,
-        )
-        if mode == "shadow" and run.status not in {
-            "succeeded",
-            "cancelled",
-            "failed",
-        }:
-            self._complete_shadow(user_id, run.id, now=now)
-            snapshot = self.store.execution(user_id, run.id)
-            if snapshot is None:
-                raise ExecutionServiceError("execution_not_found")
-            run, legs, _events = snapshot
-        return run, legs
 
     def _execution_snapshot(
         self,
@@ -104,18 +51,6 @@ class PortfolioExecutionService:
             raise ExecutionServiceError("execution_not_found")
         run, legs, _events = snapshot
         return run, legs
-
-    def _advance_shadow(
-        self,
-        user_id: UUID,
-        run: ExecutionRunRecord,
-        legs: tuple[ExecutionLegRecord, ...],
-        observed_at: datetime,
-    ) -> tuple[ExecutionRunRecord, tuple[ExecutionLegRecord, ...]]:
-        if run.status in {"succeeded", "cancelled", "failed"}:
-            return run, legs
-        self._complete_shadow(user_id, run.id, now=observed_at)
-        return self._execution_snapshot(user_id, run.id)
 
     def _require_execution_connection(
         self,
@@ -130,75 +65,29 @@ class PortfolioExecutionService:
             return
         raise ExecutionServiceError("execution_mode_invalid")
 
-    def _advance_current_leg(
-        self,
-        user_id: UUID,
-        run: ExecutionRunRecord,
-        current: ExecutionLegRecord,
-        observed_at: datetime,
-    ) -> tuple[ExecutionRunRecord, tuple[ExecutionLegRecord, ...]] | None:
-        if current.status == "pending":
-            result = self._submit_pending(user_id, run, current, observed_at)
-            if result in {"submitted", "partially_filled", "reconciling"}:
-                return self._execution_snapshot(user_id, run.id)
-            return None
+    def reconcile(
+        self, user_id: UUID, run_id: UUID, *, now: datetime | None = None,
+    ) -> tuple[ExecutionRunRecord, tuple[ExecutionLegRecord, ...]]:
+        """Read at most one previously submitted request; never submit or cancel.
 
-        active_statuses = {
-            "submitting",
-            "submitted",
-            "partially_filled",
-            "cancel_requested",
-            "reconciling",
-        }
-        if current.status not in active_statuses:
-            return self._execution_snapshot(user_id, run.id)
-
-        if _timed_out(current, observed_at):
-            self._request_cancel(user_id, run, current, observed_at)
-        else:
-            self._reconcile_leg(user_id, run, current, observed_at)
-
-        next_run, next_legs = self._execution_snapshot(user_id, run.id)
-        next_current = _current_leg(next_legs)
-        if next_current is None or next_current.id != current.id:
-            return None
-        return next_run, next_legs
-
-    def advance(
-        self,
-        user_id: UUID,
-        run_id: UUID,
-        *,
-        now: datetime | None = None,
-    ) -> tuple[
-        ExecutionRunRecord,
-        tuple[ExecutionLegRecord, ...],
-    ]:
-        observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+        A durable submitting/reconciling status may represent an ambiguous old
+        request whose provider response was lost. It is safe to query that exact
+        request ID, but a pending leg must never cause a provider call here.
+        """
         run, legs = self._execution_snapshot(user_id, run_id)
-        if run.mode == "shadow":
-            return self._advance_shadow(user_id, run, legs, observed_at)
-
-        self._require_execution_connection(user_id, run)
-        if run.status in {"succeeded", "cancelled", "failed"}:
+        if run.mode == "shadow" or run.status in {"succeeded", "cancelled", "failed"}:
             return run, legs
+        current = next((leg for leg in legs if leg.status in {
+            "submitting", "submitted", "partially_filled", "cancel_requested", "reconciling",
+        }), None)
+        if current is None:
+            return run, legs
+        observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+        self._require_execution_connection(user_id, run)
+        self._reconcile_leg(user_id, run, current, observed_at)
+        self._require_execution_connection(user_id, run)
+        return self._execution_snapshot(user_id, run_id)
 
-        for _ in range(len(legs) + 1):
-            run, legs = self._execution_snapshot(user_id, run_id)
-            current = _current_leg(legs)
-            if current is None or run.status in {"succeeded", "cancelled", "failed"}:
-                return run, legs
-
-            advanced = self._advance_current_leg(
-                user_id,
-                run,
-                current,
-                observed_at,
-            )
-            if advanced is not None:
-                return advanced
-
-        raise ExecutionServiceError("execution_advance_limit_reached")
 
     def cancel(
         self,
@@ -245,44 +134,6 @@ class PortfolioExecutionService:
             raise ExecutionServiceError("execution_not_found")
         return refreshed[0], refreshed[1]
 
-    def _complete_shadow(
-        self,
-        user_id: UUID,
-        run_id: UUID,
-        *,
-        now: datetime | None,
-    ) -> None:
-        observed_at = (now or datetime.now(UTC)).astimezone(UTC)
-        while True:
-            snapshot = self.store.execution(user_id, run_id)
-            if snapshot is None:
-                raise ExecutionServiceError("execution_not_found")
-            run, legs, _events = snapshot
-            if run.mode != "shadow":
-                raise ExecutionServiceError("shadow_mode_required")
-            current = _current_leg(legs)
-            if current is None:
-                return
-            if current.status != "pending":
-                raise ExecutionServiceError("shadow_leg_state_invalid")
-            self.store.transition_leg(
-                user_id,
-                run_id=run_id,
-                leg_id=current.id,
-                expected_statuses=("pending",),
-                new_status="shadow_filled",
-                event_type="shadow_leg_rehearsed",
-                details={
-                    "action": current.action,
-                    "instrument_uid": current.instrument_uid,
-                    "lots": current.lots_requested,
-                    "limit_price": str(current.limit_price),
-                    "limit_price_type": current.limit_price_type,
-                    "provider_mutation": False,
-                },
-                lots_executed=current.lots_requested,
-                now=observed_at,
-            )
 
     def _require_sandbox_account(
         self,
@@ -313,225 +164,6 @@ class PortfolioExecutionService:
         ):
             raise ExecutionServiceError("live_account_mismatch")
 
-    def _live_submit_authority(
-        self,
-        user_id: UUID,
-        run: ExecutionRunRecord,
-    ) -> None:
-        if not self.live_execution_enabled:
-            raise ExecutionServiceError("live_execution_disabled")
-        mandate = self.store.live_mandate(
-            user_id,
-            account_id=run.account_id,
-        )
-        if (
-            mandate is None
-            or run.live_mandate_id is None
-            or mandate.id != run.live_mandate_id
-        ):
-            raise ExecutionServiceError("live_mandate_inactive")
-        self.broker.live_account(user_id)
-
-    def _submit_pending(
-        self,
-        user_id: UUID,
-        run: ExecutionRunRecord,
-        leg: ExecutionLegRecord,
-        observed_at: datetime,
-    ) -> ExecutionLegStatus:
-        if run.mode == "sandbox":
-            self._sandbox_preflight(user_id, leg)
-        elif run.mode == "live":
-            self._live_submit_authority(user_id, run)
-            self._live_preflight(user_id, run, leg, observed_at)
-        else:
-            raise ExecutionServiceError("provider_execution_mode_invalid")
-
-        prefix = run.mode
-        self.store.transition_leg(
-            user_id,
-            run_id=run.id,
-            leg_id=leg.id,
-            expected_statuses=("pending",),
-            new_status="submitting",
-            event_type=f"{prefix}_preflight_passed",
-            details={
-                "request_id": str(leg.request_id),
-                "margin": False,
-                "order_type": "limit",
-                "time_in_force": (
-                    "fill_and_kill" if run.mode == "live" else "day"
-                ),
-            },
-            now=observed_at,
-        )
-        try:
-            if run.mode == "live":
-                state = self.broker.post_live_order(
-                    user_id,
-                    leg.instrument_uid,
-                    quantity_lots=leg.lots_requested,
-                    price=str(leg.limit_price),
-                    direction=leg.action,
-                    request_id=str(leg.request_id),
-                    price_type=leg.limit_price_type,
-                )
-            else:
-                state = self.broker.post_sandbox_order(
-                    user_id,
-                    leg.instrument_uid,
-                    quantity_lots=leg.lots_requested,
-                    price=str(leg.limit_price),
-                    direction=leg.action,
-                    request_id=str(leg.request_id),
-                    price_type=leg.limit_price_type,
-                )
-        except BrokerConnectionError as exc:
-            code = f"{prefix}_connection_changed"
-            self.store.mark_run_reconciling(
-                user_id,
-                run_id=run.id,
-                leg_id=leg.id,
-                error_code=code,
-                details={"request_id": str(leg.request_id)},
-                now=observed_at,
-            )
-            raise ExecutionServiceError(code) from exc
-        except TBankUnavailable:
-            code = f"{prefix}_submit_ambiguous"
-            self.store.mark_run_reconciling(
-                user_id,
-                run_id=run.id,
-                leg_id=leg.id,
-                error_code=code,
-                details={
-                    "request_id": str(leg.request_id),
-                    "retry_post_order": False,
-                },
-                now=observed_at,
-            )
-            return "reconciling"
-
-        return self._record_provider_state(
-            user_id,
-            run,
-            leg,
-            state,
-            observed_at,
-            expected_statuses=("submitting",),
-            event_type=f"{prefix}_order_submitted",
-        )
-
-    def _sandbox_preflight(
-        self,
-        user_id: UUID,
-        leg: ExecutionLegRecord,
-    ) -> None:
-        max_lots = self.broker.sandbox_max_lots(
-            user_id,
-            leg.instrument_uid,
-            price=str(leg.limit_price),
-        )
-        self._validate_lot_limits("sandbox", leg, max_lots)
-        estimate = self.broker.sandbox_order_price(
-            user_id,
-            leg.instrument_uid,
-            price=str(leg.limit_price),
-            direction=leg.action,
-            quantity_lots=leg.lots_requested,
-        )
-        self._validate_proposal_money_bound("sandbox", leg, _rub(estimate.total_order_amount))
-
-    def _live_preflight(
-        self,
-        user_id: UUID,
-        run: ExecutionRunRecord,
-        leg: ExecutionLegRecord,
-        observed_at: datetime,
-    ) -> None:
-        mandate = self.store.live_mandate(
-            user_id,
-            account_id=run.account_id,
-            now=observed_at,
-        )
-        if (
-            mandate is None
-            or run.live_mandate_id is None
-            or mandate.id != run.live_mandate_id
-        ):
-            raise ExecutionServiceError("live_mandate_inactive")
-        if leg.action != "buy":
-            raise ExecutionServiceError("live_canary_buy_only")
-
-        max_lots = self.broker.live_max_lots(
-            user_id,
-            leg.instrument_uid,
-            price=str(leg.limit_price),
-        )
-        self._validate_lot_limits("live", leg, max_lots)
-        estimate = self.broker.live_order_price(
-            user_id,
-            leg.instrument_uid,
-            price=str(leg.limit_price),
-            direction=leg.action,
-            quantity_lots=leg.lots_requested,
-        )
-        total = _rub(estimate.total_order_amount)
-        self._validate_proposal_money_bound("live", leg, total)
-
-        order_cap = min(
-            mandate.max_order_notional_rub,
-            self.live_max_order_rub,
-        )
-        daily_cap = min(
-            mandate.max_daily_notional_rub,
-            self.live_max_daily_rub,
-        )
-        if total > order_cap:
-            raise ExecutionServiceError("live_order_notional_cap_exceeded")
-        local_now = observed_at.astimezone(MOSCOW_TZ)
-        day_start = local_now.replace(
-            hour=0,
-            minute=0,
-            second=0,
-            microsecond=0,
-        )
-        used = self.store.live_daily_notional(
-            user_id,
-            account_id=run.account_id,
-            day_start=day_start,
-        )
-        if used + total > daily_cap:
-            raise ExecutionServiceError("live_daily_notional_cap_exceeded")
-
-    @staticmethod
-    def _validate_lot_limits(
-        prefix: str,
-        leg: ExecutionLegRecord,
-        max_lots: TBankMaxLots,
-    ) -> None:
-        currency = max_lots.currency
-        buy_max = max_lots.buy_max_lots
-        sell_max = max_lots.sell_max_lots
-        if currency not in {"", "RUB"}:
-            raise ExecutionServiceError(f"{prefix}_max_lots_currency_invalid")
-        if leg.action == "buy":
-            if buy_max < leg.lots_requested:
-                raise ExecutionServiceError(f"{prefix}_buy_lots_exceed_available")
-        elif sell_max < leg.lots_requested:
-            raise ExecutionServiceError(f"{prefix}_sell_lots_exceed_available")
-
-    @staticmethod
-    def _validate_proposal_money_bound(
-        prefix: str,
-        leg: ExecutionLegRecord,
-        total: Decimal,
-    ) -> None:
-        if leg.action == "buy":
-            if leg.max_spend_rub is None or total > leg.max_spend_rub:
-                raise ExecutionServiceError(f"{prefix}_buy_would_overspend")
-        elif leg.min_proceeds_rub is None or total < leg.min_proceeds_rub:
-            raise ExecutionServiceError(f"{prefix}_sell_below_min_proceeds")
 
     def _reconcile_leg(
         self,
@@ -582,6 +214,7 @@ class PortfolioExecutionService:
             )
             return "reconciling"
 
+        self._require_execution_connection(user_id, run)
         return self._record_provider_state(
             user_id,
             run,
@@ -800,14 +433,6 @@ def _current_leg(
             continue
         return leg
     return None
-
-
-def _timed_out(leg: ExecutionLegRecord, now: datetime) -> bool:
-    if leg.status not in {"submitted", "partially_filled"}:
-        return False
-    if leg.submitted_at is None:
-        return False
-    return now - leg.submitted_at.astimezone(UTC) >= ORDER_TIMEOUT
 
 
 def _validate_state_matches_leg(

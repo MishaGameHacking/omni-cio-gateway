@@ -6,6 +6,7 @@ from uuid import UUID
 
 import pytest
 
+from omnicio.broker import BrokerConnectionStatus
 from omnicio.cbr import (
     CBRClient,
     CBRHistory,
@@ -196,6 +197,9 @@ def test_cbr_client_rejects_key_rate_without_current_effective_value() -> None:
 class FakeBroker:
     def __init__(self, quote_time: str) -> None:
         self.quote_time = quote_time
+
+    def status(self, user_id: UUID) -> BrokerConnectionStatus:
+        return BrokerConnectionStatus(True, "prod", "fixture-account", verified_at=None)
 
     def usd_rub_quote(self, user_id: UUID) -> TBankFxQuote:
         assert user_id == UUID("00000000-0000-0000-0000-000000000001")
@@ -520,7 +524,7 @@ def test_market_service_rejects_unknown_instrument_period_before_provider_read()
         service.instrument_snapshot(
             UUID("00000000-0000-0000-0000-000000000001"),
             "uid-1",
-            period="all",
+            period="decade",
         )
 
 

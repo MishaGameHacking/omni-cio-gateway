@@ -64,10 +64,25 @@ class Settings:
     portfolio_live_execution_enabled: bool
     portfolio_live_max_order_rub: int
     portfolio_live_max_daily_rub: int
+    tid_client_id: str = ""
+    tid_client_secret: str = ""
+    tid_login_enabled: bool = False
+    tid_pkce_enabled: bool = True
+    assistant_base_url: str = ""
+    assistant_api_key: str = ""
+    assistant_model: str = ""
 
     @property
     def vkid_ready(self) -> bool:
         return self.vkid_login_enabled and positive_numeric_id(self.vkid_app_id)
+
+    @property
+    def tid_ready(self) -> bool:
+        return self.tid_login_enabled and bool(self.tid_client_id and self.tid_client_secret)
+
+    @property
+    def login_ready(self) -> bool:
+        return self.vkid_ready or self.tid_ready
 
     @property
     def access_mode(self) -> str:
@@ -101,4 +116,12 @@ def load_settings() -> Settings:
         ),
         portfolio_live_max_order_rub=live_max_order,
         portfolio_live_max_daily_rub=live_max_daily,
+        tid_client_id=os.environ.get("TID_CLIENT_ID", "").strip(),
+        tid_client_secret=os.environ.get("TID_CLIENT_SECRET", "").strip(),
+        tid_login_enabled=boolean("TID_LOGIN_ENABLED", False),
+        tid_pkce_enabled=boolean("TID_PKCE_ENABLED", True),
+        assistant_base_url=(os.environ.get("ASSISTANT_BASE_URL", "").strip()
+                            if boolean("ASSISTANT_ENABLED", True) else ""),
+        assistant_api_key=os.environ.get("ASSISTANT_API_KEY", "").strip(),
+        assistant_model=os.environ.get("ASSISTANT_MODEL", "").strip(),
     )
