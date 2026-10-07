@@ -2308,22 +2308,29 @@ async function exerciseResearchReload({fixture,send,click,wait,evaluate}) {
   await wait('document.querySelector("[data-research-state=running]")',"An accepted request survives its lost POST acknowledgment");
   const request=[...fixture.researchRequests.values()].find(item=>item.status==="running");
   const posts=fixture.requests.filter(item=>item.path==="/api/profile/strategy/research").length;
+  assert.equal(fixture.requests.filter(item=>item.path==="/api/profile/strategy/research" && item.body.request_id===request.id).length,1,"An accepted request with a lost acknowledgment is submitted only once");
   assert.equal(await evaluate('document.querySelector("#research-form [type=submit]").disabled'),true);
   assert.equal(await evaluate(`Object.values(localStorage).some(value=>value.includes(${JSON.stringify(request.id)})) || Object.values(sessionStorage).some(value=>value.includes(${JSON.stringify(request.id)}))`),false,"Private request IDs stay out of browser storage");
+  const readsBeforeReload=fixture.requests.filter(item=>item.path===`/api/research/requests/${request.id}`).length;
+  const previousDocumentTimeOrigin=await evaluate("performance.timeOrigin");
   await send("Page.reload",{ignoreCache:true});
-  await wait('document.querySelector("[data-research-state=running]")',"Reload restores the server recent_request with an exact status GET");
+  await wait(`performance.timeOrigin!==${previousDocumentTimeOrigin} && document.querySelector("[data-research-state=running]") && document.querySelector('[data-action="research-check"]')?.disabled===false`,"The new document restores the server recent_request with an exact status GET");
+  const readsAfterReload=fixture.requests.filter(item=>item.path===`/api/research/requests/${request.id}`).length;
+  assert.ok(readsAfterReload>readsBeforeReload,"The new document verifies the exact request ID before restoring its running state");
   assert.equal(fixture.requests.filter(item=>item.path==="/api/profile/strategy/research").length,posts,"Reload never resubmits research");
   const result=completeTestResearch(fixture,request);
-  await click('[data-action="research-check"]');
   await wait('document.querySelector("[data-research-state=completed]") && document.querySelector("#strategy-research").textContent.includes("Нет достаточной истории")',"Only the identified archive result is restored");
+  assert.ok(fixture.requests.filter(item=>item.path===`/api/research/requests/${request.id}`).length>readsAfterReload,"Restored research uses read-only polling to discover completion");
   assert.ok(fixture.requests.some(item=>item.path===`/api/research/runs/${result.archive.id}`));
+  assert.equal(fixture.requests.filter(item=>item.path==="/api/profile/strategy/research").length,posts,"Completion polling never resubmits research");
   // Another tab deleted this archive; cleanup removes its terminal request
   // after the list response, but before the restored exact-ID status read.
   fixture.researchRuns=fixture.researchRuns.filter(item=>item.id!==result.archive.id);
   Object.assign(request,{status:"deleted",run_id:null});
   fixture.removeResearchRequestBeforeRead=request.id;
+  const completedDocumentTimeOrigin=await evaluate("performance.timeOrigin");
   await send("Page.reload",{ignoreCache:true});
-  await wait('document.querySelector("[data-research-state=missing]") && document.querySelector("#research-form [type=submit]").disabled===false',"A restored missing tombstone cannot permanently block a new explicit run");
+  await wait(`performance.timeOrigin!==${completedDocumentTimeOrigin} && document.querySelector("[data-research-state=missing]") && document.querySelector("#research-form [type=submit]").disabled===false`,"A restored missing tombstone cannot permanently block a new explicit run");
   assert.equal(await evaluate('Boolean(document.querySelector("[data-action=research-retry]"))'),false,"No original body means there is no exact-request replay action");
   assert.equal(fixture.requests.filter(item=>item.path==="/api/profile/strategy/research").length,posts,"Missing restored metadata never automatically creates a new request");
 }
@@ -2393,7 +2400,7 @@ async function exerciseOperatorCapability({fixture,send,base,round,wait,click,ev
   assert.equal(fixture.requests.filter(item=>item.path==="/api/system/metrics").length,before,"A revoked capability prevents future aggregate reads");
 }
 async function exerciseReadConsistency(options) {
-  const {send, configureViewport, round, base, wait} = options;
+  const {send, configureViewport, round, base, wait, evaluate} = options;
   await configureViewport(390);
   const key = `signed-read-contracts-${round}`;
   const fixture = makeFixture("signed");
@@ -2402,8 +2409,9 @@ async function exerciseReadConsistency(options) {
   fixture.refreshStatus.retry_after_seconds = 1800;
   fixture.refreshStatus.cooldown_until = new Date(Date.now() + 1800000).toISOString();
   fixtures.set(key, fixture);
+  const previousDocumentTimeOrigin = await evaluate("performance.timeOrigin");
   await send("Page.navigate", {url: `${base}?case=${key}#settings`});
-  await wait('document.querySelector("#preferences-form")', "A fresh signed-in settings view");
+  await wait(`performance.timeOrigin!==${previousDocumentTimeOrigin} && document.querySelector("#preferences-form")`, "A fresh signed-in settings document");
   const context = {...options, fixture};
   await exerciseNotificationRetry(context);
   await exerciseAnalyticsReadConsistency(context);
