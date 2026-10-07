@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import secrets
+import subprocess
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
@@ -69,6 +71,28 @@ def test_accepted_production_migrations_are_content_immutable() -> None:
         content = (ROOT / "migrations" / name).read_text(encoding="utf-8")
         normalized = content.replace("\r\n", "\n").encode()
         assert hashlib.sha256(normalized).hexdigest() == expected_digest
+
+
+@pytest.mark.skipif(
+    not DATABASE_URL or not os.environ.get("OMNICIO_TEST_POSTGRES_BIN"),
+    reason="disposable PostgreSQL client and database are required",
+)
+def test_native_psql_reports_only_sqlstate_and_stdin_line() -> None:
+    binary = Path(os.environ["OMNICIO_TEST_POSTGRES_BIN"])
+    executable = binary / ("psql.exe" if os.name == "nt" else "psql")
+    result = subprocess.run(
+        [
+            str(executable), "-X", "-d", DATABASE_URL, "-q", "-f", "-",
+            "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate",
+            "-v", "SHOW_CONTEXT=never",
+        ],
+        input="-- Input values must not appear in diagnostics.\n"
+              "SELECT 'omnicio-private-error-canary'::integer;\n",
+        capture_output=True, text=True, check=False, timeout=15,
+    )
+    assert result.returncode == 3
+    assert re.fullmatch(r"psql:<stdin>:2: ERROR:\s+22P02", result.stderr.strip())
+    assert result.stdout == ""
 
 
 def _runtime_url() -> str:

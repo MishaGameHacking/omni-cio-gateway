@@ -4,14 +4,18 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import pathlib
+import subprocess
 import sys
 import tempfile
+import traceback
 import unittest
+from contextlib import ExitStack
 from dataclasses import asdict
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 MODULE_PATH = pathlib.Path(__file__).with_name("timeweb_auth_postgres.py")
 SPEC = importlib.util.spec_from_file_location("timeweb_auth_postgres", MODULE_PATH)
@@ -288,6 +292,61 @@ class PostgresTests(unittest.TestCase):
                 )
             self.assertEqual(client.mock_calls, [])
 
+    def test_schema_command_preserves_sql_and_requests_only_safe_psql_diagnostics(self) -> None:
+        ssh = Mock()
+        sql = "SELECT 'synthetic-private-value';\n"
+        MODULE.run_schema_migration(
+            ssh, migration_sql=sql, migration_step=14,
+            endpoint=MODULE.DatabaseEndpoint("10.0.0.5", 5432), desired=self.desired,
+        )
+        self.assertEqual(ssh.run.call_count, 2)
+        install, execute = ssh.run.call_args_list
+        self.assertEqual(install.kwargs, {"stage": "psql_client", "migration_step": 14})
+        self.assertEqual(execute.kwargs, {
+            "input_text": sql, "stage": MODULE.STAGE_SCHEMA_MIGRATION, "migration_step": 14,
+        })
+        command = execute.args[0]
+        self.assertIn("-X -f - -v ON_ERROR_STOP=1", command)
+        self.assertIn("-v VERBOSITY=sqlstate -v SHOW_CONTEXT=never", command)
+        self.assertIn("statement_timeout=30000 -c lock_timeout=5000", command)
+        self.assertNotIn(sql, command)
+        self.assertNotIn("--echo", command)
+
+    def test_failed_migration_stops_sequence_and_never_reports_readiness(self) -> None:
+        cluster_id = MODULE.load_policy().cluster_id
+        values = {
+            "find_managed_server": {"id": 1}, "find_vpc": {"id": "private"},
+            "find_vpc_service": {}, "private_server_cidr": "10.0.0.4/24",
+            "select_postgres_type": "postgres18", "select_database_preset": {"id": 1},
+            "find_database_cluster": {"id": cluster_id}, "public_ipv4": "192.0.2.1",
+            "inspect_provider_recovery": {},
+            "wait_for_database_endpoint": ({"id": cluster_id}, Mock()),
+            "validate_existing_cluster": None, "service_matches": True,
+            "ensure_recovery_point": None, "inspect_restore_capacity": None,
+            "ensure_server_private_network": None, "load_or_create_server_secrets": {},
+            "write_runtime_env": None, "set_output": None, "add_summary": None,
+        }
+        with ExitStack() as stack:
+            stubs = {name: stack.enter_context(patch.object(MODULE, name, return_value=value))
+                     for name, value in values.items()}
+            ssh = stack.enter_context(patch.object(MODULE, "EphemeralSsh"))
+            migration = stack.enter_context(patch.object(
+                MODULE, "run_schema_migration", side_effect=[None, MODULE.InfraError("blocked")],
+            ))
+            client = Mock()
+            client.get_vpc_services.return_value = [{}]
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.reconcile(
+                    client, desired=self.desired, server_name="server", server_comment="managed",
+                    vpc_name="private", migration_sqls=["SELECT 1;", "SELECT 2;", "SELECT 3;"],
+                )
+        self.assertEqual([call.kwargs["migration_step"] for call in migration.call_args_list],
+                         [1, 2])
+        self.assertEqual([call.kwargs["migration_sql"] for call in migration.call_args_list],
+                         ["SELECT 1;", "SELECT 2;"])
+        stubs["set_output"].assert_not_called()
+        ssh.return_value.__exit__.assert_called_once()
+
     def test_migrations_are_loaded_from_checkout_in_requested_order(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -343,6 +402,100 @@ class PostgresTests(unittest.TestCase):
                 desired=self.desired,
                 db_type="postgres18",
             )
+
+
+class RemoteDiagnosticsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.session = MODULE.EphemeralSsh(
+            client=Mock(), server_id=1, server_ip="192.0.2.1",
+        )
+        self.session._key_path = pathlib.Path("synthetic-key")
+        self.session._known_hosts = pathlib.Path("synthetic-known-hosts")
+
+    def test_sql_failure_reports_only_stage_step_code_and_numeric_line(self) -> None:
+        sql = "SELECT 'sql-canary';"
+        diagnostic = (
+            b"psql:<stdin>:146: ERROR:  42501\r\n"
+            b"DETAIL: password-canary\nCONTEXT: SELECT user-data-canary\n"
+            b"psql: error: postgresql://connection-canary\n"
+        )
+        completed = subprocess.CompletedProcess([], 3, b"stdout-canary", diagnostic)
+        with (
+            patch.object(MODULE.subprocess, "run", return_value=completed) as process,
+            patch("sys.stdout", new_callable=io.StringIO) as stdout,
+            patch("sys.stderr", new_callable=io.StringIO) as stderr,
+            self.assertRaises(MODULE.InfraError) as error,
+        ):
+            self.session.run(
+                "command-canary", input_text=sql,
+                stage=MODULE.STAGE_SCHEMA_MIGRATION, migration_step=14,
+            )
+        self.assertEqual(str(error.exception),
+                         "Remote command failed (stage=schema_migration, migration_step=14, "
+                         "exit_code=3, sqlstate=42501, psql_line=146)")
+        self.assertNotIn("canary", str(error.exception) + stdout.getvalue() + stderr.getvalue())
+        process.assert_called_once()
+        self.assertEqual(process.call_args.kwargs["input"], sql.encode("utf-8"))
+
+    def test_unknown_oversized_or_ambiguous_stderr_never_becomes_free_text(self) -> None:
+        unknown = "sqlstate=unknown, psql_line=unknown"
+        for data in (
+            b"psql: error: connection-password-canary", b"\xffprivate-canary",
+            b"DETAIL: psql:<stdin>:2: ERROR:  42501",
+            b"psql:<stdin>:0: ERROR:  42501", b"psql:<stdin>:1234567890: ERROR:  42501",
+            b"psql:<stdin>:2: ERROR:  42501 SQL-canary",
+            b"psql:<stdin>:2: ERROR:  42p01",
+            b"ERROR:  42501\nERROR:  22012\n",
+            b"x" * (MODULE.MAX_DIAGNOSTIC_BYTES + 1),
+        ):
+            with self.subTest(size=len(data)):
+                self.assertEqual(MODULE.psql_failure_fields(data), unknown)
+        self.assertEqual(MODULE.psql_failure_fields(b"FATAL:  28P01\n"),
+                         "sqlstate=28P01, psql_line=unknown")
+
+    def test_non_sql_failures_ignore_stderr_and_reject_untrusted_context(self) -> None:
+        completed = subprocess.CompletedProcess([], 255, b"stdout-canary", b"ERROR:  42501")
+        with (
+            patch.object(MODULE.subprocess, "run", return_value=completed) as process,
+            self.assertRaises(MODULE.InfraError) as error,
+        ):
+            self.session.run("command-canary")
+        self.assertEqual(str(error.exception),
+                         "Remote command failed (stage=remote_command, exit_code=255)")
+        process.assert_called_once()
+        for context in ({"stage": "private-canary"}, {"migration_step": True},
+                        {"migration_step": -1}, {"migration_step": "private-canary"},
+                        {"migration_step": 10000}):
+            with (
+                self.subTest(context=context),
+                patch.object(MODULE.subprocess, "run") as process,
+                self.assertRaises(MODULE.InfraError) as error,
+            ):
+                self.session.run("unused", **context)
+            process.assert_not_called()
+            self.assertNotIn("canary", str(error.exception))
+
+    def test_timeout_omits_command_output_and_original_exception_without_retry(self) -> None:
+        timeout = subprocess.TimeoutExpired(
+            "command-canary", 90, output=b"stdout-canary", stderr=b"password-canary",
+        )
+        with (
+            patch.object(MODULE.subprocess, "run", side_effect=timeout) as process,
+            self.assertRaises(MODULE.InfraError) as error,
+        ):
+            self.session.run("command-canary", stage="runtime_env")
+        self.assertEqual(str(error.exception), "Remote command timed out (stage=runtime_env)")
+        self.assertNotIn("canary", "".join(traceback.format_exception(error.exception)))
+        self.assertTrue(error.exception.__suppress_context__)
+        process.assert_called_once()
+
+    def test_successful_generic_command_keeps_exact_stdout_consumer(self) -> None:
+        output = "Сохранённые значения\nsynthetic-secret=unchanged\n"
+        with patch.object(MODULE.subprocess, "run", return_value=subprocess.CompletedProcess(
+            [], 0, output.encode("utf-8"), b"ignored stderr",
+        )) as process:
+            self.assertEqual(self.session.run("read existing secret"), output)
+        process.assert_called_once()
 
 
 if __name__ == "__main__":

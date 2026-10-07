@@ -8,6 +8,7 @@ import ipaddress
 import json
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 import sys
@@ -51,6 +52,16 @@ TIMEWEB_DB_PASSWORD_SAFE = frozenset(
 DB_OWNERSHIP_MARKER = "Managed by GitHub Actions: omnicio-auth-postgres"
 SSH_READY_ATTEMPTS = 36
 SSH_READY_DELAY_SECONDS = 10
+STAGE_SCHEMA_MIGRATION = "schema_migration"
+REMOTE_STAGES = frozenset({
+    "remote_command", "private_network", "secret_bootstrap", "runtime_env", "psql_client",
+    STAGE_SCHEMA_MIGRATION,
+})
+PSQL_DIAGNOSTIC = re.compile(
+    rb"(?:psql:<stdin>:([1-9][0-9]{0,8}):[ \t]*)?"
+    rb"(?:ERROR|FATAL|PANIC):[ \t]+([0-9A-Z]{5})"
+)
+MAX_DIAGNOSTIC_BYTES = 65536
 
 
 class InfraError(RuntimeError):
@@ -480,6 +491,39 @@ def validate_existing_cluster(
         raise InfraError("Managed auth database unexpectedly has public IPv6 enabled")
 
 
+def remote_operation_context(stage: str, migration_step: int | None) -> str:
+    if stage not in REMOTE_STAGES:
+        raise InfraError("Invalid remote diagnostic stage")
+    if migration_step is not None and (
+        type(migration_step) is not int or not 1 <= migration_step <= 9999
+    ):
+        raise InfraError("Invalid remote migration step")
+    context = f"stage={stage}"
+    if migration_step is not None:
+        context += f", migration_step={migration_step}"
+    return context
+
+
+def psql_failure_fields(stderr: bytes) -> str:
+    """Allow only a bounded SQLSTATE-only psql line; never return provider text."""
+    unknown = "sqlstate=unknown, psql_line=unknown"
+    if not isinstance(stderr, bytes) or len(stderr) > MAX_DIAGNOSTIC_BYTES:
+        return unknown
+    found = None
+    for line in stderr.splitlines():
+        if len(line) > 256:
+            continue
+        match = PSQL_DIAGNOSTIC.fullmatch(line)
+        if match is not None:
+            if found is not None:
+                return unknown
+            found = match
+    if found is None:
+        return unknown
+    number = found.group(1).decode("ascii") if found.group(1) is not None else "unknown"
+    return f"sqlstate={found.group(2).decode('ascii')}, psql_line={number}"
+
+
 class EphemeralSsh:
     def __init__(
         self,
@@ -595,24 +639,32 @@ class EphemeralSsh:
             detail = detail.replace(private_path, "<ephemeral-key>")
         return False, detail or f"ssh exit code {completed.returncode}"
 
-    def run(self, command: str, *, input_text: str | None = None) -> str:
+    def run(
+        self, command: str, *, input_text: str | None = None,
+        stage: str = "remote_command", migration_step: int | None = None,
+    ) -> str:
+        context = remote_operation_context(stage, migration_step)
         if self._key_path is None or self._known_hosts is None:
             raise InfraError("SSH session is not initialized")
 
         payload = None if input_text is None else input_text.encode("utf-8")
-        completed = subprocess.run(
-            ssh_base_args(self._key_path, self._known_hosts) + [
-                f"root@{self.server_ip}", "--", command,
-            ],
-            input=payload,
-            check=False,
-            capture_output=True,
-            timeout=90,
-        )
-        if completed.returncode != 0:
-            raise InfraError(
-                f"Remote command failed with exit code {completed.returncode}"
+        try:
+            completed = subprocess.run(
+                ssh_base_args(self._key_path, self._known_hosts) + [
+                    f"root@{self.server_ip}", "--", command,
+                ],
+                input=payload,
+                check=False,
+                capture_output=True,
+                timeout=90,
             )
+        except subprocess.TimeoutExpired:
+            raise InfraError(f"Remote command timed out ({context})") from None
+        if completed.returncode != 0:
+            detail = f"{context}, exit_code={completed.returncode}"
+            if stage == STAGE_SCHEMA_MIGRATION:
+                detail += ", " + psql_failure_fields(completed.stderr)
+            raise InfraError(f"Remote command failed ({detail})")
         try:
             return completed.stdout.decode("utf-8")
         except UnicodeDecodeError:
@@ -710,6 +762,7 @@ def ensure_server_private_network(
     ssh.run(
         f"bash -s -- {shlex.quote(private_cidr)}",
         input_text=REMOTE_PRIVATE_NETWORK_CONFIG,
+        stage="private_network",
     )
 
 
@@ -790,7 +843,7 @@ print(path.read_text(), end="")
 
 
 def load_or_create_server_secrets(ssh: EphemeralSsh) -> dict[str, str]:
-    raw = ssh.run("python3 -", input_text=REMOTE_SECRET_BOOTSTRAP)
+    raw = ssh.run("python3 -", input_text=REMOTE_SECRET_BOOTSTRAP, stage="secret_bootstrap")
     values = parse_secret_bundle(raw)
     if not is_valid_timeweb_db_password(values["OMNICIO_DB_ADMIN_PASSWORD"]):
         raise InfraError("Stored database password is invalid; automatic rotation is disabled")
@@ -824,6 +877,7 @@ def write_runtime_env(
         f"cat > {shlex.quote(REMOTE_RUNTIME_PATH)}; "
         f"chmod 600 {shlex.quote(REMOTE_RUNTIME_PATH)}",
         input_text=content,
+        stage="runtime_env",
     )
 
 
@@ -831,13 +885,15 @@ def run_schema_migration(
     ssh: EphemeralSsh,
     *,
     migration_sql: str,
+    migration_step: int,
     endpoint: DatabaseEndpoint,
     desired: DesiredDatabase,
 ) -> None:
     ssh.run(
         "command -v psql >/dev/null 2>&1 || "
         "(apt-get update -qq && "
-        "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client)"
+        "DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client)",
+        stage="psql_client", migration_step=migration_step,
     )
     host = shlex.quote(endpoint.host)
     port = shlex.quote(str(endpoint.port))
@@ -850,9 +906,12 @@ def run_schema_migration(
         'export PGCONNECT_TIMEOUT=10; '
         'export PGOPTIONS="-c statement_timeout=30000 -c lock_timeout=5000"; '
         f"psql -h {host} -p {port} -U {user} -d {database} "
-        "-v ON_ERROR_STOP=1 -q"
+        "-X -f - -v ON_ERROR_STOP=1 -v VERBOSITY=sqlstate -v SHOW_CONTEXT=never -q"
     )
-    ssh.run(command, input_text=migration_sql)
+    ssh.run(
+        command, input_text=migration_sql,
+        stage=STAGE_SCHEMA_MIGRATION, migration_step=migration_step,
+    )
 
 
 def wait_for_database_endpoint(
@@ -995,10 +1054,11 @@ def reconcile(
             desired=desired,
             secrets=secret_bundle,
         )
-        for migration_sql in migration_sqls:
+        for migration_step, migration_sql in enumerate(migration_sqls, start=1):
             run_schema_migration(
                 ssh,
                 migration_sql=migration_sql,
+                migration_step=migration_step,
                 endpoint=endpoint,
                 desired=desired,
             )
