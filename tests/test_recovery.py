@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from omnicio.db import UserRecord
 from omnicio.main import app
-from omnicio.recovery import recovery_status
+from omnicio.recovery import recovery_status, sign_recovery_evidence
 
 NOW = datetime(2026, 10, 5, 6, tzinfo=UTC)
 
@@ -122,3 +122,56 @@ def test_recovery_endpoint_requires_session_and_never_uses_client_path() -> None
     assert anonymous.status_code == 401
     assert response.headers["cache-control"] == "private, no-store"
     assert anonymous.headers["cache-control"] == "private, no-store"
+
+
+def restore_proof(**changes: object) -> dict[str, object]:
+    return {
+        "kind": "logical_restore_v1", "source_kind": "runtime_pg_dump", "cluster_id": 4215095,
+        "release_sha": "a" * 40, "archive_sha256": "b" * 64,
+        "verified_at": (NOW - timedelta(minutes=1)).isoformat(),
+        "source_at": (NOW - timedelta(hours=1)).isoformat(),
+        "source_system_id": "70000000000000001", "target_system_id": "70000000000000002",
+        "duration_seconds": 2.5,
+        "checks": {"content": True, "schema": True, "foreign_keys": True, "tenant_isolation": True},
+        **changes,
+    }
+
+
+@pytest.mark.parametrize("mode", [
+    "valid", "wrong_key", "tampered", "future", "same_cluster", "failed_check", "expired",
+    "wrong_source", "unicode_signature",
+])
+def test_restore_status_requires_authenticated_isolated_recent_proof(
+    monkeypatch: pytest.MonkeyPatch, mode: str,
+) -> None:
+    key = "synthetic-signing-key-" + "x" * 32
+    monkeypatch.setenv("OMNICIO_RESTORE_RECEIPT_KEY", key)
+    changes: dict[str, object] = {}
+    if mode == "future":
+        changes["verified_at"] = (NOW + timedelta(seconds=1)).isoformat()
+    elif mode == "same_cluster":
+        changes["target_system_id"] = "70000000000000001"
+    elif mode == "failed_check":
+        changes["checks"] = {"content": True, "schema": True,
+                             "foreign_keys": True, "tenant_isolation": False}
+    elif mode == "expired":
+        changes.update(verified_at=(NOW - timedelta(days=31)).isoformat(),
+                       source_at=(NOW - timedelta(days=32)).isoformat())
+    elif mode == "wrong_source":
+        changes["cluster_id"] = 99999
+    proof = sign_recovery_evidence(restore_proof(**changes), key)
+    if mode == "wrong_key":
+        monkeypatch.setenv("OMNICIO_RESTORE_RECEIPT_KEY", "different-key-" + "y" * 32)
+    elif mode == "tampered":
+        proof["payload"]["duration_seconds"] = 0
+    elif mode == "unicode_signature":
+        proof["signature"] = "я" * 64
+    payload = evidence() | {"cluster_id": 4215095, "restore_verification": proof}
+    with patch("omnicio.recovery._read_evidence", return_value=payload):
+        result = recovery_status(now=NOW)
+    assert result["production_restore_verified"] is (mode == "valid")
+    assert result["restore"]["physical_snapshot_verified"] is False
+    if mode == "expired":
+        assert result["restore"]["status"] == "expired"
+    assert "signature" not in str(result)
+    assert "70000000000000001" not in str(result)

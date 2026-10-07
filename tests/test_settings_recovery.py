@@ -7,8 +7,10 @@ customer dump or provider credential is consumed by this drill.
 from __future__ import annotations
 
 import copy
-import hashlib
+import importlib.util
+import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -30,8 +32,10 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from omnicio.db import Database, UserRecord
 from omnicio.main import app
 from omnicio.portfolio_store import PortfolioStore, SettingsVersionConflict
+from omnicio.recovery import database_guards, table_fingerprints
 from omnicio.security import decrypt_secret, encrypt_secret
 from omnicio.strategy import preset_document
+from omnicio.workspace import default_preferences
 
 ROOT = Path(__file__).resolve().parents[1]
 A, B = UUID(int=901), UUID(int=902)
@@ -74,35 +78,6 @@ def database_store(dsn: str):
         yield db, PortfolioStore(db)
     finally:
         db.close()
-
-
-def table_fingerprints(conn):
-    tables = conn.execute(
-        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
-    ).fetchall()
-    result = {}
-    for (name,) in tables:
-        rows = conn.execute(
-            sql.SQL(
-                "SELECT row_to_json(t)::text FROM {} AS t ORDER BY row_to_json(t)::text"
-            ).format(sql.Identifier("public", name))
-        ).fetchall()
-        result[name] = (
-            len(rows),
-            hashlib.sha256("\n".join(r[0] for r in rows).encode()).hexdigest(),
-        )
-    return result
-
-
-def database_guards(conn):
-    return conn.execute("""
-        SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
-               p.policyname, p.qual, p.with_check
-        FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
-        LEFT JOIN pg_policies p ON p.schemaname = n.nspname AND p.tablename = c.relname
-        WHERE n.nspname = 'public' AND c.relkind = 'r'
-        ORDER BY c.relname, p.policyname
-    """).fetchall()
 
 
 def _insert_historical_setting(
@@ -341,6 +316,97 @@ def test_dump_restore_preserves_settings_and_tenant_isolation(
                     sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
                 )
             control.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+@pytest.mark.skipif(
+    not os.environ.get("OMNICIO_TEST_POSTGRES_BIN"),
+    reason="the disposable PostgreSQL CI launcher supplies isolated cluster binaries",
+)
+def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise the actual operator commands on two synthetic disposable clusters."""
+    from omnicio.recovery import verified_recovery_evidence
+
+    script = ROOT / ".github/scripts/timeweb_recovery.py"
+    spec = importlib.util.spec_from_file_location("synthetic_operator_restore", script)
+    assert spec and spec.loader
+    recovery = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, recovery)
+    spec.loader.exec_module(recovery)
+    binary = Path(os.environ["OMNICIO_TEST_POSTGRES_BIN"])
+    suffix = ".exe" if os.name == "nt" else ""
+    base = os.environ["OMNICIO_TEST_DATABASE_URL"]
+    options = conninfo_to_dict(base)
+    assert options["host"] == "127.0.0.1" and options["dbname"] == "omnicio_test"
+    source_name = "omnicio_export_" + uuid4().hex
+    target_data = tmp_path / "target"
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    subprocess.run(
+        [str(binary / f"initdb{suffix}"), "-D", str(target_data), "-U", "postgres", "-A", "trust"],
+        check=True, capture_output=True, timeout=90,
+    )
+    subprocess.run(
+        [str(binary / f"pg_ctl{suffix}"), "-D", str(target_data), "-l", str(tmp_path / "pg.log"),
+         "-o", f"-h 127.0.0.1 -p {port} -F", "-w", "start"],
+        check=True, capture_output=True, timeout=90,
+    )
+    signing_key = "synthetic-operator-receipt-" + uuid4().hex
+    archive_key = Fernet.generate_key().decode()
+    release_sha = "a" * 40
+    try:
+        with psycopg.connect(base, autocommit=True) as control:
+            control.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(source_name)))
+            try:
+                source_dsn = make_conninfo(base, dbname=source_name)
+                with psycopg.connect(source_dsn, autocommit=True) as source:
+                    for migration in sorted((ROOT / "migrations").glob("*.sql")):
+                        source.execute(migration.read_text(encoding="utf-8"))
+                    source.execute("INSERT INTO users (id) VALUES (%s), (%s)", (A, B))
+                    for owner in (A, B):
+                        source.execute(
+                            "INSERT INTO workspace_preferences (user_id, version, document) "
+                            "VALUES (%s, 1, %s::jsonb)",
+                            (owner, json.dumps(default_preferences())),
+                        )
+                directory = tmp_path / "export"
+                manifest = recovery.export_logical_archive(
+                    source_dsn, binary, directory, cluster_id=recovery.load_policy().cluster_id,
+                    release_sha=release_sha, signing_key=signing_key, archive_key=archive_key,
+                )
+                archive = directory / "database.dump.encrypted"
+                assert not archive.read_bytes().startswith(b"PGDMP")
+                with pytest.raises(recovery.RecoveryBlocked, match="same PostgreSQL cluster"):
+                    recovery.verify_logical_archive(
+                        base, binary, archive, manifest, release_sha=release_sha,
+                        signing_key=signing_key, archive_key=archive_key,
+                    )
+                isolated = f"postgresql://postgres@127.0.0.1:{port}/postgres"
+                receipt = recovery.verify_logical_archive(
+                    isolated, binary, archive, manifest, release_sha=release_sha,
+                    signing_key=signing_key, archive_key=archive_key,
+                )
+                proof = verified_recovery_evidence(receipt, signing_key)
+                assert proof is not None and all(proof["checks"].values())
+                assert proof["source_system_id"] != proof["target_system_id"]
+                with psycopg.connect(isolated) as target:
+                    assert target.execute(
+                        "SELECT count(*) FROM pg_database WHERE datname LIKE 'omnicio_restore_%%'",
+                    ).fetchone()[0] == 0
+                    assert target.execute(
+                        "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'omnicio_restore_%%'",
+                    ).fetchone()[0] == 0
+            finally:
+                control.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(
+                    sql.Identifier(source_name),
+                ))
+    finally:
+        subprocess.run(
+            [str(binary / f"pg_ctl{suffix}"), "-D", str(target_data), "-m", "fast", "-w", "stop"],
+            check=True, capture_output=True, timeout=90,
+        )
 
 
 def test_strategy_draft_api_requires_owner_origin_version_and_keeps_authority_separate() -> None:

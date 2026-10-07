@@ -467,7 +467,7 @@ def portfolio_performance(
         "return_is_annualized": False,
         "return_limitations": [
             "Cash flows are weighted by their recorded execution time within the observed period.",
-            "Large flows during volatile periods can make this estimate differ from time-weighted return.",
+            "Large flows and volatility can make this estimate differ from time-weighted return.",
             "This is a historical account result, not a forecast or a probability of success.",
         ],
         "return_source_url": (

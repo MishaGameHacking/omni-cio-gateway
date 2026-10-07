@@ -153,6 +153,20 @@ class Database:
                     AND to_regclass('public.workspace_preferences') IS NOT NULL
                     AND to_regclass('public.investment_goals') IS NOT NULL
                     AND to_regclass('public.workspace_events') IS NOT NULL
+                    AND to_regclass('public.notification_channels') IS NOT NULL
+                    AND to_regclass('public.notification_outbox') IS NOT NULL
+                    AND to_regclass('public.strategy_research_evidence') IS NOT NULL
+                    AND to_regclass('public.strategy_research_runs') IS NOT NULL
+                    AND (
+                        SELECT count(*) = 2 FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'sessions'
+                          AND column_name IN ('authenticated_provider', 'authenticated_at')
+                    )
+                    AND (
+                        SELECT count(*) = 2 FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'workspace_events'
+                          AND column_name IN ('revision', 'updated_at')
+                    )
                     AND to_regclass('public.tbank_connection') IS NOT NULL
                     AND to_regclass('public.instrument_catalog') IS NOT NULL
                     AND to_regclass('public.account_instrument_access') IS NOT NULL
@@ -259,7 +273,7 @@ class Database:
                           )
                     )
                     AND (
-                        SELECT count(*) = 19
+                        SELECT count(*) = 23
                         FROM pg_class AS c
                         JOIN pg_namespace AS n ON n.oid = c.relnamespace
                         WHERE n.nspname = 'public'
@@ -283,7 +297,11 @@ class Database:
                                   'strategy_drafts',
                                   'workspace_preferences',
                                   'investment_goals',
-                                  'workspace_events'
+                                  'workspace_events',
+                                  'notification_channels',
+                                  'notification_outbox',
+                                  'strategy_research_evidence',
+                                  'strategy_research_runs'
                               ]
                           )
                           AND c.relrowsecurity
@@ -381,9 +399,10 @@ class Database:
                     (user.id, document_type, version, client_ip_hash),
                 )
             cur.execute(
-                "INSERT INTO sessions (user_id, token_digest, client_ip_hash, expires_at) "
-                "VALUES (%s, %s, %s, now() + make_interval(secs => %s))",
-                (user.id, session_token_digest, client_ip_hash, session_ttl_seconds),
+                "INSERT INTO sessions (user_id, token_digest, client_ip_hash, expires_at, "
+                "authenticated_provider, authenticated_at) "
+                "VALUES (%s, %s, %s, now() + make_interval(secs => %s), %s, now())",
+                (user.id, session_token_digest, client_ip_hash, session_ttl_seconds, provider),
             )
             cur.execute(
                 "INSERT INTO audit_events (user_id, event_type, metadata) "
@@ -391,6 +410,7 @@ class Database:
                 (user.id, "account_created" if created else "login_succeeded",
                  json.dumps({"method": provider, "identity_linked": linked})),
             )
+            self._prune_sessions(cur, user.id)
             return user, created
 
     @staticmethod
@@ -509,6 +529,7 @@ class Database:
                     "account_created", "login_succeeded", "tbank_connected",
                     "tbank_disconnected", "investment_profile_saved",
                     "balancing_policy_saved", "support_sessions_revoked",
+                    "session_revoked", "other_sessions_revoked", "identity_unlinked",
                 ], limit),
             )
             rows = cast(list[dict[str, Any]], cur.fetchall())
@@ -527,6 +548,210 @@ class Database:
                 """,
                 (token_digest,),
             )
+
+    @staticmethod
+    def _active_session(cur: Any, user_id: UUID, token_digest: bytes) -> dict[str, Any]:
+        """Serialize self-service security mutations with login and account deletion."""
+        cur.execute(
+            "SELECT s.id, s.authenticated_provider, s.authenticated_at, "
+            "s.authenticated_at BETWEEN now() - interval '5 minutes' AND now() "
+            "AS recently_authenticated "
+            "FROM users u JOIN sessions s ON s.user_id = u.id "
+            "WHERE u.id = %s AND u.status = 'active' AND s.token_digest = %s "
+            "AND s.revoked_at IS NULL AND s.expires_at > now() FOR UPDATE OF u, s",
+            (user_id, token_digest),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise PermissionError("session_expired")
+        return cast(dict[str, Any], row)
+
+    @staticmethod
+    def _prune_sessions(cur: Any, user_id: UUID | None = None) -> int:
+        """Bound housekeeping to 500 auth rows; never touch financial or audit history."""
+        cur.execute(
+            "DELETE FROM sessions WHERE id IN (SELECT id FROM sessions "
+            "WHERE (%s::uuid IS NULL OR user_id = %s::uuid) AND "
+            "(expires_at < now() - interval '30 days' OR "
+            "revoked_at < now() - interval '30 days') "
+            "ORDER BY expires_at, id LIMIT 500 FOR UPDATE SKIP LOCKED)",
+            (user_id, user_id),
+        )
+        return int(cur.rowcount)
+
+    def prune_sessions(self) -> int:
+        """Operator housekeeping: one bounded batch, without granting user authority."""
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            return self._prune_sessions(cur)
+
+    def active_sessions(self, user_id: UUID, current_digest: bytes) -> dict[str, Any]:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            current = self._active_session(cur, user_id, current_digest)
+            self._prune_sessions(cur, user_id)
+            cur.execute(
+                "SELECT id, created_at, last_seen_at, expires_at, authenticated_provider, "
+                "count(*) OVER () AS total FROM sessions WHERE user_id = %s "
+                "AND revoked_at IS NULL AND expires_at > now() "
+                "ORDER BY (id = %s) DESC, last_seen_at DESC, id LIMIT 100",
+                (user_id, current["id"]),
+            )
+            rows = cast(list[dict[str, Any]], cur.fetchall())
+            total = int(rows[0]["total"]) if rows else 0
+            return {
+                "sessions": [{
+                    "id": str(row["id"]), "created_at": row["created_at"],
+                    "last_seen_at": row["last_seen_at"], "expires_at": row["expires_at"],
+                    "current": row["id"] == current["id"],
+                    "auth_provider": row["authenticated_provider"],
+                } for row in rows],
+                "total": total, "truncated": total > len(rows),
+            }
+
+    def revoke_session_for_user(
+        self, user_id: UUID, current_digest: bytes, session_id: UUID,
+    ) -> bool:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            current = self._active_session(cur, user_id, current_digest)
+            if session_id == current["id"]:
+                raise ValueError("use_logout_for_current_session")
+            cur.execute(
+                "UPDATE sessions SET revoked_at = now() WHERE user_id = %s AND id = %s "
+                "AND revoked_at IS NULL AND expires_at > now() RETURNING id",
+                (user_id, session_id),
+            )
+            changed = cur.fetchone() is not None
+            if changed:
+                cur.execute(
+                    "INSERT INTO audit_events (user_id, event_type, metadata) "
+                    "VALUES (%s, 'session_revoked', %s::jsonb)",
+                    (user_id, json.dumps({"session_id": str(session_id)})),
+                )
+            return changed
+
+    def revoke_other_sessions(self, user_id: UUID, current_digest: bytes) -> int:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            current = self._active_session(cur, user_id, current_digest)
+            cur.execute(
+                "UPDATE sessions SET revoked_at = now() WHERE user_id = %s AND id <> %s "
+                "AND revoked_at IS NULL AND expires_at > now()",
+                (user_id, current["id"]),
+            )
+            count = int(cur.rowcount)
+            if count:
+                cur.execute(
+                    "INSERT INTO audit_events (user_id, event_type, metadata) "
+                    "VALUES (%s, 'other_sessions_revoked', %s::jsonb)",
+                    (user_id, json.dumps({"count": count})),
+                )
+            return count
+
+    def unlink_identity(
+        self, user_id: UUID, current_digest: bytes, provider: str,
+        *, enabled_providers: frozenset[str],
+    ) -> bool:
+        """Require recent proof of another working identity; never orphan an account."""
+        if provider not in {"vkid", "tid"}:
+            raise ValueError("oauth_provider_invalid")
+        lookup = {
+            "vkid": "SELECT vk_user_id AS subject FROM vkid_identities WHERE user_id = %s",
+            "tid": "SELECT tid_subject AS subject FROM tid_identities WHERE user_id = %s",
+        }
+        remove = {
+            "vkid": "DELETE FROM vkid_identities WHERE user_id = %s AND vk_user_id = %s",
+            "tid": "DELETE FROM tid_identities WHERE user_id = %s AND tid_subject = %s",
+        }
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+            cur.execute(lookup[provider], (user_id,))
+            identity = cur.fetchone()
+            if identity is not None:
+                subject = cast(dict[str, Any], identity)["subject"]
+                cur.execute(_ADVISORY_LOCK_SQL, (f"identity:{provider}:{subject}",))
+            current = self._active_session(cur, user_id, current_digest)
+            other = current["authenticated_provider"]
+            if (not current["recently_authenticated"] or other == provider
+                    or other not in enabled_providers or other not in lookup):
+                raise PermissionError("identity_reauthentication_required")
+            cur.execute(lookup[other], (user_id,))
+            if cur.fetchone() is None:
+                raise PermissionError("identity_last_provider")
+            if identity is None:
+                return False
+            cur.execute(remove[provider], (user_id, subject))
+            changed = cur.rowcount == 1
+            if changed:
+                # Legacy sessions cannot prove their original provider, so revoke
+                # them as well. The current recent other-provider session survives.
+                cur.execute(
+                    "UPDATE sessions SET revoked_at = now() WHERE user_id = %s "
+                    "AND revoked_at IS NULL AND (authenticated_provider = %s "
+                    "OR authenticated_provider IS NULL)", (user_id, provider),
+                )
+                cur.execute(
+                    "INSERT INTO audit_events (user_id, event_type, metadata) "
+                    "VALUES (%s, 'identity_unlinked', %s::jsonb)",
+                    (user_id, json.dumps({"provider": provider})),
+                )
+            return changed
+
+    def operational_metrics(self, operator_user_id: UUID, current_digest: bytes) -> dict[str, Any]:
+        """Owner-only aggregate evidence; no tenant rows, IDs or credentials escape."""
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._active_session(cur, operator_user_id, current_digest)
+            cur.execute("SELECT role FROM users WHERE id = %s", (operator_user_id,))
+            operator = cast(dict[str, Any] | None, cur.fetchone())
+            if operator is None or operator["role"] != "owner":
+                raise PermissionError("operator_required")
+            return self.collect_operational_metrics()
+
+    def collect_operational_metrics(self) -> dict[str, Any]:
+        """Internal monitor consumer; HTTP callers must use operational_metrics."""
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            cur.execute("SELECT now() AS checked_at")
+            checked_at = cast(dict[str, Any], cur.fetchone())["checked_at"]
+            cur.execute("SELECT id FROM users WHERE status = 'active' ORDER BY id")
+            users = cast(list[dict[str, Any]], cur.fetchall())
+            totals = dict.fromkeys(("connected_accounts", "queued", "running", "stale",
+                                   "failed_24h", "degraded_24h"), 0)
+            oldest_pending = None
+            latest_success = None
+            for user in users:
+                # Runtime keeps FORCE RLS. The operator aggregates one explicit
+                # server-resolved tenant at a time, without a bypass role.
+                cur.execute(_SET_USER_CONTEXT_SQL, (str(user["id"]),))
+                cur.execute(
+                    "SELECT EXISTS (SELECT 1 FROM tbank_connection WHERE user_id = %s) AS yes",
+                    (user["id"],),
+                )
+                totals["connected_accounts"] += int(cast(dict[str, Any], cur.fetchone())["yes"])
+                cur.execute(
+                    "SELECT count(*) FILTER (WHERE status = 'queued') AS queued, "
+                    "count(*) FILTER (WHERE status = 'running') AS running, "
+                    "count(*) FILTER (WHERE status IN ('queued', 'running') "
+                    "AND requested_at < now() - interval '30 minutes') AS stale, "
+                    "count(*) FILTER (WHERE status = 'failed' "
+                    "AND finished_at > now() - interval '24 hours') AS failed_24h, "
+                    "count(*) FILTER (WHERE status = 'degraded' "
+                    "AND finished_at > now() - interval '24 hours') AS degraded_24h, "
+                    "min(requested_at) FILTER (WHERE status IN ('queued', 'running')) "
+                    "AS oldest_pending, max(finished_at) FILTER (WHERE status = 'succeeded') "
+                    "AS latest_success FROM job_runs WHERE user_id = %s", (user["id"],),
+                )
+                row = cast(dict[str, Any], cur.fetchone())
+                for key in ("queued", "running", "stale", "failed_24h", "degraded_24h"):
+                    totals[key] += int(row[key])
+                if row["oldest_pending"] is not None:
+                    oldest_pending = (row["oldest_pending"] if oldest_pending is None else
+                                      min(oldest_pending, row["oldest_pending"]))
+                if row["latest_success"] is not None:
+                    latest_success = (row["latest_success"] if latest_success is None else
+                                      max(latest_success, row["latest_success"]))
+            return {
+                "checked_at": checked_at, "active_users": len(users), "observer": totals,
+                "oldest_pending_at": oldest_pending, "latest_success_at": latest_success,
+                "stale_after_seconds": 1800,
+                "status": "attention" if totals["stale"] or totals["failed_24h"] else "ok",
+            }
 
     def delete_user_account(self, user_id: UUID) -> bool:
         """Permanently delete one authenticated user's account and linked data."""
