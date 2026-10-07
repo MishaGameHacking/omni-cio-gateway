@@ -1412,8 +1412,8 @@ def reconcile(
             # is already healthy. The reset itself is one transaction and
             # refuses to touch a database containing more than one user.
             retire_legacy_profile(ssh)
-            commit_product_environment(ssh, release_sha=release_sha)
             used_slots, active_users = registration_occupancy(ssh)
+            commit_product_environment(ssh, release_sha=release_sha)
         except InfraError:
             rollback_remote(ssh, release_sha=release_sha)
             raise

@@ -3226,7 +3226,7 @@
     status: "active"
   };
   const openGoal = (id = "") => {
-    if (enterRouteScreen("goals", id ? "edit" : "create", {goal_id: id})) return;
+    if (enterRouteScreen("goals", id ? "edit" : "create", id ? {goal_id: id} : {})) return;
     if (!requireUser()) return;
     const goal = (state.data.goals?.items || []).find(item => item.id === id);
     if (id && !goal) {

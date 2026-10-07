@@ -665,7 +665,8 @@ const displayContracts = () => {
     window: {},
     Intl,
     Date,
-    URL
+    URL,
+    URLSearchParams
   });
   vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
   vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
@@ -696,6 +697,7 @@ const displayContracts = () => {
   assert.equal(ui.format("1234.56"), "1,234.56", "Locale setting has a real consumer");
   startupBuildContracts();
   eventReadReceiptContracts();
+  goalRouteContracts(ui);
   goalVersionContracts(ui);
   chartAxisContracts(ui);
   viewportSizeContracts();
@@ -713,6 +715,30 @@ function startupBuildContracts() {
     assert.throws(() => vm.runInContext(app, context), error => error === reachedApplication, "A coherent raw/dev or stamped bundle starts without relying on optional version.js metadata");
   }
   console.log("PASS startup build contracts: coherent dev and stamped bundles reach initialization even without release metadata");
+}
+function goalRouteContracts(ui) {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const opener = app.slice(app.indexOf("  const openGoal ="), app.indexOf("  const updateGoalFields ="));
+  const entry = app.slice(app.indexOf("  function enterRouteScreen("), app.indexOf("  async function restoreRouteOverlay("));
+  const state = {view: "goals", route: ui.parseRoute("#account/goals/create"), data: {goals: {items: [{id: "goal-a", title: "A"}, {id: "goal-b", title: "B"}]}}};
+  const navigations = [], opened = [];
+  const context = vm.createContext({state, navigate: (...args) => navigations.push(args), requireUser: () => true, goalDocument: goal => goal || {}, T: value => value, H: value => value, esc: String, field: () => "", select: () => "", openDialog: (...args) => opened.push(args), updateGoalFields() {}});
+  vm.runInContext(entry + opener + "\nglobalThis.open=openGoal;", context);
+  context.open();
+  assert.equal(opened.length, 1, "A parsed create route opens its form without a second navigation that would reset restored scroll");
+  assert.equal(navigations.length, 0, "An absent goal ID remains absent for the addressable creation screen");
+  state.route = ui.parseRoute("#account/goals/edit?goal=goal-a");
+  context.open("goal-a");
+  assert.equal(opened.length, 2, "An addressed edit route opens the selected goal directly");
+  context.open("goal-b");
+  assert.equal(navigations.length, 1, "Selecting a different goal still changes the route");
+  assert.equal(navigations[0][1].goal_id, "goal-b");
+  assert.equal(opened.length, 2, "The different goal is not rendered before its navigation");
+  state.route = ui.parseRoute("#account/goals");
+  context.open();
+  assert.equal(navigations.length, 2, "Opening a new goal from the list still enters its own screen");
+  assert.equal(navigations[1][1].screen, "create");
+  console.log("PASS goal route entry: parsed creation and edit screens preserve history restoration; another goal or screen still navigates");
 }
 function eventReadReceiptContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");

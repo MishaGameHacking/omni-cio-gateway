@@ -179,6 +179,68 @@ class AuthAppDeployTests(unittest.TestCase):
         with self.assertRaises(MODULE.InfraError):
             MODULE.registration_occupancy(ssh)
 
+    def test_final_occupancy_check_preserves_environment_until_acceptance(self) -> None:
+        from contextlib import ExitStack, nullcontext
+        from unittest.mock import MagicMock, call
+
+        sha = "a" * 40
+        for fails in (True, False):
+            with self.subTest(occupancy_fails=fails), ExitStack() as stack:
+                stack.enter_context(patch.dict(os.environ, {
+                    "VKID_APP_ID": "123456", "REGISTRATION_ENABLED": "false",
+                    "REGISTRATION_MAX_USERS": "2",
+                }, clear=True))
+                ssh = FakeSsh(True)
+                client = MagicMock()
+                client.get_vpc_services.return_value = [{"name": "database"}]
+                for name, result in {
+                    "validate_product_environment": None,
+                    "validate_legal_documents": None,
+                    "find_managed_server": {"id": 1},
+                    "find_vpc": {"id": "test-vpc"},
+                    "public_ipv4": "192.0.2.1",
+                    "build_release_archive": "test-archive",
+                    "EphemeralSsh": nullcontext(ssh),
+                    "upload_release": None,
+                    "write_product_environment": None,
+                    "deploy_remote": None,
+                    "verify_public": None,
+                    "retire_legacy_profile": None,
+                    "add_summary": None,
+                }.items():
+                    stack.enter_context(patch.object(MODULE, name, return_value=result))
+                boundary = MagicMock()
+                for name in (
+                    "registration_occupancy", "commit_product_environment",
+                    "rollback_remote", "set_output",
+                ):
+                    mocked = stack.enter_context(patch.object(MODULE, name))
+                    boundary.attach_mock(mocked, name)
+                boundary.registration_occupancy.return_value = (1, 1)
+                if fails:
+                    boundary.registration_occupancy.side_effect = MODULE.InfraError(
+                        "occupancy unavailable",
+                    )
+                arguments = {
+                    "server_name": "test-server", "server_comment": "test-only",
+                    "release_sha": sha, "repository_root": SCRIPT_DIR.parent.parent,
+                    "cluster_name": "database", "vpc_name": "test-vpc",
+                    "location": "test", "availability_zone": "test",
+                }
+                if fails:
+                    with self.assertRaisesRegex(MODULE.InfraError, "occupancy unavailable"):
+                        MODULE.reconcile(client, **arguments)
+                    boundary.commit_product_environment.assert_not_called()
+                    expected = [call.registration_occupancy(ssh),
+                                call.rollback_remote(ssh, release_sha=sha)]
+                else:
+                    self.assertEqual(MODULE.reconcile(client, **arguments), 0)
+                    boundary.rollback_remote.assert_not_called()
+                    expected = [call.registration_occupancy(ssh),
+                                call.commit_product_environment(ssh, release_sha=sha),
+                                call.set_output("status", "app_ready")]
+                self.assertEqual(boundary.mock_calls, expected)
+
     def test_release_archive_contains_only_runtime_project_files(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = pathlib.Path(tempdir)
