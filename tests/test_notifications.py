@@ -194,7 +194,8 @@ def test_vapid_origin_cache_reuses_one_signed_token_concurrently_for_an_hour() -
     google = transport._authorization(subscription()["endpoint"], now)
     assert google != tokens[0]
     renewed = transport._authorization(apple + "later", now + timedelta(hours=1))
-    assert renewed is not None and renewed != tokens[0]
+    assert renewed is not None
+    assert renewed != tokens[0]
     jwt = renewed.split("t=", 1)[1].split(",", 1)[0]
     claims = json.loads(decode(jwt.split(".")[1]))
     assert claims == {"aud": "https://web.push.apple.com", "sub": "https://omnicio.ru",
@@ -213,7 +214,8 @@ def test_vapid_cache_bounds_new_origins_without_eviction_and_handles_clock_jump(
     assert transport._authorization("https://node-0.push.apple.com/other", now) == first
     earlier = now - timedelta(days=1)
     repaired = transport._authorization("https://node-0.push.apple.com/path", earlier)
-    assert repaired is not None and repaired != first
+    assert repaired is not None
+    assert repaired != first
     jwt = repaired.split("t=", 1)[1].split(",", 1)[0]
     claims = json.loads(decode(jwt.split(".")[1]))
     assert claims["exp"] == int((earlier + timedelta(hours=2)).timestamp())

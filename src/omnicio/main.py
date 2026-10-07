@@ -2022,6 +2022,7 @@ def notification_status(
         403: _API_FAILURES[403],
         409: _API_FAILURES[409],
         422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
         503: _API_FAILURES[503],
     },
 )
@@ -2037,7 +2038,18 @@ def notification_subscribe_push(
     ))
 
 
-@app.post("/api/notifications/push/test")
+@app.post(
+    "/api/notifications/push/test",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        503: _API_FAILURES[503],
+    },
+)
 def notification_test_push(
     body: PushTestBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2056,6 +2068,7 @@ def notification_test_push(
         403: _API_FAILURES[403],
         409: _API_FAILURES[409],
         422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
         503: _API_FAILURES[503],
     },
 )
@@ -2078,6 +2091,7 @@ def notification_request_email(
         403: _API_FAILURES[403],
         409: _API_FAILURES[409],
         422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
         503: _API_FAILURES[503],
     },
 )
@@ -2099,6 +2113,7 @@ def notification_verify_email(
         403: _API_FAILURES[403],
         409: _API_FAILURES[409],
         422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
         503: _API_FAILURES[503],
     },
 )

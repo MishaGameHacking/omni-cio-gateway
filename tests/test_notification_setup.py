@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+from omnicio import notification_setup
 from omnicio.notification_setup import configure_push_environment, main
 from omnicio.notifications import push_public_key
 
@@ -127,25 +128,43 @@ def test_failed_environment_replace_keeps_prior_config_and_durable_key(tmp_path)
     assert not list(tmp_path.glob(".web-push-*"))
 
 
-def test_setup_cli_never_prints_private_key_or_unrelated_configuration(tmp_path, capsys) -> None:
+def test_setup_cli_never_prints_private_key_or_unrelated_configuration(
+    tmp_path, capsys, monkeypatch,
+) -> None:
     key = private_key(3)
     environment = environment_file(tmp_path, key=key)
     key_file = tmp_path / "web-push.key"
-    arguments = ["notification_setup", str(environment), str(key_file)]
-    with patch("sys.argv", arguments):
-        assert main() == 0
+    monkeypatch.setattr(notification_setup, "_ENVIRONMENT_PATH", environment)
+    monkeypatch.setattr(notification_setup, "_KEY_PATH", key_file)
+    monkeypatch.setattr("sys.argv", ["notification_setup"])
+    assert main() == 0
     output = capsys.readouterr()
     assert output.out == "Web Push configuration: ready\n"
     assert not output.err
     assert key not in output.out
     assert "OTHER_SECRET" not in output.out
     environment_file(tmp_path, key="malformed-test-only-secret")
-    with patch("sys.argv", arguments):
-        assert main() == 1
+    assert main() == 1
     output = capsys.readouterr()
     assert not output.out
     assert output.err == "Web Push configuration failed: ValueError\n"
     assert "malformed-test-only-secret" not in output.err
+
+
+def test_setup_cli_rejects_file_arguments_before_reading_or_writing(tmp_path, monkeypatch) -> None:
+    environment = environment_file(tmp_path)
+    before = environment.read_bytes()
+    key_file = tmp_path / "web-push.key"
+    monkeypatch.setattr("sys.argv", ["notification_setup", str(environment), str(key_file)])
+    with (
+        patch.object(notification_setup, "configure_push_environment") as configure,
+        pytest.raises(SystemExit) as result,
+    ):
+        main()
+    assert result.value.code == 2
+    configure.assert_not_called()
+    assert environment.read_bytes() == before
+    assert not key_file.exists()
 
 
 def test_same_environment_and_key_path_is_rejected_without_changes(tmp_path) -> None:

@@ -49,6 +49,7 @@ _EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9.-]{1,189}
 _PUSH_HOSTS = {"fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"}
 _PUSH_SUFFIXES = (".push.apple.com", ".notify.windows.com")
 _MAILTO_SCHEME = "mailto:"
+_HTTPS_SCHEME = "https://"
 _SETTINGS_TARGET = "/#settings"
 _EVENTS_TARGET = "/#events"
 
@@ -207,7 +208,7 @@ def normalize_subscription(value: Mapping[str, Any]) -> dict[str, Any]:
     public = _decode(keys["p256dh"], 65)
     ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), public)
     auth = _decode(keys["auth"], 16)
-    canonical = "https://" + host + parsed.path + ("?" + parsed.query if parsed.query else "")
+    canonical = _HTTPS_SCHEME + host + parsed.path + ("?" + parsed.query if parsed.query else "")
     return {"endpoint": canonical, "keys": {"p256dh": _b64(public), "auth": _b64(auth)}}
 
 
@@ -297,7 +298,7 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
 def _push_retry_delay(value: str) -> int:
     """Bound provider delta-seconds without accepting Unicode digits or huge ints."""
     value = value.strip()
-    if re.fullmatch(r"[0-9]+", value) is None:
+    if re.fullmatch(r"\d+", value, flags=re.ASCII) is None:
         return 60
     significant = value.lstrip("0") or "0"
     if len(significant) > 5:
@@ -317,7 +318,7 @@ class NotificationTransport:
             return self._shared_authorization(endpoint)
         # Isolated transport/RFC tests need no database. Application instances
         # always use the durable store shared by workers and process restarts.
-        origin = "https://" + (urlsplit(endpoint).hostname or "")
+        origin = _HTTPS_SCHEME + (urlsplit(endpoint).hostname or "")
         with self._authorization_lock:
             # Apple requires reusing a JWT for at least one hour. Keep a second
             # hour of validity so a just-reused token does not expire in transit.
@@ -340,7 +341,7 @@ class NotificationTransport:
     def _shared_authorization(self, endpoint: str) -> str | None:
         if self.database is None:
             raise NotificationUnavailable("notification_authorization_store_unavailable")
-        origin = "https://" + (urlsplit(endpoint).hostname or "")
+        origin = _HTTPS_SCHEME + (urlsplit(endpoint).hostname or "")
         identity = hashlib.sha256(_json([
             push_public_key(self.config.vapid_private_key), self.config.vapid_subject,
         ]).encode()).hexdigest()
@@ -498,7 +499,7 @@ class NotificationService:
             push_public_key(config.vapid_private_key)
             subject = config.vapid_subject
             if (any(ord(char) < 33 or ord(char) > 126 for char in subject)
-                    or not subject.startswith((_MAILTO_SCHEME, "https://"))):
+                    or not subject.startswith((_MAILTO_SCHEME, _HTTPS_SCHEME))):
                 raise ValueError("notification_vapid_subject_invalid")
             if subject.startswith(_MAILTO_SCHEME):
                 normalize_email(subject.removeprefix(_MAILTO_SCHEME))

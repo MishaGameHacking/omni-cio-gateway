@@ -137,6 +137,7 @@ jobs:
             artifacts/frontend/*.png
             artifacts/frontend/failure-state.json
             artifacts/frontend/layout-metrics.json
+            artifacts/frontend/installability.json
           if-no-files-found: warn
           retention-days: 7
 

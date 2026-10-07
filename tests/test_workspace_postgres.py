@@ -285,7 +285,8 @@ def test_session_end_cancels_pending_push_and_preserves_receipt_history(
         if ending == "logout":
             database.revoke_session(digest)
         elif ending == "expiry":
-            conn.execute("UPDATE sessions SET expires_at = now() - interval '1 second' "
+            conn.execute("UPDATE sessions SET created_at = now() - interval '2 days', "
+                         "expires_at = now() - interval '1 second' "
                          "WHERE token_digest = %s", (digest,))
         else:
             conn.execute("DELETE FROM sessions WHERE token_digest = %s", (digest,))
@@ -497,7 +498,8 @@ def test_vapid_jwt_is_shared_across_workers_restart_and_bound_to_server_identity
                      "issued_at = now() - interval '2 hours', "
                      "expires_at = now() - interval '1 hour'")
     renewed = services[0].transport._authorization(endpoint, arbitrary_clock)
-    assert renewed is not None and renewed != tokens[0]
+    assert renewed is not None
+    assert renewed != tokens[0]
     jwt = renewed.split("t=", 1)[1].split(",", 1)[0]
     claims = jwt.split(".")[1]
     payload = json.loads(base64.urlsafe_b64decode(claims + "=" * (-len(claims) % 4)))

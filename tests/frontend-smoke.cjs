@@ -1723,6 +1723,7 @@ const runBrowser = async base => {
       source: 'window.__browserErrors=[];window.__cspViolations=[];addEventListener("error",e=>window.__browserErrors.push(e.error?.stack||e.message));addEventListener("unhandledrejection",e=>window.__browserErrors.push(e.reason?.stack||String(e.reason)));addEventListener("securitypolicyviolation",e=>window.__cspViolations.push(e.effectiveDirective));'
     });
     await send("Page.addScriptToEvaluateOnNewDocument", {source: `(${installPushBrowserFixture.toString()})(${JSON.stringify(pushFixtureKey)})`});
+    await send("Page.addScriptToEvaluateOnNewDocument", {source: `(${installPromptBrowserFixture.toString()})()`});
     const evaluate = async expression => {
       const result = await send("Runtime.evaluate", {
         expression,
@@ -1911,6 +1912,7 @@ const runBrowser = async base => {
   try {
     displayContracts();
     await installLifecycleContracts();
+    await installPromptInterleavingContracts();
     await pushEndpointContracts();
     await pushContextContracts();
     await pushBindingReceiptContracts();
@@ -3631,6 +3633,16 @@ async function exerciseAssetEnrichment({send, round, base, wait, evaluate, check
   await evaluate('delete window.__enrichmentChart');
   console.log(`PASS asset enrichment round ${round}: held details/facts/news update their panels while preserving the chosen candle, SVG and focus`);
 }
+function installPromptBrowserFixture() {
+  if (new URLSearchParams(location.search).get("case") !== "guest-installation") return;
+  // Only the controlled prompt scenario replaces the native dialog. The
+  // separate manifest/installability scenario keeps the real browser event.
+  window.addEventListener("beforeinstallprompt", event => {
+    if (!event.isTrusted) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+}
 function installPushBrowserFixture(publicKey) {
   const params = new URLSearchParams(location.search);
   if (!(params.get("case") || "").startsWith("push-")) return;
@@ -3708,6 +3720,47 @@ async function installLifecycleContracts() {
     assert.ok(api.installInstructionsHTML().includes(`data-install-platform="${expected}"`), "Manual installation steps match the actual device capability, including iPad desktop user agents");
   }
   console.log("PASS actual installation lifecycle: single-use prompt, dismissal, persistent entry, installed display and platform instructions");
+}
+async function installPromptInterleavingContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const actions = app.slice(app.indexOf("  const dismissInstall ="), app.indexOf("  const deliveryStateLabels ="));
+  const listener = app.slice(app.indexOf('  window.addEventListener("beforeinstallprompt"'), app.indexOf('  window.addEventListener("appinstalled"'));
+  for (const isolated of [false, true]) {
+    const handlers = [];
+    const installState = {prompt: null, installed: false, dismissed: false, busy: false, result: ""};
+    const context = vm.createContext({installState, URLSearchParams, location: {search: `?case=${isolated ? "guest-installation" : "guest-installability"}`}, window: {addEventListener: (_name, callback) => handlers.push(callback)}, renderInstallState() {}, openInstall() {}, localStorage: {setItem() {}}});
+    vm.runInContext(`(${installPromptBrowserFixture.toString()})();` + actions + listener + "\nglobalThis.promptInstall=promptInstall;", context);
+    const dispatch = event => {
+      event.preventDefault = () => { event.defaultPrevented = true; };
+      event.stopImmediatePropagation = () => { event.stopped = true; };
+      for (const handle of handlers) {
+        handle(event);
+        if (event.stopped) break;
+      }
+    };
+    let prompts = 0, nativePrompts = 0, complete;
+    const controlled = {isTrusted: false, prompt: async () => { prompts += 1; }, userChoice: new Promise(resolve => { complete = resolve; })};
+    dispatch(controlled);
+    assert.equal(controlled.defaultPrevented, true, "The actual application consumes the controlled event");
+    const native = {isTrusted: true, prompt: async () => { nativePrompts += 1; throw new Error("Native prompt requires browser user activation"); }};
+    dispatch(native);
+    const pending = context.promptInstall();
+    if (isolated) {
+      assert.equal(installState.busy, true, "A late native event cannot replace the controlled pending choice");
+      assert.equal(prompts, 1);
+      assert.equal(nativePrompts, 0);
+      complete({outcome: "accepted"});
+      await pending;
+      assert.equal(installState.result, "accepted");
+    } else {
+      await pending;
+      assert.equal(installState.result, "unavailable", "Without fixture isolation the late native event reproduces the observed failure");
+      assert.equal(prompts, 0);
+      assert.equal(nativePrompts, 1, "The real installability scenario does not intercept native events");
+    }
+    assert.equal(installState.busy, false);
+  }
+  console.log("PASS actual install prompt interleaving: only the controlled fixture isolates late native events");
 }
 async function pushEndpointContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");

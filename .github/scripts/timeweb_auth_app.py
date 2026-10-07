@@ -541,8 +541,7 @@ python3 -m venv "$RELEASE/.venv"
 # Keep the signing identity outside product.env rollback and release cleanup.
 # The helper preserves an existing key, writes private files atomically, and
 # exposes only a readiness status. SMTP remains separately disabled.
-"$RELEASE/.venv/bin/python" -m omnicio.notification_setup \
-    /etc/omnicio/product.env /etc/omnicio/web-push.key
+"$RELEASE/.venv/bin/python" -m omnicio.notification_setup
 
 install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
 install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
@@ -1249,16 +1248,20 @@ def verify_public_root(body: bytes, release_sha: str) -> None:
         raise InfraError("Public auth page contains unresolved release markers")
 
 
-def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
-    payload = json.loads(body)
-    if not isinstance(payload, dict):
-        raise InfraError("Public auth config is not an object")
+def verify_public_legal_versions(payload: dict[str, object]) -> None:
     expected_legal = {
         key: os.environ.get(f"LEGAL_{name.upper()}_VERSION", "").strip()
         for name, key in LEGAL_DOCUMENT_KEYS.items()
     }
     if not all(expected_legal.values()) or payload.get("legal_versions") != expected_legal:
         raise InfraError("Public legal versions do not match deployment config")
+
+
+def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
+    payload = json.loads(body)
+    if not isinstance(payload, dict):
+        raise InfraError("Public auth config is not an object")
+    verify_public_legal_versions(payload)
     release = payload.get("release")
     expected_build = release_sha[:12]
     if release_sha and (

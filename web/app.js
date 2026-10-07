@@ -835,7 +835,9 @@
     const breadcrumb = $("#public-breadcrumb");
     breadcrumb.hidden = page === "welcome";
     breadcrumb.innerHTML = `<button class="button secondary small-button" data-action="route-back">${icon("back", true)} ${H("navigation.back")}</button>`;
-    document.title = `${page === "welcome" ? T("OMNICIO — ваш инвестиционный помощник") : T(page === "install" ? "install.title" : "public.page." + page)} · OMNICIO`;
+    const titleKey = page === "install" ? "install.title" : "public.page." + page;
+    const title = page === "welcome" ? T("OMNICIO — ваш инвестиционный помощник") : T(titleKey);
+    document.title = `${title} · OMNICIO`;
     if (page === "install") renderInstall();
     renderInstallPromotion();
   };
@@ -4093,7 +4095,9 @@
   };
   const installInstructionsHTML = () => {
     const touchApple = /iPad|iPhone|iPod/.test(navigator.userAgent) || navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
-    const platform = touchApple ? "ios" : /Android/.test(navigator.userAgent) ? "android" : "desktop";
+    let platform = "desktop";
+    if (touchApple) platform = "ios";
+    else if (/Android/.test(navigator.userAgent)) platform = "android";
     return `<div class="install-instructions" data-install-platform="${platform}"><h3>${H("install.steps_title")}</h3><p>${H("install.steps." + platform)}</p><p class="fine-print">${H("install.browser_controls")}</p></div>`;
   };
   const installContentsHTML = () => {
@@ -4152,22 +4156,29 @@
     const nextAttempt = item.status === "queued" ? ` ${T("· следующая попытка")} ${esc(date(item.next_attempt_at, true))} ${T("МСК")}` : "";
     const detail = item.error ? `<p class="notice error">${esc(item.error.title || T("notifications.delivery_failed"))}</p>` : "";
     const channelKind = item.channel?.kind === "push" ? "Push" : "Email";
-    const uncertain = item.status === "uncertain" ? T(item.channel?.kind === "push" ? "push.delivery_uncertain" : " · повтор автоматически не отправляется; проверьте устройство или почту") : "";
+    const uncertainKey = item.channel?.kind === "push" ? "push.delivery_uncertain" : " · повтор автоматически не отправляется; проверьте устройство или почту";
+    const uncertain = item.status === "uncertain" ? T(uncertainKey) : "";
     const channel = item.channel ? `${channelKind} · ${item.channel.label || T("notifications.channel_unavailable")}` : T("notifications.channel_unavailable");
     return `<li><p class="fine-print">${esc(channel)} · ${H("notifications.attempts")}: ${esc(item.attempts ?? 0)}</p>${detail}<strong>${esc({verification: T("Подтверждение адреса"), event: T("Событие"), digest: T("Дайджест"), operational: T("Состояние сервиса"), test: T("push.test_title")}[item.kind] || T("Уведомление"))}</strong> · ${esc(deliveryStateLabels()[item.status] || T("Состояние неизвестно"))}<br><span class="fine-print">${esc(date(item.created_at, true))} ${H("МСК")}${nextAttempt}${esc(uncertain)}</span></li>`;
+  };
+  const devicePushActions = (status, current, pending) => {
+    const extra = pending ? " disabled" : "";
+    const enable = () => button(T("push.enable"), "notification-push", {primary: true, small: true, extra});
+    if (status === "unauthenticated") return button(T("Войти"), "login", {primary: true, small: true});
+    if (status === "active") {
+      const attributes = ` data-channel-id="${esc(current.channel?.id || "")}"${extra}`;
+      return button(T("push.test"), "notification-push-test", {small: true, extra}) + button(T("Отключить"), "notification-revoke", {small: true, extra: attributes});
+    }
+    if (["default", "granted-pending", "revoked"].includes(status)) return enable();
+    if (status !== "error") return "";
+    const retry = button(T("Повторить"), "push-retry", {small: true, extra});
+    return retry + (current.error?.code === "notification_device_conflict" ? enable() : "");
   };
   const devicePushHTML = () => {
     const current = state.devicePush;
     const status = !state.user || state.tour ? "unauthenticated" : current.status;
     const pending = state.deliveryBusy || Boolean(current.pending);
-    let actions = "";
-    if (status === "unauthenticated") actions = button(T("Войти"), "login", {primary: true, small: true});
-    else if (status === "active") actions = button(T("push.test"), "notification-push-test", {small: true, extra: pending ? " disabled" : ""}) + button(T("Отключить"), "notification-revoke", {small: true, extra: ` data-channel-id="${esc(current.channel?.id || "")}"${pending ? " disabled" : ""}`});
-    else if (["default", "granted-pending", "revoked"].includes(status)) actions = button(T("push.enable"), "notification-push", {primary: true, small: true, extra: pending ? " disabled" : ""});
-    else if (status === "error") {
-      actions = button(T("Повторить"), "push-retry", {small: true, extra: pending ? " disabled" : ""});
-      if (current.error?.code === "notification_device_conflict") actions += button(T("push.enable"), "notification-push", {primary: true, small: true, extra: pending ? " disabled" : ""});
-    }
+    const actions = devicePushActions(status, current, pending);
     const error = current.error ? `<p class="notice error">${esc(humanError(current.error))}</p>` : "";
     const test = current.testStatus ? `<p class="notice" role="status" data-push-test-status="${esc(current.testStatus)}">${H("push.test_" + current.testStatus)}</p>` : "";
     return `<div data-device-push-state="${status}"><h2 class="panel-title">${H("push.title")}</h2><p>${H("push.state." + status)}</p><p class="fine-print">${H("push.privacy")} <a href="/legal/privacy.html">${H("Политика конфиденциальности")}</a></p><div class="form-actions">${actions}</div>${error}${test}</div>`;
@@ -6419,9 +6430,6 @@
   document.addEventListener("change", event => {
     const form = event.target.closest("#assistant-form");
     if (form) { state.assistantDraft = assistantDraftFromForm(form); updateAssistantContext(); }
-  });
-  document.addEventListener("input", event => {
-    const form = event.target.closest("form");
   });
   $("#app-menu-toggle").addEventListener("click", openDrawer);
   $("#drawer-close").addEventListener("click", () => closeDrawer());

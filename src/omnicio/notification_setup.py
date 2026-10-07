@@ -22,6 +22,8 @@ from .notifications import push_public_key
 _PRIVATE_KEY = "NOTIFICATION_VAPID_PRIVATE_KEY"
 _SUBJECT = "NOTIFICATION_VAPID_SUBJECT"
 _CONTACT = "https://omnicio.ru"
+_ENVIRONMENT_PATH = Path("/etc/omnicio/product.env")
+_KEY_PATH = Path("/etc/omnicio/web-push.key")
 
 
 def _setting(text: str, name: str) -> str:
@@ -111,11 +113,11 @@ def configure_push_environment(environment: Path, key_file: Path) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare the persistent Web Push identity")
-    parser.add_argument("environment", type=Path)
-    parser.add_argument("key_file", type=Path)
-    args = parser.parse_args()
+    parser.parse_args()
     try:
-        configured = configure_push_environment(args.environment, args.key_file)
+        # Deployment has one fixed destination. CLI input cannot select files
+        # for this privileged setup command to read, create or replace.
+        configured = configure_push_environment(_ENVIRONMENT_PATH, _KEY_PATH)
     except (OSError, ValueError) as exc:
         # Exception text can contain file contents or a configured destination.
         print(f"Web Push configuration failed: {type(exc).__name__}", file=sys.stderr)
