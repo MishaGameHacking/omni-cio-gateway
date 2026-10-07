@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from omnicio.broker import AnalysisSource, BrokerEvidenceSnapshot, BrokerObservationBundle
 from omnicio.intelligence import assess_candidate_fundamental_risk, build_tbank_evidence
@@ -15,6 +15,7 @@ from omnicio.tbank import (
     TBankPortfolio,
     TBankPortfolioPosition,
     TBankPositions,
+    TBankRating,
 )
 
 
@@ -34,6 +35,7 @@ def _bundle() -> BrokerObservationBundle:
         blocked=False,
         blocked_lots="0",
     )
+
     metadata = TBankInstrumentMetadata(
         uid="bond-uid",
         figi="FIGI-BOND",
@@ -598,3 +600,30 @@ def test_candidate_fundamental_risk_fails_closed_when_metrics_are_missing() -> N
     assert assessment.fundamental_status == "data_missing"
     assert assessment.rating_status == "data_missing"
     assert "fundamental_data_missing" in assessment.reasons
+
+
+def test_observed_issuer_rating_retains_provenance_and_is_not_an_issue_default() -> None:
+    bundle = _bundle()
+    now = bundle.refreshed_at
+    rating = TBankRating("Эксперт РА", "ruD", now - timedelta(days=1), "", False)
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now, dividends=(), coupons=(), bond_events=(), reports=(),
+        fundamentals=(), sources=_sources(now), ratings={"bond-uid": (rating,)},
+    )
+    documents, assessments = build_tbank_evidence(bundle, evidence, assessed_at=now)
+    source = next(row for row in documents if row.document_type == "issuer_rating")
+    assert source.provider == "tbank"
+    assert source.effective_at == rating.rating_date
+    assert source.payload["rating_object"] == "issuer"
+    assert source.facts[0].value_text == "ruD"
+    assert source.source_url.endswith("instruments-service-bond-by")
+    assessment = assessments[0]
+    assert assessment.rating_status == "received"
+    assert assessment.state == "critical"
+    assert "issuer_default_rating_requires_issue_verification" in assessment.reasons
+    stale = replace(evidence, ratings={"bond-uid": (
+        replace(rating, rating_date=now - timedelta(days=400)),
+    )})
+    _, stale_assessments = build_tbank_evidence(bundle, stale, assessed_at=now)
+    assert stale_assessments[0].rating_status == "data_missing"
+    assert stale_assessments[0].state == "data_missing"

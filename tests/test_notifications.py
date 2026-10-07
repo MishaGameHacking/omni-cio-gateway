@@ -20,6 +20,7 @@ from omnicio.notifications import (
     NotificationTransport,
     _log_worker_failure,
     _public_address,
+    delivery_error,
     delivery_time,
     encrypt_push,
     normalize_email,
@@ -168,6 +169,51 @@ def test_quiet_delivery_crosses_midnight_and_obeys_timezone() -> None:
     assert delivery_time(prefs, now) == datetime(2026, 10, 8, 5, tzinfo=UTC)
     outside = datetime(2026, 10, 8, 6, tzinfo=UTC)
     assert delivery_time(prefs, outside) == outside
+
+
+@pytest.mark.parametrize(("now", "frequency", "expected"), [
+    ("2026-10-07T17:29:00+00:00", "daily", "2026-10-06T17:30:00+00:00"),
+    ("2026-10-07T17:30:00+00:00", "daily", "2026-10-07T17:30:00+00:00"),
+    ("2026-10-05T17:29:00+00:00", "weekly", "2026-09-28T17:30:00+00:00"),
+    ("2026-10-07T17:30:00+00:00", "weekly", "2026-10-05T17:30:00+00:00"),
+])
+def test_digest_obeys_selected_local_time_and_latest_complete_period(
+    now: str, frequency: str, expected: str,
+) -> None:
+    prefs = {**default_preferences(), "digest_time": "20:30", "digest_timezone": "Europe/Moscow",
+             "digest_frequency": frequency}
+    actual = NotificationService._digest_boundary(prefs, datetime.fromisoformat(now))
+    assert actual.astimezone(UTC) == datetime.fromisoformat(expected)
+
+
+@pytest.mark.parametrize(("now", "expected"), [
+    ("2026-03-29T01:05:00+00:00", "2026-03-29T01:00:00+00:00"),
+    ("2026-10-25T00:45:00+00:00", "2026-10-24T00:30:00+00:00"),
+    ("2026-10-25T01:45:00+00:00", "2026-10-25T01:30:00+00:00"),
+])
+def test_digest_skipped_or_repeated_local_minute_has_one_delivery_boundary(
+    now: str, expected: str,
+) -> None:
+    prefs = {**default_preferences(), "digest_time": "02:30", "digest_timezone": "Europe/Berlin",
+             "digest_frequency": "daily"}
+    actual = NotificationService._digest_boundary(prefs, datetime.fromisoformat(now))
+    assert actual.astimezone(UTC) == datetime.fromisoformat(expected)
+
+
+def test_delivery_diagnostics_explain_ambiguity_without_promising_retry_or_receipt() -> None:
+    unknown = delivery_error("email_result_unknown", "uncertain")
+    assert unknown and unknown["retryable"] is False and unknown["action_code"] == "check_inbox"
+    expired = delivery_error("push_subscription_expired", "failed")
+    assert expired and expired["action_code"] == "reconnect"
+    backoff = delivery_error("push_rate_limited", "queued")
+    assert backoff and backoff["retryable"] is True
+    exhausted = delivery_error("push_rate_limited", "failed")
+    assert exhausted and exhausted["retryable"] is False
+    assert exhausted["action_code"] == "contact_support"
+    assert delivery_error("push_provider_accepted", "accepted") is None
+    safe = delivery_error("secret-provider-token", "failed")
+    assert safe and safe["code"] == "delivery_error_unknown"
+    assert "secret-provider-token" not in json.dumps(safe)
 
 
 @pytest.mark.parametrize(("status", "expected", "expired"), [

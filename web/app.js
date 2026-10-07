@@ -39,6 +39,14 @@
     generation: 0,
     locked: false,
     tour: false,
+    mode: "auto",
+    session: {status: "checking", error: null, sequence: 0, promise: null},
+    navigationSequence: 0,
+    screenDrafts: {},
+    screenBaselines: {},
+    viewState: {},
+    quotes: {},
+    outdated: false,
     view: "home",
     route: {},
     data: {},
@@ -169,7 +177,7 @@
     if (url.origin !== location.origin || !url.pathname.startsWith("/api/") || url.hash || url.username || url.password) throw new TypeError("Invalid API origin");
     return url;
   };
-  const privateRequest = path => !["/api/auth/config", "/api/auth/vkid/start", "/api/auth/tid/start", "/api/strategy/catalog", "/api/public/market-reference", "/api/public/news"].includes(path.split("?")[0]);
+  const privateRequest = path => !["/api/auth/config", "/api/auth/vkid/start", "/api/auth/tid/start", "/api/strategy/catalog", "/api/public/market-reference", "/api/public/news", "/api/public/support"].includes(path.split("?")[0]);
   const ensureResponseContext = ({
     generation,
     profile,
@@ -181,6 +189,7 @@
   };
   const apiFailure = (response, payload, profile) => {
     const code = typeof payload?.detail === "string" ? payload.detail : "request_failed";
+    if (code === "client_build_changed") flagApplicationUpdate();
     const error = Object.assign(new Error(code), {
       status: response.status,
       code
@@ -226,10 +235,13 @@
     method = "GET",
     body,
     timeout = 30000,
-    bootstrap = false
+    bootstrap = false,
+    onStream = null
   } = {}) => {
     const url = apiPath(path);
     if (state.locked && !bootstrap) throw contextError();
+    const completionRequest = /\/api\/auth\/|\/(cancel|revoke|reconcile)$/.test(path) || method === "DELETE";
+    if (state.outdated && !["GET", "HEAD"].includes(method) && !completionRequest) throw Object.assign(new Error("frontend_update_required"), {status: 409, definite: true});
     if (state.tour && privateRequest(path) && path !== "/api/me") throw Object.assign(new Error("tour_requires_login"), {
       status: 401
     });
@@ -243,6 +255,7 @@
       bootstrap
     };
     const controller = new AbortController();
+    controller.omnicioMutation = !["GET", "HEAD"].includes(method);
     state.requests.add(controller);
     let timedOut = false;
     const timer = window.setTimeout(() => {
@@ -250,7 +263,8 @@
       controller.abort();
     }, timeout);
     const headers = new Headers({
-      Accept: "application/json"
+      Accept: "application/json",
+      "X-Omnicio-Client-Build": window.OMNICIO_RELEASE?.build || "__OMNICIO_BUILD__"
     });
     if (body !== undefined) headers.set("Content-Type", "application/json");
     if (context.profile && !bootstrap) headers.set("X-Omnicio-Profile", context.profile);
@@ -264,6 +278,9 @@
         redirect: "error",
         signal: controller.signal
       });
+      const serverBuild = response.headers.get("X-Omnicio-Build");
+      if (serverBuild && serverBuild !== (window.OMNICIO_RELEASE?.build || "__OMNICIO_BUILD__")) flagApplicationUpdate();
+      if (onStream && response.ok) { ensureResponseContext(context); return await onStream(response, () => ensureResponseContext(context)); }
       return await readApiResponse(response, context);
     } catch (error) {
       throw apiTransportError(error, {
@@ -291,6 +308,8 @@
   const humanError = error => {
     const reasons = {
       offline_write_not_sent: T("Нет сети. Изменение не отправлено. Подключитесь к интернету и повторите."),
+      frontend_update_required: T("pwa.update_before_write"),
+      client_build_changed: T("pwa.update_before_write"),
       request_timeout: T("Сервер не успел ответить. Проверьте сохранённое состояние перед повтором."),
       request_interrupted: T("Отправка прервана. Проверьте сохранённое состояние перед повтором: сервер мог уже принять изменение."),
       invalid_server_response: T("Получен неполный ответ сервера. Повторите загрузку."),
@@ -391,6 +410,13 @@
     element.classList.toggle("success", !isError && Boolean(text));
   };
   const openDialog = (title, content) => {
+    captureScreenDrafts();
+    const routed = dialogScreens.has(`${state.view}/${state.route.screen}`);
+    if (!routed) {
+      const overlay = state.route.overlay && state.route.overlay !== "auth" ? state.route.overlay : `dialog-${crypto.randomUUID()}`;
+      transientDialogs.set(overlay, {title, content});
+      if (state.route.overlay !== overlay) updateViewRoute({overlay});
+    }
     state.eventRequest = (state.eventRequest || 0) + 1;
     state.recovery.id = null;
     state.recovery.record = null;
@@ -400,6 +426,11 @@
     const dialog = $("#workspace-dialog");
     $("#dialog-title").textContent = title;
     $("#dialog-content").innerHTML = content;
+    dialog.classList.toggle("route-dialog", routed);
+    const close = $(".dialog-header [data-close-dialog]", dialog);
+    close.innerHTML = icon(routed ? "back" : "close", true);
+    close.setAttribute("aria-label", T("navigation.back"));
+    restoreScreenDrafts(dialog);
     if (!dialog.open) dialog.showModal();
     U.bindCharts(dialog);
     return dialog;
@@ -413,9 +444,11 @@
   };
   let quoteStream = null;
   let quoteFailures = 0;
+  let quoteReconnectTimer = null;
   let freshnessTimer = null;
   let freshnessBusy = false;
   const stopQuoteStream = () => {
+    clearTimeout(quoteReconnectTimer);
     quoteStream?.close();
     quoteStream = null;
   };
@@ -429,11 +462,6 @@
     const current = () => quoteStream === stream && generation === state.generation && state.view === "asset" && state.asset?.uid === uid && !state.locked;
     const repaint = () => {
       const container = $("#view-asset");
-      if (!container.contains(document.activeElement)) {
-        renderAsset();
-        U.bindCharts(container);
-        return;
-      }
       // A tick must not replace a chart or focused control being inspected.
       const quote = $("[data-market-quote]", container);
       if (quote) quote.innerHTML = assetQuoteHTML(assetPricing(state.asset));
@@ -441,6 +469,19 @@
       const market = state.asset.market;
       if (source) source.innerHTML = freshness(market.source || "T-Invest", market.quote_time || market.observed_at, market.quote_status);
     };
+    const reconnect = () => {
+      if (!current()) return;
+      stopQuoteStream();
+      quoteFailures += 1;
+      state.asset.market.quote_status = navigator.onLine ? "reconnect" : "offline";
+      repaint();
+      if (navigator.onLine && document.visibilityState === "visible") quoteReconnectTimer = setTimeout(() => {
+        if (generation === state.generation && state.view === "asset" && state.asset?.uid === uid) startQuoteStream();
+      }, Math.min(30000, 1000 * 2 ** Math.min(quoteFailures, 5)));
+    };
+    state.asset.market.quote_status = "connecting";
+    repaint();
+    stream.addEventListener("open", () => { if (current()) { state.asset.market.quote_status = "connecting"; repaint(); } });
     stream.addEventListener("market", event => {
       if (!current()) return;
       try {
@@ -452,9 +493,7 @@
         quoteFailures = 0;
         repaint();
       } catch {
-        state.asset.market.quote_status = "unavailable";
-        stopQuoteStream();
-        repaint();
+        reconnect();
       }
     });
     stream.addEventListener("status", event => {
@@ -467,19 +506,20 @@
         return;
       }
       state.asset.market.quote_status = status;
-      if (["offline", "invalid", "disconnected", "reconnect"].includes(status)) stopQuoteStream();
+      if (["offline", "invalid", "disconnected", "reconnect"].includes(status)) { reconnect(); return; }
       repaint();
     });
-    stream.onerror = () => {
-      if (!current()) return;
-      state.asset.market.quote_status = "stale";
-      quoteFailures += 1;
-      if (quoteFailures >= 6) stopQuoteStream();
-      repaint();
-    };
+    stream.onerror = reconnect;
   };
   const clearPrivateState = () => {
     stopQuoteStream();
+    stopTableQuotes();
+    clearTimeout(eventSummaryTimer);
+    state.quotes = {};
+    state.screenDrafts = {};
+    state.screenBaselines = {};
+    state.authReturn = null;
+    transientDialogs.clear();
     clearTimeout(freshnessTimer);
     state.generation += 1;
     for (const controller of state.requests) controller.abort();
@@ -520,6 +560,10 @@
     state.executionPlan = null;
     state.assistantConversation = null;
     state.assistantDraft = {message: "", context: "general", include_news: false, research_run_id: ""};
+    state.assistantRequest = null;
+    state.assistantMemorySelected = new Set();
+    state.assistantSources = null;
+    state.assistantSourceSelection = null;
     state.asset = null;
     state.strategyPane = "catalog";
     state.searchResults = [];
@@ -571,7 +615,9 @@
     state.locked = true;
     state.tour = false;
     $("#app-shell").hidden = true;
-    $("#public-site").hidden = false;
+    state.session.status = "guest";
+    state.mode = "account";
+    sessionSurface();
     $("#session-message").textContent = message;
     $("#session-dialog").showModal();
   };
@@ -587,8 +633,8 @@
     } catch {/* Display preference only. */}
   };
   const renderNav = () => {
-    $("#sidebar-nav").innerHTML = U.navigation.map(([key, title]) => `<a class="nav-link" href="#${key}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
-    $("#mobile-nav").innerHTML = [["home", T("Главная")], ["market", T("Рынок")], ["assistant", T("ИИ")], ["strategies", T("Стратегии")]].map(([key, title]) => `<a href="#${key}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
+    $("#sidebar-nav").innerHTML = U.navigation.map(([key, title]) => `<a class="nav-link" href="${U.routeHash({mode: state.mode === "demo" ? "demo" : "account", view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
+    $("#mobile-nav").innerHTML = [["home", T("Главная")], ["market", T("Рынок")], ["assistant", T("ИИ")], ["strategies", T("Стратегии")]].map(([key, title]) => `<a href="${U.routeHash({mode: state.mode === "demo" ? "demo" : "account", view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
   };
   const openDrawer = () => {
     state.drawerReturn = $("#app-menu-toggle");
@@ -612,79 +658,162 @@
     if (restore && state.drawerReturn?.isConnected) state.drawerReturn.focus();
     state.drawerReturn = null;
   }
-  const parseRoute = () => {
-    const hash = location.hash.slice(1);
-    const [name, query] = hash.split("?");
-    const params = new URLSearchParams(query || "");
-    return {
-      view: views.has(name) ? name : "home",
-      uid: params.get("uid") || "",
-      q: params.get("q") || "",
-      event: params.get("event") || "",
-      goal_id: params.get("goal") || ""
-    };
+  const parseRoute = () => U.parseRoute(location.hash);
+  const activeRoute = () => ({...state.route, mode: state.mode, view: state.view});
+  const saveNavigationPosition = () => {
+    if (!history.state?.omnicio) return;
+    history.replaceState({...history.state, scroll: window.scrollY}, "", location.href);
   };
-  const updateRouteHistory = (view, detail, {
-    replace,
-    fromHistory
-  }) => {
-    const query = new URLSearchParams();
-    if (view === "asset" && detail.uid) query.set("uid", detail.uid);
-    if (view === "search" && detail.q) query.set("q", detail.q);
-    if (view === "events" && detail.event) query.set("event", detail.event);
-    if (view === "goals" && detail.goal_id) query.set("goal", detail.goal_id);
-    const hash = `#${view}${query.size ? renderNavigateFragment(query) : ""}`;
-    if (!fromHistory && location.hash !== hash) history[replace ? "replaceState" : "pushState"]({
-      view
-    }, "", hash);
+  const rememberRoute = route => {
+    try { localStorage.setItem("omnicio-last-route", U.routeHash(route)); } catch { /* Navigation has no session authority. */ }
+  };
+  const updateRouteHistory = (view, detail, {replace, fromHistory}) => {
+    const route = {...detail, mode: state.mode, view};
+    const hash = U.routeHash(route);
+    if (!fromHistory) {
+      const previous = history.state?.omnicio ? history.state : null;
+      const changed = location.hash !== hash;
+      if (changed && !replace) saveNavigationPosition();
+      const entry = {omnicio: true, view, route, scroll: replace ? previous?.scroll || 0 : 0,
+        index: (previous?.index || 0) + (previous && changed && !replace ? 1 : 0),
+        previous: changed && !replace ? location.hash : previous?.previous || null};
+      history[changed && !replace ? "pushState" : "replaceState"](entry, "", hash);
+    }
+    rememberRoute(route);
+  };
+  const restoreRouteControls = route => {
+    state.assetTab = "chart";
+    state.assetFilter = "all";
+    state.eventFilter = "all";
+    state.sort = "name";
+    state.sortDirection = 1;
+    state.cbrCurrency = "USD";
+    state.cbrPeriod = "1m";
+    state.strategyPane = "catalog";
+    if (["home", "portfolio", "analytics", "asset"].includes(route.view)) state[`${route.view}Period`] = ["home", "asset"].includes(route.view) ? "1m" : "1y";
+    const knownPeriods = ["1d", "1w", "1m", "3m", "1y", "all"];
+    if (["home", "portfolio", "analytics", "asset"].includes(route.view) && knownPeriods.includes(route.period)) state[`${route.view}Period`] = route.period;
+    if (["overview", "chart", "metrics", "news"].includes(route.tab)) state.assetTab = route.tab;
+    if (assetTypes().some(([key]) => key === route.asset_filter)) state.assetFilter = route.asset_filter;
+    if (["all", "important", "assets", "market"].includes(route.event_filter || route.filter)) state.eventFilter = route.event_filter || route.filter;
+    if (["name", "price", "change", "share", "value"].includes(route.sort)) state.sort = route.sort;
+    if (["-1", "1"].includes(String(route.direction))) state.sortDirection = Number(route.direction);
+    if (["USD", "EUR", "CNY"].includes(route.currency)) state.cbrCurrency = route.currency;
+    if (["1m", "3m", "1y"].includes(route.reference_period)) state.cbrPeriod = route.reference_period;
+    if (["catalog", "custom"].includes(route.strategy_pane)) state.strategyPane = route.strategy_pane;
+  };
+  const updateViewRoute = (detail, {replace = false} = {}) => {
+    state.route = {...state.route, ...detail};
+    updateRouteHistory(state.view, state.route, {replace, fromHistory: false});
+  };
+  const routeBack = () => {
+    if (history.state?.omnicio && history.state.index > 0 && history.state.previous) history.back();
+    else if (state.route.screen || state.route.overlay) navigate(state.view, {mode: state.mode}, {replace: true});
+    else navigate(state.mode === "public" ? "public/welcome" : ["asset", "search"].includes(state.view) ? "market" : "home", {mode: state.mode}, {replace: true});
+  };
+  const closeRouteDialogs = () => {
+    for (const dialog of $$("dialog[open]")) if (dialog.id !== "session-dialog") {
+      dialog.dataset.routeClosing = "true";
+      dialog.close();
+    }
+  };
+  const sessionSurface = () => {
+    $("#public-site").hidden = true;
+    $("#app-shell").hidden = true;
+    const checking = state.session.status === "checking";
+    const failed = state.session.status === "error";
+    const title = checking ? T("session.checking") : failed ? T("session.retry_title") : T("session.signin_title");
+    const content = checking ? U.loading(T("session.checking_details")) : `<p>${esc(failed ? humanError(state.session.error) : T("session.signin_details"))}</p><div class="form-actions">${button(failed ? T("session.retry") : T("Войти"), failed ? "session-retry" : "login", {primary: true})}${button(T("navigation.public_home"), "public-home")}</div>`;
+    $("#startup-state").hidden = false;
+    $("#startup-state").innerHTML = `<section class="card startup-card"><img class="brand-image" src="/assets/brand/omnicio-logo.png" alt="OMNICIO"><h1>${esc(title)}</h1>${content}</section>`;
+  };
+  const showPublic = route => {
+    $("#startup-state").hidden = true;
+    $("#app-shell").hidden = true;
+    $("#public-site").hidden = false;
+    const page = route.view;
+    const id = page === "strategies" ? "public-strategies" : page;
+    for (const section of $$("#public-content > section")) section.hidden = section.id !== id;
+    for (const link of $$(".public-nav [data-public-page]")) link.setAttribute("aria-current", link.dataset.publicPage === page ? "page" : "false");
+    const breadcrumb = $("#public-breadcrumb");
+    breadcrumb.hidden = page === "welcome";
+    breadcrumb.innerHTML = `<button class="button secondary small-button" data-action="route-back">${icon("back", true)} ${H("navigation.back")}</button>`;
+    document.title = `${page === "welcome" ? T("OMNICIO — ваш инвестиционный помощник") : T("public.page." + page)} · OMNICIO`;
+    if (page === "support") void loadSupport($("#support"));
   };
   const navigate = (view, detail = {}, {
     replace = false,
     fromHistory = false
   } = {}) => {
-    if (!views.has(view)) return;
-    if (!state.user && !state.tour) {
-      openAuth();
-      return;
-    }
+    const explicit = /^(public|demo|account)\//.test(view);
+    const parsed = U.parseRoute(`#${explicit ? view : (detail.mode || (state.mode === "public" || state.mode === "auto" ? (state.user ? "account" : "demo") : state.mode)) + "/" + view}`);
+    const route = {...parsed, ...detail, view: parsed.view, screen: detail.screen ?? parsed.screen};
+    if (route.mode === "auto") route.mode = state.user ? "account" : state.session.status === "guest" ? "demo" : "account";
+    if (route.invalid) { showRouteError(); return; }
+    captureScreenDrafts();
+    state.viewState[state.view] = {...state.route};
+    closeRouteDialogs();
     closeDrawer(false);
     $("#profile-menu").hidden = true;
     $("#profile-button").setAttribute("aria-expanded", "false");
-    if (state.view === "settings" && view !== "settings") {
+    if (state.view === "settings" && (route.view !== "settings" || route.screen !== state.route.screen)) {
       resetBrokerPreview();
       const credential = $('#broker-form [name="credential"]');
       if (credential) credential.value = "";
     }
     stopQuoteStream();
-    state.view = view;
-    state.route = detail;
-    updateRouteHistory(view, detail, {
+    stopTableQuotes();
+    state.mode = route.mode;
+    state.tour = route.mode === "demo";
+    state.view = route.view;
+    state.route = route;
+    state.navigationSequence += 1;
+    const sequence = state.navigationSequence;
+    restoreRouteControls(route);
+    updateRouteHistory(route.view, route, {
       replace,
       fromHistory
     });
-    for (const element of $$("[data-view]")) element.hidden = element.dataset.view !== view;
-    document.title = `${U.navigation.find(([key]) => key === view)?.[1] || (view === "asset" ? T("Актив") : T("Поиск"))} · OMNICIO`;
+    if (route.mode === "public") { showPublic(route); restoreNavigationScroll(fromHistory, sequence); void openRouteScreen(route); return; }
+    if (route.mode === "account" && (!state.user || state.locked)) { sessionSurface(); return; }
+    $("#startup-state").hidden = true;
+    $("#public-site").hidden = true;
+    $("#app-shell").hidden = false;
+    $("#tour-notice").hidden = !state.tour;
+    for (const element of $$("[data-view]")) element.hidden = element.dataset.view !== route.view;
+    document.title = `${U.navigation.find(([key]) => key === route.view)?.[1] || (route.view === "asset" ? T("Актив") : T("Поиск"))} · OMNICIO`;
     renderNav();
     renderCurrent();
-    void loadForView(view, detail);
+    void loadForView(route.view, route).then(() => {
+      if (sequence !== state.navigationSequence) return;
+      restoreNavigationScroll(fromHistory, sequence);
+      void openRouteScreen(route);
+    }).catch(error => { if (!isCancelled(error)) showRouteLoadError(error); });
     $("#main-content").focus({
       preventScroll: true
     });
-    window.scrollTo({
-      top: 0,
-      behavior: "instant"
-    });
+    restoreNavigationScroll(fromHistory, sequence);
+    scheduleTableQuotes(100);
+    scheduleEventSummary(100);
+  };
+  const restoreNavigationScroll = (fromHistory, sequence) => {
+    const top = fromHistory ? history.state?.scroll || 0 : 0;
+    requestAnimationFrame(() => { if (sequence === state.navigationSequence) window.scrollTo({top, behavior: "instant"}); });
+  };
+  const showRouteError = () => {
+    $("#public-site").hidden = true;
+    $("#app-shell").hidden = true;
+    $("#startup-state").hidden = false;
+    $("#startup-state").innerHTML = `<section class="card startup-card"><h1>${H("navigation.not_found")}</h1><p>${H("navigation.not_found_details")}</p>${button(T("navigation.public_home"), "public-home")}</section>`;
+  };
+  const showRouteLoadError = error => {
+    const target = $(`#view-${state.view}`);
+    if (target) target.innerHTML = `<section class="card">${empty(T("state.load_failed"), humanError(error), "refresh", T("Повторить загрузку"), "info", true)}</section>`;
   };
   const showApp = (tour = false) => {
-    state.tour = tour;
-    $("#public-site").hidden = true;
-    $("#app-shell").hidden = false;
-    $("#tour-notice").hidden = !tour;
-    updateIdentity();
     const route = parseRoute();
-    navigate(route.view, route, {
-      replace: true
-    });
+    const view = route.mode === "public" || route.invalid ? "home" : route.view;
+    navigate(view, {...route, view, screen: views.has(view) ? route.screen : "", mode: tour ? "demo" : "account", invalid: false}, {replace: !tour});
     if (!tour) {
       void resumeWorkspaceRefresh();
       clearTimeout(freshnessTimer);
@@ -718,6 +847,7 @@
       if (generation === state.generation && state.resourceVersions.get(name) === sequence) {
         state.loading.delete(name);
         state.resourceRequests.delete(name);
+        if (state.mode !== "public" && (state.user || state.tour) && !state.locked && !document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent();
       }
     });
     state.resourceRequests.set(name, {path, promise});
@@ -824,13 +954,17 @@
     path: "/api/research/runs?limit=200",
     read: () => readResearchChoices()
   }, {
+    name: "assistantMemory",
+    views: ["assistant"],
+    path: "/api/assistant/memory"
+  }, {
     name: "assistantStatus",
     views: ["assistant"],
     path: "/api/assistant/status"
   }, {
     name: "events",
-    views: ["events"],
-    path: "/api/events?limit=50&category=all"
+    views: ["home", "events"],
+    path: () => eventsPath()
   }, {
     name: "marketArchive",
     views: ["events"],
@@ -848,6 +982,15 @@
     name: "goals",
     views: ["goals"],
     path: "/api/goals"
+  }, {
+    name: "ledger",
+    views: ["portfolio"],
+    path: "/api/workspace/operations?limit=50"
+  }, {
+    name: "support",
+    views: [],
+    path: "/api/public/support",
+    public: true
   }, {
     name: "analysis",
     views: ["analytics"],
@@ -867,14 +1010,16 @@
   const loadForView = async (view, detail = {}, force = false) => {
     const generation = state.generation;
     const resources = viewResources.filter(resource => resource.views.includes(view) && (!state.tour || resource.public) && (!resource.operator || state.user?.can_view_operational_metrics === true));
-    await Promise.allSettled(resources.map(resource => {
+    const resourceWork = resources.map(resource => {
       const historyChanged = resource.name === "workspace" && state.data.workspace?.overview?.history_coverage?.period !== workspacePeriod(view);
       return loadResource(resource.name, typeof resource.path === "function" ? resource.path() : resource.path, {
         force: force || historyChanged,
         read: resource.read,
         timeout: resource.timeout || 30000
       });
-    }));
+    });
+    if (state.view === view) renderCurrent();
+    await Promise.allSettled(resourceWork);
     if (generation !== state.generation || state.view !== view) return;
     if (view === "strategies") restoreResearchRequest();
     if (view === "assistant") await loadSelectedAssistantConversation();
@@ -891,14 +1036,11 @@
       return;
     }
     renderCurrent();
-    if (view === "events" && detail.event && !state.tour && !$("#workspace-dialog").open) {
-      await openEvent(detail.event);
-    }
     if (view === "goals" && detail.goal_id) focusGoal(detail.goal_id);
   };
   const loadSelectedAssistantConversation = async () => {
     if (state.tour || state.assistantBusy) return;
-    const selected = state.assistantConversation?.id || state.data.assistantConversations?.items?.[0]?.id;
+    const selected = state.route.conversation || state.assistantConversation?.id || state.data.assistantConversations?.items?.[0]?.id;
     if (!selected) return;
     try { await loadAssistantConversation(selected); }
     catch (error) { if (!isCancelled(error)) toast(humanError(error), true); }
@@ -938,10 +1080,10 @@
     }
   };
   const updateIdentity = () => {
-    const name = state.prefs.draft?.display_name?.trim() || (state.tour ? T("Знакомство") : T("Мой профиль"));
+    const name = state.tour ? T("Знакомство") : state.prefs.draft?.display_name?.trim() || T("Мой профиль");
     $("#profile-name").textContent = name;
     $("#profile-avatar").textContent = name[0]?.toLocaleUpperCase("ru-RU") || T("О");
-    const unread = number(state.data.events?.unread_count) || 0;
+    const unread = number(state.data.eventSummary?.unread_total ?? state.data.events?.unread_count) || 0;
     $("#notification-dot").hidden = unread === 0 || state.tour || Boolean(state.data.events?.alerts_suppressed);
     $("#notifications-button").setAttribute("aria-label", unread ? `${T("Уведомления:")} ${unread} ${T("непрочитанных")}` : T("Уведомления"));
   };
@@ -1073,7 +1215,8 @@
       const result = await api("/api/workspace/refresh", {
         method: "POST",
         body: {
-          expected_public_id: state.user.public_id
+          expected_public_id: state.user.public_id,
+          scope: "quick"
         }
       });
       await adoptRefreshStatus(result, context);
@@ -1115,12 +1258,13 @@
     })}` : "";
   };
   const portfolioRows = () => {
+    if (state.tour) return [];
     const stored = state.data.visualization?.latest?.positions;
     return (Array.isArray(stored) ? stored : []).map(item => ({
       ...item,
       uid: item.instrument_uid,
       name: item.name || item.ticker || item.instrument_uid,
-      price: item.current_price_value,
+      price: state.quotes[item.instrument_uid]?.last_price ?? null,
       currency: String(item.current_price_currency || item.currency || "").toUpperCase(),
       change: item.daily_change_percent ?? null
     }));
@@ -1146,6 +1290,7 @@
   const assetsTable = (compact = true) => {
     if (state.tour) return empty(T("Ваши активы будут здесь"), T("Войдите и подключите свой счёт. Цены и доли появятся из источника."), "login", T("Войти"));
     if (state.errors.visualization) return dataError("visualization");
+    if (!state.data.visualization && state.loading.has("visualization")) return U.loading(T("quotes.positions_loading"));
     const rows = filteredRows();
     if (!rows.length) return empty(portfolioRows().length ? T("Нет активов этого типа") : T("Активы пока не получены"), portfolioRows().length ? T("Выберите другой фильтр.") : T("Состав счёта появится после подключения и первого наблюдения."), portfolioRows().length ? "" : "connect", T("Подключить счёт"));
     const headers = [["name", T("Название")], ["price", T("Цена")], ["change", T("Изменение")], ["share", T("Доля")]];
@@ -1162,17 +1307,18 @@
       ...legacy
     }) : undefined;
   };
-  const strategyTitle = () => state.strategy.draft?.customized ? T("Моя настройка") : selectedPreset()?.title || T("Выберите стратегию");
+  const strategyTitle = () => state.tour ? T("Выберите стратегию") : state.strategy.draft?.customized ? T("Моя настройка") : selectedPreset()?.title || T("Выберите стратегию");
   const strategyEditorTitle = () => {
     const title = selectedPreset()?.title || T("Сохранённые условия");
     if (state.strategy.draft?.customized) return T("Моя настройка · основа: ") + title;
     return T("Готовая стратегия · ") + title;
   };
   const homeStrategy = () => {
-    const document = state.strategy.draft;
+    const document = state.tour ? null : state.strategy.draft;
     const horizon = number(document?.profile?.horizon_months);
     return `${cardHeader(T("Моя стратегия"))}<div class="strategy-current">${icon("strategies")}<strong>${esc(strategyTitle())}</strong><button class="icon-button" data-route="strategies" aria-label="${H("Настройки стратегии")}">${icon("settings", true)}</button></div><div class="strategy-chips"><span class="chip">${document ? renderHomeStrategyFragment(document) : T("Ваши условия")}</span><span class="chip">${horizon ? renderHomeStrategyFragment2(horizon) : T("Ваш горизонт")}</span></div><p class="strategy-note">${document ? T("Проверка состава и ограничений на данных вашего счёта.") : T("Выберите подход и уточните личные параметры, чтобы начать расчёты.")}</p><button class="button secondary full" data-route="strategies">${H("Настроить стратегию")} ${icon("arrow", true)}</button>`;
   };
+  const eventsPath = () => `/api/events?limit=50&category=${state.eventFilter === "assets" ? "assets" : "all"}${state.eventFilter === "important" ? "&important_only=true" : ""}`;
   const eventItems = () => {
     const news = (state.data.news?.items || []).map(item => ({
       ...item,
@@ -1181,27 +1327,28 @@
       read_at: item.published_at,
       severity: "info"
     }));
-    const rows = [...(state.data.events?.items || []), ...news].sort((a, b) => (new Date(b.occurred_at).getTime() || 0) - (new Date(a.occurred_at).getTime() || 0));
+    const rows = [...(state.tour ? [] : state.data.events?.items || []), ...news].sort((a, b) => (new Date(b.occurred_at).getTime() || 0) - (new Date(a.occurred_at).getTime() || 0));
     if (state.eventFilter === "important") return rows.filter(item => ["warning", "critical", "high"].includes(item.severity));
     if (state.eventFilter === "assets") return rows.filter(item => ["portfolio", "payments"].includes(item.category));
-    if (state.eventFilter === "market") return rows.filter(item => item.category === "market");
+    if (state.eventFilter === "market") return news;
     return rows;
   };
   const eventsHTML = (compact = true) => {
     const rows = eventItems();
+    if (state.loading.has("events") && !state.data.events && !state.tour && state.eventFilter !== "market") return U.loading(T("state.loading"));
     if (!rows.length) return empty(state.eventFilter === "market" ? T("Новостной источник не подключён") : T("Нет новых событий"), state.eventFilter === "market" ? T("Система не подставляет заголовки. События счёта появятся после подключения данных.") : T("Подтверждённые события портфеля и целей появятся здесь."), "", "", "events");
     return `<div class="event-list">${(compact ? rows.slice(0, 4) : rows).map(item => renderEventsHTMLEventItem(item, compact)).join("")}</div>`;
   };
   const goalPreview = goal => `<article class="goal-preview"><span class="event-icon">${icon(goal.kind === "income" ? "wallet" : "building", true)}</span><div class="goal-preview-body"><h3>${esc(goal.title)}</h3><p>${esc(money(goal.progress?.amount_rub))} ${H("из")} ${esc(money(goal.target_amount_rub))}</p>${U.progress(goal.progress?.percent)}</div></article>`;
   const homeGoals = () => {
-    const goals = (state.data.goals?.items || []).filter(item => item.status === "active");
+    const goals = (state.tour ? [] : state.data.goals?.items || []).filter(item => item.status === "active");
     return `${cardHeader(T("Цели"), "goals", "")}${goals.length ? renderHomeGoalsGoalsPreviewList(goals) : empty(T("Начните с цели"), T("Укажите сумму и срок. Прогресс рассчитывается по выбранному источнику."), "goal-create", T("Добавить цель"), "goals")}<button class="button secondary full" data-route="goals">${H("Все цели")} ${icon("arrow", true)}</button>`;
   };
   const portfolioHistory = (overview, period) => {
     if (overview.history_coverage?.period !== period) return [];
     return overview.history || [];
   };
-  const workspaceForPeriod = period => state.data.workspace?.overview?.history_coverage?.period === period ? state.data.workspace : undefined;
+  const workspaceForPeriod = period => !state.tour && state.data.workspace?.overview?.history_coverage?.period === period ? state.data.workspace : undefined;
   const navCoverageHTML = (overview, period) => {
     const coverage = overview.history_coverage;
     if (!coverage || coverage.period !== period) return ("<p class=\"data-footnote\">" + H("Покрытие выбранного периода ещё не получено.") + "</p>");
@@ -1211,8 +1358,9 @@
     return `<p class="data-footnote" data-history-period="${esc(period)}">${esc(range)}<br>${esc(observations)}. ${coverage.status === "sampled" ? T("На графике показаны последние точки временных интервалов; расчёты используют полную сохранённую историю.") : T("Глубина истории зависит от сохранённых данных.")}</p>`;
   };
   const renderHome = () => {
+    captureScreenDrafts();
     const ws = workspaceForPeriod(state.homePeriod);
-    const overview = state.data.workspace?.overview || {};
+    const overview = state.tour ? {} : state.data.workspace?.overview || {};
     const performance = ws?.performance || {};
     const income = ws?.income || {};
     const monthly = Array.isArray(income.by_month) ? income.by_month : [];
@@ -1224,7 +1372,7 @@
     const history = portfolioHistory(overview, state.homePeriod);
     const result = number(performance.investment_result_rub);
     const resultText = result === null ? T("Полная история для расчёта ещё не получена") : `${money(result)} · ${date(performance.from)} — ${date(performance.to)}`;
-    $("#view-home").innerHTML = `<h1 class="sr-only">${H("Главная — обзор портфеля")}</h1><div class="dashboard-top"><section class="card summary-card"><p class="card-label">${H("Общая стоимость")}</p><p class="main-value">${esc(money(overview.nav_rub))}</p><div class="value-change ${result === null ? "" : renderHomeValue(result)}">${esc(resultText)}</div>${overview.observed_at ? renderHomeDataFootnote(overview) : ""}${chart(history, {
+    $("#view-home").innerHTML = `<h1 class="sr-only">${H("Главная — обзор портфеля")}</h1><div class="dashboard-top"><section class="card summary-card"><p class="card-label">${H("Общая стоимость")}</p><p class="main-value">${esc(money(overview.nav_rub))}</p>${freshness(T("portfolio.snapshot"), overview.observed_at, overview.freshness?.status || overview.status)}<div class="value-change ${result === null ? "" : renderHomeValue(result)}">${esc(resultText)}</div>${overview.observed_at ? renderHomeDataFootnote(overview) : ""}${chart(history, {
       label: T("Стоимость портфеля"),
       compact: true
     })}${periods("home", state.homePeriod)}${navCoverageHTML(overview, state.homePeriod)}</section><section class="card allocation-card">${cardHeader(T("Структура портфеля"))}${U.allocation(overview.allocations, overview.nav_rub)}</section><div class="metric-stack"><section class="card metric-card"><p class="card-label">${H("Доходность")}</p><p class="main-value">${esc(percent(performance.return_percent, true))}</p><p class="metric-note">${performance.return_percent === null || performance.return_percent === undefined ? T("Недостаточно подтверждённых потоков или положительного вложенного капитала.") : renderHomeFragment(performance)}</p>${result !== null ? renderHomeMetricNote(result) : ""}</section><section class="card metric-card secondary-metric"><p class="card-label">${H("Пассивный доход")}</p><p class="main-value">${esc(money(latestMonth?.total_rub))}</p><p class="metric-note">${latestMonth ? renderHomeFragment3(latestMonth) : T("Выплаты до налоговых списаний: данных пока нет")}</p>${incomeCurve.length > 1 ? chart(incomeCurve, {
@@ -1234,30 +1382,36 @@
       tone: "purple",
       compact: true
     }) : ""}</section></div><section class="card strategy-card">${homeStrategy()}</section></div><div class="dashboard-bottom"><section class="card">${cardHeader(T("Мои активы"), "portfolio")}${filtersHTML()}${assetsTable()}<p class="data-footnote">${state.data.visualization?.latest?.captured_at ? renderHomeFragment4() : T("Только данные вашего подключённого счёта")}</p></section><section class="card">${cardHeader(T("Новости и события"), "events", "")}${eventFilters()}${eventsHTML()}</section><section class="card goals-overview">${homeGoals()}</section></div>${!ws && state.loading.has("workspace") ? U.loading(T("Получаем состояние вашего кабинета…")) : ""}`;
+    applyScreenLayout("home");
   };
   const eventFilters = () => `<div class="filters" aria-label="${H("Фильтр событий")}">${[["important", T("Важное")], ["assets", T("Мои активы")], ["market", T("Рынок")], ["all", T("Все")]].map(([key, title]) => renderEventFiltersFilterButton(key, title)).join("")}</div>`;
   const renderPortfolio = () => {
-    const overview = state.data.workspace?.overview || {};
+    captureScreenDrafts();
+    const overview = state.tour ? {} : state.data.workspace?.overview || {};
     const performance = workspaceForPeriod(state.portfolioPeriod)?.performance || {};
-    $("#view-portfolio").innerHTML = `${heading(T("Портфель"), state.data.connection?.account_name || T("Стоимость, структура и активы вашего счёта"), button(T("Обновить"), "refresh", {
+    $("#view-portfolio").innerHTML = `${heading(T("Портфель"), !state.tour && state.data.connection?.account_name || T("Стоимость, структура и активы вашего счёта"), button(T("Обновить"), "refresh", {
       small: true
     }) + button(T("Подключение"), "connect", {
       small: true
-    }))}<div class="metric-grid">${[[T("Стоимость портфеля"), money(overview.nav_rub)], [T("Свободные средства"), money(overview.free_cash_rub)], [T("Результат за период"), money(performance.investment_result_rub)], [T("Активов"), portfolioRows().length ? String(portfolioRows().length) : "—"]].map(([title, value]) => renderPortfolioCard(title, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader(T("Стоимость портфеля"))}${chart(portfolioHistory(overview, state.portfolioPeriod))}${periods("portfolio", state.portfolioPeriod)}${navCoverageHTML(overview, state.portfolioPeriod)}<p class="data-footnote">${H("График стоимости включает пополнения и выводы. Он не является графиком доходности.")}</p></section><section class="card">${cardHeader(T("Структура портфеля"))}${U.allocation(overview.allocations, overview.nav_rub)}${freshness("T-Invest", overview.observed_at, overview.status)}</section></div><section class="card section-gap">${cardHeader(T("Мои активы"))}${filtersHTML()}${assetsTable(false)}</section>${dataError("workspace")}`;
+    }))}<div class="metric-grid">${[[T("Стоимость портфеля"), money(overview.nav_rub)], [T("Свободные средства"), money(overview.free_cash_rub)], [T("Результат за период"), money(performance.investment_result_rub)], [T("Активов"), portfolioRows().length ? String(portfolioRows().length) : "—"]].map(([title, value]) => renderPortfolioCard(title, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader(T("Стоимость портфеля"))}${chart(portfolioHistory(overview, state.portfolioPeriod))}${periods("portfolio", state.portfolioPeriod)}${navCoverageHTML(overview, state.portfolioPeriod)}<p class="data-footnote">${H("График стоимости включает пополнения и выводы. Он не является графиком доходности.")}</p></section><section class="card">${cardHeader(T("Структура портфеля"))}${U.allocation(overview.allocations, overview.nav_rub)}${freshness("T-Invest", overview.observed_at, overview.freshness?.status || overview.status)}</section></div><section class="card section-gap">${cardHeader(T("Мои активы"))}${filtersHTML()}${assetsTable(false)}</section>${dataError("workspace")}`;
+    applyScreenLayout("portfolio");
   };
   const newsHTML = () => {
     const rows = state.data.news?.items || [];
+    if (state.loading.has("news") && !state.data.news) return U.loading(T("state.loading"));
+    if (state.errors.news) return dataError("news");
     if (!rows.length) return empty(T("Новостной источник пока недоступен"), T("Повторите обновление. Заголовки не заменяются примерами."), "", "", "events");
-    return `<div class="event-list">${rows.slice(0, 8).map(item => renderNewsHTMLEventItem(item)).join("")}</div>${freshness(T("Официальная лента Банка России"), state.data.news.fetched_at, state.data.news.freshness === "cached" ? T("Сохранённый ответ источника") : "")}`;
+    return `<div class="event-list">${rows.slice(0, 8).map(item => renderNewsHTMLEventItem(item)).join("")}</div>${freshness(T("Официальная лента Банка России"), state.data.news.fetched_at, state.data.news.freshness === "cached" ? "cached" : "")}`;
   };
   const indicatorCards = reference => {
     const data = reference?.indicators;
     return `<div class="market-indicators">${[["key_rate", T("Ключевая ставка"), "%"], ["usd_rub", T("Доллар США"), "₽"], ["eur_rub", T("Евро"), "₽"]].map(([key, title, unit]) => renderIndicatorCardsCard(title, data, key, unit)).join("")}</div>`;
   };
-  const watchlist = () => state.prefs.draft?.watchlist || [];
+  const watchlist = () => state.tour ? [] : state.prefs.draft?.watchlist || [];
   const isWatched = uid => watchlist().some(item => item.instrument_uid === uid);
   const watchButton = item => `<button class="icon-button" data-watch="${esc(item.uid || item.instrument_uid)}" data-watch-name="${esc(item.name || item.ticker || T("Актив"))}" data-watch-ticker="${esc(item.ticker || "")}" aria-label="${isWatched(item.uid || item.instrument_uid) ? T("Удалить из избранного") : T("Добавить в избранное")}" aria-pressed="${isWatched(item.uid || item.instrument_uid)}">${icon("star", true)}</button>`;
   const renderMarket = () => {
+    captureScreenDrafts();
     const reference = state.data.marketReference;
     $("#view-market").innerHTML = `${heading(T("Рынок"), T("Официальные показатели и инструменты из подключённого источника"), button(T("Обновить"), "refresh", {
       small: true
@@ -1267,6 +1421,7 @@
       label: renderMarketFragment(),
       personal: false
     })}${freshness(T("Банк России · официальный курс"), reference?.history?.fetched_at || reference?.indicators?.fetched_at)}<p class="data-footnote">${H("Официальный справочный курс отличается от биржевой котировки.")}</p></section><section class="card">${cardHeader(T("Избранное"))}${watchlist().length ? renderMarketSearchResults() : empty(T("Сохраните интересные активы"), T("Найдите компанию или тикер через поиск и нажмите звёздочку. Избранное сохраняется в аккаунте."), "", "", "star")}${!state.data.connection?.connected ? renderMarketNotice() : ""}</section></div><section class="card section-gap">${cardHeader(T("Активы вашего счёта"))}${filtersHTML()}${assetsTable(false)}</section>${dataError("marketReference")}<section class="card section-gap">${cardHeader(T("Новости Банка России"))}${newsHTML()}</section>`;
+    applyScreenLayout("market");
   };
   const runSearch = async query => {
     const trimmed = String(query).trim().slice(0, 64);
@@ -1389,19 +1544,27 @@
       key: "news",
       promise: api(`/api/news?instrument_uid=${segment}&limit=50`)
     });
-    const results = await Promise.allSettled(requests.map(request => request.promise));
-    if (generation !== state.generation || state.resourceVersions.get("asset") !== sequence || state.asset?.uid !== uid || state.assetPeriod !== requestedPeriod) return;
-    results.forEach((result, index) => {
-      const key = requests[index].key;
-      if (result.status === "fulfilled") {
-        asset[key] = result.value;
+    const current = () => generation === state.generation && state.resourceVersions.get("asset") === sequence && state.asset?.uid === uid && state.assetPeriod === requestedPeriod;
+    await Promise.allSettled(requests.map(async ({key, promise}) => {
+      try {
+        const value = await promise;
+        if (!current()) return;
+        asset[key] = value;
         asset[`${key}Error`] = null;
-      } else if (!isCancelled(result.reason)) {
-        asset[key] = null;
-        asset[`${key}Error`] = result.reason;
-        if (key === "market") asset.error = result.reason;
+      } catch (error) {
+        if (!current() || isCancelled(error)) return;
+        asset[`${key}Error`] = error;
+        if (key === "market") asset.error = error;
+      } finally {
+        if (current() && state.view === "asset") {
+          if (key === "market") asset.loading = false;
+          renderAsset();
+          U.bindCharts($("#view-asset"));
+          if (key === "market" && asset.market) startQuoteStream();
+        }
       }
-    });
+    }));
+    if (!current()) return;
     asset.name = asset.facts?.name || asset.details?.latest?.name || asset.name;
     asset.ticker = asset.facts?.ticker || asset.details?.latest?.ticker || asset.ticker;
     asset.loading = false;
@@ -1455,7 +1618,7 @@
   };
   const assetChartHTML = (context) => {
     const {asset, market, candles, priceUnit, currency} = context;
-    const chartMarkup = asset.loading ? U.loading(T("Загружаем биржевой график…")) : chart(candles, {
+    const chartMarkup = asset.loading ? U.loading(T("Загружаем биржевой график…")) : market?.history_status === "unavailable" ? `<div class="notice error">${H("market.history_unavailable")}${button(T("Повторить"), "asset-refresh", {small: true})}</div>` : chart(candles, {
       timeKey: "time",
       valueKey: "close",
       label: renderAssetFragment2(asset),
@@ -1553,6 +1716,7 @@
     return `<div class="breadcrumb"><button class="icon-button" data-action="asset-back" aria-label="${H("Назад к рынку")}">${icon("back")}</button><span>${H("График актива")}</span></div><div class="asset-detail-header"><span class="asset-logo">${esc((asset.ticker || asset.name).slice(0, 1))}</span><div><h1>${esc(asset.name)}</h1><p>${esc(asset.ticker || T("Инструмент T-Invest"))}</p></div>${watchButton(asset)}</div><div class="asset-detail-layout"><section class="card asset-chart-card"><div class="tab-bar" role="tablist" aria-label="${H("Карточка актива")}">${tabs}</div><div class="asset-tab-content" role="tabpanel">${asset.error ? renderAssetNotice(asset) : ""}${content}</div></section><section class="card">${assetSideHTML(context)}</section></div>`;
   };
   const renderAsset = () => {
+    if (!state.route.uid) { $("#view-asset").innerHTML = `${heading(T("Актив"))}<section class="card">${empty(T("Некорректный инструмент"), T("Откройте актив из портфеля или результатов поиска."), "asset-back", T("navigation.back"), "info", true)}</section>`; return; }
     const container = $("#view-asset");
     if (state.tour) {
       container.innerHTML = empty(T("Карточка инструмента"), T("Войдите и подключите источник, чтобы получить цену, историю и финансовые показатели."), "login", T("Войти"), "market", true);
@@ -1721,6 +1885,7 @@
       slot.dirty = false;
     }
     slot.error = null;
+    if (kind === "prefs" && slot.revision === revision) for (const id of ["profile-form", "preferences-form"]) if ($( "#" + id)) clearScreenDraft($("#" + id));
     applySavedEffects(kind);
   };
   const currentWrite = context => context.generation === state.generation && state[context.kind] === context.slot;
@@ -1956,6 +2121,7 @@
   const setStrategyPane = pane => {
     if (!["catalog", "custom"].includes(pane)) return;
     state.strategyPane = pane;
+    updateViewRoute({strategy_pane: pane});
     for (const value of ["catalog", "custom"]) {
       const selected = value === pane;
       const tab = $("#strategy-tab-" + value);
@@ -2049,10 +2215,11 @@
     return editor;
   };
   const renderStrategies = () => {
+    captureScreenDrafts();
     const catalog = state.data.catalog;
     const slot = state.strategy;
-    const document = slot.draft;
-    const preset = selectedPreset();
+    const document = state.tour ? null : slot.draft;
+    const preset = state.tour ? null : selectedPreset();
     if (!catalog) {
       $("#view-strategies").innerHTML = `${heading(T("Стратегии"), T("Выбор подхода и личные ограничения"))}${state.errors.catalog ? dataError("catalog") : U.loading(T("Получаем каталог стратегий…"))}`;
       return;
@@ -2074,6 +2241,7 @@
     if (document) $("#view-strategies .strategy-editor")?.insertAdjacentHTML("beforeend", executionPlannerCard());
     updateSaveStatus("strategy");
     U.bindCharts($("#view-strategies"));
+    applyScreenLayout("strategies");
   };
   const documentChanged = () => {
     const slot = state.strategy;
@@ -2491,6 +2659,7 @@
   };
   const researchArchiveItemHTML = item => `<section class="card section-gap"><h3>${esc(date(item.created_at, true))} ${H("МСК")}</h3><p class="fine-print">${H("Версия стратегии:")} ${esc(item.strategy_version)} · ${esc(item.status === "computed" ? T("Рассчитано") : T("Данные неполные"))}</p>${infoRows([[T("Результат за период"), percent(item.metrics?.net_return_percent)]])}<div class="form-actions"><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="open">${H("Открыть")}</button><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="replay">${H("Проверить повторяемость")}</button><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="export">${H("Скачать входные данные")}</button><button class="button danger small" data-research-run="${esc(item.id)}" data-research-operation="delete">${H("Удалить")}</button></div></section>`;
   const openResearchArchive = async () => {
+    if (enterRouteScreen("strategies", "archive", {})) return;
     if (!requireUser()) return;
     openDialog(T("История исследований"), `<div id="research-archive">${U.loading(T("research.checking_archive"))}</div>`);
     state.researchArchiveDialog = {items: [], next_cursor: null, capacity: null, busy: false, error: null,
@@ -2553,6 +2722,7 @@
     }
   };
   const openResearchEvidence = async () => {
+    if (enterRouteScreen("strategies", "evidence", {})) return;
     if (!requireUser()) return;
     const generation = state.generation;
     openDialog(T("Дополнительные источники исследования"), U.loading(T("Загрузка…")));
@@ -2628,10 +2798,7 @@
       }
       state.researchDisplaySequence = (state.researchDisplaySequence || 0) + 1;
       state.strategy.research = {...payload.result, archive: {id: payload.id, created_at: payload.created_at, strategy_version: payload.strategy_version}};
-      $("#workspace-dialog").close();
-      navigate("strategies");
-      state.strategyPane = "catalog";
-      renderCurrent();
+      navigate("strategies", {screen: "result", run: payload.id});
   };
   const executionPlannerCard = () => `<section class="card"><h3 class="panel-title">${H("execution.title")}</h3><p class="fine-print">${H("execution.help")}</p><div class="form-actions">${button(T("execution.prepare"), "execution-plan", {primary: true, extra: strategySaveUnavailable(state.strategy) || state.executionBusy ? "disabled" : ""})}${button(T("execution.history"), "execution-history")}</div></section>`;
   const executionProblem = code => ({
@@ -2654,6 +2821,7 @@
   })[code];
   const executionError = error => executionProblem(error.code || error.message) || humanError(error);
   const openExecutionPlanner = async () => {
+    if (enterRouteScreen("strategies", "plan", {})) return;
     if (!requireUser() || state.executionBusy) return;
     if (strategySaveUnavailable(state.strategy)) {
       toast(T("execution.save_first"), true);
@@ -2664,9 +2832,12 @@
     openDialog(T("execution.title"), U.loading(T("execution.loading")));
     const sequence = state.eventRequest;
     state.executionPlan = null;
-    const results = await Promise.all([
-      readResearchChoices(), api("/api/portfolio/execution-capabilities")
-    ]);
+    let results;
+    try { results = await Promise.all([readResearchChoices(), api("/api/portfolio/execution-capabilities")]); }
+    catch (error) {
+      if (generation === state.generation && sequence === state.eventRequest && !isCancelled(error)) openDialog(T("execution.title"), `<p class="notice error">${esc(humanError(error))}</p>${button(T("Повторить"), "route-retry")}`);
+      return;
+    }
     if (generation !== state.generation || sequence !== state.eventRequest || !$("#workspace-dialog").open) return;
     const [archive, caps] = results;
     state.data.executionCapabilities = caps;
@@ -2751,6 +2922,7 @@
     }
   };
   const openExecutionHistory = async () => {
+    if (enterRouteScreen("strategies", "executions", {})) return;
     if (!requireUser()) return;
     const generation = state.generation;
     openDialog(T("execution.history"), U.loading(T("execution.loading")));
@@ -2789,12 +2961,16 @@
     return number(goal.progress?.amount_rub) === null ? T("Источник ещё не предоставил данные для расчёта прогресса.") : source;
   };
   const renderGoals = () => {
-    const goals = state.data.goals?.items || [];
+    captureScreenDrafts();
+    const allGoals = state.tour ? [] : state.data.goals?.items || [];
+    const selected = state.route.screen === "archive" ? "archive" : state.route.filter || "active";
+    const goals = allGoals.filter(goal => selected === "all" || selected === "archive" ? (selected === "all" || goal.status !== "active") : goal.status === selected);
     $("#view-goals").innerHTML = `${heading(T("Цели"), T("Капитал, сроки и прогресс из выбранного источника"), button(T("Добавить цель"), "goal-create", {
       primary: true
     }) + button(T("Обновить"), "refresh", {
       small: true
-    }))}${state.errors.goals ? dataError("goals") : renderGoalsValue6(goals)}<p class="notice section-gap">${H("Доли активных целей проверяет сервер. Прогресс по портфелю зависит от стоимости счёта; выплаты учитываются до отдельных налоговых списаний.")}</p>`;
+    }))}${screenLinks("goals", [["", T("goals.active")], ["archive", T("goals.archive")]])}${state.loading.has("goals") && !state.data.goals ? U.loading(T("state.loading")) : state.errors.goals ? dataError("goals") : renderGoalsValue6(goals)}<p class="notice section-gap">${H("Доли активных целей проверяет сервер. Прогресс по портфелю зависит от стоимости счёта; выплаты учитываются до отдельных налоговых списаний.")}</p>`;
+    applyScreenLayout("goals");
   };
   const goalForecastHTML = forecast => {
     if (!forecast) return ("<p class=\"notice\">" + H("Задайте собственные предположения и сохраните план для расчёта.") + "</p>");
@@ -2807,9 +2983,10 @@
     }
     const simulation = forecast.simulation;
     const probabilityModel = simulation ? `<h3 class="panel-title section-gap">${H("Условная модель вероятности")}</h3>${infoRows([[T("Достигнуто в модельных траекториях"), percent(simulation.conditional_probability_percent)], [T("Точность моделирования, интервал 95%"), simulation.sampling_interval_95_percent.map(value => percent(value)).join(" — ")], [T("10-й процентиль суммы"), money(simulation.terminal_percentiles_rub["10"])], [T("Медиана суммы"), money(simulation.terminal_percentiles_rub["50"])], [T("90-й процентиль суммы"), money(simulation.terminal_percentiles_rub["90"])]])}<p class="notice warning">${H("Это доля успешных траекторий при ваших предположениях, а не установленная вероятность будущей прибыли. Модель использует независимые логнормальные доходности; кризисы, дефолты и изменение связей между активами в неё не входят. Интервал отражает только погрешность симуляции.")}</p>` : "";
-    return `${sourceHTML}${infoRows([[T("Расчётный срок, месяцев"), format(forecast.months, 0)], [T("Целевая сумма с инфляцией"), money(forecast.inflation_adjusted_target_rub)], [T("Сумма в заданном сценарии"), money(forecast.projected_amount_rub)], [forecast.required_monthly_kind === "income" ? T("Необходимые поступления в месяц") : T("Необходимый взнос в месяц"), money(forecast.required_monthly_rub)], [T("Месяцев до цели в сценарии"), forecast.deterministic_months_to_target ?? T("За выбранный срок не достигается")]])}${probabilityModel}<p class="fine-print">${H("Поступления — в конце месяца, оставшаяся часть текущего месяца считается отдельным периодом. Доходность задана после издержек. Для цели по выплатам рост стоимости капитала не считается доходом.")}</p>`;
+    return `${sourceHTML}${chart(forecast.scenario_path || [], {timeKey: "month", valueKey: "amount_rub", xKind: "model_month", label: T("goals.scenario"), comparison: [{key: "target_rub", label: T("goals.scenario_target")}, {key: "contributions_rub", label: T("goals.scenario_contributions")}]})}<p class="fine-print">${H("goals.scenario_notice")}</p>${infoRows([[T("Расчётный срок, месяцев"), format(forecast.months, 0)], [T("Целевая сумма с инфляцией"), money(forecast.inflation_adjusted_target_rub)], [T("Сумма в заданном сценарии"), money(forecast.projected_amount_rub)], [forecast.required_monthly_kind === "income" ? T("Необходимые поступления в месяц") : T("Необходимый взнос в месяц"), money(forecast.required_monthly_rub)], [T("Месяцев до цели в сценарии"), forecast.deterministic_months_to_target ?? T("За выбранный срок не достигается")]])}${probabilityModel}<p class="fine-print">${H("Поступления — в конце месяца, оставшаяся часть текущего месяца считается отдельным периодом. Доходность задана после издержек. Для цели по выплатам рост стоимости капитала не считается доходом.")}</p>`;
   };
   const openGoalPlan = async id => {
+    if (enterRouteScreen("goals", "plan", {goal_id: id})) return;
     if (!requireUser()) return;
     const generation = state.generation;
     openDialog(T("План достижения цели"), U.loading(T("state.loading")));
@@ -2818,10 +2995,18 @@
       const saved = await api(`/api/goals/${safeSegment(id)}/plan`);
       if (generation !== state.generation || sequence !== state.eventRequest || !$("#workspace-dialog").open) return;
       const doc = saved.document || {};
-      const fields = [["monthly_contribution_rub", T("Ежемесячный взнос в капитал, ₽"), 0, 1000000000000], ["monthly_income_rub", T("Ежемесячные выплаты для цели по доходу, ₽"), 0, 1000000000000], ["annual_return_percent", T("Годовой темп роста после издержек, %"), -99, 100], ["annual_volatility_percent", T("Годовая волатильность для модели, %"), 0, 200], ["annual_inflation_percent", T("Предполагаемая инфляция, %"), -20, 100]];
-      openDialog(T("План достижения цели"), `<form id="goal-plan-form" data-id="${esc(id)}" data-version="${saved.version}" data-goal-version="${saved.goal_version}"><p class="notice">${H("Введите собственные сценарные предположения. Эти поля не являются прогнозом OMNICIO. Ноль также нужно указать явно.")}</p><div class="field-grid">${fields.map(([name, label, min, max]) => field({name, label, type: "number", min, max, step: "0.0001", required: true, value: doc[name] ?? ""})).join("")}${field({name: "seed", label: T("Номер воспроизводимого расчёта"), type: "number", min: 0, max: 4294967295, step: 1, required: true, value: doc.seed ?? 42})}</div>${U.switchControl("target_in_today_money", T("Цель в сегодняшних ценах"), T("Будущая целевая сумма увеличивается на заданную инфляцию."), doc.target_in_today_money ?? true)}<div class="form-actions"><button class="button primary" type="submit">${H("Сохранить и рассчитать")}</button><button class="button secondary" type="button" data-close-dialog>${H("Закрыть")}</button></div><output class="form-message" id="goal-plan-message"></output><section id="goal-plan-result" class="section-gap">${goalForecastHTML(saved.forecast)}</section></form>`);
-    } catch (error) { if (generation === state.generation && sequence === state.eventRequest && !isCancelled(error)) toast(humanError(error), true); }
+      const kind = saved.goal_kind || (state.data.goals?.items || []).find(goal => goal.id === id)?.kind || "capital";
+      const applicable = new Set(saved.applicable_fields || (kind === "income" ? ["monthly_income_rub", "annual_inflation_percent"] : ["monthly_contribution_rub", "annual_return_percent", "annual_volatility_percent", "annual_inflation_percent"]));
+      const fields = [["monthly_contribution_rub", T("Ежемесячный взнос в капитал, ₽"), 0, 1000000000000], ["monthly_income_rub", T("Ежемесячные выплаты для цели по доходу, ₽"), 0, 1000000000000], ["annual_return_percent", T("Годовой темп роста после издержек, %"), -99, 100], ["annual_volatility_percent", T("Годовая волатильность для модели, %"), 0, 200], ["annual_inflation_percent", T("Предполагаемая инфляция, %"), -20, 100]].filter(([name]) => applicable.has(name));
+      openDialog(T("План достижения цели"), `<form id="goal-plan-form" data-id="${esc(id)}" data-kind="${esc(kind)}" data-version="${saved.version}" data-goal-version="${saved.goal_version}"><p class="notice">${H("Введите собственные сценарные предположения. Эти поля не являются прогнозом OMNICIO. Ноль также нужно указать явно.")}</p>${U.switchControl("target_in_today_money", T("Цель в сегодняшних ценах"), T("Будущая целевая сумма увеличивается на заданную инфляцию."), doc.target_in_today_money ?? true)}<div class="field-grid">${fields.map(([name, label, min, max]) => field({name, label, type: "number", min, max, step: "0.0001", required: name !== "annual_volatility_percent", value: doc[name] ?? ""})).join("")}</div><div class="form-actions"><button class="button primary" type="submit">${H("Сохранить и рассчитать")}</button><button class="button secondary" type="button" data-close-dialog>${H("navigation.back")}</button></div><output class="form-message" id="goal-plan-message"></output><section id="goal-plan-result" class="section-gap">${goalForecastHTML(saved.forecast)}</section></form>`);
+      updateGoalPlanFields();
+    } catch (error) { if (generation === state.generation && sequence === state.eventRequest && !isCancelled(error)) openDialog(T("state.load_failed"), `<p class="notice error">${esc(humanError(error))}</p>${button(T("Повторить загрузку"), "route-retry")}`); }
   };
+  function updateGoalPlanFields() {
+    const form = $("#goal-plan-form");
+    const inflation = form?.elements.annual_inflation_percent;
+    if (inflation) { inflation.disabled = !form.elements.target_in_today_money.checked; inflation.required = !inflation.disabled; inflation.closest(".field").hidden = inflation.disabled; }
+  }
   const saveGoalPlan = async form => {
     if (!requireUser() || form.dataset.busy === "true" || !form.reportValidity()) return;
     form.dataset.busy = "true";
@@ -2829,8 +3014,7 @@
     const sequence = state.eventRequest;
     const current = () => generation === state.generation && sequence === state.eventRequest && form.isConnected && $("#workspace-dialog").open;
     const data = new FormData(form);
-    const document = Object.fromEntries(["monthly_contribution_rub", "monthly_income_rub", "annual_return_percent", "annual_volatility_percent", "annual_inflation_percent"].map(key => [key, data.get(key)]));
-    document.seed = Number(data.get("seed"));
+    const document = Object.fromEntries(["monthly_contribution_rub", "monthly_income_rub", "annual_return_percent", "annual_volatility_percent", "annual_inflation_percent"].filter(key => data.has(key) && data.get(key) !== "").map(key => [key, data.get(key)]));
     document.target_in_today_money = data.has("target_in_today_money");
     const controls = Array.from(form.elements, control => [control, control.disabled]);
     for (const [control] of controls) control.disabled = true;
@@ -2839,7 +3023,9 @@
       if (!current()) return;
       form.dataset.version = saved.version;
       form.dataset.goalVersion = saved.goal_version;
+      clearScreenDraft(form);
       $("#goal-plan-result", form).innerHTML = goalForecastHTML(saved.forecast);
+      U.bindCharts(form);
       showMessage($("#goal-plan-message", form), saved.forecast?.status === "available" ? T("План сохранён; расчёт использует показанные предположения.") : T("goals.saved_without_forecast"));
     } catch (error) {
       if (!isCancelled(error) && current()) showMessage($("#goal-plan-message", form), `${humanError(error)} ${T("При конфликте или неопределённом результате закройте окно и откройте сохранённый план снова.")}`, true);
@@ -2866,6 +3052,7 @@
     status: "active"
   };
   const openGoal = (id = "") => {
+    if (enterRouteScreen("goals", id ? "edit" : "create", {goal_id: id})) return;
     if (!requireUser()) return;
     const goal = (state.data.goals?.items || []).find(item => item.id === id);
     if (id && !goal) {
@@ -2980,6 +3167,7 @@
     const items = current.map(goal => goal.id === saved.id ? saved : goal);
     if (!current.some(goal => goal.id === saved.id)) items.push(saved);
     replaceGoalList(items);
+    clearScreenDraft(form);
     return true;
   };
   const renderGoalConsumers = () => {
@@ -3089,6 +3277,7 @@
   };
   const eventNewsArchiveHTML = () => {
     if (state.tour) return "";
+    if (state.tour) return "";
     const archive = state.data.marketArchive;
     const articles = (archive?.items || []).map(archiveNewsItem).join("") || ("<p class=\"notice\">" + H("В загруженной части архива публикаций нет.") + "</p>");
     const content = state.errors.marketArchive ? dataError("marketArchive") : `<div class="event-list">${articles}</div>`;
@@ -3096,8 +3285,9 @@
     return `<section class="card section-gap"><h2 class="panel-title">${H("Архив новостей источника")}</h2>${content}${previous}</section>`;
   };
   const renderEvents = () => {
-    const data = state.data.events;
-    const unread = number(data?.unread_count) || 0;
+    captureScreenDrafts();
+    const data = state.tour ? null : state.data.events;
+    const unread = state.tour ? 0 : number(state.data.eventSummary?.unread_total ?? data?.unread_count) || 0;
     const previousEvents = data?.next_cursor ? `<div class="form-actions">${button(T("Загрузить предыдущие события"), "events-more", {small: true, extra: state.loading.has("events-more") ? " disabled" : ""})}</div>` : "";
     $("#view-events").innerHTML = `${heading(T("События"), T("Подтверждённые изменения портфеля, выплат и целей"), button(T("Обновить"), "refresh", {
       small: true
@@ -3107,6 +3297,7 @@
       route: true,
       small: true
     })}</div></div>${data?.digest?.frequency && data.digest.frequency !== "off" ? renderEventsCard(data) : ""}`;
+    applyScreenLayout("events");
   };
   const markEvents = async ids => {
     if (!requireUser() || !ids.length) return;
@@ -3122,6 +3313,7 @@
       if (generation !== state.generation) return;
       state.eventHistoryExtended = false;
       state.data.events = result;
+      scheduleEventSummary(100);
       updateIdentity();
       if (["events", "home"].includes(state.view)) renderCurrent();
     } catch (error) {
@@ -3137,6 +3329,7 @@
       if (generation !== state.generation) return;
       state.eventHistoryExtended = false;
       state.data.events = result;
+      scheduleEventSummary(100);
       updateIdentity();
       if (["events", "home"].includes(state.view)) renderCurrent();
     } catch (error) {
@@ -3154,7 +3347,9 @@
     state.loading.add(busy);
     renderEvents();
     try {
-      const page = await api(`/api/${news ? "news" : "events"}?limit=50&cursor=${encodeURIComponent(cursor)}`);
+      const filter = state.eventFilter;
+      const page = await api(`${news ? "/api/news?limit=50" : eventsPath()}&cursor=${encodeURIComponent(cursor)}`);
+      if (!news && filter !== state.eventFilter) return;
       if (generation !== state.generation) return;
       state.data[name] = mergePage(state.data[name], page);
       if (!news) state.eventHistoryExtended = true;
@@ -3190,6 +3385,7 @@
     return button(label, "event-destination", {primary: true});
   };
   const openEvent = async id => {
+    if (enterRouteScreen("events", "detail", {event: id})) return;
     if (!requireUser() || !/^[a-f0-9]{64}$/.test(id)) return;
     const generation = state.generation;
     openDialog(T("Событие"), U.loading(T("Получаем подтверждённые подробности…")));
@@ -3204,22 +3400,30 @@
       if (generation === state.generation && request === state.eventRequest && $("#workspace-dialog").open && !isCancelled(error)) openDialog(T("Событие недоступно"), `<p class="notice error">${esc(humanError(error))}</p>`);
     }
   };
-  const openNews = id => {
+  const openNews = async id => {
+    if (enterRouteScreen("events", "news", {news: id})) return;
+    const sequence = state.navigationSequence;
     const collections = [state.data.marketArchive, state.searchPages.news, state.asset?.news];
-    const item = collections.flatMap(collection => collection?.items || []).find(row => row.id === id);
-    if (!item) return;
+    let item = collections.flatMap(collection => collection?.items || []).find(row => row.id === id);
+    if (!item) {
+      openDialog(T("Новости"), U.loading(T("state.loading")));
+      try { item = await api(`/api/news/${safeSegment(id)}`); }
+      catch (error) { if (!isCancelled(error) && sequence === state.navigationSequence) openDialog(T("Новости"), `<p class="notice error">${esc(humanError(error))}</p>${button(T("Повторить"), "route-retry")}`); return; }
+    }
+    if (sequence !== state.navigationSequence) return;
     openDialog(item.title, `<p class="fine-print">${esc(item.source || T("Источник брокера"))} · ${esc(date(item.occurred_at, true))} ${H("МСК")}</p><p class="help-copy">${esc(item.content || item.summary || T("Источник не предоставил полный текст."))}</p>${item.source_url ? U.sourceLink(item.source_url, T("Первоисточник")) : ("<p class=\"fine-print\">" + H("Публикация предоставлена API источника; внешняя ссылка отсутствует.") + "</p>")}`);
   };
   const renderAnalytics = () => {
+    captureScreenDrafts();
     const ws = workspaceForPeriod(state.analyticsPeriod);
     const performance = ws?.performance || {};
     const income = ws?.income || {};
-    const analysis = state.data.analysis?.analysis;
+    const analysis = state.tour ? null : state.data.analysis?.analysis;
     const result = number(performance.investment_result_rub);
     const incomePeriod = income.from ? `${esc(date(income.from))} — ${esc(date(income.to))}<br>` : "";
     $("#view-analytics").innerHTML = `${heading(T("Аналитика"), T("Результат, денежные потоки и полнота исходных данных"), button(T("Обновить"), "refresh", {
       small: true
-    }))}${periods("analytics", state.analyticsPeriod)}${!ws ? ("<p class=\"notice\">" + H("Показатели выбранного периода ещё не получены. Расчёты другого периода здесь не отображаются.") + "</p>") : ""}${dataError("workspace")}<div class="metric-grid">${[[T("Финансовый результат"), money(result)], [T("Чистые пополнения"), money(performance.net_contributions_rub)], [T("Полученные выплаты"), money(income.total_rub)], [T("Налоги"), money(performance.taxes_rub)]].map(([label, value]) => renderAnalyticsCard(label, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader(T("Стоимость по наблюдениям"))}${chart(ws?.overview?.history)}${navCoverageHTML(ws?.overview || {}, state.analyticsPeriod)}${freshness("T-Invest", ws?.overview?.observed_at, ws?.overview?.status)}<p class="data-footnote">${H("Изменение стоимости включает движение денег. Доходность не выводится из разницы крайних точек.")}</p></section><section class="card">${cardHeader(T("Из чего складывается результат"))}${infoRows([[T("Стоимость в начале"), money(performance.start_nav_rub)], [T("Стоимость в конце"), money(performance.end_nav_rub)], [T("Изменение стоимости"), money(performance.nav_change_rub)], [T("Чистые пополнения / выводы"), money(performance.net_contributions_rub)], [T("Результат после внешних потоков"), money(performance.investment_result_rub)], [T("Комиссии за период"), money(performance.fees_rub)], [T("Налоговые списания"), money(performance.taxes_rub)]])}<p class="data-footnote">${performance.from ? renderAnalyticsFragment(performance) : ""}${H("Метод: изменение стоимости минус внешние денежные потоки. Комиссии и налоги уже отражаются в результате; повторно они не вычитаются.")}</p></section></div><div class="two-column section-gap"><section class="card">${cardHeader(T("Выплаты до налоговых списаний"))}${income.by_month?.length ? chart(income.by_month.map(item => ({
+    }))}${periods("analytics", state.analyticsPeriod)}${!ws ? ("<p class=\"notice\">" + H("Показатели выбранного периода ещё не получены. Расчёты другого периода здесь не отображаются.") + "</p>") : ""}${dataError("workspace")}<div class="metric-grid">${[[T("Финансовый результат"), money(result)], [T("Чистые пополнения"), money(performance.net_contributions_rub)], [T("Полученные выплаты"), money(income.total_rub)], [T("Налоги"), money(performance.taxes_rub)]].map(([label, value]) => renderAnalyticsCard(label, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader(T("Стоимость по наблюдениям"))}${chart(ws?.overview?.history)}${navCoverageHTML(ws?.overview || {}, state.analyticsPeriod)}${freshness("T-Invest", ws?.overview?.observed_at, ws?.overview?.freshness?.status || ws?.overview?.status)}<p class="data-footnote">${H("Изменение стоимости включает движение денег. Доходность не выводится из разницы крайних точек.")}</p></section><section class="card">${cardHeader(T("Из чего складывается результат"))}${infoRows([[T("Стоимость в начале"), money(performance.start_nav_rub)], [T("Стоимость в конце"), money(performance.end_nav_rub)], [T("Изменение стоимости"), money(performance.nav_change_rub)], [T("Чистые пополнения / выводы"), money(performance.net_contributions_rub)], [T("Результат после внешних потоков"), money(performance.investment_result_rub)], [T("Комиссии за период"), money(performance.fees_rub)], [T("Налоговые списания"), money(performance.taxes_rub)]])}<p class="data-footnote">${performance.from ? renderAnalyticsFragment(performance) : ""}${H("Метод: изменение стоимости минус внешние денежные потоки. Комиссии и налоги уже отражаются в результате; повторно они не вычитаются.")}</p></section></div><div class="two-column section-gap"><section class="card">${cardHeader(T("Выплаты до налоговых списаний"))}${income.by_month?.length ? chart(income.by_month.map(item => ({
       ...item,
       time: renderAnalyticsFragment2(item)
     })), {
@@ -3228,6 +3432,7 @@
       label: T("Подтверждённые выплаты по месяцам"),
       tone: "purple"
     }) : empty(T("История выплат пока недоступна"), T("Для расчёта нужны подтверждённые операции брокера."), "", "", "wallet")}${infoRows([[T("Купоны"), money(income.coupons_rub)], [T("Дивиденды"), money(income.dividends_rub)], [T("Прочие доходы"), money(income.other_income_rub)], [T("Погашения капитала"), money(income.redemptions_rub)]])}<p class="data-footnote">${incomePeriod}${H("Погашение возвращает капитал и не включается в доход. Налоговые списания учитываются отдельно в финансовом результате.")}</p></section><section class="card">${cardHeader(T("Полнота данных и риски"))}${analysis ? renderAnalyticsFragment3(analysis) : empty(T("Анализ ещё не получен"), T("Проверьте подключение счёта и наличие наблюдений."), "connect", T("Проверить подключение"), "analytics")}${dataError("analysis")}</section></div>${performance.status === "unavailable" ? ("<p class=\"notice section-gap\">" + H("Финансовый результат не рассчитан: недостаточно подтверждённых снимков или истории денежных потоков. Пропуски не заменяются нулями.") + "</p>") : ""}<section class="card section-gap">${cardHeader(T("Проверка выбранной стратегии"), "strategies", T("Открыть"))}<p class="fine-print">${esc(strategyTitle())}${H(". Подробные ограничения, проверка состава и исследование на истории находятся в разделе стратегий.")}</p></section>`;
+    applyScreenLayout("analytics");
   };
   const billingLabel = status => ({
     creating: T("Платёж создаётся"), pending: T("Ожидает оплаты"), paid: T("Оплачен"),
@@ -3264,11 +3469,12 @@
     const history = (value.payments || []).map(billingHistoryItemHTML).join("");
     const activeUntil = active ? `<p>${H("Доступ действует до")} ${esc(date(value.valid_until, true))} ${H("МСК.")}</p>` : "";
     let checkout = "";
-    if (offer && !active && !pending) checkout = `<form id="billing-checkout-form" data-offer="${esc(offer.version)}" data-request-id="${crypto.randomUUID()}"><h3 class="panel-title">${esc(offer.description)}</h3><p class="help-copy">${esc(money(offer.amount_kopecks / 100, 2, "RUB", false))} ${H("за")} ${esc(format(offer.period_days, 0))} ${H("дней")}</p>${field({name: "receipt_email", label: T("Email для банковского чека"), type: "email", required: true})}<label class="check-field"><input name="accept_offer" type="checkbox" required><span>${H("Подтверждаю выбранный срок и сумму.")} <a href="/legal/terms.html" target="_blank" rel="noopener">${H("Условия использования")}</a></span></label><button class="button primary" type="submit"${state.billingBusy ? " disabled" : ""}>${H("Создать платёж")}</button></form>`;
+    if (offer && !active && !pending) checkout = `<form id="billing-checkout-form" data-offer="${esc(offer.version)}" data-request-id="${crypto.randomUUID()}"><h3 class="panel-title">${esc(offer.description)}</h3><p class="help-copy">${esc(money(offer.amount_kopecks / 100, 2, "RUB", false))} ${H("за")} ${esc(format(offer.period_days, 0))} ${H("дней")}</p>${field({name: "receipt_email", label: T("Email для банковского чека"), type: "email", required: true})}<label class="check-field"><input name="accept_offer" type="checkbox" required><span>${H("Подтверждаю выбранный срок и сумму.")} <a href="/legal/terms.html">${H("Условия использования")}</a></span></label><button class="button primary" type="submit"${state.billingBusy ? " disabled" : ""}>${H("Создать платёж")}</button></form>`;
     else if (!value.configured) checkout = ("<p class=\"notice\">" + H("Приём оплаты ещё не включён. Тариф появится после настройки реального терминала, стоимости и условий оператором.") + "</p>");
     return `${dataError("billing")}<p class="help-copy">${H("Текущий план:")} <strong>${active ? "Premium" : T("Личный кабинет")}</strong></p>${activeUntil}${billingLimitsHTML(value)}<p class="fine-print">${H("Портфель, цели, стратегии, аналитика и настройки доступны в личном кабинете. Автоматические списания не используются.")}</p>${checkout}<output id="billing-message" class="form-message"></output>${pending ? ("<p class=\"notice\">" + H("Есть незавершённая оплата. Сверьте её состояние перед созданием новой.") + "</p>") : ""}<details class="section-gap" ${pending ? "open" : ""}><summary class="details-summary">${H("История оплат ·")} ${(value.payments || []).length}</summary><ul class="source-list">${history || ("<li>" + H("Оплат ещё не было.") + "</li>")}</ul></details><p class="fine-print section-gap">${H("Доступ обновляется после подтверждения банка. Возврат на сайт после оплаты не подтверждает списание.")}</p>`;
   };
   const openBilling = async () => {
+    if (enterRouteScreen("profile", "plan", {})) return;
     if (!requireUser()) return;
     const generation = state.generation;
     openDialog(T("План и подписка"), U.loading(T("Проверяем план и оплаты…")));
@@ -3331,6 +3537,7 @@
   };
 
   const renderProfile = () => {
+    captureScreenDrafts();
     if (state.tour) {
       $("#view-profile").innerHTML = `${heading(T("Профиль"))}<section class="card">${empty(T("Ваш личный аккаунт"), T("Войдите через T-ID или VK ID, чтобы настроить профиль."), "login", T("Войти"), "profile", true)}</section>`;
       return;
@@ -3348,6 +3555,7 @@
     $("#view-profile .settings-layout").insertAdjacentHTML("beforeend", sessionsHTML() + `<section class="card"><h2 class="panel-title">${H("План и подписка")}</h2><p class="help-copy">${state.data.billing?.plan === "premium" ? "Premium" : T("Личный кабинет")}</p>${button(T("Управление планом"), "premium", {small: true})}${dataError("billing")}</section>`);
     restoreEditableForm("profile-form");
     updateSaveStatus("prefs");
+    applyScreenLayout("profile");
   };
   const sessionItemHTML = item => {
     const action = item.current ? ("<span class=\"chip\">" + H("Это устройство") + "</span>") : `<button class="button secondary small" data-session-revoke="${esc(item.id)}">${H("Завершить")}</button>`;
@@ -3600,7 +3808,9 @@
   };
   const notificationDeliveryHTML = item => {
     const nextAttempt = item.status === "queued" ? ` ${T("· следующая попытка")} ${esc(date(item.next_attempt_at, true))} ${T("МСК")}` : "";
-    return `<li><strong>${esc({verification: T("Подтверждение адреса"), event: T("Событие"), digest: T("Дайджест"), operational: T("Состояние сервиса")}[item.kind] || T("Уведомление"))}</strong> · ${esc(deliveryStateLabels()[item.status] || T("Состояние неизвестно"))}<br><span class="fine-print">${esc(date(item.created_at, true))} ${H("МСК")}${nextAttempt}${item.status === "uncertain" ? T(" · повтор автоматически не отправляется; проверьте устройство или почту") : ""}</span></li>`;
+    const detail = item.error ? `<p class="notice error">${esc(item.error.title || T("notifications.delivery_failed"))}</p>` : "";
+    const channel = item.channel ? `${item.channel.kind === "push" ? "Push" : "Email"} · ${item.channel.label || T("notifications.channel_unavailable")}` : T("notifications.channel_unavailable");
+    return `<li><p class="fine-print">${esc(channel)} · ${H("notifications.attempts")}: ${esc(item.attempts ?? 0)}</p>${detail}<strong>${esc({verification: T("Подтверждение адреса"), event: T("Событие"), digest: T("Дайджест"), operational: T("Состояние сервиса")}[item.kind] || T("Уведомление"))}</strong> · ${esc(deliveryStateLabels()[item.status] || T("Состояние неизвестно"))}<br><span class="fine-print">${esc(date(item.created_at, true))} ${H("МСК")}${nextAttempt}${item.status === "uncertain" ? T(" · повтор автоматически не отправляется; проверьте устройство или почту") : ""}</span></li>`;
   };
   const notificationContentsHTML = () => {
     const data = state.data.notifications;
@@ -3706,6 +3916,7 @@
     return `<section class="card section-gap" id="operations-settings">${heading}${error}<p class="notice${data.status === "attention" ? " warning" : ""}">${esc(operationalStatus(data.status))}</p>${freshness(T("ops.server"), data.checked_at)}<p class="fine-print">${H("ops.aggregate_scope")}</p>${infoRows([[T("ops.accounts"), format(observer.connected_accounts, 0)], [T("ops.stale_accounts"), format(observer.stale_success_accounts, 0)], [T("ops.collection_failures"), format(observer.failed_24h, 0)], [T("ops.degraded"), format(observer.degraded_24h, 0)]])}<details class="section-gap"><summary class="details-summary">${H("ops.collection_queue")}</summary>${infoRows([[T("ops.queued"), format(observer.queued, 0)], [T("ops.running"), format(observer.running, 0)], [T("ops.late"), format(observer.stale, 0)], [T("ops.oldest_collection"), date(data.oldest_pending_at, true)], [T("ops.last_collection"), date(data.latest_success_at, true)]])}</details><details class="section-gap"><summary class="details-summary">${H("ops.delivery_queue")}</summary>${infoRows([[T("ops.queued"), format(deliveries.queued, 0)], [T("ops.sending"), format(deliveries.sending, 0)], [T("ops.late"), format(deliveries.stale, 0)], [T("ops.failures_day"), format(deliveries.failed_24h, 0)], [T("ops.uncertain"), format(deliveries.uncertain, 0)], [T("ops.oldest_delivery"), date(deliveries.oldest_due_at, true)], [T("ops.last_accepted"), date(deliveries.last_accepted_at, true)]])}</details><details class="section-gap"><summary class="details-summary">${H("ops.workers")}</summary>${workers}</details><p class="fine-print section-gap">${H("ops.times_msk")}</p></section>`;
   };
   const renderSettings = () => {
+    captureScreenDrafts();
     if (state.tour) {
       $("#view-settings").innerHTML = `${heading(T("Настройки"))}<section class="card">${empty(T("Настройки сохраняются в аккаунте"), T("Для источников данных, уведомлений и личных предпочтений войдите в OMNICIO."), "login", T("Войти"), "settings", true)}</section>`;
       return;
@@ -3713,7 +3924,7 @@
     const prefs = state.prefs.draft;
     const timezones = [["Europe/Moscow", T("Москва · UTC+3")], ["Etc/UTC", "UTC"]];
     if (prefs?.quiet_hours?.timezone && !timezones.some(([value]) => value === prefs.quiet_hours.timezone)) timezones.push([prefs.quiet_hours.timezone, prefs.quiet_hours.timezone]);
-    const preferences = prefs ? `<form id="preferences-form"><section class="card"><div class="card-header"><h2>${H("Оформление и приватность")}</h2><span class="save-status" data-save-status="prefs"></span></div><div class="field-grid">${select("theme", T("Тема"), [["system", T("Как на устройстве")], ["dark", T("Тёмная")], ["light", T("Светлая")]], prefs.theme)}${select("locale", T("settings.language"), [["ru", T("Русский · 1 234,56")], ["en", "English · 1,234.56"]], prefs.locale, T("settings.language_help"))}</div>${U.switchControl("mask_balances", T("Скрывать личные суммы"), T("Маскирует баланс, суммы целей и персональные графики на экране."), prefs.mask_balances)}</section><section class="card section-gap"><h2 class="panel-title">${H("Уведомления в кабинете")}</h2>${U.switchControl("notify_portfolio", T("Портфель"), T("Изменения и состояния подключённого счёта."), prefs.notifications.portfolio)}${U.switchControl("notify_payments", T("Выплаты"), T("Подтверждённые купоны, дивиденды и другие поступления."), prefs.notifications.payments)}${U.switchControl("notify_goals", T("Цели"), T("Прогресс и события ваших целей."), prefs.notifications.goals)}${U.switchControl("notify_system", T("Система"), T("Подключение данных и важные состояния сервиса."), prefs.notifications.system)}<p class="notice">${H("Категории управляют лентой и подключёнными каналами доставки. Push и email требуют отдельного подключения ниже; SMS не используется.")}</p><div class="field-grid section-gap">${select("digest_frequency", T("Режим дайджеста"), [["off", T("Отдельные события")], ["daily", T("За день")], ["weekly", T("За неделю")]], prefs.digest_frequency)}${select("quiet_timezone", T("Часовой пояс тихих часов"), timezones, prefs.quiet_hours.timezone)}</div>${U.switchControl("quiet_enabled", T("Тихие часы"), T("События остаются в ленте. Внешняя доставка откладывается до окончания тихих часов."), prefs.quiet_hours.enabled)}<div class="field-grid">${field({
+    const preferences = prefs ? `<form id="preferences-form"><section class="card"><div class="card-header"><h2>${H("Оформление и приватность")}</h2><span class="save-status" data-save-status="prefs"></span></div><div class="field-grid">${select("theme", T("Тема"), [["system", T("Как на устройстве")], ["dark", T("Тёмная")], ["light", T("Светлая")]], prefs.theme)}${select("locale", T("settings.language"), [["ru", T("Русский · 1 234,56")], ["en", "English · 1,234.56"]], prefs.locale, T("settings.language_help"))}</div>${U.switchControl("mask_balances", T("Скрывать личные суммы"), T("Маскирует баланс, суммы целей и персональные графики на экране."), prefs.mask_balances)}</section><section class="card section-gap"><h2 class="panel-title">${H("Уведомления в кабинете")}</h2>${U.switchControl("notify_portfolio", T("Портфель"), T("Изменения и состояния подключённого счёта."), prefs.notifications.portfolio)}${U.switchControl("notify_payments", T("Выплаты"), T("Подтверждённые купоны, дивиденды и другие поступления."), prefs.notifications.payments)}${U.switchControl("notify_goals", T("Цели"), T("Прогресс и события ваших целей."), prefs.notifications.goals)}${U.switchControl("notify_system", T("Система"), T("Подключение данных и важные состояния сервиса."), prefs.notifications.system)}<p class="notice">${H("Категории управляют лентой и подключёнными каналами доставки. Push и email требуют отдельного подключения ниже; SMS не используется.")}</p><div class="field-grid section-gap">${select("digest_frequency", T("Режим дайджеста"), [["off", T("Отдельные события")], ["daily", T("За день")], ["weekly", T("За неделю")]], prefs.digest_frequency)}${field({name: "digest_time", label: T("notifications.digest_time"), type: "time", value: prefs.digest_time || "09:00", required: true})}${select("digest_timezone", T("notifications.digest_timezone"), timezones, prefs.digest_timezone || "Europe/Moscow")}${select("quiet_timezone", T("Часовой пояс тихих часов"), timezones, prefs.quiet_hours.timezone)}</div>${U.switchControl("quiet_enabled", T("Тихие часы"), T("События остаются в ленте. Внешняя доставка откладывается до окончания тихих часов."), prefs.quiet_hours.enabled)}<div class="field-grid">${field({
       name: "quiet_start",
       label: T("Начало"),
       type: "time",
@@ -3741,6 +3952,7 @@
     $("#view-settings .settings-layout > div")?.insertAdjacentHTML("beforeend", `<section class="card section-gap" id="notification-settings">${notificationContentsHTML()}</section>`);
     $("#view-settings .settings-layout > div:last-child")?.insertAdjacentHTML("beforeend", operationalMetricsHTML());
     updateSaveStatus("prefs");
+    applyScreenLayout("settings");
   };
   const brokerSettingsHTML = () => {
     const connection = state.data.connection;
@@ -3751,7 +3963,7 @@
       small: true,
       extra: disconnectBlocked() ? " disabled" : ""
     })}</div>`;
-    return `<p class="fine-print">${H("Добавьте личный токен API T-Invest. Проверка покажет доступные счета; затем вы явно выберете нужный.")}</p><form id="broker-form" class="connection-steps"><label class="field"><span>${H("API-токен")} ${help(T("API-токен"), T("Создайте токен в личном кабинете T-Invest для чтения данных. Токен вводится только после входа в OMNICIO, проверяется сервером и хранится зашифрованным. Не передавайте его в переписке."))}</span><input type="password" name="credential" autocomplete="off" minlength="20" maxlength="4096" required placeholder="${H("Вставьте токен")}" spellcheck="false"></label>${select("environment", T("Среда источника"), [["prod", T("Основной счёт")], ["sandbox", T("Тестовая среда")]], "prod")}<label class="check-field"><input type="checkbox" name="accept_personal_terms" required><span>${H("Подтверждаю доступ к своим данным на условиях")} <a href="/legal/terms.html" target="_blank" rel="noopener">${H("использования сервиса")}</a>.</span></label><button class="button primary" type="submit">${H("Проверить токен")}</button><div id="broker-accounts"></div><output id="broker-message" class="form-message"></output></form>`;
+    return `<p class="fine-print">${H("Добавьте личный токен API T-Invest. Проверка покажет доступные счета; затем вы явно выберете нужный.")}</p><form id="broker-form" class="connection-steps"><label class="field"><span>${H("API-токен")} ${help(T("API-токен"), T("Создайте токен в личном кабинете T-Invest для чтения данных. Токен вводится только после входа в OMNICIO, проверяется сервером и хранится зашифрованным. Не передавайте его в переписке."))}</span><input type="password" name="credential" autocomplete="off" minlength="20" maxlength="4096" required placeholder="${H("Вставьте токен")}" spellcheck="false"></label>${select("environment", T("Среда источника"), [["prod", T("Основной счёт")], ["sandbox", T("Тестовая среда")]], "prod")}<label class="check-field"><input type="checkbox" name="accept_personal_terms" required><span>${H("Подтверждаю доступ к своим данным на условиях")} <a href="/legal/terms.html">${H("использования сервиса")}</a>.</span></label><button class="button primary" type="submit">${H("Проверить токен")}</button><div id="broker-accounts"></div><output id="broker-message" class="form-message"></output></form>`;
   };
   const assistantHealthLabel = status => {
     if (!status?.enabled) return T("Активация отложена");
@@ -3777,21 +3989,23 @@
     return `<aside class="card assistant-side"><h2 class="panel-title">${H("Ваши разговоры")}</h2>${button(T("Новый разговор"), "assistant-new", {small: true, extra: state.assistantBusy || state.tour ? "disabled" : ""})}<div class="assistant-history section-gap">${history || ("<p class=\"fine-print\">" + H("Сохранённых разговоров ещё нет.") + "</p>")}</div>${dataError("assistantConversations")}${conversationActions}<h3 class="panel-title section-gap">${H("Лимит запросов")}</h3><p>${quotaLabel}</p><p class="fine-print">${quotaReset}</p><h3 class="panel-title section-gap">${H("Начать с вопроса")}</h3><div class="assistant-prompts">${[T("Как читать структуру моего портфеля?"), T("Что означает просадка?"), T("Какие данные нужны для оценки стратегии?")].map(text => renderAssistantButton(text, enabled)).join("")}</div><p class="section-gap fine-print">${H("Ответ ИИ не изменяет настройки и не отправляет заявки брокеру.")}</p></aside>`;
   };
   const renderAssistant = () => {
+    captureScreenDrafts();
     const status = state.data.assistantStatus;
     const enabled = Boolean(status?.enabled && status?.configured && !state.tour);
-    const selected = state.assistantConversation;
-    const draft = state.assistantDraft;
-    const rows = state.data.assistantConversations?.items || [];
-    const runs = state.data.assistantResearch?.items || [];
+    const selected = state.tour ? null : state.assistantConversation;
+    const draft = state.tour ? {message: "", context: "general"} : state.assistantDraft;
+    const rows = state.tour ? [] : state.data.assistantConversations?.items || [];
+    const runs = state.tour ? [] : state.data.assistantResearch?.items || [];
     const requestState = value => ({running: T("Запрос выполняется"), uncertain: T("Ответ не подтверждён. Автоматической повторной отправки нет."), cancelled: T("Запрос остановлен")})[value] || "";
-    const chat = state.chat.map(item => {
+    const chat = (state.tour ? [] : state.chat).map(item => {
       const requestNotice = requestState(item.request_status) ? `<p class="fine-print">${esc(requestState(item.request_status))}</p>` : "";
       return `<article class="chat-message ${item.role === "user" ? "user" : ""}"><small>${item.role === "user" ? T("Вы") : T("OMNICIO · ИИ")} · ${esc(date(item.created_at, true))} ${H("МСК")}</small>${esc(item.content)}${item.sources?.length ? renderAssistantSourceList(item) : ""}${requestNotice}</article>`;
     }).join("");
     const history = rows.map(item => `<button class="recovery-row" data-assistant-conversation="${esc(item.id)}"${state.assistantBusy ? " disabled" : ""}${selected?.id === item.id ? ' aria-current="true"' : ""}><span><strong>${esc(item.title)}</strong><small>${esc(date(item.updated_at, true))} ${H("МСК")}</small></span></button>`).join("");
     const researchOptions = [["", T("Не передавать")], ...runs.map(run => [run.id, `${date(run.created_at, true)} · ${run.strategy_version || ""}`])];
-    $("#view-assistant").innerHTML = `${heading(T("ИИ-помощник"), T("Разговоры и выбранные вами данные"), button(T("Настроить подключение"), "assistant-connect", {small: true}))}<div class="assistant-layout"><section class="card chat-card"><div class="assistant-status">${icon("assistant")}<strong>${esc(selected?.title || T("Персональный помощник"))}</strong><span class="chip">${esc(assistantHealthLabel(status))}</span></div>${!status?.enabled ? ("<p class=\"notice\">" + H("Внешний ИИ будет включён после завершения и проверки остальной системы. Настройки подключения и история уже доступны.") + "</p>") : ""}<div id="chat-messages" class="chat-messages" role="log" aria-label="${H("Переписка с ИИ")}">${selected?.next_before ? button(T("Предыдущие сообщения"), "assistant-history-more", {small: true, extra: state.assistantBusy ? "disabled" : ""}) : ""}${chat || empty(T("Начните новый разговор"), T("Выберите контекст и задайте вопрос после активации модели."), "", "", "assistant", true)}${state.assistantBusy ? U.loading(T("Ожидаем подтверждённый ответ…")) : ""}</div><form id="assistant-form"><div class="assistant-context">${select("context", T("Данные для этого вопроса"), [["general", T("Общий вопрос · без личных данных")], ["portfolio", T("Сводные показатели портфеля")], ["investment", T("Портфель, позиции, цели и стратегия")]], draft.context)}<div class="field-grid">${select("research_run_id", T("Сохранённое исследование"), researchOptions, draft.research_run_id)}<label class="check-field"><input name="include_news" type="checkbox"${draft.include_news ? " checked" : ""}><span>${H("Добавить последние новости Банка России")}</span></label></div><p class="fine-print">${H("Личные данные отправляются только с выбранным контекстом. История хранится в вашем аккаунте и доступна после повторного входа.")}</p></div><div class="chat-compose"><textarea name="message" aria-label="${H("Сообщение помощнику")}" maxlength="4000" required placeholder="${H("Задайте свой вопрос…")}"${!enabled || state.assistantBusy ? " disabled" : ""}>${esc(draft.message)}</textarea><button class="button primary" type="submit"${!enabled || state.assistantBusy ? " disabled" : ""}>${H("Отправить")}</button></div><output id="assistant-message" class="form-message chat-form-message"></output></form>${dataError("assistantStatus")}</section>${assistantSidebarHTML({status, selected, history, enabled})}</div>`;
+    $("#view-assistant").innerHTML = `${heading(T("ИИ-помощник"), T("Разговоры и выбранные вами данные"), button(T("Настроить подключение"), "assistant-connect", {small: true}))}<div class="assistant-layout"><section class="card chat-card"><div class="assistant-status">${icon("assistant")}<strong>${esc(selected?.title || T("Персональный помощник"))}</strong><span class="chip">${esc(assistantHealthLabel(status))}</span></div>${!status?.enabled ? ("<p class=\"notice\">" + H("Внешний ИИ будет включён после завершения и проверки остальной системы. Настройки подключения и история уже доступны.") + "</p>") : ""}<div id="chat-messages" class="chat-messages" role="log" aria-label="${H("Переписка с ИИ")}">${selected?.next_before ? button(T("Предыдущие сообщения"), "assistant-history-more", {small: true, extra: state.assistantBusy ? "disabled" : ""}) : ""}${chat || empty(T("Начните новый разговор"), T("Выберите контекст и задайте вопрос после активации модели."), "", "", "assistant", true)}<div id="assistant-request">${assistantRequestHTML()}</div></div><form id="assistant-form"><div class="assistant-context">${select("context", T("Данные для этого вопроса"), [["general", T("Общий вопрос · без личных данных")], ["portfolio", T("Сводные показатели портфеля")], ["investment", T("Портфель, позиции, цели и стратегия")]], draft.context)}<div class="field-grid">${select("research_run_id", T("Сохранённое исследование"), researchOptions, draft.research_run_id)}<label class="check-field"><input name="include_news" type="checkbox"${draft.include_news ? " checked" : ""}><span>${H("Добавить последние новости Банка России")}</span></label></div><p class="fine-print">${H("Личные данные отправляются только с выбранным контекстом. История хранится в вашем аккаунте и доступна после повторного входа.")}</p></div>${assistantMemoryChoices()}<div class="chat-compose"><textarea name="message" aria-label="${H("Сообщение помощнику")}" maxlength="4000" required placeholder="${H("Задайте свой вопрос…")}"${!enabled || state.assistantBusy ? " disabled" : ""}>${esc(draft.message)}</textarea><button class="button primary" type="submit"${!enabled || state.assistantBusy ? " disabled" : ""}>${H("Отправить")}</button></div><output id="assistant-message" class="form-message chat-form-message"></output></form>${dataError("assistantStatus")}</section>${assistantSidebarHTML({status, selected, history, enabled})}</div>`;
     updateAssistantContext();
+    applyScreenLayout("assistant");
   };
   const loadAssistantConversation = async (id, more = false) => {
     if (!requireUser() || state.assistantBusy) return;
@@ -3804,6 +4018,7 @@
     if (payload.id !== id || !Array.isArray(payload.messages)) throw new Error("invalid_server_response");
     state.chat = more ? [...new Map([...payload.messages, ...state.chat].map(item => [item.position, item])).values()].sort((a,b) => a.position - b.position) : payload.messages;
     state.assistantConversation = payload;
+    if (payload.latest_request) state.assistantRequest = {...payload.latest_request, id: payload.latest_request.request_id};
     if (state.view === "assistant") renderAssistant();
   };
   const newAssistantConversation = async () => {
@@ -3821,6 +4036,7 @@
     }
     if (generation !== state.generation) return;
     state.assistantConversation = {...created, messages: [], next_before: null};
+    updateViewRoute({screen: "conversation", conversation: created.id});
     state.chat = [];
     await loadResource("assistantConversations", "/api/assistant/conversations", {force: true});
     if (generation === state.generation && state.view === "assistant") renderAssistant();
@@ -3857,6 +4073,7 @@
     }
   };
   const openAssistantConnection = async () => {
+    if (enterRouteScreen("assistant", "connection", {})) return;
     if (!requireUser()) return;
     const generation = state.generation;
     openDialog(T("Подключение ИИ"), U.loading(T("state.loading")));
@@ -3864,7 +4081,7 @@
     await loadResource("assistantStatus", "/api/assistant/status", {force: true});
     if (generation !== state.generation || sequence !== state.eventRequest || !$("#workspace-dialog").open) return;
     const status = state.data.assistantStatus;
-    if (!status) { toast(humanError(state.errors.assistantStatus), true); return; }
+    if (!status) { openDialog(T("Подключение ИИ"), `${dataError("assistantStatus")}${button(T("Повторить"), "route-retry")}`); return; }
     const endpoints = status.allowed_endpoints || [];
     const keyPlaceholder = status.has_key ? T("Оставьте пустым, чтобы сохранить ключ") : T("Ключ провайдера");
     const connectionForm = endpoints.length ? `<form id="assistant-connection-form" data-version="${status.connection_version}">${select("provider", T("Протокол"), [["ollama", "Ollama"], ["openai_compatible", "OpenAI compatible"]], status.provider || "ollama")}${select("base_url", T("Адрес, разрешённый оператором"), endpoints.map(url => [url,url]), status.base_url || endpoints[0])}${field({name: "model", label: T("Идентификатор модели"), value: status.model || "", required: true})}<label class="field"><span>${H("API-ключ")}</span><input type="password" name="api_key" autocomplete="new-password" maxlength="4096" placeholder="${esc(keyPlaceholder)}"><small>${H("Ключ шифруется на сервере и не возвращается в интерфейс.")}</small></label><button class="button primary" type="submit">${H("Сохранить подключение")}</button><output id="assistant-connection-message" class="form-message"></output></form>` : ("<p class=\"notice\">" + H("Оператор ещё не указал разрешённые адреса моделей.") + "</p>");
@@ -3909,6 +4126,7 @@
   const reportAssistantFailure = async (error, generation) => {
     if (generation !== state.generation || isCancelled(error)) return;
     state.assistantBusy = false;
+    if (state.assistantRequest) state.assistantRequest.status = "uncertain";
     if (state.assistantConversation) await loadAssistantConversation(state.assistantConversation.id).catch(() => null);
     if (generation !== state.generation) return;
     if (state.view === "assistant") {
@@ -3931,13 +4149,18 @@
       const selected = state.assistantConversation;
       state.assistantBusy = true;
       renderAssistant();
-      await api("/api/assistant/messages", {method: "POST", timeout: 60000, body: {
-        conversation_id: selected.id, request_id: crypto.randomUUID(), expected_version: selected.version,
+      const request = {id: crypto.randomUUID(), conversation_id: selected.id, status: "running", reply_prefix: "", stream_sequence: 0};
+      state.assistantRequest = request;
+      updateViewRoute({screen: "conversation", conversation: selected.id}, {replace: true});
+      paintAssistantRequest();
+      await api("/api/assistant/messages/stream", {method: "POST", timeout: 120000, body: {
+        conversation_id: selected.id, request_id: request.id, expected_version: selected.version,
         message, context: draft.context, include_news: draft.context === "investment" && draft.include_news,
-        research_run_id: draft.context === "investment" ? draft.research_run_id || null : null
-      }});
+        research_run_id: draft.context === "investment" ? draft.research_run_id || null : null,
+        memory_ids: [...(state.assistantMemorySelected || [])]
+      }, onStream: (response, ensure) => readAssistantStream(response, request, ensure)});
       if (generation !== state.generation) return;
-      state.assistantDraft.message = "";
+      if (state.assistantRequest?.status === "completed") { state.assistantDraft.message = ""; const currentForm = $("#assistant-form"); if (currentForm) { currentForm.elements.message.value = ""; clearScreenDraft(currentForm); } }
       state.assistantBusy = false;
       await loadAssistantConversation(selected.id);
       await Promise.allSettled([loadResource("assistantStatus", "/api/assistant/status", {force: true}), loadResource("assistantConversations", "/api/assistant/conversations", {force: true})]);
@@ -3949,6 +4172,455 @@
       await reportAssistantFailure(error, generation);
     } finally { if (generation === state.generation) state.assistantBusy = false; }
   };
+
+  function assistantRequestHTML() {
+    const request = state.tour ? null : state.assistantRequest;
+    if (!request) return "";
+    const running = request.status === "running";
+    const status = {running: T("assistant.generating"), uncertain: T("assistant.incomplete"), cancelled: T("assistant.cancelled"), completed: T("assistant.completed")}[request.status] || T("assistant.incomplete");
+    const text = request.reply_prefix || "";
+    return `<section class="assistant-stream" aria-live="polite"><p class="fine-print">${esc(status)}</p>${text && request.status !== "completed" ? `<p class="notice warning">${H("assistant.provisional")}</p><p class="assistant-prefix">${esc(text)}</p>` : ""}<div class="form-actions">${running ? button(T("assistant.stop"), "assistant-cancel", {small: true}) : ""}${request.status !== "completed" ? button(T("assistant.readback"), "assistant-request-read", {small: true}) : ""}</div></section>`;
+  }
+  function paintAssistantRequest() { const element = $("#assistant-request"); if (element) element.innerHTML = assistantRequestHTML(); }
+  async function readAssistantStream(response, request, ensure) {
+    if (!response.headers.get("Content-Type")?.includes("text/event-stream") || !response.body) throw new Error("assistant_stream_invalid");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let terminal = false;
+    const accept = block => {
+      const lines = block.split(/\r?\n/);
+      const event = lines.find(line => line.startsWith("event:"))?.slice(6).trim();
+      const json = lines.filter(line => line.startsWith("data:")).map(line => line.slice(5).trimStart()).join("\n");
+      if (!json) return;
+      const data = JSON.parse(json);
+      if (data.request_id !== request.id) throw new Error("assistant_stream_invalid");
+      if (event === "delta") {
+        if (typeof data.reply_prefix !== "string" || data.reply_prefix.length > 100000 || !Number.isSafeInteger(data.sequence)) throw new Error("assistant_stream_invalid");
+        if (data.sequence > request.stream_sequence) { request.reply_prefix = data.reply_prefix; request.stream_sequence = data.sequence; }
+      } else if (event === "complete") { request.status = "completed"; request.result = data.result; terminal = true; }
+      else if (event === "cancelled") { request.status = "cancelled"; terminal = true; }
+      else if (event === "error") { request.status = "uncertain"; throw Object.assign(new Error(data.code || "assistant_unavailable"), {code: data.code}); }
+      paintAssistantRequest();
+    };
+    try {
+      while (true) {
+        const {value, done} = await reader.read();
+        ensure();
+        buffer += decoder.decode(value || new Uint8Array(), {stream: !done});
+        if (buffer.length > 524288) throw new Error("assistant_response_too_large");
+        let match;
+        while ((match = /\r?\n\r?\n/.exec(buffer))) {
+          const block = buffer.slice(0, match.index);
+          buffer = buffer.slice(match.index + match[0].length);
+          accept(block);
+        }
+        if (done || terminal) break;
+      }
+      if (!terminal) throw new Error("assistant_response_incomplete");
+      return request.result;
+    } finally { await reader.cancel().catch(() => null); }
+  }
+  async function readAssistantRequest(cancel = false) {
+    const request = state.assistantRequest;
+    if (!requireUser() || !request?.id) return;
+    const generation = state.generation;
+    try {
+      const saved = await api(`/api/assistant/requests/${safeSegment(request.id)}${cancel ? "/cancel" : ""}`, cancel ? {method: "POST", body: {}} : {});
+      if (generation !== state.generation || state.assistantRequest?.id !== request.id) return;
+      state.assistantRequest = {...saved, id: saved.request_id || request.id};
+      paintAssistantRequest();
+      if (["completed", "cancelled"].includes(saved.status)) {
+        state.assistantBusy = false;
+        if (state.assistantConversation) await loadAssistantConversation(state.assistantConversation.id);
+      }
+    } catch (error) { if (generation === state.generation && !isCancelled(error)) showMessage($("#assistant-message"), humanError(error), true); }
+  }
+  function assistantMemoryChoices() {
+    const items = state.tour ? [] : state.data.assistantMemory?.items || [];
+    if (!items.length) return "";
+    return `<details class="section-gap"><summary class="details-summary">${H("assistant.memory_selection")}</summary>${items.map(item => `<label class="check-field"><input type="checkbox" data-memory-select="${esc(item.id)}"${state.assistantMemorySelected?.has(item.id) ? " checked" : ""}${state.assistantBusy ? " disabled" : ""}><span>${esc(item.content)}</span></label>`).join("")}<p class="fine-print">${H("assistant.memory_selection_help")}</p></details>`;
+  }
+  function assistantMemoryHTML() {
+    if (state.tour) return empty(T("assistant.memory"), T("assistant.memory_help"), "login", T("Войти"));
+    const data = state.data.assistantMemory;
+    const rows = (data?.items || []).map(item => `<article class="event-item"><div class="event-item-body"><p>${esc(item.content)}</p><p class="fine-print">${esc(item.category === "preference" ? T("assistant.preference") : T("assistant.context"))} · ${H("Версия")}: ${esc(item.version)}</p><div class="form-actions"><button class="button secondary small-button" data-memory-edit="${esc(item.id)}">${H("assistant.memory_edit")}</button><button class="button danger small-button" data-memory-delete="${esc(item.id)}">${H("Удалить")}</button></div></div></article>`).join("");
+    return `${cardHeader(T("assistant.memory"))}<p class="fine-print">${H("assistant.memory_help")}</p>${dataError("assistantMemory")}${!data && !state.errors.assistantMemory ? U.loading(T("state.loading")) : rows || `<p class="notice">${H("assistant.memory_empty")}</p>`}<div id="assistant-memory-editor">${assistantMemoryForm()}</div>`;
+  }
+  function assistantMemoryForm(item = null) {
+    return `<form id="assistant-memory-form" class="section-gap" data-id="${esc(item?.id || (state.assistantMemoryDraftId ||= crypto.randomUUID()))}" data-version="${item?.version || 0}">${select("category", T("assistant.memory_kind"), [["preference", T("assistant.preference")], ["context", T("assistant.context")]], item?.category || "preference")}<label class="field"><span>${H("assistant.memory_content")}</span><textarea name="content" maxlength="1000" rows="4" required>${esc(item?.content || "")}</textarea></label><label class="check-field"><input type="checkbox" name="confirmed" required><span>${H("assistant.memory_confirm")}</span></label><div class="form-actions"><button class="button primary" type="submit">${H("Сохранить")}</button></div><output id="assistant-memory-message" class="form-message"></output></form>`;
+  }
+  async function saveAssistantMemory(form) {
+    if (!requireUser() || form.dataset.busy === "true" || !form.reportValidity()) return;
+    const generation = state.generation;
+    const id = form.dataset.id;
+    const version = Number(form.dataset.version);
+    const body = {content: form.elements.content.value.trim(), category: form.elements.category.value, confirmed: form.elements.confirmed.checked, expected_version: version};
+    form.dataset.busy = "true";
+    form.querySelector("button[type=submit]").disabled = true;
+    try {
+      await api(`/api/assistant/memory${version ? "/" + safeSegment(id) : ""}`, {method: version ? "PUT" : "POST", body: version ? body : {...body, id}});
+      if (generation !== state.generation) return;
+      clearScreenDraft(form);
+      if (!version) state.assistantMemoryDraftId = null;
+      await loadResource("assistantMemory", "/api/assistant/memory", {force: true});
+      if (generation === state.generation && state.view === "assistant") renderAssistant();
+    } catch (error) {
+      if (generation !== state.generation || isCancelled(error)) return;
+      await loadResource("assistantMemory", "/api/assistant/memory", {force: true});
+      const actual = state.data.assistantMemory?.items?.find(item => item.id === id);
+      if (actual && actual.content === body.content && actual.category === body.category && actual.version > version) { clearScreenDraft(form); renderAssistant(); }
+      else showMessage($("#assistant-memory-message"), humanError(error), true);
+    } finally { if (form.isConnected) { form.dataset.busy = "false"; form.querySelector("button[type=submit]").disabled = false; } }
+  }
+  async function deleteAssistantMemory(id) {
+    const item = state.data.assistantMemory?.items?.find(row => row.id === id);
+    if (!requireUser() || !item) return;
+    const generation = state.generation;
+    await api(`/api/assistant/memory/${safeSegment(id)}`, {method: "DELETE", body: {expected_version: item.version}});
+    if (generation !== state.generation) return;
+    state.assistantMemorySelected?.delete(id);
+    await loadResource("assistantMemory", "/api/assistant/memory", {force: true});
+    if (generation === state.generation) { $("#workspace-dialog").close(); renderAssistant(); }
+  }
+  function assistantSourcesHTML() {
+    if (state.tour) return empty(T("assistant.sources"), T("assistant.sources_scope"), "login", T("Войти"));
+    const selection = state.assistantSourceSelection || {context: "general", query: ""};
+    const runs = state.data.assistantResearch?.items || [];
+    return `${cardHeader(T("assistant.sources"))}<p class="notice">${H("assistant.sources_scope")}</p><form id="assistant-sources-form">${select("context", T("Данные для этого вопроса"), [["general", T("Общий вопрос · без личных данных")], ["portfolio", T("Сводные показатели портфеля")], ["investment", T("Портфель, позиции, цели и стратегия")]], selection.context)}${select("research_run_id", T("Сохранённое исследование"), [["", T("Не передавать")], ...runs.map(item => [item.id, date(item.created_at, true)])], selection.research_run_id || "")}<label class="check-field"><input type="checkbox" name="include_news"${selection.include_news ? " checked" : ""}><span>${H("Добавить последние новости Банка России")}</span></label>${field({name: "query", label: T("Поиск"), value: selection.query || "", required: true})}<div class="form-actions"><button class="button primary" type="submit">${H("Найти")}</button></div><output id="assistant-sources-message" class="form-message"></output></form><div id="assistant-source-results" class="section-gap">${assistantSourcesResults()}</div>`;
+  }
+  function assistantSourcesResults() {
+    const page = state.assistantSources;
+    if (!page) return "";
+    return (page.items || []).map(item => `<article class="event-item"><div class="event-item-body"><h3>${esc(item.label || item.kind)}</h3><p>${esc(item.excerpt || "")}</p><button class="button secondary small-button" data-assistant-source="${esc(item.id)}">${H("Открыть")}</button></div></article>`).join("") || `<p class="notice">${H("Совпадений не найдено")}</p>`;
+  }
+  async function searchAssistantSources(form) {
+    if (!requireUser() || form.dataset.busy === "true") return;
+    const generation = state.generation;
+    const context = form.elements.context.value;
+    const selection = {context, include_news: context === "investment" && form.elements.include_news.checked, research_run_id: context === "investment" ? form.elements.research_run_id.value || null : null, query: form.elements.query.value.trim(), limit: 20};
+    form.dataset.busy = "true";
+    const target = $("#assistant-source-results");
+    target.innerHTML = U.loading(T("state.loading"));
+    try {
+      const page = await api("/api/assistant/sources/search", {method: "POST", body: selection});
+      if (generation !== state.generation || !form.isConnected) return;
+      state.assistantSourceSelection = selection;
+      state.assistantSources = page;
+      clearScreenDraft(form);
+      target.innerHTML = assistantSourcesResults();
+    } catch (error) { if (generation === state.generation && !isCancelled(error)) { target.replaceChildren(); showMessage($("#assistant-sources-message"), humanError(error), true); } }
+    finally { if (form.isConnected) form.dataset.busy = "false"; }
+  }
+  async function readAssistantSource(id) {
+    if (!requireUser() || !state.assistantSourceSelection) return;
+    const {query, limit, ...selection} = state.assistantSourceSelection;
+    const generation = state.generation;
+    openDialog(T("assistant.sources"), U.loading(T("state.loading")));
+    const sequence = state.eventRequest;
+    try {
+      const source = await api("/api/assistant/sources/read", {method: "POST", body: {...selection, source_id: id}});
+      if (generation !== state.generation || sequence !== state.eventRequest) return;
+      openDialog(source.label || T("assistant.sources"), `<p class="fine-print">${H("assistant.sources_scope")}</p><pre class="source-document">${esc(typeof source.content === "string" ? source.content : JSON.stringify(source.content, null, 2))}</pre>${source.url ? U.sourceLink(source.url, T("Первоисточник")) : ""}`);
+    } catch (error) { if (generation === state.generation && sequence === state.eventRequest && !isCancelled(error)) openDialog(T("assistant.sources"), `<p class="notice error">${esc(humanError(error))}</p>`); }
+  }
+
+  const dialogScreens = new Set(["goals/create", "goals/edit", "goals/plan", "events/detail", "events/news", "strategies/archive", "strategies/evidence", "strategies/result", "strategies/detail", "strategies/plan", "strategies/executions", "assistant/connection", "profile/plan"]);
+  const transientDialogs = new Map();
+  let tableQuotesTimer = null;
+  let tableQuotesBusy = false;
+  let eventSummaryTimer = null;
+  let eventSummaryBusy = false;
+  let pwaRegistration = null;
+  let acceptingUpdate = false;
+  function initializeNavigation() {
+    history.scrollRestoration = "manual";
+    let hash = location.hash;
+    const standalone = matchMedia("(display-mode: standalone)").matches || matchMedia("(display-mode: fullscreen)").matches || navigator.standalone;
+    if (!hash && standalone) {
+      try { hash = localStorage.getItem("omnicio-last-route") || ""; } catch { /* Last route is optional. */ }
+    }
+    const route = U.parseRoute(hash);
+    if (route.invalid) { showRouteError(); return; }
+    if (route.mode === "auto") {
+      if (hash) navigate(route.view, {...route, mode: "account"}, {replace: true});
+      else { state.mode = "auto"; sessionSurface(); }
+    } else navigate(route.view, route, {replace: true});
+    const expected = window.OMNICIO_RELEASE?.build;
+    if (expected && [U.compiledBuild, I.compiledBuild, "__OMNICIO_BUILD__"].some(build => build && build !== expected)) flagApplicationUpdate();
+  }
+  function enterRouteScreen(view, screen, detail = {}) {
+    if (state.view === view && state.route.screen === screen && Object.entries(detail).every(([key, value]) => state.route[key] === value)) return false;
+    navigate(view, {...detail, screen});
+    return true;
+  }
+  async function openRouteScreen(route) {
+    if (route.mode !== "public" && route.mode !== "demo" && (!state.user || state.locked)) return;
+    const sequence = state.navigationSequence;
+    state.openingRoute = true;
+    try {
+      if (route.overlay === "auth") { openAuth(state.authMode || "login"); return; }
+      if (route.overlay && transientDialogs.has(route.overlay)) {
+        const saved = transientDialogs.get(route.overlay);
+        openDialog(saved.title, saved.content);
+        return;
+      }
+      const key = `${route.view}/${route.screen}`;
+      if (key === "goals/create") openGoal();
+      else if (key === "goals/edit") openGoal(route.goal_id);
+      else if (key === "goals/plan") await openGoalPlan(route.goal_id);
+      else if (key === "events/detail") await openEvent(route.event);
+      else if (key === "events/news") await openNews(route.news);
+      else if (key === "strategies/archive") await openResearchArchive();
+      else if (key === "strategies/evidence") await openResearchEvidence();
+      else if (key === "strategies/detail") openPublicStrategy(route.preset);
+      else if (key === "strategies/plan") await openExecutionPlanner();
+      else if (key === "strategies/executions") await openExecutionHistory();
+      else if (key === "assistant/connection") await openAssistantConnection();
+      else if (key === "profile/plan") await openBilling();
+      else if (key === "settings/support") await loadSupport($("#workspace-support"));
+      else if (key === "strategies/result" && route.run) {
+        const payload = await api(`/api/research/runs/${safeSegment(route.run)}`);
+        if (sequence !== state.navigationSequence) return;
+        state.strategy.research = {...payload.result, archive: {id: payload.id, created_at: payload.created_at, strategy_version: payload.strategy_version}};
+        openDialog(T("Исследование на истории"), renderResearch());
+      }
+    } catch (error) {
+      if (sequence === state.navigationSequence && !isCancelled(error)) openDialog(T("state.load_failed"), `<p class="notice error">${esc(humanError(error))}</p>${button(T("Повторить загрузку"), "route-retry")}`);
+    } finally { state.openingRoute = false; }
+  }
+  function draftKey(form) { return `${form.id}:${form.dataset.goalId || form.dataset.id || ""}`; }
+  function draftForms(root = document) {
+    return $$("form[id]", root).filter(form => /^(goal-form|goal-plan-form|research-evidence-form|profile-form|preferences-form|assistant-form|research-form|assistant-memory-form|assistant-sources-form)$/.test(form.id));
+  }
+  function draftValues(form) {
+    return Object.fromEntries([...form.elements].filter(control => control.name && !["password", "file", "submit", "button", "hidden"].includes(control.type) && !/credential|token|code|secret/.test(control.name)).map(control => [control.name, control.type === "checkbox" ? control.checked : control.value]));
+  }
+  function captureScreenDrafts() {
+    for (const form of draftForms()) {
+      const key = draftKey(form);
+      const values = draftValues(form);
+      if (state.screenBaselines[key] === undefined) state.screenBaselines[key] = JSON.stringify(values);
+      if (JSON.stringify(values) !== state.screenBaselines[key]) state.screenDrafts[key] = values;
+      else delete state.screenDrafts[key];
+    }
+  }
+  function restoreScreenDrafts(root) {
+    if (state.tour) return;
+    for (const form of draftForms(root)) {
+      const key = draftKey(form);
+      if (state.screenBaselines[key] === undefined) state.screenBaselines[key] = JSON.stringify(draftValues(form));
+      const draft = state.screenDrafts[key];
+      if (!draft) continue;
+      for (const [name, value] of Object.entries(draft)) {
+        const control = form.elements.namedItem(name);
+        if (!control || control.type === "password" || control.type === "file") continue;
+        if (control.type === "checkbox") control.checked = value === true;
+        else control.value = value;
+      }
+      form.dataset.draftRestored = "true";
+    }
+  }
+  function clearScreenDraft(form) {
+    const key = draftKey(form);
+    delete state.screenDrafts[key];
+    state.screenBaselines[key] = JSON.stringify(draftValues(form));
+  }
+  function screenLinks(view, panes) {
+    return `<nav class="screen-menu" aria-label="${H("navigation.sections")}">${panes.map(([key, title, detail]) => `<a class="screen-menu-item${state.route.screen === key ? " selected" : ""}" href="${U.routeHash({mode: state.mode, view, screen: key})}" data-route="${view}" data-screen="${key}"${state.route.screen === key ? ' aria-current="page"' : ""}><span><strong>${esc(title)}</strong>${detail ? `<small>${esc(detail)}</small>` : ""}</span>${icon("arrow", true)}</a>`).join("")}</nav>`;
+  }
+  function applyScreenLayout(view) {
+    if (state.view !== view) return;
+    const root = $(`#view-${view}`);
+    if (!root) return;
+    const screen = state.route.screen || "";
+    const panes = [];
+    const attach = (key, title, elements) => {
+      const nodes = (Array.isArray(elements) ? elements : [elements]).filter(Boolean);
+      if (!nodes.length) return;
+      panes.push([key, title]);
+      for (const node of nodes) { node.dataset.screenContent = key; node.hidden = screen !== key; }
+    };
+    if (view === "market") {
+      const columns = $$(":scope > .two-column > section", root);
+      attach("reference", T("Курсы Банка России"), [columns[0], $(".market-indicators", root)]);
+      attach("watchlist", T("Избранное"), columns[1]);
+      const sections = $$(":scope > section", root);
+      attach("positions", T("Активы вашего счёта"), sections[0]);
+      attach("news", T("Новости Банка России"), sections[1]);
+    } else if (view === "portfolio") {
+      const columns = $$(":scope > .two-column > section", root);
+      attach("history", T("Стоимость портфеля"), columns[0]);
+      attach("structure", T("Структура портфеля"), columns[1]);
+      attach("positions", T("Мои активы"), $(":scope > section", root));
+      panes.push(["income", T("Полученные выплаты")], ["operations", T("portfolio.operations")]);
+      if (screen === "income") root.insertAdjacentHTML("beforeend", `<section class="card">${cardHeader(T("Полученные выплаты"))}${incomePaneHTML()}</section>`);
+      if (screen === "operations") root.insertAdjacentHTML("beforeend", `<section id="ledger-screen" class="card">${ledgerHTML()}</section>`);
+    } else if (view === "analytics") {
+      const groups = $$(":scope > .two-column", root);
+      attach("history", T("Стоимость по наблюдениям"), groups[0]?.children[0]);
+      attach("performance", T("Из чего складывается результат"), groups[0]?.children[1]);
+      attach("income", T("Выплаты до налоговых списаний"), groups[1]?.children[0]);
+      attach("risk", T("Полнота данных и риски"), groups[1]?.children[1]);
+    } else if (view === "settings" && !state.tour) {
+      const form = $("#preferences-form", root);
+      const sections = form ? $$(":scope > section", form) : [];
+      attach("appearance", T("Оформление и приватность"), sections[0]);
+      attach("notifications", T("Уведомления"), [sections[1], $("#notification-settings", root)]);
+      if (sections[0]) sections[0].insertAdjacentHTML("beforeend", `<div class="form-actions"><button class="button primary" type="submit">${H("Сохранить настройки")}</button></div>${saveErrorHTML("prefs")}`);
+      attach("broker", T("Подключение T-Invest"), $("#broker-settings", root));
+      attach("recovery", T("Ранее начатые исполнения"), $("#recovery-settings", root));
+      const right = $$(".settings-layout > div:last-child > section", root);
+      for (const item of right) if (!item.id) {
+        if ($('[data-action="legal"]', item)) attach("about", T("О приложении"), item);
+        else item.hidden = true;
+      }
+      attach("operations", T("ops.title"), $("#operations-settings", root));
+      panes.push(["support", T("support.title")]);
+      if (screen === "support") root.insertAdjacentHTML("beforeend", `<section id="workspace-support" class="card">${U.loading(T("state.loading"))}</section>`);
+    } else if (view === "profile" && !state.tour) {
+      const sections = $$(".settings-layout > section", root);
+      attach("personal", T("Мой профиль"), sections[0]);
+      attach("identities", T("Способы входа"), [sections[1], sections[4]]);
+      attach("delete", T("Удаление аккаунта"), sections[2]);
+      attach("sessions", T("Активные сессии"), sections[3]);
+      attach("plan", T("План и подписка"), sections[5]);
+    } else if (view === "assistant") {
+      attach("conversation", T("assistant.chat"), $(".chat-card", root));
+      attach("history", T("Ваши разговоры"), $(".assistant-side", root));
+      panes.push(["memory", T("assistant.memory")], ["sources", T("assistant.sources")], ["connection", T("Подключение ИИ")]);
+      if (!screen) root.insertAdjacentHTML("beforeend", `<section class="card"><p class="notice">${esc(assistantHealthLabel(state.data.assistantStatus))}</p><p>${H("assistant.workspace_help")}</p></section>`);
+      if (screen === "memory") root.insertAdjacentHTML("beforeend", `<section id="assistant-memory-screen" class="card">${assistantMemoryHTML()}</section>`);
+      if (screen === "sources") root.insertAdjacentHTML("beforeend", `<section id="assistant-sources-screen" class="card">${assistantSourcesHTML()}</section>`);
+    } else if (view === "strategies") {
+      attach("catalog", T("Готовые стратегии"), $(".strategy-catalog", root));
+      const editors = $$(".strategy-editor > section", root);
+      attach("editor", T("Моя настройка"), editors[0]);
+      attach("assessment", T("Проверка на вашем счёте"), editors[1]);
+      attach("research", T("Исследование на истории"), editors[2]);
+      attach("plan", T("execution.title"), editors[3]);
+      panes.push(["archive", T("Архив исследований")], ["evidence", T("Дополнительные источники исследования")], ["executions", T("execution.history")]);
+      if (!state.tour && !state.strategy.draft && screen && screen !== "catalog") {
+        const placeholder = $(".strategy-layout > section", root);
+        if (placeholder) placeholder.hidden = false;
+      }
+    }
+    if (panes.length) {
+      root.classList.add("has-screen-menu");
+      root.dataset.screen = screen;
+      root.insertAdjacentHTML("afterbegin", `<div class="screen-navigation"><button class="button secondary small-button" data-action="route-back">${icon("back", true)} ${H("navigation.back")}</button>${screen ? `<span class="chip">${esc(panes.find(([key]) => key === screen)?.[1] || T("Подробности"))}</span>` : ""}</div>`);
+      const header = $(".view-header", root);
+      if (header) header.insertAdjacentHTML("afterend", screenLinks(view, panes));
+      for (const wrapper of $$(".two-column,.settings-layout,.settings-layout > div,.strategy-layout,.strategy-editor,.assistant-layout", root)) wrapper.classList.add("screen-layout");
+    }
+    for (const anchor of $$('a[href^="/legal/"]', root)) { anchor.removeAttribute("target"); anchor.removeAttribute("rel"); }
+    restoreScreenDrafts(root);
+  }
+  function incomePaneHTML() {
+    const income = state.data.workspace?.income;
+    if (!income) return state.loading.has("workspace") ? U.loading(T("state.loading")) : dataError("workspace") || empty(T("История выплат пока недоступна"), T("Для расчёта нужны подтверждённые операции брокера."));
+    return infoRows([[T("Купоны"), money(income.coupons_rub)], [T("Дивиденды"), money(income.dividends_rub)], [T("Прочие доходы"), money(income.other_income_rub)], [T("Погашения капитала"), money(income.redemptions_rub)]]) + `<p class="fine-print">${esc(date(income.from))} — ${esc(date(income.to))}</p>`;
+  }
+  function ledgerHTML() {
+    const data = state.data.ledger;
+    if (!data) return state.errors.ledger ? dataError("ledger") : U.loading(T("state.loading"));
+    const names = {contribution: T("portfolio.contribution"), withdrawal: T("portfolio.withdrawal"), fee: T("Комиссии за период"), tax: T("Налоги"), income: T("Полученные выплаты"), principal_return: T("Погашения капитала"), internal: T("portfolio.internal"), non_cash_transfer: T("portfolio.non_cash"), unclassified: T("portfolio.unclassified")};
+    const rows = (data.items || []).map(item => `<tr><td>${esc(date(item.operation_date, true))}</td><td>${esc(item.name || item.description || item.operation_type)}<small class="fine-print">${esc(names[item.category] || T("portfolio.unclassified"))}</small></td><td>${esc(money(item.payment?.value, 2, String(item.payment?.currency || "").toUpperCase()))}</td><td>${item.instrument_uid ? `<button class="button secondary small-button" data-asset="${esc(item.instrument_uid)}">${esc(item.ticker || T("Инструмент"))}</button>` : "—"}</td></tr>`).join("");
+    return `${cardHeader(T("portfolio.operations"))}${freshness(data.source || "T-Invest", data.observed_at, data.status)}${dataError("ledger")}<p class="fine-print">${H("portfolio.operations_notice")}</p>${rows ? `<div class="table-scroll"><table class="asset-table"><thead><tr><th>${H("Дата")}</th><th>${H("Операция")}</th><th>${H("Сумма")}</th><th>${H("Инструмент")}</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty(T("portfolio.no_operations"), T("portfolio.no_operations_details"))}${data.next_cursor ? button(T("Загрузить ещё"), "ledger-more", {small: true, extra: state.loading.has("ledger-more") ? " disabled" : ""}) : ""}`;
+  }
+  async function loadLedgerPage() {
+    if (!state.data.ledger?.next_cursor || state.loading.has("ledger-more")) return;
+    const generation = state.generation;
+    state.loading.add("ledger-more");
+    try {
+      const page = await api(`/api/workspace/operations?limit=50&cursor=${encodeURIComponent(state.data.ledger.next_cursor)}`);
+      if (generation === state.generation) { state.data.ledger = mergePage(state.data.ledger, page); delete state.errors.ledger; }
+    } catch (error) { if (generation === state.generation && !isCancelled(error)) state.errors.ledger = error; }
+    finally { state.loading.delete("ledger-more"); if (generation === state.generation && state.view === "portfolio") renderPortfolio(); }
+  }
+  async function loadSupport(target) {
+    if (!target) return;
+    const data = await loadResource("support", "/api/public/support");
+    if (!target.isConnected) return;
+    if (!data) { target.innerHTML = dataError("support") || `<p class="notice">${H("support.unavailable")}</p>${button(T("Повторить"), "route-retry")}`; return; }
+    const address = typeof data.email === "string" && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(data.email) ? data.email : "";
+    const compose = address ? `<a class="button primary" href="mailto:${esc(address)}?subject=${encodeURIComponent("OMNICIO " + (window.OMNICIO_RELEASE?.version || ""))}">${H("support.compose")}</a>` : `<p class="notice">${H("support.unavailable")}</p>`;
+    target.innerHTML = `${heading(T("support.title"))}<p>${H("support.description")}</p>${infoRows([[T("support.operator"), data.name || "—"], ["Email", address || "—"], [T("Версия"), window.OMNICIO_RELEASE?.version || "—"], [T("support.route"), U.routeHash(activeRoute())]])}<p class="fine-print">${H("support.safe_details")}</p>${compose}`;
+  }
+  function flagApplicationUpdate() {
+    state.outdated = true;
+    const banner = $("#update-banner");
+    if (!banner) return;
+    banner.hidden = false;
+    banner.innerHTML = `<span>${H("pwa.update_available")}</span>${button(T("pwa.apply"), "pwa-update", {small: true})}`;
+  }
+  async function applyApplicationUpdate() {
+    captureScreenDrafts();
+    if (hasPending() || Object.keys(state.screenDrafts).length || [...state.requests].some(controller => controller.omnicioMutation)) {
+      toast(T("pwa.finish_work"), true);
+      return;
+    }
+    acceptingUpdate = true;
+    saveNavigationPosition();
+    rememberRoute(activeRoute());
+    if (pwaRegistration?.waiting) pwaRegistration.waiting.postMessage({type: "ACTIVATE_UPDATE"});
+    else location.reload();
+  }
+  function stopTableQuotes() { clearTimeout(tableQuotesTimer); tableQuotesTimer = null; }
+  function scheduleTableQuotes(delay = 10000) {
+    stopTableQuotes();
+    if (state.mode !== "account" || !state.user || state.locked || document.visibilityState !== "visible" || !["home", "portfolio", "market"].includes(state.view)) return;
+    tableQuotesTimer = setTimeout(() => void pollTableQuotes(), delay);
+  }
+  async function pollTableQuotes() {
+    if (tableQuotesBusy || !navigator.onLine) { scheduleTableQuotes(15000); return; }
+    const generation = state.generation;
+    const uids = [...new Set([...filteredRows().map(item => item.uid), ...watchlist().map(item => item.instrument_uid)].filter(Boolean))].slice(0, 50);
+    if (!uids.length) { scheduleTableQuotes(); return; }
+    tableQuotesBusy = true;
+    try {
+      const payload = await api(`/api/market/quotes?instrument_uids=${encodeURIComponent(uids.join(","))}`);
+      if (generation !== state.generation || state.tour) return;
+      for (const item of payload.items || []) if (uids.includes(item.instrument_uid)) state.quotes[item.instrument_uid] = item;
+      paintTableQuotes();
+    } catch (error) {
+      if (generation === state.generation && !isCancelled(error)) {
+        for (const uid of uids) state.quotes[uid] = {...state.quotes[uid], quote_status: "unavailable"};
+        paintTableQuotes();
+      }
+    } finally { tableQuotesBusy = false; scheduleTableQuotes(); }
+  }
+  function tableQuoteHTML(item) {
+    const quote = state.quotes[item.uid];
+    if (!quote) return `<span class="muted">${H("quotes.loading")}</span>`;
+    return `<strong>${esc(marketPrice(quote.last_price, quote.price_unit || "unknown", quote.price_currency || ""))}</strong>${freshness("T-Invest", quote.quote_time || quote.observed_at, quote.quote_status)}`;
+  }
+  function paintTableQuotes() {
+    const rows = new Map(portfolioRows().map(item => [item.uid, item]));
+    for (const element of $$("[data-table-quote]")) element.innerHTML = tableQuoteHTML(rows.get(element.dataset.tableQuote) || {uid: element.dataset.tableQuote});
+  }
+  function scheduleEventSummary(delay = 30000) {
+    clearTimeout(eventSummaryTimer);
+    if (!state.user || state.mode !== "account" || state.locked || document.visibilityState !== "visible") return;
+    eventSummaryTimer = setTimeout(() => void pollEventSummary(), delay);
+  }
+  async function pollEventSummary() {
+    if (eventSummaryBusy || !navigator.onLine) { scheduleEventSummary(); return; }
+    const generation = state.generation;
+    eventSummaryBusy = true;
+    try {
+      const summary = await api("/api/events/summary");
+      if (generation === state.generation && !state.tour) { state.data.eventSummary = summary; updateIdentity(); }
+    } catch (error) { if (!isCancelled(error) && generation === state.generation) $("#notifications-button").title = T("events.counter_unavailable"); }
+    finally { eventSummaryBusy = false; scheduleEventSummary(); }
+  }
+  function openPublicStrategy(id) {
+    const raw = state.data.catalog?.presets?.find(item => item.id === id);
+    if (!raw) { openDialog(T("Стратегии"), `<p class="notice">${H("navigation.not_found")}</p>`); return; }
+    const preset = I.preset(raw);
+    const sources = (state.data.catalog?.sources || []).filter(item => !preset.source_ids || preset.source_ids.includes(item.id));
+    openDialog(preset.title, `<p class="help-copy">${esc(preset.description || "")}</p><p class="notice">${esc(preset.risk || "")}</p><h3>${H("Методика и источники")}</h3><ul class="source-list">${sources.map(renderStrategiesLi).join("")}</ul><p class="fine-print">${H("strategy.demo_description")}</p>${button(T("Войти"), "login", {primary: true})}`);
+  }
 
   const renderCurrent = () => {
     if (state.locked || !state.user && !state.tour) return;
@@ -4026,12 +4698,15 @@
     for (const tab of $$("[data-auth-mode]")) tab.setAttribute("aria-selected", String(tab.dataset.authMode === mode));
     renderAuthConfig();
     showMessage($("#auth-message"), "");
+    if (state.route.overlay !== "auth") updateViewRoute({overlay: "auth"});
     if (!$("#auth-dialog").open) $("#auth-dialog").showModal();
   }
   const startAuth = async (form, provider) => {
     if (!["tid", "vkid"].includes(provider) || !form.reportValidity()) return;
     const payload = Object.fromEntries(["accept_privacy", "accept_personal_data", "accept_terms", "confirm_age_18"].map(key => [key, form.elements[key].checked]));
     if (!Object.values(payload).every(Boolean)) return;
+    const destination = state.authReturn || (state.mode === "public" ? {view: "home"} : {...state.route, overlay: ""});
+    payload.return_to = "/" + U.routeHash({...destination, mode: "account"});
     if (state.authLink) payload.link_current_account = true;
     $("#tid-login").disabled = true;
     $("#vkid-login").disabled = true;
@@ -4091,29 +4766,46 @@
   };
   const bootstrap = async () => {
     const generation = state.generation;
-    const results = await Promise.allSettled([api("/api/auth/config", {
-      bootstrap: true
-    }), api("/api/me", {
-      bootstrap: true
-    }), api("/api/strategy/catalog", {
-      bootstrap: true
-    })]);
-    if (generation !== state.generation) return;
-    if (results[0].status === "fulfilled") state.config = results[0].value;
-    renderAuthConfig();
-    if (results[2].status === "fulfilled") {
-      state.data.catalog = results[2].value;
-      renderPublicCatalog(results[2].value);
-    } else renderPublicCatalog(null);
-    if (results[1].status === "fulfilled" && /^\d{9}$/.test(results[1].value.public_id)) {
+    const sequence = ++state.session.sequence;
+    state.session.status = "checking";
+    state.session.error = null;
+    if (state.mode === "account" && !state.user) sessionSurface();
+    const current = () => generation === state.generation && sequence === state.session.sequence;
+    const config = api("/api/auth/config", {bootstrap: true}).then(value => {
+      if (!current()) return;
+      state.config = value;
+      renderAuthConfig();
+    }).catch(error => { if (current() && !isCancelled(error)) renderAuthConfig(); });
+    const catalog = loadResource("catalog", "/api/strategy/catalog", {bootstrap: true}).then(value => {
+      if (current()) renderPublicCatalog(value);
+    });
+    const session = api("/api/me", {bootstrap: true}).then(user => {
+      if (!current()) return;
+      if (!/^\d{9}$/.test(user.public_id)) throw new Error("invalid_session_response");
+      state.user = user;
       state.locked = false;
-      state.user = results[1].value;
-      showApp();
-    } else if (!state.tour) {
-      $("#public-site").hidden = false;
-      $("#app-shell").hidden = true;
-      if (results[1].status === "rejected" && results[1].reason?.status !== 401) $("#public-access-status").textContent = T("Сессию не удалось проверить. Повторите вход после восстановления соединения.");
-    }
+      state.session.status = "authenticated";
+      const route = parseRoute();
+      if (state.mode === "auto" || route.mode === "auto") navigate(route.view, {...route, mode: "account"}, {replace: true});
+      else if (state.mode === "account") navigate(route.view, route, {replace: true});
+      scheduleEventSummary(100);
+      void resumeWorkspaceRefresh();
+    }).catch(error => {
+      if (!current() || isCancelled(error)) return;
+      state.session.status = error?.status === 401 ? "guest" : "error";
+      state.session.error = error;
+      const route = parseRoute();
+      if (state.mode === "auto") {
+        if (error?.status === 401) navigate("public/welcome", {}, {replace: true});
+        else { state.mode = "account"; sessionSurface(); }
+      } else if (state.mode === "account") sessionSurface();
+      if (error?.status !== 401) $("#public-access-status").textContent = T("session.retry_title");
+      // A failed verification does not turn a chosen demo/public screen into a login screen.
+      if (route.mode === "account" && error?.status === 401) state.user = null;
+    });
+    state.session.promise = session;
+    await Promise.allSettled([config, catalog, session]);
+    if (!current()) return;
     callbackMessage();
   };
   const resetBrokerPreview = () => {
@@ -4255,6 +4947,7 @@
       clearPrivateState();
       $("#app-shell").hidden = true;
       $("#public-site").hidden = false;
+      navigate("public/welcome", {}, {replace: true});
       return;
     }
     if (hasPending() && !window.confirm(T("Есть несохранённые изменения. Выйти и закрыть их?"))) return;
@@ -4263,11 +4956,13 @@
         method: "POST"
       });
       clearPrivateState();
+      state.session.status = "guest";
+      try { localStorage.removeItem("omnicio-last-route"); } catch { /* Optional navigation state. */ }
       state.tour = false;
       state.locked = false;
       $("#app-shell").hidden = true;
       $("#public-site").hidden = false;
-      history.replaceState(null, "", "/");
+      navigate("public/welcome", {}, {replace: true});
       sessionChannel?.postMessage({
         type: "session-cleared"
       });
@@ -4504,23 +5199,17 @@
   const actions = {
     login: () => openAuth(),
     register: () => openAuth("register"),
-    tour: () => showApp(true),
-    "leave-tour": () => {
-      clearPrivateState();
-      state.tour = false;
-      $("#app-shell").hidden = true;
-      $("#public-site").hidden = false;
-      history.replaceState(null, "", "#welcome");
-      void bootstrap();
-    },
+    tour: () => navigate("home", {mode: "demo"}),
+    "session-retry": bootstrap,
+    "public-home": () => navigate("public/welcome"),
+    "route-back": routeBack,
+    "pwa-update": applyApplicationUpdate,
+    "route-retry": () => openRouteScreen(activeRoute()),
+    "support": () => navigate(state.mode === "public" ? "public/support" : "settings", {screen: state.mode === "public" ? "" : "support"}),
+    "leave-tour": () => navigate("public/welcome"),
     connect: () => {
-      if (requireUser()) {
-        navigate("settings");
-        window.setTimeout(() => $("#broker-settings")?.scrollIntoView({
-          block: "start",
-          behavior: "smooth"
-        }), 100);
-      }
+      if (!state.user || state.tour) { state.authReturn = {view: "settings", screen: "broker"}; openAuth(); return; }
+      navigate("settings", {screen: "broker"});
     },
     refresh: async () => {
       if (hasPending()) {
@@ -4554,12 +5243,13 @@
     "language-ru": () => chooseLocale("ru"),
     "language-en": () => chooseLocale("en"),
     premium: openBilling,
-    legal: () => openDialog(T("Документы"), ("<ul class=\"source-list\"><li><a href=\"/legal/terms.html\" target=\"_blank\" rel=\"noopener\">" + H("Условия использования") + "</a></li><li><a href=\"/legal/privacy.html\" target=\"_blank\" rel=\"noopener\">" + H("Политика конфиденциальности") + "</a></li><li><a href=\"/legal/consent.html\" target=\"_blank\" rel=\"noopener\">" + H("Обработка персональных данных") + "</a></li></ul>")),
+    legal: () => openDialog(T("Документы"), ("<ul class=\"source-list\"><li><a href=\"/legal/terms.html\">" + H("Условия использования") + "</a></li><li><a href=\"/legal/privacy.html\">" + H("Политика конфиденциальности") + "</a></li><li><a href=\"/legal/consent.html\">" + H("Обработка персональных данных") + "</a></li></ul>")),
     "goal-create": () => openGoal(),
     "goal-reconcile": reconcileGoals,
     "events-read-all": readAllEvents,
     "events-more": () => loadEventPage(false),
     "news-more": () => loadEventPage(true),
+    "ledger-more": loadLedgerPage,
     "search-more-events": () => loadSearchPage("events"),
     "search-more-news": () => loadSearchPage("news"),
     "asset-news-more": loadAssetNewsPage,
@@ -4620,9 +5310,7 @@
       }
     },
     "asset-refresh": () => state.asset && loadAsset(state.asset.uid, true),
-    "asset-back": () => {
-      if (history.state?.view === "asset" && history.length > 1) history.back();else navigate("market");
-    },
+    "asset-back": routeBack,
     "copy-profile": async () => {
       if (!state.user) return;
       try {
@@ -4637,6 +5325,8 @@
     "chat-clear": () => deleteAssistantConversation(false),
     "assistant-delete-confirm": () => deleteAssistantConversation(true),
     "assistant-connect": openAssistantConnection,
+    "assistant-cancel": () => readAssistantRequest(true),
+    "assistant-request-read": () => readAssistantRequest(false),
     "assistant-health": () => assistantConnectionOperation("check"),
     "assistant-disconnect": () => assistantConnectionOperation("disconnect"),
     "assistant-new": newAssistantConversation,
@@ -4650,7 +5340,7 @@
   };
   const clickHandlers = [{
     matches: ({control}) => control.dataset.assistantConversation,
-    run: ({control}) => loadAssistantConversation(control.dataset.assistantConversation)
+    run: ({control}) => { navigate("assistant", {screen: "conversation", conversation: control.dataset.assistantConversation}); }
   }, {
     matches: ({control}) => control.dataset.billingId,
     run: ({control}) => billingOperation(control)
@@ -4789,9 +5479,16 @@
     run: handleClickAction
   }];
   document.addEventListener("click", async event => {
-    const control = event.target.closest("button,a[data-route],a[data-public-open]");
+    if (event.target.closest(".skip-link")) { event.preventDefault(); $(state.mode === "public" ? "#public-content" : "#main-content").focus({preventScroll: false}); return; }
+    const control = event.target.closest("button,a[data-route],a[data-public-open],a[data-public-page]");
+    if (control?.dataset.publicPage) { event.preventDefault(); $(".public-nav").classList.remove("open"); navigate(`public/${control.dataset.publicPage}`); return; }
     if (!control || control.disabled) return;
     try {
+      if (control.dataset.memoryEdit) { const item = state.data.assistantMemory?.items?.find(row => row.id === control.dataset.memoryEdit); if (item) { captureScreenDrafts(); $("#assistant-memory-editor").innerHTML = assistantMemoryForm(item); restoreScreenDrafts($("#assistant-memory-editor")); } return; }
+      if (control.dataset.memoryDelete) { openDialog(T("assistant.memory_delete"), `<p>${H("assistant.memory_delete_help")}</p><button class="button danger" data-memory-delete-confirm="${esc(control.dataset.memoryDelete)}">${H("Удалить")}</button>`); return; }
+      if (control.dataset.memoryDeleteConfirm) { await deleteAssistantMemory(control.dataset.memoryDeleteConfirm); return; }
+      if (control.dataset.assistantSource) { await readAssistantSource(control.dataset.assistantSource); return; }
+
       const context = {
         control,
         event
@@ -4847,6 +5544,8 @@
   }];
   document.addEventListener("change", async event => {
     const input = event.target;
+    if (input.dataset.memorySelect) { state.assistantMemorySelected ||= new Set(); if (input.checked) state.assistantMemorySelected.add(input.dataset.memorySelect); else state.assistantMemorySelected.delete(input.dataset.memorySelect); return; }
+    if (input.closest("#goal-plan-form") && input.name === "target_in_today_money") updateGoalPlanFields();
     if (captureFormDraft(input)) return;
     const context = {
       input,
@@ -4857,7 +5556,7 @@
       await handler.run(context);
     }
   });
-  const submitHandlers = [{
+  const submitHandlers = [{matches: ({form}) => form.id === "assistant-memory-form", run: ({form}) => saveAssistantMemory(form)}, {matches: ({form}) => form.id === "assistant-sources-form", run: ({form}) => searchAssistantSources(form)}, {
     matches: ({form}) => form.id === "assistant-connection-form",
     run: ({form}) => saveAssistantConnection(form)
   }, {
@@ -5021,12 +5720,27 @@
     });
   });
   const historyNavigation = () => {
-    if (!state.user && !state.tour) return;
     const route = parseRoute();
-    if (route.view !== state.view || route.uid !== (state.route.uid || "") || route.q !== (state.route.q || "") || route.event !== (state.route.event || "") || route.goal_id !== (state.route.goal_id || "")) navigate(route.view, route, {
-      fromHistory: true
-    });
+    if (route.mode === "auto") route.mode = state.mode === "public" ? (state.user ? "account" : "demo") : state.mode;
+    if (U.routeHash(route) !== U.routeHash(activeRoute())) navigate(route.view, route, {fromHistory: true});
   };
+  for (const dialog of $$("dialog")) {
+    if (dialog.id === "session-dialog") continue;
+    dialog.addEventListener("cancel", event => { event.preventDefault(); captureScreenDrafts(); routeBack(); });
+    dialog.addEventListener("close", () => {
+      if (dialog.dataset.routeClosing === "true") { delete dialog.dataset.routeClosing; return; }
+      if (state.route.overlay || dialog.classList.contains("route-dialog")) {
+        const parent = {...state.route, screen: dialog.classList.contains("route-dialog") ? "" : state.route.screen, overlay: ""};
+        navigate(state.view, parent, {replace: true});
+      }
+    });
+  }
+  let scrollSaveScheduled = false;
+  window.addEventListener("scroll", () => {
+    if (scrollSaveScheduled) return;
+    scrollSaveScheduled = true;
+    requestAnimationFrame(() => { scrollSaveScheduled = false; saveNavigationPosition(); });
+  }, {passive: true});
   window.addEventListener("popstate", historyNavigation);
   window.addEventListener("hashchange", historyNavigation);
   const refreshVisibleData = async () => {
@@ -5052,16 +5766,20 @@
     }
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") void refreshVisibleData();
-    else { stopQuoteStream(); clearTimeout(freshnessTimer); }
+    if (document.visibilityState === "visible") { void refreshVisibleData(); scheduleTableQuotes(100); scheduleEventSummary(100); startQuoteStream(); }
+    else { stopQuoteStream(); stopTableQuotes(); clearTimeout(eventSummaryTimer); clearTimeout(freshnessTimer); }
   });
   window.addEventListener("beforeunload", event => {
-    if (hasPending() || state.assistantDraft.message.trim()) {
+    captureScreenDrafts();
+    saveNavigationPosition();
+    if (hasPending() || Object.keys(state.screenDrafts).length || state.assistantDraft.message.trim()) {
       event.preventDefault();
     }
   });
   window.addEventListener("pagehide", () => {
     stopQuoteStream();
+    stopTableQuotes();
+    clearTimeout(eventSummaryTimer);
     clearTimeout(freshnessTimer);
     const pendingGoal = $("#goal-form");
     if (pendingGoal?.dataset.busy === "true") reportGoalSaveError(pendingGoal, Object.assign(new Error("request_interrupted"), {
@@ -5083,6 +5801,10 @@
   window.addEventListener("online", () => {
     toast(T("Соединение восстановлено. Проверяем сессию и обновляем данные."));
     void refreshVisibleData();
+    scheduleTableQuotes(100);
+    scheduleEventSummary(100);
+    startQuoteStream();
+    if (state.session.status === "error") void bootstrap();
   });
   prefersDark.addEventListener("change", () => {
     if (themeChoice === "system") applyTheme("system");
@@ -5097,7 +5819,15 @@
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       const build = new URL(document.querySelector('script[src*="app.js"]').src).searchParams.get("build") || "";
-      void navigator.serviceWorker.register(`/sw.js?build=${encodeURIComponent(build)}`).catch(() => {/* Network use remains available without offline assets. */});
+      void navigator.serviceWorker.register(`/sw.js?build=${encodeURIComponent(build)}`).then(registration => {
+        pwaRegistration = registration;
+        if (registration.waiting) flagApplicationUpdate();
+        registration.addEventListener("updatefound", () => {
+          const worker = registration.installing;
+          worker?.addEventListener("statechange", () => { if (worker.state === "installed" && navigator.serviceWorker.controller) flagApplicationUpdate(); });
+        });
+      }).catch(() => {/* Network use remains available without offline assets. */});
+      navigator.serviceWorker.addEventListener("controllerchange", () => { if (acceptingUpdate) location.reload(); });
     });
   }
   if (window.OMNICIO_RELEASE && /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(window.OMNICIO_RELEASE.version)) {
@@ -5107,6 +5837,7 @@
   $("#app-sidebar").inert = window.innerWidth <= 960;
   applyTheme(themeChoice);
   renderNav();
+  initializeNavigation();
   void bootstrap();
   function renderStableDocumentValue(value) {
     if (value && typeof value === "object") {
@@ -5187,7 +5918,7 @@
     return `<td class="hide-on-mobile">${esc(money(item.value_rub))}</td><td>${watchButton(item)}</td>`;
   }
   function renderAssetsTableAssetName(item, compact) {
-    return `<tr><td><button class="asset-name" data-asset="${esc(item.uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}${compact ? "" : renderAssetsTableAssetTicker(item)}</span></button></td><td>${esc(money(item.price, 2, item.currency, false))}</td><td class="${number(item.change) === null ? "muted" : renderAssetsTableValue2(item)}" title="${item.change === null ? T("Изменение цены за день не получено от источника") : T("Изменение цены за день")}">${esc(percent(item.change, true))}</td><td>${esc(percent(item.nav_percent))}</td>${compact ? "" : renderAssetsTableHideOnMobile(item)}</tr>`;
+    return `<tr data-position="${esc(item.uid)}"><td><button class="asset-name" data-asset="${esc(item.uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}${compact ? "" : renderAssetsTableAssetTicker(item)}</span></button></td><td data-table-quote="${esc(item.uid)}">${tableQuoteHTML(item)}</td><td class="${number(item.change) === null ? "muted" : renderAssetsTableValue2(item)}" title="${item.change === null ? T("Изменение цены за день не получено от источника") : T("Изменение цены за день")}">${esc(percent(item.change, true))}</td><td>${esc(percent(item.nav_percent))}</td>${compact ? "" : renderAssetsTableHideOnMobile(item)}</tr>`;
   }
   function renderHomeStrategyFragment(document) {
     return `${T("Просадка:")} ${esc(percent(document.profile.max_drawdown_percent))}`;
@@ -5593,7 +6324,7 @@
     return T("Без фиксированного срока");
   }
   function renderGoalsDataFootnote(goal) {
-    return `<p class="data-footnote">${esc(date(goal.progress.as_of, true))} ${H("МСК")}</p>`;
+    return `${freshness(goal.progress_source === "manual" ? T("Сумма указана вами") : "T-Invest", goal.progress.as_of, goal.progress.status)}${goal.progress.status === "stale" ? `<p class="notice warning">${H("goals.source_stale")}</p>` : ""}`;
   }
   function renderGoalsValue5(goal) {
     if (goal.progress?.as_of) {
@@ -5768,12 +6499,10 @@
     }
     return (index + renderViewValue3(event) + items.length) % items.length;
   }
-  async function handleClickCloseDialog({
-    event,
-    control
-  }) {
+  async function handleClickCloseDialog({event}) {
     event.preventDefault();
-    control.closest("dialog")?.close();
+    captureScreenDrafts();
+    routeBack();
   }
   async function handleClickHelp({
     event,
@@ -5825,16 +6554,14 @@
     control
   }) {
     event.preventDefault();
-    showApp(true);
-    navigate(control.dataset.publicOpen);
+    navigate(control.dataset.publicOpen, {mode: "demo"});
   }
   async function handleClickRoute({
     event,
     control
   }) {
     event.preventDefault();
-    for (const dialog of $$("dialog[open]")) if (dialog.id !== "session-dialog") dialog.close();
-    navigate(control.dataset.route);
+    navigate(control.dataset.route, {screen: control.dataset.screen || ""});
   }
   async function handleClickAuthMode({
     event,
@@ -5860,6 +6587,7 @@
   }) {
     event.preventDefault();
     state.assetTab = control.dataset.assetTab;
+    updateViewRoute({tab: state.assetTab});
     renderAsset();
     U.bindCharts($("#view-asset"));
   }
@@ -5876,6 +6604,7 @@
   }) {
     event.preventDefault();
     state.assetFilter = control.dataset.assetFilter;
+    updateViewRoute({asset_filter: state.assetFilter});
     renderCurrent();
   }
   async function handleClickSort({
@@ -5887,6 +6616,7 @@
       state.sort = control.dataset.sort;
       state.sortDirection = 1;
     }
+    updateViewRoute({sort: state.sort, direction: String(state.sortDirection)});
     renderCurrent();
     $(`[data-sort="${state.sort}"]`, $(`#view-${state.view}`))?.focus({
       preventScroll: true
@@ -5898,6 +6628,7 @@
   }) {
     event.preventDefault();
     const scope = control.dataset.periodScope;
+    updateViewRoute({period: control.dataset.period});
     if (scope === "asset") {
       state.assetPeriod = control.dataset.period;
       if (state.asset) await loadAsset(state.asset.uid);
@@ -5918,6 +6649,11 @@
   }) {
     event.preventDefault();
     state.eventFilter = control.dataset.eventFilter;
+    updateViewRoute({event_filter: state.eventFilter});
+    state.eventHistoryExtended = false;
+    delete state.data.events;
+    renderCurrent();
+    if (!state.tour && state.eventFilter !== "market") await loadResource("events", eventsPath(), {force: true});
     renderCurrent();
   }
   async function handleClickEventOpen({
@@ -5982,18 +6718,12 @@
     control
   }) {
     event.preventDefault();
+    if (state.tour) { navigate("strategies", {screen: "detail", preset: control.dataset.selectStrategy}); return; }
     chooseStrategy(control.dataset.selectStrategy);
   }
-  async function handleClickPublicStrategy({
-    event,
-    control
-  }) {
+  async function handleClickPublicStrategy({event, control}) {
     event.preventDefault();
-    const preset = I.preset(state.data.catalog?.presets?.find(item => item.id === control.dataset.publicStrategy));
-    if (!preset) return;
-    openDialog(preset.title, `<p class="help-copy">${esc(preset.description)}</p><p class="notice">${esc(preset.risk)}</p><p class="fine-print">${H("Параметры подхода можно изменить после входа. Название не является обещанием результата.")}</p><div class="form-actions">${button(T("Открыть личный кабинет"), "login", {
-      primary: true
-    })}</div>`);
+    navigate("strategies", {mode: state.mode === "account" ? "account" : "demo", screen: "detail", preset: control.dataset.publicStrategy});
   }
   async function handleClickStep({
     event,
@@ -6062,6 +6792,7 @@
     input
   }) {
     if (input.name === "cbr_currency") state.cbrCurrency = input.value;else state.cbrPeriod = input.value;
+    updateViewRoute({currency: state.cbrCurrency, reference_period: state.cbrPeriod});
     await loadResource("marketReference", `/api/public/market-reference?currency=${state.cbrCurrency}&period=${state.cbrPeriod}`, {
       force: true
     });
@@ -6114,6 +6845,8 @@
       document.locale = controls.locale.value;
       document.mask_balances = controls.mask_balances.checked;
       document.digest_frequency = controls.digest_frequency.value;
+      document.digest_time = controls.digest_time.value;
+      document.digest_timezone = controls.digest_timezone.value;
       document.quiet_hours = {
         enabled: controls.quiet_enabled.checked,
         start: controls.quiet_start.value,
@@ -6161,6 +6894,8 @@
         }
       });
       clearPrivateState();
+      state.session.status = "guest";
+      try { localStorage.removeItem("omnicio-last-route"); } catch { /* Optional navigation state. */ }
       state.tour = false;
       state.locked = false;
       $("#app-shell").hidden = true;

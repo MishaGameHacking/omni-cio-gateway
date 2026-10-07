@@ -115,7 +115,7 @@ class FakeStore:
         self.database = Mock(spec=Database)
         self.scheduled: list[date] = []
 
-    def observer_lock(self):
+    def observer_lock(self, user_id=None):
         return nullcontext(self.lock_available)
 
     def observer_user_ids(self) -> tuple[UUID, ...]:
@@ -932,3 +932,24 @@ def test_observer_does_not_log_provider_or_sql_exception_text(caplog, failure_in
     assert "sensitive-provider-value" not in caplog.text
     assert "sensitive-sql-value" not in caplog.text
     assert all(record.exc_info is None for record in caplog.records)
+
+
+def test_native_observer_owner_locks_allow_parallel_accounts_and_exclude_legacy_worker(
+    connected_database,
+):
+    database, store, _ = connected_database
+    another = uuid4()
+    with store.observer_lock(USER_ID) as first:
+        assert first
+        with PortfolioStore(database).observer_lock(USER_ID) as same:
+            assert not same
+        with PortfolioStore(database).observer_lock(another) as independent:
+            assert independent
+        with PortfolioStore(database).observer_lock() as legacy:
+            assert not legacy
+    with store.observer_lock() as legacy:
+        assert legacy
+        with PortfolioStore(database).observer_lock(USER_ID) as blocked:
+            assert not blocked
+    with store.observer_lock(USER_ID) as released:
+        assert released

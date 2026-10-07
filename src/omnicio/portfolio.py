@@ -78,6 +78,9 @@ class PortfolioAnalysis:
     securities: tuple[SecurityExposure, ...]
     observations: tuple[Observation, ...]
     execution_enabled: bool = False
+    valuation_status: str = "unknown"
+    positions_valuation_status: str = "unknown"
+    sector_status: str = "unknown"
 
 
 def _number(value: str) -> Decimal:
@@ -348,9 +351,9 @@ def _observations(
             "evidence_required",
             2,
             "Проверка эмитентов ещё не завершена",
-            "Кредитные рейтинги, юридические эмитенты, группы связанных компаний, отчётность "
-            "и look-through фондов будут подключаться следующими этапами. Страна риска и "
-            "сектор брокера не доказывают регистрацию эмитента и не заменяют эти проверки.",
+            "Полнота рейтингов, юридических эмитентов, групп, отчётности и состава фондов "
+            "проверяется отдельно для каждого источника. Страна риска и сектор брокера "
+            "не доказывают регистрацию эмитента и не заменяют эти проверки.",
             ("catalog",),
         )
     )
@@ -405,7 +408,8 @@ def analyze_portfolio(
 
     # GetPortfolio and GetPositions are separate provider reads, not an atomic valuation.
     # A large impossible overlap is surfaced as reconciliation instead of normalized away.
-    if nav < valued + cash - Decimal("0.01"):
+    valuation_consistent = nav >= 0 and nav >= valued + cash - Decimal("0.01")
+    if not valuation_consistent:
         compatible = False
 
     unblocked = (
@@ -438,4 +442,11 @@ def analyze_portfolio(
             compatible=compatible,
             unblocked=unblocked,
         ),
+        # RUB NAV is supplied by the broker independently of fund look-through
+        # and spendable-cash checks. An impossible observed overlap invalidates it.
+        valuation_status="complete" if valuation_consistent else "unavailable",
+        positions_valuation_status=(
+            "complete" if all(item.value_rub is not None for item in securities) else "partial"
+        ),
+        sector_status="complete" if all(item.sector for item in securities) else "partial",
     )

@@ -5,27 +5,18 @@
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",
-  "display_override": ["fullscreen", "standalone"],
+  "display_override": [
+    "fullscreen",
+    "standalone"
+  ],
   "background_color": "#071421",
   "theme_color": "#071421",
   "icons": [
     {
-      "src": "/assets/brand/pwa-icon-192.png",
-      "sizes": "192x192",
+      "src": "/assets/brand/omnicio-logo.png",
+      "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any"
-    },
-    {
-      "src": "/assets/brand/pwa-icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/assets/brand/pwa-maskable-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
     }
   ]
 }

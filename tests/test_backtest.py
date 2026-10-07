@@ -103,6 +103,26 @@ def test_flat_prices_charge_real_cost_model_once_and_do_not_spend_negative_cash(
     assert result["benchmark"]["basis"] == result["basis"]
 
 
+def test_history_boundary_trim_uses_only_observed_common_sessions_and_preserves_old_replay():
+    from omnicio.backtest import _common_research_times
+
+    first, second = prices("a"), prices("b")
+    panel = {
+        "a": {bar.time: bar for bar in first.candles},
+        "b": {bar.time: bar for bar in second.candles[3:-2]},
+    }
+    split = START + (END - START) * 0.7
+    observations, training, testing, missing = _common_research_times(panel, split)
+    assert not missing
+    assert observations == len(second.candles) - 5
+    assert all(when in panel["a"] and when in panel["b"] for when in (*training, *testing))
+    assert "unaligned_history" in _common_research_times(
+        panel, split, trim_boundaries=False,
+    )[3]
+    panel["b"].pop(second.candles[100].time)
+    assert "unaligned_history" in _common_research_times(panel, split)[3]
+
+
 def test_historical_income_screen_uses_only_paid_income_and_never_future_principal():
     asset = prices()
     cutoff = START + timedelta(days=140)

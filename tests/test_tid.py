@@ -311,6 +311,69 @@ def callback(
 
 
 @pytest.mark.parametrize("provider_name", ["tid", "vkid"])
+def test_oauth_returns_to_the_signed_original_screen(
+    auth_http: AuthHTTP, provider_name: str,
+) -> None:
+    target = "/#account/goals/plan?goal=00000000-0000-4000-8000-000000000901&period=1y"
+    response = auth_http.client.post(
+        f"/api/auth/{provider_name}/start", headers=HEADERS,
+        json={**CONSENT, "return_to": target},
+    )
+    assert response.status_code == 200
+    state = parse_qs(urlsplit(response.json()["authorize_url"]).query)["state"][0]
+    flow_cookie = response.cookies[f"omnicio_{provider_name}_flow"]
+    assert target not in response.json()["authorize_url"]
+    flow = open_oauth_flow(
+        flow_cookie, crypto_key=auth_http.cfg.vkid_flow_crypto_key,
+        ttl_seconds=600, provider=provider_name,
+    )
+    assert flow.return_to == target
+    result = callback(auth_http, state, flow_cookie, provider_name=provider_name,
+                      extra={"return_to": "https://untrusted.invalid"})
+    assert result.headers["location"] == "/?auth=success" + target[1:]
+    assert "omnicio_session" in result.cookies
+
+
+@pytest.mark.parametrize("target", [
+    "https://untrusted.invalid", "//untrusted.invalid", "/api/me", "/#demo/market",
+    "/#account/../../other", "/#account/settings\\broker", "/#account/home\nLocation: evil",
+    "/#account/home?q=%0d%0aLocation%3Aevil", "/#account/home?q=a&q=b",
+    "/#account/home?" + "x" * 2048,
+])
+def test_oauth_rejects_non_application_return_destinations(
+    auth_http: AuthHTTP, target: str,
+) -> None:
+    result = auth_http.client.post(
+        "/api/auth/tid/start", headers=HEADERS, json={**CONSENT, "return_to": target},
+    )
+    assert result.status_code == 422
+    auth_http.tid.authorization_url.assert_not_called()
+    assert not result.cookies
+
+
+def test_deployed_build_rejects_old_writes_but_keeps_reads_and_login(auth_http: AuthHTTP) -> None:
+    with patch.object(app.state, "settings", replace(auth_http.cfg, release_build="a" * 12)):
+        for supplied in ({}, {"X-Omnicio-Client-Build": "b" * 12}):
+            result = auth_http.client.put("/api/preferences", headers={**HEADERS, **supplied},
+                                          json={})
+            assert result.status_code == 409
+            assert result.json()["detail"] == "client_build_changed"
+            assert result.headers["X-Omnicio-Build"] == "a" * 12
+            assert result.headers["Cache-Control"] == "private, no-store"
+        # Current code reaches schema validation; no settings are mutated.
+        result = auth_http.client.put(
+            "/api/preferences", headers={**HEADERS, "X-Omnicio-Client-Build": "a" * 12},
+            json={},
+        )
+        assert result.status_code == 422
+        result = auth_http.client.get("/api/me", headers=HEADERS)
+        assert result.status_code == 200
+        assert result.headers["X-Omnicio-Version"]
+        result = auth_http.client.post("/api/auth/tid/start", headers=HEADERS, json=CONSENT)
+        assert result.status_code == 200
+
+
+@pytest.mark.parametrize("provider_name", ["tid", "vkid"])
 def test_oauth_callback_consumes_state_once_and_never_uses_browser_subject(
     auth_http: AuthHTTP,
     provider_name: str,
@@ -320,7 +383,7 @@ def test_oauth_callback_consumes_state_once_and_never_uses_browser_subject(
         auth_http, state, cookie, provider_name=provider_name, extra={"sub": str(OTHER.id)}
     )
     assert first.status_code == 303
-    assert first.headers["location"] == "/?auth=success"
+    assert first.headers["location"] == "/?auth=success#account/home"
     assert first.headers["referrer-policy"] == "no-referrer"
     assert first.cookies["omnicio_session"] == "new-session-token"
     complete = getattr(auth_http.auth, f"complete_{provider_name}_login")
@@ -383,7 +446,7 @@ def test_identity_link_binds_exact_original_session_and_provider_only(auth_http:
     )
     assert flow.link_user_id == str(OWNER.id)
     response = callback(auth_http, state, cookie, session="owner-token")
-    assert response.headers["location"] == "/?auth=success"
+    assert response.headers["location"] == "/?auth=success#account/home"
     context = auth_http.auth.complete_tid_login.call_args.kwargs
     assert context["link_user_id"] == OWNER.id
     assert context["link_session_digest"] == session_digest("owner-token")

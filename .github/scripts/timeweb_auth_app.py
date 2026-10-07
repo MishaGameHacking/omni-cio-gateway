@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import io
 import json
 import os
@@ -49,17 +50,16 @@ RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
 LEGACY_RESET_MARKER = "/etc/omnicio/legacy-profile-reset-v1.done"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
+BRAND_SOURCE = "assets/brand/omnicio-logo.png"
+# The unchanged owner-provided PNG and the two existing backgrounds total 6 MiB.
+# Keep a bounded archive budget that includes that explicit brand requirement.
+MAX_RELEASE_ARCHIVE_BYTES = 8 * 1024 * 1024
 BRAND_RUNTIME_FILES = (
-    "assets/brand/web/omnicio-mark.svg",
-    "assets/brand/web/apple-touch-icon-180.png",
-    "assets/brand/web/favicon.ico",
-    "assets/brand/web/pwa-icon-192.png",
-    "assets/brand/web/pwa-icon-512.png",
-    "assets/brand/web/pwa-maskable-512.png",
+    BRAND_SOURCE,
     "assets/brand/web/earth-hero.png",
     "assets/brand/web/auth-mountains.png",
 )
-BRAND_PUBLIC_MARK = "/assets/brand/pwa-icon-192.png"
+BRAND_PUBLIC_MARK = "/assets/brand/omnicio-logo.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
 JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
@@ -116,8 +116,8 @@ def build_release_archive(root: pathlib.Path) -> str:
     raw = buffer.getvalue()
     if not raw:
         raise InfraError("Release archive is empty")
-    if len(raw) > 5 * 1024 * 1024:
-        raise InfraError("Release archive unexpectedly exceeds 5 MiB")
+    if len(raw) > MAX_RELEASE_ARCHIVE_BYTES:
+        raise InfraError("Release archive unexpectedly exceeds 8 MiB")
     return base64.b64encode(raw).decode("ascii")
 
 
@@ -340,7 +340,9 @@ def validate_legal_documents(repository_root: pathlib.Path) -> None:
             )
 
 
-def build_product_environment() -> str:
+def build_product_environment(*, release_sha: str = "") -> str:
+    if release_sha and not RELEASE_RE.fullmatch(release_sha):
+        raise InfraError("Release SHA must be a full lowercase 40-character SHA")
     values = {
         "OMNICIO_RECOVERY_STATUS_PATH": REMOTE_STATUS_PATH,
         # Authority must be explicitly revoked when the workflow variable is cleared.
@@ -362,6 +364,8 @@ def build_product_environment() -> str:
         "PORTFOLIO_LIVE_MAX_ORDER_RUB": str(portfolio_live_caps()[0]),
         "PORTFOLIO_LIVE_MAX_DAILY_RUB": str(portfolio_live_caps()[1]),
     }
+    if release_sha:
+        values["OMNICIO_RELEASE_BUILD"] = release_sha[:12]
     # Missing workflow secrets must not erase an integration configured on the server.
     values.update({
         name: os.environ[name] if name in OPTIONAL_SECRET_KEYS else os.environ[name].strip()
@@ -410,7 +414,7 @@ def write_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
         'chmod 600 "$tmp"; '
         f"mv -f \"$tmp\" {PRODUCT_ENV}"
     )
-    ssh.run(command, input_text=build_product_environment())
+    ssh.run(command, input_text=build_product_environment(release_sha=release_sha))
 
 
 def commit_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
@@ -528,14 +532,14 @@ install -m 0644 "$RELEASE/web/workspace.js" "$WEB_RELEASE/assets/workspace.js"
 install -m 0644 "$RELEASE/web/i18n.js" "$WEB_RELEASE/assets/i18n.js"
 install -m 0644 "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
-install -m 0644 "$RELEASE/assets/brand/web/omnicio-mark.svg" "$WEB_RELEASE/assets/brand/omnicio-mark.svg"
+install -m 0644 "$RELEASE/assets/brand/omnicio-logo.png" "$WEB_RELEASE/assets/brand/omnicio-logo.png"
 install -m 0644 "$RELEASE/assets/brand/web/earth-hero.png" "$WEB_RELEASE/assets/brand/earth-hero.png"
 install -m 0644 "$RELEASE/assets/brand/web/auth-mountains.png" "$WEB_RELEASE/assets/brand/auth-mountains.png"
-install -m 0644 "$RELEASE/assets/brand/web/apple-touch-icon-180.png" "$WEB_RELEASE/assets/brand/apple-touch-icon-180.png"
-install -m 0644 "$RELEASE/assets/brand/web/favicon.ico" "$WEB_RELEASE/assets/brand/favicon.ico"
-install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-192.png" "$WEB_RELEASE/assets/brand/pwa-icon-192.png"
-install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-512.png" "$WEB_RELEASE/assets/brand/pwa-icon-512.png"
-install -m 0644 "$RELEASE/assets/brand/web/pwa-maskable-512.png" "$WEB_RELEASE/assets/brand/pwa-maskable-512.png"
+# Existing installed clients may still request the former PNG URLs. All resolve
+# to the owner's unchanged original, while the new manifest uses its canonical URL.
+for name in apple-touch-icon-180.png pwa-icon-192.png pwa-icon-512.png pwa-maskable-512.png; do
+    ln -s omnicio-logo.png "$WEB_RELEASE/assets/brand/$name"
+done
 set -a
 . /etc/omnicio/product.env
 set +a
@@ -596,6 +600,13 @@ for source_index in (6, 8):
     pathlib.Path(sys.argv[source_index + 1]).write_text(
         template.replace("__OMNICIO_BUILD__", build), encoding="utf-8",
     )
+assets = pathlib.Path(sys.argv[4]).parent / "assets"
+for name in ("app.js", "workspace.js", "i18n.js"):
+    script = assets / name
+    template = script.read_text(encoding="utf-8")
+    if "__OMNICIO_BUILD__" not in template:
+        raise SystemExit(f"release marker is missing: {name}")
+    script.write_text(template.replace("__OMNICIO_BUILD__", build), encoding="utf-8")
 PY
 chmod 0644 "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" "$WEB_RELEASE/sw.js"
 
@@ -1219,10 +1230,15 @@ def verify_public_root(body: bytes, release_sha: str) -> None:
         raise InfraError("Public auth page contains unresolved release markers")
 
 
-def verify_public_config(body: bytes) -> None:
+def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
     payload = json.loads(body)
     if not isinstance(payload, dict):
         raise InfraError("Public auth config is not an object")
+    release = payload.get("release")
+    if release_sha and (
+        not isinstance(release, dict) or release.get("build") != release_sha[:12]
+    ):
+        raise InfraError("Public API build does not match the frontend release")
 
     expected_registration = registration_enabled()
     if payload.get("registration_enabled") is not expected_registration:
@@ -1249,7 +1265,9 @@ def verify_public_config(body: bytes) -> None:
 
 def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
     brand, content_type = fetch_public(BRAND_PUBLIC_MARK, context)
-    if content_type != PNG_CONTENT_TYPE or not brand:
+    approved = (pathlib.Path(__file__).resolve().parents[2] / BRAND_SOURCE).read_bytes()
+    if (content_type != PNG_CONTENT_TYPE
+            or hashlib.sha256(brand).digest() != hashlib.sha256(approved).digest()):
         raise InfraError("Public approved brand mark verification failed")
 
     manifest_body, _ = fetch_public(WEB_MANIFEST_PATH, context)
@@ -1278,7 +1296,8 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         body, content_type = fetch_public(f"{path}?build={release_sha[:12]}", context)
         if content_type not in content_types or marker not in body:
             raise InfraError(f"Public runtime asset verification failed: {path}")
-        if path in {"/sw.js", "/offline.html"} and (
+        if path in {"/sw.js", "/offline.html", "/assets/app.js",
+                    "/assets/workspace.js", "/assets/i18n.js"} and (
             release_sha[:12].encode() not in body or b"__OMNICIO_BUILD__" in body
         ):
             raise InfraError(f"Public runtime asset build does not match release: {path}")
@@ -1291,7 +1310,7 @@ def verify_public(release_sha: str) -> None:
         verify_public_root(root, release_sha)
         verify_public_assets(context, release_sha)
         config, _ = fetch_public("/api/auth/config", context)
-        verify_public_config(config)
+        verify_public_config(config, release_sha=release_sha)
         for path, marker in LEGAL_PAGES.items():
             body, _ = fetch_public(path, context)
             rendered = body.decode(errors="replace")

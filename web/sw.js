@@ -3,7 +3,7 @@
 // Only public, versioned interface assets. Never cache API, HTML sessions or messages.
 const build = "__OMNICIO_BUILD__";
 const cacheName = `omnicio-public-${build}`;
-const publicPaths = ["/assets/i18n.js", "/assets/app.css", "/assets/app.js", "/assets/workspace.js"];
+const publicPaths = ["/assets/i18n.js", "/assets/app.css", "/assets/app.js", "/assets/workspace.js", "/assets/brand/omnicio-logo.png"];
 const offlineUrl = `/offline.html?build=${encodeURIComponent(build)}`;
 
 self.addEventListener("install", (event) => {
@@ -40,11 +40,13 @@ self.addEventListener("fetch", (event) => {
 const notificationUrl = value => {
   try {
     const url = new URL(value, self.location.origin);
-    if (url.origin !== self.location.origin || url.pathname !== "/" || url.search) return "/#events";
-    if (!/^#(?:events(?:\?event=[a-f0-9]{64})?|settings)$/.test(url.hash)) return "/#events";
+    if (url.origin !== self.location.origin || url.pathname !== "/" || url.search) return "/#account/events";
+    if (/^#events(?:\?event=[a-f0-9]{64})?$/.test(url.hash)) return url.hash.includes("?event=") ? "/#account/events/detail?event=" + url.hash.split("?event=")[1] : "/#account/events";
+    if (url.hash === "#settings") return "/#account/settings/notifications";
+    if (!/^#account\/(?:events(?:\/detail\?event=[a-f0-9]{64})?|settings\/notifications)$/.test(url.hash)) return "/#account/events";
     return url.pathname + url.hash;
   } catch {
-    return "/#events";
+    return "/#account/events";
   }
 };
 
@@ -56,8 +58,8 @@ self.addEventListener("push", event => {
   // Opening the destination still requires the current authenticated session.
   event.waitUntil(self.registration.showNotification("OMNICIO", {
     body: "В кабинете появились новые сведения. Откройте приложение, чтобы посмотреть подробности.",
-    icon: "/assets/brand/pwa-icon-192.png",
-    badge: "/assets/brand/pwa-icon-192.png",
+    icon: "/assets/brand/omnicio-logo.png",
+    badge: "/assets/brand/omnicio-logo.png",
     tag,
     renotify: false,
     data: {url: notificationUrl(payload.url)}

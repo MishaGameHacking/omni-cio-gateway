@@ -108,6 +108,9 @@ class Settings:
     assistant_allowed_endpoints: tuple[str, ...] = ()
     assistant_daily_request_limit: int = 30
     operator_user_id: UUID | None = None
+    legal_operator_name: str = ""
+    legal_operator_email: str = ""
+    release_build: str = ""
 
     @property
     def vkid_ready(self) -> bool:
@@ -187,4 +190,7 @@ def load_settings() -> Settings:
         ),
         assistant_daily_request_limit=positive_int("ASSISTANT_DAILY_REQUEST_LIMIT", 30),
         operator_user_id=optional_uuid("OPERATOR_USER_ID"),
+        legal_operator_name=os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
+        legal_operator_email=os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip(),
+        release_build=os.environ.get("OMNICIO_RELEASE_BUILD", "").strip(),
     )

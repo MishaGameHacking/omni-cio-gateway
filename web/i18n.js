@@ -1949,6 +1949,383 @@
     if (placeholders(pair[0]) !== placeholders(pair[1])) throw new Error(`Translation placeholders differ: ${key}`);
     Object.freeze(pair);
   };
+  Object.assign(messages, {
+  "session.checking": [
+    "Проверяем сессию",
+    "Checking your session"
+  ],
+  "session.checking_details": [
+    "Открываем выбранный экран после ответа сервера…",
+    "Opening the selected screen after the server responds…"
+  ],
+  "session.retry_title": [
+    "Не удалось проверить сессию",
+    "Session could not be verified"
+  ],
+  "session.signin_title": [
+    "Войдите, чтобы продолжить",
+    "Sign in to continue"
+  ],
+  "session.signin_details": [
+    "Этот экран сохранён в ссылке. После входа вы вернётесь к нему.",
+    "This screen is saved in the URL. You will return here after signing in."
+  ],
+  "session.retry": [
+    "Повторить проверку",
+    "Retry verification"
+  ],
+  "navigation.public_home": [
+    "О сервисе",
+    "About the service"
+  ],
+  "navigation.back": [
+    "Назад",
+    "Back"
+  ],
+  "navigation.sections": [
+    "Разделы страницы",
+    "Page sections"
+  ],
+  "navigation.not_found": [
+    "Страница не найдена",
+    "Page not found"
+  ],
+  "navigation.not_found_details": [
+    "Ссылка не соответствует доступным разделам. Откройте меню или вернитесь назад.",
+    "This URL does not match an available section. Open the menu or go back."
+  ],
+  "public.page.features": [
+    "Возможности",
+    "Features"
+  ],
+  "public.page.how-it-works": [
+    "Как это работает",
+    "How it works"
+  ],
+  "public.page.strategies": [
+    "Стратегии",
+    "Strategies"
+  ],
+  "public.page.technology": [
+    "Технологии",
+    "Technology"
+  ],
+  "public.page.pricing": [
+    "Тарифы",
+    "Plans"
+  ],
+  "public.page.about": [
+    "О проекте",
+    "About"
+  ],
+  "public.page.support": [
+    "Поддержка",
+    "Support"
+  ],
+  "public.page.": [
+    "О сервисе",
+    "About the service"
+  ],
+  "state.load_failed": [
+    "Данные не загрузились",
+    "Data could not be loaded"
+  ],
+  "state.source_missing": [
+    "Источник не передал цену",
+    "The source did not return a price"
+  ],
+  "state.source_future": [
+    "Время источника требует проверки",
+    "Source timestamp needs verification"
+  ],
+  "state.connecting": [
+    "Подключаем поток",
+    "Connecting the stream"
+  ],
+  "quotes.loading": [
+    "Получаем цену…",
+    "Fetching price…"
+  ],
+  "quotes.positions_loading": [
+    "Загружаем состав счёта…",
+    "Loading account positions…"
+  ],
+  "quotes.reconnecting": [
+    "Восстанавливаем поток",
+    "Reconnecting the stream"
+  ],
+  "market.history_unavailable": [
+    "История цен временно недоступна. Текущая котировка отображается отдельно.",
+    "Price history is temporarily unavailable. The current quote is shown separately."
+  ],
+  "portfolio.snapshot": [
+    "Наблюдение стоимости счёта",
+    "Account value observation"
+  ],
+  "portfolio.operations": [
+    "Операции",
+    "Transactions"
+  ],
+  "portfolio.operations_notice": [
+    "Показаны сохранённые операции источника. Комиссия в деталях сделки не учитывается повторно как отдельный расход.",
+    "Saved source transactions are shown. A fee recorded in trade details is not counted again as a separate expense."
+  ],
+  "portfolio.no_operations": [
+    "Операций в полученной истории нет",
+    "No transactions in the retrieved history"
+  ],
+  "portfolio.no_operations_details": [
+    "После сбора данных здесь появится фактическая история счёта.",
+    "The account’s actual history will appear here after collection."
+  ],
+  "portfolio.contribution": [
+    "Пополнение",
+    "Contribution"
+  ],
+  "portfolio.withdrawal": [
+    "Вывод",
+    "Withdrawal"
+  ],
+  "portfolio.internal": [
+    "Внутреннее движение",
+    "Internal transfer"
+  ],
+  "portfolio.non_cash": [
+    "Перевод бумаг",
+    "Securities transfer"
+  ],
+  "portfolio.unclassified": [
+    "Требует классификации",
+    "Needs classification"
+  ],
+  "goals.active": [
+    "Активные цели",
+    "Active goals"
+  ],
+  "goals.archive": [
+    "Завершённые и архив",
+    "Completed and archived"
+  ],
+  "goals.scenario": [
+    "Сценарий суммы",
+    "Amount scenario"
+  ],
+  "goals.scenario_target": [
+    "Целевая сумма",
+    "Target amount"
+  ],
+  "goals.scenario_contributions": [
+    "Взносы по сценарию",
+    "Scenario contributions"
+  ],
+  "goals.scenario_notice": [
+    "Сценарий по вашим предположениям. Месяцы — расчётные периоды, а не наблюдавшиеся даты.",
+    "Scenario based on your assumptions. Months are model periods, not observed dates."
+  ],
+  "goals.model_month": [
+    "Месяц {month}",
+    "Month {month}"
+  ],
+  "notifications.delivery_failed": [
+    "Отправка не завершена",
+    "Delivery has not completed"
+  ],
+  "notifications.channel_unavailable": [
+    "Канал больше недоступен",
+    "Channel is no longer available"
+  ],
+  "notifications.attempts": [
+    "Попыток",
+    "Attempts"
+  ],
+  "notifications.digest_time": [
+    "Время дайджеста",
+    "Digest time"
+  ],
+  "notifications.digest_timezone": [
+    "Часовой пояс дайджеста",
+    "Digest time zone"
+  ],
+  "events.counter_unavailable": [
+    "Счётчик пока не обновлён. Откройте события для проверки.",
+    "The count has not been updated. Open Events to check."
+  ],
+  "support.title": [
+    "Поддержка",
+    "Support"
+  ],
+  "support.description": [
+    "Опишите экран и действие, после которого возникла проблема. Письмо откроется в вашем почтовом приложении.",
+    "Describe the screen and the action that caused the problem. Your email app will open a draft."
+  ],
+  "support.operator": [
+    "Оператор сервиса",
+    "Service operator"
+  ],
+  "support.route": [
+    "Текущий раздел",
+    "Current section"
+  ],
+  "support.safe_details": [
+    "Можно приложить номер запроса из сообщения об ошибке, версию и описание. Не отправляйте API-ключи, пароли или финансовые документы.",
+    "Include the request ID from the error, the version and a description. Do not send API keys, passwords or financial documents."
+  ],
+  "support.compose": [
+    "Написать в поддержку",
+    "Compose a support email"
+  ],
+  "support.unavailable": [
+    "Контакт поддержки пока не опубликован оператором.",
+    "The operator has not published a support contact yet."
+  ],
+  "pwa.update_available": [
+    "Доступна новая версия. Завершите текущие действия перед обновлением.",
+    "A new version is available. Finish your current work before updating."
+  ],
+  "pwa.apply": [
+    "Обновить приложение",
+    "Update application"
+  ],
+  "pwa.finish_work": [
+    "Сначала сохраните или завершите открытые изменения. Обновление сохранит текущую страницу.",
+    "Save or finish your open changes first. Updating will preserve the current page."
+  ],
+  "pwa.update_before_write": [
+    "Версия приложения изменилась. Завершите сверку начатых действий и обновите страницу перед новым изменением.",
+    "The application version has changed. Reconcile pending actions and update the page before making a new change."
+  ],
+  "strategy.demo_description": [
+    "Описание доступно без входа. Применение личных параметров и расчёты на счёте доступны после авторизации.",
+    "Descriptions are available without signing in. Personal settings and account calculations require authentication."
+  ],
+  "Архив исследований": [
+    "Архив исследований",
+    "Research archive"
+  ],
+  "Операция": [
+    "Операция",
+    "Transaction"
+  ],
+  "Дата": [
+    "Дата",
+    "Date"
+  ],
+  "Сумма": [
+    "Сумма",
+    "Amount"
+  ],
+  "Загрузить ещё": [
+    "Загрузить ещё",
+    "Load more"
+  ],
+  "Ранее начатые исполнения": [
+    "Ранее начатые исполнения",
+    "Previous executions"
+  ],
+  "Подробности": [
+    "Подробности",
+    "Details"
+  ]
+});
+  messages["Активная"] = ["Активная", "Active"];
+  Object.assign(messages, {
+  "assistant.generating": [
+    "Ответ формируется",
+    "Generating a response"
+  ],
+  "assistant.incomplete": [
+    "Ответ не завершён. Проверьте сохранённое состояние перед повторной отправкой.",
+    "The response is incomplete. Check saved state before sending again."
+  ],
+  "assistant.cancelled": [
+    "Запрос остановлен",
+    "Request stopped"
+  ],
+  "assistant.completed": [
+    "Ответ подтверждён и сохранён",
+    "Response confirmed and saved"
+  ],
+  "assistant.provisional": [
+    "Предварительный текст: ответ ещё не завершён и может быть неполным.",
+    "Provisional text: the response is not complete and may be incomplete."
+  ],
+  "assistant.stop": [
+    "Остановить ответ",
+    "Stop response"
+  ],
+  "assistant.readback": [
+    "Проверить сохранённый ответ",
+    "Check saved response"
+  ],
+  "assistant.memory_selection": [
+    "Выбрать сведения для этого вопроса",
+    "Select memory for this question"
+  ],
+  "assistant.memory_selection_help": [
+    "В запрос попадут только отмеченные сведения. Выбор делаете вы.",
+    "Only checked entries will be included in this request. You make the selection."
+  ],
+  "assistant.memory": [
+    "Память помощника",
+    "Assistant memory"
+  ],
+  "assistant.memory_help": [
+    "Сведения сохраняются только после вашего подтверждения. Диалоги не превращаются в память автоматически. Не сохраняйте ключи и пароли.",
+    "Entries are saved only after your confirmation. Conversations do not become memory automatically. Do not save keys or passwords."
+  ],
+  "assistant.preference": [
+    "Предпочтение",
+    "Preference"
+  ],
+  "assistant.memory_edit": [
+    "Изменить сведения",
+    "Edit entry"
+  ],
+  "assistant.memory_empty": [
+    "Подтверждённых сведений пока нет.",
+    "No confirmed entries yet."
+  ],
+  "assistant.memory_kind": [
+    "Вид сведений",
+    "Entry category"
+  ],
+  "assistant.memory_content": [
+    "Что сохранить",
+    "What to save"
+  ],
+  "assistant.memory_confirm": [
+    "Подтверждаю сохранение этих сведений в моём аккаунте.",
+    "I confirm saving this entry in my account."
+  ],
+  "assistant.sources": [
+    "Данные и источники",
+    "Data and sources"
+  ],
+  "assistant.sources_scope": [
+    "Поиск и чтение работают по выбранным данным аккаунта, сохранённым исследованиям и новостям ЦБ. Поиск по всему интернету здесь не подключён. Внешняя модель для просмотра не нужна.",
+    "Search and read the selected account data, saved research and Bank of Russia news. Whole-web search is not connected here. Viewing these sources does not require an external model."
+  ],
+  "Найти": [
+    "Найти",
+    "Search"
+  ],
+  "assistant.chat": [
+    "Разговор",
+    "Conversation"
+  ],
+  "assistant.workspace_help": [
+    "Выберите разговор, историю, подтверждённую память или исходные данные. Статус внешнего ИИ проверяется сервером.",
+    "Choose a conversation, history, confirmed memory or source data. The server verifies the external AI status."
+  ],
+  "assistant.memory_delete": [
+    "Удалить сведения из памяти?",
+    "Delete this memory entry?"
+  ],
+  "assistant.memory_delete_help": [
+    "Эти сведения больше не будут доступны для выбора в новых вопросах. Уже сохранённые разговоры останутся в истории.",
+    "This entry will no longer be selectable for new questions. Saved conversations will remain in history."
+  ]
+});
   const literalKeys = new Map();
   for (const [key, pair] of Object.entries(messages)) {
     validatePair(key, pair);
@@ -2016,7 +2393,7 @@
     }
     return result;
   };
-  const api = Object.freeze({t, html, has, setLocale, getLocale: () => locale, normalizeLocale, apply, keys: () => Object.keys(messages), preset: record => authoredRecord("preset", record), catalogSource: record => authoredRecord("catalog_source", record)});
+  const api = Object.freeze({compiledBuild: "__OMNICIO_BUILD__", t, html, has, setLocale, getLocale: () => locale, normalizeLocale, apply, keys: () => Object.keys(messages), preset: record => authoredRecord("preset", record), catalogSource: record => authoredRecord("catalog_source", record)});
   if (typeof window !== "undefined") window.OMNICIO_I18N = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof document !== "undefined" && Object.hasOwn(document.documentElement.dataset, "i18nDeviceLocale")) {

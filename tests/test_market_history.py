@@ -186,10 +186,13 @@ def test_unknown_future_naive_or_over_budget_first_date_fails_before_candle_read
 ) -> None:
     broker = history_broker(first)
     service = market(broker)
-    with patch("omnicio.market.datetime", FixedDatetime), pytest.raises(TBankUnavailable):
-        service.instrument_snapshot(OWNER.id, UID, period="all")
+    with patch("omnicio.market.datetime", FixedDatetime):
+        result = service.instrument_snapshot(OWNER.id, UID, period="all")
+    assert result.history_status == "unavailable"
+    assert result.errors["history"] == "source_unavailable"
+    assert result.last_price is not None
     broker.market_exchange_candles.assert_not_called()
-    broker.market_last_price.assert_not_called()
+    broker.market_last_price.assert_called_once()
 
 
 @pytest.mark.parametrize("surface", ["all", "1m", "live"])

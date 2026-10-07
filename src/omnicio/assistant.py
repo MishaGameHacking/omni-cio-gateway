@@ -6,10 +6,15 @@ import hashlib
 import http.client
 import ipaddress
 import json
+import queue
+import re
+import socket
 import threading
-from collections.abc import Callable, Mapping, Sequence
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import closing, suppress
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
@@ -40,6 +45,231 @@ class AssistantUnavailable(RuntimeError):
 
 class AssistantBusy(RuntimeError):
     """The provider already has its allowed number of requests."""
+
+
+class AssistantCancelled(AssistantRequestConflict):
+    """The owner cancelled this exact request; late provider output is discarded."""
+
+
+class _Cancellation:
+    def __init__(self) -> None:
+        self.event = threading.Event()
+        self._lock = threading.Lock()
+        self._connection: http.client.HTTPConnection | None = None
+
+    def attach(self, connection: http.client.HTTPConnection) -> None:
+        with self._lock:
+            self._connection = connection
+        if self.event.is_set():
+            self.cancel()
+
+    def cancel(self) -> None:
+        self.event.set()
+        with self._lock:
+            connection = self._connection
+        if connection is not None:
+            if connection.sock is not None:
+                with suppress(OSError):
+                    connection.sock.shutdown(socket.SHUT_RDWR)
+            connection.close()
+
+    def check(self) -> None:
+        if self.event.is_set():
+            raise AssistantCancelled("assistant_request_cancelled")
+
+
+def _source_hash(value: object) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False,
+                                    default=str, separators=(",", ":")).encode()).hexdigest()
+
+
+def _source_catalog(context: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    if not context:
+        return []
+    result = []
+    sections = {
+        "overview": ("portfolio_snapshot", "Стоимость портфеля"),
+        "performance": ("portfolio_performance", "Расчёт доходности портфеля"),
+        "income": ("portfolio_income", "Подтверждённые выплаты"),
+        "positions": ("portfolio_positions", "Позиции портфеля"),
+        "goals": ("user_goals", "Цели пользователя"),
+        "strategy": ("user_strategy", "Выбранная стратегия"),
+        "research": ("research", "Сохранённое исследование"),
+    }
+    for section, (kind, label) in sections.items():
+        evidence = context.get(section)
+        if not evidence:
+            continue
+        digest = _source_hash(evidence)
+        observed_at = (evidence.get("observed_at") or evidence.get("to")
+                       or evidence.get("created_at")) if isinstance(evidence, Mapping) else None
+        result.append({"id": section + ":" + digest, "kind": kind, "label": label,
+                       "sha256": digest, "observed_at": observed_at or context.get("generated_at"),
+                       "scope": "selected_server_facts", "content": evidence})
+    for item in context.get("news", []):
+        if not isinstance(item, Mapping):
+            continue
+        url = item.get("url")
+        if not isinstance(url, str):
+            continue
+        try:
+            parsed = urlsplit(url)
+            if (parsed.scheme != "https" or parsed.hostname not in {"www.cbr.ru", "cbr.ru"}
+                    or parsed.username or parsed.password or parsed.port or parsed.fragment
+                    or any(ord(char) < 33 for char in url)):
+                continue
+        except ValueError:
+            continue
+        digest = _source_hash(item)
+        result.append({"id": "news:" + digest, "kind": "official_news",
+                       "label": str(item.get("title", "Банк России")), "url": url,
+                       "published_at": item.get("published_at"), "sha256": digest,
+                       "scope": "selected_headline", "content": dict(item)})
+    for item in context.get("_memory", []):
+        if not isinstance(item, Mapping):
+            continue
+        digest = _source_hash(item)
+        result.append({"id": "memory:" + digest, "kind": "explicit_memory",
+                       "label": "Заметка, выбранная пользователем", "sha256": digest,
+                       "observed_at": item.get("updated_at"), "scope": "user_supplied",
+                       "content": dict(item)})
+    # Older portfolio-only contexts can contain just a generated timestamp.
+    if not result and context:
+        evidence = {key: value for key, value in context.items() if key != "_source_refs"}
+        digest = _source_hash(evidence)
+        result.append({"id": "context:" + digest, "kind": "investment_snapshot",
+                       "label": "Выбранные серверные данные", "sha256": digest,
+                       "observed_at": context.get("generated_at"),
+                       "scope": "selected_server_facts", "content": evidence})
+    for row in result:
+        row["selection"] = context.get("_selection")
+    return result
+
+
+def source_references(context: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    return [{key: value for key, value in row.items() if key != "content"}
+            for row in _source_catalog(context)]
+
+
+def source_search(
+    context: Mapping[str, Any] | None, query: str, *, limit: int = 10,
+) -> dict[str, Any]:
+    """Search only selected, owner-authorized evidence; never imply an internet search."""
+    if not isinstance(query, str) or not 1 <= len(query.strip()) <= 200 or not 1 <= limit <= 20:
+        raise ValueError("assistant_source_query_invalid")
+    terms = query.casefold().split()
+    matches = []
+    for row in _source_catalog(context):
+        text = json.dumps(row["content"], ensure_ascii=False, default=str)
+        haystack = (row["label"] + " " + text).casefold()
+        if not all(term in haystack for term in terms):
+            continue
+        first = min((text.casefold().find(term) for term in terms if term in text.casefold()),
+                    default=0)
+        matches.append({**{key: value for key, value in row.items() if key != "content"},
+                        "excerpt": text[max(0, first - 80):first + 320]})
+    return {"items": matches[:limit], "total": len(matches), "scope": "selected_sources",
+            "web_search": False, "truncated": len(matches) > limit}
+
+
+def source_read(context: Mapping[str, Any] | None, source_id: str) -> dict[str, Any]:
+    from .workspace_store import WorkspaceNotFound
+
+    for row in _source_catalog(context):
+        if row["id"] == source_id:
+            return {**row, "web_search": False}
+    raise WorkspaceNotFound("assistant_source_not_found")
+
+
+_CURRENCIES = {"RUB", "USD", "EUR", "CNY", "HKD", "GBP", "CHF", "JPY", "TRY", "BYN", "KZT"}
+_FINANCIAL_NUMBER = re.compile(
+    r"(?<![\w.])([-+−]?\d+(?:[\s\u00a0\u202f]\d{3})*(?:[.,]\d+)?)\s*"
+    r"(тыс\.?|млн\.?|млрд\.?)?\s*(%|₽|руб\.?|рублей|рубля|"
+    + "|".join(sorted(_CURRENCIES)) + r"|[$€])",
+    re.IGNORECASE,
+)
+
+
+def _financial_value(match: re.Match[str]) -> tuple[str, Decimal]:
+    number = re.sub(r"\s", "", match.group(1)).replace("−", "-").replace(",", ".")
+    multiplier = (match.group(2) or "").casefold().rstrip(".")
+    amount = Decimal(number) * {"": 1, "тыс": 1000, "млн": 1000000, "млрд": 1000000000}[multiplier]
+    label = match.group(3).upper()
+    unit = {"$": "USD", "€": "EUR"}.get(
+        label, label if label in _CURRENCIES or label == "%" else "RUB",
+    )
+    return unit, amount
+
+
+def _field_unit(field: str, currency: str | None) -> str | None:
+    if "percent" in field:
+        return "%"
+    if field.endswith("_rub"):
+        return "RUB"
+    if field in {"price", "current_price", "market_value", "expected_yield", "dividends", "coupons",
+                 "other_income", "redemptions", "fees", "taxes", "net_contributions"}:
+        return currency
+    return None
+
+
+def _scalar_financial_facts(value: object, unit: str | None) -> list[tuple[str, Decimal]]:
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+        return []
+    result = [_financial_value(match) for match in _FINANCIAL_NUMBER.finditer(str(value))]
+    if unit is not None:
+        try:
+            amount = Decimal(str(value))
+            if amount.is_finite():
+                result.append((unit, amount))
+        except InvalidOperation:
+            pass
+    return result
+
+
+def _financial_facts(context: Mapping[str, Any]) -> dict[str, set[Decimal]]:
+    values: dict[str, set[Decimal]] = {}
+    pending: list[tuple[object, str, str | None]] = [(context, "", None)]
+    while pending:
+        value, field, currency = pending.pop()
+        if field in _CURRENCIES:
+            currency = field
+        if isinstance(value, Mapping):
+            declared = value.get("currency")
+            if isinstance(declared, str) and declared in _CURRENCIES:
+                currency = declared
+            pending.extend((item, str(key), currency) for key, item in value.items()
+                           if key not in {"_selection", "generated_at", "_source_refs"})
+        elif isinstance(value, list):
+            pending.extend((item, field, currency) for item in value)
+        else:
+            for unit, amount in _scalar_financial_facts(value, _field_unit(field, currency)):
+                values.setdefault(unit, set()).add(amount)
+    return values
+
+
+def validate_source_response(reply: str, context: Mapping[str, Any] | None) -> None:
+    """Reject unsupported links and monetary/percentage claims in selected factual analysis.
+
+    This is a deterministic provenance gate, not a proof of every natural-language
+    statement. It deliberately does not publish an unchecked personal-data draft.
+    """
+    refs = source_references(context)
+    urls = {row["url"] for row in refs if "url" in row}
+    for url in re.findall(r"https?://[^\s<>\]\"']+", reply):
+        if url.rstrip(".,;:!?)") not in urls:
+            raise AssistantUnavailable("assistant_source_unverified")
+    identifiers = {row["id"] for row in refs}
+    for identifier in re.findall(r"\[source:([^\]]+)\]", reply):
+        if identifier not in identifiers:
+            raise AssistantUnavailable("assistant_source_unverified")
+    if not context:
+        return
+    values = _financial_facts(context)
+    for match in _FINANCIAL_NUMBER.finditer(reply):
+        unit, amount = _financial_value(match)
+        if not any(abs(amount - fact) <= max(Decimal("0.005"), abs(fact) * Decimal("0.00005"))
+                   for fact in values.get(unit, set())):
+            raise AssistantUnavailable("assistant_evidence_unverified")
 
 
 def _validated_endpoint(
@@ -108,7 +338,8 @@ def portfolio_context(workspace: Mapping[str, Any]) -> dict[str, Any]:
     """Allowlisted aggregate evidence: no tokens, account IDs or personal goals."""
     result: dict[str, Any] = {"generated_at": workspace.get("generated_at")}
     fields = {
-        "overview": {"status", "nav_rub", "observed_at", "reason", "cash_rub"},
+        "overview": {"status", "nav_rub", "observed_at", "reason", "cash_rub", "valid_until",
+                     "valuation_status", "positions_valuation_status", "sector_status"},
         "performance": {
             "status",
             "method",
@@ -123,6 +354,9 @@ def portfolio_context(workspace: Mapping[str, Any]) -> dict[str, Any]:
             "start_nav_rub",
             "end_nav_rub",
             "income_received_rub",
+            "nav_status",
+            "return_status",
+            "return_reason",
         },
         "income": {
             "status",
@@ -141,6 +375,35 @@ def portfolio_context(workspace: Mapping[str, Any]) -> dict[str, Any]:
         value = workspace.get(section)
         if isinstance(value, dict):
             result[section] = {key: value[key] for key in allowed if key in value}
+            if section in {"performance", "income"}:
+                result[section].update(_payment_context(value))
+    return result
+
+
+def _payment_context(value: Mapping[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    fields = {"net_contributions_rub", "coupons_rub", "dividends_rub", "other_income_rub",
+              "redemptions_rub", "fees_rub", "taxes_rub", "total_rub"}
+    coverage = value.get("metric_coverage")
+    if isinstance(coverage, Mapping):
+        result["metric_coverage"] = {
+            key: {name: item[name] for name in ("status", "value_rub", "observed_rub", "reason")
+                  if name in item and (item[name] is None
+                                       or isinstance(item[name], (str, int, float)))}
+            for key, item in coverage.items() if key in fields and isinstance(item, Mapping)
+        }
+    native = value.get("native_payment_sums")
+    if isinstance(native, Mapping):
+        currencies = native.get("currencies", native)
+        if isinstance(currencies, Mapping):
+            result["native_payment_sums"] = {
+                "basis": "observed_executed_payments_without_fx_conversion",
+                "currencies": {currency: {
+                    key: amount for key, amount in amounts.items()
+                    if key + "_rub" in fields and isinstance(amount, (str, int, float))
+                } for currency, amounts in currencies.items()
+                    if currency in _CURRENCIES and isinstance(amounts, Mapping)},
+            }
     return result
 
 
@@ -279,6 +542,14 @@ class AssistantClient:
         context: Mapping[str, Any] | None,
     ) -> dict[str, Any]:
         _scheme, _host, _port, path = _validated_endpoint(self._base_url, self.provider)
+        body = self._body(messages, context, stream=False)
+        payload = self._request("POST", path, body)
+        reply, usage = _response_values(payload, self.provider)
+        return self._result(reply, usage, context)
+
+    def _body(
+        self, messages: list[dict[str, str]], context: Mapping[str, Any] | None, *, stream: bool,
+    ) -> dict[str, Any]:
         prompt = _SYSTEM_PROMPT
         if context is not None:
             prompt += "\nФакты текущего снимка портфеля (JSON):\n" + json.dumps(
@@ -287,10 +558,16 @@ class AssistantClient:
                 default=str,
                 separators=(",", ":"),
             )
+            prompt += (
+                "\nПроверенные ссылки доступны только в _source_refs. Используй только их. "
+                "Денежные суммы и проценты называй только из приложенных фактов; "
+                "если расчёт не приложен, объясни метод без выдуманной суммы. "
+                "Указывай источник как [source:ID] с точным id из _source_refs."
+            )
         body: dict[str, Any] = {
             "model": self.model,
             "messages": [{"role": "system", "content": prompt}, *messages],
-            "stream": False,
+            "stream": stream,
         }
         if self.provider == "ollama":
             body.update(think=False, options={"num_predict": 1024, "temperature": 0.2})
@@ -298,8 +575,11 @@ class AssistantClient:
             body.update(max_completion_tokens=1024)
         else:
             body.update(max_tokens=1024, temperature=0.2)
-        payload = self._request("POST", path, body)
-        reply, usage = _response_values(payload, self.provider)
+        return body
+
+    def _result(
+        self, reply: str, usage: Mapping[str, Any], context: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
         return {
             "reply": reply.strip(),
             "message_id": uuid4().hex,
@@ -314,6 +594,129 @@ class AssistantClient:
                 for key, value in usage.items()
             },
         }
+
+    def stream(
+        self, *, message: str, history: Sequence[Mapping[str, str]],
+        context: Mapping[str, Any] | None = None, cancellation: _Cancellation | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        messages = validate_messages(message, history)
+        if not self.configured:
+            raise AssistantNotConfigured("assistant_not_configured")
+        if not self._slots.acquire(blocking=False):
+            raise AssistantBusy("assistant_busy")
+        stop = cancellation or _Cancellation()
+        try:
+            yield from self._stream(messages, context, stop)
+        finally:
+            self._slots.release()
+
+    def _stream(
+        self, messages: list[dict[str, str]], context: Mapping[str, Any] | None,
+        stop: _Cancellation,
+    ) -> Iterator[dict[str, Any]]:
+        scheme, host, port, path = _validated_endpoint(self._base_url, self.provider)
+        headers = {"Content-Type": "application/json", "Accept": (
+            "application/x-ndjson" if self.provider == "ollama" else "text/event-stream"
+        )}
+        if self._api_key:
+            headers["Authorization"] = "Bearer " + self._api_key
+        connection_type = (
+            http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+        )
+        text, finished, consumed = "", False, 0
+        usage: dict[str, Any] = {}
+        started = time.monotonic()
+        try:
+            with closing(connection_type(host, port=port, timeout=self.timeout_seconds)) as conn:
+                stop.attach(conn)
+                stop.check()
+                conn.request("POST", path, body=json.dumps(
+                    self._body(messages, context, stream=True), ensure_ascii=False,
+                ).encode(), headers=headers)
+                response = conn.getresponse()
+                if response.status != 200:
+                    raise AssistantUnavailable("assistant_unavailable")
+                while True:
+                    stop.check()
+                    if time.monotonic() - started > 120:
+                        raise AssistantUnavailable("assistant_stream_timeout")
+                    line = response.readline(_MAX_REPLY_BYTES + 1)
+                    if not line:
+                        break
+                    consumed += len(line)
+                    if consumed > _MAX_REPLY_BYTES:
+                        raise AssistantUnavailable("assistant_response_too_large")
+                    if not line.strip():
+                        continue
+                    if self.provider == "openai_compatible":
+                        if line.startswith(b":"):
+                            continue
+                        if not line.startswith(b"data:"):
+                            if line.startswith((b"event:", b"id:", b"retry:")):
+                                continue
+                            raise AssistantUnavailable("assistant_stream_invalid")
+                        line = line[5:].strip()
+                        if line == b"[DONE]":
+                            break
+                    payload = json.loads(line)
+                    if not isinstance(payload, dict) or payload.get("error"):
+                        raise AssistantUnavailable("assistant_stream_invalid")
+                    delta, measured, done = self._stream_values(payload)
+                    if finished and delta:
+                        raise AssistantUnavailable("assistant_stream_invalid")
+                    text += delta
+                    if len(text) > 16000:
+                        raise AssistantUnavailable("assistant_response_too_large")
+                    usage.update(measured)
+                    finished = finished or done
+                    if delta:
+                        yield {"delta": delta}
+                    if self.provider == "ollama" and finished:
+                        break
+        except (OSError, ValueError, http.client.HTTPException) as exc:
+            stop.check()
+            raise AssistantUnavailable("assistant_unavailable") from exc
+        stop.check()
+        if not finished or not text.strip():
+            raise AssistantUnavailable("assistant_response_incomplete")
+        yield {"result": self._result(text, usage, context)}
+
+    def _stream_values(self, payload: Mapping[str, Any]) -> tuple[str, dict[str, Any], bool]:
+        if self.provider == "ollama":
+            message = payload.get("message")
+            if (not isinstance(message, dict) or message.get("role") != "assistant"
+                    or message.get("tool_calls")):
+                raise AssistantUnavailable("assistant_stream_invalid")
+            delta = message.get("content", "")
+            done = payload.get("done") is True
+            if done and payload.get("done_reason") not in {None, "stop"}:
+                raise AssistantUnavailable("assistant_response_incomplete")
+            usage = {"input_tokens": payload.get("prompt_eval_count"),
+                     "output_tokens": payload.get("eval_count")} if done else {}
+        else:
+            choices = payload.get("choices")
+            measured = payload.get("usage") or {}
+            if not isinstance(measured, dict):
+                raise AssistantUnavailable("assistant_stream_invalid")
+            usage = {"input_tokens": measured.get("prompt_tokens"),
+                     "output_tokens": measured.get("completion_tokens")} if measured else {}
+            if choices == [] and measured:
+                return "", usage, False
+            if (not isinstance(choices, list) or len(choices) != 1
+                    or not isinstance(choices[0], dict)):
+                raise AssistantUnavailable("assistant_stream_invalid")
+            choice = choices[0]
+            message = choice.get("delta")
+            if (not isinstance(message, dict) or message.get("role") not in {None, "assistant"}
+                    or message.get("tool_calls") or message.get("function_call")):
+                raise AssistantUnavailable("assistant_stream_invalid")
+            if choice.get("finish_reason") not in {None, "stop"}:
+                raise AssistantUnavailable("assistant_response_incomplete")
+            delta = message.get("content") or ""
+            done = choice.get("finish_reason") == "stop"
+        if not isinstance(delta, str):
+            raise AssistantUnavailable("assistant_stream_invalid")
+        return delta, usage, done
 
     def _request(
         self, method: str, path: str, body: dict[str, Any] | None = None
@@ -476,6 +879,9 @@ class AssistantService:
         self.daily_limit = daily_request_limit
         self.default_client = default_client
         self._slots = threading.BoundedSemaphore(2)
+        self._active_lock = threading.Lock()
+        self._active: dict[tuple[UUID, UUID], _Cancellation] = {}
+        self._closing = threading.Event()
 
     def _secret(self, user_id: UUID, connection: Mapping[str, Any]) -> str:
         encrypted = connection.get("key_ciphertext")
@@ -547,7 +953,63 @@ class AssistantService:
             "context_supported": True,
             "max_message_length": 4000,
             "quota": self.store.quota(user_id, self.daily_limit),
+            "capabilities": {"streaming": True, "cancellation": True, "request_readback": True,
+                             "explicit_memory": True, "automatic_memory": False,
+                             "source_search": "selected_sources", "source_read": "selected_sources",
+                             "web_search": False, "external_activation": self.enabled},
         }
+
+    def list_memory(self, user_id: UUID) -> dict[str, Any]:
+        return self.store.list_memory(user_id)
+
+    def save_memory(
+        self, user_id: UUID, memory_id: UUID, content: str, category: str, *,
+        expected_version: int, confirmed: bool,
+    ) -> dict[str, Any]:
+        result = self.store.save_memory(user_id, memory_id, content, category,
+                                        expected_version=expected_version, confirmed=confirmed)
+        self._cancel_active(user_id)
+        return result
+
+    def delete_memory(self, user_id: UUID, memory_id: UUID, *, expected_version: int) -> bool:
+        result = self.store.delete_memory(user_id, memory_id, expected_version=expected_version)
+        self._cancel_active(user_id)
+        return result
+
+    def _cancel_active(self, user_id: UUID, request_id: UUID | None = None) -> None:
+        with self._active_lock:
+            matches = [control for (owner, identifier), control in self._active.items()
+                       if owner == user_id and (request_id is None or identifier == request_id)]
+        for control in matches:
+            control.cancel()
+
+    def close(self) -> None:
+        """Cancel only requests owned by this service process, preserving durable readback."""
+        self._closing.set()
+        with self._active_lock:
+            active = list(self._active.items())
+        failed = False
+        for (user_id, request_id), control in active:
+            try:
+                self.store.cancel_request(user_id, request_id)
+            except Exception:
+                # Cleanup must reach every own socket even if its account was
+                # deleted or the database has already begun shutting down.
+                failed = True
+            finally:
+                control.cancel()
+        if failed:
+            raise RuntimeError("assistant_shutdown_cancellation_failed")
+
+    def stream_request(self, user_id: UUID, request_id: UUID) -> dict[str, Any]:
+        self.store.expire_requests(user_id)
+        return self.store.read_request(user_id, request_id)
+
+    def cancel_request(self, user_id: UUID, request_id: UUID) -> dict[str, Any]:
+        result = self.store.cancel_request(user_id, request_id)
+        if result["status"] == "cancelled":
+            self._cancel_active(user_id, request_id)
+        return result
 
     def save_connection(
         self,
@@ -610,6 +1072,7 @@ class AssistantService:
             },
             expected_version=expected_version,
         )
+        self._cancel_active(user_id)
         return self.status(user_id)
 
     def disconnect(self, user_id: UUID, *, expected_version: int) -> dict[str, Any]:
@@ -626,6 +1089,7 @@ class AssistantService:
             },
             expected_version=expected_version,
         )
+        self._cancel_active(user_id)
         return self.status(user_id)
 
     def check_connection(self, user_id: UUID) -> dict[str, Any]:
@@ -670,7 +1134,69 @@ class AssistantService:
         return self.store.conversation(user_id, conversation_id, before=before, limit=limit)
 
     def delete_conversation(self, user_id: UUID, conversation_id: UUID) -> bool:
+        # The durable cancellation is scoped to this conversation. A provider
+        # checks it on the next real chunk even when another process owns it.
         return self.store.delete_conversation(user_id, conversation_id)
+
+    def _prepare_context(
+        self, user_id: UUID, context: Mapping[str, Any] | None, memory_ids: Sequence[UUID],
+    ) -> tuple[dict[str, Any] | None, dict[str, int]]:
+        if context is not None and len(json.dumps(context, default=str)) > 48000:
+            raise ValueError("assistant_context_too_large")
+        memory = self.store.selected_memory(user_id, memory_ids) if memory_ids else []
+        prepared = dict(context) if context is not None else None
+        if memory:
+            prepared = {**(prepared or {}), "_memory": memory}
+        versions = {item["id"]: item["version"] for item in memory}
+        if prepared is not None:
+            prepared["_source_refs"] = source_references(prepared)
+            if len(json.dumps(prepared, default=str)) > 65536:
+                raise ValueError("assistant_context_too_large")
+        return prepared, versions
+
+    def _admit(
+        self, user_id: UUID, conversation_id: UUID, *, message: str,
+        context: Mapping[str, Any] | None, request_id: UUID, expected_version: int,
+        memory_ids: Sequence[UUID],
+    ) -> tuple[AssistantClient, dict[str, Any], dict[str, Any] | None]:
+        if not self.enabled:
+            raise AssistantNotConfigured("assistant_activation_disabled")
+        if self._closing.is_set():
+            raise AssistantNotConfigured("assistant_shutting_down")
+        validate_messages(message, [])
+        if type(expected_version) is not int or expected_version < 0:
+            raise ValueError("assistant_version_invalid")
+        prepared, versions = self._prepare_context(user_id, context, memory_ids)
+        connection = self.store.connection(user_id)
+        client = self._client(user_id, connection)
+        if client is None or not client.configured:
+            raise AssistantNotConfigured("assistant_not_configured")
+        fingerprint_document: dict[str, Any] = {
+            "conversation": str(conversation_id), "message": message.strip(),
+            "context_used": prepared is not None,
+            "selection": context.get("_selection") if context else None,
+        }
+        if versions:
+            fingerprint_document["memory_versions"] = versions
+        fingerprint = hashlib.sha256(
+            json.dumps(fingerprint_document, sort_keys=True).encode(),
+        ).hexdigest()
+        if not self._slots.acquire(blocking=False):
+            raise AssistantBusy("assistant_busy")
+        try:
+            self.store.expire_requests(user_id)
+            admission = self.store.claim(
+                user_id, conversation_id, request_id,
+                message=message.strip(), input_hash=fingerprint,
+                expected_version=expected_version,
+                connection_version=connection["version"] if connection else 0,
+                model=client.model, context_used=prepared is not None,
+                daily_limit=self.daily_limit, memory_versions=versions,
+            )
+        except Exception:
+            self._slots.release()
+            raise
+        return client, admission, prepared
 
     def chat(
         self,
@@ -682,71 +1208,24 @@ class AssistantService:
         request_id: UUID,
         expected_version: int,
         validate_context: Callable[[], None] | None = None,
+        memory_ids: Sequence[UUID] = (),
     ) -> dict[str, Any]:
-        if not self.enabled:
-            raise AssistantNotConfigured("assistant_activation_disabled")
-        validate_messages(message, [])
-        if type(expected_version) is not int or expected_version < 0:
-            raise ValueError("assistant_version_invalid")
-        if context is not None and len(json.dumps(context, default=str)) > 48000:
-            raise ValueError("assistant_context_too_large")
-        connection = self.store.connection(user_id)
-        client = self._client(user_id, connection)
-        if client is None or not client.configured:
-            raise AssistantNotConfigured("assistant_not_configured")
-        fingerprint = hashlib.sha256(
-            json.dumps(
-                {
-                    "conversation": str(conversation_id),
-                    "message": message.strip(),
-                    "context_used": context is not None,
-                    "selection": context.get("_selection") if context else None,
-                },
-                sort_keys=True,
-            ).encode()
-        ).hexdigest()
-        if not self._slots.acquire(blocking=False):
-            raise AssistantBusy("assistant_busy")
+        client, admission, prepared = self._admit(
+            user_id, conversation_id, message=message, context=context, request_id=request_id,
+            expected_version=expected_version, memory_ids=memory_ids,
+        )
         try:
-            self.store.expire_requests(user_id)
-            admission = self.store.claim(
-                user_id,
-                conversation_id,
-                request_id,
-                message=message.strip(),
-                input_hash=fingerprint,
-                expected_version=expected_version,
-                connection_version=connection["version"] if connection else 0,
-                model=client.model,
-                context_used=context is not None,
-                daily_limit=self.daily_limit,
-            )
             if "completed" in admission:
                 return cast(dict[str, Any], admission["completed"])
             try:
                 if validate_context is not None:
                     validate_context()
-                result = client.chat(message=message, history=admission["history"], context=context)
+                result = client.chat(message=message, history=admission["history"],
+                                     context=prepared)
                 if validate_context is not None:
                     validate_context()
-                if context is not None:
-                    result["sources"] = [
-                        {
-                            "label": "Серверные данные, выбранные для этого вопроса",
-                            "kind": "investment_snapshot",
-                            "sha256": hashlib.sha256(
-                                json.dumps(
-                                    context,
-                                    sort_keys=True,
-                                    ensure_ascii=False,
-                                    default=str,
-                                    separators=(",", ":"),
-                                ).encode()
-                            ).hexdigest(),
-                            "selection": context.get("_selection"),
-                            "observed_at": context.get("generated_at"),
-                        }
-                    ]
+                validate_source_response(result["reply"], prepared)
+                result["sources"] = source_references(prepared)
                 return self.store.finish(user_id, request_id, result)
             except Exception:
                 with suppress(PermissionError):
@@ -754,3 +1233,132 @@ class AssistantService:
                 raise
         finally:
             self._slots.release()
+
+    def stream(
+        self, user_id: UUID, conversation_id: UUID, *, message: str,
+        context: Mapping[str, Any] | None, request_id: UUID, expected_version: int,
+        validate_context: Callable[[], None] | None = None, memory_ids: Sequence[UUID] = (),
+    ) -> Iterator[dict[str, Any]]:
+        client, admission, prepared = self._admit(
+            user_id, conversation_id, message=message, context=context, request_id=request_id,
+            expected_version=expected_version, memory_ids=memory_ids,
+        )
+        if "completed" in admission:
+            self._slots.release()
+            return iter([{"event": "complete", "data": {
+                "request_id": str(request_id), "result": admission["completed"], "replayed": True,
+            }}])
+        stop, finished = _Cancellation(), threading.Event()
+        events: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=64)
+        with self._active_lock:
+            closing_now = self._closing.is_set()
+            if not closing_now:
+                self._active[(user_id, request_id)] = stop
+        if closing_now:
+            self._slots.release()
+            self.store.cancel_request(user_id, request_id)
+            raise AssistantNotConfigured("assistant_shutting_down")
+
+        def emit(event: str, **data: Any) -> None:
+            record = {"event": event, "data": {"request_id": str(request_id), **data}}
+            try:
+                events.put_nowait(record)
+            except queue.Full:
+                # Every delta carries the entire persisted prefix, so a slow
+                # reader can skip an intermediate update without losing text.
+                with suppress(queue.Empty):
+                    events.get_nowait()
+                with suppress(queue.Full):
+                    events.put_nowait(record)
+
+        def run() -> None:
+            try:
+                if validate_context is not None:
+                    validate_context()
+                sources = source_references(prepared)
+                self.store.update_stream(user_id, request_id, "", sources)
+                emit("status", phase="generating", context_checked=prepared is not None)
+                prefix = ""
+                result = None
+                last_flush, flushed_characters = 0.0, 0
+                for part in client.stream(message=message, history=admission["history"],
+                                          context=prepared, cancellation=stop):
+                    stop.check()
+                    if "delta" in part:
+                        prefix += part["delta"]
+                        now = time.monotonic()
+                        if now - last_flush < 0.2 and len(prefix) - flushed_characters < 512:
+                            continue
+                        if validate_context is not None:
+                            validate_context()
+                        visible = prefix if prepared is None else ""
+                        sequence = self.store.update_stream(user_id, request_id, visible, sources)
+                        last_flush, flushed_characters = now, len(prefix)
+                        if prepared is None:
+                            emit("delta", reply_prefix=visible, sequence=sequence, provisional=True)
+                        else:
+                            emit("status", phase="generating", received_characters=len(prefix),
+                                 sequence=sequence, context_checked=True)
+                    else:
+                        result = part.get("result")
+                if not isinstance(result, dict):
+                    raise AssistantUnavailable("assistant_response_incomplete")
+                stop.check()
+                if validate_context is not None:
+                    validate_context()
+                emit("status", phase="checking_sources")
+                validate_source_response(result["reply"], prepared)
+                result["sources"] = sources
+                saved = self.store.finish(user_id, request_id, result)
+                emit("complete", result=saved)
+            except Exception as error:
+                cancelled = stop.event.is_set() or isinstance(error, AssistantCancelled)
+                try:
+                    state = self.store.read_request(user_id, request_id)
+                    cancelled = cancelled or state["status"] == "cancelled"
+                    if not cancelled:
+                        self.store.uncertain(user_id, request_id)
+                except Exception:
+                    # No private error payload crosses the SSE boundary; the
+                    # durable lease will expire if the database is unavailable.
+                    pass
+                if cancelled:
+                    emit("cancelled", code="assistant_request_cancelled")
+                else:
+                    safe_codes = {
+                        "assistant_activation_disabled", "assistant_not_configured",
+                        "assistant_context_changed", "assistant_memory_changed", "assistant_busy",
+                        "assistant_response_incomplete", "assistant_response_invalid",
+                        "assistant_response_too_large", "assistant_stream_invalid",
+                        "assistant_stream_timeout", "assistant_source_unverified",
+                        "assistant_evidence_unverified",
+                    }
+                    code = str(error) if str(error) in safe_codes else "assistant_unavailable"
+                    emit("error", code=code, incomplete=True)
+            finally:
+                with self._active_lock:
+                    self._active.pop((user_id, request_id), None)
+                self._slots.release()
+                finished.set()
+
+        worker = threading.Thread(target=run, name="assistant-stream", daemon=True)
+        try:
+            worker.start()
+        except Exception:
+            with self._active_lock:
+                self._active.pop((user_id, request_id), None)
+            self._slots.release()
+            self.store.uncertain(user_id, request_id)
+            raise
+
+        def read() -> Iterator[dict[str, Any]]:
+            yield {"event": "accepted", "data": {"request_id": str(request_id),
+                   "conversation_id": str(conversation_id), "version": admission["version"]}}
+            while not finished.is_set() or not events.empty():
+                try:
+                    yield events.get(timeout=1)
+                except queue.Empty:
+                    if not finished.is_set():
+                        yield {"event": "status", "data": {"request_id": str(request_id),
+                               "phase": "waiting_for_provider"}}
+        return read()

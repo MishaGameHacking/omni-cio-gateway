@@ -23,9 +23,34 @@ _PATHS = 2048
 _MAX_MONTHS = 360
 
 
-def normalize_goal_plan(document: object) -> dict[str, Any]:
-    if not isinstance(document, dict) or set(document) != _FIELDS:
+def goal_plan_fields(kind: str) -> tuple[str, ...]:
+    """Fields with a financial consumer for this goal; seed is an internal detail."""
+    common = ("target_in_today_money", "annual_inflation_percent")
+    if kind == "income":
+        return ("monthly_income_rub", *common)
+    if kind == "capital":
+        return ("monthly_contribution_rub", "annual_return_percent",
+                "annual_volatility_percent", *common)
+    raise ValueError("goal_plan_kind_invalid")
+
+
+def normalize_goal_plan(document: object, *, kind: str | None = None) -> dict[str, Any]:
+    if not isinstance(document, dict) or set(document) - _FIELDS:
         raise ValueError("goal_plan_fields_invalid")
+    if kind is None:
+        if set(document) != _FIELDS:
+            raise ValueError("goal_plan_fields_invalid")
+        active = _FIELDS
+    else:
+        active = set(goal_plan_fields(kind))
+        required = active - {"annual_volatility_percent", "annual_inflation_percent"}
+        if not required <= set(document):
+            raise ValueError("goal_plan_fields_invalid")
+        if document.get("target_in_today_money") is True:
+            if "annual_inflation_percent" not in document:
+                raise ValueError("goal_plan_fields_invalid")
+        else:
+            active.discard("annual_inflation_percent")
     result: dict[str, Any] = {}
     bounds = {
         "monthly_contribution_rub": (Decimal(0), Decimal("1000000000000")),
@@ -35,16 +60,18 @@ def normalize_goal_plan(document: object) -> dict[str, Any]:
         "annual_inflation_percent": (Decimal(-20), Decimal(100)),
     }
     for field, (lower, upper) in bounds.items():
-        value = amount(document[field], maximum=max(abs(lower), upper), places=4)
+        raw = document.get(field, "0") if field in active else "0"
+        value = amount(raw, maximum=max(abs(lower), upper), places=4)
         if not lower <= value <= upper:
             raise ValueError("goal_plan_value_invalid")
         result[field] = format(value, "f")
     if type(document["target_in_today_money"]) is not bool:
         raise ValueError("goal_plan_inflation_choice_invalid")
-    if type(document["seed"]) is not int or not 0 <= document["seed"] < 2**32:
+    seed = document.get("seed", 42) if kind != "income" else 42
+    if type(seed) is not int or not 0 <= seed < 2**32:
         raise ValueError("goal_plan_seed_invalid")
     result["target_in_today_money"] = document["target_in_today_money"]
-    result["seed"] = document["seed"]
+    result["seed"] = seed
     return result
 
 
@@ -97,7 +124,8 @@ def _source_progress(goal: Mapping[str, Any]) -> dict[str, Any]:
 def goal_forecast(
     goal: Mapping[str, Any], document: object, *, today: date,
 ) -> dict[str, Any]:
-    plan = normalize_goal_plan(document)
+    kind = str(goal["kind"])
+    plan = normalize_goal_plan(document, kind=kind)
     progress = _source_progress(goal)
     result: dict[str, Any] = {
         "status": "unavailable", "reason": None, "as_of": today.isoformat(),
@@ -106,6 +134,7 @@ def goal_forecast(
         "source_amount_rub": progress.get("amount_rub"),
         "method": "monthly_lognormal_scenario_v1", "assumptions": plan,
         "assumptions_source": "user_supplied", "future_success_guaranteed": False,
+        "goal_kind": kind, "applicable_fields": list(goal_plan_fields(kind)),
         "limits": [
             "Returns, volatility, inflation and contributions are assumptions, not forecasts.",
             "Month-end contributions; geometric return assumption after costs.",
@@ -140,6 +169,8 @@ def goal_forecast(
     required = max(0.0, (adjusted_target - capital * growth) / annuity)
     path: list[dict[str, Any]] = [
         {"month": month, "amount_rub": _money(_future(capital, monthly, log_rate, month)),
+             "contributions_rub": _money(monthly * month),
+             "source_amount_rub": _money(capital),
              "target_rub": _money(target * math.exp(inflation * month))}
             for month in range(months + 1)]
     reached = next((point["month"] for point in path
@@ -152,6 +183,12 @@ def goal_forecast(
         "required_monthly_rub": _money(required),
         "required_monthly_kind": "income" if income else "contribution",
         "deterministic_months_to_target": reached, "scenario_path": path,
+        "chart_contract": {
+            "kind": "scenario", "x": "model_month", "currency": "RUB",
+            "source_amount_rub": result["source_amount_rub"],
+            "source_as_of": result["source_as_of"], "start_date": today.isoformat(),
+            "target_date": end.isoformat(), "observed_history": False,
+        },
         "simulation": None,
     })
     if income:

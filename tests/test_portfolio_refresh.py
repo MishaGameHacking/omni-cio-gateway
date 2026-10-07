@@ -5,13 +5,14 @@ from __future__ import annotations
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from threading import Event, Lock
 from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
 
 import pytest
-from test_observer import LEGAL_VERSIONS, USER_ID, FakeBroker, FakeStore
+from test_observer import LEGAL_VERSIONS, USER_ID, FakeBroker, FakeStore, bundle
 
 from omnicio.observer import (
     ObservationInterrupted,
@@ -34,14 +35,19 @@ class RefreshStore(FakeStore):
         self.jobs = [manual_job()]
         self.locked = False
         self.completed = Event()
+        self.mutex = Lock()
 
     @contextmanager
-    def observer_lock(self) -> Iterator[bool]:
-        self.locked = self.lock_available
+    def observer_lock(self, user_id: UUID | None = None) -> Iterator[bool]:
+        acquired = self.lock_available and self.mutex.acquire(blocking=False)
+        if acquired:
+            self.locked = True
         try:
-            yield self.locked
+            yield acquired
         finally:
-            self.locked = False
+            if acquired:
+                self.locked = False
+                self.mutex.release()
 
     def claim_refresh_job(self, user_id: UUID, versions: dict[str, str]):
         assert self.locked
@@ -113,6 +119,43 @@ def test_refresh_history_limit_is_partial_and_retains_the_continuation_cursor() 
     assert details["snapshot_saved"] is True
 
 
+def test_quick_refresh_saves_nav_and_bounded_history_without_full_enrichment() -> None:
+    store, broker = RefreshStore(), FakeBroker()
+    store.jobs = [replace(store.jobs[0], refresh_scope="quick")]
+    observed = bundle("partial")
+    observed = replace(observed, analysis=replace(observed.analysis, valuation_status="complete"))
+    broker.observation_bundle = Mock(return_value=observed)
+    broker.evidence = Mock(side_effect=AssertionError("quick refresh must defer fundamentals"))
+    broker.user_info = Mock(side_effect=AssertionError("quick refresh must not read user profile"))
+    coordinator = PortfolioRefreshCoordinator(store, broker, legal_versions=LEGAL_VERSIONS)
+    assert coordinator.run_pending()
+    broker.observation_bundle.assert_called_once_with(USER_ID, quick=True)
+    assert store.saved_snapshots == 1
+    assert store.saved_evidence == 0
+    assert broker.seen_cursors == [""]
+    status, details = store.finished[0]
+    assert status == "degraded"
+    assert details["valuation_status"] == "complete"
+    assert details["history_status"] == "continuation_pending"
+    assert details["evidence_status"] == "deferred_to_full_refresh"
+
+
+def test_quick_refresh_never_retries_a_failed_provider_read_or_marks_it_fresh() -> None:
+    from omnicio.tbank import TBankUnavailable
+
+    store, broker = RefreshStore(), FakeBroker()
+    store.jobs = [replace(store.jobs[0], refresh_scope="quick")]
+    broker.revalidate_account = Mock(side_effect=TBankUnavailable("provider unavailable"))
+    coordinator = PortfolioRefreshCoordinator(store, broker, legal_versions=LEGAL_VERSIONS)
+    with patch("omnicio.observer.time.sleep") as sleep:
+        assert coordinator.run_pending()
+    broker.revalidate_account.assert_called_once()
+    sleep.assert_not_called()
+    assert store.saved_snapshots == 0
+    assert store.finished[0][0] == "degraded"
+    assert store.finished[0][1]["snapshot_saved"] is False
+
+
 def test_refresh_with_incomplete_portfolio_never_reports_complete_success() -> None:
     store, broker = RefreshStore(), FakeBroker(analysis_status="partial")
     coordinator = PortfolioRefreshCoordinator(store, broker, legal_versions=LEGAL_VERSIONS)
@@ -140,7 +183,8 @@ def test_refresh_enqueue_admission_is_bounded_and_released_after_failure() -> No
     ready, release, mutex = Event(), Event(), Lock()
     admitted = 0
 
-    def enqueue(owner: UUID, versions: dict[str, str]) -> dict[str, object]:
+    def enqueue(owner: UUID, versions: dict[str, str], *, scope: str) -> dict[str, object]:
+        assert scope == "full"
         nonlocal admitted
         with mutex:
             admitted += 1
@@ -165,7 +209,7 @@ def test_refresh_enqueue_admission_is_bounded_and_released_after_failure() -> No
     store.request_refresh.side_effect = None
     store.request_refresh.return_value = {"status": "queued", "job_id": "server-job"}
     assert coordinator.request(USER_ID) == {"status": "queued", "job_id": "server-job"}
-    store.request_refresh.assert_called_with(USER_ID, LEGAL_VERSIONS)
+    store.request_refresh.assert_called_with(USER_ID, LEGAL_VERSIONS, scope="full")
 
 
 def test_worker_start_recovers_existing_queue_and_shutdown_rejects_new_work() -> None:

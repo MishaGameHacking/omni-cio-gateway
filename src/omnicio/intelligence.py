@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Literal
 
 from .broker import BrokerEvidenceSnapshot, BrokerObservationBundle
+from .strategy_assessment import rating_notch
 from .tbank import (
     TBankAssetFundamental,
     TBankAssetReport,
@@ -16,6 +17,7 @@ from .tbank import (
     TBankDividend,
     TBankInstrumentMetadata,
     TBankPortfolioPosition,
+    TBankRating,
 )
 
 RiskState = Literal[
@@ -65,6 +67,7 @@ TBANK_ASSET_REPORTS_SOURCE = (
 TBANK_FUNDAMENTALS_SOURCE = (
     "https://developer.tbank.ru/invest/api/instruments-service-get-asset-fundamentals"
 )
+TBANK_RATINGS_SOURCE = "https://developer.tbank.ru/invest/api/instruments-service-bond-by"
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +127,11 @@ class InstrumentRiskAssessment:
 def rating_source_references() -> tuple[dict[str, str], ...]:
     """Describe official rating sources without pretending unconfigured feeds were ingested."""
     return (
+        {
+            "id": "tbank_bond_ratings", "name": "T-Invest — рейтинги эмитентов облигаций",
+            "url": TBANK_RATINGS_SOURCE, "access": "connected_broker",
+            "ingestion": "provider_observed",
+        },
         {
             "id": "cbr_rating_repository",
             "name": "Банк России — рейтинговый репозитарий",
@@ -398,6 +406,7 @@ def _held_position_assessment(
     evidence_stale: bool,
     assessed_at: datetime,
     evidence_refreshed_at: datetime,
+    ratings: tuple[TBankRating, ...] = (),
 ) -> InstrumentRiskAssessment:
     uid = position.instrument_uid or position.figi
     info = metadata_by_uid.get(position.instrument_uid)
@@ -418,10 +427,11 @@ def _held_position_assessment(
             status=fundamental_status,
         )
     )
+    current_ratings = tuple(rating for rating in ratings if rating_notch(rating, assessed_at))
     rating_status: DataStatus = (
         "not_applicable"
         if position.instrument_type == "etf"
-        else "data_missing"
+        else "received" if current_ratings and not evidence_stale else "data_missing"
     )
     state, reasons = _held_risk_state(
         position=position,
@@ -433,6 +443,18 @@ def _held_position_assessment(
         source_status=source_status,
         evidence_stale=evidence_stale,
     )
+    if state != "confirmed_default" and current_ratings and not evidence_stale:
+        notches = {rating_notch(rating, assessed_at) for rating in current_ratings}
+        if "D" in notches:
+            state = "critical"
+            reasons.append("issuer_default_rating_requires_issue_verification")
+        elif notches & {"CCC+", "CCC", "CCC-", "CC", "C"}:
+            state = "elevated"
+            reasons.append("issuer_very_low_credit_rating")
+        elif any(rating.is_under_watch for rating in current_ratings):
+            if state in {"normal", "data_missing"}:
+                state = "watch"
+            reasons.append("issuer_rating_under_watch")
     return InstrumentRiskAssessment(
         instrument_uid=uid,
         state=state,
@@ -447,7 +469,9 @@ def _held_position_assessment(
             "default_date": (
                 default_date.isoformat() if default_date is not None else None
             ),
-            "rating_policy": "missing_until_licensed_feed_is_verified",
+            "rating_policy": "observed_tbank_issuer_rating_not_issue_rating",
+            "rating_source_url": TBANK_RATINGS_SOURCE,
+            "ratings": [asdict(rating) for rating in ratings],
             "fundamental_max_age_days": FUNDAMENTAL_MAX_AGE.days,
             "evidence_retrieval_max_age_hours": int(
                 EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds() // 3600
@@ -473,6 +497,8 @@ def build_tbank_evidence(
 
     fundamentals = {item.asset_uid: item for item in evidence.fundamentals}
     documents = [
+        *(_rating_document(uid, rating) for uid, values in evidence.ratings.items()
+          for rating in values),
         *(_fundamental_document(item) for item in evidence.fundamentals),
         *(_dividend_document(item) for item in evidence.dividends),
         *(_coupon_document(item) for item in evidence.coupons),
@@ -500,6 +526,7 @@ def build_tbank_evidence(
         if uid in seen:
             continue
         seen.add(uid)
+        info = metadata_by_uid.get(position.instrument_uid) or metadata_by_figi.get(position.figi)
         assessments.append(
             _held_position_assessment(
                 position,
@@ -511,9 +538,25 @@ def build_tbank_evidence(
                 evidence_stale=evidence_stale,
                 assessed_at=assessed_at,
                 evidence_refreshed_at=evidence.refreshed_at,
+                ratings=evidence.ratings.get(info.uid if info is not None else uid, ()),
             )
         )
     return tuple(documents), tuple(assessments)
+
+
+def _rating_document(instrument_uid: str, rating: TBankRating) -> EvidenceDocument:
+    payload = {**asdict(rating), "rating_object": "issuer", "instrument_uid": instrument_uid}
+    key = f"{rating.agency_name}:{rating.rating_date.isoformat()}"
+    return EvidenceDocument(
+        provider="tbank", document_type="issuer_rating", subject_uid=instrument_uid,
+        provider_key=key, source_url=TBANK_RATINGS_SOURCE,
+        published_at=rating.rating_date, effective_at=rating.rating_date, payload=payload,
+        facts=(EvidenceFact(
+            subject_uid=instrument_uid, fact_type="issuer_rating", fact_key=key,
+            value_text=rating.rating_level, unit="agency_national_scale",
+            effective_at=rating.rating_date, published_at=rating.rating_date, payload=payload,
+        ),),
+    )
 
 def assess_candidate_fundamental_risk(
     info: TBankInstrumentMetadata,

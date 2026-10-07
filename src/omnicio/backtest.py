@@ -23,7 +23,7 @@ from .tbank import TBankHistoricCandle
 ResearchBasis = Literal["unadjusted_price", "verified_total_return"]
 HISTORY_SOURCE = "https://developer.tbank.ru/invest/api/market-data-service-get-candles"
 MAX_RESEARCH_ASSETS = 100
-RESEARCH_ENGINE_VERSION = "1.2.0"
+RESEARCH_ENGINE_VERSION = "1.3.0"
 MAX_RESEARCH_DAYS = 1095
 MIN_TRAIN_OBSERVATIONS = 60
 MIN_TEST_OBSERVATIONS = 20
@@ -906,10 +906,15 @@ def _selected_evidence_requirements(
 def _common_research_times(
     panel: Mapping[str, Mapping[datetime, TBankHistoricCandle]],
     split: datetime,
+    *, trim_boundaries: bool = True,
 ) -> tuple[int, list[datetime], list[datetime], set[str]]:
     common = set.intersection(*(set(series) for series in panel.values())) if panel else set()
     missing = set()
-    if panel and any(set(series) != common for series in panel.values()):
+    compared = [set(series) for series in panel.values()]
+    if common and trim_boundaries:
+        first, last = min(common), max(common)
+        compared = [{when for when in dates if first <= when <= last} for dates in compared]
+    if any(dates != common for dates in compared):
         missing.add("unaligned_history")
     training_times = sorted(when for when in common if when + _DAY <= split)
     test_times = sorted(when for when in common if when >= split)
@@ -1144,7 +1149,17 @@ def run_strategy_backtest(
         asset.candidate.instrument_uid: {bar.time: bar for bar in asset.candles}
         for asset in selected_assets
     }
-    observations, training_times, test_times, history_missing = _common_research_times(panel, split)
+    observations, training_times, test_times, history_missing = _common_research_times(
+        panel, split, trim_boundaries=engine_version not in {"1.1.0", "1.2.0"},
+    )
+    if engine_version not in {"1.1.0", "1.2.0"}:
+        result["history_alignment"] = {
+            "method": "observed_common_sessions_without_fill",
+            "common_observations": observations,
+            "input_observations": {uid: len(series) for uid, series in panel.items()},
+            "internal_gaps": "unaligned_history" in history_missing,
+            "boundary_trimmed": any(len(series) != observations for series in panel.values()),
+        }
     missing.update(history_missing)
     result["period"].update(
         observations=observations,

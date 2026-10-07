@@ -17,6 +17,8 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .freshness import PORTFOLIO_MAX_AGE
+
 CATEGORIES = ("portfolio", "payments", "goals", "system")
 _MOSCOW_TIMEZONE = "Europe/Moscow"
 DEFAULT_PREFERENCES: dict[str, Any] = {
@@ -33,6 +35,8 @@ DEFAULT_PREFERENCES: dict[str, Any] = {
         "timezone": _MOSCOW_TIMEZONE,
     },
     "digest_frequency": "off",
+    "digest_time": "20:30",
+    "digest_timezone": _MOSCOW_TIMEZONE,
 }
 GOAL_FIELDS = (
     "title",
@@ -107,6 +111,13 @@ def default_preferences() -> dict[str, Any]:
 
 
 def normalize_preferences(value: object) -> dict[str, Any]:
+    # Legacy clients/documents retain the original midnight delivery schedule.
+    if isinstance(value, dict) and set(value) == set(DEFAULT_PREFERENCES) - {
+        "digest_time", "digest_timezone",
+    }:
+        quiet_value = value.get("quiet_hours")
+        legacy_zone = quiet_value.get("timezone") if isinstance(quiet_value, dict) else None
+        value = {**value, "digest_time": "00:00", "digest_timezone": legacy_zone}
     data = _exact(value, tuple(DEFAULT_PREFERENCES))
     notifications = _exact(data["notifications"], CATEGORIES)
     quiet = _exact(data["quiet_hours"], ("enabled", "start", "end", "timezone"))
@@ -123,6 +134,16 @@ def normalize_preferences(value: object) -> dict[str, Any]:
     timezone = _text(quiet["timezone"], maximum=64)
     try:
         ZoneInfo(timezone)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError("workspace_timezone_invalid") from exc
+    digest_time = data["digest_time"]
+    if not isinstance(digest_time, str) or not re.fullmatch(
+        r"(?:[01]\d|2[0-3]):[0-5]\d", digest_time, flags=re.ASCII,
+    ):
+        raise ValueError("workspace_digest_time_invalid")
+    digest_timezone = _text(data["digest_timezone"], maximum=64)
+    try:
+        ZoneInfo(digest_timezone)
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise ValueError("workspace_timezone_invalid") from exc
     watchlist = data["watchlist"]
@@ -157,6 +178,8 @@ def normalize_preferences(value: object) -> dict[str, Any]:
             "timezone": timezone,
         },
         "digest_frequency": _choice(data["digest_frequency"], ("off", "daily", "weekly")),
+        "digest_time": digest_time,
+        "digest_timezone": digest_timezone,
     }
     # Match the database's JSONB text-size boundary before attempting a write.
     # Individual field limits alone do not bound a 50-item Unicode watchlist.
@@ -304,6 +327,31 @@ _NON_INCOME_TRANSFERS = {
 }
 
 
+def operation_category(operation_type: object) -> str:
+    """One classification shared by the ledger and financial explanations."""
+    kind = str(operation_type or "").removeprefix("OPERATION_TYPE_")
+    for choices, category in (
+        (_INPUT, "contribution"), (_OUTPUT, "withdrawal"), (_FEES, "fee"),
+        (_TAXES, "tax"), (_INCOME.keys(), "income"), (_REDEMPTIONS, "principal_return"),
+        (_INTERNAL, "internal"), (_NON_INCOME_TRANSFERS, "non_cash_transfer"),
+    ):
+        if kind in choices:
+            return category
+    return "unclassified"
+
+
+def _cashflow_metric(kind: str) -> str:
+    if kind in _INPUT | _OUTPUT:
+        return "net_contributions_rub"
+    if kind in _FEES:
+        return "fees_rub"
+    if kind in _TAXES:
+        return "taxes_rub"
+    if kind in _REDEMPTIONS:
+        return "redemptions_rub"
+    return _INCOME[kind]
+
+
 def _operation_amount(operation: Mapping[str, Any]) -> Decimal | None:
     if str(operation.get("payment_currency") or "").upper() != "RUB":
         return None
@@ -396,14 +444,36 @@ def cashflow_summary(
     months: dict[str, dict[str, Decimal]] = {}
     reasons = set() if complete else {"history_incomplete"}
     income_reasons = set(reasons)
+    metric_reasons = {key: set(reasons) for key in values}
+    metric_counts = dict.fromkeys(values, 0)
+    native: dict[str, dict[str, Decimal]] = {}
     for operation in operations:
+        previous_reasons, previous_income_reasons = set(reasons), set(income_reasons)
         parsed = _executed_cashflow(operation, from_at, to_at, reasons, income_reasons)
         if parsed is None:
+            for key in values:
+                new_reasons = (income_reasons - previous_income_reasons
+                               if key in (*_INCOME_FIELDS, "redemptions_rub")
+                               else reasons - previous_reasons)
+                metric_reasons[key].update(new_reasons)
             continue
         kind, at = parsed
+        metric = _cashflow_metric(kind)
+        currency = str(operation.get("payment_currency") or "").upper()
+        try:
+            native_payment = amount(operation.get("payment_value"))
+        except ValueError:
+            native_payment = None
+        if native_payment is not None and re.fullmatch(r"[A-Z]{3}", currency):
+            currency_values = native.setdefault(currency, dict.fromkeys(values, _ZERO))
+            _accumulate_cashflow(kind, at, native_payment, currency_values, {})
         payment = _cashflow_payment(operation, kind, reasons, income_reasons)
         if payment is None:
+            metric_reasons[metric].update(reasons - previous_reasons or {
+                "payment_currency_or_amount_unavailable",
+            })
             continue
+        metric_counts[metric] += 1
         _accumulate_cashflow(kind, at, payment, values, months)
     income_total = sum((values[key] for key in _INCOME_FIELDS), _ZERO)
     return {
@@ -412,6 +482,21 @@ def cashflow_summary(
         "from": from_at.isoformat(),
         "to": to_at.isoformat(),
         **{key: decimal_text(value) if not reasons else None for key, value in values.items()},
+        "metrics": {key: {
+            "status": "complete" if not metric_reasons[key] else (
+                "partial" if metric_counts[key] else "unavailable"
+            ),
+            "value_rub": decimal_text(value) if not metric_reasons[key] else None,
+            "observed_rub": decimal_text(value) if metric_counts[key] else None,
+            "reason": ",".join(sorted(metric_reasons[key])) or None,
+        } for key, value in values.items()},
+        "native_payment_sums": {
+            "basis": "observed_executed_payments_without_fx_conversion",
+            "history_complete": complete,
+            "currencies": {currency: {
+                key.removesuffix("_rub"): decimal_text(value) for key, value in row.items()
+            } for currency, row in sorted(native.items())},
+        },
         "income": {
             "status": "available" if not income_reasons else "unavailable",
             "reason": ",".join(sorted(income_reasons)) or None,
@@ -434,8 +519,30 @@ def cashflow_summary(
             else [],
             "source_url": _SOURCE,
             "tax_basis": "broker_payments_before_separate_tax_operations",
+            "metric_coverage": {key: {
+                "status": "complete" if not metric_reasons[key] else "partial",
+                "value_rub": decimal_text(values[key]) if not metric_reasons[key] else None,
+                "observed_rub": decimal_text(values[key]) if metric_counts[key] else None,
+                "reason": ",".join(sorted(metric_reasons[key])) or None,
+            } for key in (*_INCOME_FIELDS, "redemptions_rub")},
+            "native_payment_sums": {currency: {
+                key.removesuffix("_rub"): decimal_text(row[key])
+                for key in (*_INCOME_FIELDS, "redemptions_rub")
+            } for currency, row in sorted(native.items())},
         },
     }
+
+
+def snapshot_valuation_complete(snapshot: Mapping[str, Any]) -> bool:
+    """Use independent NAV coverage; legacy snapshots require observed status."""
+    valuation_status = snapshot.get("valuation_status")
+    evidence = snapshot.get("evidence")
+    if valuation_status is None and isinstance(evidence, Mapping):
+        analysis = evidence.get("analysis")
+        if isinstance(analysis, Mapping):
+            valuation_status = analysis.get("valuation_status")
+    return (valuation_status == "complete" if valuation_status is not None
+            else snapshot.get("analysis_status") == "observed")
 
 
 def portfolio_performance(
@@ -483,7 +590,7 @@ def portfolio_performance(
         if watermark is not None
         and (at := timestamp(row.get("captured_at"))) is not None
         and at <= watermark
-        and row.get("analysis_status") == "observed"
+        and snapshot_valuation_complete(row)
     ]
     covered.sort(key=lambda row: timestamp(row["captured_at"]) or datetime.min.replace(tzinfo=UTC))
     if len(covered) < 2:
@@ -506,13 +613,21 @@ def portfolio_performance(
             "nav_change_rub": decimal_text(delta),
             "net_contributions_rub": flow["net_contributions_rub"],
             "income_received_rub": flow["income"]["total_rub"],
-            "fees_rub": flow["fees_rub"],
-            "taxes_rub": flow["taxes_rub"],
+            "fees_rub": flow["metrics"]["fees_rub"]["value_rub"],
+            "taxes_rub": flow["metrics"]["taxes_rub"]["value_rub"],
         }
     )
-    if flow["status"] == "available":
+    contribution = flow["metrics"]["net_contributions_rub"]
+    result["metric_coverage"] = flow["metrics"]
+    result["native_payment_sums"] = flow["native_payment_sums"]
+    result["nav_status"] = "complete"
+    if contribution["status"] == "complete":
+        result.update(status="available", reason=None,
+                      net_contributions_rub=contribution["value_rub"])
         # Expenses and payouts already change NAV: do not subtract/add them twice.
-        investment_result = delta - amount(flow["net_contributions_rub"])
+        # Foreign internal payouts/fees need no FX approximation for the RUB
+        # account result. Only external transfers require a known RUB value.
+        investment_result = delta - amount(contribution["value_rub"])
         result["investment_result_rub"] = decimal_text(investment_result)
         denominator = _dietz_denominator(start_nav, operations, begin, end)
         result["return_denominator_rub"] = decimal_text(denominator)
@@ -523,7 +638,7 @@ def portfolio_performance(
         else:
             result["return_reason"] = "non_positive_or_negligible_invested_capital"
     else:
-        result["return_reason"] = flow["reason"]
+        result["return_reason"] = contribution["reason"]
     return result
 
 
@@ -560,7 +675,7 @@ def _portfolio_goal_amount(
     observed = timestamp(snapshot.get("captured_at")) if snapshot else None
     if (
         snapshot is None or observed is None or observed > now
-        or snapshot.get("analysis_status") != "observed"
+        or not snapshot_valuation_complete(snapshot)
     ):
         return None, observed, "portfolio_not_reconciled"
     current = amount(snapshot["nav_rub"]) * amount(goal["allocation_percent"]) / _HUNDRED
@@ -630,7 +745,7 @@ def goal_progress(
             percent=decimal_text(current / target * _HUNDRED),
             remaining_rub=decimal_text(max(_ZERO, target - current)),
         )
-        if source != "manual" and observed is not None and now - observed > timedelta(hours=36):
+        if source != "manual" and observed is not None and now - observed >= PORTFOLIO_MAX_AGE:
             result["status"] = "stale"
     return result
 
@@ -648,20 +763,35 @@ def event_digest(
     frequency = preferences["digest_frequency"]
     start = now
     if frequency != "off":
-        local = now.astimezone(ZoneInfo(preferences["quiet_hours"]["timezone"]))
+        local = now.astimezone(ZoneInfo(preferences.get(
+            "digest_timezone", preferences["quiet_hours"]["timezone"],
+        )))
         start = local.replace(hour=0, minute=0, second=0, microsecond=0)
         if frequency == "weekly":
             start -= timedelta(days=start.weekday())
     counts = dict.fromkeys(CATEGORIES, 0)
+    selected = []
     if frequency != "off":
         for item in events:
             at = timestamp(item.get("updated_at"))
-            if at is not None and start <= at <= now and item.get("read_at") is None:
+            if (at is not None and start <= at <= now and item.get("read_at") is None
+                    and preferences["notifications"].get(item["category"], False)):
                 counts[item["category"]] += 1
+                selected.append(item)
+    selected.sort(key=lambda item: (
+        {"critical": 2, "warning": 1}.get(str(item.get("severity")), 0),
+        timestamp(item.get("updated_at")) or start,
+    ), reverse=True)
     return {
         "frequency": frequency,
         "period_basis": "available_at",
         "from": start.isoformat(),
+        "to": now.isoformat(),
         "count": sum(counts.values()),
         "by_category": counts,
+        "source_basis": "persisted_owner_events",
+        "highlights": [{key: row.get(key) for key in (
+            "id", "category", "kind", "severity", "title", "detail", "occurred_at", "destination",
+        )} for row in selected[:8]],
+        "highlights_limit": 8,
     }

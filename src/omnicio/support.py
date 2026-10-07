@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections.abc import Sequence
+from urllib.parse import quote
 
 from .config import required
 from .db import Database, UserRecord
@@ -18,6 +20,28 @@ from .security import SecurityValueError, format_public_id, parse_public_id
 
 class SupportCommandError(RuntimeError):
     """Raised for invalid or impossible support operations."""
+
+
+def public_support_contact(name: str, email: str) -> dict[str, object]:
+    """Expose the published operator contact; opening a draft does not send it."""
+    safe_name = name.strip()
+    safe_email = email.strip()
+    configured = bool(
+        3 <= len(safe_name) <= 200
+        and len(safe_email) <= 254
+        and re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}",
+                         safe_email)
+        and not any(ord(char) < 32 or ord(char) == 127 for char in safe_name)
+    )
+    return {
+        "configured": configured,
+        "name": safe_name if configured else None,
+        "email": safe_email if configured else None,
+        "mailto": "mailto:" + quote(safe_email, safe="@.") if configured else None,
+        "scope": "user_initiated_email",
+        "safe_fields": ["request_id", "release", "route", "description"],
+        "automatically_sent": False,
+    }
 
 
 def validate_reason(value: str) -> str:

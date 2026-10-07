@@ -458,6 +458,7 @@ def test_events_filters_and_durable_read_request_reach_the_owner_store(
     assert response.status_code == 200
     store.events.assert_called_once_with(
         OWNER.id, limit=40, unread_only=True, category="payments", cursor=None, query="",
+        important_only=False,
     )
     assert client.get("/api/events?category=unknown").status_code == 422
     response = client.post(

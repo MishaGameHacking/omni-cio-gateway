@@ -75,7 +75,7 @@ def test_refresh_get_post_are_bound_to_session_and_return_private_status(
     assert response.status_code == 200
     assert response.json() == {**JOB, "public_id": "000001801"}
     assert response.headers["cache-control"] == "private, no-store"
-    refresh.request.assert_called_once_with(OWNER.id)
+    refresh.request.assert_called_once_with(OWNER.id, scope="quick")
     response = client.get(
         "/api/workspace/refresh", params={"user_id": str(OTHER.id)}, headers=HEADERS,
     )
@@ -125,7 +125,7 @@ def test_refresh_discards_status_after_session_changes_during_store_io(
 ) -> None:
     client, auth, _, refresh, _ = refresh_http
 
-    def revoked(owner: UUID) -> dict[str, Any]:
+    def revoked(owner: UUID, *, scope: str = "full") -> dict[str, Any]:
         auth.refresh_session.side_effect = None
         auth.refresh_session.return_value = None if change == "logout" else OTHER
         return JOB
@@ -136,7 +136,7 @@ def test_refresh_discards_status_after_session_changes_during_store_io(
     response = client.request(method, "/api/workspace/refresh", headers=HEADERS, **kwargs)
     assert response.status_code == (401 if change == "logout" else 409)
     assert "job_id" not in response.json()
-    action.assert_called_once_with(OWNER.id)
+    action.assert_called_once_with(OWNER.id, **({"scope": "quick"} if method == "POST" else {}))
 
 
 def test_refresh_rechecks_consent_after_enqueue_and_reports_busy_without_new_authority(
@@ -144,7 +144,7 @@ def test_refresh_rechecks_consent_after_enqueue_and_reports_busy_without_new_aut
 ) -> None:
     client, _, database, refresh, _ = refresh_http
 
-    def revoked(owner: UUID) -> dict[str, Any]:
+    def revoked(owner: UUID, *, scope: str = "full") -> dict[str, Any]:
         database.has_legal_versions.return_value = False
         return JOB
 

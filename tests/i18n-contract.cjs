@@ -74,7 +74,7 @@ assert.equal(I.preset({id: "unknown", title: "Сбалансированная"}
 const source = {id: "buffett1989", title: "Berkshire Hathaway: письмо 1989 года", url: "https://www.berkshirehathaway.com/letters/1989.html"};
 assert.equal(I.catalogSource(source).title, "Berkshire Hathaway: 1989 shareholder letter");
 assert.equal(I.catalogSource(source).url, source.url);
-const displayContext = {window: {OMNICIO_I18N: I}, Intl, console};
+const displayContext = {window: {OMNICIO_I18N: I}, Intl, console, URLSearchParams};
 vm.runInNewContext(readFileSync(join(__dirname, "../web/workspace.js"), "utf8"), displayContext);
 displayContext.window.OmniUI.setLocale("en");
 assert.equal(displayContext.window.OmniUI.navigation.find(([key]) => key === "events")[1], "Events");
@@ -82,6 +82,22 @@ assert.ok(displayContext.window.OmniUI.periods("portfolio", "1d").includes("1D")
 displayContext.window.OmniUI.setLocale("ru");
 assert.equal(displayContext.window.OmniUI.navigation.find(([key]) => key === "events")[1], "События", "Labels must be evaluated in the current locale, not frozen at page startup");
 assert.ok(displayContext.window.OmniUI.periods("portfolio", "1d").includes("1Д"));
+const U = displayContext.window.OmniUI;
+for (const hash of ["#demo/market/reference?currency=CNY&reference_period=1y", "#account/portfolio/positions?assets=bond&sort=price&direction=-1", "#account/goals/plan?goal=00000000-0000-4000-8000-000000000001", "#public/features"]) {
+  const route = U.parseRoute(hash);
+  assert.equal(route.invalid, false, "A supported nested screen is a valid bookmark");
+  assert.equal(U.routeHash(route), hash, "Mode, screen and controls survive a URL round trip");
+}
+assert.equal(U.parseRoute("#public-strategies").mode, "public");
+assert.equal(U.parseRoute("#asset?uid=synthetic-a").uid, "synthetic-a");
+assert.equal(U.parseRoute("#demo/unsupported").invalid, true);
+assert.equal(U.parseRoute("#account/settings/unknown").invalid, true);
+assert.equal(U.parseRoute("#public/features/unknown").invalid, true);
+assert.equal(U.parseRoute("#account/home?user_id=other").user_id, undefined, "Navigation never accepts tenant authority fields");
+const scenario = U.chart([{month: 0, amount_rub: "100", target_rub: "200", contributions_rub: "0"}, {month: 12, amount_rub: "220", target_rub: "240", contributions_rub: "120"}], {timeKey: "month", valueKey: "amount_rub", xKind: "model_month", comparison: [{key: "target_rub", label: "Target"}, {key: "contributions_rub", label: "Contributions"}]});
+assert.ok(scenario.includes("Месяц 12"));
+assert.ok(!scenario.includes("1970"), "Model months cannot masquerade as observed calendar dates");
+assert.ok(scenario.includes("chart-comparison-0") && scenario.includes("chart-comparison-1"), "Scenario, target and contributions are separate real numerical series");
 for (const file of ["app.js", "workspace.js"]) {
   const code = readFileSync(join(__dirname, "../web/", file), "utf8");
   for (const match of code.matchAll(/\b[TH]\(("(?:\\.|[^"\\])*")/g)) {

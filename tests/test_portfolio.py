@@ -138,6 +138,25 @@ def test_fund_look_through_foreign_currency_and_unknown_coverage() -> None:
     assert report.valued_security_count == 1
     assert report.securities[1].value_rub is None
     assert report.status == "partial"
+    assert report.valuation_status == "complete"
+    assert report.positions_valuation_status == "partial"
+    assert report.sector_status == "partial"
+
+
+def test_fund_sector_coverage_cannot_invalidate_fully_observed_rub_nav() -> None:
+    report = analyze_portfolio(
+        portfolio(position("fund", "9", "100", "etf")), cash(),
+        (metadata("fund", "financial", "etf"),),
+    )
+    assert report.status == "partial"
+    assert report.valuation_status == "complete"
+    assert report.positions_valuation_status == "complete"
+    assert report.sector_status == "partial"
+    impossible = analyze_portfolio(
+        portfolio(position("fund", "20", "100", "etf")), cash(), (),
+    )
+    assert impossible.valuation_status == "unavailable"
+    assert impossible.rub_cash_unblocked is None
 
 
 @pytest.mark.parametrize(

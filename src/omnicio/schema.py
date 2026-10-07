@@ -35,6 +35,25 @@ SELECT
                                'created_at', 'updated_at', 'expires_at')
     )
     AND to_regclass('public.goal_plans') IS NOT NULL
+    AND to_regclass('public.assistant_memory') IS NOT NULL
+    AND to_regclass('public.assistant_memory_recent') IS NOT NULL
+    AND EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.assistant_messages') AND contype = 'c'
+          AND convalidated AND conname = 'assistant_messages_source_refs_size'
+    )
+    AND (
+        SELECT count(*) = 8 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'assistant_memory'
+          AND column_name IN ('user_id', 'id', 'version', 'content', 'category', 'origin',
+                              'created_at', 'updated_at')
+    )
+    AND (
+        SELECT count(*) = 4 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'assistant_requests'
+          AND column_name IN ('reply_prefix', 'stream_sequence', 'source_refs', 'updated_at')
+          AND is_nullable = 'NO'
+    )
     AND (
         SELECT count(*) = 5 FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'billing_payments'
@@ -220,7 +239,7 @@ SELECT
           )
     )
     AND (
-        SELECT count(*) = 31
+        SELECT count(*) = 32
         FROM pg_class AS c
         JOIN pg_namespace AS n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public'
@@ -255,6 +274,7 @@ SELECT
                   'assistant_conversations',
                   'assistant_requests',
                   'assistant_messages',
+                  'assistant_memory',
                   'billing_payments'
               ]
           )

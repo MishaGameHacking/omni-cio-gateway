@@ -29,6 +29,7 @@ from omnicio.security import (
     parse_public_id,
     pkce_challenge,
     seal_oauth_flow,
+    validate_auth_return_to,
 )
 
 
@@ -147,6 +148,25 @@ def test_client_ip_digest_is_keyed() -> None:
         "203.0.113.10",
         second,
     )
+
+
+def test_auth_route_validator_preserves_filters_and_rejects_injected_flow_payload() -> None:
+    import json
+
+    destination = "/#account/market/news?q=%D0%A6%D0%91&filter=all"
+    assert validate_auth_return_to(destination) == destination
+    key = Fernet.generate_key().decode("ascii")
+    token = seal_oauth_flow(state="state", code_verifier="v" * 64, legal_versions={},
+                            crypto_key=key, return_to=destination)
+    cipher = Fernet(key.encode())
+    document = json.loads(cipher.decrypt(token.encode()))
+    document["return_to"] = "https://untrusted.invalid"
+    injected = cipher.encrypt(json.dumps(document).encode()).decode()
+    with pytest.raises(SecurityValueError, match="oauth_return_to_invalid"):
+        open_oauth_flow(injected, crypto_key=key, ttl_seconds=600)
+    del document["return_to"]
+    legacy = cipher.encrypt(json.dumps(document).encode()).decode()
+    assert open_oauth_flow(legacy, crypto_key=key, ttl_seconds=600).return_to == "/#account/home"
 
 
 def _request(client_host: str, headers: dict[str, str]) -> Request:

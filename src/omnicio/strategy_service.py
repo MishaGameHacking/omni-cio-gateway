@@ -175,6 +175,14 @@ def current_account_assessment(
             "read_limit": STRATEGY_RATING_READ_LIMIT,
             "complete": len(ratings) == len(bond_ids) and all(ratings.values()),
         },
+        "issuer_source": {
+            "verified_instruments": len(_issuer_mappings(context, bundle.account_id)),
+            "held_instruments": len(bundle.analysis.securities),
+            "imported_observations": context.get("issuer_imports", []) if context else [],
+            "import_provenance": "user_supplied",
+            "imports_independently_verified": False,
+            "verified_mapping_policy": "legal_identity_and_relationship_source_required",
+        },
         "freshness": asdict(
             describe_freshness(
                 bundle.refreshed_at,

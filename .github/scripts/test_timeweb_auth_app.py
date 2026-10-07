@@ -753,7 +753,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertEqual(manifest["name"], "OMNICIO")
         for icon in manifest["icons"]:
             name = icon["src"].rsplit("/", 1)[-1]
-            self.assertTrue((root / "assets" / "brand" / "web" / name).is_file())
+            self.assertEqual(name, "omnicio-logo.png")
+            self.assertTrue((root / MODULE.BRAND_SOURCE).is_file())
 
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -768,7 +769,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "1.2.0"', project)
+        self.assertIn('version = "1.3.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
@@ -797,6 +798,9 @@ class AuthAppDeployTests(unittest.TestCase):
         build = "b" * 40
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory)
+            (output / "assets").mkdir()
+            for name in ("app.js", "workspace.js", "i18n.js"):
+                (output / "assets" / name).write_bytes((root / "web" / name).read_bytes())
             subprocess.run([
                 sys.executable, "-c", program, str(root / "pyproject.toml"), build,
                 str(root / "web" / "index.html"), str(output / "index.html"),
@@ -810,6 +814,10 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(f'const build = "{build[:12]}"', worker)
             self.assertNotIn("__OMNICIO_BUILD__", offline)
             self.assertNotIn("__OMNICIO_BUILD__", worker)
+            for name in ("app.js", "workspace.js", "i18n.js"):
+                script = (output / "assets" / name).read_text(encoding="utf-8")
+                self.assertIn(build[:12], script)
+                self.assertNotIn("__OMNICIO_BUILD__", script)
 
     def test_remote_release_publishes_all_legal_pages(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
@@ -846,6 +854,7 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             self.sha[:12],
         )).encode()
         config = json.dumps({
+            "release": {"version": "1.3.0", "build": self.sha[:12]},
             "mode": "closed",
             "registration_enabled": False,
             "registration_max_users": 1,
@@ -857,7 +866,9 @@ class PublicReleaseVerificationTests(unittest.TestCase):
         }).encode()
         self.responses = {
             "/": (root, "text/html", 200),
-            MODULE.BRAND_PUBLIC_MARK: (b"png", "image/png", 200),
+            MODULE.BRAND_PUBLIC_MARK: (
+                (SCRIPT_DIR.parent.parent / MODULE.BRAND_SOURCE).read_bytes(), "image/png", 200,
+            ),
             MODULE.WEB_MANIFEST_PATH: (b'{"icons": []}', "application/json", 200),
             MODULE.VERSION_PUBLIC_PATH: (
                 f'window.OMNICIO_RELEASE = {{"build": "{self.sha[:12]}"}}'.encode(),
@@ -866,9 +877,10 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             "/api/auth/config": (config, "application/json", 200),
         }
         for path, body, content_type in (
-            ("/assets/app.js", b"window.OmniUI", "text/javascript"),
-            ("/assets/workspace.js", b"window.OmniUI", "application/javascript"),
-            ("/assets/i18n.js", b"OMNICIO_I18N", "text/javascript"),
+            ("/assets/app.js", b"window.OmniUI " + self.sha[:12].encode(), "text/javascript"),
+            ("/assets/workspace.js", b"window.OmniUI " + self.sha[:12].encode(),
+             "application/javascript"),
+            ("/assets/i18n.js", b"OMNICIO_I18N " + self.sha[:12].encode(), "text/javascript"),
             ("/assets/app.css", b"--sidebar:240px", "text/css"),
             ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", "image/png"),
             ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", "image/png"),

@@ -7,13 +7,14 @@
   <link rel="stylesheet" href="/assets/app.css?build=__OMNICIO_BUILD__">
   <title data-i18n-text="[&quot;Нет сети · OMNICIO&quot;]">Нет сети · OMNICIO</title>
   <script src="/assets/i18n.js?build=__OMNICIO_BUILD__" defer></script>
+  <script src="/assets/workspace.js?build=__OMNICIO_BUILD__" defer></script>
 </head>
 <body class="offline-page">
   <main class="offline-card">
-    <div class="brand"><span class="brand-ring" aria-hidden="true"></span>OMNICIO</div>
+    <div class="brand"><img class="brand-image" src="/assets/brand/omnicio-logo.png" width="40" height="40" alt="">OMNICIO</div>
     <h1 data-i18n-text="[&quot;Вернёмся к данным,&quot;, &quot;когда появится сеть&quot;]">Вернёмся к данным,<br>когда появится сеть</h1>
     <p data-i18n-text="[&quot;Для входа, портфеля и сохранения изменений необходимо соединение с интернетом.&quot;]">Для входа, портфеля и сохранения изменений необходимо соединение с интернетом.</p>
-    <a href="/" class="button primary" data-i18n-text="[&quot;Попробовать снова&quot;]">Попробовать снова</a>
+    <button type="button" data-offline-retry class="button primary" data-i18n-text="[&quot;Попробовать снова&quot;]">Попробовать снова</button>
     <small data-i18n-text="[&quot;Финансовые данные и сообщения не хранятся в общем офлайн-кэше. Если соединение прервалось во время сохранения, после входа проверьте его результат.&quot;]">Финансовые данные и сообщения не хранятся в общем офлайн-кэше. Если соединение прервалось во время сохранения, после входа проверьте его результат.</small>
   </main>
 </body>

@@ -90,7 +90,9 @@ const defaultPreferences = () => ({
       end: "08:00",
       timezone: "Europe/Moscow"
     },
-    digest_frequency: "off"
+    digest_frequency: "off",
+    digest_time: "09:00",
+    digest_timezone: "Europe/Moscow"
   }
 });
 const makeFixture = mode => {
@@ -225,7 +227,9 @@ const overview = () => ({
 const eventDTO = (fixture, url = new URL("https://example.test/api/events")) => {
   const [offset, ceiling] = url.searchParams.has("cursor") ? url.searchParams.get("cursor").split(":").map(Number) : [0, Math.max(0, ...fixture.events.map(item => item.revision))];
   const query = (url.searchParams.get("query") || "").toLowerCase();
-  const items = fixture.events.filter(item => item.revision <= ceiling && JSON.stringify(item).toLowerCase().includes(query)).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id.localeCompare(a.id));
+  const category = url.searchParams.get("category") || "all";
+  const important = url.searchParams.get("important_only") === "true";
+  const items = fixture.events.filter(item => item.revision <= ceiling && JSON.stringify(item).toLowerCase().includes(query) && (category === "all" || category === "assets" ? category === "all" || ["portfolio", "payments"].includes(item.category) : item.category === category) && (!important || ["warning", "critical", "high"].includes(item.severity))).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id.localeCompare(a.id));
   const limit = Number(url.searchParams.get("limit") || 50);
   return {
   items: clone(items.slice(offset, offset + limit)),
@@ -368,6 +372,9 @@ const testApiHandlers = [{
   }) => path === "/api/public/market-reference",
   run: serveTestPublicMarketReference
 }, {
+  matches: ({path}) => path === "/api/public/support",
+  run: ({response}) => sendJSON(response, {configured: true, name: "Fixture operator", email: "support@example.test", mailto: "mailto:support@example.test", scope: "user_initiated_email"})
+}, {
   matches: ({
     path
   }) => path === "/api/public/news",
@@ -377,6 +384,9 @@ const testApiHandlers = [{
     path
   }) => /^\/api\/auth\/(tid|vkid)\/start$/.test(path),
   run: serveTestGuard5
+}, {
+  matches: ({path}) => path === "/api/me",
+  run: serveTestMe
 }, {
   matches: ({
     fixture
@@ -476,6 +486,12 @@ const testApiHandlers = [{
   }) => path.startsWith("/api/portfolio/instruments/"),
   run: serveTestPortfolioInstruments
 }, {
+  matches: ({path}) => path === "/api/market/quotes",
+  run: ({url,response}) => sendJSON(response,{items:(url.searchParams.get("instrument_uids") || "").split(",").filter(Boolean).map(uid=>({...marketEvent,instrument_uid:uid,metadata_status:"available"})),source:"T-Invest",observed_at:stamp,refresh_after_seconds:10})
+}, {
+  matches: ({path}) => path === "/api/workspace/operations",
+  run: ({response}) => sendJSON(response,{items:[],next_cursor:null,status:"available",source:"T-Invest",observed_at:stamp})
+}, {
   matches: ({
     path
   }) => path.startsWith("/api/market/instruments/") && path.endsWith("/facts"),
@@ -531,7 +547,7 @@ const testApiHandlers = [{
   }) => path === "/api/events" || path.startsWith("/api/events/"),
   run: serveTestEvents
 }, {
-  matches: ({path}) => path === "/api/news",
+  matches: ({path}) => path === "/api/news" || path.startsWith("/api/news/"),
   run: serveTestNews
 }, {
   matches: ({path}) => path === "/api/notifications" || path.startsWith("/api/notifications/"),
@@ -601,7 +617,7 @@ const server = createServer(async (request, response) => {
     let path = url.pathname;
     if (path === "/") path = "/index.html";
     let file = join(root, "web", path.replace(/^\/assets\//, "").replace(/^\//, ""));
-    if (path.startsWith("/assets/brand/")) file = join(root, "assets", "brand", "web", path.split("/").at(-1));
+    if (path.startsWith("/assets/brand/")) file = path === "/assets/brand/omnicio-logo.png" ? join(root,"assets","brand","omnicio-logo.png") : join(root, "assets", "brand", "web", path.split("/").at(-1));
     if (!file.startsWith(root) || !existsSync(file)) {
       response.statusCode = 404;
       return response.end();
@@ -779,7 +795,7 @@ const workerContract = async () => {
     });
     await Promise.all(tasks);
     assert.ok(cached.includes("/offline.html?build=__OMNICIO_BUILD__"));
-    assert.ok(cached.every(path => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js|i18n\.js))\?build=__OMNICIO_BUILD__$/.test(path)), "Private content never enters the cache allowlist");
+    assert.ok(cached.every(path => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js|i18n\.js|brand\/omnicio-logo\.png))\?build=__OMNICIO_BUILD__$/.test(path)), "Private content never enters the cache allowlist");
     let intercepted = 0;
     for (const path of ["/api/me", "/api/workspace", "/api/preferences", "/api/goals", "/api/assistant/messages", "/api/broker/tbank/portfolio", "/health/ready"]) {
       for (const method of ["GET", "POST"]) handlers.get("fetch")({
@@ -815,13 +831,13 @@ const workerContract = async () => {
       handlers.get("push")({data: {json: () => ({title: "PRIVATE GOAL", body: "PRIVATE AMOUNT", url, tag: "a".repeat(64)})}, waitUntil: task => tasks.push(task)});
     }
     await Promise.all(tasks);
-    assert.deepEqual(notifications.map(item => item.options.data.url), ["/#events", "/#events?event=" + "a".repeat(64), "/#events", "/#settings"]);
+    assert.deepEqual(notifications.map(item => item.options.data.url), ["/#account/events", "/#account/events/detail?event=" + "a".repeat(64), "/#account/events", "/#account/settings/notifications"]);
     assert.ok(notifications.every(item => item.title === "OMNICIO" && !item.options.body.includes("PRIVATE")), "Lock-screen push never shows private source content");
     let closed = false;
     handlers.get("notificationclick")({notification: {data: {url: "https://untrusted.invalid/"}, close: () => {closed = true;}}, waitUntil: task => tasks.push(task)});
     await Promise.all(tasks);
     assert.equal(closed, true);
-    assert.deepEqual(opened, ["/#events"]);
+    assert.deepEqual(opened, ["/#account/events"]);
     console.log("PASS service worker: private-cache isolation, origin checks, private push redaction and safe notification navigation");
   } finally {
     delete globalThis.self;
@@ -1303,19 +1319,25 @@ const runBrowser = async base => {
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.text + ": " + (result.exceptionDetails.exception?.description || ""));
       return result.result.value;
     };
-    const click = selector => evaluate(`(() => {
+    const revealControl = async selector => {
+      const section = await evaluate(`(() => { const element=document.querySelector(${JSON.stringify(selector)}); if (!element || element.getClientRects().length) return null; return element.closest("[data-screen-content]")?.dataset.screenContent || null; })()`);
+      if (!section) return;
+      await evaluate(`(() => { const view=document.querySelector(".view:not([hidden])"); const menu=view?.querySelector('[data-route][data-screen="'+${JSON.stringify(section)}+'"]'); if(!menu) throw new Error("No visible section menu for requested control"); menu.click(); })()`);
+      await wait(`document.querySelector(${JSON.stringify(selector)})?.getClientRects().length > 0`, "Control is visible in its own section: " + selector);
+    };
+    const click = async selector => { await revealControl(selector); return evaluate(`(() => {
       const element=document.querySelector(${JSON.stringify(selector)});
       if(!element || element.disabled)throw new Error('Control unavailable: '+${JSON.stringify(selector)});
       if(element.closest('#app-sidebar')?.inert)document.querySelector('#app-menu-toggle').click();
       element.click();
-    })()`);
+    })()`); };
     const wait = (expression, label) => until(async () => {
       const result = await evaluate(`({ready:Boolean(${expression}),errors:window.__browserErrors||[],csp:window.__cspViolations||[]})`);
       assert.deepEqual(result.errors, [], `${label}: runtime errors before state acknowledgement`);
       assert.deepEqual(result.csp, [], `${label}: CSP violations before state acknowledgement`);
       return result.ready;
     }, label || expression);
-    const fieldValue = (form, name, value) => evaluate(`(() => {const input=document.querySelector(${JSON.stringify(form)}).elements[${JSON.stringify(name)}];input.value=${JSON.stringify(value)};input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    const fieldValue = async (form, name, value) => { await revealControl(`${form} [name="${name}"]`); return evaluate(`(() => {const input=document.querySelector(${JSON.stringify(form)}).elements[${JSON.stringify(name)}];input.value=${JSON.stringify(value)};input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));})()`); };
     const layoutMetrics = [];
     const recordLayout = async label => {
       const data = await evaluate(`(${captureBrowserLayout.toString()})()`);
@@ -1407,6 +1429,7 @@ const runBrowser = async base => {
           fieldValue
         });
       }
+      await exerciseCanonicalNavigation({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseEnglishLocale({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseReadConsistency({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
@@ -1542,6 +1565,9 @@ async function serveTestMe({
   response,
   fixture
 }) {
+  if (fixture.holdMe) await new Promise(resolve => { fixture.releaseMe = resolve; });
+  if (fixture.failMe) return sendJSON(response, {detail: "synthetic_session_unavailable"}, 503);
+  if (fixture.mode === "guest") return sendJSON(response, {detail: "authentication required"}, 401);
   return sendJSON(response, {
     public_id: fixture.user,
     status: "active",
@@ -2075,6 +2101,7 @@ async function serveTestEvents({
   path,
   url
 }) {
+  if (path === "/api/events/summary") return sendJSON(response,{unread_total:fixture.events.filter(item=>!item.read_at).length,max_revision:Math.max(0,...fixture.events.map(item=>item.revision)),categories:{},observed_at:stamp,alerts_suppressed:false});
   if (method === "GET" && path.startsWith("/api/events/")) {
     const item = fixture.events.find(event => event.id === path.split("/").at(-1));
     return sendJSON(response, item || {detail: "event_not_found"}, item ? 200 : 404);
@@ -2089,6 +2116,7 @@ async function serveTestEvents({
   return sendJSON(response, eventDTO(fixture, url));
 }
 async function serveTestNews({fixture, url, response}) {
+  if (url.pathname !== "/api/news") { const item=fixture.news.find(row=>row.id===url.pathname.split("/").at(-1)); return sendJSON(response,item || {detail:"news_not_found"},item?200:404); }
   const query = (url.searchParams.get("query") || "").toLowerCase();
   const uid = url.searchParams.get("instrument_uid");
   const items = fixture.news.filter(item => (!uid || item.instrument_uids.includes(uid)) && JSON.stringify(item).toLowerCase().includes(query));
@@ -2466,7 +2494,7 @@ async function serveTestGoalPlan({fixture,path,method,body,response}) {
     plan={version:plan.version+1,document:clone(body.document),forecast:clone(serverContracts.goal_forecast_available)};
     fixture.goalPlans[id]=plan;
   }
-  return sendJSON(response,{...clone(plan),goal_id:id,goal_version:goal.version});
+  return sendJSON(response,{...clone(plan),goal_id:id,goal_version:goal.version,goal_kind:goal.kind,applicable_fields:goal.kind === "income" ? ["monthly_income_rub","target_in_today_money","annual_inflation_percent"] : ["monthly_contribution_rub","annual_return_percent","annual_volatility_percent","target_in_today_money","annual_inflation_percent"]});
 }
 async function serveTestResearchArchive({fixture,path,method,body,url,response}) {
   fixture.researchEvidence ||= {version:0,document:{assets:[]}};
@@ -2576,13 +2604,23 @@ async function serveTestAssistantStatus({fixture,path,method,body,url,response})
     if(method==="POST"){const item={id:require("node:crypto").randomUUID(),title:body.title,version:0,messages:[],created_at:stamp,updated_at:stamp};fixture.conversations.push(item);return sendJSON(response,item,201);}
     return sendJSON(response,{items:fixture.conversations.map(({messages,...item})=>item),total:fixture.conversations.length,truncated:false});
   }
-  if(path==="/api/assistant/messages"){
+  if(path==="/api/assistant/memory") return sendJSON(response,{items:[],total:0});
+  if(path==="/api/assistant/messages" || path==="/api/assistant/messages/stream"){
     assert.equal(Object.hasOwn(body,"history"),false,"Conversation history is loaded server-side");
     const conversation=fixture.conversations.find(item=>item.id===body.conversation_id);
     if(!conversation || conversation.version!==body.expected_version)return sendJSON(response,{detail:"settings_version_conflict"},409);
     assert.match(body.request_id,/^[a-f0-9-]{36}$/);
     conversation.messages.push({position:++conversation.version,role:"user",content:body.message,created_at:stamp,sources:[],request_status:"completed"},{position:++conversation.version,role:"assistant",content:"Synthetic isolated model response",created_at:stamp,sources:[{label:"Synthetic source receipt"}],request_status:"completed"});
-    fixture.ai.quota.used++;return sendJSON(response,{reply:"Synthetic isolated model response",conversation_id:conversation.id,version:conversation.version,created_at:stamp,sources:[]});
+    fixture.ai.quota.used++;
+    const result={reply:"Synthetic isolated model response",conversation_id:conversation.id,version:conversation.version,created_at:stamp,sources:[]};
+    if (path.endsWith("/stream")) {
+      response.setHeader("Content-Type","text/event-stream");
+      response.write(`event: accepted\ndata: ${JSON.stringify({request_id:body.request_id,conversation_id:conversation.id})}\n\n`);
+      response.write(`event: delta\ndata: ${JSON.stringify({request_id:body.request_id,reply_prefix:"Synthetic isolated",sequence:1,provisional:true})}\n\n`);
+      response.end(`event: complete\ndata: ${JSON.stringify({request_id:body.request_id,result})}\n\n`);
+      return;
+    }
+    return sendJSON(response,result);
   }
   const id=path.split("/").at(-1),item=fixture.conversations.find(row=>row.id===id);
   if(!item)return sendJSON(response,{detail:"workspace_item_not_found"},404);
@@ -2616,7 +2654,7 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   await click('#assistant-form [type="submit"]');
   await wait('document.querySelector("#chat-messages").textContent.includes("Synthetic isolated model response")',"Durable assistant result");
   assert.equal(fixture.ai.quota.used,1);
-  const last=fixture.requests.findLast(item=>item.path==="/api/assistant/messages");
+  const last=fixture.requests.findLast(item=>item.path==="/api/assistant/messages/stream");
   assert.equal(last.body.context,"general");assert.equal(last.body.include_news,false);
   await click('#sidebar-nav [data-route="home"]');
   await click('#sidebar-nav [data-route="assistant"]');
@@ -2807,7 +2845,7 @@ async function exerciseEnglishLocale({send,configureViewport,round,base,wait,cli
 async function exerciseGoalPlan({fixture,click,fieldValue,wait}) {
   await click('#view-goals [data-goal-plan]');
   await wait('document.querySelector("#goal-plan-form")',"Saved goal assumptions editor");
-  for(const [name,value] of Object.entries({monthly_contribution_rub:"100",monthly_income_rub:"0",annual_return_percent:"0",annual_volatility_percent:"0",annual_inflation_percent:"0"}))await fieldValue("#goal-plan-form",name,value);
+  for(const [name,value] of Object.entries({monthly_contribution_rub:"100",annual_return_percent:"0",annual_volatility_percent:"0",annual_inflation_percent:"0"}))await fieldValue("#goal-plan-form",name,value);
   fixture.holdGoalPlanSave=true;
   await click('#goal-plan-form [type="submit"]');
   await until(()=>typeof fixture.releaseGoalPlanSave==="function","Goal plan save is pending");
@@ -2829,6 +2867,69 @@ async function serveTestAuthLogout({
   fixture.mode = "guest";
   response.statusCode = 204;
   return response.end();
+}
+async function exerciseCanonicalNavigation({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
+  await configureViewport(390);
+  const guestKey = `guest-canonical-${round}`;
+  fixtures.set(guestKey, makeFixture("guest"));
+  await send("Page.navigate", {url: `${base}?case=${guestKey}#demo/market/reference?currency=CNY&reference_period=1y`});
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await wait('!document.querySelector("#view-market").hidden && !document.querySelector("#app-shell").hidden && document.querySelector("[name=cbr_currency]")?.value === "CNY"', "Demo deep link survives repeated reload");
+    assert.equal(await evaluate('document.querySelector("#public-site").hidden'), true);
+    assert.equal(await evaluate('document.querySelector("[name=cbr_period]").value'), "1y");
+    assert.equal(await evaluate('location.hash'), "#demo/market/reference?currency=CNY&reference_period=1y");
+    if (attempt < 2) { const origin = await evaluate("performance.timeOrigin"); await send("Page.reload"); await wait(`performance.timeOrigin !== ${origin}`, "A new demo document loaded"); }
+  }
+  await checkLayout(`canonical-demo-${round}`);
+  await click('#view-market [data-screen="news"]');
+  await wait('location.hash === "#demo/market/news" && document.querySelector("#view-market [data-screen-content=news]")?.getClientRects().length', "Market news is a standalone screen");
+  assert.equal(await evaluate('document.querySelector("#view-market [data-screen-content=reference]").getClientRects().length'), 0, "Unselected data panels are not visible");
+  await evaluate("history.back()");
+  await wait('location.hash.includes("reference") && document.querySelector("[name=cbr_currency]").value === "CNY" && document.querySelector("[name=cbr_period]").value === "1y"', "Back restores currency and period");
+  await click('[data-action="leave-tour"]');
+  await wait('!document.querySelector("#public-site").hidden', "Leaving demo returns to the public root");
+  await click('.public-nav [data-public-page="features"]');
+  await wait('location.hash === "#public/features"', "Public menu is a page route");
+  assert.deepEqual(await evaluate('[...document.querySelectorAll("#public-content > section")].filter(element=>element.getClientRects().length).map(element=>element.id)'), ["features"]);
+  assert.equal(await evaluate('document.querySelectorAll("a[href^=\"/legal/\"][target=\"_blank\"]").length'), 0, "Internal legal pages keep browser Back available");
+  await evaluate("history.back()");
+  await wait('location.hash === "#public/welcome"', "Public page Back restores the welcome screen");
+  const lateKey = `signed-late-session-${round}`;
+  const late = makeFixture("signed"); late.holdMe = true; fixtures.set(lateKey, late);
+  await send("Page.navigate", {url: `${base}?case=${lateKey}#public/features`});
+  await until(()=>typeof late.releaseMe === "function", "Session verification is deliberately pending");
+  await click('[data-action="tour"]');
+  await click('#sidebar-nav [data-route="market"]');
+  await click('#view-market [data-screen="reference"]');
+  late.holdMe = false; late.releaseMe();
+  await delay(250);
+  assert.equal(await evaluate("location.hash"), "#demo/market/reference", "A late successful session response cannot override an explicit demo route");
+  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Знакомство", "Demo does not display the authenticated account's name");
+  const failureKey = `signed-session-retry-${round}`;
+  const failure = makeFixture("signed"); failure.failMe = true; fixtures.set(failureKey, failure);
+  await send("Page.navigate", {url: `${base}?case=${failureKey}#account/settings/broker`});
+  await wait('document.querySelector("#startup-state [data-action=session-retry]")', "Temporary session failure has an explicit retry");
+  assert.equal(await evaluate('document.querySelector("#public-site").hidden'), true, "A network error must not show an unauthenticated landing page");
+  assert.equal(await evaluate("location.hash"), "#account/settings/broker");
+  failure.failMe = false;
+  await click('[data-action="session-retry"]');
+  await wait('!document.querySelector("#app-shell").hidden && document.querySelector("#broker-settings")?.getClientRects().length', "Retry restores the requested settings screen");
+  assert.equal(await evaluate('document.querySelector("#preferences-form")?.getClientRects().length || 0'), 0, "Broker settings do not expose the unrelated preference form");
+  await click('#sidebar-nav [data-route="goals"]');
+  await wait('document.querySelector("#view-goals [data-action=goal-create]")', "Goal list is ready");
+  await click('#view-goals [data-action="goal-create"]');
+  await wait('document.querySelector("#goal-form") && document.querySelector("#workspace-dialog").open', "Goal creation is an addressable screen");
+  await fieldValue("#goal-form", "title", "Unsubmitted navigation draft");
+  assert.ok((await evaluate("location.hash")).startsWith("#account/goals/create"));
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open && location.hash === "#account/goals"', "Back closes the form and restores the list");
+  await evaluate("history.forward()");
+  await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#goal-form")?.elements.title.value === "Unsubmitted navigation draft"', "Forward restores the unsaved draft");
+  await fieldValue("#goal-form", "title", "");
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "Draft was returned to its initial state");
+  assert.equal(failure.requests.filter(item=>item.method === "POST" && item.path === "/api/goals").length, 0, "Navigating and restoring a draft cannot create a goal");
+  console.log(`PASS canonical navigation round ${round}: repeated demo reload, public screens, Back, control restoration, late bootstrap, retry and draft history`);
 }
 async function exerciseGuestViewport({
   send,
@@ -3069,7 +3170,7 @@ async function exerciseViewport({
     await until(() => fixture.marketStreams?.size === 1, "Only the current instrument stream remains open");
     for (const response of fixture.marketStreams) response.write(serverContracts.instrument_status_event);
     await until(() => fixture.marketStreams.size === 0, "The server's terminal status closes the browser stream");
-    await wait('document.querySelector("#view-asset [data-market-source]").textContent.includes("Недоступно")', "The terminal source state remains visible while the chart has focus");
+    await wait('document.querySelector("#view-asset [data-market-source]").textContent.includes("Восстанавливаем поток")', "The terminal source state remains visible while the chart has focus");
   }
   await click('#view-asset [data-watch]');
   await until(() => fixture.prefs.document.watchlist.length === 1, "Persistent watchlist");

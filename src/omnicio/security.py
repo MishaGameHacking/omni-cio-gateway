@@ -6,8 +6,10 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import secrets
 from dataclasses import dataclass
+from urllib.parse import parse_qsl
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -93,6 +95,35 @@ class OAuthFlow:
     legal_versions: dict[str, str]
     link_user_id: str | None = None
     link_session_digest: str | None = None
+    return_to: str = "/#account/home"
+
+
+def validate_auth_return_to(value: str) -> str:
+    """Accept only a bounded application route; never redirect to a supplied origin."""
+    if (not isinstance(value, str) or len(value) > 2048
+            or not value.startswith("/#account/")
+            or any(ord(char) < 32 or ord(char) == 127 or char == "\\" for char in value)):
+        raise SecurityValueError("oauth_return_to_invalid")
+    path, _, query = value[len("/#account/"):].partition("?")
+    parts = path.split("/")
+    if (not 1 <= len(parts) <= 2
+            or parts[0] not in {
+                "home", "portfolio", "market", "strategies", "assistant", "goals",
+                "analytics", "events", "profile", "settings", "asset", "search",
+            }
+            or any(re.fullmatch(r"[a-z][a-z0-9-]{0,39}", part) is None for part in parts)):
+        raise SecurityValueError("oauth_return_to_invalid")
+    try:
+        fields = parse_qsl(query, keep_blank_values=True, strict_parsing=True, max_num_fields=24)
+    except ValueError as exc:
+        raise SecurityValueError("oauth_return_to_invalid") from exc
+    if (len({key for key, _ in fields}) != len(fields)
+            or any(re.fullmatch(r"[a-z_]{1,30}", key) is None
+                   or len(item) > 512 or "#" in item
+                   or any(ord(char) < 32 or ord(char) == 127 for char in item)
+                   for key, item in fields)):
+        raise SecurityValueError("oauth_return_to_invalid")
+    return value
 
 
 def seal_oauth_flow(
@@ -104,6 +135,7 @@ def seal_oauth_flow(
     provider: str = "vkid",
     link_user_id: str | None = None,
     link_session_digest: str | None = None,
+    return_to: str = "/#account/home",
 ) -> str:
     if provider not in {"vkid", "tid"}:
         raise SecurityValueError("invalid OAuth provider")
@@ -115,6 +147,7 @@ def seal_oauth_flow(
             "provider": provider,
             "link_user_id": link_user_id,
             "link_session_digest": link_session_digest,
+            "return_to": validate_auth_return_to(return_to),
         },
         separators=(",", ":"),
         sort_keys=True,
@@ -167,4 +200,7 @@ def open_oauth_flow(
         or any(c not in "0123456789abcdef" for c in link_session)
     ):
         raise SecurityValueError("OAuth link context is invalid")
-    return OAuthFlow(state, verifier, versions, link_user, link_session)
+    return OAuthFlow(
+        state, verifier, versions, link_user, link_session,
+        validate_auth_return_to(payload.get("return_to", "/#account/home")),
+    )

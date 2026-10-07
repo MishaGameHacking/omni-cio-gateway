@@ -281,10 +281,104 @@ def test_stale_claim_and_changed_selection_cannot_trigger_duplicate_external_wor
     with workspace_database[0].pool.connection() as conn, conn.transaction():
         conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
         conn.execute(
-            "UPDATE assistant_requests SET created_at = now() - interval '3 minutes' "
+            "UPDATE assistant_requests SET created_at = now() - interval '3 minutes', "
+            "updated_at = now() - interval '3 minutes' "
             "WHERE user_id = %s AND id = %s",
             (owner, expired),
         )
     history = service.conversation(owner, conversation)
     assert history["messages"][-1]["request_status"] == "uncertain"
     assert service.store.quota(owner, 30)["used"] == 2
+
+
+def test_memory_is_explicit_versioned_owner_scoped_and_delete_cancels_pending_context(
+    workspace_database,
+):
+    database = workspace_database[0]
+    service, owner, conversation = setup(database)
+    other, memory, request = user(database), uuid4(), uuid4()
+    with pytest.raises(ValueError):
+        service.save_memory(owner, memory, "Ответы кратко", "preference",
+                            expected_version=0, confirmed=False)
+    created = service.save_memory(owner, memory, "Ответы кратко", "preference",
+                                  expected_version=0, confirmed=True)
+    assert created["version"] == 1 and created["origin"] == "explicit"
+    assert service.save_memory(owner, memory, "Ответы кратко", "preference",
+                               expected_version=0, confirmed=True) == created
+    assert service.list_memory(other)["items"] == []
+    with pytest.raises(WorkspaceNotFound):
+        service.store.selected_memory(other, [memory])
+    with pytest.raises(SettingsVersionConflict):
+        service.save_memory(owner, memory, "Другой текст", "context",
+                            expected_version=0, confirmed=True)
+    service.store.claim(owner, conversation, request, message="Вопрос", input_hash="a" * 64,
+                        expected_version=0, connection_version=0, model="test", context_used=True,
+                        daily_limit=30, memory_versions={str(memory): 1})
+    assert service.store.update_stream(owner, request, "Черновик", []) == 1
+    with pytest.raises(WorkspaceNotFound):
+        service.stream_request(other, request)
+    with pytest.raises(WorkspaceNotFound):
+        service.cancel_request(other, request)
+    assert service.delete_memory(owner, memory, expected_version=1)
+    assert service.stream_request(owner, request)["status"] == "cancelled"
+    with pytest.raises(AssistantRequestConflict):
+        service.store.finish(owner, request, {"reply": "Late result"})
+    assert service.list_memory(owner)["items"] == []
+    with database.pool.connection() as conn, conn.transaction():
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(other),))
+        assert conn.execute(
+            "SELECT 1 FROM assistant_memory WHERE user_id = %s", (owner,),
+        ).fetchone() is None
+
+
+def test_memory_update_between_selection_and_claim_cannot_use_deleted_revision(workspace_database):
+    service, owner, conversation = setup(workspace_database[0])
+    identifier = uuid4()
+    service.save_memory(owner, identifier, "Старая заметка", "context", expected_version=0,
+                        confirmed=True)
+    service.save_memory(owner, identifier, "Новая заметка", "context", expected_version=1,
+                        confirmed=True)
+    with pytest.raises(AssistantRequestConflict, match="memory_changed"):
+        service.store.claim(owner, conversation, uuid4(), message="Вопрос", input_hash="b" * 64,
+                            expected_version=0, connection_version=0, model="test",
+                            context_used=True,
+                            daily_limit=30, memory_versions={str(identifier): 1})
+    assert service.conversation(owner, conversation)["version"] == 0
+    assert service.store.quota(owner, 30)["used"] == 0
+
+
+def test_general_question_does_not_receive_previous_attached_personal_context(workspace_database):
+    service, owner, conversation = setup(workspace_database[0])
+    with patch.object(service.default_client, "chat",
+                      return_value={"reply": "Private portfolio text"}):
+        service.chat(owner, conversation, message="Мой портфель",
+                     context={"overview": {"nav_rub": "1000"}},
+                     request_id=uuid4(), expected_version=0)
+    with patch.object(service.default_client, "chat",
+                      return_value={"reply": "Общее объяснение"}) as model:
+        service.chat(owner, conversation, message="Что такое облигация", context=None,
+                     request_id=uuid4(), expected_version=2)
+    assert model.call_args.kwargs["history"] == []
+    history = service.conversation(owner, conversation)
+    assert len(history["messages"]) == 4
+
+
+def test_durable_stream_prefix_cancel_and_completed_readback_do_not_restart_provider(
+    workspace_database,
+):
+    service, owner, conversation = setup(workspace_database[0])
+    request = uuid4()
+    with patch.object(service.default_client, "stream", return_value=iter([
+        {"delta": "Первая "}, {"delta": "часть"}, {"result": {"reply": "Первая часть"}},
+    ])) as model:
+        events = list(service.stream(owner, conversation, message="Вопрос", context=None,
+                                     request_id=request, expected_version=0))
+        assert events[-1]["event"] == "complete"
+        read = service.stream_request(owner, request)
+        assert read["status"] == "completed" and read["reply_prefix"] == "Первая часть"
+        assert read["stream_sequence"] >= 3
+        assert service.cancel_request(owner, request)["status"] == "completed"
+        replay = list(service.stream(owner, conversation, message="Вопрос", context=None,
+                                     request_id=request, expected_version=0))
+        assert replay[-1]["data"]["result"] == read["result"]
+    assert model.call_count == 1

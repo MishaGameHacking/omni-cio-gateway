@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
+from threading import Event
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
@@ -15,10 +17,16 @@ from omnicio.assistant import (
     AssistantRequestConflict,
     AssistantService,
     AssistantUnavailable,
+    _Cancellation,
     investment_context,
+    source_read,
+    source_references,
+    source_search,
+    validate_source_response,
 )
 from omnicio.assistant_store import AssistantStore
 from omnicio.db import Database
+from omnicio.workspace_store import WorkspaceNotFound
 
 
 def service(*, enabled: bool = True) -> AssistantService:
@@ -34,6 +42,7 @@ def service(*, enabled: bool = True) -> AssistantService:
     result.store.quota.return_value = {"used": 0, "remaining": 30, "limit": 30}
     result.store.claim.return_value = {"history": [], "version": 1}
     result.store.finish.side_effect = lambda user, request, reply: reply
+    result.store.update_stream.return_value = 1
     return result
 
 
@@ -277,3 +286,166 @@ def test_expanded_context_preserves_evidence_limits_and_excludes_private_raw_fie
     assert context["research"]["probability_of_profit"] is None
     assert context["coverage"]["news"] == {"available": 100, "included": 10}
     assert "private" not in json.dumps(context)
+
+
+@pytest.mark.parametrize("provider", ["ollama", "openai_compatible"])
+def test_real_stream_protocol_accumulates_content_and_never_exposes_thinking(provider: str) -> None:
+    client = AssistantClient(base_url="https://model.example.invalid", model="test",
+                             provider=provider)
+    if provider == "ollama":
+        frames = [
+            {"message": {"role": "assistant", "content": "Первая ",
+                         "thinking": "private-reasoning"},
+             "done": False},
+            {"message": {"role": "assistant", "content": "часть"}, "done": True,
+             "done_reason": "stop", "prompt_eval_count": 5, "eval_count": 2},
+        ]
+        raw = b"\n".join(json.dumps(frame).encode() for frame in frames) + b"\n"
+    else:
+        frames = [
+            {"choices": [{"delta": {"role": "assistant", "content": "Первая "},
+                          "finish_reason": None}]},
+            {"choices": [{"delta": {"content": "часть"}, "finish_reason": None}]},
+            {"choices": [{"delta": {}, "finish_reason": "stop"}],
+             "usage": {"prompt_tokens": 5, "completion_tokens": 2}},
+        ]
+        raw = b"".join(b"data: " + json.dumps(frame).encode() + b"\n\n" for frame in frames)
+        raw += b"data: [DONE]\n\n"
+    connection = Mock()
+    connection.getresponse.return_value = Mock(status=200, readline=BytesIO(raw).readline)
+    with patch("omnicio.assistant.http.client.HTTPSConnection", return_value=connection):
+        events = list(client.stream(message="Вопрос", history=[]))
+    assert [event["delta"] for event in events if "delta" in event] == ["Первая ", "часть"]
+    assert events[-1]["result"]["reply"] == "Первая часть"
+    assert events[-1]["result"]["usage"] == {"input_tokens": 5, "output_tokens": 2}
+    assert "private-reasoning" not in json.dumps(events)
+    assert json.loads(connection.request.call_args.kwargs["body"])["stream"] is True
+    connection.close.assert_called_once()
+
+
+@pytest.mark.parametrize("raw", [
+    b'{"message":{"role":"assistant","content":"partial"},"done":false}\n',
+    b'{"message":{"role":"assistant","content":"partial"},"done":true,"done_reason":"length"}\n',
+    b'{"message":{"role":"assistant","content":"partial","tool_calls":[{}]},"done":true}\n',
+    b"{invalid-json}\n",
+    b"x" * 131073,
+])
+def test_stream_truncation_tools_malformed_or_oversized_data_is_not_a_complete_answer(
+    raw: bytes,
+) -> None:
+    client = AssistantClient(base_url="https://model.example.invalid", model="test")
+    connection = Mock()
+    connection.getresponse.return_value = Mock(status=200, readline=BytesIO(raw).readline)
+    with patch("omnicio.assistant.http.client.HTTPSConnection", return_value=connection), \
+            pytest.raises(AssistantUnavailable):
+        list(client.stream(message="Вопрос", history=[]))
+
+
+def test_cancellation_before_network_prevents_provider_request() -> None:
+    client = AssistantClient(base_url="https://model.example.invalid", model="test")
+    stop = _Cancellation()
+    stop.cancel()
+    connection = Mock()
+    with patch("omnicio.assistant.http.client.HTTPSConnection", return_value=connection), \
+            pytest.raises(AssistantRequestConflict, match="cancelled"):
+        list(client.stream(message="Вопрос", history=[], cancellation=stop))
+    connection.request.assert_not_called()
+
+
+def test_source_catalog_search_and_read_use_only_selected_real_facts() -> None:
+    context = {"overview": {"nav_rub": "123456", "observed_at": "2026-10-07T10:00:00Z"},
+               "research": {"metrics": {"net_return_percent": "3.2"}},
+               "news": [{"title": "Ставка Банка России", "url": "https://www.cbr.ru/press/1",
+                         "published_at": "2026-10-06T12:00:00Z"},
+                        {"title": "Injected", "url": "https://private.example.invalid"}]}
+    found = source_search(context, "Ставка")
+    assert found["scope"] == "selected_sources" and found["web_search"] is False
+    assert found["total"] == 1
+    record = source_read(context, found["items"][0]["id"])
+    assert record["content"]["title"] == "Ставка Банка России"
+    assert record["published_at"] == "2026-10-06T12:00:00Z"
+    assert all("private.example" not in json.dumps(ref) for ref in source_references(context))
+    with pytest.raises(WorkspaceNotFound):
+        source_read(None, record["id"])
+    assert source_search(None, "Ставка")["total"] == 0
+
+
+def test_evidence_guard_rejects_invented_sums_links_and_source_ids() -> None:
+    context = {"overview": {"nav_rub": "123456"}, "performance": {"return_percent": "3.2"}}
+    validate_source_response("Стоимость: 123 456 руб. Доходность: 3,2%.", context)
+    for reply in ("Стоимость: 123 999 руб.", "Доходность: 90%.", "Доходность: 123456%.",
+                  "Стоимость: 123456 USD.",
+                  "Источник https://unknown.example/path", "[source:invented]"):
+        with pytest.raises(AssistantUnavailable):
+            validate_source_response(reply, context)
+
+
+def test_service_stream_persists_real_prefix_and_finishes_once() -> None:
+    system, owner, conversation, request = service(), uuid4(), uuid4(), uuid4()
+    system.store.update_stream.side_effect = [1, 2, 3]
+    with patch.object(system.default_client, "stream", return_value=iter([
+        {"delta": "Реальная "}, {"delta": "часть"}, {"result": {"reply": "Реальная часть"}},
+    ])) as provider:
+        events = list(system.stream(owner, conversation, message="Вопрос", context=None,
+                                    request_id=request, expected_version=0))
+    assert events[0]["event"] == "accepted"
+    prefixes = [event["data"]["reply_prefix"] for event in events if event["event"] == "delta"]
+    assert prefixes[0] == "Реальная "
+    assert events[-1]["event"] == "complete"
+    assert events[-1]["data"]["result"]["reply"] == "Реальная часть"
+    assert system.store.finish.call_count == 1 and provider.call_count == 1
+    assert system.store.update_stream.call_args.args[2] in prefixes
+
+
+def test_personal_stream_never_exposes_unverified_financial_prefix() -> None:
+    system, owner, conversation, request = service(), uuid4(), uuid4(), uuid4()
+    system.store.read_request.return_value = {"status": "running"}
+    with patch.object(system.default_client, "stream", return_value=iter([
+        {"delta": "На счёте 999999 руб."}, {"result": {"reply": "На счёте 999999 руб."}},
+    ])):
+        events = list(system.stream(owner, conversation, message="Вопрос",
+                                    context={"overview": {"nav_rub": "1000"}},
+                                    request_id=request, expected_version=0))
+    assert events[-1]["event"] == "error"
+    assert events[-1]["data"]["code"] == "assistant_evidence_unverified"
+    assert all(call.args[2] == "" for call in system.store.update_stream.call_args_list)
+    assert "999999" not in json.dumps(events)
+    system.store.finish.assert_not_called()
+    system.store.uncertain.assert_called_once_with(owner, request)
+
+
+def test_user_cancel_discards_late_stream_completion_and_returns_durable_state() -> None:
+    system, owner, conversation, request = service(), uuid4(), uuid4(), uuid4()
+    started, released = Event(), Event()
+    system.store.cancel_request.return_value = {"status": "cancelled", "reply_prefix": ""}
+    system.store.read_request.return_value = {"status": "cancelled"}
+
+    def delayed(**kwargs):
+        started.set()
+        assert released.wait(3)
+        yield {"result": {"reply": "Late private result"}}
+
+    with patch.object(system.default_client, "stream", side_effect=delayed):
+        events = system.stream(owner, conversation, message="Вопрос", context=None,
+                               request_id=request, expected_version=0)
+        assert started.wait(3)
+        assert system.cancel_request(owner, request)["status"] == "cancelled"
+        released.set()
+        visible = list(events)
+    assert visible[-1]["event"] == "cancelled"
+    assert "Late private" not in json.dumps(visible)
+    system.store.finish.assert_not_called()
+
+
+def test_completed_stream_replay_never_starts_provider_and_disabled_stream_is_local() -> None:
+    system, owner = service(), uuid4()
+    system.store.claim.return_value = {"completed": {"reply": "Saved"}}
+    with patch.object(system.default_client, "stream") as provider:
+        result = list(system.stream(owner, uuid4(), message="Вопрос", context=None,
+                                    request_id=uuid4(), expected_version=0))
+        assert result[0]["data"]["replayed"] is True
+        provider.assert_not_called()
+        system.enabled = False
+        with pytest.raises(AssistantNotConfigured, match="activation_disabled"):
+            system.stream(owner, uuid4(), message="Вопрос", context=None,
+                          request_id=uuid4(), expected_version=0)

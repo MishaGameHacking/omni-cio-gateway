@@ -96,6 +96,50 @@ class DeliveryResult:
     expired: bool = False
 
 
+_DELIVERY_ERRORS = {
+    "push_dns_unavailable": ("Сервис push временно недоступен.", "wait"),
+    "push_result_unknown": ("Сервис push не подтвердил результат отправки.", "check_device"),
+    "push_subscription_expired": ("Подписка этого устройства истекла.", "reconnect"),
+    "push_rate_limited": ("Сервис push попросил повторить отправку позже.", "wait"),
+    "push_provider_rejected": ("Сервис push отклонил уведомление.", "reconnect"),
+    "email_temporary_rejection": ("Почтовый сервер временно отложил отправку.", "wait"),
+    "email_provider_rejected": ("Почтовый сервер отклонил письмо.", "contact_support"),
+    "email_recipient_rejected": ("Почтовый сервер не принял адрес получателя.", "verify_email"),
+    "email_result_unknown": ("Почтовый сервер не подтвердил результат отправки.", "check_inbox"),
+    "verification_replaced": ("Этот код заменён новым кодом подтверждения.", "use_latest_code"),
+    "channel_revoked": ("Канал уведомлений отключён пользователем.", "reconnect"),
+    "legacy_digest_membership_unknown": (
+        "Для прежнего дайджеста нет подтверждения состава отправленных событий.", "open_events",
+    ),
+    "delivery_preference_changed": (
+        "Отправка отменена после изменения настроек или прочтения событий.", "open_events",
+    ),
+    "worker_result_unknown": (
+        "Сервер не получил подтверждение результата отправки.", "open_events",
+    ),
+    "delivery_expired": (
+        "Срок отправки уведомления истёк; события доступны в кабинете.", "open_events",
+    ),
+}
+
+
+def delivery_error(code: str | None, status: str) -> dict[str, Any] | None:
+    """Stable public diagnostics, never raw provider payloads or destinations."""
+    if status == "accepted" or not code:
+        return None
+    public_code = code if code in _DELIVERY_ERRORS else "delivery_error_unknown"
+    title, action = _DELIVERY_ERRORS.get(public_code, (
+        "Причину отправки пока не удалось определить.", "contact_support",
+    ))
+    retryable = status == "queued" and public_code in {
+        "push_dns_unavailable", "push_rate_limited", "email_temporary_rejection",
+    }
+    if status == "failed" and action == "wait":
+        title += " Автоматические попытки завершены."
+        action = "contact_support"
+    return {"code": public_code, "title": title, "action_code": action, "retryable": retryable}
+
+
 def _decode(value: str, length: int) -> bytes:
     if not isinstance(value, str) or re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", value) is None:
         raise ValueError("notification_key_invalid")
@@ -391,11 +435,21 @@ class NotificationService:
                     0, 5 - channel.pop("verification_attempts"),
                 )
             cur.execute(
-                "SELECT id, channel_id, kind, status, attempts, last_error, created_at, "
-                "accepted_at, next_attempt_at FROM notification_outbox WHERE user_id = %s "
-                "ORDER BY created_at DESC, id DESC LIMIT 30", (user_id,),
+                "SELECT o.id, o.channel_id, o.kind, o.status, o.attempts, o.last_error, "
+                "o.created_at, o.accepted_at, o.next_attempt_at, c.kind AS channel_kind, "
+                "c.label AS channel_label, c.status AS channel_status "
+                "FROM notification_outbox o JOIN notification_channels c "
+                "ON c.user_id = o.user_id AND c.id = o.channel_id WHERE o.user_id = %s "
+                "ORDER BY o.created_at DESC, o.id DESC LIMIT 30", (user_id,),
             )
             deliveries = [dict(row) for row in cur.fetchall()]
+            for delivery in deliveries:
+                delivery["channel"] = {
+                    "id": delivery["channel_id"], "kind": delivery.pop("channel_kind"),
+                    "label": delivery.pop("channel_label"),
+                    "status": delivery.pop("channel_status"),
+                }
+                delivery["error"] = delivery_error(delivery["last_error"], delivery["status"])
         return {
             "push_configured": self.push_configured, "email_configured": self.email_configured,
             "vapid_public_key": push_public_key(self.config.vapid_private_key)
@@ -707,12 +761,42 @@ class NotificationService:
         )
 
     @staticmethod
-    def _digest_boundary(preferences: Mapping[str, Any], now: datetime) -> datetime:
-        local = now.astimezone(ZoneInfo(preferences["quiet_hours"]["timezone"]))
-        end = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    def _digest_calendar_time(preferences: Mapping[str, Any], day: datetime) -> datetime:
+        zone = ZoneInfo(preferences.get("digest_timezone")
+                        or preferences["quiet_hours"]["timezone"])
+        hour, minute = (int(part) for part in preferences.get("digest_time", "00:00").split(":"))
+        local = day.astimezone(zone).replace(hour=hour, minute=minute, second=0, microsecond=0)
+        # A repeated local minute is delivered once, after its second occurrence.
+        # A skipped minute is postponed to the first existing local minute. Store
+        # the actual instant so a DST retry cannot create another digest period.
+        for _ in range(24 * 60 + 1):
+            candidate = local.replace(fold=1)
+            returned = candidate.astimezone(UTC).astimezone(zone)
+            if returned.replace(tzinfo=None) == candidate.replace(tzinfo=None):
+                return returned
+            local += timedelta(minutes=1)
+        raise ValueError("notification_digest_time_invalid")
+
+    @classmethod
+    def _digest_boundary(cls, preferences: Mapping[str, Any], now: datetime) -> datetime:
+        local = now.astimezone(ZoneInfo(preferences.get("digest_timezone")
+                                      or preferences["quiet_hours"]["timezone"]))
         if preferences["digest_frequency"] == "weekly":
-            end -= timedelta(days=end.weekday())
+            local -= timedelta(days=local.weekday())
+        end = cls._digest_calendar_time(preferences, local)
+        if end.astimezone(UTC) > now.astimezone(UTC):
+            end = cls._digest_calendar_time(preferences, local - timedelta(
+                days=7 if preferences["digest_frequency"] == "weekly" else 1,
+            ))
         return end
+
+    @classmethod
+    def _next_digest_boundary(
+        cls, preferences: Mapping[str, Any], boundary: datetime,
+    ) -> datetime:
+        return cls._digest_calendar_time(preferences, boundary + timedelta(
+            days=7 if preferences["digest_frequency"] == "weekly" else 1,
+        ))
 
     def _queue_event(
         self, cur: Any, user_id: UUID, channel_id: UUID, event: dict[str, Any],
@@ -760,7 +844,7 @@ class NotificationService:
             end = self._digest_boundary(preferences, now)
             frequency = preferences["digest_frequency"]
             if any(event["updated_at"] >= end for event in members):
-                end += timedelta(days=7 if frequency == "weekly" else 1)
+                end = self._next_digest_boundary(preferences, end)
             key = hashlib.sha256((frequency + ":" + ":".join(
                 sorted(str(ident) for ident in identifiers),
             )).encode()).hexdigest()
@@ -814,7 +898,7 @@ class NotificationService:
                 previous_end = end
                 end = self._digest_boundary(preferences, now)
                 if any(event["updated_at"] >= end for event in members):
-                    end += timedelta(days=7 if preferences["digest_frequency"] == "weekly" else 1)
+                    end = self._next_digest_boundary(preferences, end)
                 row["payload"]["to"] = end.isoformat()
                 boundary_changed = end != previous_end
             earliest = max(now, end)

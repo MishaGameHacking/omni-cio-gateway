@@ -28,6 +28,7 @@ JOB_TYPE = "portfolio_daily"
 MOSCOW = ZoneInfo("Europe/Moscow")
 MAX_WORKERS = 2
 MAX_HISTORY_PAGES_PER_RUN = 20
+QUICK_REFRESH_BUDGET_SECONDS = 35
 HISTORY_PAGE_SIZE = 1000
 HISTORY_CORRECTION_OVERLAP = timedelta(days=7)
 PROVIDER_READ_ATTEMPTS = 3
@@ -144,18 +145,13 @@ class PortfolioObserver:
             self.store.schedule_daily_job(user_id, scheduled_for=_scheduled_day(observed_at),
                                           legal_versions=self.legal_versions)
         self.store.database.record_worker_heartbeat("portfolio_daily", status="running")
-        with self.store.observer_lock() as locked:
-            if not locked:
-                logger.info("portfolio observer deferred; dated requests remain queued")
-                self.store.database.record_worker_heartbeat("portfolio_daily")
-                return ObserverRunResult(len(user_ids), 0, 0, 0, 0, deferred=True)
-            result = self._run_locked(observed_at)
+        result = self._run_users(observed_at)
         self.store.database.record_worker_heartbeat(
             "portfolio_daily", status="attention" if result.failed or result.degraded else "ok",
         )
         return result
 
-    def _run_locked(self, observed_at: datetime) -> ObserverRunResult:
+    def _run_users(self, observed_at: datetime) -> ObserverRunResult:
         user_ids = self.store.observer_user_ids()
         if not user_ids:
             return ObserverRunResult(0, 0, 0, 0, 0)
@@ -197,10 +193,11 @@ class PortfolioObserver:
 
         return ObserverRunResult(
             total_users=len(user_ids),
-            claimed_jobs=len(results),
+            claimed_jobs=sum(item.status != "deferred" for item in results),
             succeeded=sum(item.status == "succeeded" for item in results),
             degraded=sum(item.status == "degraded" for item in results),
             failed=sum(item.status == "failed" for item in results),
+            deferred=any(item.status == "deferred" for item in results),
         )
 
     def run_user(
@@ -214,16 +211,16 @@ class PortfolioObserver:
             raise ValueError(_AWARE_OBSERVER_TIME_REQUIRED)
         now = now.astimezone(UTC)
         scheduled_for = _scheduled_day(now)
-        job = self.store.claim_daily_job(
-            user_id,
-            job_type=JOB_TYPE,
-            scheduled_for=scheduled_for,
-            legal_versions=self.legal_versions,
-            recover_running=recover_running,
-        )
-        if job is None:
-            return None
-        return self.run_job(job, now=now)
+        with self.store.observer_lock(user_id) as locked:
+            if not locked:
+                return UserObservationResult(user_id, "deferred", False, 0, 0)
+            job = self.store.claim_daily_job(
+                user_id, job_type=JOB_TYPE, scheduled_for=scheduled_for,
+                legal_versions=self.legal_versions, recover_running=recover_running,
+            )
+            if job is None:
+                return None
+            return self.run_job(job, now=now)
 
     def run_job(
         self, job: JobRunRecord, *, now: datetime,
@@ -239,6 +236,7 @@ class PortfolioObserver:
             "snapshot_saved": False,
             "history_pages": 0,
             "history_new_observations": 0,
+            "refresh_scope": job.refresh_scope,
         }
         status: Literal["succeeded", "degraded"] = "degraded"
         try:
@@ -288,9 +286,19 @@ class PortfolioObserver:
         should_stop: Callable[[], bool] | None,
     ) -> None:
         _checkpoint(should_stop)
+        quick = job.refresh_scope == "quick"
+        deadline = time.monotonic() + QUICK_REFRESH_BUDGET_SECONDS if quick else None
         bundle, snapshot_id, opened_at = self._snapshot(job, details)
         _checkpoint(should_stop)
-        self._evidence(job, bundle, snapshot_id, now, details)
+        if quick:
+            details["evidence_sources"] = {}
+            details["evidence_status"] = "deferred_to_full_refresh"
+        else:
+            try:
+                self._evidence(job, bundle, snapshot_id, now, details)
+            except TBankUnavailable:
+                # NAV and the ledger remain usable if an enrichment provider fails.
+                details["evidence_sources"] = {"provider": "unavailable"}
         _checkpoint(should_stop)
         profile = self.store.current_profile(job.user_id)
         details["profile_version"] = profile.version if profile else None
@@ -298,6 +306,7 @@ class PortfolioObserver:
             job.user_id, job_run_id=job.id, account_id=bundle.account_id,
             environment=bundle.environment, account_opened_at=opened_at,
             now=max(now, bundle.refreshed_at), should_stop=should_stop,
+            max_pages=1 if quick else None, retry=not quick, deadline=deadline,
         )
         details.update(history_pages=pages, history_new_observations=inserted,
                        history_status=history_status)
@@ -306,26 +315,33 @@ class PortfolioObserver:
         self, job: JobRunRecord, details: dict[str, object],
     ) -> tuple[BrokerObservationBundle, UUID, datetime | None]:
         user_id = job.user_id
-        account = provider_read(lambda: self.broker.revalidate_account(user_id))
+        quick = job.refresh_scope == "quick"
+        account = (self.broker.revalidate_account(user_id) if quick
+                   else provider_read(lambda: self.broker.revalidate_account(user_id)))
         details.update(account_access=account.access_level, account_status=account.status,
                        account_type=account.type)
         user_info = None
-        try:
-            user_info = provider_read(lambda: self.broker.user_info(user_id))
-        except TBankUnavailable:
-            details["broker_user_info_status"] = "unavailable"
-        else:
-            details.update(
-                broker_user_info_status="received", broker_qualified=user_info.qualified,
-                broker_qualified_for_work_with=list(user_info.qualified_for_work_with),
-                broker_risk_level_code=user_info.risk_level_code, broker_tariff=user_info.tariff,
-            )
-        bundle = provider_read(lambda: self.broker.observation_bundle(user_id, full_catalog=True))
+        details["broker_user_info_status"] = "not_requested"
+        if not quick:
+            try:
+                user_info = provider_read(lambda: self.broker.user_info(user_id))
+            except TBankUnavailable:
+                details["broker_user_info_status"] = "unavailable"
+            else:
+                details.update(
+                    broker_user_info_status="received", broker_qualified=user_info.qualified,
+                    broker_qualified_for_work_with=list(user_info.qualified_for_work_with),
+                    broker_risk_level_code=user_info.risk_level_code,
+                    broker_tariff=user_info.tariff,
+                )
+        bundle = (self.broker.observation_bundle(user_id, quick=True) if quick else
+                  provider_read(lambda: self.broker.observation_bundle(user_id, full_catalog=True)))
         snapshot_id = self.store.save_snapshot(
             user_id, job_run_id=job.id, bundle=bundle, account=account, user_info=user_info,
         )
         details.update(
             snapshot_saved=True, analysis_status=bundle.analysis.status,
+            valuation_status=bundle.analysis.valuation_status,
             catalog_status=next((source.status for source in bundle.sources
                                  if source.id == "catalog"), "not_requested"),
         )
@@ -336,7 +352,9 @@ class PortfolioObserver:
         now: datetime, details: dict[str, object],
     ) -> None:
         evidence = provider_read(lambda: self.broker.evidence(job.user_id, bundle, now=now))
-        documents, assessments = build_tbank_evidence(bundle, evidence, assessed_at=now)
+        documents, assessments = build_tbank_evidence(
+            bundle, evidence, assessed_at=max(now, evidence.refreshed_at),
+        )
         new_documents, new_assessments = self.store.save_evidence(
             job.user_id, job_run_id=job.id, snapshot_id=snapshot_id, documents=documents,
             assessments=assessments, retrieved_at=evidence.refreshed_at,
@@ -344,7 +362,16 @@ class PortfolioObserver:
         details.update(
             evidence_documents_new=new_documents, risk_assessments_new=new_assessments,
             evidence_sources={source.id: source.status for source in evidence.sources},
-            credit_rating_status="data_missing",
+            credit_rating_status="received" if evidence.ratings else "data_missing",
+            credit_rating_coverage={
+                "held_bonds": sum(
+                    item.instrument_type == "bond" for item in bundle.analysis.securities
+                ),
+                "instruments_read": len(evidence.ratings),
+                "instruments_with_ratings": sum(
+                    bool(values) for values in evidence.ratings.values()
+                ),
+            },
             risk_states={
                 state: sum(item.state == state for item in assessments)
                 for state in ("data_missing", "normal", "watch", "elevated", "critical",
@@ -354,8 +381,12 @@ class PortfolioObserver:
 
     @staticmethod
     def _degraded(details: dict[str, object]) -> bool:
+        if details.get("refresh_scope") == "quick":
+            return (details.get("valuation_status") != "complete"
+                    or details.get("history_status") != "complete")
         return (
-            details["analysis_status"] != "observed"
+            (details.get("valuation_status") != "complete"
+             and details["analysis_status"] != "observed")
             or details["catalog_status"] == "partial"
             or details["broker_user_info_status"] != "received"
             or details["history_status"] != "complete"
@@ -374,6 +405,9 @@ class PortfolioObserver:
         account_opened_at: datetime | None,
         now: datetime,
         should_stop: Callable[[], bool] | None = None,
+        max_pages: int | None = None,
+        retry: bool = True,
+        deadline: float | None = None,
     ) -> tuple[int, int, str]:
         state = self.store.sync_state(user_id, account_id)
         window = _history_window(state, account_opened_at, now)
@@ -383,18 +417,20 @@ class PortfolioObserver:
 
         seen_cursors = {cursor} if cursor else set()
         inserted = 0
-        for page_number in range(1, MAX_HISTORY_PAGES_PER_RUN + 1):
+        page_limit = max_pages if max_pages is not None else MAX_HISTORY_PAGES_PER_RUN
+        for page_number in range(1, page_limit + 1):
             _checkpoint(should_stop)
-            page = provider_read(
-                partial(
+            if deadline is not None and time.monotonic() >= deadline:
+                return page_number - 1, inserted, "continuation_pending"
+            read = partial(
                     self.broker.history_page,
                     user_id,
                     from_at=window_from,
                     to_at=window_to,
                     cursor=cursor,
                     limit=HISTORY_PAGE_SIZE,
-                )
             )
+            page = provider_read(read) if retry else read()
             if page.has_next and page.next_cursor in seen_cursors:
                 raise RuntimeError("T-Invest operation pagination cursor repeated")
 
@@ -421,11 +457,11 @@ class PortfolioObserver:
                 seen_cursors.add(page.next_cursor)
                 cursor = page.next_cursor
 
-        return MAX_HISTORY_PAGES_PER_RUN, inserted, "continuation_pending"
+        return page_limit, inserted, "continuation_pending"
 
 
 class PortfolioRefreshCoordinator:
-    """One bounded worker per process, backed by durable owner-scoped job records."""
+    """Two bounded workers per process, backed by durable owner-scoped job records."""
 
     def __init__(
         self, store: PortfolioStore, broker: BrokerService, *, legal_versions: dict[str, str],
@@ -437,6 +473,7 @@ class PortfolioRefreshCoordinator:
         self._wake = Event()
         self._stopping = Event()
         self._worker: Thread | None = None
+        self._second_worker: Thread | None = None
         self._last_user: UUID | None = None
 
     def start(self) -> None:
@@ -445,6 +482,8 @@ class PortfolioRefreshCoordinator:
         worker = Thread(target=self._loop, name="portfolio-refresh", daemon=True)
         worker.start()
         self._worker = worker
+        self._second_worker = Thread(target=self._loop, name="portfolio-refresh-2", daemon=True)
+        self._second_worker.start()
 
     def close(self) -> None:
         self._stopping.set()
@@ -453,12 +492,14 @@ class PortfolioRefreshCoordinator:
             # An in-flight provider request has its own timeout. An unfinished
             # durable job is recovered after restart; shutdown never marks it fresh.
             self._worker.join(timeout=5)
+        if self._second_worker is not None:
+            self._second_worker.join(timeout=5)
 
-    def request(self, user_id: UUID) -> dict[str, object]:
+    def request(self, user_id: UUID, *, scope: str = "full") -> dict[str, object]:
         if self._stopping.is_set() or not self._requests.acquire(blocking=False):
             raise PortfolioRefreshBusy("portfolio_refresh_busy")
         try:
-            result = self.store.request_refresh(user_id, self.legal_versions)
+            result = self.store.request_refresh(user_id, self.legal_versions, scope=scope)
             self._wake.set()
             return result
         finally:
@@ -484,17 +525,16 @@ class PortfolioRefreshCoordinator:
             self._wake.clear()
 
     def run_pending(self) -> bool:
-        """Process at most one run; the daily observer shares the same lock."""
+        """Process one owner; a slow account never holds another owner's lock."""
         if self._stopping.is_set():
             return False
         self.store.database.record_worker_heartbeat("portfolio_refresh", status="running")
-        with self.store.observer_lock() as locked:
-            if not locked:
-                self.store.database.record_worker_heartbeat("portfolio_refresh")
-                return False
-            users = self.store.observer_user_ids()
-            ordered = self._fair_order(users)
-            for user_id in ordered:
+        users = self.store.observer_user_ids()
+        ordered = self._fair_order(users)
+        for user_id in ordered:
+            with self.store.observer_lock(user_id) as locked:
+                if not locked:
+                    continue
                 job = self.store.claim_refresh_job(user_id, self.legal_versions)
                 if job is None:
                     job = self.store.claim_pending_daily_job(user_id, self.legal_versions)

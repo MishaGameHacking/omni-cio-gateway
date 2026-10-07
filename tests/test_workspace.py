@@ -91,6 +91,54 @@ def test_preferences_defaults_have_no_invented_user_facts_and_do_not_alias() -> 
     assert not fresh["quiet_hours"]["enabled"]
 
 
+def test_old_digest_preferences_keep_midnight_schedule_and_new_defaults_are_explicit() -> None:
+    preferences = default_preferences()
+    assert preferences["digest_time"] == "20:30"
+    preferences.pop("digest_time")
+    preferences.pop("digest_timezone")
+    preferences["quiet_hours"]["timezone"] = "Europe/Berlin"
+    old = normalize_preferences(preferences)
+    assert old["digest_time"] == "00:00"
+    assert old["digest_timezone"] == "Europe/Berlin"
+    with pytest.raises(ValueError, match="digest_time_invalid"):
+        normalize_preferences({**old, "digest_time": "24:00"})
+
+
+def test_independent_nav_coverage_unlocks_fund_return_but_unknown_legacy_partial_does_not() -> None:
+    snapshots = [
+        {"captured_at": START, "analysis_status": "partial", "nav_rub": "1000",
+         "valuation_status": "complete"},
+        {"captured_at": END, "analysis_status": "partial", "nav_rub": "1100",
+         "valuation_status": "complete"},
+    ]
+    result = portfolio_performance(snapshots, [], watermark=END, history_complete=True)
+    assert result["return_percent"] == "10.0"
+    assert result["investment_result_rub"] == "100"
+    snapshots[0].pop("valuation_status")
+    assert portfolio_performance(snapshots, [], watermark=END, history_complete=True)[
+        "return_status"
+    ] == "unavailable"
+
+
+def test_foreign_internal_payments_do_not_require_fabricated_fx_for_rub_nav_return() -> None:
+    snapshots = [
+        {"captured_at": START, "analysis_status": "observed", "nav_rub": "1000"},
+        {"captured_at": END, "analysis_status": "observed", "nav_rub": "1100"},
+    ]
+    operations = [operation("DIVIDEND", "2", currency="USD"), operation("BROKER_FEE", "-1")]
+    result = portfolio_performance(snapshots, operations, watermark=END, history_complete=True)
+    assert result["return_percent"] == "10.0"
+    assert result["income_received_rub"] is None
+    assert result["fees_rub"] == "1"
+    assert result["metric_coverage"]["dividends_rub"]["status"] == "unavailable"
+    assert result["native_payment_sums"]["currencies"]["USD"]["dividends"] == "2"
+    operations.append(operation("INPUT", "2", currency="USD"))
+    result = portfolio_performance(snapshots, operations, watermark=END, history_complete=True)
+    assert result["return_percent"] is None
+    assert result["nav_change_rub"] == "100"
+    assert result["metric_coverage"]["fees_rub"]["status"] == "complete"
+
+
 @pytest.mark.parametrize(
     "change",
     [

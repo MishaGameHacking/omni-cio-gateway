@@ -14,7 +14,7 @@ from test_workspace_postgres import DATABASE_URL, goal_document, user
 from test_workspace_postgres import workspace_database as workspace_database
 
 from omnicio.db import Database
-from omnicio.goal_planning import goal_forecast, normalize_goal_plan
+from omnicio.goal_planning import goal_forecast, goal_plan_fields, normalize_goal_plan
 from omnicio.portfolio_store import SettingsVersionConflict
 from omnicio.workspace_store import WorkspaceNotFound, WorkspaceStore
 
@@ -91,6 +91,48 @@ def test_income_goal_never_counts_capital_contributions_or_appreciation_as_incom
     assert result["projected_amount_rub"] == "112000.00"
     assert result["required_monthly_kind"] == "income"
     assert result["simulation"] is None
+
+
+def test_income_plan_accepts_only_its_active_inputs_and_ignores_inactive_values() -> None:
+    document = {"monthly_income_rub": "2500", "target_in_today_money": False,
+                "annual_return_percent": "not applicable", "annual_volatility_percent": None,
+                "monthly_contribution_rub": -10, "annual_inflation_percent": "unused", "seed": None}
+    normalized = normalize_goal_plan(document, kind="income")
+    assert normalized["monthly_income_rub"] == "2500"
+    assert normalized["monthly_contribution_rub"] == "0"
+    assert normalized["annual_return_percent"] == "0"
+    assert normalized["seed"] == 42
+    result = goal_forecast(goal(kind="income"), document, today=date(2026, 1, 1))
+    assert result["projected_amount_rub"] == "130000.00"
+    assert result["applicable_fields"] == list(goal_plan_fields("income"))
+    assert "annual_return_percent" not in result["applicable_fields"]
+
+
+def test_capital_plan_does_not_require_income_or_optional_simulation_fields() -> None:
+    document = {"monthly_contribution_rub": "10000", "annual_return_percent": "0",
+                "target_in_today_money": False}
+    result = goal_forecast(goal(), document, today=date(2026, 1, 1))
+    assert result["projected_amount_rub"] == "220000.00"
+    assert result["simulation"] is None
+    assert result["chart_contract"]["observed_history"] is False
+    assert result["chart_contract"]["x"] == "model_month"
+    assert result["scenario_path"][0] == {
+        "month": 0, "amount_rub": "100000.00", "contributions_rub": "0.00",
+        "source_amount_rub": "100000.00", "target_rub": "220000.00",
+    }
+    assert result["scenario_path"][-1]["contributions_rub"] == "120000.00"
+
+
+@pytest.mark.parametrize("document", [
+    {"monthly_income_rub": "2500", "target_in_today_money": True},
+    {"monthly_income_rub": "-1", "target_in_today_money": False},
+    {"monthly_income_rub": "2500", "target_in_today_money": False, "unknown": 1},
+])
+def test_typed_plan_still_rejects_missing_active_or_unknown_inputs(
+    document: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError):
+        normalize_goal_plan(document, kind="income")
 
 
 def test_model_probability_is_reproducible_conditional_and_has_sampling_interval() -> None:

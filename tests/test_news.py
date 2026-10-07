@@ -8,7 +8,7 @@ from xml.sax.saxutils import escape
 
 import pytest
 
-from omnicio.news import NewsClient, NewsUnavailable, parse_news
+from omnicio.news import NewsClient, NewsNotFound, NewsUnavailable, parse_news, source_page_text
 
 NOW = datetime(2026, 10, 6, 12, tzinfo=UTC)
 
@@ -55,6 +55,58 @@ def test_news_keeps_real_dates_sorts_deduplicates_and_canonicalizes_source_https
     assert len(newest["id"]) == 64
     assert payload["fetched_at"] == NOW.isoformat()
     assert payload["freshness"] == "fresh"
+
+
+def test_search_scope_is_current_official_feed_and_read_is_bound_to_confirmed_id() -> None:
+    payload = parse_news(feed(item(title="Новая ставка"),
+                              item(title="Отчёт", link="https://www.cbr.ru/press/event/2")),
+                         fetched_at=NOW)
+    client = NewsClient()
+    connection = Mock()
+    connection.getresponse.return_value = Mock(status=200, getheader=Mock(return_value="text/html"),
+        read=Mock(return_value=("<html><body><nav>Не текст новости</nav>"
+             "<main>Официальная публикация с достаточно длинным подтверждённым текстом.</main>"
+             "<script>secret-script-token</script></body></html>").encode()))
+    with patch.object(client, "headlines", return_value=payload), \
+            patch("omnicio.news.http.client.HTTPSConnection", return_value=connection) as network:
+        found = client.search("ставка")
+        assert found["scope"] == "current_cbr_feed" and found["web_search"] is False
+        assert found["total"] == 1
+        read = client.read_source(found["items"][0]["id"])
+        assert read["scope"] == "official_page_text"
+        assert "Официальная публикация" in read["content"]
+        assert "secret-script-token" not in read["content"]
+        assert "Не текст новости" not in read["content"]
+        assert len(read["sha256"]) == 64
+        network.assert_called_once_with("www.cbr.ru", timeout=6)
+        assert client.read_source(found["items"][0]["id"])["freshness"] == "cached"
+        assert network.call_count == 1
+        with pytest.raises(NewsNotFound):
+            client.read_source("a" * 64)
+        assert network.call_count == 1
+
+
+@pytest.mark.parametrize("status", [301, 302, 404, 500])
+def test_source_reader_does_not_follow_redirect_or_invent_missing_page_text(status: int) -> None:
+    payload = parse_news(feed(item()), fetched_at=NOW)
+    client, connection = NewsClient(), Mock()
+    connection.getresponse.return_value.status = status
+    with patch.object(client, "headlines", return_value=payload), \
+            patch("omnicio.news.http.client.HTTPSConnection", return_value=connection), \
+            pytest.raises(NewsUnavailable):
+        client.read_source(payload["items"][0]["id"])
+    assert connection.request.call_count == 1
+
+
+def test_source_page_plaintext_is_bounded_and_invalid_encoding_fails() -> None:
+    text, truncated = source_page_text(
+        ("<html><body>" + "Публикация " * 3000 + "</body></html>").encode(),
+    )
+    assert len(text) == 16000 and truncated is True
+    with pytest.raises(NewsUnavailable):
+        source_page_text(b"\xff\xff")
+    with pytest.raises(NewsUnavailable):
+        source_page_text(b"x" * 512001)
 
 
 @pytest.mark.parametrize(

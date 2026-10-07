@@ -82,6 +82,15 @@ ACCEPTED_MIGRATION_SHA256 = {
     "0023_strategy_execution_guards.sql": (
         "0c4a3f29bc370d424aef7959cbee569f10adc0ad836572d7dc6428071a4e0efb"
     ),
+    "0024_background_reliability.sql": (
+        "24ab7ef2a42b928d13e445517e6961293272a67b6557b4aa865a8158825867a9"
+    ),
+    "0025_billing_recovery.sql": (
+        "5d6ac08ba7312d09aa85ee895f4d66b8bef7b08c1b8af3ce1d52e0457552d3b1"
+    ),
+    "0026_strategy_research_capacity.sql": (
+        "1cce5a0967c32a6ddd70c48986dd7dcf5074d23a1e8dfe60c7c5abbc72752288"
+    ),
 }
 USER_ONE = UUID("00000000-0000-0000-0000-000000000101")
 USER_TWO = UUID("00000000-0000-0000-0000-000000000102")
@@ -396,7 +405,7 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     reason="ephemeral PostgreSQL is required for migration integration coverage",
 )
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0026_strategy_research_capacity.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0027_assistant_stream_memory.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:

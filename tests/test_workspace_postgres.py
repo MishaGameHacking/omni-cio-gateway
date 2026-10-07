@@ -32,7 +32,7 @@ from omnicio.notifications import (
     NotificationTransport,
     push_public_key,
 )
-from omnicio.portfolio_store import SettingsVersionConflict
+from omnicio.portfolio_store import PortfolioStore, SettingsVersionConflict
 from omnicio.workspace import default_preferences
 from omnicio.workspace_store import WorkspaceNotFound, WorkspaceStore
 
@@ -155,6 +155,14 @@ def notification_service(database: Database) -> tuple[NotificationService, Mock,
                  "auth": base64.urlsafe_b64encode(bytes([2]) * 16).decode().rstrip("=")},
     }
     return service, transport, subscription
+
+
+def midnight_notification_preferences(timezone: str = "Europe/Moscow") -> dict[str, Any]:
+    """Keep receipt/retry fixtures independent of the new configurable default schedule."""
+    preferences = default_preferences()
+    preferences.update(digest_time="00:00", digest_timezone=timezone)
+    preferences["quiet_hours"]["timezone"] = timezone
+    return preferences
 
 
 def test_event_pagination_search_and_read_all_cover_more_than_fifty(
@@ -341,7 +349,7 @@ def test_queued_delivery_rechecks_read_state_preferences_and_retry_budget(
     transport.send_push.assert_not_called()
     second = insert_notification_event(service.workspace, owner, 2)
     service.queue_events(owner)
-    prefs = default_preferences()
+    prefs = midnight_notification_preferences()
     prefs["digest_frequency"] = "daily"
     service.workspace.save_preferences(owner, prefs, expected_version=0)
     with patch.object(database, "has_legal_versions", return_value=True):
@@ -443,7 +451,7 @@ def test_quiet_hours_and_digest_schedule_have_durable_deduplication(
     owner = user(database)
     service, transport, subscription = notification_service(database)
     channel = UUID(service.subscribe_push(owner, subscription)["id"])
-    prefs = default_preferences()
+    prefs = midnight_notification_preferences()
     prefs["quiet_hours"]["enabled"] = True
     service.workspace.save_preferences(owner, prefs, expected_version=0)
     now = datetime(2026, 10, 8, 20, tzinfo=UTC)
@@ -475,7 +483,7 @@ def test_digest_includes_late_imports_corrections_and_days_missed_during_worker_
     owner = user(database)
     service, transport, subscription = notification_service(database)
     channel = UUID(service.subscribe_push(owner, subscription)["id"])
-    prefs = default_preferences()
+    prefs = midnight_notification_preferences("UTC")
     prefs["digest_frequency"] = "daily"
     prefs["quiet_hours"]["timezone"] = "UTC"
     service.workspace.save_preferences(owner, prefs, expected_version=0)
@@ -541,7 +549,7 @@ def test_digest_cursor_and_outbox_commit_together_after_interrupted_enqueue(
     owner = user(database)
     service, _, subscription = notification_service(database)
     channel = UUID(service.subscribe_push(owner, subscription)["id"])
-    prefs = default_preferences()
+    prefs = midnight_notification_preferences("UTC")
     prefs["digest_frequency"] = "daily"
     prefs["quiet_hours"]["timezone"] = "UTC"
     service.workspace.save_preferences(owner, prefs, expected_version=0)
@@ -579,7 +587,7 @@ def pending_digest(
     channel = UUID(service.subscribe_push(owner, subscription)["id"])
     start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     start -= timedelta(days=2)
-    prefs = default_preferences()
+    prefs = midnight_notification_preferences("UTC")
     prefs["digest_frequency"] = "daily"
     prefs["quiet_hours"].update(enabled=True, timezone="UTC")
     service.workspace.save_preferences(owner, prefs, expected_version=0)
@@ -698,7 +706,7 @@ def test_unsubmitted_weekly_digest_recomputes_its_calendar_boundary_after_timezo
     service.subscribe_push(owner, subscription)
     insert_notification_event(service.workspace, owner, 201)
     service.queue_events(owner)
-    prefs = default_preferences()
+    prefs = midnight_notification_preferences("UTC")
     prefs["digest_frequency"] = "weekly"
     prefs["quiet_hours"]["timezone"] = "UTC"
     service.workspace.save_preferences(owner, prefs, expected_version=0)
@@ -707,6 +715,7 @@ def test_unsubmitted_weekly_digest_recomputes_its_calendar_boundary_after_timezo
     queued = next(row for row in service.status(owner)["deliveries"] if row["status"] == "queued")
     assert queued["next_attempt_at"] > now
     prefs["quiet_hours"]["timezone"] = "Europe/Moscow"
+    prefs["digest_timezone"] = "Europe/Moscow"
     service.workspace.save_preferences(owner, prefs, expected_version=1)
     with patch.object(database, "has_legal_versions", return_value=True):
         assert not service.deliver_one(owner, now=now)
@@ -744,7 +753,7 @@ def test_weekly_handoff_ttl_starts_after_period_close_and_never_slides_on_retry(
     with service.workspace._transaction(owner) as cur:
         cur.execute("UPDATE workspace_events SET updated_at = %s WHERE user_id = %s AND id = %s",
                     (now - timedelta(seconds=30), owner, event))
-    prefs = default_preferences()
+    prefs = midnight_notification_preferences(timezone)
     prefs["quiet_hours"].update(enabled=True, timezone=timezone, start="22:00", end="08:00")
     service.workspace.save_preferences(owner, prefs, expected_version=0)
     service.queue_events(owner, now=now)
@@ -1351,9 +1360,10 @@ def test_full_range_nav_sampling_keeps_exact_covered_performance_endpoints(
         )
     partial = store.dashboard(owner)
     assert partial["overview"]["history_coverage"]["status"] == "sampled"
-    assert partial["performance"]["status"] == "unavailable"
-    assert partial["performance"]["investment_result_rub"] is None
-    assert partial["income"]["total_rub"] is None
+    # A new pending window does not erase the independently completed watermark.
+    assert partial["performance"]["status"] == "available"
+    assert partial["performance"]["investment_result_rub"] == performance["investment_result_rub"]
+    assert partial["income"]["total_rub"] == result["income"]["total_rub"]
 
 
 def test_nav_history_empty_single_zero_and_replaced_account_are_explicit(
@@ -1391,3 +1401,207 @@ def test_nav_history_empty_single_zero_and_replaced_account_are_explicit(
     assert switched["overview"]["history_coverage"]["total_stored_observations"] == 0
     assert switched["overview"]["nav_rub"] is None
     assert switched["performance"]["investment_result_rub"] is None
+
+
+def _ledger_fact(
+    database: Database, owner: UUID, ident: str, at: datetime, *, observed: datetime | None = None,
+) -> None:
+    payload = {"provider_operation_id": ident, "operation_type": "OPERATION_TYPE_INPUT",
+               "state": "OPERATION_STATE_EXECUTED", "name": ident,
+               "payment": {"value": "100", "currency": "RUB"}}
+    digest = hashlib.sha256(f"{ident}:{at}".encode()).digest()
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        conn.execute(
+            "INSERT INTO operation_observations (user_id, account_id, observation_hash, "
+            "semantic_hash, provider_operation_id, operation_date, operation_type, "
+            "operation_state, "
+            "payment_value, payment_currency, normalized, observed_at) VALUES "
+            "(%s, %s, %s, %s, %s, %s, 'OPERATION_TYPE_INPUT', 'OPERATION_STATE_EXECUTED', "
+            "100, 'RUB', %s::jsonb, %s)",
+            (owner, str(owner), digest, digest, ident, at, json.dumps(payload),
+             observed or datetime.now(UTC)),
+        )
+
+
+def test_operations_pages_freeze_ingestion_and_bind_account_filters(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, other = user(database, account=True), user(database, account=True)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    _ledger_fact(database, owner, "alpha", now - timedelta(hours=36),
+                 observed=now - timedelta(hours=2))
+    _ledger_fact(database, owner, "beta", now - timedelta(hours=24),
+                 observed=now - timedelta(hours=2))
+    _ledger_fact(database, owner, "gamma", now - timedelta(hours=6),
+                 observed=now - timedelta(hours=2))
+    lower = now - timedelta(days=2)
+    first = store.operations(owner, limit=1, from_at=lower)
+    assert first["items"][0]["provider_operation_id"] == "gamma"
+    assert first["items"][0]["category"] == "contribution"
+    _ledger_fact(database, owner, "beta", now - timedelta(days=10),
+                 observed=now - timedelta(hours=1))
+    second = store.operations(owner, limit=1, from_at=lower, cursor=first["next_cursor"])
+    assert second["items"][0]["provider_operation_id"] == "beta"
+    third = store.operations(owner, limit=1, from_at=lower, cursor=second["next_cursor"])
+    assert third["items"][0]["provider_operation_id"] == "alpha"
+    assert third["next_cursor"] is None
+    # A fresh read sees the corrected date outside the selected interval.
+    assert {item["provider_operation_id"] for item in store.operations(
+        owner, from_at=lower,
+    )["items"]} == {"alpha", "gamma"}
+    with pytest.raises(ValueError, match="cursor_invalid"):
+        store.operations(other, from_at=lower, cursor=first["next_cursor"])
+    with pytest.raises(ValueError, match="cursor_invalid"):
+        store.operations(owner, from_at=lower - timedelta(days=1), cursor=first["next_cursor"])
+
+
+def test_selected_history_limit_is_applied_after_corrections_and_before_old_lifetime_rows(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    for index in range(5):
+        _ledger_fact(database, owner, str(index), now - timedelta(days=10 + index))
+    _ledger_fact(database, owner, "moved", now - timedelta(hours=12))
+    _ledger_fact(database, owner, "moved", now - timedelta(days=20))
+    _ledger_fact(database, owner, "current", now - timedelta(minutes=10))
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        conn.execute(
+            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
+            "VALUES(%s, %s, %s)", (owner, str(owner), now),
+        )
+    with patch("omnicio.workspace_store._MAX_OPERATIONS", 2), store._transaction(owner) as cur:
+        all_time = store._basis(cur, owner)
+        selected = store._basis(cur, owner, operations_from=now - timedelta(days=1))
+    assert not all_time.complete
+    assert selected.complete
+    assert [row["provider_operation_id"] for row in selected.operations] == ["current"]
+
+
+def test_fund_nav_coverage_enables_intraday_return_and_goal_without_sector_guess(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        for at, nav in ((now - timedelta(hours=2), "1000"), (now - timedelta(minutes=1), "1100")):
+            evidence = {"analysis": {"valuation_status": "complete", "sector_status": "partial"},
+                        "account": {"opened_at": (now - timedelta(days=30)).isoformat()}}
+            conn.execute(
+                "INSERT INTO portfolio_snapshots (user_id, account_id, environment, captured_at, "
+                "analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, rub_cash_unblocked, "
+                "limits_loading_in_progress, evidence) "
+                "VALUES(%s, %s, 'prod', %s, 'partial', %s, 0, 0, 0, false, %s::jsonb)",
+                (owner, str(owner), at, nav, json.dumps(evidence)),
+            )
+        conn.execute(
+            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
+            "VALUES(%s, %s, %s)", (owner, str(owner), now),
+        )
+    goal = store.create_goal(owner, goal_document(
+        progress_source="portfolio", allocation_percent="100", manual_amount_rub=None,
+    ))
+    result = store.dashboard(owner, history_period="1d")
+    assert result["overview"]["status"] == "observed"
+    assert result["overview"]["sector_status"] == "partial"
+    assert len(result["overview"]["history"]) == 2
+    assert Decimal(result["performance"]["return_percent"]) == 10
+    assert Decimal(goal["progress"]["amount_rub"]) == 1100
+
+
+def test_event_important_assets_filters_apply_before_pagination_and_summary_has_no_page_limit(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    with store._transaction(owner) as cur:
+        for number in range(80):
+            store._insert_event(
+                cur, owner, identity=number, category="system", kind="fixture_info",
+                title=f"Info {number}", occurred_at=now - timedelta(seconds=number),
+                target="settings", source={},
+            )
+        for number, category in enumerate(("portfolio", "payments")):
+            store._insert_event(
+                cur, owner, identity=number, category=category, kind="fixture_important",
+                title=f"Important {number}", occurred_at=now - timedelta(days=1),
+                target="portfolio", source={}, severity="warning",
+            )
+    first = store.events(owner, important_only=True, category="assets", limit=1)
+    assert len(first["items"]) == 1
+    assert first["items"][0]["severity"] == "warning"
+    second = store.events(owner, important_only=True, category="assets", limit=1,
+                          cursor=first["next_cursor"])
+    assert len(second["items"]) == 1
+    assert second["items"][0]["id"] != first["items"][0]["id"]
+    with pytest.raises(ValueError, match="cursor_filter_changed"):
+        store.events(owner, cursor=first["next_cursor"])
+    summary = store.events_summary(owner)
+    assert summary["unread_total"] == 82
+    assert summary["categories"] == {"system": 80, "portfolio": 1, "payments": 1, "goals": 0}
+    store.mark_all_events_read(owner, category="assets", through_revision=summary["max_revision"])
+    assert store.events_summary(owner)["unread_total"] == 80
+
+
+def test_new_nav_snapshot_keeps_original_risk_time_and_closed_position_is_not_current(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    now = datetime.now(UTC)
+    old = now - timedelta(days=3)
+    ids = []
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        for at in (old, now - timedelta(minutes=1)):
+            row = conn.execute(
+                "INSERT INTO portfolio_snapshots (user_id, account_id, environment, captured_at, "
+                "analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, rub_cash_unblocked, "
+                "limits_loading_in_progress, evidence) "
+                "VALUES(%s, %s, 'prod', %s, 'observed', 1000, 0, 0, 0, false, '{}'::jsonb) "
+                "RETURNING id", (owner, str(owner), at),
+            ).fetchone()
+            ids.append(row["id"])
+            conn.execute(
+                "INSERT INTO portfolio_snapshot_positions (snapshot_id, user_id, instrument_uid, "
+                "ticker, instrument_type, quantity, current_price_value, current_price_currency, "
+                "blocked, blocked_lots, value_rub) VALUES "
+                "(%s, %s, 'held', 'HELD', 'share', 10, 100, 'RUB', false, 0, 1000)",
+                (row["id"], owner),
+            )
+        conn.execute(
+            "INSERT INTO portfolio_snapshot_positions (snapshot_id, user_id, instrument_uid, "
+            "ticker, instrument_type, quantity, current_price_value, current_price_currency, "
+            "blocked, blocked_lots, value_rub) VALUES "
+            "(%s, %s, 'sold', 'SOLD', 'share', 1, 100, 'RUB', false, 0, 100)", (ids[0], owner),
+        )
+        conn.execute(
+            "INSERT INTO portfolio_risk_assessments (user_id, snapshot_id, instrument_uid, state, "
+            "rating_status, fundamental_status, source_status, reasons, evidence, assessed_at) "
+            "VALUES(%s, %s, 'held', 'watch', 'data_missing', 'data_missing', 'partial', "
+            "'[]'::jsonb, '{}'::jsonb, %s)", (owner, ids[0], old),
+        )
+    store = PortfolioStore(database)
+    positions = store.portfolio_visualization(owner, now=now)["latest"]["positions"]
+    assert positions[0]["risk_state"] == "watch"
+    assert positions[0]["assessed_at"] == old
+    assert positions[0]["assessment_freshness"] == "stale"
+    held = store.instrument_visualization(owner, "held", now=now)
+    assert held["latest"]["assessed_at"] == old
+    assert held["current_holding"]["status"] == "held"
+    sold = store.instrument_visualization(owner, "sold", now=now)
+    assert sold["latest"]["quantity"] == 1
+    assert sold["current_holding"]["status"] == "not_held"
+    assert sold["current_holding"]["quantity"] == "0"
+    assert len(sold["history"]) == 1  # No manufactured zero-price history point.

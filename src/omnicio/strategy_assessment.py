@@ -1485,7 +1485,7 @@ def select_strategy_candidates(
     candidates: Sequence[StrategyCandidateFacts],
     *,
     as_of: datetime,
-    engine_version: str = "1.2.0",
+    engine_version: str = "1.3.0",
 ) -> dict[str, Any]:
     """Screen dated facts, rank by the mandate and allocate bounded research weights.
 
@@ -1493,7 +1493,8 @@ def select_strategy_candidates(
     is useful, but it does not certify a complete personal investment selection.
     """
     data = normalize_document(document)
-    if as_of.tzinfo is None or len(candidates) > 100 or engine_version not in {"1.1.0", "1.2.0"}:
+    if (as_of.tzinfo is None or len(candidates) > 100
+            or engine_version not in {"1.1.0", "1.2.0", "1.3.0"}):
         raise ValueError("strategy_candidate_input_invalid")
     ids = [row.instrument_uid for row in candidates]
     if any(not uid for uid in ids) or len(ids) != len(set(ids)):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from threading import Event
 from unittest.mock import Mock, patch
 from uuid import UUID
 
@@ -16,7 +17,7 @@ from omnicio.cbr import (
     CBRRate,
     CBRUnavailable,
 )
-from omnicio.market import MarketService
+from omnicio.market import MarketService, MarketStreamLimit
 from omnicio.tbank import (
     TBankFxQuote,
     TBankHistoricCandle,
@@ -550,12 +551,13 @@ def test_market_service_rejects_malformed_provider_ohlc_as_unavailable() -> None
         live_after_seconds=30,
     )
 
-    with pytest.raises(TBankUnavailable, match="missing OHLC"):
-        service.instrument_snapshot(
-            UUID("00000000-0000-0000-0000-000000000001"),
-            "uid-1",
-            period="1m",
-        )
+    snapshot = service.instrument_snapshot(
+        UUID("00000000-0000-0000-0000-000000000001"), "uid-1", period="1m",
+    )
+    assert snapshot.history_status == "unavailable"
+    assert snapshot.errors["history"] == "source_unavailable"
+    assert snapshot.candles == ()
+    assert snapshot.last_price == "102.5"
 
 
 def test_market_service_rejects_unknown_instrument_period_before_provider_read() -> None:
@@ -570,6 +572,86 @@ def test_market_service_rejects_unknown_instrument_period_before_provider_read()
             "uid-1",
             period="decade",
         )
+
+
+@pytest.mark.parametrize("failed", ["history", "quote", "trading_status", "metadata"])
+def test_provider_component_failure_keeps_independent_market_data(failed: str) -> None:
+    broker = FakeBroker(datetime.now(UTC).isoformat())
+    methods = {"history": "market_exchange_candles", "quote": "market_last_price",
+               "trading_status": "market_trading_status", "metadata": "market_instrument_metadata"}
+    setattr(broker, methods[failed], Mock(side_effect=TBankUnavailable("private upstream text")))
+    service = MarketService(broker=broker, cbr=FakeCBR())  # type: ignore[arg-type]
+    try:
+        result = service.instrument_snapshot(
+            UUID("00000000-0000-0000-0000-000000000001"), "uid-1", period="1m",
+        )
+        assert result.errors[failed] == "source_unavailable"
+        assert bool(result.candles) is (failed != "history")
+        assert result.last_price == (None if failed == "quote" else "102.5")
+        if failed == "trading_status":
+            assert result.trading_status == "UNKNOWN"
+            assert result.api_trade_available is False
+        if failed == "metadata":
+            assert result.price_unit == "unknown"
+            assert result.price_currency is None
+        assert "private" not in str(result)
+    finally:
+        service.close()
+
+
+def test_batch_quotes_do_not_wait_for_metadata_and_cache_is_connection_scoped() -> None:
+    owner = UUID("00000000-0000-0000-0000-000000000001")
+    broker = Mock()
+    first = BrokerConnectionStatus(True, "prod", "first", verified_at=datetime.now(UTC))
+    broker.status.return_value = first
+    broker.candidate_last_prices.return_value = (
+        TBankLastPrice("uid-1", "10", datetime.now(UTC)),
+        TBankLastPrice("uid-2", "NaN", datetime.now(UTC)),
+    )
+    release = Event()
+
+    def metadata_read(user_id: UUID, uid: str) -> TBankInstrumentMetadata:
+        assert release.wait(timeout=5)
+        return TBankInstrumentMetadata(uid, uid, uid, "", "share", "", "RU", False,
+                                       currency="RUB")
+
+    broker.market_instrument_metadata.side_effect = metadata_read
+    service = MarketService(broker=broker, cbr=FakeCBR())  # type: ignore[arg-type]
+    try:
+        result = service.batch_quotes(owner, ("uid-1", "uid-2"))
+        rows = result["items"]
+        assert rows[0]["last_price"] == "10"
+        assert rows[0]["metadata_status"] == "loading"
+        assert rows[0]["price_currency"] is None
+        assert rows[1]["quote_status"] == "unavailable"
+        assert rows[1]["last_price"] is None
+        service.batch_quotes(owner, ("uid-1", "uid-2"))
+        assert broker.candidate_last_prices.call_count == 1
+        broker.status.return_value = BrokerConnectionStatus(True, "prod", "second")
+        service.batch_quotes(owner, ("uid-1", "uid-2"))
+        assert broker.candidate_last_prices.call_count == 2
+    finally:
+        release.set()
+        service.close()
+
+
+def test_stream_admission_is_per_owner_bounded_and_idempotently_released() -> None:
+    service = MarketService(broker=Mock(), cbr=FakeCBR())  # type: ignore[arg-type]
+    owner, another = UUID(int=1), UUID(int=2)
+    first, second = service.acquire_stream(owner), service.acquire_stream(owner)
+    with pytest.raises(MarketStreamLimit):
+        service.acquire_stream(owner)
+    other = service.acquire_stream(another)
+    service.release_stream(another, first)
+    with pytest.raises(MarketStreamLimit):
+        service.acquire_stream(owner)
+    service.release_stream(owner, first)
+    service.release_stream(owner, first)
+    replacement = service.acquire_stream(owner)
+    for user_id, lease in ((owner, second), (owner, replacement), (another, other)):
+        service.release_stream(user_id, lease)
+    assert service._streams == {}
+    service.close()
 
 
 def _history_xml(*, rows: str, code: str = "R01235") -> bytes:
