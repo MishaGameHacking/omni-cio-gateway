@@ -1825,7 +1825,10 @@ async function serveTestProfileStrategyResearch({response, fixture, body}) {
   assert.match(body.request_id, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/);
   if (body.expected_version !== fixture.selection.version) return sendJSON(response, {detail: "settings_version_conflict"}, 409);
   if (fixture.researchPrerequisite) return sendJSON(response, {status: fixture.researchPrerequisite, execution_enabled: false});
-  if (fixture.researchDropBeforeAccept) { fixture.researchDropBeforeAccept = false; response.destroy(); return; }
+  if (fixture.researchDropBeforeAccept) {
+    fixture.researchDropBeforeAccept = false;
+    return sendJSON(response, {detail: "synthetic_lost_ack"}, 503);
+  }
   const existing = fixture.researchRequests.get(body.request_id);
   if (existing) {
     if (JSON.stringify(existing.body) !== JSON.stringify(body)) return sendJSON(response, {detail: "settings_version_conflict"}, 409);
@@ -1838,7 +1841,10 @@ async function serveTestProfileStrategyResearch({response, fixture, body}) {
   const request = {id: body.request_id, body: clone(body), status: "running", run_id: null, error_code: null,
     created_at: new Date().toISOString(), updated_at: new Date().toISOString(), expires_at: new Date(Date.now() + 600000).toISOString()};
   fixture.researchRequests.set(request.id, request);
-  if (fixture.researchLoseAcknowledgment) { fixture.researchLoseAcknowledgment = false; response.destroy(); return; }
+  if (fixture.researchLoseAcknowledgment) {
+    fixture.researchLoseAcknowledgment = false;
+    return sendJSON(response, {detail: "synthetic_lost_ack"}, 503);
+  }
   const result = completeTestResearch(fixture, request);
   if (fixture.researchHoldAcknowledgment) await new Promise(release => fixture.researchHeldAcknowledgments.push(release));
   return sendJSON(response, result);
