@@ -91,7 +91,7 @@
   }) : ""}</div>`;
   const loading = (label = "Загружаем данные…") => `<output class="loading-panel"><span class="spinner" aria-hidden="true"></span>${escape(label)}</output>`;
   const heading = (title, detail = "", actions = "") => `<div class="view-header"><div><h1>${escape(title)}</h1>${detail ? renderHeadingP(detail) : ""}</div>${actions ? renderHeadingViewActions(actions) : ""}</div>`;
-  const cardHeader = (title, route = "", label = "Смотреть все") => `<div class="card-header"><h2>${escape(title)}</h2>${route ? renderCardHeaderTextButton(route, label) : ""}</div>`;
+  const cardHeader = (title, route = "", label = "Смотреть все") => `<div class="card-header"><h2>${escape(title)}</h2>${route ? renderCardHeaderTextButton(route, label, title) : ""}</div>`;
   const periodLabels = [["1d", "1Д"], ["1w", "1Н"], ["1m", "1М"], ["3m", "3М"], ["1y", "1Г"], ["all", "ВСЕ"]];
   const periods = (scope, selected, includeAll = true) => `<div class="periods" aria-label="Период графика">${periodLabels.filter(([key]) => includeAll || key !== "all").map(([key, label]) => renderPeriodsPeriodButton(key, scope, selected, label)).join("")}</div>`;
   const filteredSeries = (data, period, timeKey = "captured_at") => {
@@ -318,8 +318,8 @@
   function renderHeadingViewActions(actions) {
     return `<div class="view-actions">${actions}</div>`;
   }
-  function renderCardHeaderTextButton(route, label) {
-    return `<button class="text-button" data-route="${escape(route)}">${escape(label)} ${icon("arrow", true)}</button>`;
+  function renderCardHeaderTextButton(route, label, title) {
+    return `<button class="text-button" data-route="${escape(route)}" aria-label="${escape(label || title)}">${escape(label)} ${icon("arrow", true)}</button>`;
   }
   function renderPeriodsPeriodButton(key, scope, selected, label) {
     return `<button class="period-button" data-period="${key}" data-period-scope="${escape(scope)}" aria-pressed="${key === selected}">${label}</button>`;

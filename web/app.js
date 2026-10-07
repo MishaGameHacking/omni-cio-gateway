@@ -3711,7 +3711,8 @@
     return `${esc(format(data[key].value, renderIndicatorCardsValue(key)))} ${unit}`;
   }
   function renderIndicatorCardsFragment2(data, key) {
-    return `Действует с ${esc(date(data[key].effective_date))}`;
+    const label = key === "key_rate" ? "Данные на" : "Действует с";
+    return `${label} ${esc(date(data[key].effective_date))}`;
   }
   function renderIndicatorCardsCard(title, data, key, unit) {
     return `<article class="card"><p class="card-label">${title}</p><strong class="indicator-value">${data?.[key] ? renderIndicatorCardsFragment(data, key, unit) : "—"}</strong><p class="indicator-date">${data?.[key]?.effective_date ? renderIndicatorCardsFragment2(data, key) : "Нет данных от источника"}</p></article>`;
