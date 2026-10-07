@@ -2249,6 +2249,7 @@ async function exerciseGoalSourceContract({fixture, click, wait, evaluate, scree
   const staleDate = await evaluate(`window.OmniUI.date(${JSON.stringify(serverContracts.goal_forecast_stale.source_as_of)}, true)`);
   assert.ok(staleText.includes(staleDate), "The source's original date is retained, not replaced by today's calculation date");
   assert.ok(!staleText.includes("Сумма в заданном сценарии") && !staleText.includes("Условная модель вероятности"));
+  await evaluate('document.querySelector("#goal-plan-result").scrollIntoView({behavior:"instant",block:"center"})');
   await screenshot(`goal-source-stale-${round}-390.png`);
   await click('#goal-plan-result [data-route="portfolio"]');
   await wait('!document.querySelector("#workspace-dialog").open && !document.querySelector("#view-portfolio").hidden', "The source-recovery action reaches the existing account controls");
@@ -2384,12 +2385,33 @@ async function exerciseOperatorCapability({fixture,send,base,round,wait,click,ev
   fixture.canViewOperationalMetrics=true;
   await send("Page.navigate",{url:`${base}?case=signed-read-contracts-${round}&operator=1#settings`});
   await wait('document.querySelector("#operations-settings")?.textContent.includes("Требует внимания оператора")',"The explicit server capability enables the operator panel");
-  await evaluate('[...document.querySelectorAll("#operations-settings details")].forEach(item=>item.open=true)');
   const text=await evaluate('document.querySelector("#operations-settings").textContent');
   assert.ok(text.includes("Счета без своевременного обновления") && text.includes("Неопределённый результат отправки") && text.includes("Подтверждение запуска не получено"));
   assert.ok(!text.includes("worker_not_reported") && !text.includes("stale_success_accounts"),"Operator codes are translated into meaningful statuses");
+  await evaluate(`(() => {
+    const panel=document.querySelector("#operations-settings");
+    panel.querySelectorAll("details").forEach(item=>item.open=false);
+    panel.scrollIntoView({behavior:"instant",block:"start"});
+    window.scrollBy({top:-16,behavior:"instant"});
+  })()`);
   await screenshot(`operator-status-${round}-390.png`);
   await checkLayout(`operator-status-${round}-390`);
+  for (const [name,sectionIndex,workerIndex] of [
+    ["collection",0,-1],["delivery",1,-1],
+    ["workers-notifications",2,0],["workers-refresh",2,1],["workers-daily",2,2]
+  ]) {
+    const visible=await evaluate(`(() => {
+      const sections=[...document.querySelectorAll("#operations-settings > details")];
+      sections.forEach((item,index)=>item.open=index===${sectionIndex});
+      const section=sections[${sectionIndex}];
+      const target=${workerIndex} < 0 ? section : section.querySelectorAll(":scope > div")[${workerIndex}];
+      target.scrollIntoView({behavior:"instant",block:"center"});
+      const rect=target.getBoundingClientRect();
+      return rect.top>=0 && rect.bottom<=document.querySelector("#mobile-nav").getBoundingClientRect().top;
+    })()`);
+    assert.ok(visible,"The focused operator evidence fits above mobile navigation: "+name);
+    await screenshot(`operator-${name}-${round}-390.png`);
+  }
   const before=fixture.requests.filter(item=>item.path==="/api/system/metrics").length;
   fixture.canViewOperationalMetrics=false;
   await evaluate('document.querySelector("#main-content").focus(); window.dispatchEvent(new Event("focus"))');
