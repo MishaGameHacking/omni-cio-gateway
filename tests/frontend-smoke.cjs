@@ -159,6 +159,8 @@ const makeFixture = mode => {
     researchRuns: [],
     heldResearchReads: [],
     holdResearchReads: false,
+    heldExecutionReads: [],
+    holdExecutionReads: false,
     mandate: null,
     recoveryLostAck: false,
     connected: true
@@ -1611,14 +1613,18 @@ const executionDetailDTO = execution => ({
   recovery_only: true,
   new_orders_enabled: false
 });
-function serveTestExecutions({
+async function serveTestExecutions({
   path,
   fixture,
   response,
   method,
   body
 }) {
-  if (path === "/api/portfolio/executions") return sendJSON(response, executionListDTO(fixture));
+  if (path === "/api/portfolio/executions") {
+    const saved = clone(executionListDTO(fixture));
+    if (fixture.holdExecutionReads) await new Promise(release => fixture.heldExecutionReads.push(release));
+    return sendJSON(response, saved);
+  }
   const [,,,, id, action] = path.split("/");
   const execution = fixture.executions.find(item => item.id === id);
   if (!execution) return sendJSON(response, {
@@ -1635,7 +1641,7 @@ function serveTestExecutions({
       leg.lots_executed = leg.lots_requested;
       leg.last_checked_at = stamp;
       leg.terminal_at = stamp;
-      execution.status = execution.legs.every(item => item.status === "shadow_filled") ? "completed" : "running";
+      execution.status = execution.legs.every(item => item.status === "shadow_filled") ? "succeeded" : "running";
       return sendJSON(response, executionDetailDTO(execution));
     }
     if (action === "cancel") {
@@ -2276,7 +2282,8 @@ async function exerciseExecutionPlanner({fixture,click,fieldValue,wait,evaluate,
   await checkLayout("shadow-execution-before-dispatch-390");
   await click('#dialog-content [data-action="recovery-dispatch"]');
   await until(()=>leg.status==="shadow_filled","Explicit shadow dispatch records a simulated fill");
-  await wait('!document.querySelector("#dialog-content [data-action=recovery-dispatch]")',"A terminal plan has no next-step action");
+  assert.equal(run.status,"succeeded","Shadow completion uses the server terminal status");
+  await wait('!document.querySelector("#dialog-content [data-action=recovery-dispatch]") && document.querySelector("#dialog-content").textContent.includes("Завершено")',"The acknowledged terminal plan displays completion and has no next-step action");
   const dispatched=fixture.requests.filter(item=>item.path.endsWith("/dispatch"));
   assert.equal(dispatched.length,1);
   assert.equal(dispatched[0].body.expected_leg_id,leg.id,"Dispatch carries the exact reviewed pending leg UUID");
@@ -3153,8 +3160,17 @@ async function exerciseRefreshRecovery({
     expires_at: day(-1),
     revoked_at: null
   };
+  fixture.holdExecutionReads = true;
   await click('[data-action="recovery-reload"]');
-  await wait('document.querySelector(".recovery-row")', "Existing execution history");
+  await until(() => fixture.heldExecutionReads.length > 0, "Execution history readback is in flight");
+  try {
+    assert.equal(await evaluate('document.querySelector("[data-action=disconnect-start]").disabled'), true, "Pending history readback blocks disconnect even when the previous history was terminal");
+    assert.equal(await evaluate('Boolean(document.querySelector(\'[data-recovery-id="synthetic-run"]\'))'), false, "The active execution has not arrived before the held response");
+  } finally {
+    fixture.holdExecutionReads = false;
+    fixture.heldExecutionReads.splice(0).forEach(release => release());
+  }
+  await wait('document.querySelector(\'[data-recovery-id="synthetic-run"]\')', "Authoritative active execution history");
   assert.equal(await evaluate('document.querySelector("[data-action=disconnect-start]").disabled'), true, "Active order blocks a simple broker disconnect");
   await click('[data-action="recovery-open"]');
   await wait('document.querySelector(".recovery-leg")', "Persisted execution details");

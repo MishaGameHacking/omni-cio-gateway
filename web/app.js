@@ -3095,7 +3095,7 @@
   };
   const executionActive = execution => ["created", "running", "reconciling"].includes(execution?.status) && ["live", "sandbox", "shadow"].includes(execution?.mode);
   const activeExecutionExists = () => Boolean(state.data.executions?.has_active_live_execution || state.data.executions?.executions?.some(item => item.mode !== "shadow" && executionActive(item)));
-  const disconnectBlocked = () => !state.data.executions || Boolean(state.errors.executions) || activeExecutionExists();
+  const disconnectBlocked = () => state.loading.has("executions") || !state.data.executions || Boolean(state.errors.executions) || activeExecutionExists();
   const executionStatus = status => ({
     created: T("План создан"),
     running: T("Есть незавершённые шаги"),
@@ -3142,10 +3142,13 @@
     if (broker && state.data.connection?.connected) broker.innerHTML = `<h2 class="panel-title">${H("Подключение T-Invest")}</h2>${brokerSettingsHTML()}`;
   };
   const reloadRecovery = async () => {
-    await loadResource("executions", "/api/portfolio/executions", {
+    const generation = state.generation;
+    const pending = loadResource("executions", "/api/portfolio/executions", {
       force: true
     });
     if (state.user && !state.locked) repaintRecoveryPanel();
+    await pending;
+    if (generation === state.generation && state.user && !state.locked) repaintRecoveryPanel();
   };
   const nextExecutionLeg = execution => execution?.legs?.find(leg => !["filled", "shadow_filled", "cancelled", "rejected", "failed"].includes(leg.status));
   const recoveryButtons = execution => {
