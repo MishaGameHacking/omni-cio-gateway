@@ -1824,7 +1824,8 @@
     "startup.loading": ["Загружаем приложение","Loading the application"],
     "startup.wait": ["Если загрузка не завершится, проверьте соединение и обновите страницу кнопкой браузера. Текущий адрес можно открыть снова.","If loading does not finish, check your connection and refresh using the browser. You can reopen the current address."],
     "startup.unavailable": ["Приложение не загрузилось","The application did not load"],
-    "startup.recover": ["Некоторые файлы приложения не загрузились или относятся к другой версии. Повторите загрузку — текущий адрес страницы сохранится.","Some application files are missing or belong to a different version. Reload to retry; the current page address will be preserved."]
+    "startup.recover": ["Некоторые файлы приложения не загрузились или относятся к другой версии. Повторите загрузку — текущий адрес страницы сохранится.","Some application files are missing or belong to a different version. Reload to retry; the current page address will be preserved."],
+    "events.counter_pending": ["Счётчик уточняется","Count pending"]
   };
   const validatePair = (key, pair) => {
     if (!Array.isArray(pair) || pair.length !== 2 || pair.some(value => typeof value !== "string")) throw new Error(`Invalid translation: ${key}`);

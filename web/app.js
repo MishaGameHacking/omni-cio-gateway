@@ -134,6 +134,8 @@
     searchFailures: {},
     eventDetail: null,
     eventHistoryExtended: false,
+    eventWrites: new Set(),
+    eventWritesOverlapped: false,
     deliveryBusy: false,
     deliveryDrafts: {},
     searchSequence: 0,
@@ -586,6 +588,7 @@
     stopQuoteStream();
     stopTableQuotes();
     clearTimeout(eventSummaryTimer);
+    eventSummaryRequest = null;
     state.quotes = {};
     state.screenDrafts = {};
     state.screenBaselines = {};
@@ -644,6 +647,8 @@
     state.searchFailures = {};
     state.eventDetail = null;
     state.eventHistoryExtended = false;
+    state.eventWrites.clear();
+    state.eventWritesOverlapped = false;
     state.deliveryBusy = false;
     state.deliveryDrafts = {};
     state.prefs = {
@@ -931,6 +936,11 @@
       freshnessTimer = setTimeout(() => void refreshVisibleData(), 60000);
     }
   };
+  const eventReadEpoch = () => state.resourceVersions.get("eventReads") || 0;
+  const currentEventRead = epoch => epoch === eventReadEpoch() && state.eventWrites.size === 0;
+  const retryMissingEvents = () => {
+    if (!state.data.events && !state.loading.has("events") && !state.eventWrites.size && state.user && !state.locked && state.mode === "account" && ["home", "events"].includes(state.view)) void loadResource("events", eventsPath(), {force: true});
+  };
   const loadResource = async (name, path, {
     force = false,
     read = null,
@@ -944,20 +954,24 @@
     state.resourceVersions.set(name, sequence);
     const generation = state.generation;
     const goalsSequence = state.resourceVersions.get("goals") || 0;
+    const eventsEpoch = eventReadEpoch();
+    const current = () => generation === state.generation && state.resourceVersions.get(name) === sequence;
+    const currentResult = () => current() && (name !== "events" || currentEventRead(eventsEpoch));
     state.loading.add(name);
     delete state.errors[name];
     const promise = (read ? read() : api(path, options)).then(payload => {
-      if (generation !== state.generation || state.resourceVersions.get(name) !== sequence) return null;
+      if (!currentResult()) return null;
       state.data[name] = resourceSnapshot(name, payload);
-      adoptLoadedResource(name, payload, goalsSequence);
+      adoptLoadedResource(name, payload, goalsSequence, eventsEpoch);
       return payload;
     }).catch(error => {
-      if (generation === state.generation && state.resourceVersions.get(name) === sequence && !isCancelled(error)) state.errors[name] = error;
+      if (currentResult() && !isCancelled(error)) state.errors[name] = error;
       return null;
     }).finally(() => {
-      if (generation === state.generation && state.resourceVersions.get(name) === sequence) {
+      if (current()) {
         state.loading.delete(name);
         state.resourceRequests.delete(name);
+        if (name === "events" && !currentEventRead(eventsEpoch)) { retryMissingEvents(); return; }
         if (state.mode !== "public" && (state.user || state.tour) && !state.locked && !document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent();
       }
     });
@@ -969,15 +983,15 @@
     if (name === "events") return eventSnapshot(payload);
     return payload;
   };
-  const adoptWorkspace = (payload, goalsSequence) => {
+  const adoptWorkspace = (payload, goalsSequence, eventsEpoch) => {
     if (payload.preferences) adoptPreferences(payload.preferences);
     if (payload.goals && goalsSequence === (state.resourceVersions.get("goals") || 0)) state.data.goals = mergeGoalList(payload.goals);
-    if (payload.events) state.data.events = eventSnapshot(payload.events);
+    if (payload.events && currentEventRead(eventsEpoch) && state.eventFilter === "all") state.data.events = eventSnapshot(payload.events);
     if (payload.connection) state.data.connection = payload.connection;
     $("#workspace-freshness").textContent = payload.overview?.observed_at ? `T-Invest · ${date(payload.overview.observed_at, true)} ${T("МСК · Стоимость по последнему наблюдению")}` : renderAdoptWorkspaceValue(payload);
   };
-  const adoptLoadedResource = (name, payload, goalsSequence) => {
-    if (name === "workspace") adoptWorkspace(payload, goalsSequence);
+  const adoptLoadedResource = (name, payload, goalsSequence, eventsEpoch) => {
+    if (name === "workspace") adoptWorkspace(payload, goalsSequence, eventsEpoch);
     if (name === "preferences") adoptPreferences(payload);
     if (name === "strategy") adoptStrategy(payload);
   };
@@ -1201,9 +1215,28 @@
     const name = state.tour ? T("Знакомство") : state.prefs.draft?.display_name?.trim() || T("Мой профиль");
     $("#profile-name").textContent = name;
     $("#profile-avatar").textContent = name[0]?.toLocaleUpperCase("ru-RU") || T("О");
-    const unread = number(state.data.eventSummary?.unread_total ?? state.data.events?.unread_count) || 0;
-    $("#notification-dot").hidden = unread === 0 || state.tour || Boolean(state.data.events?.alerts_suppressed);
-    $("#notifications-button").setAttribute("aria-label", unread ? `${T("Уведомления:")} ${unread} ${T("непрочитанных")}` : T("Уведомления"));
+    paintEventCounters();
+  };
+  const eventUnreadCount = () => {
+    if (state.tour) return 0;
+    const unread = number(state.data.eventSummary?.unread_total);
+    return Number.isSafeInteger(unread) && unread >= 0 ? unread : null;
+  };
+  const eventReadBoundary = () => state.data.eventSummary?.max_revision ?? state.data.events?.read_all_before;
+  const eventUnreadLabel = unread => unread === null ? T("events.counter_pending") : `${unread} ${T("непрочитанных")}`;
+  const paintEventCounters = () => {
+    const unread = eventUnreadCount();
+    const unknown = unread === null;
+    const bell = $("#notifications-button");
+    $("#notification-dot").hidden = unknown || unread === 0 || state.tour || Boolean(state.data.eventSummary?.alerts_suppressed);
+    bell.setAttribute("aria-label", unknown || unread > 0 ? `${T("Уведомления:")} ${eventUnreadLabel(unread)}` : T("Уведомления"));
+    bell.title = unknown || state.errors.eventSummary ? T("events.counter_unavailable") : "";
+    for (const chip of $$("[data-event-unread]")) chip.textContent = eventUnreadLabel(unread);
+    for (const control of $$('[data-action="events-read-all"]')) {
+      control.hidden = unknown || unread === 0 || state.tour;
+      control.disabled = state.eventWrites.size > 0 || state.loading.has("events-read-all");
+      control.setAttribute("aria-busy", String(control.disabled));
+    }
   };
   const refreshActive = result => ["queued", "running"].includes(result?.status);
   const refreshContext = () => ({
@@ -3418,7 +3451,6 @@
   };
   const eventNewsArchiveHTML = () => {
     if (state.tour) return "";
-    if (state.tour) return "";
     const archive = state.data.marketArchive;
     const articles = (archive?.items || []).map(archiveNewsItem).join("") || ("<p class=\"notice\">" + H("В загруженной части архива публикаций нет.") + "</p>");
     const content = state.errors.marketArchive ? dataError("marketArchive") : `<div class="event-list">${articles}</div>`;
@@ -3428,55 +3460,110 @@
   const renderEvents = () => {
     captureScreenDrafts();
     const data = state.tour ? null : state.data.events;
-    const unread = state.tour ? 0 : number(state.data.eventSummary?.unread_total ?? data?.unread_count) || 0;
+    const unread = eventUnreadCount();
     const previousEvents = data?.next_cursor ? `<div class="form-actions">${button(T("Загрузить предыдущие события"), "events-more", {small: true, extra: state.loading.has("events-more") ? " disabled" : ""})}</div>` : "";
     $("#view-events").innerHTML = `${heading(T("События"), T("Подтверждённые изменения портфеля, выплат и целей"), button(T("Обновить"), "refresh", {
       small: true
-    }) + (unread ? button(T("Прочитать все"), "events-read-all", {
+    }) + button(T("Прочитать все"), "events-read-all", {
       small: true
-    }) : ""))}<section class="card"><div class="card-header"><h2>${H("Лента событий")}</h2><span class="chip">${unread} ${H("непрочитанных")}</span></div>${eventFilters()}${state.errors.events ? dataError("events") : eventsHTML(false)}${previousEvents}<p class="data-footnote">${H("«Прочитать все» охватывает историю до последнего полученного состояния. Пришедшие позже события остаются непрочитанными.")}</p></section>${eventNewsArchiveHTML()}${data?.alerts_suppressed ? ("<p class=\"notice section-gap\">" + H("Сейчас действуют тихие часы. События доступны в ленте; внешняя доставка отложена до их окончания.") + "</p>") : ""}<div class="notice section-gap">${H("Push на устройство и письма включаются отдельно после вашего согласия. Их доступность и результат отправки видны в настройках. SMS не используется.")}<div class="form-actions">${button(T("Настроить уведомления"), "settings", {
+    }))}<section class="card"><div class="card-header"><h2>${H("Лента событий")}</h2><span class="chip" data-event-unread>${esc(eventUnreadLabel(unread))}</span></div>${eventFilters()}${state.errors.events ? dataError("events") : eventsHTML(false)}${previousEvents}<p class="data-footnote">${H("«Прочитать все» охватывает историю до последнего полученного состояния. Пришедшие позже события остаются непрочитанными.")}</p></section>${eventNewsArchiveHTML()}${data?.alerts_suppressed ? ("<p class=\"notice section-gap\">" + H("Сейчас действуют тихие часы. События доступны в ленте; внешняя доставка отложена до их окончания.") + "</p>") : ""}<div class="notice section-gap">${H("Push на устройство и письма включаются отдельно после вашего согласия. Их доступность и результат отправки видны в настройках. SMS не используется.")}<div class="form-actions">${button(T("Настроить уведомления"), "settings", {
       route: true,
       small: true
     })}</div></div>${data?.digest?.frequency && data.digest.frequency !== "off" ? renderEventsCard(data) : ""}`;
     applyScreenLayout("events");
+    paintEventCounters();
+  };
+  const beginEventRead = () => {
+    const context = {generation: state.generation};
+    if (state.eventWrites.size) {
+      state.eventWritesOverlapped = true;
+      delete state.data.eventSummary;
+    }
+    state.eventWrites.add(context);
+    state.resourceVersions.set("eventReads", eventReadEpoch() + 1);
+    paintEventCounters();
+    return context;
+  };
+  const endEventRead = context => {
+    if (context.generation !== state.generation) return;
+    state.eventWrites.delete(context);
+    state.resourceVersions.set("eventReads", eventReadEpoch() + 1);
+    if (!state.eventWrites.size) state.eventWritesOverlapped = false;
+    paintEventCounters();
+    retryMissingEvents();
+    scheduleEventSummary(100);
+  };
+  const eventIsRead = item => Boolean(item.read_at || item.read_confirmed);
+  const confirmEventItem = (item, matches, serverItem) => {
+    if (serverItem) {
+      if (serverItem.revision > item.revision) return serverItem;
+      if (serverItem.revision < item.revision || eventIsRead(item) && !serverItem.read_at) return item;
+      return serverItem;
+    }
+    if (!matches(item)) return item;
+    // A read receipt can omit an older row beyond its first page. Confirmation
+    // is sufficient for the read mark, but cannot invent the server's timestamp.
+    return {...item, read_confirmed: true};
+  };
+  const confirmEventItems = (items, matches, received) => (items || []).map(item => confirmEventItem(item, matches, received.get(item.id)));
+  const paintEventRow = (row, item) => {
+    if (String(item.revision ?? "") !== row.dataset.eventRevision) {
+      row.outerHTML = renderEventsHTMLEventItem(item, row.dataset.eventCompact === "true");
+      return;
+    }
+    if (!eventIsRead(item)) return;
+    row.classList.remove("unread");
+    $(".event-meta .status-dot", row)?.remove();
+    $("[data-event-read]", row)?.remove();
+  };
+  const paintConfirmedEvents = () => {
+    const items = new Map((state.data.events?.items || []).map(item => [item.id, item]));
+    for (const row of $$("[data-event-id]")) {
+      const item = items.get(row.dataset.eventId);
+      if (item) paintEventRow(row, item);
+    }
+  };
+  const acceptEventReadReceipt = (result, matches) => {
+    const received = new Map((result.items || []).map(item => [item.id, item]));
+    const list = state.data.events;
+    if (list) state.data.events = {...list, items: confirmEventItems(list.items, matches, received)};
+    const search = state.searchPages.events;
+    if (search) state.searchPages.events = {...search, items: confirmEventItems(search.items, matches, received)};
+    if (state.eventDetail) [state.eventDetail] = confirmEventItems([state.eventDetail], matches, received);
+    // Concurrent acknowledgments have no server read-state version. Only a new
+    // summary after all writes settle can safely establish their global count.
+    if (!state.eventWritesOverlapped) {
+      state.data.eventSummary = {unread_total: result.unread_count, max_revision: result.read_all_before, alerts_suppressed: result.alerts_suppressed};
+      delete state.errors.eventSummary;
+    }
+    paintConfirmedEvents();
+    paintEventCounters();
+  };
+  const mutateEventRead = async (path, body, matches) => {
+    const context = beginEventRead();
+    try {
+      const result = await api(path, {method: "POST", body});
+      if (context.generation === state.generation) acceptEventReadReceipt(result, matches);
+    } catch (error) {
+      if (context.generation === state.generation && !isCancelled(error)) {
+        if (!error.definite) delete state.data.eventSummary;
+        toast(humanError(error), true);
+      }
+    } finally { endEventRead(context); }
   };
   const markEvents = async ids => {
     if (!requireUser() || !ids.length) return;
-    const generation = state.generation;
-    try {
-      const result = await api("/api/events/read", {
-        method: "POST",
-        body: {
-          ids,
-          read: true
-        }
-      });
-      if (generation !== state.generation) return;
-      state.eventHistoryExtended = false;
-      state.data.events = result;
-      scheduleEventSummary(100);
-      updateIdentity();
-      if (["events", "home"].includes(state.view)) renderCurrent();
-    } catch (error) {
-      if (!isCancelled(error)) toast(humanError(error), true);
-    }
+    await mutateEventRead("/api/events/read", {ids, read: true}, item => ids.includes(item.id));
   };
   const readAllEvents = async () => {
-    if (!requireUser() || state.loading.has("events-read-all") || !Number.isSafeInteger(state.data.events?.read_all_before)) return;
+    if (!requireUser() || state.loading.has("events-read-all") || !Number.isSafeInteger(eventReadBoundary())) return;
     const generation = state.generation;
+    const through = eventReadBoundary();
     state.loading.add("events-read-all");
     try {
-      const result = await api("/api/events/read-all", {method: "POST", body: {through_revision: state.data.events.read_all_before, category: "all"}});
-      if (generation !== state.generation) return;
-      state.eventHistoryExtended = false;
-      state.data.events = result;
-      scheduleEventSummary(100);
-      updateIdentity();
-      if (["events", "home"].includes(state.view)) renderCurrent();
-    } catch (error) {
-      if (!isCancelled(error)) toast(humanError(error), true);
+      await mutateEventRead("/api/events/read-all", {through_revision: through, category: "all"}, item => Number.isSafeInteger(item.revision) && item.revision <= through);
     } finally {
-      if (generation === state.generation) state.loading.delete("events-read-all");
+      if (generation === state.generation) { state.loading.delete("events-read-all"); paintEventCounters(); }
     }
   };
   const loadEventPage = async (news = false) => {
@@ -3485,22 +3572,24 @@
     const cursor = state.data[name]?.next_cursor;
     if (!cursor || state.loading.has(busy)) return;
     const generation = state.generation;
+    const eventsEpoch = eventReadEpoch();
+    const filter = state.eventFilter;
+    const current = () => generation === state.generation && (news || filter === state.eventFilter && currentEventRead(eventsEpoch));
     state.loading.add(busy);
     renderEvents();
     try {
-      const filter = state.eventFilter;
       const page = await api(`${news ? "/api/news?limit=50" : eventsPath()}&cursor=${encodeURIComponent(cursor)}`);
-      if (!news && filter !== state.eventFilter) return;
-      if (generation !== state.generation) return;
+      if (!current()) return;
       state.data[name] = mergePage(state.data[name], page);
       if (!news) state.eventHistoryExtended = true;
       delete state.errors[name];
     } catch (error) {
-      if (generation === state.generation && !isCancelled(error)) state.errors[name] = error;
+      if (current() && !isCancelled(error)) state.errors[name] = error;
     } finally {
       if (generation === state.generation) {
         state.loading.delete(busy);
-        if (state.view === "events") renderEvents();
+        if (state.view === "events" && current()) renderEvents();
+        else if (!news) $("#view-events [data-action=events-more]")?.removeAttribute("disabled");
       }
     }
   };
@@ -4493,7 +4582,7 @@
   let tableQuotesTimer = null;
   let tableQuotesBusy = false;
   let eventSummaryTimer = null;
-  let eventSummaryBusy = false;
+  let eventSummaryRequest = null;
   let pwaRegistration = null;
   let acceptingUpdate = false;
   function initializeNavigation() {
@@ -4928,14 +5017,21 @@
     eventSummaryTimer = setTimeout(() => void pollEventSummary(), delay);
   }
   async function pollEventSummary() {
-    if (eventSummaryBusy || !navigator.onLine) { scheduleEventSummary(); return; }
-    const generation = state.generation;
-    eventSummaryBusy = true;
+    if (eventSummaryRequest || state.eventWrites.size || !navigator.onLine) { scheduleEventSummary(); return; }
+    const context = {generation: state.generation, epoch: eventReadEpoch()};
+    eventSummaryRequest = context;
+    const current = () => context.generation === state.generation && currentEventRead(context.epoch);
     try {
       const summary = await api("/api/events/summary");
-      if (generation === state.generation && !state.tour) { state.data.eventSummary = summary; updateIdentity(); }
-    } catch (error) { if (!isCancelled(error) && generation === state.generation) $("#notifications-button").title = T("events.counter_unavailable"); }
-    finally { eventSummaryBusy = false; scheduleEventSummary(); }
+      if (current() && !state.tour) { state.data.eventSummary = summary; delete state.errors.eventSummary; paintEventCounters(); }
+    } catch (error) {
+      if (!isCancelled(error) && current()) { state.errors.eventSummary = error; paintEventCounters(); }
+    } finally {
+      if (eventSummaryRequest === context) {
+        eventSummaryRequest = null;
+        scheduleEventSummary(currentEventRead(context.epoch) ? 30000 : 100);
+      }
+    }
   }
   function openPublicStrategy(id) {
     const raw = state.data.catalog?.presets?.find(item => item.id === id);
@@ -6281,11 +6377,12 @@
     return `<button class="icon-button" data-event-read="${esc(item.id)}" aria-label="${H("Отметить прочитанным")}">${icon("check", true)}</button>`;
   }
   function renderEventsHTMLEventItem(item, compact) {
-    return `<article class="event-item${item.read_at ? "" : " unread"}"><span class="event-icon">${icon({
+    const read = eventIsRead(item);
+    return `<article class="event-item${read ? "" : " unread"}" data-event-id="${esc(item.id)}" data-event-revision="${esc(item.revision ?? "")}" data-event-compact="${compact}"><span class="event-icon">${icon({
       payments: "wallet",
       goals: "goals",
       portfolio: "market"
-    }[item.category] || "events", true)}</span><div class="event-item-body"><h3>${item.news ? U.sourceLink(item.url, item.title) : renderEventsHTMLEventTitleButton(item)}</h3>${!compact && item.detail ? renderEventsHTMLP(item) : ""}<div class="event-meta"><span>${esc(date(item.occurred_at, true))}</span>${item.news && state.data.news?.freshness === "cached" ? ("<span>" + H("· сохранённый ответ источника") + "</span>") : ""}${item.source ? renderEventsHTMLSpan(item) : ""}${item.read_at ? "" : '<span class="status-dot"></span>'}</div></div>${!compact && !item.read_at ? renderEventsHTMLIconButton(item) : ""}</article>`;
+    }[item.category] || "events", true)}</span><div class="event-item-body"><h3>${item.news ? U.sourceLink(item.url, item.title) : renderEventsHTMLEventTitleButton(item)}</h3>${!compact && item.detail ? renderEventsHTMLP(item) : ""}<div class="event-meta"><span>${esc(date(item.occurred_at, true))}</span>${item.news && state.data.news?.freshness === "cached" ? ("<span>" + H("· сохранённый ответ источника") + "</span>") : ""}${item.source ? renderEventsHTMLSpan(item) : ""}${read ? "" : '<span class="status-dot"></span>'}</div></div>${!compact && !read ? renderEventsHTMLIconButton(item) : ""}</article>`;
   }
   function renderHomeGoalsGoalsPreviewList(goals) {
     return `<div class="goals-preview-list">${goals.slice(0, 2).map(goalPreview).join("")}</div>`;

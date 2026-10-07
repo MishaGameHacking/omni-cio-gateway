@@ -131,6 +131,10 @@ const makeFixture = mode => {
       source: {type: "operation", amount: "125.50", currency: "RUB", expected_at: stamp, instrument_uid: "synthetic-a", state: "executed"},
       destination: {view: "asset", uid: "synthetic-a"}
     }],
+    holdEventSummary: false,
+    heldEventSummaries: [],
+    holdEventReads: false,
+    heldEventReads: [],
     ledgerItems: [{id: "fixture-ledger-1", operation_date: stamp, name: "Контрольная выплата", category: "income", instrument_uid: "synthetic-a", ticker: "SYNA", payment: {value: "12.34", currency: "eur"}}],
     notificationChannels: [],
     news: [{id: "synthetic-news-1", title: "Изолированная публикация инструмента", summary: "Краткое содержание теста", content: "Полный текст публикации из изолированного API", source: "Изолированный источник", source_url: "https://example.test/news/1", occurred_at: stamp, instrument_uids: ["synthetic-a"], priority: 1}],
@@ -233,14 +237,15 @@ const eventDTO = (fixture, url = new URL("https://example.test/api/events")) => 
   const [offset, ceiling] = url.searchParams.has("cursor") ? url.searchParams.get("cursor").split(":").map(Number) : [0, Math.max(0, ...fixture.events.map(item => item.revision))];
   const query = (url.searchParams.get("query") || "").toLowerCase();
   const category = url.searchParams.get("category") || "all";
+  const includesCategory = item => category === "all" || (category === "assets" ? ["portfolio", "payments"].includes(item.category) : item.category === category);
   const important = url.searchParams.get("important_only") === "true";
-  const items = fixture.events.filter(item => item.revision <= ceiling && JSON.stringify(item).toLowerCase().includes(query) && (category === "all" || category === "assets" ? category === "all" || ["portfolio", "payments"].includes(item.category) : item.category === category) && (!important || ["warning", "critical", "high"].includes(item.severity))).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id.localeCompare(a.id));
+  const items = fixture.events.filter(item => item.revision <= ceiling && JSON.stringify(item).toLowerCase().includes(query) && includesCategory(item) && (!important || ["warning", "critical", "high"].includes(item.severity))).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id.localeCompare(a.id));
   const limit = Number(url.searchParams.get("limit") || 50);
   return {
   items: clone(items.slice(offset, offset + limit)),
   next_cursor: offset + limit < items.length ? `${offset + limit}:${ceiling}` : null,
   read_all_before: ceiling,
-  unread_count: fixture.events.filter(item => !item.read_at).length,
+  unread_count: fixture.events.filter(item => !item.read_at && includesCategory(item)).length,
   alerts_suppressed: false,
   digest: {
     frequency: fixture.prefs.document.digest_frequency,
@@ -690,6 +695,7 @@ const displayContracts = () => {
   ui.setLocale("en");
   assert.equal(ui.format("1234.56"), "1,234.56", "Locale setting has a real consumer");
   startupBuildContracts();
+  eventReadReceiptContracts();
   goalVersionContracts(ui);
   chartAxisContracts(ui);
   viewportSizeContracts();
@@ -707,6 +713,39 @@ function startupBuildContracts() {
     assert.throws(() => vm.runInContext(app, context), error => error === reachedApplication, "A coherent raw/dev or stamped bundle starts without relying on optional version.js metadata");
   }
   console.log("PASS startup build contracts: coherent dev and stamped bundles reach initialization even without release metadata");
+}
+function eventReadReceiptContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const start = app.indexOf("  const eventIsRead =");
+  const end = app.indexOf("  const paintEventRow =", start);
+  assert.ok(start >= 0 && end > start, "Read receipt contracts exercise the actual application reconciliation");
+  const context = vm.createContext({});
+  vm.runInContext(app.slice(start, end) + "\nglobalThis.reconcile = confirmEventItems;", context);
+  const row = {id: "source-event", revision: 10, read_at: null, title: "Earlier fact"};
+  const [changed] = context.reconcile([row], item => item.revision <= 10, new Map([[row.id, {...row, revision: 11, title: "New source fact"}]]));
+  assert.equal(changed.revision, 11);
+  assert.equal(changed.read_at, null);
+  assert.equal(changed.read_confirmed, undefined, "A source revision newer than the read-all boundary stays unread");
+  const [omitted] = context.reconcile([row], () => true, new Map());
+  assert.equal(omitted.read_confirmed, true, "A successful receipt confirms an affected archived row beyond its bounded response");
+  assert.equal(omitted.read_at, null, "Confirmation cannot fabricate a server timestamp");
+  const [delayed] = context.reconcile([omitted], () => true, new Map([[row.id, row]]));
+  assert.equal(delayed.read_confirmed, true, "A delayed overlapping receipt cannot undo a confirmed read of the same source revision");
+  const [observed] = context.reconcile([omitted], () => true, new Map([[row.id, {...row, read_at: "2026-10-07T12:00:00Z"}]]));
+  assert.equal(observed.read_at, "2026-10-07T12:00:00Z", "A real returned read timestamp replaces the local confirmation");
+  const [newer] = context.reconcile([changed], () => true, new Map([[row.id, {...row, read_at: "2026-10-07T12:00:00Z"}]]));
+  assert.equal(newer.revision, 11);
+  assert.equal(newer.read_at, null, "An older acknowledged source cannot replace the displayed newer unread fact");
+  const counters = app.slice(app.indexOf("  const eventUnreadCount ="), app.indexOf("  const eventUnreadLabel ="));
+  const state = {tour: false, data: {events: {unread_count: 2, read_all_before: 10}}};
+  const counts = vm.createContext({state, number: value => value == null ? null : Number(value)});
+  vm.runInContext(counters + "\nglobalThis.count = eventUnreadCount;globalThis.boundary = eventReadBoundary;", counts);
+  assert.equal(counts.count(), null, "A category-filtered page cannot establish the global unread count");
+  state.data.eventSummary = {unread_total: 8, max_revision: 11};
+  assert.equal(counts.count(), 8);
+  assert.equal(counts.boundary(), 11, "The next explicit read-all uses the last trusted global observation without altering pagination");
+  assert.equal(state.data.events.read_all_before, 10);
+  console.log("PASS event receipts: source revisions, archived confirmations, global counters and independent pagination");
 }
 function goalVersionContracts(ui) {
   const known = [{
@@ -2148,7 +2187,11 @@ async function serveTestEvents({
   path,
   url
 }) {
-  if (path === "/api/events/summary") return sendJSON(response,{unread_total:fixture.events.filter(item=>!item.read_at).length,max_revision:Math.max(0,...fixture.events.map(item=>item.revision)),categories:{},observed_at:stamp,alerts_suppressed:false});
+  if (path === "/api/events/summary") {
+    const summary = {unread_total: fixture.events.filter(item => !item.read_at).length, max_revision: Math.max(0, ...fixture.events.map(item => item.revision)), categories: {}, observed_at: stamp, alerts_suppressed: false};
+    if (fixture.holdEventSummary) await new Promise(release => fixture.heldEventSummaries.push({release, summary}));
+    return sendJSON(response, summary);
+  }
   if (method === "GET" && path.startsWith("/api/events/")) {
     const item = fixture.events.find(event => event.id === path.split("/").at(-1));
     return sendJSON(response, item || {detail: "event_not_found"}, item ? 200 : 404);
@@ -2160,7 +2203,9 @@ async function serveTestEvents({
     }
     fixture.events.filter(item => path === "/api/events/read-all" ? item.revision <= body.through_revision : body.ids.includes(item.id)).forEach(item => { item.read_at = body.read === false ? null : stamp; });
   }
-  return sendJSON(response, eventDTO(fixture, url));
+  const result = eventDTO(fixture, url);
+  if (method === "GET" && fixture.holdEventReads) await new Promise(release => fixture.heldEventReads.push({release, result}));
+  return sendJSON(response, result);
 }
 async function serveTestNews({fixture, url, response}) {
   if (url.pathname !== "/api/news") { const item=fixture.news.find(row=>row.id===url.pathname.split("/").at(-1)); return sendJSON(response,item || {detail:"news_not_found"},item?200:404); }
@@ -2201,6 +2246,7 @@ async function exerciseEventArchive({fixture, click, fieldValue, wait, evaluate}
   await wait('document.querySelectorAll("#view-events [data-event-open]").length===100', "Second event page");
   await click('#view-events [data-action="events-more"]');
   await wait('document.querySelectorAll("#view-events [data-event-open]").length===115', "Full event archive beyond fifty");
+  await exerciseDelayedEventList({fixture, click, wait, evaluate});
   await click(`#view-events [data-event-open="${fixture.events[114].id}"]`);
   await wait('document.querySelector("#dialog-content").textContent.includes("Сумма операции")', "Structured event source details");
   assert.ok(await evaluate('document.querySelector("#dialog-content").textContent.includes("125,50")'));
@@ -2210,15 +2256,57 @@ async function exerciseEventArchive({fixture, click, fieldValue, wait, evaluate}
   await evaluate('document.querySelector("#global-search-form").requestSubmit()');
   await wait('document.querySelector("#view-search [data-event-open]")', "Server search finds an older archived event");
   assert.ok(fixture.requests.some(item => item.path === "/api/events" && new URLSearchParams(item.query).get("query") === "Архивный контрольный"), "Search reads the server archive with the submitted query");
+  await until(() => fixture.events[114].read_at, "The old event's explicit opening is acknowledged outside the receipt's first fifty rows");
+  fixture.holdEventSummary = true;
   await click('#sidebar-nav [data-route="events"]');
-  await wait('document.querySelector("#view-events [data-action=events-read-all]")', "Read all is available");
+  await wait('document.querySelector("#view-events [data-action=events-read-all]")?.hidden===false && !document.querySelector("#view-events [data-action=events-read-all]").disabled', "Read all is available");
+  await until(() => fixture.heldEventSummaries.length === 1, "An older global summary is held before the read mutation");
+  assert.equal(fixture.heldEventSummaries[0].summary.unread_total, 113, "Held summary is a real earlier observation, not a new event revision");
+  await wait('document.querySelectorAll("#view-events [data-event-open]").length===115', "Opening an archived event preserves all loaded pages");
+  await evaluate('window.__eventListBeforeRead=document.querySelector("#view-events .event-list");window.scrollTo({top:180,behavior:"instant"});void 0');
+  await wait('window.scrollY===180', "Event archive has a saved nonzero scroll position");
   fixture.arrivingEvent = {...clone(baseEvent), id: "e".repeat(64), revision: 116, title: "Поступившее во время чтения", read_at: null, occurred_at: new Date().toISOString()};
   await click('#view-events [data-action="events-read-all"]');
   await until(() => fixture.events.length === 116 && fixture.events.filter(item => !item.read_at).length === 1, "Read-all cutoff preserves a concurrent new event");
   await wait('document.querySelector("#view-events .chip").textContent.includes("1 непрочитанных")', "New event remains unread");
+  await assertEventCounterArchive({evaluate, expected: 1});
+  fixture.heldEventSummaries.shift().release();
+  await until(() => fixture.heldEventSummaries.length === 1, "Discarding the pre-mutation summary immediately requests the actual global count");
+  assert.equal(fixture.heldEventSummaries[0].summary.unread_total, 1);
+  await assertEventCounterArchive({evaluate, expected: 1});
+  fixture.holdEventSummary = false;
+  fixture.heldEventSummaries.shift().release();
+  await wait('document.querySelector("#notifications-button").getAttribute("aria-label").includes("1 непрочитанных")', "The bell and open page share the same global unread count");
   await click('#view-events [data-news-open]');
   await wait('document.querySelector("#dialog-content").textContent.includes("Полный текст публикации")', "News article opens full source text");
   await click('#workspace-dialog [data-close-dialog]');
+}
+async function exerciseDelayedEventList({fixture, click, wait, evaluate}) {
+  const id = fixture.events[0].id;
+  fixture.holdEventReads = true;
+  await click('#view-events [data-action="refresh"]');
+  await until(() => fixture.heldEventReads.length === 1, "An older event page is held before a read receipt");
+  assert.equal(fixture.heldEventReads[0].result.items.find(item => item.id === id).read_at, null);
+  await click(`#view-events [data-event-read="${id}"]`);
+  await until(() => fixture.events[0].read_at, "The explicit read commits while the earlier GET remains pending");
+  await wait(`!document.querySelector('#view-events [data-event-id="${id}"]').classList.contains('unread')`, "The confirmed row changes in place before the older GET returns");
+  assert.equal(await evaluate('document.querySelectorAll("#view-events [data-event-open]").length'), 115, "A fifty-row read receipt cannot replace the full archive");
+  fixture.holdEventReads = false;
+  fixture.heldEventReads.shift().release();
+  // Wait for the explicitly requested refresh's completion, then inspect the
+  // still-confirmed row. The controlled response contains its old unread value.
+  await delay(300);
+  await wait(`!document.querySelector('#view-events [data-event-id="${id}"]').classList.contains('unread') && document.querySelectorAll('#view-events [data-event-open]').length===115`, "A delayed event GET cannot undo a later read or truncate loaded pages");
+}
+async function assertEventCounterArchive({evaluate, expected}) {
+  const visible = await evaluate('({text:document.querySelector("#view-events [data-event-unread]").textContent,bell:document.querySelector("#notifications-button").getAttribute("aria-label"),sameList:window.__eventListBeforeRead===document.querySelector("#view-events .event-list"),rows:document.querySelectorAll("#view-events [data-event-open]").length,unreadRows:document.querySelectorAll("#view-events [data-event-id].unread [data-event-open]").length,filter:document.querySelector("#view-events [data-event-filter][aria-pressed=true]").dataset.eventFilter,scroll:window.scrollY})');
+  assert.equal(visible.text, `${expected} непрочитанных`);
+  assert.ok(visible.bell.includes(`${expected} непрочитанных`), "The bell uses the same confirmed global count");
+  assert.equal(visible.sameList, true, "A summary/read receipt updates counters and read marks without recreating the list");
+  assert.equal(visible.rows, 115);
+  assert.equal(visible.unreadRows, 0, "All rows covered by the read-all boundary are confirmed, including rows omitted from its response");
+  assert.equal(visible.filter, "all");
+  assert.equal(visible.scroll, 180, "Read receipts and counter polls preserve the inspected archive position");
 }
 async function exerciseNotificationChannels({fixture, click, fieldValue, wait, evaluate}) {
   await wait('document.querySelector("#notification-email-form [type=submit]") && !document.querySelector("#notification-email-form [type=submit]").disabled', "Configured email delivery form");
