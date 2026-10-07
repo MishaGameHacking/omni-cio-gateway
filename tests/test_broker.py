@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import io
 import json
+import socket
 import ssl
 import urllib.error
 from contextlib import contextmanager
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from http.client import HTTPResponse
 from unittest.mock import Mock, patch
 from uuid import UUID
 
@@ -21,6 +24,7 @@ from omnicio.broker import (
     BrokerService,
 )
 from omnicio.db import TBankConnectionRecord
+from omnicio.market import MarketService
 from omnicio.tbank import (
     TBankAccount,
     TBankAccruedInterest,
@@ -35,6 +39,7 @@ from omnicio.tbank import (
     TBankMoney,
     TBankNewsItem,
     TBankNewsPage,
+    TBankNotFound,
     TBankOrderBook,
     TBankOrderLevel,
     TBankPortfolio,
@@ -1032,6 +1037,61 @@ def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
     }
 
 
+@pytest.mark.parametrize("parts,expected", [
+    ({"units": "9223372036854775807", "nano": 999999999}, "9223372036854775807.999999999"),
+    ({"units": "-9223372036854775808", "nano": -999999999}, "-9223372036854775808.999999999"),
+    ({"units": "10", "nano": 2147483647}, "12.147483647"),
+    ({"units": "10", "nano": -2147483648}, "7.852516352"),
+    ({"units": "1e2", "nano": "1.0"}, "100.000000001"),
+    ({"units": 1.0, "nano": 1.0}, "1.000000001"),
+    ({"units": None, "nano": 1}, "0.000000001"),
+    ({"units": "1", "nano": None}, "1"),
+    ({"units": None, "nano": None}, "0"),
+    ({}, "0"),
+])
+def test_tbank_money_preserves_protojson_integer_edges_and_defaults(parts, expected) -> None:
+    client = TBankInvestClient()
+    response = FakeResponse({"totalAmountPortfolio": {"currency": "RUB", **parts}})
+    with patch("urllib.request.urlopen", return_value=response):
+        portfolio = client.get_portfolio("synthetic-test-credential", "prod", "synthetic-account")
+    assert portfolio.total.value == expected
+
+
+@pytest.mark.parametrize("quantity,expected", [
+    ("1e2", "100"), ("1.0", "1"), (1.0, "1"), (None, "0"),
+    ("9223372036854775807", "9223372036854775807"),
+])
+def test_tbank_all_operation_quantities_reuse_bounded_protojson_integer(quantity, expected) -> None:
+    now = datetime.now(UTC)
+    item = {"id": "operation-1", "date": now.isoformat(), "quantity": quantity,
+            "quantityRest": quantity, "quantityDone": quantity,
+            "tradesInfo": {"trades": [{"date": now.isoformat(), "quantity": quantity}]}}
+    client = TBankInvestClient()
+    with patch("urllib.request.urlopen", return_value=FakeResponse({"items": [item]})):
+        page = client.get_operations_by_cursor(
+            "synthetic-test-credential", "prod", "synthetic-account",
+            from_at=now - timedelta(days=1), to_at=now,
+        )
+    row = page.items[0]
+    assert (row.quantity, row.quantity_rest, row.quantity_done, row.trades[0].quantity) == (
+        expected, expected, expected, expected,
+    )
+
+
+@pytest.mark.parametrize("parts", [
+    {"units": "9223372036854775808"}, {"units": "-9223372036854775809"},
+    {"nano": 2147483648}, {"nano": -2147483649},
+])
+def test_tbank_money_rejects_parts_outside_signed_wire_types(parts) -> None:
+    client = TBankInvestClient()
+    response = FakeResponse({"totalAmountPortfolio": {"currency": "RUB", **parts}})
+    with (
+        patch("urllib.request.urlopen", return_value=response),
+        pytest.raises(TBankUnavailable),
+    ):
+        client.get_portfolio("synthetic-test-credential", "prod", "synthetic-account")
+
+
 def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> None:
     client = TBankInvestClient()
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
@@ -1265,10 +1325,16 @@ def test_tbank_tls_verification_failure_is_reported_as_unavailable() -> None:
         client.get_accounts("t.fake-owner-credential-1234567890", "prod")
 
 
-def test_tbank_rejects_unauthorized_credential_without_response_body() -> None:
+@pytest.mark.parametrize("status,expected,message", [
+    (401, TBankTokenRejected, "rejected"), (403, TBankTokenRejected, "rejected"),
+    (404, TBankNotFound, "object was not found"),
+])
+def test_tbank_preserves_http_error_authority_without_response_body(
+    status, expected, message,
+) -> None:
     error = urllib.error.HTTPError(
         "https://invest-public-api.tbank.ru/",
-        401,
+        status,
         "Unauthorized",
         {},
         io.BytesIO(b'{"message":"credential must never be surfaced"}'),
@@ -1277,9 +1343,64 @@ def test_tbank_rejects_unauthorized_credential_without_response_body() -> None:
 
     with (
         patch("urllib.request.urlopen", side_effect=error),
-        pytest.raises(TBankTokenRejected, match="rejected"),
+        pytest.raises(expected, match=message) as failure,
     ):
         client.get_accounts("t.fake-owner-credential-1234567890", "prod")
+    assert "credential must never be surfaced" not in str(failure.value)
+
+
+@pytest.mark.parametrize("failure", ["truncated", "invalid_utf8"])
+@pytest.mark.parametrize("consumer", ["quote_client", "market", "order_client"])
+def test_tbank_real_response_failure_is_safe_and_never_replays(failure, consumer, caplog) -> None:
+    credential = "synthetic-credential-must-not-leak"
+    body = b'{"lastPrices":[' if failure == "truncated" else b'{"secret":"\xff"}'
+    length = len(body) + (200 if failure == "truncated" else 0)
+    client, broker = TBankInvestClient(), Mock()
+    broker.status.return_value = "synthetic-account"
+    broker.market_last_prices.side_effect = lambda owner, uids: client.get_last_prices_batch(
+        credential, "prod", uids,
+    )
+    broker.market_instrument_metadata.return_value = TBankInstrumentMetadata(
+        "uid-1", "Synthetic share", "SYN", "", "share", "", "RU", False, currency="RUB",
+    )
+    service = MarketService(broker=broker, cbr=Mock())
+    receiver, sender = socket.socketpair()
+    try:
+        sender.sendall(f"HTTP/1.1 200 OK\r\nContent-Length: {length}\r\n\r\n".encode() + body)
+        sender.shutdown(socket.SHUT_WR)
+        with HTTPResponse(receiver) as response:
+            response.begin()
+            with patch("urllib.request.urlopen", return_value=response) as request:
+                if consumer == "market":
+                    payload = service.batch_quotes(UUID(int=1), ("uid-1",))
+                    item = payload["items"][0]
+                    assert item["quote_status"] == "unavailable"
+                    assert item["last_price"] is None
+                    assert item["errors"]["quote"] == "source_unavailable"
+                else:
+                    with pytest.raises(TBankUnavailable) as failure_result:
+                        if consumer == "quote_client":
+                            client.get_last_prices_batch(credential, "prod", ("uid-1",))
+                        else:
+                            client.submit_limit_order(
+                                credential, "sandbox", "synthetic-account",
+                                instrument_uid="uid-1", lots=1, price=Decimal("10"),
+                                action="buy", request_id=str(UUID(int=2)),
+                            )
+                    assert credential not in str(failure_result.value)
+                    assert "secret" not in str(failure_result.value)
+                request.assert_called_once()
+                if consumer == "order_client":
+                    assert request.call_args.args[0].full_url.endswith(
+                        "SandboxService/PostSandboxOrder",
+                    )
+            assert response.isclosed()
+        assert credential not in caplog.text
+        assert "secret" not in caplog.text
+    finally:
+        service.close()
+        receiver.close()
+        sender.close()
 
 
 class FakeTBank:

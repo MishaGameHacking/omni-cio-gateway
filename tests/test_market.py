@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+import json
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from threading import Event
 from unittest.mock import Mock, patch
@@ -601,6 +604,73 @@ def test_provider_component_failure_keeps_independent_market_data(failed: str) -
         service.close()
 
 
+def test_metadata_retry_deadline_survives_continuous_stream_readers() -> None:
+    owner, uid = UUID(int=1), "uid-1"
+    fixture = FakeBroker(datetime.now(UTC).isoformat())
+    broker = Mock(wraps=fixture)
+    metadata = fixture.market_instrument_metadata(owner, uid)
+    broker.market_instrument_metadata.side_effect = [TBankUnavailable("transient"), metadata]
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
+    leases = [service.acquire_stream(owner), service.acquire_stream(owner)]
+    try:
+        with patch("omnicio.market.time.monotonic") as clock:
+            # Two permitted streams read the same instrument at staggered intervals.
+            for at in (0, 2.5, 4.9):
+                clock.return_value = at
+                result = service.instrument_live_state(owner, uid)
+                assert result.metadata_status == "unavailable"
+                assert result.last_price == "102.5"
+            assert broker.market_instrument_metadata.call_count == 1
+            clock.return_value = 5
+            recovered = service.instrument_live_state(owner, uid)
+            assert broker.market_instrument_metadata.call_count == 2
+            assert recovered.metadata_status == "available"
+            assert recovered.price_currency == "RUB"
+    finally:
+        for lease in leases:
+            service.release_stream(owner, lease)
+        service.close()
+
+
+def test_late_failed_metadata_waiter_cannot_replace_a_recovered_future() -> None:
+    owner, uid = UUID(int=1), "uid-1"
+    fixture = FakeBroker(datetime.now(UTC).isoformat())
+    broker = Mock(wraps=fixture)
+    connection = fixture.status(owner)
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
+    old: Future[TBankInstrumentMetadata] = Future()
+    old.set_exception(TBankUnavailable("transient"))
+    service._metadata[(owner, connection, uid)] = (1, old)
+    entered, release = Event(), Event()
+    result = old.result
+
+    def delayed_result(timeout: float | None = None) -> TBankInstrumentMetadata:
+        entered.set()
+        assert release.wait(timeout=5)
+        return result(timeout=timeout)
+
+    try:
+        with (
+            patch("omnicio.market.time.monotonic") as clock,
+            patch.object(old, "result", side_effect=delayed_result),
+            ThreadPoolExecutor(max_workers=1) as readers,
+        ):
+            clock.return_value = 0
+            waiting = readers.submit(service.instrument_live_state, owner, uid)
+            try:
+                assert entered.wait(timeout=5)
+                clock.return_value = 2
+                assert service.instrument_live_state(owner, uid).metadata_status == "available"
+            finally:
+                release.set()
+            assert waiting.result(timeout=5).metadata_status == "unavailable"
+            assert service.instrument_live_state(owner, uid).metadata_status == "available"
+            broker.market_instrument_metadata.assert_called_once_with(owner, uid)
+    finally:
+        release.set()
+        service.close()
+
+
 def test_batch_quotes_do_not_wait_for_metadata_and_cache_is_connection_scoped() -> None:
     owner = UUID("00000000-0000-0000-0000-000000000001")
     broker = Mock()
@@ -676,6 +746,54 @@ def test_quote_batch_uses_real_parser_and_keeps_strict_consumers_fail_closed(fai
             assert items["bad"]["last_price"] is None
             assert items["bad"]["quote_time"] is None
             assert items["absent"]["quote_status"] == "missing"
+        assert items["bad"]["errors"]["quote"] == "source_unavailable"
+    finally:
+        service.close()
+
+
+@pytest.mark.parametrize("bad_price", [
+    {"units": "1.5"}, {"nano": 0.1}, {"nano": "0.1"},
+    {"units": "9223372036854775808"}, {"units": "-9223372036854775809"},
+    {"nano": 2147483648}, {"nano": -2147483649},
+    {"units": "1e999999"}, {"units": "1e1000000"},
+    {"units": "NaN"}, {"nano": "sNaN"}, {"units": "Infinity"},
+    {"units": True}, {"nano": []},
+])
+def test_invalid_protojson_price_cannot_escape_or_contaminate_valid_quotes(bad_price) -> None:
+    owner, now = UUID(int=1), datetime.now(UTC)
+    payload = json.dumps({"lastPrices": [
+        {"instrumentUid": "good", "price": {"units": "1e2", "nano": 1.0},
+         "time": now.isoformat()},
+        {"instrumentUid": "bad", "price": bad_price, "time": now.isoformat()},
+    ]}).encode()
+    client, broker = TBankInvestClient(), Mock()
+    broker.status.return_value = BrokerConnectionStatus(True, "prod", "synthetic")
+    broker.market_last_prices.side_effect = lambda _user, uids: client.get_last_prices_batch(
+        "synthetic-test-credential", "prod", uids,
+    )
+    broker.market_instrument_metadata.side_effect = lambda _user, uid: TBankInstrumentMetadata(
+        uid, uid, uid, "", "share", "", "RU", False, currency="RUB",
+    )
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
+    try:
+        with patch(
+            "urllib.request.urlopen", side_effect=lambda *args, **kwargs: io.BytesIO(payload),
+        ):
+            batch = client.get_last_prices_batch(
+                "synthetic-test-credential", "prod", ("good", "bad"),
+            )
+            assert [(row.instrument_uid, row.price) for row in batch.prices] == [
+                ("good", "100.000000001"),
+            ]
+            assert batch.unavailable_uids == ("bad",)
+            with pytest.raises(TBankUnavailable):
+                client.get_last_prices("synthetic-test-credential", "prod", ("good", "bad"))
+            result = service.batch_quotes(owner, ("good", "bad"))
+        items = {item["instrument_uid"]: item for item in result["items"]}
+        assert items["good"]["quote_status"] == "live"
+        assert items["good"]["last_price"] == "100.000000001"
+        assert items["bad"]["quote_status"] == "unavailable"
+        assert items["bad"]["last_price"] is None
         assert items["bad"]["errors"]["quote"] == "source_unavailable"
     finally:
         service.close()

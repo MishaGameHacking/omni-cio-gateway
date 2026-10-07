@@ -80,19 +80,19 @@
     const numeric = number(value);
     return numeric === null ? "—" : new Intl.NumberFormat(displayLocale, {
       maximumFractionDigits: digits
-    }).format(numeric);
+    }).format(value);
   };
   const money = (value, digits = 0, currency = "RUB", personal = true) => {
     if (personal && privateValuesHidden && number(value) !== null) return "••••••";
     const numeric = number(value);
     if (numeric === null) return "—";
-    if (!/^[A-Z]{3}$/.test(currency)) return format(numeric, digits);
+    if (!/^[A-Z]{3}$/.test(currency)) return format(value, digits);
     const safeCurrency = currency;
     return new Intl.NumberFormat(displayLocale, {
       style: "currency",
       currency: safeCurrency,
       maximumFractionDigits: digits
-    }).format(numeric);
+    }).format(value);
   };
   const percent = (value, signed = false) => {
     const numeric = number(value);
@@ -169,9 +169,11 @@
     });
   };
   const marketPrice = (value, unit = "currency", currency = "", personal = false) => {
-    if (unit === "currency") return money(value, 2, currency, personal);
+    if (number(value) === null) return "—";
+    if (personal && privateValuesHidden) return "••••••";
+    if (unit === "currency") return money(value, 9, currency, personal);
     const suffix = {percent_nominal: T("% номинала"), points: T("пунктов"), per_nominal: `${currency} ${T("за номинал")}`, unknown: T("ед. источника")}[unit] || T("ед. источника");
-    return number(value) === null ? "—" : `${format(value, 2)} ${suffix}`;
+    return `${format(value, 9)} ${suffix}`;
   };
   const chartPoints = (rows, timeKey, valueKey, comparison, xKind) => {
     const unique = new Map();
@@ -181,6 +183,7 @@
       if (time !== null && Number.isFinite(time) && value !== null) unique.set(time, {
         time,
         value,
+        sourceValue: row[valueKey],
         comparison: comparison.map(series => number(row[series.key]))
       });
     }
@@ -248,7 +251,7 @@
       return `<path class="chart-path chart-comparison chart-comparison-${index % 2}" d="${line}"/>`;
     }).join("");
     const legend = chartLegend(comparison, points, label, currency, personal);
-    return `<div class="chart-block${tone === "purple" ? " chart-purple" : ""}"><div class="chart-plot${compact ? " chart-compact" : ""}"><svg class="chart-svg" data-chart="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" tabindex="0" role="group" aria-label="${escape(label)}${H(". Используйте стрелки для просмотра значений.")}">${grid}<path class="chart-area" d="${path} L${right} ${bottom} L${left} ${bottom} Z"/><path class="chart-path" d="${path}"/>${compared}<g class="chart-hover" visibility="hidden"><line class="chart-cursor" y1="${top}" y2="${bottom}"/><circle class="chart-point" r="4"/></g></svg>${compact ? "" : renderChartAxes(points, low, high, timeLabel)}</div><div class="chart-readout" aria-live="off"><span>${escape(timeLabel(points.at(-1).time))}</span><strong>${escape(marketPrice(points.at(-1).value, priceUnit, currency, personal))}</strong></div>${legend}</div>`;
+    return `<div class="chart-block${tone === "purple" ? " chart-purple" : ""}"><div class="chart-plot${compact ? " chart-compact" : ""}"><svg class="chart-svg" data-chart="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" tabindex="0" role="group" aria-label="${escape(label)}${H(". Используйте стрелки для просмотра значений.")}">${grid}<path class="chart-area" d="${path} L${right} ${bottom} L${left} ${bottom} Z"/><path class="chart-path" d="${path}"/>${compared}<g class="chart-hover" visibility="hidden"><line class="chart-cursor" y1="${top}" y2="${bottom}"/><circle class="chart-point" r="4"/></g></svg>${compact ? "" : renderChartAxes(points, low, high, timeLabel)}</div><div class="chart-readout" aria-live="off"><span>${escape(timeLabel(points.at(-1).time))}</span><strong>${escape(marketPrice(points.at(-1).sourceValue, priceUnit, currency, personal))}</strong></div>${legend}</div>`;
   };
   const bindCharts = (container = document) => {
     for (const svg of container.querySelectorAll("svg[data-chart]")) {
@@ -271,9 +274,9 @@
         point.setAttribute("cx", String(px));
         point.setAttribute("cy", String(py));
         readout.firstElementChild.textContent = data.timeLabel(current.time);
-        readout.lastElementChild.textContent = marketPrice(current.value, data.priceUnit, data.currency, data.personal);
+        readout.lastElementChild.textContent = marketPrice(current.sourceValue, data.priceUnit, data.currency, data.personal);
         for (const item of svg.closest(".chart-block").querySelectorAll("[data-chart-comparison]")) item.textContent = money(current.comparison[Number(item.dataset.chartComparison)], 0, data.currency, data.personal);
-        svg.setAttribute("aria-label", `${data.label}: ${data.timeLabel(current.time)}, ${marketPrice(current.value, data.priceUnit, data.currency, data.personal)}${T(". Стрелки меняют наблюдение.")}`);
+        svg.setAttribute("aria-label", `${data.label}: ${data.timeLabel(current.time)}, ${marketPrice(current.sourceValue, data.priceUnit, data.currency, data.personal)}${T(". Стрелки меняют наблюдение.")}`);
       };
       svg.addEventListener("pointermove", event => {
         const box = svg.getBoundingClientRect();

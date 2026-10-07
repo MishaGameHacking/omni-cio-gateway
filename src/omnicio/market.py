@@ -250,8 +250,9 @@ class MarketService:
         except (TBankUnavailable, CancelledError):
             key = (user_id, connection, uid)
             with self._cache_lock:
-                if key in self._metadata:
-                    self._metadata[key] = (time.monotonic() + 5, future)
+                current = self._metadata.get(key)
+                if current is not None and current[1] is future:
+                    self._metadata[key] = (min(current[0], time.monotonic() + 5), future)
             return None, "unavailable"
         if result.uid != uid:
             return None, "unavailable"

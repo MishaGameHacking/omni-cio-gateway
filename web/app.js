@@ -1713,8 +1713,8 @@
       } finally {
         if (current() && state.view === "asset") {
           if (key === "market") asset.loading = false;
-          renderAsset();
-          U.bindCharts($("#view-asset"));
+          const preservedChart = renderAsset({preserveChart: key !== "market"});
+          if (!preservedChart) U.bindCharts($("#view-asset"));
           if (key === "market" && asset.market) startQuoteStream();
         }
       }
@@ -1724,8 +1724,8 @@
     asset.ticker = asset.facts?.ticker || asset.details?.latest?.ticker || asset.ticker;
     asset.loading = false;
     if (state.view === "asset") {
-      renderAsset();
-      U.bindCharts($("#view-asset"));
+      const preservedChart = renderAsset({preserveChart: true});
+      if (!preservedChart) U.bindCharts($("#view-asset"));
       quoteFailures = 0;
       startQuoteStream();
     }
@@ -1738,6 +1738,35 @@
     const metrics = (facts.metrics || []).filter(item => number(item.value) !== null);
     return `<h3 class="panel-title">${H("Финансовые показатели")}</h3>${metrics.length ? renderFundamentalMetricsHTMLInfoList(metrics, compact) : ("<p class=\"notice\">" + H("Источник не предоставил подтверждённые финансовые показатели этого инструмента.") + "</p>")}${freshness(T("Финансовые данные T-Invest"), facts.observed_at)}${!compact && facts.metrics?.length ? renderFundamentalMetricsHTMLSourceList(facts) : ""}${!compact && facts.missing_requirements?.length ? renderFundamentalMetricsHTMLDetailsSummary(facts) : ""}${!compact && facts.limitations?.length ? renderFundamentalMetricsHTMLFinePrint(facts) : ""}`;
   };
+  const quotationNanos = value => {
+    if (typeof value !== "string" || !/^(?:0|[1-9]\d{0,18})(?:\.\d{1,9})?$/.test(value)) return null;
+    const [whole, fraction = ""] = value.split(".");
+    const nanos = BigInt(whole) * 1000000000n + BigInt(fraction.padEnd(9, "0"));
+    return nanos > 0n ? nanos : null;
+  };
+  const assetPriceChange = (current, initial) => {
+    const currentNanos = quotationNanos(current), initialNanos = quotationNanos(initial);
+    if (currentNanos === null || initialNanos === null) return null;
+    const difference = currentNanos - initialNanos;
+    const absolute = difference < 0n ? -difference : difference;
+    let fraction = String(absolute % 1000000000n).padStart(9, "0");
+    while (fraction.endsWith("0")) fraction = fraction.slice(0, -1);
+    return (difference < 0n ? "-" : "") + String(absolute / 1000000000n) + (fraction ? "." + fraction : "");
+  };
+  const assetPriceExtreme = (candles, key) => {
+    let selected = null;
+    let selectedNanos = null;
+    for (const candle of candles) {
+      const value = candle[key];
+      const nanos = quotationNanos(value);
+      if (nanos === null) continue;
+      if (selectedNanos === null || (key === "high" ? nanos > selectedNanos : nanos < selectedNanos)) {
+        selected = value;
+        selectedNanos = nanos;
+      }
+    }
+    return selected;
+  };
   const assetPricing = asset => {
     const market = asset.market;
     const details = asset.details;
@@ -1747,14 +1776,13 @@
     if (holding?.status === "held") position = latest;
     else if (holding?.status === "not_held") position = {quantity: "0", value_rub: "0", nav_percent: "0", blocked_lots: "0"};
     const candles = Array.isArray(market?.candles) ? market.candles : [];
-    const current = number(market?.last_price);
+    const numericCurrent = number(market?.last_price);
+    const current = numericCurrent === null ? null : market.last_price;
     const initial = number(candles[0]?.open);
-    const change = current !== null && initial !== null && initial !== 0 ? current - initial : null;
-    const changePercent = change !== null ? change / initial * 100 : null;
+    const change = assetPriceChange(current, candles[0]?.open);
+    const changePercent = change !== null ? Number(change) / initial * 100 : null;
     const currency = String(market?.price_currency || "").toUpperCase();
     const priceUnit = market?.price_unit || "unknown";
-    const highs = candles.map(item => number(item.high)).filter(item => item !== null);
-    const lows = candles.map(item => number(item.low)).filter(item => item !== null);
     return {
       asset,
       market,
@@ -1768,13 +1796,13 @@
       changePercent,
       priceUnit,
       currency,
-      high: highs.length ? Math.max(...highs) : null,
-      low: lows.length ? Math.min(...lows) : null
+      high: assetPriceExtreme(candles, "high"),
+      low: assetPriceExtreme(candles, "low")
     };
   };
   const assetQuoteHTML = ({market, current, change, changePercent, priceUnit, currency}) => {
     const changeLabel = change === null ? T("Изменение за период не рассчитано") : `${esc(marketPrice(change, priceUnit, currency))} · ${esc(percent(changePercent, true))}`;
-    const cashPrice = market?.cash_price && priceUnit !== "currency" ? `<p class="fine-print">${H("Текущая чистая цена:")} ${esc(money(market.cash_price, 2, market.cash_price_currency, false))}</p>` : "";
+    const cashPrice = market?.cash_price && priceUnit !== "currency" ? `<p class="fine-print">${H("Текущая чистая цена:")} ${esc(marketPrice(market.cash_price, "currency", market.cash_price_currency))}</p>` : "";
     return `<div class="main-value">${esc(marketPrice(current, priceUnit, currency))}</div>${cashPrice}<p class="value-change ${change === null ? "" : renderAssetValue(change)}">${changeLabel}</p>`;
   };
   const assetChartMarkup = (context) => {
@@ -1884,9 +1912,24 @@
       asset
     } = context;
     const tabs = [["overview", T("Обзор")], ["chart", T("График")], ["metrics", T("Показатели")], ["news", T("Новости")]].map(([key, label]) => renderAssetTabButton(key, label)).join("");
-    return `<div class="breadcrumb"><button class="icon-button" data-action="asset-back" aria-label="${H("Назад к рынку")}">${icon("back")}</button><span>${H("График актива")}</span></div><div class="asset-detail-header"><span class="asset-logo">${esc((asset.ticker || asset.name).slice(0, 1))}</span><div><h1>${esc(asset.name)}</h1><p>${esc(asset.ticker || T("Инструмент T-Invest"))}</p></div>${watchButton(asset)}</div><div class="asset-detail-layout"><section class="card asset-chart-card"><div class="tab-bar" role="tablist" aria-label="${H("Карточка актива")}">${tabs}</div><div class="asset-tab-content" role="tabpanel">${asset.error ? renderAssetNotice(asset) : ""}${content}</div></section><section class="card">${assetSideHTML(context)}</section></div>`;
+    return `<div class="breadcrumb"><button class="icon-button" data-action="asset-back" aria-label="${H("Назад к рынку")}">${icon("back")}</button><span>${H("График актива")}</span></div><div class="asset-detail-header"><span class="asset-logo">${esc((asset.ticker || asset.name).slice(0, 1))}</span><div><h1>${esc(asset.name)}</h1><p>${esc(asset.ticker || T("Инструмент T-Invest"))}</p></div>${watchButton(asset)}</div><div class="asset-detail-layout"><section class="card asset-chart-card"><div class="tab-bar" role="tablist" aria-label="${H("Карточка актива")}">${tabs}</div><div class="asset-tab-content" role="tabpanel">${asset.error ? renderAssetNotice(asset) : ""}${content}</div></section><section class="card" data-asset-sidebar>${assetSideHTML(context)}</section></div>`;
   };
-  const renderAsset = () => {
+  const refreshAssetChartContext = (container, context) => {
+    if (state.assetTab !== "chart" || container.dataset.assetPane !== "chart" || container.dataset.assetUid !== context.asset.uid || container.dataset.assetPeriod !== state.assetPeriod || !$(".chart-svg", container)) return false;
+    const header = $(".asset-detail-header", container);
+    const sidebar = $("[data-asset-sidebar]", container);
+    if (!header || !sidebar) return false;
+    const {asset} = context;
+    $("h1", header).textContent = asset.name;
+    $("p", header).textContent = asset.ticker || T("Инструмент T-Invest");
+    $(".asset-logo", header).textContent = (asset.ticker || asset.name).slice(0, 1);
+    const watch = $("[data-watch]", header);
+    watch.dataset.watchName = asset.name || asset.ticker || T("Актив");
+    watch.dataset.watchTicker = asset.ticker || "";
+    sidebar.innerHTML = assetSideHTML(context);
+    return true;
+  };
+  const renderAsset = ({preserveChart = false} = {}) => {
     if (!state.route.uid) { $("#view-asset").innerHTML = `${heading(T("Актив"))}<section class="card">${empty(T("Некорректный инструмент"), T("Откройте актив из портфеля или результатов поиска."), "asset-back", T("navigation.back"), "info", true)}</section>`; return; }
     const container = $("#view-asset");
     if (state.tour) {
@@ -1899,6 +1942,7 @@
       return;
     }
     const context = assetPricing(asset);
+    if (preserveChart && refreshAssetChartContext(container, context)) return true;
     const renderers = {
       chart: assetChartHTML,
       overview: assetOverviewHTML,
@@ -1906,6 +1950,9 @@
       news: assetNewsHTML
     };
     const renderer = renderers[state.assetTab] || assetChartHTML;
+    container.dataset.assetUid = asset.uid;
+    container.dataset.assetPeriod = state.assetPeriod;
+    container.dataset.assetPane = state.assetTab;
     container.innerHTML = assetFrameHTML(context, renderer(context));
   };
   const tradingLabel = value => ({

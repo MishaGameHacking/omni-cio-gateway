@@ -500,7 +500,10 @@ const testApiHandlers = [{
   run: serveTestPortfolioInstruments
 }, {
   matches: ({path}) => path === "/api/market/quotes",
-  run: ({url,response}) => sendJSON(response,{items:(url.searchParams.get("instrument_uids") || "").split(",").filter(Boolean).map(uid=>({...marketEvent,instrument_uid:uid,metadata_status:"available"})),source:"T-Invest",observed_at:stamp,refresh_after_seconds:10})
+  run: ({url,response,fixture}) => {
+    const quote = fixture.precisionCase ? JSON.parse(fixture.precisionCase.market_event.split("\ndata: ")[1].trim()) : marketEvent;
+    return sendJSON(response,{items:(url.searchParams.get("instrument_uids") || "").split(",").filter(Boolean).map(uid=>({...quote,instrument_uid:uid,metadata_status:"available"})),source:"T-Invest",observed_at:stamp,refresh_after_seconds:10});
+  }
 }, {
   matches: ({path}) => path === "/api/workspace/operations",
   run: ({fixture,response}) => sendJSON(response,{items:clone(fixture.ledgerItems),next_cursor:null,status:"available",source:"T-Invest",observed_at:stamp})
@@ -698,6 +701,9 @@ const displayContracts = () => {
   startupBuildContracts();
   eventReadReceiptContracts();
   goalRouteContracts(ui);
+  quotePrecisionContracts(ui);
+  assetQuotePrecisionContracts(ui);
+  quoteChartPrecisionContracts(ui);
   goalVersionContracts(ui);
   chartAxisContracts(ui);
   viewportSizeContracts();
@@ -739,6 +745,84 @@ function goalRouteContracts(ui) {
   assert.equal(navigations.length, 2, "Opening a new goal from the list still enters its own screen");
   assert.equal(navigations[1][1].screen, "create");
   console.log("PASS goal route entry: parsed creation and edit screens preserve history restoration; another goal or screen still navigates");
+}
+function quotePrecisionContracts(ui) {
+  const clean = text => text.replaceAll("\u00a0", " ").replaceAll("\u202f", " ");
+  const cases = [
+    ["0.00345", "currency", "0,00345 ₽", "RUB 0.00345"],
+    ["0.000000001", "currency", "0,000000001 ₽", "RUB 0.000000001"],
+    ["99.999", "percent_nominal", "99,999 % номинала", "99.999 % of face value"],
+    ["123456.000000001", "points", "123 456,000000001 пунктов", "123,456.000000001 points"],
+    ["10000000.000000001", "currency", "10 000 000,000000001 ₽", "RUB 10,000,000.000000001"],
+    ["9223372036854775807.999999999", "currency", "9 223 372 036 854 775 807,999999999 ₽", "RUB 9,223,372,036,854,775,807.999999999"]
+  ];
+  for (const [locale, column] of [["ru", 2], ["en", 3]]) {
+    ui.setLocale(locale);
+    for (const item of cases) assert.equal(clean(ui.marketPrice(item[0], item[1], "RUB")), item[column], "Quotation precision is visible in " + locale);
+  }
+  ui.setLocale("en");
+  assert.equal(ui.format("9007199254740993.123456789", 9), "9,007,199,254,740,993.123456789", "Validated decimal strings cannot be rounded through Number before formatting");
+  assert.equal(clean(ui.money("9007199254740993.123456789", 9, "RUB", false)), "RUB 9,007,199,254,740,993.123456789");
+  assert.equal(ui.money("10000000.000000001", 9, "", false), "10,000,000.000000001", "Unknown currency keeps the source digits without inventing a currency");
+  assert.equal(ui.marketPrice(1e-9, "points"), "0.000000001 points", "Already numeric nano values remain supported");
+  ui.setPrivacy(true);
+  for (const unit of ["currency", "percent_nominal", "points", "per_nominal", "unknown"]) {
+    assert.equal(ui.marketPrice("0.00345", unit, "RUB", true), "••••••", "Personal values respect privacy for every unit");
+    assert.equal(ui.marketPrice("not-a-price", unit, "RUB", true), "—", "Privacy cannot turn an unknown price into an implied known value");
+  }
+  assert.equal(clean(ui.marketPrice("0.00345", "currency", "RUB", false)), "RUB 0.00345", "Public market prices remain visible when personal balances are masked");
+  ui.setPrivacy(false);
+  ui.setLocale("ru");
+  console.log("PASS quote precision: nano, currency, nominal percent, points, exact decimal strings, locales and privacy");
+}
+function assetQuotePrecisionContracts(ui) {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const start = app.indexOf("  const quotationNanos =");
+  assert.ok(start >= 0, "Asset extrema use the source decimal contract");
+  const source = app.slice(start, app.indexOf("  const assetChartMarkup =", start));
+  const context = vm.createContext({number: ui.number, marketPrice: ui.marketPrice, money: ui.money, percent: ui.percent, esc: ui.escape, T: value => value, H: value => value, renderAssetValue: () => ""});
+  vm.runInContext(source + "\nglobalThis.pricing=assetPricing;globalThis.quote=assetQuoteHTML;globalThis.extreme=assetPriceExtreme;", context);
+  const smaller = "10000000.000000001", larger = "10000000.000000002";
+  assert.equal(Number(smaller), Number(larger), "The fixture exposes two source prices that Number cannot distinguish");
+  for (const values of [[smaller, larger], [larger, smaller]]) {
+    const candles = values.map(value => ({open: value, close: value, high: value, low: value}));
+    const price = context.pricing({market: {last_price: smaller, price_unit: "currency", price_currency: "RUB", candles}});
+    assert.equal(price.current, smaller, "The asset header and Last price retain the source string");
+    assert.equal(price.high, larger, "High selects the exact source decimal in either candle order");
+    assert.equal(price.low, smaller, "Low selects the exact source decimal in either candle order");
+    assert.ok(context.quote(price).includes("10\u00a0000\u00a0000,000000001"));
+  }
+  for (const value of [null, undefined, false, "0", "-1", "NaN", "Infinity", "1e-9", "0.0000000001", "12345678901234567890"]) assert.equal(context.extreme([{high: value}], "high"), null, "Out-of-contract OHLC remains unknown");
+  assert.equal(context.extreme([{low: "0.000000001"}], "low"), "0.000000001");
+  assert.equal(context.extreme([{high: "9223372036854775807.999999999"}], "high"), "9223372036854775807.999999999", "The full positive int64/nano source range is comparable without Number");
+  for (const [open, last, expected] of [[larger, smaller, "-0.000000001"], [smaller, larger, "0.000000001"], [smaller, smaller, "0"], ["1.000000001", "0.999999999", "-0.000000002"], ["250", "251.75", "1.75"]]) {
+    const price = context.pricing({market: {last_price: last, price_unit: "currency", price_currency: "RUB", candles: [{open}]}});
+    assert.equal(price.change, expected, "Visible absolute change preserves the exact source difference");
+    assert.ok(context.quote(price).includes(ui.marketPrice(expected, "currency", "RUB")), "The exact delta reaches the asset quote consumer");
+  }
+  for (const open of [null, undefined, "0", "-1", "NaN", "1e-9"]) assert.equal(context.pricing({market: {last_price: smaller, candles: [{open}]}}).change, null, "Missing or invalid opening price cannot produce a delta");
+  const cash = context.quote({market: {cash_price: "0.000000001", cash_price_currency: "RUB"}, current: "1", change: null, changePercent: null, priceUnit: "points", currency: "RUB"});
+  assert.ok(cash.includes("0,000000001"), "The displayed cash price does not round a positive source price to zero");
+  console.log("PASS asset source prices: raw current, exact high/low and absolute change, cash price");
+}
+function quoteChartPrecisionContracts(ui) {
+  const first = "10000000.000000001", last = "10000000.000000002";
+  const markup = ui.chart([{time: "2026-01-01T00:00:00Z", close: first}, {time: "2026-01-02T00:00:00Z", close: last}], {timeKey: "time", valueKey: "close", currency: "RUB", personal: false});
+  assert.ok(markup.includes("10\u00a0000\u00a0000,000000002"), "Initial chart readout uses the last raw observation");
+  const listeners = new Map(), attributes = new Map();
+  const readout = {firstElementChild: {}, lastElementChild: {}};
+  const element = {setAttribute() {}};
+  const hover = {setAttribute() {}, querySelector: () => element};
+  const block = {querySelector: () => readout, querySelectorAll: () => []};
+  const svg = {dataset: {chart: /data-chart="([^"]+)"/.exec(markup)[1]}, querySelector: () => hover, closest: () => block, addEventListener: (name, handler) => listeners.set(name, handler), setAttribute: (name, value) => attributes.set(name, value), getBoundingClientRect: () => ({left: 0, width: 480})};
+  ui.bindCharts({querySelectorAll: () => [svg]});
+  listeners.get("keydown")({key: "Home", preventDefault() {}});
+  assert.ok(readout.lastElementChild.textContent.includes("10\u00a0000\u00a0000,000000001"), "Keyboard selection preserves the first source decimal");
+  assert.ok(attributes.get("aria-label").includes("10\u00a0000\u00a0000,000000001"), "Accessible readout uses the same source observation");
+  listeners.get("pointermove")({clientX: 480});
+  assert.ok(readout.lastElementChild.textContent.includes("10\u00a0000\u00a0000,000000002"), "Pointer selection preserves the last source decimal");
+  assert.ok(attributes.get("aria-label").includes("10\u00a0000\u00a0000,000000002"));
+  console.log("PASS source chart readouts: initial, keyboard, pointer and accessibility retain exact decimal strings");
 }
 function eventReadReceiptContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
@@ -1667,7 +1751,9 @@ const runBrowser = async base => {
       }
       await exerciseCanonicalNavigation({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseIndependentPageLoads({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
+      await exerciseAssetEnrichment({send, round, base, wait, evaluate, checkLayout});
       await exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
+      await exerciseQuotePrecision({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
       await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseEnglishLocale({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseReadConsistency({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
@@ -2133,6 +2219,7 @@ async function serveTestPortfolioInstruments({
   response,
   fixture
 }) {
+  await holdAssetEnrichment(fixture, "details");
   return sendJSON(response, {
     status: "observed",
     current_holding: {status: fixture.closedPosition ? "not_held" : "held", quantity: fixture.closedPosition ? "0" : positions[0].quantity, observed_at: stamp},
@@ -2146,13 +2233,15 @@ async function serveTestPortfolioInstruments({
   });
 }
 async function serveTestMarketInstruments({
-  response
+  response,
+  fixture
 }) {
+  await holdAssetEnrichment(fixture, "facts");
   return sendJSON(response, {
     instrument_uid: "synthetic-a",
     currency: "rub",
-    name: "Тестовая компания A",
-    ticker: "SYNA",
+    name: fixture.enrichmentName || (fixture.precisionCase ? "Synthetic precision contract" : "Тестовая компания A"),
+    ticker: fixture.enrichmentTicker || "SYNA",
     instrument_type: "share",
     observed_at: stamp,
     status: "partial",
@@ -2179,9 +2268,10 @@ async function serveTestMarketInstruments2({
     fixture.marketStreams ||= new Set();
     fixture.marketStreams.add(response);
     response.once("close", () => fixture.marketStreams.delete(response));
-    if (!fixture.holdMarketStream) response.write(serverContracts.instrument_market_event);
+    if (!fixture.holdMarketStream) response.write(fixture.precisionCase?.market_event || serverContracts.instrument_market_event);
     return;
   }
+  if (fixture.precisionCase) return sendJSON(response, fixture.precisionCase.market);
   return sendJSON(response, {
     instrument_uid: "synthetic-a",
     period: url.searchParams.get("period"),
@@ -2367,10 +2457,14 @@ async function serveTestNews({fixture, url, response}) {
   if (url.pathname !== "/api/news") { const item=fixture.news.find(row=>row.id===url.pathname.split("/").at(-1)); return sendJSON(response,item || {detail:"news_not_found"},item?200:404); }
   const query = (url.searchParams.get("query") || "").toLowerCase();
   const uid = url.searchParams.get("instrument_uid");
+  if (uid) await holdAssetEnrichment(fixture, "news");
   const items = fixture.news.filter(item => (!uid || item.instrument_uids.includes(uid)) && JSON.stringify(item).toLowerCase().includes(query));
   const offset = Number(url.searchParams.get("cursor") || 0);
   const limit = Number(url.searchParams.get("limit") || 50);
   return sendJSON(response, {items: clone(items.slice(offset, offset + limit)), next_cursor: offset + limit < items.length ? String(offset + limit) : null, scanned_items: Math.min(limit, items.length - offset), instrument_uid: uid, source: "Изолированный источник", observed_at: stamp, status: items.length ? "received" : "empty"});
+}
+async function holdAssetEnrichment(fixture, kind) {
+  if (fixture.holdAssetParts?.has(kind)) await new Promise(release => fixture.heldAssetParts.set(kind, release));
 }
 async function serveTestNotifications({fixture, path, body, method, response}) {
   if (path === "/api/notifications" && fixture.holdNotifications) await new Promise(release => fixture.heldNotifications.push(release));
@@ -3380,6 +3474,42 @@ async function exerciseIndependentPageLoads({send, configureViewport, round, bas
   await checkLayout(`independent-support-${round}`);
   console.log(`PASS independent reads round ${round}: asset, search, article and support become usable before unrelated responses`);
 }
+async function exerciseAssetEnrichment({send, round, base, wait, evaluate, checkLayout}) {
+  const key = `signed-late-asset-${round}`;
+  const fixture = makeFixture("signed");
+  fixture.holdAssetParts = new Set(["details", "facts", "news"]);
+  fixture.heldAssetParts = new Map();
+  fixture.closedPosition = true;
+  fixture.enrichmentName = "Late source company";
+  fixture.enrichmentTicker = "LATE";
+  fixtures.set(key, fixture);
+  await send("Page.navigate", {url: `${base}?case=${key}#account/asset?uid=synthetic-a`});
+  await until(() => fixture.heldAssetParts.size === 3, "All auxiliary asset responses are deliberately held");
+  await wait('document.querySelector("#view-asset .chart-svg") && document.querySelector("#view-asset [data-market-quote] .main-value")?.textContent.includes("251,75")', "The chart is usable while details, facts and news are still pending");
+  await evaluate('window.__enrichmentChart = document.querySelector("#view-asset .chart-svg"); window.__enrichmentChart.focus()');
+  await send("Input.dispatchKeyEvent", {type: "keyDown", key: "Home", code: "Home", windowsVirtualKeyCode: 36});
+  const selected = await evaluate('document.querySelector("#view-asset .chart-readout").textContent');
+  const aria = await evaluate('window.__enrichmentChart.getAttribute("aria-label")');
+  const ready = {
+    details: `Object.fromEntries([...document.querySelectorAll('#view-asset [data-asset-sidebar] .info-row')].map(row=>[row.querySelector('dt').textContent,row.querySelector('dd').textContent]))['Стоимость в портфеле'] === window.OmniUI.money('0')`,
+    facts: `document.querySelector('#view-asset [data-asset-sidebar]').textContent.includes('11,25')`,
+    news: `document.querySelector('#view-asset h1').textContent === 'Late source company' && document.querySelector('#view-asset .asset-detail-header p').textContent === 'LATE'`
+  };
+  for (const kind of ["details", "facts", "news"]) {
+    fixture.holdAssetParts.delete(kind);
+    fixture.heldAssetParts.get(kind)();
+    fixture.heldAssetParts.delete(kind);
+    await wait(ready[kind], "The late " + kind + " response updates its actual consumer");
+    assert.equal(await evaluate('document.querySelector("#view-asset .chart-svg") === window.__enrichmentChart && document.activeElement === window.__enrichmentChart'), true, "Auxiliary asset data cannot replace the chart or its focus");
+    assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout").textContent'), selected, "The inspected first candle remains selected after " + kind);
+    assert.equal(await evaluate('window.__enrichmentChart.getAttribute("aria-label")'), aria, "The selected accessible observation remains intact");
+  }
+  assert.equal(await evaluate('document.querySelector("#view-asset .asset-detail-header .asset-logo").textContent'), "L");
+  assert.deepEqual(await evaluate('(() => { const watch=document.querySelector("#view-asset .asset-detail-header [data-watch]"); return [watch.dataset.watchName,watch.dataset.watchTicker]; })()'), ["Late source company", "LATE"], "The existing watch control receives the same final source metadata");
+  await checkLayout(`asset-enrichment-${round}`, {minCharts: 1});
+  await evaluate('delete window.__enrichmentChart');
+  console.log(`PASS asset enrichment round ${round}: held details/facts/news update their panels while preserving the chosen candle, SVG and focus`);
+}
 async function exerciseStartupRecovery({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot}) {
   await configureViewport(390);
   const destination = "#account/settings/appearance";
@@ -3520,6 +3650,75 @@ async function exerciseSafeUpdate({send, configureViewport, round, base, wait, c
   await wait('!document.querySelector("#public-site").hidden && !document.querySelector("#workspace-dialog").open', "Logout finishes after the update tests");
   assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null, "Logout removes every stored update draft");
   console.log(`PASS safe update round ${round}: build guard, same-profile restoration, different-profile isolation, TTL, field allowlist and logout cleanup`);
+}
+function expectedQuoteText(value, unit, currency, locale) {
+  const options = {maximumFractionDigits: 9};
+  if (unit === "currency") Object.assign(options, {style: "currency", currency});
+  const amount = new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US", options).format(value);
+  const suffixes = locale === "ru" ? {percent_nominal: "% номинала", points: "пунктов"} : {percent_nominal: "% of face value", points: "points"};
+  return unit === "currency" ? amount : amount + " " + suffixes[unit];
+}
+async function exerciseQuotePrecision({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot}) {
+  const locale = round === 1 ? "ru" : "en";
+  await configureViewport(round === 1 ? 320 : 390);
+  assert.deepEqual(serverContracts.market_precision_cases.map(item => item.key), ["tiny", "nano", "percent", "points", "large", "int64"], "Precision cases are generated by the real market REST and SSE endpoints");
+  for (const precision of serverContracts.market_precision_cases) {
+    await exerciseQuotePrecisionCase({send, round, base, wait, click, evaluate, checkLayout, screenshot, locale, precision});
+  }
+  console.log(`PASS market precision round ${round}: actual REST and SSE, batch table, nano and exact extrema, chart keyboard and narrow layout in ${locale}`);
+}
+async function exerciseQuotePrecisionCase({send, round, base, wait, click, evaluate, checkLayout, screenshot, locale, precision}) {
+  const key = `signed-precision-${round}-${precision.key}`;
+  const fixture = makeFixture("signed");
+  fixture.precisionCase = precision;
+  fixture.holdMarketStream = true;
+  fixture.holdAssetParts = new Set(["facts"]);
+  fixture.heldAssetParts = new Map();
+  fixture.prefs.document.locale = locale;
+  fixtures.set(key, fixture);
+  const {price_unit: unit, price_currency: currency} = precision.expected;
+  const text = value => expectedQuoteText(value, unit, currency, locale);
+  const expected = text(precision.expected.last_price);
+  await send("Page.navigate", {url: `${base}?case=${key}#account/market/positions`});
+  await wait(`document.documentElement.lang === ${JSON.stringify(locale)} && document.querySelector('#view-market [data-table-quote="synthetic-a"] strong')?.textContent === ${JSON.stringify(expected)}`, "Batch quote preserves exact source digits: " + precision.key);
+  await checkLayout(`precision-table-${precision.key}-${locale}`, {minTables: 1});
+  await click('#view-market [data-asset="synthetic-a"]');
+  await wait(`document.querySelector('#view-asset [data-market-quote] .main-value')?.textContent === ${JSON.stringify(text(precision.market.last_price))} && document.querySelector('#view-asset .chart-svg')`, "Actual REST quote and candles retain their precision: " + precision.key);
+  await until(() => fixture.marketStreams?.size === 1 && fixture.heldAssetParts.has("facts"), "The initial precision stream is open while auxiliary facts remain held");
+  const initialStream = [...fixture.marketStreams][0];
+  fixture.holdAssetParts.delete("facts");
+  fixture.heldAssetParts.get("facts")();
+  fixture.heldAssetParts.delete("facts");
+  await wait('document.querySelector("#view-asset h1")?.textContent === "Synthetic precision contract" && !document.querySelector("#view-asset .loading-panel")', "The precision asset has completed its auxiliary reads");
+  await until(() => fixture.marketStreams.size === 1 && !fixture.marketStreams.has(initialStream), "The final active stream has replaced the closed initial response");
+  assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout strong").textContent'), text(precision.expected.last_close), "Initial chart readout shows the exact last source observation");
+  if (unit !== "currency" && precision.market.cash_price !== null) assert.ok((await evaluate('document.querySelector("#view-asset [data-market-quote] .fine-print").textContent')).includes(expectedQuoteText(precision.market.cash_price, "currency", precision.market.cash_price_currency, locale)), "The REST cash price preserves its displayed source digits");
+  await evaluate('document.querySelector("#view-asset .chart-svg").focus()');
+  const focused = await evaluate('document.activeElement.dataset.chart');
+  fixture.holdMarketStream = false;
+  for (const response of fixture.marketStreams) response.write(precision.market_event);
+  await wait(`document.querySelector('#view-asset [data-market-quote] .main-value')?.textContent === ${JSON.stringify(expected)}`, "Actual SSE replaces the previous REST price without rounding: " + precision.key);
+  assert.equal(await evaluate('document.activeElement.dataset.chart'), focused, "Exact quote updates preserve the chart being inspected");
+  assert.equal((await evaluate('document.querySelector("#view-asset [data-market-quote] .value-change").textContent')).split(" · ")[0], text(precision.expected.absolute_change), "The displayed absolute change matches the independent Decimal source difference");
+  if (unit !== "currency" && precision.expected.cash_price !== null) assert.ok((await evaluate('document.querySelector("#view-asset [data-market-quote] .fine-print").textContent')).includes(expectedQuoteText(precision.expected.cash_price, "currency", precision.market.cash_price_currency, locale)), "The SSE cash price preserves its displayed source digits");
+  for (const [keyName, keyCode, price] of [["Home", 36, precision.expected.first_close], ["End", 35, precision.expected.last_close]]) {
+    await send("Input.dispatchKeyEvent", {type: "keyDown", key: keyName, code: keyName, windowsVirtualKeyCode: keyCode});
+    assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout strong").textContent'), text(price), "Keyboard selection keeps each exact source observation");
+    assert.ok((await evaluate('document.querySelector("#view-asset .chart-svg").getAttribute("aria-label")')).includes(text(price)), "Accessible chart values match the selected source observation");
+  }
+  await checkLayout(`precision-asset-${precision.key}-${locale}`, {minCharts: 1});
+  const bounds = await evaluate(`(() => {
+    const card=document.querySelector("#view-asset .asset-chart-card").getBoundingClientRect();
+    return [...document.querySelectorAll("#view-asset [data-market-quote] .main-value,#view-asset .chart-readout,#view-asset .chart-readout strong")].map(element=>{const rect=element.getBoundingClientRect();return {text:element.textContent,inside:rect.left>=card.left-1 && rect.right<=card.right+1,unclipped:element.scrollWidth<=element.clientWidth+1};});
+  })()`);
+  assert.ok(bounds.every(item => item.inside && item.unclipped), "The full source price and chart readout remain visible inside the narrow card: " + JSON.stringify(bounds));
+  if (["large", "int64"].includes(precision.key)) await screenshot(`precision-${precision.key}-${round}-${locale}.png`);
+  await click('#view-asset [data-asset-tab="metrics"]');
+  const labels = locale === "ru" ? ["Последняя цена", "Максимум периода", "Минимум периода"] : ["Last price", "Period high", "Period low"];
+  await wait(`document.querySelector('#view-asset .asset-tab-content')?.textContent.includes(${JSON.stringify(labels[0])}) && !document.querySelector('#view-asset .asset-tab-content .loading-panel')`, "The metrics screen is ready for exact source values");
+  const metrics = await evaluate('Object.fromEntries([...document.querySelectorAll("#view-asset .asset-tab-content .info-row")].map(row=>[row.querySelector("dt")?.textContent,row.querySelector("dd")?.textContent]))');
+  for (const [index, value] of [precision.expected.last_price, precision.expected.high, precision.expected.low].entries()) assert.equal(metrics[labels[index]], text(value), "Asset metrics preserve the source price for " + labels[index]);
+  assert.equal(fixture.requests.filter(item => !["GET", "HEAD"].includes(item.method)).length, 0, "Reading precise market prices cannot write personal data");
 }
 async function exerciseGuestViewport({
   send,
