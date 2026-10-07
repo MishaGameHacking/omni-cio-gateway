@@ -18,6 +18,7 @@ from omnicio.workspace import (
     portfolio_performance,
     quiet_now,
 )
+from omnicio.workspace_store import WorkspaceStore, _Basis
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 END = START + timedelta(days=30)
@@ -54,6 +55,30 @@ def operation(
         "payment_currency": currency,
         **changes,
     }
+
+
+def test_income_uses_selected_period_and_keeps_principal_separate() -> None:
+    basis = _Basis(
+        connection=None,
+        latest={"evidence": {"account": {"opened_at": START.isoformat()}}},
+        operations=[
+            operation("DIVIDEND", "100", day=5),
+            operation("COUPON", "50", day=20),
+            operation("BOND_REPAYMENT", "1000", day=25),
+        ],
+        watermark=END, complete=True,
+    )
+    all_time = WorkspaceStore._income(basis, END)
+    selected = WorkspaceStore._income(basis, END, from_at=START + timedelta(days=10))
+    assert all_time["total_rub"] == "150"
+    assert selected["total_rub"] == "50"
+    assert selected["dividends_rub"] == "0"
+    assert selected["redemptions_rub"] == "1000"
+    assert selected["from"] == (START + timedelta(days=10)).isoformat()
+    assert selected["by_month"][0]["total_rub"] == "50"
+    after_watermark = WorkspaceStore._income(basis, END, from_at=END + timedelta(days=1))
+    assert after_watermark["status"] == "unavailable"
+    assert after_watermark["total_rub"] is None
 
 
 def test_preferences_defaults_have_no_invented_user_facts_and_do_not_alias() -> None:

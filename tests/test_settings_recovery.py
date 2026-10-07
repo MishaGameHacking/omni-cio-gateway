@@ -33,6 +33,7 @@ from omnicio.db import Database, UserRecord
 from omnicio.main import app
 from omnicio.portfolio_store import PortfolioStore, SettingsVersionConflict
 from omnicio.recovery import database_guards, table_fingerprints
+from omnicio.schema import READINESS_QUERY
 from omnicio.security import decrypt_secret, encrypt_secret
 from omnicio.strategy import preset_document
 from omnicio.workspace import default_preferences
@@ -126,6 +127,15 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
         assert database_guards(admin) == guards
         encrypted = admin.execute("SELECT token_ciphertext FROM tbank_connection").fetchone()[0]
         assert decrypt_secret(bytes(encrypted), key) == "synthetic-broker-token"
+        assert admin.execute(READINESS_QUERY).fetchone()[0]
+        for incomplete_schema in (
+            "ALTER TABLE portfolio_execution_legs DISABLE TRIGGER strategy_submission_authority",
+            "ALTER TABLE billing_payments RENAME cancel_attempted_at TO missing_cancel_receipt",
+        ):
+            with admin.transaction(force_rollback=True):
+                admin.execute(incomplete_schema)
+                assert admin.execute(READINESS_QUERY).fetchone()[0] is False
+        assert admin.execute(READINESS_QUERY).fetchone()[0]
         admin.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
         assert admin.execute("SELECT * FROM investment_profile_versions").fetchall() == []
         assert admin.execute("SELECT * FROM strategy_drafts").fetchall() == []
@@ -329,6 +339,8 @@ def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_e
     from omnicio.recovery import verified_recovery_evidence
 
     script = ROOT / ".github/scripts/timeweb_recovery.py"
+    monkeypatch.syspath_prepend(str(script.parent))
+    runner = importlib.import_module("run_recovery_drill")
     spec = importlib.util.spec_from_file_location("synthetic_operator_restore", script)
     assert spec and spec.loader
     recovery = importlib.util.module_from_spec(spec)
@@ -344,19 +356,19 @@ def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_e
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-    subprocess.run(
-        [str(binary / f"initdb{suffix}"), "-D", str(target_data), "-U", "postgres", "-A", "trust"],
-        check=True, capture_output=True, timeout=90,
-    )
-    subprocess.run(
-        [str(binary / f"pg_ctl{suffix}"), "-D", str(target_data), "-l", str(tmp_path / "pg.log"),
-         "-o", f"-h 127.0.0.1 -p {port} -F", "-w", "start"],
-        check=True, capture_output=True, timeout=90,
-    )
     signing_key = "synthetic-operator-receipt-" + uuid4().hex
     archive_key = Fernet.generate_key().decode()
     release_sha = "a" * 40
     try:
+        runner.native(
+            [str(binary / f"initdb{suffix}"), "-D", str(target_data),
+             "-U", "postgres", "-A", "trust"], timeout=90,
+        )
+        runner.native(
+            [str(binary / f"pg_ctl{suffix}"), "-D", str(target_data),
+             "-l", str(tmp_path / "pg.log"), "-o", f"-h 127.0.0.1 -p {port} -F",
+             "-w", "-t", "30", "start"], timeout=45,
+        )
         with psycopg.connect(base, autocommit=True) as control:
             control.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(source_name)))
             try:
@@ -403,10 +415,11 @@ def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_e
                     sql.Identifier(source_name),
                 ))
     finally:
-        subprocess.run(
-            [str(binary / f"pg_ctl{suffix}"), "-D", str(target_data), "-m", "fast", "-w", "stop"],
-            check=True, capture_output=True, timeout=90,
-        )
+        if (target_data / "postmaster.pid").exists():
+            runner.native(
+                [str(binary / f"pg_ctl{suffix}"), "-D", str(target_data),
+                 "-m", "fast", "-w", "-t", "30", "stop"], timeout=45,
+            )
 
 
 def test_strategy_draft_api_requires_owner_origin_version_and_keeps_authority_separate() -> None:

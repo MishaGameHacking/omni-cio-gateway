@@ -4,13 +4,18 @@
 (() => {
   "use strict";
 
+  const I = window.OMNICIO_I18N;
+  const T = (key, values) => I.t(key, values);
+  const H = (key, values) => I.html(key, values);
+
   const colors = ["#3689ff", "#15c7ce", "#02d59b", "#efa85f", "#ad79f1", "#6ab8de"];
-  const navigation = [["home", "Главная"], ["portfolio", "Портфель"], ["market", "Рынок"], ["strategies", "Стратегии"], ["assistant", "ИИ-помощник"], ["goals", "Цели"], ["analytics", "Аналитика"], ["events", "События"], ["profile", "Профиль"], ["settings", "Настройки"]];
+  const navigation = () => ([["home", T("Главная")], ["portfolio", T("Портфель")], ["market", T("Рынок")], ["strategies", T("Стратегии")], ["assistant", T("ИИ-помощник")], ["goals", T("Цели")], ["analytics", T("Аналитика")], ["events", T("События")], ["profile", T("Профиль")], ["settings", T("Настройки")]]);
   const pendingCharts = new Map();
   let chartSequence = 0;
   let privateValuesHidden = false;
   let displayLocale = "ru-RU";
   const setLocale = locale => {
+    I.setLocale(locale);
     displayLocale = locale === "en" ? "en-US" : "ru-RU";
   };
   const escape = value => String(value ?? "").replace(/[&<>"']/g, character => ({
@@ -49,9 +54,9 @@
     return numeric === null ? "—" : `${renderPercentValue(signed, numeric)}${format(numeric, 2)}%`;
   };
   const date = (value, time = false) => {
-    if (!value) return "Дата не получена";
+    if (!value) return T("Дата не получена");
     const parsed = new Date(value);
-    if (!Number.isFinite(parsed.getTime())) return "Дата не получена";
+    if (!Number.isFinite(parsed.getTime())) return T("Дата не получена");
     return new Intl.DateTimeFormat(displayLocale, {
       day: "numeric",
       month: "short",
@@ -89,11 +94,11 @@
     primary: true,
     small: !centered
   }) : ""}</div>`;
-  const loading = (label = "Загружаем данные…") => `<output class="loading-panel"><span class="spinner" aria-hidden="true"></span>${escape(label)}</output>`;
+  const loading = (label = T("Загружаем данные…")) => `<output class="loading-panel"><span class="spinner" aria-hidden="true"></span>${escape(label)}</output>`;
   const heading = (title, detail = "", actions = "") => `<div class="view-header"><div><h1>${escape(title)}</h1>${detail ? renderHeadingP(detail) : ""}</div>${actions ? renderHeadingViewActions(actions) : ""}</div>`;
-  const cardHeader = (title, route = "", label = "Смотреть все") => `<div class="card-header"><h2>${escape(title)}</h2>${route ? renderCardHeaderTextButton(route, label, title) : ""}</div>`;
-  const periodLabels = [["1d", "1Д"], ["1w", "1Н"], ["1m", "1М"], ["3m", "3М"], ["1y", "1Г"], ["all", "ВСЕ"]];
-  const periods = (scope, selected, includeAll = true) => `<div class="periods" aria-label="Период графика">${periodLabels.filter(([key]) => includeAll || key !== "all").map(([key, label]) => renderPeriodsPeriodButton(key, scope, selected, label)).join("")}</div>`;
+  const cardHeader = (title, route = "", label = T("Смотреть все")) => `<div class="card-header"><h2>${escape(title)}</h2>${route ? renderCardHeaderTextButton(route, label, title) : ""}</div>`;
+  const periodLabels = () => ([["1d", T("1Д")], ["1w", T("1Н")], ["1m", T("1М")], ["3m", T("3М")], ["1y", T("1Г")], ["all", T("ВСЕ")]]);
+  const periods = (scope, selected, includeAll = true) => `<div class="periods" aria-label="${H("Период графика")}">${periodLabels().filter(([key]) => includeAll || key !== "all").map(([key, label]) => renderPeriodsPeriodButton(key, scope, selected, label)).join("")}</div>`;
   const filteredSeries = (data, period, timeKey = "captured_at") => {
     if (!Array.isArray(data)) return [];
     const days = {
@@ -118,16 +123,22 @@
       return previous?.version > goal.version ? previous : goal;
     });
   };
+  const marketPrice = (value, unit = "currency", currency = "", personal = false) => {
+    if (unit === "currency") return money(value, 2, currency, personal);
+    const suffix = {percent_nominal: T("% номинала"), points: T("пунктов"), per_nominal: `${currency} ${T("за номинал")}`, unknown: T("ед. источника")}[unit] || T("ед. источника");
+    return number(value) === null ? "—" : `${format(value, 2)} ${suffix}`;
+  };
   const chart = (rows, {
     timeKey = "captured_at",
     valueKey = "nav_rub",
-    label = "Стоимость портфеля",
+    label = T("Стоимость портфеля"),
     personal = true,
     currency = "RUB",
+    priceUnit = "currency",
     tone = "green",
     compact = false
   } = {}) => {
-    if (personal && privateValuesHidden) return '<div class="chart-empty">Значения скрыты настройкой конфиденциальности.</div>';
+    if (personal && privateValuesHidden) return ("<div class=\"chart-empty\">" + H("Значения скрыты настройкой конфиденциальности.") + "</div>");
     const unique = new Map();
     for (const row of Array.isArray(rows) ? rows : []) {
       const time = new Date(row[timeKey]).getTime();
@@ -138,7 +149,7 @@
       });
     }
     const points = [...unique.values()].sort((left, right) => left.time - right.time);
-    if (points.length < 2) return '<div class="chart-empty">Для графика нужны минимум два реальных наблюдения.</div>';
+    if (points.length < 2) return ("<div class=\"chart-empty\">" + H("Для графика нужны минимум два реальных наблюдения.") + "</div>");
     const width = 480;
     const height = 180;
     const left = 1;
@@ -164,6 +175,7 @@
       width,
       label,
       currency,
+      priceUnit,
       personal
     });
     const grid = [0, .5, 1].map(part => {
@@ -171,7 +183,7 @@
       const position = y(value);
       return `<line class="chart-grid" x1="${left}" x2="${right}" y1="${position}" y2="${position}"/>`;
     }).join("");
-    return `<div class="chart-block${tone === "purple" ? " chart-purple" : ""}"><div class="chart-plot${compact ? " chart-compact" : ""}"><svg class="chart-svg" data-chart="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" tabindex="0" role="group" aria-label="${escape(label)}. Используйте стрелки для просмотра значений.">${grid}<path class="chart-area" d="${path} L${right} ${bottom} L${left} ${bottom} Z"/><path class="chart-path" d="${path}"/><g class="chart-hover" visibility="hidden"><line class="chart-cursor" y1="${top}" y2="${bottom}"/><circle class="chart-point" r="4"/></g></svg>${compact ? "" : renderChartAxes(points, low, high)}</div><div class="chart-readout" aria-live="off"><span>${escape(date(points.at(-1).time, true))}</span><strong>${escape(money(points.at(-1).value, 2, currency, personal))}</strong></div></div>`;
+    return `<div class="chart-block${tone === "purple" ? " chart-purple" : ""}"><div class="chart-plot${compact ? " chart-compact" : ""}"><svg class="chart-svg" data-chart="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" tabindex="0" role="group" aria-label="${escape(label)}${H(". Используйте стрелки для просмотра значений.")}">${grid}<path class="chart-area" d="${path} L${right} ${bottom} L${left} ${bottom} Z"/><path class="chart-path" d="${path}"/><g class="chart-hover" visibility="hidden"><line class="chart-cursor" y1="${top}" y2="${bottom}"/><circle class="chart-point" r="4"/></g></svg>${compact ? "" : renderChartAxes(points, low, high)}</div><div class="chart-readout" aria-live="off"><span>${escape(date(points.at(-1).time, true))}</span><strong>${escape(marketPrice(points.at(-1).value, priceUnit, currency, personal))}</strong></div></div>`;
   };
   const bindCharts = (container = document) => {
     for (const svg of container.querySelectorAll("svg[data-chart]")) {
@@ -194,8 +206,8 @@
         point.setAttribute("cx", String(px));
         point.setAttribute("cy", String(py));
         readout.firstElementChild.textContent = date(current.time, true);
-        readout.lastElementChild.textContent = money(current.value, 2, data.currency, data.personal);
-        svg.setAttribute("aria-label", `${data.label}: ${date(current.time, true)}, ${money(current.value, 2, data.currency, data.personal)}. Стрелки меняют наблюдение.`);
+        readout.lastElementChild.textContent = marketPrice(current.value, data.priceUnit, data.currency, data.personal);
+        svg.setAttribute("aria-label", `${data.label}: ${date(current.time, true)}, ${marketPrice(current.value, data.priceUnit, data.currency, data.personal)}${T(". Стрелки меняют наблюдение.")}`);
       };
       svg.addEventListener("pointermove", event => {
         const box = svg.getBoundingClientRect();
@@ -233,7 +245,7 @@
   };
   const allocation = (items, total) => {
     const valid = (Array.isArray(items) ? items : []).filter(item => number(item.value_rub) !== null && number(item.value_rub) >= 0 && number(item.nav_percent) !== null && number(item.nav_percent) >= 0);
-    if (!valid.length || number(total) === null || number(total) <= 0) return empty("Структура пока не рассчитана", "Она появится после получения полного состава портфеля.", "", "", "portfolio");
+    if (!valid.length || number(total) === null || number(total) <= 0) return empty(T("Структура пока не рассчитана"), T("Она появится после получения полного состава портфеля."), "", "", "portfolio");
     const circumference = 2 * Math.PI * 47;
     let offset = 0;
     const arcs = valid.map((item, index) => {
@@ -243,11 +255,11 @@
       offset += length;
       return result;
     }).join("");
-    return `<div class="allocation-content"><div class="donut-wrap"><svg class="donut" viewBox="0 0 120 120" role="img" aria-label="Структура портфеля"><circle cx="60" cy="60" r="47" stroke="var(--line)"/>${arcs}</svg><div class="donut-center"><span>Всего</span><strong>${escape(money(total))}</strong></div></div><ul class="allocation-legend">${valid.map((item, index) => renderAllocationLegendDot(index, item)).join("")}</ul></div>`;
+    return `<div class="allocation-content"><div class="donut-wrap"><svg class="donut" viewBox="0 0 120 120" role="img" aria-label="${H("Структура портфеля")}"><circle cx="60" cy="60" r="47" stroke="var(--line)"/>${arcs}</svg><div class="donut-center"><span>${H("Всего")}</span><strong>${escape(money(total))}</strong></div></div><ul class="allocation-legend">${valid.map((item, index) => renderAllocationLegendDot(index, item)).join("")}</ul></div>`;
   };
   const progress = value => `<div class="progress-row"><div class="progress-track"><svg viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect class="progress-shape" width="${Math.max(0, Math.min(100, number(value) ?? 0))}" height="4" rx="2"/></svg></div><span>${escape(percent(value))}</span></div>`;
   const infoRows = rows => `<dl class="info-list">${rows.map(([label, value]) => renderInfoRowsInfoRow(label, value)).join("")}</dl>`;
-  const help = (title, detail) => `<button type="button" class="help-button" data-help-title="${escape(title)}" data-help="${escape(detail)}" aria-label="Справка: ${escape(title)}">${icon("info", true)}</button>`;
+  const help = (title, detail) => `<button type="button" class="help-button" data-help-title="${escape(title)}" data-help="${escape(detail)}" aria-label="${H("Справка:")} ${escape(title)}">${icon("info", true)}</button>`;
   const field = ({
     name,
     label,
@@ -264,7 +276,7 @@
   }) => `<label class="field${full ? " full-span" : ""}"><span>${escape(label)}${helpText ? help(label, helpText) : ""}</span><input name="${escape(name)}" type="${escape(type)}" value="${escape(value ?? "")}"${min !== undefined ? renderFieldFragment(min) : ""}${max !== undefined ? renderFieldFragment2(max) : ""}${step !== undefined ? renderFieldFragment3(step) : ""}${required ? " required" : ""}${placeholder ? renderFieldFragment4(placeholder) : ""}${type === "number" ? ' inputmode="decimal"' : ""}>${hint ? renderFieldSmall(hint) : ""}</label>`;
   const select = (name, label, choices, value, helpText = "") => `<label class="field"><span>${escape(label)}${helpText ? help(label, helpText) : ""}</span><select name="${escape(name)}">${choices.map(([key, title]) => renderSelectOption(key, value, title)).join("")}</select></label>`;
   const switchControl = (name, label, detail, checked) => `<label class="switch-row"><span><strong>${escape(label)}</strong><small>${escape(detail)}</small></span><input type="checkbox" name="${escape(name)}" role="switch"${checked ? " checked" : ""}></label>`;
-  const freshness = (source, at, status = "") => `<span class="source-line">${icon("refresh", true)}<span>${escape(source || "Источник не указан")}${at ? renderFreshnessFragment(at) : ""}</span>${status && !["fresh", "observed", "available"].includes(status) ? renderFreshnessSourceTag(status) : ""}</span>`;
+  const freshness = (source, at, status = "") => `<span class="source-line">${icon("refresh", true)}<span>${escape(source || T("Источник не указан"))}${at ? renderFreshnessFragment(at) : ""}</span>${status && !["fresh", "observed", "available"].includes(status) ? renderFreshnessSourceTag(status) : ""}</span>`;
   const setPrivacy = hidden => {
     privateValuesHidden = Boolean(hidden);
   };
@@ -301,7 +313,8 @@
     setLocale,
     clearCharts,
     colors,
-    navigation
+    get navigation() { return navigation(); },
+    marketPrice
   });
   function renderPercentValue(signed, numeric) {
     if (signed && numeric > 0) {
@@ -358,18 +371,18 @@
     return `<option value="${escape(key)}"${String(key) === String(value) ? " selected" : ""}>${escape(title)}</option>`;
   }
   function renderFreshnessFragment(at) {
-    return ` · ${escape(date(at, true))} МСК`;
+    return ` · ${escape(date(at, true))} ${T("МСК")}`;
   }
   function renderFreshnessSourceTag(status) {
     return `<span class="source-tag">${escape({
-      stale: "Данные устарели",
-      partial: "Частичные данные",
-      pending: "Ожидаем данные",
-      not_connected: "Не подключено",
-      cached: "Сохранённый ответ",
-      unavailable: "Недоступно",
-      delayed: "Данные с задержкой",
-      empty: "Нет наблюдений"
-    }[status] || "Статус требует проверки")}</span>`;
+      stale: T("Данные устарели"),
+      partial: T("Частичные данные"),
+      pending: T("Ожидаем данные"),
+      not_connected: T("Не подключено"),
+      cached: T("Сохранённый ответ"),
+      unavailable: T("Недоступно"),
+      delayed: T("Данные с задержкой"),
+      empty: T("Нет наблюдений")
+    }[status] || T("Статус требует проверки"))}</span>`;
   }
 })();

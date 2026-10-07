@@ -144,6 +144,43 @@ def portfolio_context(workspace: Mapping[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _openai_response(payload: Mapping[str, Any]) -> tuple[Any, dict[str, Any]]:
+    choices = payload.get("choices")
+    if (
+        not isinstance(choices, list)
+        or len(choices) != 1
+        or not isinstance(choices[0], dict)
+        or choices[0].get("finish_reason") != "stop"
+    ):
+        raise AssistantUnavailable("assistant_response_incomplete")
+    measured = payload.get("usage")
+    if not isinstance(measured, dict):
+        measured = {}
+    return choices[0].get("message"), {
+        "input_tokens": measured.get("prompt_tokens"),
+        "output_tokens": measured.get("completion_tokens"),
+    }
+
+
+def _response_values(payload: Mapping[str, Any], provider: str) -> tuple[str, dict[str, Any]]:
+    if provider == "ollama":
+        if payload.get("done") is not True:
+            raise AssistantUnavailable("assistant_response_incomplete")
+        item = payload.get("message")
+        usage = {
+            "input_tokens": payload.get("prompt_eval_count"),
+            "output_tokens": payload.get("eval_count"),
+        }
+    else:
+        item, usage = _openai_response(payload)
+    if not isinstance(item, dict) or item.get("role") != "assistant":
+        raise AssistantUnavailable("assistant_response_invalid")
+    reply = item.get("content")
+    if not isinstance(reply, str) or not 1 <= len(reply.strip()) <= 16000:
+        raise AssistantUnavailable("assistant_response_invalid")
+    return reply.strip(), usage
+
+
 class AssistantClient:
     def __init__(
         self,
@@ -262,35 +299,7 @@ class AssistantClient:
         else:
             body.update(max_tokens=1024, temperature=0.2)
         payload = self._request("POST", path, body)
-        if self.provider == "ollama":
-            if payload.get("done") is not True:
-                raise AssistantUnavailable("assistant_response_incomplete")
-            item = payload.get("message")
-            usage = {
-                "input_tokens": payload.get("prompt_eval_count"),
-                "output_tokens": payload.get("eval_count"),
-            }
-        else:
-            choices = payload.get("choices")
-            if (
-                not isinstance(choices, list)
-                or len(choices) != 1
-                or not isinstance(choices[0], dict)
-                or choices[0].get("finish_reason") != "stop"
-            ):
-                raise AssistantUnavailable("assistant_response_incomplete")
-            item = choices[0].get("message")
-            measured = payload.get("usage")
-            measured = measured if isinstance(measured, dict) else {}
-            usage = {
-                "input_tokens": measured.get("prompt_tokens"),
-                "output_tokens": measured.get("completion_tokens"),
-            }
-        if not isinstance(item, dict) or item.get("role") != "assistant":
-            raise AssistantUnavailable("assistant_response_invalid")
-        reply = item.get("content")
-        if not isinstance(reply, str) or not 1 <= len(reply.strip()) <= 16000:
-            raise AssistantUnavailable("assistant_response_invalid")
+        reply, usage = _response_values(payload, self.provider)
         return {
             "reply": reply.strip(),
             "message_id": uuid4().hex,
@@ -519,21 +528,21 @@ class AssistantService:
         connection = self.store.connection(user_id)
         client = self._client(user_id, connection)
         configured = client is not None and client.configured
-        health: dict[str, Any] = (
-            {"status": connection["health_status"], "checked_at": connection["checked_at"]}
-            if connection
-            else cast(dict[str, Any], client.status()["health"])
-            if client
-            else {"status": "unchecked", "checked_at": None}
-        )
+        if connection:
+            health = {"status": connection["health_status"], "checked_at": connection["checked_at"]}
+        elif client:
+            health = cast(dict[str, Any], client.status()["health"])
+        else:
+            health = {"status": "unchecked", "checked_at": None}
+        activation = health["status"]
+        if not self.enabled:
+            activation = "activation_disabled"
+        elif not configured:
+            activation = "not_configured"
         return {
             "enabled": self.enabled,
             "configured": configured,
-            "status": "activation_disabled"
-            if not self.enabled
-            else "not_configured"
-            if not configured
-            else health["status"],
+            "status": activation,
             "connection_version": connection["version"] if connection else 0,
             "connection_source": "personal" if connection else "operator",
             "provider": client.provider if client else None,

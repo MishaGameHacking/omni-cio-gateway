@@ -1,4 +1,4 @@
-"""Thin T-Invest REST adapter for owner broker read-only data."""
+"""Typed T-Invest REST reads and explicit, idempotent limit-order requests."""
 
 from __future__ import annotations
 
@@ -1064,51 +1064,87 @@ class TBankInvestClient:
         return item
 
     def get_instrument_overview(
-        self, token: str, environment: TBankEnvironment, instrument_uid: str,
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
     ) -> TBankInstrumentMetadata:
         item = self._instrument_by(token, environment, instrument_uid)
         return _instrument_metadata(item, _text(item.get("instrumentType")).strip())
 
     def get_execution_instrument(
-        self, token: str, environment: TBankEnvironment, instrument_uid: str,
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uid: str,
     ) -> TBankInstrumentMetadata:
         value = self.get_instrument_overview(token, environment, instrument_uid)
         if value.instrument_type == "bond":
-            value = _instrument_metadata(self._instrument_by(
-                token, environment, instrument_uid, method="BondBy"), "bond")
+            value = _instrument_metadata(
+                self._instrument_by(token, environment, instrument_uid, method="BondBy"), "bond"
+            )
         return value
 
     def estimate_limit_order(
-        self, token: str, environment: TBankEnvironment, account_id: str, *,
-        instrument_uid: str, lots: int, price: Decimal, action: str,
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        account_id: str,
+        *,
+        instrument_uid: str,
+        lots: int,
+        price: Decimal,
+        action: str,
     ) -> TBankOrderEstimate:
         body = _limit_order_body(account_id, instrument_uid, lots, price, action)
-        payload = self._post(token=token, environment=environment,
+        payload = self._post(
+            token=token,
+            environment=environment,
             service="SandboxService" if environment == "sandbox" else "OrdersService",
             method="GetSandboxOrderPrice" if environment == "sandbox" else "GetOrderPrice",
-            body=body)
+            body=body,
+        )
         total = _money(payload.get("totalOrderAmount"))
         initial = _money(payload.get("initialOrderAmount"))
         commission = _money(payload.get("executedCommission"))
-        if (_int_value(payload.get("lotsRequested"), "lotsRequested") != lots or
-                any(value is None or value.currency.upper() != "RUB" or
-                    Decimal(value.value) < 0 for value in (total, initial, commission))):
+        if _int_value(payload.get("lotsRequested"), "lotsRequested") != lots or any(
+            value is None or value.currency.upper() != "RUB" or Decimal(value.value) < 0
+            for value in (total, initial, commission)
+        ):
             raise TBankUnavailable("order estimate is incomplete")
         assert total is not None and initial is not None and commission is not None
         return TBankOrderEstimate(lots, total, initial, commission)
 
     def submit_limit_order(
-        self, token: str, environment: TBankEnvironment, account_id: str, *,
-        instrument_uid: str, lots: int, price: Decimal, action: str, request_id: str,
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        account_id: str,
+        *,
+        instrument_uid: str,
+        lots: int,
+        price: Decimal,
+        action: str,
+        request_id: str,
     ) -> TBankOrderState:
         ident = str(UUID(request_id))
         body = _limit_order_body(account_id, instrument_uid, lots, price, action)
-        body.update({"orderId": ident, "orderType": "ORDER_TYPE_LIMIT",
-                     "priceType": "PRICE_TYPE_CURRENCY", "timeInForce": "TIME_IN_FORCE_FILL_AND_KILL",
-                     "confirmMarginTrade": False})
-        payload = self._post(token=token, environment=environment,
+        body.update(
+            {
+                "orderId": ident,
+                "orderType": "ORDER_TYPE_LIMIT",
+                "priceType": "PRICE_TYPE_CURRENCY",
+                "timeInForce": "TIME_IN_FORCE_FILL_AND_KILL",
+                "confirmMarginTrade": False,
+            }
+        )
+        payload = self._post(
+            token=token,
+            environment=environment,
             service="SandboxService" if environment == "sandbox" else "OrdersService",
-            method="PostSandboxOrder" if environment == "sandbox" else "PostOrder", body=body)
+            method="PostSandboxOrder" if environment == "sandbox" else "PostOrder",
+            body=body,
+        )
         return _order_state(payload, expected_request_id=ident)
 
     def get_bond_ratings(

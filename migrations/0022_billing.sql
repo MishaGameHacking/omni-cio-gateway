@@ -15,12 +15,14 @@ CREATE TABLE IF NOT EXISTS billing_payments (
     checkout_url text,
     entitlement_from timestamptz,
     entitlement_until timestamptz,
+    cancel_attempted_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, id),
     UNIQUE (terminal_key, provider_payment_id),
     CHECK ((entitlement_from IS NULL AND entitlement_until IS NULL)
-        OR (entitlement_from IS NOT NULL AND entitlement_until > entitlement_from))
+        OR (entitlement_from IS NOT NULL AND entitlement_until IS NOT NULL
+            AND entitlement_until > entitlement_from))
 );
 CREATE INDEX IF NOT EXISTS billing_payments_user_time_idx
     ON billing_payments(user_id, created_at DESC);

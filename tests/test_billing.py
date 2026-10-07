@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from psycopg.errors import CheckViolation
 from test_workspace_api import HEADERS, OTHER, OWNER
 from test_workspace_api import workspace_http as workspace_http
 from test_workspace_postgres import DATABASE_URL, user
@@ -330,3 +331,66 @@ def test_out_of_order_partial_refund_never_becomes_a_new_full_entitlement(
     service._apply_provider_state(owner, ident, {**source, "Status": "REFUNDED", "Amount": 0})
     repeated = service._apply_provider_state(owner, ident, source)
     assert repeated["status"] == "refunded"
+
+
+@pytest.mark.skipif(not DATABASE_URL, reason="ephemeral PostgreSQL is required")
+def test_lost_cancel_response_is_durable_and_retries_only_reconcile(workspace_database) -> None:
+    database = workspace_database[0]
+    owner, other = user(database), user(database)
+    cfg, ident = config(), uuid4()
+    client = Mock(spec=PaymentClient)
+    service = BillingService(database, cfg, client=client)
+    source = {
+        "TerminalKey": cfg.terminal_key,
+        "PaymentId": str(ident.int % 10**15),
+        "Amount": cfg.amount_kopecks,
+        "Status": "NEW",
+        "Success": True,
+    }
+    calls = []
+
+    def provider(method, payload):
+        calls.append(method)
+        if method == "Init":
+            source["OrderId"] = payload["OrderId"]
+            return {**source, "PaymentURL": "https://securepayments.tinkoff.ru/test"}
+        if method == "Cancel":
+            # This second real transaction must observe a committed receipt
+            # before transport starts, not an in-memory flag or uncommitted row.
+            with service.workspace._transaction(owner) as cur:
+                cur.execute(
+                    "SELECT cancel_attempted_at, status FROM billing_payments "
+                    "WHERE user_id=%s AND id=%s",
+                    (owner, ident),
+                )
+                row = cur.fetchone()
+                assert row["cancel_attempted_at"] is not None
+                assert row["status"] == "uncertain"
+            raise BillingUnavailable("billing_provider_outcome_unknown")
+        assert method == "GetState"
+        return dict(source)
+
+    client.call.side_effect = provider
+    service.checkout(owner, ident, expected_offer=cfg.offer_key, receipt_email="test@example.com")
+    with pytest.raises(WorkspaceNotFound):
+        service.cancel(other, ident)
+    assert calls == ["Init"]
+    with pytest.raises(BillingUnavailable, match="unknown"):
+        service.cancel(owner, ident)
+    uncertain = service.status(owner)["payments"][0]
+    assert uncertain["cancel_attempted_at"] is not None
+    for _ in range(2):
+        pending = service.cancel(owner, ident)
+        assert pending["status"] == "pending"
+        assert pending["cancel_attempted_at"] == uncertain["cancel_attempted_at"]
+    assert calls.count("Cancel") == 1
+    source["Status"] = "CANCELED"
+    assert service.cancel(owner, ident)["status"] == "cancelled"
+    assert calls.count("Cancel") == 1
+    # Nullable SQL comparisons must not accept an incomplete entitlement.
+    with pytest.raises(CheckViolation), service.workspace._transaction(owner) as cur:
+        cur.execute(
+            "UPDATE billing_payments SET entitlement_from = now(), "
+            "entitlement_until = NULL WHERE user_id=%s AND id=%s",
+            (owner, ident),
+        )

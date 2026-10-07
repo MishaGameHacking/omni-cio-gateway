@@ -1462,8 +1462,11 @@ def select_strategy_candidates(
 
 
 def candidate_weight_constraints(
-    document: object, candidates: Sequence[StrategyCandidateFacts],
-    weights: Mapping[str, Decimal], *, as_of: datetime,
+    document: object,
+    candidates: Sequence[StrategyCandidateFacts],
+    weights: Mapping[str, Decimal],
+    *,
+    as_of: datetime,
 ) -> list[str]:
     """Recheck rounded, cost-adjusted holdings with the same look-through caps as selection."""
     data = normalize_document(document)
@@ -1484,15 +1487,23 @@ def candidate_weight_constraints(
             missing.add("instrument_cap:" + uid)
         if candidate.asset_class in data["excluded"]:
             missing.add("excluded_class:" + candidate.asset_class)
-        if candidate.asset_class == "funds" and weight > Decimal(data["rules"]["fund_wrapper_cap_percent"]):
+        if candidate.asset_class == "funds" and weight > Decimal(
+            data["rules"]["fund_wrapper_cap_percent"]
+        ):
             missing.add("fund_wrapper_cap:" + uid)
-        for name, key, exposure, limit in _candidate_exposure_limits(candidate, data, as_of, missing):
+        for name, key, exposure, limit in _candidate_exposure_limits(
+            candidate, data, as_of, missing
+        ):
             used[name, key] += weight * exposure
             if used[name, key] > limit:
                 missing.add("exposure_cap:" + name + ":" + key)
     for kind, total in classes.items():
-        key = {"shares": "max_share_percent", "bonds": "max_bond_percent", "funds": "max_etf_percent"}[kind]
-        limit = _amount(data["policy"][key])
-        if limit is None or total > limit:
+        key = {
+            "shares": "max_share_percent",
+            "bonds": "max_bond_percent",
+            "funds": "max_etf_percent",
+        }[kind]
+        class_limit = _amount(data["policy"][key])
+        if class_limit is None or total > class_limit:
             missing.add("class_cap:" + kind)
     return sorted(missing)

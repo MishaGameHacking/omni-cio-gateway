@@ -280,10 +280,10 @@ def _cashflow_reasons(events: Sequence[HistoricalCashflow]) -> list[str]:
     return reasons
 
 
-def _asset_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> list[str]:
+def _corporate_action_reasons(
+    asset: ResearchAsset, from_at: datetime, to_at: datetime
+) -> list[str]:
     reasons = []
-    if asset.basis not in {"unadjusted_price", "verified_total_return"}:
-        reasons.append("unsupported_return_basis")
     for when in asset.corporate_action_dates:
         if when.tzinfo is None:
             reasons.append("corporate_action_time_missing")
@@ -299,20 +299,11 @@ def _asset_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> 
         reasons.append("split_evidence_invalid")
     if len({split.time for split in asset.splits}) != len(asset.splits):
         reasons.append("duplicate_split_event")
-    if asset.basis == "verified_total_return" and not (
-        asset.lot_history_verified
-        and asset.cashflow_history_verified
-        and asset.verification_source.startswith("https://")
-    ):
-        reasons.append("total_return_basis_not_verified")
-    if asset.basis == "unadjusted_price" and asset.cashflows:
-        reasons.append("cashflows_require_verified_basis")
-    if (
-        asset.basis == "verified_total_return"
-        and asset.candidate.asset_class == "bonds"
-        and not asset.bond_valuations
-    ):
-        reasons.append("bond_principal_and_accrual_history_required")
+    return reasons
+
+
+def _bond_history_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> list[str]:
+    reasons = []
     if asset.bond_valuations:
         values = {row.time.date(): row for row in asset.bond_valuations}
         if len(values) != len(asset.bond_valuations) or any(
@@ -336,6 +327,11 @@ def _asset_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> 
             for row in asset.bond_valuations
         ):
             reasons.append("bond_valuation_history_invalid")
+    return reasons
+
+
+def _factor_history_reasons(asset: ResearchAsset) -> list[str]:
+    reasons = []
     if any(
         row.time.tzinfo is None
         or row.available_at.tzinfo is None
@@ -348,6 +344,30 @@ def _asset_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> 
         reasons.append("factor_history_invalid")
     if len({row.time.date() for row in asset.factors}) != len(asset.factors):
         reasons.append("factor_history_duplicate")
+    return reasons
+
+
+def _asset_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> list[str]:
+    reasons = []
+    if asset.basis not in {"unadjusted_price", "verified_total_return"}:
+        reasons.append("unsupported_return_basis")
+    if asset.basis == "verified_total_return" and not (
+        asset.lot_history_verified
+        and asset.cashflow_history_verified
+        and asset.verification_source.startswith("https://")
+    ):
+        reasons.append("total_return_basis_not_verified")
+    if asset.basis == "unadjusted_price" and asset.cashflows:
+        reasons.append("cashflows_require_verified_basis")
+    if (
+        asset.basis == "verified_total_return"
+        and asset.candidate.asset_class == "bonds"
+        and not asset.bond_valuations
+    ):
+        reasons.append("bond_principal_and_accrual_history_required")
+    reasons.extend(_corporate_action_reasons(asset, from_at, to_at))
+    reasons.extend(_bond_history_reasons(asset, from_at, to_at))
+    reasons.extend(_factor_history_reasons(asset))
     reasons.extend(_cashflow_reasons(asset.cashflows))
     return sorted(set(reasons))
 
@@ -484,6 +504,40 @@ class _RebalanceSession:
     previous_nav: Decimal
 
 
+def _rebalance_change(
+    state: _Simulation,
+    asset: ResearchAsset,
+    previous: TBankHistoricCandle,
+    weight: Decimal,
+    document: Mapping[str, Any],
+    costs: ResearchCosts,
+    session: _RebalanceSession,
+    participation: Decimal,
+) -> int:
+    uid = asset.candidate.instrument_uid
+    target = _ZERO if state.risk_stopped else session.previous_nav * weight / 100
+    split_factor = _split_factor(asset.splits, session.previous, session.opening)
+    price = _decimal(previous.close) / split_factor * asset.candidate.lot_size
+    change = int(target / price) - state.lots[uid]
+    if not state.risk_stopped:
+        current = state.lots[uid] * price
+        band = _decimal(document["policy"]["no_trade_band_percent"] or "0")
+        minimum = _decimal(document["policy"]["min_replace_benefit_rub"] or "0")
+        # A geometric improvement in allocation, explicitly not forecast profit.
+        reduction = abs(target - current) - abs(target - current - change * price)
+        estimated_cost = abs(change * price) * (costs.commission_bps + costs.slippage_bps) / 10000
+        if (
+            abs(target - current) / session.previous_nav * 100 <= band
+            or reduction - estimated_cost < minimum
+        ):
+            change = 0
+    days = document["profile"]["liquidity_horizon_days"]
+    if days is not None:
+        exit_capacity = int(previous.volume_lots * split_factor * participation * Decimal(days))
+        change = min(change, exit_capacity - state.lots[uid])
+    return change
+
+
 def _apply_rebalance(
     state: _Simulation,
     assets: Sequence[ResearchAsset],
@@ -506,38 +560,19 @@ def _apply_rebalance(
         _ZERO,
     )
     turnover = session.previous_nav * turnover_fraction
-    targets = {}
-    for asset in assets:
-        uid = asset.candidate.instrument_uid
-        target = _ZERO if state.risk_stopped else session.previous_nav * weights[uid] / 100
-        split_factor = _split_factor(asset.splits, session.previous, session.opening)
-        price = (
-            _decimal(panel[uid][session.previous].close) / split_factor * asset.candidate.lot_size
+    targets = {
+        asset.candidate.instrument_uid: _rebalance_change(
+            state,
+            asset,
+            panel[asset.candidate.instrument_uid][session.previous],
+            weights[asset.candidate.instrument_uid],
+            document,
+            costs,
+            session,
+            participation,
         )
-        targets[uid] = int(target / price) - state.lots[uid]
-        if not state.risk_stopped:
-            current = state.lots[uid] * price
-            band = _decimal(document["policy"]["no_trade_band_percent"] or "0")
-            minimum = _decimal(document["policy"]["min_replace_benefit_rub"] or "0")
-            # A geometric improvement in allocation, explicitly not forecast profit.
-            reduction = abs(target - current) - abs(target - current - targets[uid] * price)
-            estimated_cost = (
-                abs(targets[uid] * price) * (costs.commission_bps + costs.slippage_bps) / 10000
-            )
-            if (
-                abs(target - current) / session.previous_nav * 100 <= band
-                or reduction - estimated_cost < minimum
-            ):
-                targets[uid] = 0
-        days = document["profile"]["liquidity_horizon_days"]
-        if days is not None:
-            exit_capacity = int(
-                panel[uid][session.previous].volume_lots
-                * split_factor
-                * participation
-                * Decimal(days)
-            )
-            targets[uid] = min(targets[uid], exit_capacity - state.lots[uid])
+        for asset in assets
+    }
     minimum_cash = max(reserve, session.previous_nav * cash_target)
     for side in (-1, 1):
         for asset in assets:

@@ -40,6 +40,7 @@ from .broker import (
 from .cbr import CBRClient, CBRUnavailable
 from .config import Settings, load_settings
 from .db import ActiveLiveExecutionError, BrokerConnectionConflict, Database, UserRecord
+from .execution import ExecutionStateError
 from .execution_service import ExecutionServiceError, PortfolioExecutionService
 from .execution_store import (
     ExecutionLedgerError,
@@ -108,6 +109,17 @@ _PROFILE_CONTEXT_HEADER = "X-Omnicio-Profile"
 _PROFILE_CONTEXT_CONFLICT_DESCRIPTION = "Viewed profile is missing or differs from the session"
 _PROFILE_CHANGED_EVENT = 'event: status\ndata: {"state":"profile_context_changed"}\n\n'
 logger = logging.getLogger(__name__)
+_API_FAILURES: dict[int | str, dict[str, Any]] = {
+    401: {"description": "An active session is required"},
+    403: {"description": "Origin, operator authority or provider signature rejected"},
+    404: {"description": "The requested object does not belong to this account"},
+    409: {"description": "Profile, consent, saved version or source state changed"},
+    413: {"description": "The request exceeds its bounded payload size"},
+    422: {"description": "The request document is invalid"},
+    429: {"description": "Admission or quota limit reached"},
+    502: {"description": "An external service returned an invalid response"},
+    503: {"description": "The required source or integration is unavailable"},
+}
 
 
 class StrictRequestBody(BaseModel):
@@ -161,6 +173,35 @@ class StrategyResearchBody(StrictRequestBody):
     initial_capital_rub: Decimal = Field(
         gt=0, le=1_000_000_000_000, max_digits=24, decimal_places=8, allow_inf_nan=False,
     )
+
+
+class ExecutionPlanBody(StrictRequestBody):
+    expected_version: int = Field(ge=1, le=2_147_483_647, strict=True)
+    research_run_id: UUID
+    commission_bps: Decimal = Field(ge=0, le=1000, allow_inf_nan=False)
+    slippage_bps: Decimal = Field(ge=0, le=1000, allow_inf_nan=False)
+    mode: Literal["shadow", "sandbox", "live"] = "shadow"
+
+
+class ExecutionConfirmBody(StrictRequestBody):
+    proposal_version: int = Field(ge=1, le=2_147_483_647, strict=True)
+    proposal_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_strategy_version: int = Field(ge=1, le=2_147_483_647, strict=True)
+
+
+class ExecutionDispatchBody(StrictRequestBody):
+    expected_leg_id: UUID
+
+
+class ExecutionMandateBody(StrictRequestBody):
+    expected_version: int = Field(ge=1, le=2_147_483_647, strict=True)
+    max_order_notional_rub: Decimal = Field(
+        gt=0, le=1_000_000_000_000, max_digits=24, decimal_places=2, allow_inf_nan=False,
+    )
+    max_daily_notional_rub: Decimal = Field(
+        gt=0, le=1_000_000_000_000, max_digits=24, decimal_places=2, allow_inf_nan=False,
+    )
+    expires_at: datetime
 
 
 class WorkspaceRefreshBody(StrictRequestBody):
@@ -416,6 +457,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.execution_service = PortfolioExecutionService(
         store=execution_ledger,
         broker=broker,
+        portfolio_store=app.state.portfolio_store,
+        research_store=app.state.research_store,
+        legal_versions=app.state.auth_service.legal_versions(),
+        live_enabled=cfg.portfolio_live_execution_enabled,
+        sandbox_enabled=False,
+        max_order_rub=Decimal(cfg.portfolio_live_max_order_rub),
+        max_daily_rub=Decimal(cfg.portfolio_live_max_daily_rub),
     )
     app.state.market_service = MarketService(
         broker=broker,
@@ -457,6 +505,7 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
     lifespan=lifespan,
+    responses=_API_FAILURES,
 )
 
 
@@ -2449,14 +2498,14 @@ def _require_current_legal_consent(request: Request, user: UserRecord) -> None:
 
 
 def _execution_error(exc: Exception) -> HTTPException:
-    if isinstance(exc, (ExecutionLedgerError, ExecutionServiceError)):
+    if isinstance(exc, (ExecutionLedgerError, ExecutionServiceError, ExecutionStateError)):
         code = exc.code
     else:
         return HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         )
-    if code in {"proposal_not_found", "execution_not_found"}:
+    if code in {"proposal_not_found", "execution_not_found", "research_run_not_found"}:
         return HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=code,
@@ -2466,6 +2515,7 @@ def _execution_error(exc: Exception) -> HTTPException:
         "sandbox_reconcile_unavailable",
         "live_connection_changed",
         "live_reconcile_unavailable",
+        "execution_planning_unavailable",
     }:
         return HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -2474,6 +2524,111 @@ def _execution_error(exc: Exception) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail=code,
+    )
+
+
+def _execution_write(
+    request: Request, token: str | None, user: UserRecord,
+    action: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    try:
+        payload = action()
+    except (ExecutionLedgerError, ExecutionServiceError, ExecutionStateError) as exc:
+        raise _execution_error(exc) from exc
+    except ResearchNotFound as exc:
+        raise HTTPException(status_code=404, detail="research_run_not_found") from exc
+    except SettingsVersionConflict:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="execution_parameters_invalid") from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(status_code=409, detail=_TBANK_CREDENTIAL_REJECTED_DETAIL) from exc
+    except BrokerConnectionError as exc:
+        raise HTTPException(status_code=409, detail="execution_connection_required") from exc
+    except TBankUnavailable as exc:
+        raise HTTPException(status_code=503, detail="execution_provider_unavailable") from exc
+    return _workspace_result(request, token, user, payload, write=True)
+
+
+@app.get("/api/portfolio/execution-capabilities")
+def portfolio_execution_capabilities(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    executor = execution_service(request)
+    return _workspace_result(request, session_token, user, {
+        "shadow_enabled": True,
+        "sandbox_enabled": executor.sandbox_enabled,
+        "live_enabled": executor.live_enabled,
+        "max_order_notional_rub": str(executor.max_order_rub),
+        "max_daily_notional_rub": str(executor.max_daily_rub),
+        "cap_timezone": "Europe/Moscow",
+        "proposal_ttl_seconds": 120,
+        "quote_max_age_seconds": 30,
+        "snapshot_max_age_seconds": 300,
+        "research_max_age_seconds": 86400,
+    })
+
+
+@app.post("/api/portfolio/proposals/plan")
+def plan_portfolio_execution(
+    body: ExecutionPlanBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    return _execution_write(request, session_token, user, lambda: execution_service(request).plan(
+        user.id, expected_version=body.expected_version, research_run_id=body.research_run_id,
+        session_digest=session_digest(session_token or ""), commission_bps=body.commission_bps,
+        slippage_bps=body.slippage_bps, mode=body.mode,
+    ))
+
+
+@app.post("/api/portfolio/proposals/{proposal_id}/confirm")
+def confirm_portfolio_execution(
+    proposal_id: UUID, body: ExecutionConfirmBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    return _execution_write(
+        request, session_token, user, lambda: execution_service(request).confirm(
+            user.id, proposal_id, proposal_version=body.proposal_version,
+            proposal_hash=body.proposal_hash,
+            expected_strategy_version=body.expected_strategy_version,
+            session_digest=session_digest(session_token or ""),
+        ),
+    )
+
+
+@app.post("/api/portfolio/executions/{run_id}/dispatch")
+def dispatch_portfolio_execution(
+    run_id: UUID, body: ExecutionDispatchBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    return _execution_write(
+        request, session_token, user, lambda: execution_service(request).dispatch(
+            user.id, run_id, session_digest=session_digest(session_token or ""),
+            expected_leg_id=body.expected_leg_id,
+        ),
+    )
+
+
+@app.post("/api/portfolio/live-execution/mandate")
+def create_portfolio_execution_mandate(
+    body: ExecutionMandateBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    if body.expires_at.tzinfo is None:
+        raise HTTPException(status_code=422, detail="execution_expiry_timezone_required")
+    return _execution_write(
+        request, session_token, user, lambda: execution_service(request).create_mandate(
+            user.id, expected_version=body.expected_version,
+            session_digest=session_digest(session_token or ""),
+            max_order_notional_rub=body.max_order_notional_rub,
+            max_daily_notional_rub=body.max_daily_notional_rub, expires_at=body.expires_at,
+        ),
     )
 
 

@@ -6,6 +6,7 @@ import os
 import secrets
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Barrier
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -359,3 +360,44 @@ def test_operational_metrics_require_owner_and_aggregate_without_tenant_identifi
         assert conn.execute("SELECT current_setting('omnicio.user_id', true)").fetchone()[
             "current_setting"
         ] in {"", None}
+
+
+def test_opposite_session_revocations_serialize_and_preserve_the_winning_session(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    subject = uuid4().hex
+    owner, _, first = login(database, subject=subject)
+    _, _, second = login(database, subject=subject)
+    ready = Barrier(2)
+
+    def revoke(digest: bytes) -> int | str:
+        ready.wait(timeout=5)
+        try:
+            return database.revoke_other_sessions(owner.id, digest)
+        except PermissionError:
+            return "already_revoked"
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        outcomes = list(workers.map(revoke, (first, second)))
+    assert sorted(map(str, outcomes)) == ["1", "already_revoked"]
+    still_active = [digest for digest in (first, second)
+                    if database.refresh_session_digest(digest, session_ttl_seconds=3600)]
+    assert len(still_active) == 1
+
+
+def test_operational_metrics_do_not_borrow_a_second_connection_under_authority_lock(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, _, current = login(database)
+    with database.pool.connection() as conn:
+        conn.execute("UPDATE users SET role='owner' WHERE id=%s", (owner.id,))
+    single = Database(database.pool.conninfo)
+    single.pool.resize(min_size=1, max_size=1)
+    single.pool.timeout = 1
+    single.open()
+    try:
+        assert "observer" in single.operational_metrics(owner.id, current)
+    finally:
+        single.close()

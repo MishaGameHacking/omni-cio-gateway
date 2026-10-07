@@ -1,21 +1,24 @@
-"""Read and recover existing execution and mandate ledgers in PostgreSQL."""
+"""Immutable proposals, exact consent, bounded mandates and execution recovery ledgers."""
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from .db import Database
+from .db import Database, live_execution_lock_key
 from .execution import (
     ExecutionLegStatus,
     ExecutionMode,
     ExecutionRunStatus,
     run_status_for_legs,
 )
+from .strategy import POLICY_KEYS, PROFILE_LIMITS
 
 _TERMINAL_RUNS = {"succeeded", "cancelled", "failed"}
 _TERMINAL_LEGS = {"filled", "cancelled", "rejected", "failed", "shadow_filled"}
@@ -149,15 +152,9 @@ def _transition_values(
     next_lots = leg.lots_executed if lots_executed is None else lots_executed
     if next_lots < 0 or next_lots > leg.lots_requested:
         raise ValueError("executed lots are outside requested bounds")
-    next_amount = (
-        leg.executed_amount_rub
-        if executed_amount_rub is None
-        else executed_amount_rub
-    )
+    next_amount = leg.executed_amount_rub if executed_amount_rub is None else executed_amount_rub
     next_commission = (
-        leg.executed_commission_rub
-        if executed_commission_rub is None
-        else executed_commission_rub
+        leg.executed_commission_rub if executed_commission_rub is None else executed_commission_rub
     )
     if next_amount < 0 or next_commission < 0:
         raise ValueError("execution money values must be non-negative")
@@ -174,6 +171,413 @@ class ExecutionStore:
             "SELECT set_config('omnicio.user_id', %s, true)",
             (str(user_id),),
         )
+
+    @staticmethod
+    def _strategy_authority(
+        cur: Any,
+        user_id: UUID,
+        session_digest: bytes,
+        legal_versions: dict[str, str],
+        payload: dict[str, Any],
+    ) -> None:
+        if (
+            len(session_digest) != 32
+            or not legal_versions
+            or any(not v for v in legal_versions.values())
+        ):
+            raise ExecutionLedgerError("execution_authority_missing")
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (live_execution_lock_key(user_id),),
+        )
+        cur.execute(
+            "SELECT s.id FROM sessions s JOIN users u ON u.id = s.user_id "
+            "WHERE s.user_id = %s AND s.token_digest = %s AND s.revoked_at IS NULL "
+            "AND s.expires_at > now() AND u.status = 'active' FOR SHARE OF s, u",
+            (user_id, session_digest),
+        )
+        if cur.fetchone() is None:
+            raise ExecutionLedgerError("execution_session_revoked")
+        for kind, version in legal_versions.items():
+            cur.execute(
+                "SELECT 1 FROM legal_acceptances WHERE user_id=%s AND document_type=%s "
+                "AND document_version=%s FOR SHARE",
+                (user_id, kind, version),
+            )
+            if cur.fetchone() is None:
+                raise ExecutionLedgerError("execution_consent_required")
+        cur.execute(
+            "SELECT account_id, environment, verified_at FROM tbank_connection "
+            "WHERE user_id=%s FOR SHARE",
+            (user_id,),
+        )
+        connection = cur.fetchone()
+        cur.execute(
+            "SELECT version, document FROM strategy_drafts WHERE user_id=%s FOR SHARE", (user_id,)
+        )
+        strategy = cur.fetchone()
+        if (
+            not connection
+            or not strategy
+            or connection["account_id"] != payload["account_id"]
+            or connection["environment"] != payload["environment"]
+            or connection["verified_at"].isoformat() != payload["connection_verified_at"]
+            or strategy["version"] != payload["strategy_version"]
+            or strategy["document"] != payload["document"]
+        ):
+            raise ExecutionLedgerError("execution_context_changed")
+        if "evidence_version" in payload:
+            cur.execute(
+                "SELECT version FROM strategy_research_evidence WHERE user_id=%s FOR SHARE",
+                (user_id,),
+            )
+            evidence = cur.fetchone()
+            if (evidence["version"] if evidence else 0) != payload["evidence_version"]:
+                raise ExecutionLedgerError("execution_research_evidence_changed")
+
+    def authorize_strategy(
+        self,
+        user_id: UUID,
+        *,
+        session_digest: bytes,
+        legal_versions: dict[str, str],
+        payload: dict[str, Any],
+    ) -> None:
+        cur: Any
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            self._strategy_authority(cur, user_id, session_digest, legal_versions, payload)
+
+    @staticmethod
+    def _materialize_policy(cur: Any, user_id: UUID, document: dict[str, Any]) -> tuple[int, int]:
+        versions = []
+        for table, group, keys in (
+            (
+                "investment_profile_versions",
+                "profile",
+                (*PROFILE_LIMITS, "allow_below_investment_grade"),
+            ),
+            ("balancing_policy_versions", "policy", POLICY_KEYS),
+        ):
+            values = document[group]
+            if any(values[key] is None for key in keys):
+                raise ExecutionLedgerError("execution_policy_incomplete")
+            # Table/column identifiers are compile-time constants, never request input.
+            cur.execute(
+                f"SELECT * FROM {table} WHERE user_id=%s ORDER BY version DESC LIMIT 1", (user_id,)
+            )
+            current = cur.fetchone()
+            if current and all(
+                str(current[key]) == str(values[key])
+                or (
+                    not isinstance(values[key], bool)
+                    and Decimal(str(current[key])) == Decimal(str(values[key]))
+                )
+                for key in keys
+            ):
+                versions.append(current["version"])
+                continue
+            version = current["version"] + 1 if current else 1
+            placeholders = ", ".join(["%s"] * (len(keys) + 2))
+            cur.execute(
+                f"INSERT INTO {table} (user_id, version, {', '.join(keys)}) "
+                f"VALUES ({placeholders})",
+                (user_id, version, *(values[key] for key in keys)),
+            )
+            versions.append(version)
+        return versions[0], versions[1]
+
+    def save_strategy_proposal(
+        self,
+        user_id: UUID,
+        *,
+        payload: dict[str, Any],
+        session_digest: bytes,
+        legal_versions: dict[str, str],
+    ) -> dict[str, Any]:
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        digest = hashlib.sha256(encoded.encode()).digest()
+        ident = uuid4()
+        cur: Any
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            self._strategy_authority(cur, user_id, session_digest, legal_versions, payload)
+            profile, policy = self._materialize_policy(cur, user_id, payload["document"])
+            cur.execute(
+                "SELECT COALESCE(max(version), 0)+1 AS version FROM "
+                "portfolio_proposals WHERE user_id=%s",
+                (user_id,),
+            )
+            version = cur.fetchone()["version"]
+            sell = next(
+                (leg["instrument_uid"] for leg in payload["legs"] if leg["action"] == "sell"), None
+            )
+            buy = next(
+                (leg["instrument_uid"] for leg in payload["legs"] if leg["action"] == "buy"), None
+            )
+            cur.execute(
+                "INSERT INTO portfolio_proposals (id,user_id,version,source_snapshot_id,account_id,"
+                "profile_version,policy_version,scenario_kind,target_instrument_uid,replaced_instrument_uid,"
+                "proposal_hash,created_session_digest,payload,expires_at) VALUES "
+                "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s) RETURNING "
+                "created_at,expires_at",
+                (
+                    ident,
+                    user_id,
+                    version,
+                    payload["source_snapshot_id"],
+                    payload["account_id"],
+                    profile,
+                    policy,
+                    "replace" if sell else "deploy_cash",
+                    buy,
+                    sell,
+                    digest,
+                    session_digest,
+                    encoded,
+                    datetime.fromisoformat(payload["expires_at"]),
+                ),
+            )
+            dates = dict(cur.fetchone())
+        return {
+            "id": str(ident),
+            "version": version,
+            "proposal_hash": digest.hex(),
+            **dates,
+            "payload": payload,
+            "status": "ready",
+        }
+
+    def strategy_proposal(self, user_id: UUID, proposal_id: UUID) -> dict[str, Any]:
+        cur: Any
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            cur.execute(
+                "SELECT * FROM portfolio_proposals WHERE id=%s AND user_id=%s",
+                (proposal_id, user_id),
+            )
+            row = cur.fetchone()
+            if row is None or row["payload"].get("engine") != "strategy_execution_1":
+                raise ExecutionLedgerError("execution_proposal_not_found")
+            return dict(row)
+
+    def confirm_strategy_proposal(
+        self,
+        user_id: UUID,
+        proposal_id: UUID,
+        *,
+        proposal_version: int,
+        proposal_hash: str,
+        expected_strategy_version: int,
+        session_digest: bytes,
+        legal_versions: dict[str, str],
+        live_enabled: bool,
+        sandbox_enabled: bool,
+        global_max_order: Decimal,
+        global_max_daily: Decimal,
+    ) -> UUID:
+        cur: Any
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            # Match disconnect/account deletion: owner lock precedes financial row locks.
+            cur.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (live_execution_lock_key(user_id),),
+            )
+            cur.execute(
+                "SELECT * FROM portfolio_proposals WHERE id=%s AND user_id=%s FOR SHARE",
+                (proposal_id, user_id),
+            )
+            proposal = cur.fetchone()
+            if not proposal or proposal["payload"].get("engine") != "strategy_execution_1":
+                raise ExecutionLedgerError("execution_proposal_not_found")
+            payload = proposal["payload"]
+            self._strategy_authority(cur, user_id, session_digest, legal_versions, payload)
+            if (
+                proposal["version"] != proposal_version
+                or not hmac.compare_digest(bytes(proposal["proposal_hash"]).hex(), proposal_hash)
+                or payload["strategy_version"] != expected_strategy_version
+                or not hmac.compare_digest(
+                    bytes(proposal["created_session_digest"]), session_digest
+                )
+            ):
+                raise ExecutionLedgerError("execution_confirmation_mismatch")
+            mode = payload["mode"]
+            if mode == "live" and not live_enabled or mode == "sandbox" and not sandbox_enabled:
+                raise ExecutionLedgerError("execution_deployment_disabled")
+            cur.execute(
+                "SELECT id FROM portfolio_execution_runs WHERE proposal_id=%s AND user_id=%s",
+                (proposal_id, user_id),
+            )
+            existing = cur.fetchone()
+            if existing:
+                return cast(UUID, existing["id"])
+            if proposal["expires_at"] <= datetime.now(UTC):
+                raise ExecutionLedgerError("execution_proposal_expired")
+            cur.execute(
+                "SELECT id FROM portfolio_execution_runs WHERE user_id=%s "
+                "AND status IN ('created','running','reconciling') LIMIT 1",
+                (user_id,),
+            )
+            if cur.fetchone():
+                raise ExecutionLedgerError("execution_run_already_active")
+            mandate = self._validate_plan_budget(
+                cur, user_id, payload, global_max_order, global_max_daily
+            )
+            cur.execute(
+                "INSERT INTO portfolio_proposal_actions "
+                "(proposal_id,user_id,action,proposal_version,"
+                "proposal_hash,session_digest) VALUES (%s,%s,'confirmed',%s,%s,%s) RETURNING id",
+                (proposal_id, user_id, proposal_version, proposal["proposal_hash"], session_digest),
+            )
+            action_id = cur.fetchone()["id"]
+            ident = uuid4()
+            cur.execute(
+                "INSERT INTO portfolio_execution_runs (id,user_id,proposal_id,confirmed_action_id,"
+                "proposal_version,proposal_hash,account_id,mode,provider_environment,live_mandate_id,"
+                "created_session_digest) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    ident,
+                    user_id,
+                    proposal_id,
+                    action_id,
+                    proposal_version,
+                    proposal["proposal_hash"],
+                    payload["account_id"],
+                    mode,
+                    None if mode == "shadow" else payload["environment"],
+                    mandate,
+                    session_digest,
+                ),
+            )
+            for index, leg in enumerate(payload["legs"]):
+                cur.execute(
+                    "INSERT INTO portfolio_execution_legs (id,run_id,user_id,leg_index,action,"
+                    "instrument_uid,lots_requested,limit_price,limit_price_type,max_spend_rub,"
+                    "min_proceeds_rub,request_id) VALUES "
+                    "(%s,%s,%s,%s,%s,%s,%s,%s,'currency',%s,%s,%s)",
+                    (
+                        uuid4(),
+                        ident,
+                        user_id,
+                        index,
+                        leg["action"],
+                        leg["instrument_uid"],
+                        leg["lots"],
+                        leg["limit_price"],
+                        leg["max_spend_rub"],
+                        leg["min_proceeds_rub"],
+                        uuid4(),
+                    ),
+                )
+            self._append_event(
+                cur,
+                user_id=user_id,
+                run_id=ident,
+                leg_id=None,
+                event_type="strategy_confirmed",
+                details={"strategy_version": payload["strategy_version"], "mode": mode},
+            )
+            return ident
+
+    @staticmethod
+    def _validate_plan_budget(
+        cur: Any,
+        user_id: UUID,
+        payload: dict[str, Any],
+        global_order: Decimal,
+        global_daily: Decimal,
+        exclude_run_id: UUID | None = None,
+    ) -> UUID | None:
+        if payload["mode"] != "live":
+            return None
+        cur.execute(
+            "SELECT * FROM portfolio_live_execution_mandates WHERE user_id=%s AND account_id=%s "
+            "AND revoked_at IS NULL AND expires_at>now() ORDER BY created_at "
+            "DESC LIMIT 1 FOR SHARE",
+            (user_id, payload["account_id"]),
+        )
+        mandate = cur.fetchone()
+        if not mandate:
+            raise ExecutionLedgerError("live_mandate_inactive")
+        order_cap = min(global_order, mandate["max_order_notional_rub"])
+        daily_cap = min(global_daily, mandate["max_daily_notional_rub"])
+        cur.execute(
+            "WITH trading_day AS (SELECT date_trunc('day',now() AT TIME ZONE "
+            "'Europe/Moscow') AT TIME ZONE 'Europe/Moscow' AS starts_at) "
+            "SELECT COALESCE(sum(CASE WHEN p.payload->>'engine'='strategy_execution_1' "
+            "THEN (p.payload->>'gross_turnover_rub')::numeric ELSE "
+            "(SELECT COALESCE(sum(GREATEST(l.executed_amount_rub, "
+            "COALESCE(l.max_spend_rub,l.min_proceeds_rub,0))+l.executed_commission_rub),0) "
+            "FROM portfolio_execution_legs l WHERE l.run_id=r.id "
+            "AND l.user_id=r.user_id) END),0) AS used "
+            "FROM portfolio_execution_runs r JOIN portfolio_proposals p ON p.id=r.proposal_id "
+            "CROSS JOIN trading_day d WHERE r.user_id=%s AND r.mode='live' AND "
+            "(r.status IN ('created','running','reconciling') OR r.created_at>=d.starts_at "
+            "OR EXISTS (SELECT 1 FROM portfolio_execution_legs activity "
+            "WHERE activity.run_id=r.id AND activity.user_id=r.user_id AND "
+            "(activity.submitted_at>=d.starts_at OR activity.terminal_at>=d.starts_at))) "
+            "AND r.id<>%s",
+            (user_id, exclude_run_id or UUID(int=0)),
+        )
+        used = cur.fetchone()["used"]
+        if (
+            any(Decimal(leg["gross_amount_rub"]) > order_cap for leg in payload["legs"])
+            or used + Decimal(payload["gross_turnover_rub"]) > daily_cap
+        ):
+            raise ExecutionLedgerError("live_notional_cap_exceeded")
+        return cast(UUID, mandate["id"])
+
+    def create_strategy_mandate(
+        self,
+        user_id: UUID,
+        *,
+        payload: dict[str, Any],
+        session_digest: bytes,
+        legal_versions: dict[str, str],
+        max_order: Decimal,
+        max_daily: Decimal,
+        expires_at: datetime,
+        global_max_order: Decimal,
+        global_max_daily: Decimal,
+    ) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        if (
+            not max_order.is_finite()
+            or not max_daily.is_finite()
+            or not 0 < max_order <= global_max_order
+            or not max_order <= max_daily <= global_max_daily
+            or expires_at.tzinfo is None
+            or not now < expires_at <= now + timedelta(days=1)
+        ):
+            raise ExecutionLedgerError("live_mandate_bounds_invalid")
+        cur: Any
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            self._strategy_authority(cur, user_id, session_digest, legal_versions, payload)
+            cur.execute(
+                "SELECT id FROM portfolio_live_execution_mandates WHERE "
+                "user_id=%s AND revoked_at IS NULL "
+                "AND expires_at>now()",
+                (user_id,),
+            )
+            if cur.fetchone():
+                raise ExecutionLedgerError("live_mandate_already_active")
+            cur.execute(
+                "UPDATE portfolio_live_execution_mandates SET revoked_at=now() "
+                "WHERE user_id=%s AND revoked_at IS NULL AND expires_at<=now()",
+                (user_id,),
+            )
+            cur.execute(
+                "INSERT INTO portfolio_live_execution_mandates "
+                "(user_id,account_id,max_order_notional_rub,"
+                "max_daily_notional_rub,created_session_digest,expires_at) VALUES "
+                "(%s,%s,%s,%s,%s,%s) RETURNING *",
+                (user_id, payload["account_id"], max_order, max_daily, session_digest, expires_at),
+            )
+            result = dict(cur.fetchone())
+            result.pop("created_session_digest")
+            return result
 
     def live_mandate(
         self,
@@ -208,17 +612,11 @@ class ExecutionStore:
                 )
             else:
                 cur.execute(
-                    select_sql
-                    + " AND account_id = %s ORDER BY created_at DESC LIMIT 1",
+                    select_sql + " AND account_id = %s ORDER BY created_at DESC LIMIT 1",
                     (user_id, observed_at, account_id),
                 )
             row = cur.fetchone()
-            return (
-                _mandate_record(cast(dict[str, Any], row))
-                if row is not None
-                else None
-            )
-
+            return _mandate_record(cast(dict[str, Any], row)) if row is not None else None
 
     def revoke_live_mandate(
         self,
@@ -249,12 +647,7 @@ class ExecutionStore:
                 (observed_at, user_id),
             )
             row = cur.fetchone()
-            return (
-                _mandate_record(cast(dict[str, Any], row))
-                if row is not None
-                else None
-            )
-
+            return _mandate_record(cast(dict[str, Any], row)) if row is not None else None
 
     def has_active_live_execution(self, user_id: UUID) -> bool:
         with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
@@ -272,16 +665,18 @@ class ExecutionStore:
             )
             return cur.fetchone() is not None
 
-
     def execution(
         self,
         user_id: UUID,
         run_id: UUID,
-    ) -> tuple[
-        ExecutionRunRecord,
-        tuple[ExecutionLegRecord, ...],
-        tuple[ExecutionEventRecord, ...],
-    ] | None:
+    ) -> (
+        tuple[
+            ExecutionRunRecord,
+            tuple[ExecutionLegRecord, ...],
+            tuple[ExecutionEventRecord, ...],
+        ]
+        | None
+    ):
         with (
             self.database.pool.connection() as conn,
             conn.transaction(),
@@ -334,10 +729,7 @@ class ExecutionStore:
                 """,
                 (run_id, user_id),
             )
-            events = tuple(
-                _event_record(cast(dict[str, Any], item))
-                for item in cur.fetchall()
-            )
+            events = tuple(_event_record(cast(dict[str, Any], item)) for item in cur.fetchall())
             return run, legs, events
 
     def executions(
@@ -380,10 +772,7 @@ class ExecutionStore:
                 """,
                 (user_id, limit),
             )
-            return tuple(
-                _run_record(cast(dict[str, Any], row))
-                for row in cur.fetchall()
-            )
+            return tuple(_run_record(cast(dict[str, Any], row)) for row in cur.fetchall())
 
     def transition_leg(
         self,
@@ -401,6 +790,8 @@ class ExecutionStore:
         executed_amount_rub: Decimal | None = None,
         executed_commission_rub: Decimal | None = None,
         now: datetime | None = None,
+        strategy_authority: tuple[bytes, dict[str, str], dict[str, Any]] | None = None,
+        strategy_limits: tuple[Decimal, Decimal] | None = None,
     ) -> tuple[ExecutionRunRecord, ExecutionLegRecord]:
         _validate_leg_transition_request(expected_statuses, event_type)
         observed_at = (now or datetime.now(UTC)).astimezone(UTC)
@@ -411,6 +802,13 @@ class ExecutionStore:
             conn.cursor() as cur,
         ):
             self._tenant(cur, user_id)
+            if strategy_authority is not None:
+                digest, legal_versions, payload = strategy_authority
+                self._strategy_authority(cur, user_id, digest, legal_versions, payload)
+                if strategy_limits is not None:
+                    self._validate_plan_budget(
+                        cur, user_id, payload, *strategy_limits, exclude_run_id=run_id
+                    )
             cur.execute(
                 """
                 SELECT
@@ -497,11 +895,7 @@ class ExecutionStore:
                 executed_commission_rub=executed_commission_rub,
             )
 
-            terminal_at = (
-                observed_at
-                if new_status in _TERMINAL_LEGS
-                else None
-            )
+            terminal_at = observed_at if new_status in _TERMINAL_LEGS else None
             cur.execute(
                 """
                 UPDATE portfolio_execution_legs
@@ -586,12 +980,8 @@ class ExecutionStore:
             )
 
             legs = self._legs(cur, user_id, run_id)
-            derived = run_status_for_legs(
-                tuple(item.status for item in legs)
-            )
-            finished_at = (
-                observed_at if derived in _TERMINAL_RUNS else None
-            )
+            derived = run_status_for_legs(tuple(item.status for item in legs))
+            finished_at = observed_at if derived in _TERMINAL_RUNS else None
             cur.execute(
                 """
                 UPDATE portfolio_execution_runs
@@ -776,10 +1166,7 @@ class ExecutionStore:
             """,
             (run_id, user_id),
         )
-        return tuple(
-            _leg_record(cast(dict[str, Any], row))
-            for row in cur.fetchall()
-        )
+        return tuple(_leg_record(cast(dict[str, Any], row)) for row in cur.fetchall())
 
 
 def _run_record(row: dict[str, Any]) -> ExecutionRunRecord:
@@ -828,15 +1215,9 @@ def _leg_record(row: dict[str, Any]) -> ExecutionLegRecord:
         lots_executed=int(row["lots_executed"]),
         limit_price=Decimal(row["limit_price"]),
         limit_price_type=str(row["limit_price_type"]),
-        max_spend_rub=(
-            Decimal(row["max_spend_rub"])
-            if row["max_spend_rub"] is not None
-            else None
-        ),
+        max_spend_rub=(Decimal(row["max_spend_rub"]) if row["max_spend_rub"] is not None else None),
         min_proceeds_rub=(
-            Decimal(row["min_proceeds_rub"])
-            if row["min_proceeds_rub"] is not None
-            else None
+            Decimal(row["min_proceeds_rub"]) if row["min_proceeds_rub"] is not None else None
         ),
         request_id=cast(UUID, row["request_id"]),
         provider_order_id=cast(str | None, row["provider_order_id"]),

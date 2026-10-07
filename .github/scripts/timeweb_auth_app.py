@@ -76,6 +76,11 @@ OPTIONAL_INTEGRATION_KEYS = (
     "BILLING_PERIOD_DAYS", "BILLING_OFFER_VERSION", "BILLING_DESCRIPTION", "BILLING_TAXATION",
     "BILLING_TAX",
 )
+OPTIONAL_SECRET_KEYS = frozenset({
+    "TID_CLIENT_SECRET", "ASSISTANT_API_KEY", "NOTIFICATION_CRYPTO_KEY",
+    "NOTIFICATION_VAPID_PRIVATE_KEY", "NOTIFICATION_SMTP_PASSWORD",
+    "OMNICIO_RESTORE_RECEIPT_KEY", "BILLING_PASSWORD",
+})
 
 
 def add_summary(line: str) -> None:
@@ -357,7 +362,8 @@ def build_product_environment() -> str:
     }
     # Missing workflow secrets must not erase an integration configured on the server.
     values.update({
-        name: os.environ[name].strip() for name in OPTIONAL_INTEGRATION_KEYS
+        name: os.environ[name] if name in OPTIONAL_SECRET_KEYS else os.environ[name].strip()
+        for name in OPTIONAL_INTEGRATION_KEYS
         if os.environ.get(name, "").strip()
     })
     return "".join(
@@ -517,6 +523,7 @@ install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEA
 install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
 install -m 0644 "$RELEASE/web/app.js" "$WEB_RELEASE/assets/app.js"
 install -m 0644 "$RELEASE/web/workspace.js" "$WEB_RELEASE/assets/workspace.js"
+install -m 0644 "$RELEASE/web/i18n.js" "$WEB_RELEASE/assets/i18n.js"
 install -m 0644 "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
 install -m 0644 "$RELEASE/assets/brand/web/omnicio-mark.svg" "$WEB_RELEASE/assets/brand/omnicio-mark.svg"
@@ -930,6 +937,11 @@ server {
         add_header Cache-Control "no-cache";
     }
 
+    location = /assets/i18n.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+    }
+
     location = /sw.js {
         try_files $uri =404;
         add_header Cache-Control "no-cache";
@@ -1222,6 +1234,7 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
     runtime_assets = (
         ("/assets/app.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/workspace.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
+        ("/assets/i18n.js", b"OMNICIO_I18N", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/app.css", b"--sidebar", ("text/css",)),
         ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", (PNG_CONTENT_TYPE,)),
         ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", (PNG_CONTENT_TYPE,)),

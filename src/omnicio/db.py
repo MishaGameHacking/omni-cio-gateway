@@ -386,6 +386,9 @@ class Database:
     @staticmethod
     def _active_session(cur: Any, user_id: UUID, token_digest: bytes) -> dict[str, Any]:
         """Serialize self-service security mutations with login and account deletion."""
+        # OAuth linking locks session before user, while a join planner can choose
+        # either row order. The shared tenant lock prevents opposite-order deadlocks.
+        cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
         cur.execute(
             "SELECT s.id, s.authenticated_provider, s.authenticated_at, "
             "s.authenticated_at BETWEEN now() - interval '5 minutes' AND now() "
@@ -536,7 +539,9 @@ class Database:
             operator = cast(dict[str, Any] | None, cur.fetchone())
             if operator is None or operator["role"] != "owner":
                 raise PermissionError("operator_required")
-            return self.collect_operational_metrics()
+        # Do not borrow a second pool connection while holding the authorization
+        # lock: simultaneous owner requests could otherwise exhaust the pool.
+        return self.collect_operational_metrics()
 
     def collect_operational_metrics(self) -> dict[str, Any]:
         """Internal monitor consumer; HTTP callers must use operational_metrics."""

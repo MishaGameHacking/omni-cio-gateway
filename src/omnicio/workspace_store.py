@@ -7,7 +7,6 @@ not silently switch to another account, and incomplete evidence stays unavailabl
 from __future__ import annotations
 
 import base64
-import binascii
 import json
 import re
 from collections.abc import Iterator, Mapping, Sequence
@@ -43,6 +42,7 @@ _MAX_OPERATIONS = 50_000
 _MAX_HISTORY_POINTS = 366
 _HISTORY_PERIOD_DAYS = {"1d": 1, "1w": 7, "1m": 31, "3m": 93, "1y": 365}
 _FINANCIAL_AGE = timedelta(hours=36)
+_EVENT_ID_PATTERN = r"[0-9a-f]{64}"
 _ACTIVITY = {
     "account_created": "Аккаунт создан",
     "login_succeeded": "Выполнен вход в аккаунт",
@@ -51,6 +51,9 @@ _ACTIVITY = {
     "investment_profile_saved": "Инвестиционные условия сохранены",
     "balancing_policy_saved": "Ограничения портфеля сохранены",
     "support_sessions_revoked": "Сессии аккаунта отозваны",
+    "session_revoked": "Выбранная сессия завершена",
+    "other_sessions_revoked": "Другие сессии аккаунта завершены",
+    "identity_unlinked": "Способ входа отвязан",
 }
 _RISK_LABELS = {
     "normal": "обычная оценка по доступным данным",
@@ -105,11 +108,11 @@ def _event_cursor(value: str | None) -> tuple[datetime | None, str | None, int |
         at, ident, ceiling = decoded
         parsed = timestamp(at)
         if (parsed is None or not isinstance(ident, str)
-                or re.fullmatch(r"[0-9a-f]{64}", ident) is None
+                or re.fullmatch(_EVENT_ID_PATTERN, ident) is None
                 or type(ceiling) is not int or not 0 <= ceiling < 2**63):
             raise ValueError("workspace_event_cursor_invalid")
         return parsed, ident, ceiling
-    except (ValueError, TypeError, binascii.Error) as exc:
+    except (ValueError, TypeError) as exc:
         raise ValueError("workspace_event_cursor_invalid") from exc
 
 
@@ -545,7 +548,9 @@ class WorkspaceStore:
         }
 
     @staticmethod
-    def _income(basis: _Basis, now: datetime) -> dict[str, Any]:
+    def _income(
+        basis: _Basis, now: datetime, *, from_at: datetime | None = None,
+    ) -> dict[str, Any]:
         latest = basis.latest
         opened_at = (
             timestamp(latest["evidence"].get("account", {}).get("opened_at"))
@@ -566,13 +571,16 @@ class WorkspaceStore:
                 "by_month": [],
             }
         end = min(basis.watermark, now)
+        start = max(opened_at - timedelta(microseconds=1), from_at) if from_at else (
+            opened_at - timedelta(microseconds=1)
+        )
         return cast(
             dict[str, Any],
             cashflow_summary(
                 basis.operations,
-                from_at=opened_at - timedelta(microseconds=1),
+                from_at=start,
                 to_at=end,
-                complete=basis.complete and opened_at <= end,
+                complete=basis.complete and start <= end,
             )["income"],
         )
 
@@ -986,7 +994,7 @@ class WorkspaceStore:
             self._sync_events(cur, user_id, basis, goals, now)
 
     def get_event(self, user_id: UUID, ident: str) -> dict[str, Any]:
-        if not isinstance(ident, str) or re.fullmatch(r"[0-9a-f]{64}", ident) is None:
+        if not isinstance(ident, str) or re.fullmatch(_EVENT_ID_PATTERN, ident) is None:
             raise ValueError("workspace_event_ids_invalid")
         with self._transaction(user_id) as cur:
             cur.execute(
@@ -1035,7 +1043,7 @@ class WorkspaceStore:
             or not 1 <= len(ids) <= 200
             or type(read) is not bool
             or any(
-                not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None
+                not isinstance(value, str) or re.fullmatch(_EVENT_ID_PATTERN, value) is None
                 for value in ids
             )
             or len(set(ids)) != len(ids)
@@ -1096,7 +1104,7 @@ class WorkspaceStore:
                     "requested_from": history.coverage["requested_from"],
                     "requested_to": history.coverage["requested_to"],
                 },
-                "income": self._income(basis, now),
+                "income": {**self._income(basis, now, from_at=from_at), "period": history_period},
                 "goals": {"items": goals},
                 "preferences": preferences,
                 "events": self._events_payload(cur, user_id, preferences["document"], now),

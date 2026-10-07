@@ -122,25 +122,29 @@ def _rows(value: object, maximum: int) -> list[Any]:
     return value
 
 
+def _fact_value(name: str, number: Any) -> Any:
+    if name in _BOOL_FACTS:
+        if type(number) is not bool:
+            raise ValueError("research_evidence_boolean_invalid")
+    elif name in _STRING_FACTS:
+        number = _text(number)
+        if name == "maturity_date":
+            parsed = datetime.fromisoformat(number.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                raise ValueError("research_evidence_time_invalid")
+            number = parsed.astimezone(UTC).isoformat()
+    else:
+        number = _number(number)
+    return number
+
+
 def _facts(value: object, now: datetime) -> dict[str, Any]:
     if not isinstance(value, dict) or not set(value) <= _FACT_KEYS:
         raise ValueError("research_evidence_fact_invalid")
     result = {}
     for name, raw in value.items():
         row = _object(raw, {"value", "available_at", "source_url"})
-        number = row["value"]
-        if name in _BOOL_FACTS:
-            if type(number) is not bool:
-                raise ValueError("research_evidence_boolean_invalid")
-        elif name in _STRING_FACTS:
-            number = _text(number)
-            if name == "maturity_date":
-                parsed = datetime.fromisoformat(number.replace("Z", "+00:00"))
-                if parsed.tzinfo is None:
-                    raise ValueError("research_evidence_time_invalid")
-                number = parsed.astimezone(UTC).isoformat()
-        else:
-            number = _number(number)
+        number = _fact_value(name, row["value"])
         result[name] = {
             "value": number,
             "available_at": _time(row["available_at"], now),

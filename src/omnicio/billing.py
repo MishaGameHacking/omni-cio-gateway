@@ -33,6 +33,7 @@ _TAXES = {"none", "vat0", "vat5", "vat7", "vat10", "vat22",
 _PUBLIC_PAYMENT_FIELDS = (
     "id", "amount_kopecks", "period_days", "offer_version", "status", "checkout_url",
     "created_at", "updated_at", "entitlement_from", "entitlement_until",
+    "cancel_attempted_at",
 )
 
 
@@ -298,12 +299,23 @@ class BillingService:
         if current["status"] == "cancelled":
             return current
         with self.workspace._transaction(user_id) as cur:
-            cur.execute("SELECT provider_payment_id FROM billing_payments "
-                        "WHERE user_id = %s AND id = %s", (user_id, ident))
+            cur.execute("SELECT * FROM billing_payments "
+                        "WHERE user_id = %s AND id = %s FOR UPDATE", (user_id, ident))
             row = cur.fetchone()
             if row is None or row["provider_payment_id"] is None:
                 raise BillingUnavailable("billing_order_outcome_unknown")
+            # A callback may settle the payment after the preceding provider read.
+            if row["status"] in {"paid", "partial_refund", "refunded"}:
+                raise ValueError("billing_payment_already_settled")
+            if row["status"] == "cancelled" or row["cancel_attempted_at"] is not None:
+                # Prior financial I/O is only reconciled, never repeated after an
+                # ambiguous transport outcome, even if GetState still says NEW.
+                return _public(row)
             provider_id = row["provider_payment_id"]
+            cur.execute("UPDATE billing_payments SET cancel_attempted_at = now(), "
+                        "status = 'uncertain', updated_at = now() "
+                        "WHERE user_id = %s AND id = %s", (user_id, ident))
+        # The durable receipt commits before the external financial request.
         self.client.call("Cancel", {"PaymentId": provider_id})
         return self.reconcile(user_id, ident)
 

@@ -18,7 +18,7 @@ import tomllib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 REMOTE_STATUS_PATH = "/var/lib/omnicio-recovery/status.json"
 REMOTE_PYTHON = "python3 -"
@@ -38,7 +38,10 @@ class RecoveryBlocked(RuntimeError):
 
 
 class Provider(Protocol):
-    def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]: ...
+    def request(
+        self, method: str, path: str, *, api_version: str = "v1",
+        payload: dict[str, Any] | None = None, timeout: int = 30,
+    ) -> dict[str, Any]: ...
 
 
 class Remote(Protocol):
@@ -943,7 +946,8 @@ def _postgres_process(binary: pathlib.Path, arguments: list[str], dsn: str) -> N
         raise RecoveryBlocked("Unsupported database connection option for the restore drill")
     environment = {key: value for key, value in os.environ.items()
                    if key in {"SYSTEMROOT", "WINDIR", "TEMP", "TMP", "PATH", "LANG"}}
-    environment.update({allowed[key]: value for key, value in options.items()})
+    environment.update({allowed[key]: str(value) for key, value in options.items()
+                        if value is not None})
     environment["PGOPTIONS"] = "-c statement_timeout=900000 -c lock_timeout=15000"
     try:
         result = subprocess.run(
@@ -978,11 +982,15 @@ def export_logical_archive(
             with psycopg.connect(source_dsn) as source:
                 source.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                 source.execute("SET LOCAL statement_timeout = '120s'")
-                system_id = str(source.execute(
+                system_id = str(cast(tuple[Any, ...], source.execute(
                     "SELECT system_identifier FROM pg_control_system()",
-                ).fetchone()[0])
-                snapshot = source.execute("SELECT pg_export_snapshot()").fetchone()[0]
-                source_at = source.execute("SELECT now()").fetchone()[0].isoformat()
+                ).fetchone())[0])
+                snapshot = cast(tuple[Any, ...], source.execute(
+                    "SELECT pg_export_snapshot()",
+                ).fetchone())[0]
+                source_at = cast(tuple[Any, ...], source.execute(
+                    "SELECT now()",
+                ).fetchone())[0].isoformat()
                 fingerprints = contract.table_fingerprints(source)
                 guards = contract.database_guards(source)
                 if not {"users", "sessions", "workspace_preferences", "workspace_events",
@@ -1045,15 +1053,11 @@ def _restore_tenant_checks(connection: Any, role: str, guards: list[Any]) -> Non
                     raise RecoveryBlocked("Restored tenant isolation check failed")
 
 
-def verify_logical_archive(
-    isolated_dsn: str, binary: pathlib.Path, archive: pathlib.Path, envelope: object, *,
-    release_sha: str, signing_key: str, archive_key: str,
-) -> dict[str, Any]:
-    """Restore only into a newly created database on another loopback cluster."""
-    import psycopg
+def _read_logical_export(
+    archive: pathlib.Path, envelope: object, *, release_sha: str,
+    signing_key: str, archive_key: str,
+) -> tuple[dict[str, Any], bytes]:
     from cryptography.fernet import Fernet, InvalidToken
-    from psycopg import sql
-    from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
     from omnicio import recovery as contract
 
@@ -1065,11 +1069,6 @@ def verify_logical_archive(
             or proof["source_kind"] != "runtime_pg_dump" or proof["release_sha"] != release_sha
             or proof["cluster_id"] != load_policy().cluster_id):
         raise RecoveryBlocked("A matching accepted-main signed export manifest is required")
-    options = conninfo_to_dict(isolated_dsn)
-    if (options.get("host") not in {"127.0.0.1", "::1"}
-            or options.get("dbname") not in {"postgres", "omnicio_test"}
-            or "hostaddr" in options or "service" in options):
-        raise RecoveryBlocked("Restore destination must be an explicitly isolated loopback cluster")
     if not 0 < archive.stat().st_size <= MAX_LOGICAL_ARCHIVE_BYTES * 2:
         raise RecoveryBlocked("Encrypted logical archive exceeds the reviewed size limit")
     encrypted = archive.read_bytes()
@@ -1082,15 +1081,38 @@ def verify_logical_archive(
     if (len(raw) > MAX_LOGICAL_ARCHIVE_BYTES or not raw.startswith(b"PGDMP")
             or hashlib.sha256(raw).hexdigest() != proof["archive_sha256"]):
         raise RecoveryBlocked("Archive is not the authenticated PostgreSQL logical export")
+    return proof, raw
+
+
+def verify_logical_archive(
+    isolated_dsn: str, binary: pathlib.Path, archive: pathlib.Path, envelope: object, *,
+    release_sha: str, signing_key: str, archive_key: str,
+) -> dict[str, Any]:
+    """Restore only into a newly created database on another loopback cluster."""
+    import psycopg
+    from psycopg import sql
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+    from omnicio import recovery as contract
+
+    proof, raw = _read_logical_export(
+        archive, envelope, release_sha=release_sha, signing_key=signing_key,
+        archive_key=archive_key,
+    )
+    options = conninfo_to_dict(isolated_dsn)
+    if (options.get("host") not in {"127.0.0.1", "::1"}
+            or options.get("dbname") not in {"postgres", "omnicio_test"}
+            or "hostaddr" in options or "service" in options):
+        raise RecoveryBlocked("Restore destination must be an explicitly isolated loopback cluster")
     started = time.monotonic()
     name = "omnicio_restore_" + secrets.token_hex(12)
     role = name + "_role"
     created_database = created_role = False
     suffix = ".exe" if os.name == "nt" else ""
     with psycopg.connect(isolated_dsn, autocommit=True) as control:
-        target_system_id = str(control.execute(
+        target_system_id = str(cast(tuple[Any, ...], control.execute(
             "SELECT system_identifier FROM pg_control_system()",
-        ).fetchone()[0])
+        ).fetchone())[0])
         if target_system_id == proof["source_system_id"]:
             raise RecoveryBlocked("Source and restore destination are the same PostgreSQL cluster")
         try:
@@ -1120,9 +1142,9 @@ def verify_logical_archive(
                 guards = contract.database_guards(restored)
                 if contract.evidence_digest(guards) != proof["schema_digest"]:
                     raise RecoveryBlocked("Restored schema guards differ from the source")
-                if restored.execute(
+                if cast(tuple[Any, ...], restored.execute(
                     "SELECT count(*) FROM pg_constraint WHERE contype = 'f' AND NOT convalidated",
-                ).fetchone()[0]:
+                ).fetchone())[0]:
                     raise RecoveryBlocked("Restored foreign keys are not validated")
                 _restore_tenant_checks(restored, role, guards)
         finally:
@@ -1146,10 +1168,97 @@ def verify_logical_archive(
     return contract.sign_recovery_evidence(payload, signing_key)
 
 
+def validate_export_source(source: str, client: Any) -> None:
+    """Pin a manually supplied source DSN to the observed approved private cluster."""
+    from psycopg.conninfo import conninfo_to_dict
+    from timeweb_auth_postgres import private_database_endpoint
+
+    values = conninfo_to_dict(source)
+    cluster = client.get_database_cluster(load_policy().cluster_id)
+    endpoint = private_database_endpoint(cluster)
+    if (endpoint is None or values.get("host") != endpoint.host
+            or int(str(values.get("port", "5432"))) != endpoint.port
+            or values.get("dbname") != os.environ.get("DB_INSTANCE_NAME")
+            or not values.get("dbname") or values.get("sslmode") != "verify-full"
+            or "hostaddr" in values or "service" in values):
+        raise RecoveryBlocked("Export source does not match the verified private production DB")
+
+
+def install_restore_receipt(ssh: Remote, envelope: dict[str, Any], release_sha: str) -> None:
+    """Install signed evidence only into the matching running accepted release.
+
+    The remote runtime independently verifies using its own provisioned key.
+    No source rows, archive key, or receipt signing key crosses this SSH call.
+    A monotonic merge preserves physical-backup mutation receipts.
+    """
+    from omnicio import recovery as contract
+
+    _require_release_sha(release_sha)
+    verified = contract.verified_recovery_evidence(
+        envelope, os.environ.get("OMNICIO_RESTORE_RECEIPT_KEY", ""),
+    )
+    if (verified is None or verified.get("release_sha") != release_sha
+            or verified.get("cluster_id") != load_policy().cluster_id
+            or contract._restore_verification({
+                "cluster_id": load_policy().cluster_id, "restore_verification": envelope,
+            }, datetime.now(UTC))["status"] != "verified"):
+        raise RecoveryBlocked("Restore proof is invalid or belongs to another accepted release")
+    encoded = json.dumps(envelope, ensure_ascii=True, separators=(",", ":"))
+    command = ("set -a && . /etc/omnicio/runtime.env && . /etc/omnicio/product.env && "
+               "set +a && /opt/omnicio/current/.venv/bin/python -")
+    result = ssh.run(command, input_text=f"""
+import json, os, pathlib
+from datetime import UTC, datetime
+from omnicio.recovery import _restore_verification, verified_recovery_evidence
+path = pathlib.Path({REMOTE_STATUS_PATH!r})
+if pathlib.Path('/opt/omnicio/current').resolve().name != {release_sha!r}:
+    raise SystemExit('release changed')
+if not path.is_file() or path.stat().st_size > 16384:
+    raise SystemExit('recovery state unavailable')
+state = json.loads(path.read_text(encoding='utf-8'))
+if (not isinstance(state, dict) or state.get('schema_version') != 1
+        or state.get('cluster_id') != {load_policy().cluster_id}):
+    raise SystemExit('recovery cluster differs')
+envelope = json.loads({encoded!r})
+candidate = dict(state, restore_verification=envelope)
+if _restore_verification(candidate, datetime.now(UTC))['status'] != 'verified':
+    raise SystemExit('runtime cannot verify proof')
+previous = verified_recovery_evidence(
+    state.get('restore_verification'), os.environ.get('OMNICIO_RESTORE_RECEIPT_KEY', ''))
+if previous and datetime.fromisoformat(previous['verified_at']) > datetime.fromisoformat(
+        envelope['payload']['verified_at']):
+    raise SystemExit('newer restore proof already exists')
+encoded = json.dumps(candidate, ensure_ascii=True, separators=(',', ':'))
+if len(encoded.encode()) > 16384:
+    raise SystemExit('recovery state exceeds limit')
+temp = path.with_suffix('.restore-new')
+try:
+    with temp.open('x', encoding='utf-8') as output:
+        output.write(encoded)
+        output.flush()
+        os.fsync(output.fileno())
+    os.chmod(temp, 0o644)
+    temp.replace(path)
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+finally:
+    if temp.exists():
+        temp.unlink()
+readback = json.loads(path.read_text(encoding='utf-8'))
+if readback.get('restore_verification') != envelope:
+    raise SystemExit('restore proof readback differs')
+print('restore_receipt_installed')
+""")
+    if result.strip() != "restore_receipt_installed":
+        raise RecoveryBlocked("Runtime restore proof installation was not confirmed")
+
+
 def restore_cli() -> int:
     """Manual accepted-main job only; never called by scheduled backup reconciliation."""
-    from psycopg.conninfo import conninfo_to_dict
-    from timeweb_auth_postgres import TimewebClient, private_database_endpoint
+    from timeweb_auth_postgres import TimewebClient
     from verify_main_release import (
         GitHubClient,
         release_context,
@@ -1171,16 +1280,7 @@ def restore_cli() -> int:
     archive_key = os.environ.get("OMNICIO_RESTORE_ARCHIVE_KEY", "")
     if args.action == "export-logical":
         source = os.environ.get("OMNICIO_RESTORE_SOURCE_DSN", "")
-        values = conninfo_to_dict(source)
-        cluster = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", "")).get_database_cluster(
-            load_policy().cluster_id,
-        )
-        endpoint = private_database_endpoint(cluster)
-        if (endpoint is None or values.get("host") != endpoint.host
-                or int(values.get("port", "5432")) != endpoint.port
-                or values.get("dbname") != os.environ.get("DB_INSTANCE_NAME")
-                or not values.get("dbname") or values.get("sslmode") != "verify-full"):
-            raise RecoveryBlocked("Export source does not match the verified private production DB")
+        validate_export_source(source, TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", "")))
         export_logical_archive(
             source, args.postgres_bin, args.directory, cluster_id=load_policy().cluster_id,
             release_sha=sha, signing_key=signing_key, archive_key=archive_key,

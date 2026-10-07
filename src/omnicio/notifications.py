@@ -320,7 +320,7 @@ class NotificationService:
             push_public_key(config.vapid_private_key)
             subject = config.vapid_subject
             if (any(ord(char) < 33 or ord(char) > 126 for char in subject)
-                    or not (subject.startswith("mailto:") or subject.startswith("https://"))):
+                    or not subject.startswith(("mailto:", "https://"))):
                 raise ValueError("notification_vapid_subject_invalid")
             if subject.startswith("mailto:"):
                 normalize_email(subject.removeprefix("mailto:"))
@@ -630,6 +630,52 @@ class NotificationService:
             (period, user_id, channel["id"]),
         )
 
+    def _event_delivery_allowed(
+        self, cur: Any, user_id: UUID, payload: dict[str, Any], preferences: Mapping[str, Any],
+    ) -> bool:
+        if (preferences["digest_frequency"] != "off"
+                or not preferences["notifications"].get(payload.get("category"), False)):
+            return False
+        cur.execute(
+            "SELECT revision, read_at FROM workspace_events WHERE user_id = %s AND id = %s",
+            (user_id, payload.get("event_id")),
+        )
+        event = cur.fetchone()
+        return (event is not None and event["read_at"] is None
+                and event["revision"] == payload.get("event_revision"))
+
+    def _digest_delivery_allowed(
+        self, cur: Any, user_id: UUID, payload: dict[str, Any], preferences: Mapping[str, Any],
+    ) -> bool:
+        if preferences["digest_frequency"] != payload.get("frequency"):
+            return False
+        enabled = [key for key, value in preferences["notifications"].items() if value]
+        cur.execute(
+            "SELECT count(*) AS total FROM workspace_events WHERE user_id = %s "
+            "AND category = ANY (%s) AND occurred_at >= %s AND occurred_at < %s "
+            "AND read_at IS NULL", (user_id, enabled, payload["from"], payload["to"]),
+        )
+        count = int(cur.fetchone()["total"])
+        payload["body"] = (f"За завершённый период: {count} непрочитанных событий. "
+                           "Подробности доступны после входа в кабинет.")
+        return count > 0
+
+    def _delivery_allowed(
+        self, cur: Any, user_id: UUID, row: Mapping[str, Any], payload: dict[str, Any],
+        preferences: Mapping[str, Any], now: datetime,
+    ) -> bool:
+        if row["kind"] == "verification":
+            return bool(row["channel_status"] == "pending"
+                        and row["verification_expires_at"] > now
+                        and row["verification_attempts"] < 5)
+        if row["channel_status"] != "active":
+            return False
+        if row["kind"] == "event":
+            return self._event_delivery_allowed(cur, user_id, payload, preferences)
+        if row["kind"] == "digest":
+            return self._digest_delivery_allowed(cur, user_id, payload, preferences)
+        return row["kind"] == "operational" and bool(preferences["notifications"]["system"])
+
     def _claim(self, user_id: UUID, now: datetime) -> dict[str, Any] | None:
         if not self.config.enabled or not self.database.has_legal_versions(
             user_id, self.legal_versions,
@@ -659,41 +705,8 @@ class NotificationService:
             row = dict(found)
             payload = self._open(row["payload_ciphertext"])
             preferences = self.workspace._preferences(cur, user_id)["document"]
-            configured = (self.push_configured if row["channel_kind"] == "push"
-                          else self.email_configured)
-            allowed = row["channel_status"] == "active"
             expired = row["kind"] != "verification" and row["created_at"] < now - timedelta(days=7)
-            if row["kind"] == "verification":
-                allowed = (row["channel_status"] == "pending"
-                           and row["verification_expires_at"] > now
-                           and row["verification_attempts"] < 5)
-            elif row["kind"] == "event":
-                allowed = allowed and preferences["notifications"].get(
-                    payload.get("category"), False,
-                ) and preferences["digest_frequency"] == "off"
-                cur.execute(
-                    "SELECT revision, read_at FROM workspace_events "
-                    "WHERE user_id = %s AND id = %s", (user_id, payload.get("event_id")),
-                )
-                event = cur.fetchone()
-                allowed = (allowed and event is not None and event["read_at"] is None
-                           and event["revision"] == payload.get("event_revision"))
-            elif row["kind"] == "digest":
-                allowed = allowed and preferences["digest_frequency"] == payload.get("frequency")
-                enabled = [key for key, value in preferences["notifications"].items() if value]
-                cur.execute(
-                    "SELECT count(*) AS total FROM workspace_events WHERE user_id = %s "
-                    "AND category = ANY (%s) AND occurred_at >= %s AND occurred_at < %s "
-                    "AND read_at IS NULL", (user_id, enabled, payload["from"], payload["to"]),
-                )
-                count = int(cur.fetchone()["total"])
-                allowed = allowed and count > 0
-                payload["body"] = (f"За завершённый период: {count} непрочитанных событий. "
-                                   "Подробности доступны после входа в кабинет.")
-            elif row["kind"] == "operational":
-                allowed = allowed and preferences["notifications"]["system"]
-            if not configured:
-                return None
+            allowed = self._delivery_allowed(cur, user_id, row, payload, preferences, now)
             if not allowed or expired:
                 cur.execute(
                     "UPDATE notification_outbox SET status = 'cancelled', last_error = %s "

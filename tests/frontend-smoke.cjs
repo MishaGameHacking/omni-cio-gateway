@@ -100,7 +100,8 @@ const makeFixture = mode => {
     goals: [],
     goalSequence: 0,
     events: [{
-      id: "synthetic-event-1",
+      id: createHash("sha256").update("synthetic-event-1").digest("hex"),
+      revision: 1,
       category: "system",
       kind: "connected",
       severity: "info",
@@ -109,8 +110,11 @@ const makeFixture = mode => {
       occurred_at: stamp,
       read_at: null,
       target: "settings",
-      source: "Synthetic API"
+      source: {type: "operation", amount: "125.50", currency: "RUB", expected_at: stamp, instrument_uid: "synthetic-a", state: "executed"},
+      destination: {view: "asset", uid: "synthetic-a"}
     }],
+    notificationChannels: [],
+    news: [{id: "synthetic-news-1", title: "Изолированная публикация инструмента", summary: "Краткое содержание теста", content: "Полный текст публикации из изолированного API", source: "Изолированный источник", source_url: "https://example.test/news/1", occurred_at: stamp, instrument_uids: ["synthetic-a"], priority: 1}],
     requests: [],
     mutationDelay: 0,
     failPreferences: false,
@@ -151,6 +155,10 @@ const makeFixture = mode => {
       reason: null
     },
     executions: [],
+    executionProposals: [],
+    researchRuns: [],
+    heldResearchReads: [],
+    holdResearchReads: false,
     mandate: null,
     recoveryLostAck: false,
     connected: true
@@ -188,8 +196,15 @@ const overview = () => ({
     nav_percent: "66.667"
   }]
 });
-const eventDTO = fixture => ({
-  items: clone(fixture.events),
+const eventDTO = (fixture, url = new URL("https://example.test/api/events")) => {
+  const [offset, ceiling] = url.searchParams.has("cursor") ? url.searchParams.get("cursor").split(":").map(Number) : [0, Math.max(0, ...fixture.events.map(item => item.revision))];
+  const query = (url.searchParams.get("query") || "").toLowerCase();
+  const items = fixture.events.filter(item => item.revision <= ceiling && JSON.stringify(item).toLowerCase().includes(query)).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id.localeCompare(a.id));
+  const limit = Number(url.searchParams.get("limit") || 50);
+  return {
+  items: clone(items.slice(offset, offset + limit)),
+  next_cursor: offset + limit < items.length ? `${offset + limit}:${ceiling}` : null,
+  read_all_before: ceiling,
   unread_count: fixture.events.filter(item => !item.read_at).length,
   alerts_suppressed: false,
   digest: {
@@ -200,7 +215,8 @@ const eventDTO = fixture => ({
       system: fixture.events.length
     }
   }
-});
+};
+};
 const connection = fixture => ({
   connected: fixture.connected,
   account_id: fixture.connected ? "synthetic-account" : null,
@@ -361,7 +377,16 @@ const testApiHandlers = [{
 }, {
   matches: ({
     path
-  }) => path === "/api/auth/identities",
+  }) => path.startsWith("/api/me/sessions"),
+  run: serveTestSessions
+}, {
+  matches: ({path}) => path === "/api/billing" || path.startsWith("/api/billing/"),
+  run: serveTestBilling
+}, {
+  matches: ({path}) => path.startsWith("/api/research/"),
+  run: serveTestResearchArchive
+}, {
+  matches: ({path}) => path === "/api/auth/identities",
   run: serveTestAuthIdentities
 }, {
   matches: ({
@@ -373,6 +398,9 @@ const testApiHandlers = [{
     path
   }) => path === "/api/workspace/refresh",
   run: serveTestRefresh
+}, {
+  matches: ({path}) => path === "/api/portfolio/execution-capabilities" || path.startsWith("/api/portfolio/proposals/"),
+  run: serveTestExecutionPlans
 }, {
   matches: ({
     path
@@ -463,17 +491,26 @@ const testApiHandlers = [{
 }, {
   matches: ({
     path
-  }) => path.startsWith("/api/goals/"),
+  }) => path.startsWith("/api/goals/") && path.endsWith("/plan"),
+  run: serveTestGoalPlan
+}, {
+  matches: ({path}) => path.startsWith("/api/goals/"),
   run: serveTestGoals3
 }, {
   matches: ({
     path
-  }) => path === "/api/events" || path === "/api/events/read",
+  }) => path === "/api/events" || path.startsWith("/api/events/"),
   run: serveTestEvents
+}, {
+  matches: ({path}) => path === "/api/news",
+  run: serveTestNews
+}, {
+  matches: ({path}) => path === "/api/notifications" || path.startsWith("/api/notifications/"),
+  run: serveTestNotifications
 }, {
   matches: ({
     path
-  }) => path === "/api/assistant/status",
+  }) => path.startsWith("/api/assistant/"),
   run: serveTestAssistantStatus
 }, {
   matches: ({
@@ -486,6 +523,7 @@ const routeAPI = async (request, response, url, fixture, body) => {
   const method = request.method;
   fixture.requests.push({
     path,
+    query: url.searchParams.toString(),
     method,
     body,
     profile: request.headers["x-omnicio-profile"],
@@ -561,6 +599,7 @@ const displayContracts = () => {
     Date,
     URL
   });
+  vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
   vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
   const ui = context.window.OmniUI;
   for (const value of [null, undefined, "", "  ", false, [], {}, "NaN", Infinity]) assert.equal(ui.number(value), null, "Unknown and non-finite values remain unknown");
@@ -682,6 +721,8 @@ const workerContract = async () => {
   const handlers = new Map();
   const tasks = [];
   const cached = [];
+  const notifications = [];
+  const opened = [];
   let activated = 0;
   const origin = "https://example.test";
   globalThis.self = {
@@ -689,6 +730,8 @@ const workerContract = async () => {
       origin
     },
     addEventListener: (name, handler) => handlers.set(name, handler),
+    registration: {showNotification: async (title, options) => notifications.push({title, options})},
+    clients: {matchAll: async () => [], openWindow: async path => opened.push(path)},
     skipWaiting: async () => {
       activated += 1;
     }
@@ -705,7 +748,7 @@ const workerContract = async () => {
     });
     await Promise.all(tasks);
     assert.ok(cached.includes("/offline.html?build=__OMNICIO_BUILD__"));
-    assert.ok(cached.every(path => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js))\?build=__OMNICIO_BUILD__$/.test(path)), "Private content never enters the cache allowlist");
+    assert.ok(cached.every(path => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js|i18n\.js))\?build=__OMNICIO_BUILD__$/.test(path)), "Private content never enters the cache allowlist");
     let intercepted = 0;
     for (const path of ["/api/me", "/api/workspace", "/api/preferences", "/api/goals", "/api/assistant/messages", "/api/broker/tbank/portfolio", "/health/ready"]) {
       for (const method of ["GET", "POST"]) handlers.get("fetch")({
@@ -737,7 +780,18 @@ const workerContract = async () => {
     });
     await Promise.all(tasks);
     assert.equal(activated, 1);
-    console.log("PASS service worker: private-cache isolation and origin checks");
+    for (const url of ["https://untrusted.invalid/#events", "/#events?event=" + "a".repeat(64), "/?credential=secret#events", "/#settings"]) {
+      handlers.get("push")({data: {json: () => ({title: "PRIVATE GOAL", body: "PRIVATE AMOUNT", url, tag: "a".repeat(64)})}, waitUntil: task => tasks.push(task)});
+    }
+    await Promise.all(tasks);
+    assert.deepEqual(notifications.map(item => item.options.data.url), ["/#events", "/#events?event=" + "a".repeat(64), "/#events", "/#settings"]);
+    assert.ok(notifications.every(item => item.title === "OMNICIO" && !item.options.body.includes("PRIVATE")), "Lock-screen push never shows private source content");
+    let closed = false;
+    handlers.get("notificationclick")({notification: {data: {url: "https://untrusted.invalid/"}, close: () => {closed = true;}}, waitUntil: task => tasks.push(task)});
+    await Promise.all(tasks);
+    assert.equal(closed, true);
+    assert.deepEqual(opened, ["/#events"]);
+    console.log("PASS service worker: private-cache isolation, origin checks, private push redaction and safe notification navigation");
   } finally {
     delete globalThis.self;
     delete globalThis.caches;
@@ -1303,6 +1357,7 @@ const runBrowser = async base => {
         });
       }
       await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
+      await exerciseEnglishLocale({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
     }
     const failureKey = "signed-load-failure";
     const failure = makeFixture("signed");
@@ -1540,7 +1595,8 @@ function serveTestExecutions({
   path,
   fixture,
   response,
-  method
+  method,
+  body
 }) {
   if (path === "/api/portfolio/executions") return sendJSON(response, executionListDTO(fixture));
   const [,,,, id, action] = path.split("/");
@@ -1549,7 +1605,19 @@ function serveTestExecutions({
     detail: "execution_not_found"
   }, 404);
   if (method === "POST") {
-    assert.ok(["reconcile", "cancel"].includes(action), "Recovery can only reconcile or cancel existing requests");
+    assert.ok(["reconcile", "cancel", "dispatch"].includes(action), "Only explicit execution actions are accepted");
+    if (action === "dispatch") {
+      assert.equal(execution.mode, "shadow", "The test UI must never submit a live broker order");
+      const leg = execution.legs.find(item => item.status === "pending");
+      if (!leg || leg.id !== body.expected_leg_id) return sendJSON(response, {detail: "execution_leg_changed"}, 409);
+      assert.match(body.expected_leg_id, /^[a-f0-9-]{36}$/);
+      leg.status = "shadow_filled";
+      leg.lots_executed = leg.lots_requested;
+      leg.last_checked_at = stamp;
+      leg.terminal_at = stamp;
+      execution.status = execution.legs.every(item => item.status === "shadow_filled") ? "completed" : "running";
+      return sendJSON(response, executionDetailDTO(execution));
+    }
     if (action === "cancel") {
       execution.status = "cancelled";
       execution.legs[0].status = "cancelled";
@@ -1727,6 +1795,11 @@ async function serveTestMarketInstruments2({
   response,
   url
 }) {
+  if (url.pathname.endsWith("/stream")) {
+    response.setHeader("Content-Type", "text/event-stream");
+    response.write("event: quote\ndata: " + JSON.stringify({instrument_uid:"synthetic-a",observed_at:stamp,last_price:"250.25",quote_status:"fresh",quote_time:stamp,price_unit:"currency",price_currency:"RUB",cash_price:"250.25",cash_price_currency:"RUB"})+"\n\n");
+    return;
+  }
   return sendJSON(response, {
     instrument_uid: "synthetic-a",
     period: url.searchParams.get("period"),
@@ -1735,6 +1808,10 @@ async function serveTestMarketInstruments2({
     last_price: "250.25",
     quote_time: stamp,
     quote_status: "fresh",
+    price_unit: "currency",
+    price_currency: "RUB",
+    cash_price: "250.25",
+    cash_price_currency: "RUB",
     trading_status: "SECURITY_TRADING_STATUS_NORMAL_TRADING",
     candles: [{
       time: day(3),
@@ -1880,23 +1957,358 @@ async function serveTestEvents({
   method,
   fixture,
   body,
-  response
+  response,
+  path,
+  url
 }) {
-  if (method === "POST") fixture.events.filter(item => body.ids.includes(item.id)).forEach(item => {
-    item.read_at = stamp;
-  });
-  return sendJSON(response, eventDTO(fixture));
+  if (method === "GET" && path.startsWith("/api/events/")) {
+    const item = fixture.events.find(event => event.id === path.split("/").at(-1));
+    return sendJSON(response, item || {detail: "event_not_found"}, item ? 200 : 404);
+  }
+  if (method === "POST") {
+    if (path === "/api/events/read-all" && fixture.arrivingEvent) {
+      fixture.events.push(fixture.arrivingEvent);
+      fixture.arrivingEvent = null;
+    }
+    fixture.events.filter(item => path === "/api/events/read-all" ? item.revision <= body.through_revision : body.ids.includes(item.id)).forEach(item => { item.read_at = body.read === false ? null : stamp; });
+  }
+  return sendJSON(response, eventDTO(fixture, url));
 }
-async function serveTestAssistantStatus({
-  response
-}) {
-  return sendJSON(response, {
-    configured: false,
-    provider: "ollama",
-    model: null,
-    context_supported: true,
-    max_message_length: 4000
-  });
+async function serveTestNews({fixture, url, response}) {
+  const query = (url.searchParams.get("query") || "").toLowerCase();
+  const uid = url.searchParams.get("instrument_uid");
+  const items = fixture.news.filter(item => (!uid || item.instrument_uids.includes(uid)) && JSON.stringify(item).toLowerCase().includes(query));
+  const offset = Number(url.searchParams.get("cursor") || 0);
+  const limit = Number(url.searchParams.get("limit") || 50);
+  return sendJSON(response, {items: clone(items.slice(offset, offset + limit)), next_cursor: offset + limit < items.length ? String(offset + limit) : null, scanned_items: Math.min(limit, items.length - offset), instrument_uid: uid, source: "Изолированный источник", observed_at: stamp, status: items.length ? "received" : "empty"});
+}
+async function serveTestNotifications({fixture, path, body, method, response}) {
+  if (path === "/api/notifications/email/request") {
+    const channel = {id: "00000000-0000-4000-8000-000000000801", kind: "email", label: "t***@example.test", status: "pending", verification_expires_at: new Date(Date.now() + 900000).toISOString(), verification_attempts_remaining: 5};
+    fixture.notificationChannels = [channel];
+    return sendJSON(response, channel);
+  }
+  if (path === "/api/notifications/email/verify") {
+    const channel = fixture.notificationChannels.find(item => item.id === body.channel_id);
+    if (!channel || body.code !== "123456") return sendJSON(response, {detail: "notification_verification_invalid"}, 400);
+    channel.status = "active";
+    channel.verified_at = stamp;
+    return sendJSON(response, {id: channel.id, status: "active"});
+  }
+  if (method === "DELETE") {
+    fixture.notificationChannels = fixture.notificationChannels.filter(item => item.id !== path.split("/").at(-1));
+    return sendJSON(response, {revoked: true});
+  }
+  return sendJSON(response, {enabled: true, push_configured: false, email_configured: true, vapid_public_key: null, channels: clone(fixture.notificationChannels), deliveries: [], receipt_scope: "provider_acceptance_only"});
+}
+async function exerciseEventArchive({fixture, click, fieldValue, wait, evaluate}) {
+  const baseEvent = clone(fixture.events[0]);
+  fixture.events = Array.from({length: 115}, (_, index) => ({...clone(baseEvent), id: createHash("sha256").update(`archive-event-${index}`).digest("hex"), revision: index + 1, title: index === 114 ? "Архивный контрольный факт" : `Подтверждённый факт ${index + 1}`, occurred_at: new Date(Date.now() - index * 60000).toISOString(), read_at: null}));
+  await click('#view-events [data-action="refresh"]');
+  await wait('document.querySelectorAll("#view-events [data-event-open]").length===50', "First event page is bounded");
+  await click('#view-events [data-action="events-more"]');
+  await wait('document.querySelectorAll("#view-events [data-event-open]").length===100', "Second event page");
+  await click('#view-events [data-action="events-more"]');
+  await wait('document.querySelectorAll("#view-events [data-event-open]").length===115', "Full event archive beyond fifty");
+  await click(`#view-events [data-event-open="${fixture.events[114].id}"]`);
+  await wait('document.querySelector("#dialog-content").textContent.includes("Сумма операции")', "Structured event source details");
+  assert.ok(await evaluate('document.querySelector("#dialog-content").textContent.includes("125,50")'));
+  await click('#dialog-content [data-action="event-destination"]');
+  await wait('!document.querySelector("#view-asset").hidden && location.hash.includes("synthetic-a")', "Exact source instrument deep link");
+  await fieldValue("#global-search-form", "q", "Архивный контрольный");
+  await evaluate('document.querySelector("#global-search-form").requestSubmit()');
+  await wait('document.querySelector("#view-search [data-event-open]")', "Server search finds an older archived event");
+  assert.ok(fixture.requests.some(item => item.path === "/api/events" && new URLSearchParams(item.query).get("query") === "Архивный контрольный"), "Search reads the server archive with the submitted query");
+  await click('#sidebar-nav [data-route="events"]');
+  await wait('document.querySelector("#view-events [data-action=events-read-all]")', "Read all is available");
+  fixture.arrivingEvent = {...clone(baseEvent), id: "e".repeat(64), revision: 116, title: "Поступившее во время чтения", read_at: null, occurred_at: new Date().toISOString()};
+  await click('#view-events [data-action="events-read-all"]');
+  await until(() => fixture.events.length === 116 && fixture.events.filter(item => !item.read_at).length === 1, "Read-all cutoff preserves a concurrent new event");
+  await wait('document.querySelector("#view-events .chip").textContent.includes("1 непрочитанных")', "New event remains unread");
+  await click('#view-events [data-news-open]');
+  await wait('document.querySelector("#dialog-content").textContent.includes("Полный текст публикации")', "News article opens full source text");
+  await click('#workspace-dialog [data-close-dialog]');
+}
+async function exerciseNotificationChannels({fixture, click, fieldValue, wait, evaluate}) {
+  await wait('document.querySelector("#notification-email-form [type=submit]") && !document.querySelector("#notification-email-form [type=submit]").disabled', "Configured email delivery form");
+  await fieldValue("#notification-email-form", "email", "test@example.test");
+  await click('#notification-email-form [type="submit"]');
+  const formId = "notification-verify-00000000-0000-4000-8000-000000000801";
+  await wait(`document.querySelector("#${formId} [type=submit]") && !document.querySelector("#${formId} [type=submit]").disabled`, "Pending verified-email channel");
+  assert.equal(fixture.notificationChannels[0].status, "pending", "Request alone cannot opt an unverified address into delivery");
+  await fieldValue(`#${formId}`, "code", "000000");
+  await click(`#${formId} [type="submit"]`);
+  await wait('document.querySelector("#notification-message").textContent.length>0', "Wrong verification code is visible");
+  await fieldValue(`#${formId}`, "code", "123456");
+  await click(`#${formId} [type="submit"]`);
+  await until(() => fixture.notificationChannels[0].status === "active", "Verified channel activation");
+  await wait('!document.querySelector("#notification-settings form[id^=notification-verify]")', "Verified channel state is rendered");
+  await click('#notification-settings [data-action="notification-revoke"]');
+  await until(() => fixture.notificationChannels.length === 0, "Explicit channel opt-out");
+  await wait('document.querySelector("#notification-settings").textContent.includes("Устройства и адреса пока не подключены")', "Revoked channel removed from UI");
+  assert.ok(!await evaluate('document.querySelector("#notification-settings").textContent.includes("test@example.test")'), "Full address is never retained in channel display");
+}
+async function serveTestSessions({fixture, path, method, body, response}) {
+  fixture.sessions ||= [{id:"00000000-0000-0000-0000-000000000991", current:true, auth_provider:"vkid", created_at:stamp, last_seen_at:stamp, expires_at:new Date(Date.now()+86400000).toISOString()}, {id:"00000000-0000-0000-0000-000000000992", current:false, auth_provider:"tid", created_at:stamp, last_seen_at:stamp, expires_at:new Date(Date.now()+86400000).toISOString()}];
+  if (method === "GET") return sendJSON(response, {sessions:clone(fixture.sessions), total:fixture.sessions.length, truncated:false});
+  if (path.endsWith("/revoke-others")) fixture.sessions = fixture.sessions.filter(item=>item.current);
+  else if (path.endsWith("/revoke")) fixture.sessions = fixture.sessions.filter(item=>item.id!==body.session_id || item.current);
+  return sendJSON(response,{revoked:true});
+}
+async function serveTestGoalPlan({fixture,path,method,body,response}) {
+  const id = path.split("/").at(-2);
+  const goal = fixture.goals.find(item=>item.id===id);
+  if (!goal) return sendJSON(response,{detail:"workspace_item_not_found"},404);
+  fixture.goalPlans ||= {};
+  let plan=fixture.goalPlans[id] || {version:0,document:null,forecast:null};
+  if(method==="PUT") {
+    if(body.expected_version!==plan.version || body.expected_goal_version!==goal.version) return sendJSON(response,{detail:"settings_version_conflict"},409);
+    plan={version:plan.version+1,document:clone(body.document),forecast:{status:"available",method:"geometric_monthly_scenario_v1",projected_amount_rub:"1300.00",inflation_adjusted_target_rub:"1000.00",required_monthly_rub:"75.00",deterministic_months_to_target:9,months:12,assumptions_source:"user_supplied",simulation:null,limitations:["Synthetic UI response; financial math is exercised by Python tests."]}};
+    fixture.goalPlans[id]=plan;
+  }
+  return sendJSON(response,{...clone(plan),goal_id:id,goal_version:goal.version});
+}
+async function serveTestResearchArchive({fixture,path,method,body,response}) {
+  fixture.researchEvidence ||= {version:0,document:{assets:[]}};
+  if(path.endsWith("/evidence")) {
+    if(method==="PUT") {
+      if(body.expected_version!==fixture.researchEvidence.version) return sendJSON(response,{detail:"settings_version_conflict"},409);
+      fixture.researchEvidence={version:fixture.researchEvidence.version+1,document:clone(body.document)};
+    }
+    return sendJSON(response,fixture.researchEvidence);
+  }
+  if (path === "/api/research/runs") {
+    const items = clone(fixture.researchRuns);
+    if (fixture.holdResearchReads) await new Promise(release => fixture.heldResearchReads.push(release));
+    return sendJSON(response,{items});
+  }
+  const item = fixture.researchRuns.find(row => row.id === path.split("/").at(-1));
+  return sendJSON(response, item || {detail:"workspace_item_not_found"}, item ? 200 : 404);
+}
+function serveTestExecutionPlans({fixture,path,body,response}) {
+  if (path.endsWith("execution-capabilities")) return sendJSON(response, {shadow_enabled:true,sandbox_enabled:false,live_enabled:false,max_order_notional_rub:"25000",max_daily_notional_rub:"100000"});
+  if (path.endsWith("/plan")) {
+    assert.equal(body.expected_version, fixture.selection.version);
+    assert.equal(body.mode, "shadow");
+    const research = fixture.researchRuns.find(item => item.id === body.research_run_id);
+    assert.ok(research, "The planner must use an owned research record");
+    assert.equal(body.commission_bps, research.inputs.commission_bps);
+    assert.equal(body.slippage_bps, research.inputs.slippage_bps);
+    const payload={strategy_version:fixture.selection.version,nav_rub:"150000.25",cash_before_rub:"100000.25",cash_after_rub:"97998.25",reserve_rub:"5000",gross_turnover_rub:"2000",mode:"shadow",account_id:"synthetic-account",legs:[{action:"buy",instrument_uid:"synthetic-a",ticker:"SYNA",lots:2,lot_size:10,limit_price:"100",gross_amount_rub:"2000",commission_cap_rub:"2",tax_reserve_rub:"0"}]};
+    const proposal={id:require("node:crypto").randomUUID(),version:1,status:"proposed",proposal_hash:createHash("sha256").update(JSON.stringify(payload)).digest("hex"),payload,expires_at:new Date(Date.now()+120000).toISOString()};
+    fixture.executionProposals.push(proposal);
+    return sendJSON(response, proposal);
+  }
+  const id=path.split("/").at(-2), proposal=fixture.executionProposals.find(item=>item.id===id);
+  if(!proposal) return sendJSON(response,{detail:"execution_proposal_not_found"},404);
+  assert.equal(body.proposal_version,proposal.version);
+  assert.equal(body.proposal_hash,proposal.proposal_hash);
+  assert.equal(body.expected_strategy_version,proposal.payload.strategy_version);
+  let run=fixture.executions.find(item=>item.proposal_id===id);
+  if(!run){run={id:require("node:crypto").randomUUID(),proposal_id:id,account_id:"synthetic-account",mode:"shadow",provider_environment:"prod",status:"created",error_code:null,created_at:stamp,updated_at:stamp,finished_at:null,legs:proposal.payload.legs.map((leg,index)=>({id:require("node:crypto").randomUUID(),leg_index:index,action:leg.action,instrument_uid:leg.instrument_uid,lots_requested:leg.lots,lots_executed:0,request_id:require("node:crypto").randomUUID(),provider_order_id:null,provider_status:null,status:"pending",submitted_at:null,last_checked_at:null,terminal_at:null}))};fixture.executions.push(run);}
+  return sendJSON(response,{run:clone(run)});
+}
+async function serveTestBilling({fixture,path,method,body,response}) {
+  fixture.billing ||= {configured:false,provider:"tbank_hosted_checkout",plan:"personal",automatic_renewal:false,valid_until:null,offer:null,payments:[]};
+  if(path==="/api/billing") return sendJSON(response,fixture.billing);
+  if(path.endsWith("/checkout")) {
+    assert.equal(typeof body.expected_offer,"string");assert.equal(Object.hasOwn(body,"amount_kopecks"),false);
+    const existing=fixture.billing.payments.find(item=>item.id===body.request_id);
+    if(existing)return sendJSON(response,existing);
+    if(!fixture.billing.offer || body.expected_offer!==fixture.billing.offer.version)return sendJSON(response,{detail:"billing_offer_changed"},409);
+    const payment={id:body.request_id,status:"pending",amount_kopecks:fixture.billing.offer.amount_kopecks,period_days:30,offer_version:body.expected_offer,created_at:stamp,updated_at:stamp,checkout_url:"https://securepayments.tinkoff.ru/synthetic-do-not-follow",entitlement_from:null,entitlement_until:null};
+    fixture.billing.payments.push(payment);return sendJSON(response,payment);
+  }
+  const ident=path.split("/").at(-2), payment=fixture.billing.payments.find(item=>item.id===ident);
+  if(!payment)return sendJSON(response,{detail:"workspace_item_not_found"},404);
+  if(path.endsWith("/cancel"))payment.status="cancelled";
+  else { payment.status="paid";payment.entitlement_from=stamp;payment.entitlement_until=new Date(Date.now()+30*86400000).toISOString();fixture.billing.plan="premium";fixture.billing.valid_until=payment.entitlement_until; }
+  return sendJSON(response,payment);
+}
+async function serveTestAssistantStatus({fixture,path,method,body,url,response}) {
+  fixture.ai ||= {enabled:false,configured:false,status:"activation_disabled",connection_version:0,connection_source:"personal",provider:"ollama",base_url:"https://model.example.invalid",model:null,has_key:false,health:{status:"unchecked",checked_at:null},allowed_endpoints:["https://model.example.invalid"],max_message_length:4000,quota:{used:0,limit:30,remaining:30,resets_at:new Date(Date.now()+86400000).toISOString()}};
+  fixture.conversations ||= [];
+  if(path.endsWith("/status"))return sendJSON(response,fixture.ai);
+  if(path==="/api/assistant/connection") {
+    assert.equal(body.expected_version,fixture.ai.connection_version);
+    if(method==="PUT"){Object.assign(fixture.ai,{configured:true,connection_version:fixture.ai.connection_version+1,provider:body.document.provider,base_url:body.document.base_url,model:body.document.model,has_key:Boolean(body.document.api_key)});}
+    else Object.assign(fixture.ai,{configured:false,connection_version:fixture.ai.connection_version+1,has_key:false});
+    return sendJSON(response,fixture.ai);
+  }
+  if(path.endsWith("/connection/check")) {fixture.ai.health={status:"healthy",checked_at:stamp};return sendJSON(response,fixture.ai);}
+  if(path==="/api/assistant/conversations") {
+    if(method==="POST"){const item={id:require("node:crypto").randomUUID(),title:body.title,version:0,messages:[],created_at:stamp,updated_at:stamp};fixture.conversations.push(item);return sendJSON(response,item,201);}
+    return sendJSON(response,{items:fixture.conversations.map(({messages,...item})=>item),total:fixture.conversations.length,truncated:false});
+  }
+  if(path==="/api/assistant/messages"){
+    assert.equal(Object.hasOwn(body,"history"),false,"Conversation history is loaded server-side");
+    const conversation=fixture.conversations.find(item=>item.id===body.conversation_id);
+    if(!conversation || conversation.version!==body.expected_version)return sendJSON(response,{detail:"settings_version_conflict"},409);
+    assert.match(body.request_id,/^[a-f0-9-]{36}$/);
+    conversation.messages.push({position:++conversation.version,role:"user",content:body.message,created_at:stamp,sources:[],request_status:"completed"},{position:++conversation.version,role:"assistant",content:"Synthetic isolated model response",created_at:stamp,sources:[{label:"Synthetic source receipt"}],request_status:"completed"});
+    fixture.ai.quota.used++;return sendJSON(response,{reply:"Synthetic isolated model response",conversation_id:conversation.id,version:conversation.version,created_at:stamp,sources:[]});
+  }
+  const id=path.split("/").at(-1),item=fixture.conversations.find(row=>row.id===id);
+  if(!item)return sendJSON(response,{detail:"workspace_item_not_found"},404);
+  if(method==="DELETE"){fixture.conversations=fixture.conversations.filter(row=>row.id!==id);return sendJSON(response,{deleted:true});}
+  const eligible=item.messages.filter(message=>!url.searchParams.has("before") || message.position<Number(url.searchParams.get("before")));
+  const messages=eligible.slice(-50);return sendJSON(response,{...item,messages,next_before:eligible.length>50?messages[0].position:null});
+}
+
+async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evaluate,checkLayout}) {
+  await click('#view-assistant [data-action="assistant-connect"]');
+  await wait('document.querySelector("#assistant-connection-form")',"Personal AI connection editor");
+  await fieldValue("#assistant-connection-form","model","synthetic-model");
+  await fieldValue("#assistant-connection-form","api_key","synthetic-private-key");
+  await click('#assistant-connection-form [type="submit"]');
+  await wait('document.querySelector("#assistant-connection-form")?.dataset.version==="1"',"AI connection save readback");
+  assert.equal(await evaluate('document.querySelector("#assistant-connection-form").elements.api_key.value'),"","Stored provider key is never rendered");
+  assert.equal(await evaluate('document.querySelector("[data-action=assistant-health]").disabled'),true,"Disabled activation cannot perform a provider probe");
+  await click('#workspace-dialog [data-close-dialog]');
+  fixture.ai.enabled=true;
+  await click('#view-assistant [data-action="assistant-connect"]');
+  await wait('document.querySelector("[data-action=assistant-health]").disabled===false',"Operator activation is read back");
+  await click('#workspace-dialog [data-close-dialog]');
+  await click('#view-assistant [data-action="assistant-new"]');
+  await until(()=>fixture.conversations.length===1,"Create owned conversation");
+  await wait('!document.querySelector("#assistant-form textarea").disabled',"Activated synthetic model");
+  await fieldValue("#assistant-form","message","Explain my portfolio");
+  await click('#assistant-form [type="submit"]');
+  await wait('document.querySelector("#chat-messages").textContent.includes("Synthetic isolated model response")',"Durable assistant result");
+  assert.equal(fixture.ai.quota.used,1);
+  const last=fixture.requests.findLast(item=>item.path==="/api/assistant/messages");
+  assert.equal(last.body.context,"general");assert.equal(last.body.include_news,false);
+  await click('#sidebar-nav [data-route="home"]');
+  await click('#sidebar-nav [data-route="assistant"]');
+  await wait('document.querySelector("#chat-messages").textContent.includes("Synthetic isolated model response")',"History returns after navigation");
+  await click('#view-assistant [data-action="chat-clear"]');
+  await click('#workspace-dialog [data-action="assistant-delete-confirm"]');
+  await until(()=>fixture.conversations.length===0,"Delete owned conversation");
+  assert.equal(fixture.ai.quota.used,1,"Deleting conversation does not reset request quota");
+  await click('#sidebar-nav [data-route="profile"]');
+  await wait('document.querySelector("#view-profile [data-session-revoke]")',"Own session list");
+  const other=fixture.sessions.find(item=>!item.current);
+  await click(`#view-profile [data-session-revoke="${other.id}"]`);
+  await until(()=>fixture.sessions.length===1,"Revoke another session");
+  fixture.billing.configured=true;fixture.billing.offer={version:"a".repeat(64),description:"Synthetic optional plan",amount_kopecks:12345,currency:"RUB",period_days:30};
+  await click('#view-profile [data-action="premium"]');
+  await wait('document.querySelector("#billing-checkout-form")',"Configured hosted checkout");
+  await fieldValue("#billing-checkout-form","receipt_email","receipt@example.test");
+  await click('#billing-checkout-form [name="accept_offer"]');
+  await click('#billing-checkout-form [type="submit"]');
+  await wait('[...document.querySelectorAll("#dialog-content a")].some(link => link.href.startsWith("https://securepayments.tinkoff.ru/"))',"Signed server checkout link");
+  assert.equal(fixture.billing.plan,"personal","A checkout link alone never activates a plan");
+  await click('#dialog-content [data-billing-operation="reconcile"]');
+  await until(()=>fixture.billing.plan==="premium","Only bank confirmation activates entitlement");
+  await wait('document.querySelector("#dialog-content").textContent.includes("Premium")',"Confirmed plan readback");
+  await checkLayout("payments-and-assistant");
+  await click('#workspace-dialog [data-close-dialog]');
+}
+async function exerciseExecutionPlanner({fixture,click,wait,evaluate,screenshot,checkLayout,round}) {
+  fixture.researchRuns=[{id:require("node:crypto").randomUUID(),strategy_version:fixture.selection.version,status:"computed",created_at:new Date().toISOString(),metrics:{net_return_percent:"1.25"},inputs:{commission_bps:"10",slippage_bps:"20"}}];
+  const prepare = async () => {
+    await click('#view-strategies [data-action="execution-plan"]');
+    await wait('document.querySelector("#execution-plan-form")', "Saved research and current account planning inputs");
+    await click('#execution-plan-form [type="submit"]');
+    await wait('document.querySelector("#execution-review-consent")', "Review exact plan before confirmation");
+  };
+  await prepare();
+  assert.equal(fixture.executions.length,0,"Calculating a plan cannot start execution");
+  await click('#dialog-content [data-action="execution-confirm"]');
+  await wait('document.querySelector("#execution-plan-message").classList.contains("error")',"Explicit review consent is required");
+  assert.equal(fixture.requests.filter(item=>item.path.endsWith("/confirm")).length,0,"Missing consent cannot send confirmation");
+  await screenshot(`execution-review-${round}-390.png`);
+  await click('#execution-review-consent');
+  await click('#dialog-content [data-action="execution-confirm"]');
+  await wait('document.querySelector("#dialog-content [data-action=recovery-dispatch]") && !document.querySelector("#dialog-content [data-action=recovery-dispatch]").disabled', "Confirmation opens the newly persisted execution ID");
+  assert.equal(fixture.executions.length,1);
+  const run=fixture.executions[0],leg=run.legs[0];
+  assert.equal(leg.lots_executed,0,"Confirmation alone cannot dispatch the first leg");
+  await checkLayout("shadow-execution-before-dispatch-390");
+  await click('#dialog-content [data-action="recovery-dispatch"]');
+  await until(()=>leg.status==="shadow_filled","Explicit shadow dispatch records a simulated fill");
+  await wait('!document.querySelector("#dialog-content [data-action=recovery-dispatch]")',"A terminal plan has no next-step action");
+  const dispatched=fixture.requests.filter(item=>item.path.endsWith("/dispatch"));
+  assert.equal(dispatched.length,1);
+  assert.equal(dispatched[0].body.expected_leg_id,leg.id,"Dispatch carries the exact reviewed pending leg UUID");
+  assert.equal(leg.provider_order_id,null,"Shadow dispatch never invents a real broker order ID");
+  assert.equal(leg.lots_executed,leg.lots_requested);
+  await screenshot(`execution-shadow-result-${round}-390.png`);
+  await click('#workspace-dialog [data-close-dialog]');
+  await prepare();
+  await click('#execution-review-consent');
+  await click('#dialog-content [data-action="execution-confirm"]');
+  await wait('document.querySelector("#dialog-content [data-action=recovery-cancel]") && !document.querySelector("#dialog-content [data-action=recovery-cancel]").disabled',"A second unfilled shadow plan can be cancelled");
+  await click('#dialog-content [data-action="recovery-cancel"]');
+  await click('#dialog-content [data-action="recovery-cancel-confirm"]');
+  await until(()=>fixture.executions[1].status==="cancelled","Cancel closes the unfilled shadow plan");
+  assert.equal(fixture.executions[1].legs[0].lots_executed,0);
+  assert.equal(fixture.requests.filter(item=>item.path.endsWith("/dispatch")).length,1,"Cancelling a pending shadow plan cannot execute it");
+  await click('#workspace-dialog [data-close-dialog]');
+  await click('#view-strategies [data-action="execution-history"]');
+  await wait('document.querySelectorAll("#dialog-content [data-recovery-id]").length===2',"Both terminal plans remain in execution history");
+  await click('#workspace-dialog [data-close-dialog]');
+  fixture.holdResearchReads=true;
+  await click('#view-strategies [data-action="execution-plan"]');
+  await until(()=>fixture.heldResearchReads.length>0,"Delayed planner prerequisites are in flight");
+  await click('#workspace-dialog [data-close-dialog]');
+  fixture.holdResearchReads=false;
+  fixture.heldResearchReads.splice(0).forEach(release=>release());
+  await delay(250);
+  assert.equal(await evaluate('document.querySelector("#workspace-dialog").open'),false,"A late prerequisite response cannot reopen a dismissed planner");
+}
+async function exerciseEnglishLocale({send,configureViewport,round,base,wait,click,evaluate,fieldValue,checkLayout,screenshot}) {
+  await configureViewport(390);
+  const key=`signed-language-${round}`,fixture=makeFixture("signed");
+  fixture.prefs.document.display_name="Портфель · Тестовый пользователь";
+  fixtures.set(key,fixture);
+  await send("Page.navigate",{url:`${base}?case=${key}#settings`});
+  await wait('document.querySelector("#preferences-form") && document.documentElement.lang==="ru"',"Initial Russian account interface");
+  const profileName=fixture.prefs.document.display_name;
+  await fieldValue("#preferences-form","locale","en");
+  await click('#preferences-form [type="submit"]');
+  await until(()=>fixture.prefs.document.locale==="en","Language choice is persisted to the server");
+  await wait('document.documentElement.lang==="en" && document.querySelector("#view-settings h1").textContent==="Settings"',"English settings and document language");
+  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'),profileName,"Language switching preserves the exact user name");
+  assert.equal(await evaluate('document.querySelector("#global-search").getAttribute("aria-label")'),"Search assets, companies, and news");
+  await screenshot(`settings-english-${round}-390.png`);
+  const labels={home:"Overview",portfolio:"Portfolio",market:"Market",strategies:"Strategies",assistant:"AI assistant",goals:"Goals",analytics:"Analytics",events:"Events",profile:"Profile",settings:"Settings"};
+  for(const [view,label]of Object.entries(labels)) {
+    await click(`#sidebar-nav [data-route="${view}"]`);
+    await wait(`!document.querySelector('#view-${view}').hidden && document.querySelector('#sidebar-nav [data-route="${view}"] span').textContent===${JSON.stringify(label)}`,"English navigation: "+view);
+    if(view==="home") {
+      await wait('document.querySelector("#view-home .main-value").textContent.includes("150,000")',"English number formatting follows the saved language");
+      assert.ok(await evaluate('document.querySelector("#view-home").textContent.includes("Тестовая компания")'),"Issuer names remain in their original language");
+    }
+    if(view==="strategies") {
+      await wait('document.querySelector("[data-select-strategy=balanced] strong").textContent==="Balanced"',"Canonical preset title is translated by ID");
+      assert.ok(await evaluate('document.querySelector(".strategy-note").textContent.includes("historical volatility")'),"Canonical preset description is translated");
+    }
+    await checkLayout(`english-${view}-${round}-390`);
+  }
+  const origin=await evaluate("performance.timeOrigin");
+  await send("Page.reload");
+  await wait(`performance.timeOrigin!==${origin} && document.documentElement.lang==="en" && document.querySelector("#preferences-form")`,"Saved English preference survives reload");
+  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'),profileName);
+  await fieldValue("#preferences-form","locale","ru");
+  await click('#preferences-form [type="submit"]');
+  await until(()=>fixture.prefs.document.locale==="ru","Russian choice persists");
+  await wait('document.documentElement.lang==="ru" && document.querySelector("#view-settings h1").textContent==="Настройки"',"Russian interface is restored without a reload");
+  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'),profileName);
+  assert.equal(fixture.selection.version,1,"Changing language cannot mutate investment strategy versions");
+  console.log(`PASS locale round ${round}: every tab, catalogue metadata, real-source names, numeric format, reload and reversible language choice`);
+}
+async function exerciseGoalPlan({fixture,click,fieldValue,wait}) {
+  await click('#view-goals [data-goal-plan]');
+  await wait('document.querySelector("#goal-plan-form")',"Saved goal assumptions editor");
+  for(const [name,value] of Object.entries({monthly_contribution_rub:"100",monthly_income_rub:"0",annual_return_percent:"0",annual_volatility_percent:"0",annual_inflation_percent:"0"}))await fieldValue("#goal-plan-form",name,value);
+  await click('#goal-plan-form [type="submit"]');
+  await wait('document.querySelector("#goal-plan-form").dataset.version==="1"',"Goal plan versioned save");
+  assert.equal(fixture.goalPlans[fixture.goals[0].id].document.monthly_contribution_rub,"100");
+  await click('#goal-plan-form [data-close-dialog]');
+  await click('#view-goals [data-goal-plan]');
+  await wait('document.querySelector("#goal-plan-form")?.elements.monthly_contribution_rub.value==="100"',"Assumptions survive reopening");
+  await click('#goal-plan-form [data-close-dialog]');
 }
 async function serveTestAuthLogout({
   fixture,
@@ -2067,6 +2479,7 @@ async function exerciseViewport({
   const key = `signed-${round}-${width}`;
   fixtures.set(key, makeFixture("signed"));
   const fixture = fixtures.get(key);
+  fixture.extendedWorkflows = width === 390;
   await send("Page.navigate", {
     url: `${base}?case=${key}`
   });
@@ -2100,6 +2513,7 @@ async function exerciseViewport({
     if (width <= 390) await screenshot(`${view}-${round}-${width}.png`);
   }
   assert.equal(await evaluate('document.querySelector("#assistant-form textarea").disabled'), true, "Disconnected AI cannot fabricate answers");
+  if (width === 390) await exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evaluate,checkLayout});
   await click('#sidebar-nav [data-route="market"]');
   await fieldValue("#global-search-form", "q", "SYNA");
   await evaluate('document.querySelector("#global-search-form").requestSubmit()');
@@ -2161,6 +2575,7 @@ async function exerciseViewport({
   if (width === 390) await screenshot(`strategies-custom-${round}-${width}.png`);
   await click('#strategy-tab-catalog');
   assert.equal(fixture.maxActiveWrites, 1, "Versioned autosave uses a single in-flight mutation");
+  if (width === 390) await exerciseExecutionPlanner({fixture, click, fieldValue, wait, evaluate, screenshot, checkLayout, round});
   configureGoalCases(fixture, round, width);
   await exerciseGoalCRUD({
     fixture,
@@ -2170,10 +2585,12 @@ async function exerciseViewport({
     evaluate
   });
   await click('#sidebar-nav [data-route="events"]');
+  if (width === 390) await exerciseEventArchive({fixture, click, fieldValue, wait, evaluate});
   await click('#view-events [data-action="events-read-all"]');
   await until(() => fixture.events.every(item => item.read_at), "Durable read receipts");
   await click('#sidebar-nav [data-route="settings"]');
   await wait('document.querySelector("#preferences-form")', "Preferences form");
+  if (width === 390) await exerciseNotificationChannels({fixture, click, fieldValue, wait, evaluate});
   if (width === 390) await exerciseProfileDraft({
     fixture,
     click,
@@ -2444,11 +2861,13 @@ async function exerciseGoalCRUD(options) {
   await fieldValue("#goal-form", "target_amount_rub", "1000");
   await fieldValue("#goal-form", "progress_source", "manual");
   await fieldValue("#goal-form", "manual_amount_rub", "100");
+  await fieldValue("#goal-form", "target_date", day(-365).slice(0,10));
   await click('#goal-form [type="submit"]');
   await until(() => fixture.goals.length === 1, "Create goal on server");
   if (fixture.goalWriteConsentAfterCommit) await reconcileGoalConsentError(options);
   await wait('!document.querySelector("#workspace-dialog").open', "Goal saved");
   assert.equal(fixture.goals[0].manual_amount_rub, "100");
+  if (fixture.extendedWorkflows) await exerciseGoalPlan(options);
   if (fixture.lateGoalAck) {
     await exerciseLateGoalAcknowledgement(options);
   } else if (fixture.goalPutConsentAfterCommit) {
@@ -2632,6 +3051,7 @@ async function exerciseRefreshRecovery({
   evaluate,
   checkLayout
 }) {
+  const creationCountBefore = fixture.requests.filter(item => item.method === "POST" && /proposals|advance|executions$/.test(item.path)).length;
   await wait('document.querySelector("#view-settings [data-action=refresh]").disabled===false', "Refresh available");
   fixture.refreshQueued = true;
   const initialObservations = fixture.requests.filter(item => item.path === "/api/workspace").length;
@@ -2701,7 +3121,7 @@ async function exerciseRefreshRecovery({
   await click('[data-action="mandate-revoke-confirm"]');
   await wait('!document.querySelector("#workspace-dialog").open && !document.querySelector("[data-action=mandate-revoke]")', "Server-side mandate revoked");
   assert.equal(fixture.mandate, null);
-  assert.equal(fixture.requests.filter(item => item.method === "POST" && /proposals|advance|executions$/.test(item.path)).length, 0, "Recovery must never create or advance a plan");
+  assert.equal(fixture.requests.filter(item => item.method === "POST" && /proposals|advance|executions$/.test(item.path)).length, creationCountBefore, "Legacy recovery must never create or advance a plan");
 }
 async function serveTestSavedSettings({
   strategy,

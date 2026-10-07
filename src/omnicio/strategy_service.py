@@ -388,8 +388,8 @@ def _user_asset_evidence(
         )
         for row in evidence.get("factors", [])
     )
-    return replace(
-        asset,
+    return ResearchAsset(
+        candles=asset.candles,
         candidate=replace(asset.candidate, facts=facts, constituents=constituents),
         basis="verified_total_return" if covered else asset.basis,
         cashflows=cashflows if covered else (),
@@ -436,6 +436,80 @@ def _evidence_covers(
     )
 
 
+def _fund_profile_facts(
+    user_id: UUID,
+    asset_uid: str,
+    broker: BrokerService,
+    now: datetime,
+) -> dict[str, StrategyFact]:
+    fund = broker.candidate_fund_profile(user_id, asset_uid)
+    source = "https://developer.tbank.ru/invest/api/instruments-service-get-asset-by"
+    facts = {}
+    if fund.total_expense_percent is not None:
+        facts["expense_ratio_percent"] = StrategyFact(
+            Decimal(fund.total_expense_percent), now, source
+        )
+    if fund.primary_index:
+        facts["index_tracking"] = StrategyFact(True, now, source)
+    return facts
+
+
+def _trailing_dividend_facts(
+    user_id: UUID,
+    instrument_uid: str,
+    price: Decimal,
+    broker: BrokerService,
+    now: datetime,
+) -> dict[str, StrategyFact]:
+    dividends = broker.candidate_dividends(
+        user_id,
+        instrument_uid,
+        from_at=now - timedelta(days=366),
+        to_at=now,
+    )
+    accepted = [
+        item
+        for item in dividends
+        if item.dividend_type == "Regular Cash"
+        and item.dividend_net.currency.upper() == "RUB"
+        and item.declared_date
+        and item.declared_date <= now
+        and item.payment_date
+        and now - timedelta(days=365) < item.payment_date <= now
+    ]
+    if not accepted:
+        return {}
+    source = "https://developer.tbank.ru/invest/api/instruments-service-get-dividends"
+    annual_income = sum((Decimal(item.dividend_net.value) for item in accepted), Decimal(0))
+    yield_fact = StrategyFact(annual_income / price * 100, now, source)
+    return {
+        "dividend_declared": StrategyFact(True, now, source),
+        "dividend_yield_percent": yield_fact,
+        "cashflow_yield_percent": yield_fact,
+    }
+
+
+def _bond_yield_facts(
+    user_id: UUID,
+    instrument_uid: str,
+    broker: BrokerService,
+    now: datetime,
+) -> dict[str, StrategyFact]:
+    values = broker.candidate_market_yields(user_id, (instrument_uid,))
+    if not values or values[0].instrument_uid != instrument_uid:
+        return {}
+    observed = values[0]
+    if not timedelta(0) <= now - observed.time <= timedelta(days=4):
+        return {}
+    return {
+        "cashflow_yield_percent": StrategyFact(
+            Decimal(observed.yield_percent),
+            now,
+            "https://developer.tbank.ru/invest/api/market-data-service-get-market-values",
+        )
+    }
+
+
 def _current_method_facts(
     user_id: UUID,
     row: Mapping[str, Any],
@@ -446,64 +520,24 @@ def _current_method_facts(
     document: Mapping[str, Any],
     costs: ResearchCosts,
 ) -> dict[str, StrategyFact]:
-    """Available today only. Provider metadata is never backdated to a fiscal period."""
+    """Facts available today; provider data is never backdated to a fiscal period."""
     method = document["base_preset_id"]
-    facts: dict[str, StrategyFact] = {}
-    if candidate.asset_class == "funds" and method == "bogle" and row.get("asset_uid"):
-        try:
-            fund = broker.candidate_fund_profile(user_id, str(row["asset_uid"]))
-        except TBankUnavailable:
-            return facts
-        source = "https://developer.tbank.ru/invest/api/instruments-service-get-asset-by"
-        if fund.total_expense_percent is not None:
-            facts["expense_ratio_percent"] = StrategyFact(
-                Decimal(fund.total_expense_percent), now, source
-            )
-        if fund.primary_index:
-            facts["index_tracking"] = StrategyFact(True, now, source)
-    if method not in {"income", "dividends", "floating"} or not bars:
-        return facts
-    price = Decimal(bars[-1].close)
-    if bars[-1].time + timedelta(days=4) < now or price <= 0:
-        return facts
-    source = "https://developer.tbank.ru/invest/api/instruments-service-get-dividends"
-    annual_income = Decimal(0)
     try:
+        if candidate.asset_class == "funds" and method == "bogle" and row.get("asset_uid"):
+            return _fund_profile_facts(user_id, str(row["asset_uid"]), broker, now)
+        if method not in {"income", "dividends", "floating"} or not bars:
+            return {}
+        price = Decimal(bars[-1].close)
+        if bars[-1].time + timedelta(days=4) < now or price <= 0:
+            return {}
         if candidate.asset_class == "shares":
-            dividends = broker.candidate_dividends(
-                user_id, candidate.instrument_uid, from_at=now - timedelta(days=366), to_at=now
-            )
-            accepted = [
-                item
-                for item in dividends
-                if item.dividend_type == "Regular Cash"
-                and item.dividend_net.currency.upper() == "RUB"
-                and item.declared_date
-                and item.declared_date <= now
-                and item.payment_date
-                and now - timedelta(days=365) < item.payment_date <= now
-            ]
-            annual_income = sum((Decimal(item.dividend_net.value) for item in accepted), Decimal(0))
-            if accepted:
-                facts["dividend_declared"] = StrategyFact(True, now, source)
-                facts["dividend_yield_percent"] = StrategyFact(
-                    annual_income / price * 100, now, source
-                )
+            facts = _trailing_dividend_facts(user_id, candidate.instrument_uid, price, broker, now)
         elif candidate.asset_class == "bonds":
-            values = broker.candidate_market_yields(user_id, (candidate.instrument_uid,))
-            if values and values[0].instrument_uid == candidate.instrument_uid:
-                observed = values[0]
-                if timedelta(0) <= now - observed.time <= timedelta(days=4):
-                    gross = Decimal(observed.yield_percent)
-                    facts["cashflow_yield_percent"] = StrategyFact(
-                        gross,
-                        now,
-                        "https://developer.tbank.ru/invest/api/market-data-service-get-market-values",
-                    )
+            facts = _bond_yield_facts(user_id, candidate.instrument_uid, broker, now)
+        else:
+            return {}
     except TBankUnavailable:
-        return facts
-    if annual_income > 0:
-        facts["cashflow_yield_percent"] = StrategyFact(annual_income / price * 100, now, source)
+        return {}
     gross_fact = facts.get("cashflow_yield_percent")
     tax = document["policy"]["securities_tax_rate_percent"]
     horizon = document["profile"]["horizon_months"]
@@ -570,18 +604,18 @@ def _research_assets(
     to_at: datetime,
     now: datetime,
     *,
-    document: Mapping[str, Any] | None = None,
-    costs: ResearchCosts | None = None,
-    evidence: Mapping[str, Any] | None = None,
+    document: Mapping[str, Any],
+    costs: ResearchCosts,
+    evidence: Mapping[str, Any],
     cbr: CBRClient | None = None,
 ) -> tuple[list[ResearchAsset], list[str]]:
     fundamentals = _research_fundamentals(user_id, rows, broker, now)
     assets = []
     unavailable = []
     ratings_read = 0
-    supplied = {row["instrument_uid"]: row for row in (evidence or {}).get("assets", [])}
+    supplied = {row["instrument_uid"]: row for row in evidence.get("assets", [])}
     key_rate = None
-    if cbr is not None and document and document["rules"]["yield_floor"] == "key_rate":
+    if cbr is not None and document["rules"]["yield_floor"] == "key_rate":
         with suppress(CBRUnavailable):
             key_rate = cbr.latest_indicators().key_rate
     for row in rows:
@@ -607,10 +641,9 @@ def _research_assets(
         bars = _research_price_bars(
             row, bars, supplied_asset if _evidence_covers(supplied_asset, from_at, to_at) else None
         )
-        if document is not None and costs is not None:
-            facts.update(
-                _current_method_facts(user_id, row, candidate, bars, broker, now, document, costs)
-            )
+        facts.update(
+            _current_method_facts(user_id, row, candidate, bars, broker, now, document, costs)
+        )
         if key_rate is not None:
             facts["key_rate_percent"] = StrategyFact(
                 Decimal(key_rate.value), now, "https://www.cbr.ru/hd_base/KeyRate/"

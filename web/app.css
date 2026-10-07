@@ -2484,6 +2484,32 @@ button .icon {
   color:var(--muted);
   line-height:1.8
 }
+.assistant-history {
+  display:grid;
+  gap:8px;
+  max-height:min(45dvh,420px);
+  overflow:auto;
+  overscroll-behavior:contain
+}
+.assistant-history button {
+  min-width:0;
+  text-align:left;
+  overflow-wrap:anywhere
+}
+.setting-row {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding:14px 0;
+  border-bottom:1px solid var(--line)
+}
+.setting-row>div {
+  flex:1 1 240px;
+  min-width:0;
+  overflow-wrap:anywhere
+}
 .asset-detail-header {
   display:flex;
   align-items:center;
@@ -4370,11 +4396,13 @@ dialog::backdrop {
 .assistant-context {
   padding:10px 16px 0;
   display:flex;
+  flex-wrap:wrap;
   gap:15px;
   align-items:end
 }
 .assistant-context>.field {
-  min-width:155px
+  flex:1 1 190px;
+  min-width:0
 }
 .assistant-context>.fine-print {
   margin:0;

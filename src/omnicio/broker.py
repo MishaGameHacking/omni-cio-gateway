@@ -1,4 +1,4 @@
-"""Business boundary for the owner's T-Invest connection and read-only data."""
+"""Owner-bound T-Invest reads and explicitly authorized execution adapter calls."""
 
 from __future__ import annotations
 

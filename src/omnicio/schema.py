@@ -16,6 +16,11 @@ SELECT
     AND to_regclass('public.strategy_research_evidence') IS NOT NULL
     AND to_regclass('public.strategy_research_runs') IS NOT NULL
     AND to_regclass('public.goal_plans') IS NOT NULL
+    AND EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'billing_payments'
+          AND column_name = 'cancel_attempted_at'
+    )
     AND (
         SELECT count(*) = 2 FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'sessions'
@@ -80,6 +85,19 @@ SELECT
     AND to_regclass('public.portfolio_execution_legs') IS NOT NULL
     AND to_regclass('public.portfolio_execution_events') IS NOT NULL
     AND to_regclass('public.portfolio_live_execution_mandates') IS NOT NULL
+    AND to_regprocedure(
+        'public.omnicio_current_strategy_execution_authority(uuid,bytea,jsonb)'
+    ) IS NOT NULL
+    AND (
+        SELECT count(*) = 3 FROM pg_trigger
+        WHERE NOT tgisinternal AND tgenabled IN ('O', 'A')
+          AND tgfoid = to_regprocedure('public.omnicio_guard_new_strategy_execution()')
+          AND (tgrelid, tgname) IN (
+              (to_regclass('public.portfolio_proposals'), 'strategy_proposal_authority'),
+              (to_regclass('public.portfolio_execution_runs'), 'strategy_run_authority'),
+              (to_regclass('public.portfolio_execution_legs'), 'strategy_submission_authority')
+          )
+    )
     AND EXISTS (
         SELECT 1
         FROM information_schema.columns

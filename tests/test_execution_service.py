@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from uuid import UUID
 
 import pytest
@@ -19,6 +19,7 @@ from omnicio.tbank import (
     TBankNotFound,
     TBankSandboxCancelResult,
     TBankSandboxOrderState,
+    TBankUnavailable,
 )
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000801")
@@ -255,3 +256,67 @@ def test_explicit_cancel_closes_old_plan_without_creating_another_order(submitte
     else:
         broker.cancel_sandbox_order.assert_not_called()
         assert store.transition_leg.call_args.kwargs["new_status"] == "cancelled"
+
+
+def test_pending_shadow_can_be_closed_without_any_provider_call():
+    service, store, broker = _service()
+    store.execution.return_value = (
+        replace(_run(), mode="shadow", provider_environment=None),
+        (_leg(),),
+        (),
+    )
+    service.cancel(USER_ID, RUN_ID, now=NOW)
+    assert broker.mock_calls == []
+    assert store.transition_leg.call_args.kwargs["new_status"] == "cancelled"
+
+
+def test_new_dispatch_timeout_is_reconciled_without_reposting_or_advancing():
+    service, store, broker = _service()
+    service.sandbox_enabled = True
+    service.legal_versions = {"terms": "test"}
+    service.research_store = Mock()
+    service.research_store.evidence.return_value = {"version": 0}
+    session = b"s" * 32
+    now = datetime.now(UTC)
+    payload = {"evidence_version": 0, "connection_verified_at": now.isoformat(), "legs": [{}]}
+    store.strategy_proposal.return_value = {
+        "created_session_digest": session,
+        "payload": payload,
+        "expires_at": now + timedelta(minutes=2),
+    }
+    current = [_leg()]
+    store.execution.side_effect = lambda *args: (_run(), tuple(current), ())
+
+    def transition(*args, **kwargs):
+        current[0] = replace(current[0], status=kwargs["new_status"])
+
+    def unknown(*args, **kwargs):
+        current[0] = replace(current[0], status="reconciling")
+
+    store.transition_leg.side_effect = transition
+    store.mark_run_reconciling.side_effect = unknown
+    broker.submit_limit_order.side_effect = TBankUnavailable("timeout")
+    broker.sandbox_order_state.side_effect = TBankNotFound("not-yet-visible")
+    with patch.object(service, "_dispatch_preflight"):
+        service.dispatch(USER_ID, RUN_ID, session_digest=session, expected_leg_id=LEG_ID)
+        service.dispatch(USER_ID, RUN_ID, session_digest=session, expected_leg_id=LEG_ID)
+    broker.submit_limit_order.assert_called_once()
+    assert broker.submit_limit_order.call_args.kwargs["request_id"] == str(REQUEST_ID)
+    assert store.transition_leg.call_args.kwargs["new_status"] == "submitting"
+    assert store.transition_leg.call_args.kwargs["strategy_authority"][0] == session
+    broker.sandbox_order_state.assert_called_once_with(
+        USER_ID, request_id=str(REQUEST_ID), price_type="point"
+    )
+
+
+def test_retrying_completed_leg_returns_receipt_and_cannot_advance_next_leg():
+    service, store, broker = _service()
+    completed = replace(_leg(), status="shadow_filled", lots_executed=2)
+    pending = replace(_leg(), id=UUID(int=999), leg_index=1)
+    store.execution.return_value = (replace(_run(), mode="shadow"), (completed, pending), ())
+    result = service.dispatch(USER_ID, RUN_ID, session_digest=b"s" * 32, expected_leg_id=LEG_ID)
+    assert result["legs"][1]["status"] == "pending"
+    assert broker.mock_calls == []
+    store.transition_leg.assert_not_called()
+    with pytest.raises(ExecutionServiceError, match="execution_leg_not_found"):
+        service.dispatch(USER_ID, RUN_ID, session_digest=b"s" * 32, expected_leg_id=UUID(int=1000))

@@ -500,6 +500,22 @@ class AuthAppDeployTests(unittest.TestCase):
             'TID_LOGIN_ENABLED="true"',
         ])
 
+    def test_optional_passwords_preserve_exact_bytes_and_config_values_are_trimmed(self) -> None:
+        secret = "  test-only-secret-with-outer-spaces  "
+        with patch.dict(os.environ, {
+            "VKID_APP_ID": "123456",
+            "NOTIFICATION_SMTP_PASSWORD": secret,
+            "BILLING_PASSWORD": secret,
+            "OMNICIO_RESTORE_RECEIPT_KEY": secret,
+            "NOTIFICATION_SMTP_HOST": " smtp.example.test ",
+        }, clear=True):
+            result = MODULE.build_product_environment()
+        for key in (
+            "NOTIFICATION_SMTP_PASSWORD", "BILLING_PASSWORD", "OMNICIO_RESTORE_RECEIPT_KEY",
+        ):
+            self.assertIn(f'{key}="{secret}"\n', result)
+        self.assertIn('NOTIFICATION_SMTP_HOST="smtp.example.test"\n', result)
+
     def test_runtime_values_escape_systemd_double_quote_metacharacters(self) -> None:
         # EnvironmentFile uses the POSIX double-quote escape set, including $/`.
         value = 'test-only-$VALUE-`literal`-"quoted"-\\path'
@@ -694,7 +710,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "1.0.1"', project)
+        self.assertIn('version = "1.1.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
@@ -707,6 +723,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("location = /assets/app.css", script)
         self.assertIn("location = /assets/app.js", script)
         self.assertIn("location = /assets/workspace.js", script)
+        self.assertIn("location = /assets/i18n.js", script)
         self.assertIn("location = /sw.js", script)
         self.assertIn("location = /offline.html", script)
         self.assertIn("location = /version.js", script)
@@ -793,6 +810,7 @@ class PublicReleaseVerificationTests(unittest.TestCase):
         for path, body, content_type in (
             ("/assets/app.js", b"window.OmniUI", "text/javascript"),
             ("/assets/workspace.js", b"window.OmniUI", "application/javascript"),
+            ("/assets/i18n.js", b"OMNICIO_I18N", "text/javascript"),
             ("/assets/app.css", b"--sidebar:240px", "text/css"),
             ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", "image/png"),
             ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", "image/png"),
