@@ -3,7 +3,31 @@ BEGIN;
 -- Manual observations have no scheduled date. Keep the accepted full unique
 -- key so the previous application can still claim daily jobs after rollback.
 ALTER TABLE job_runs ADD COLUMN IF NOT EXISTS requested_at timestamptz;
-UPDATE job_runs SET requested_at = started_at WHERE requested_at IS NULL;
+ALTER TABLE job_runs ALTER COLUMN scheduled_for DROP NOT NULL;
+
+-- The table owner is also subject to FORCE RLS. Visit every server-owned
+-- identity, including inactive users, without changing the tenant policies.
+DO $omnicio$
+DECLARE
+    tenant_id uuid;
+    previous_context text := current_setting('omnicio.user_id', true);
+BEGIN
+    FOR tenant_id IN SELECT id FROM users LOOP
+        PERFORM set_config('omnicio.user_id', tenant_id::text, true);
+        UPDATE job_runs
+        SET requested_at = COALESCE(requested_at, started_at),
+            scheduled_for = CASE
+                WHEN job_type = 'portfolio_refresh' THEN NULL
+                ELSE scheduled_for
+            END
+        WHERE user_id = tenant_id
+          AND (requested_at IS NULL
+               OR (job_type = 'portfolio_refresh' AND scheduled_for IS NOT NULL));
+    END LOOP;
+    PERFORM set_config('omnicio.user_id', COALESCE(previous_context, ''), true);
+END;
+$omnicio$;
+
 ALTER TABLE job_runs ALTER COLUMN requested_at SET DEFAULT now();
 ALTER TABLE job_runs ALTER COLUMN requested_at SET NOT NULL;
 
@@ -15,9 +39,6 @@ ALTER TABLE job_runs ADD CONSTRAINT job_runs_finish_state_consistent CHECK (
     (status IN ('queued', 'running') AND finished_at IS NULL)
     OR (status NOT IN ('queued', 'running') AND finished_at IS NOT NULL)
 );
-ALTER TABLE job_runs ALTER COLUMN scheduled_for DROP NOT NULL;
-UPDATE job_runs SET scheduled_for = NULL
-    WHERE job_type = 'portfolio_refresh' AND scheduled_for IS NOT NULL;
 ALTER TABLE job_runs DROP CONSTRAINT IF EXISTS job_runs_schedule_kind_consistent;
 ALTER TABLE job_runs ADD CONSTRAINT job_runs_schedule_kind_consistent CHECK (
     (job_type = 'portfolio_refresh' AND scheduled_for IS NULL)
