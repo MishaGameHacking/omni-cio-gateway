@@ -110,7 +110,7 @@ def validate_auth_return_to(value: str) -> str:
     if (not 1 <= len(parts) <= 2
             or parts[0] not in {
                 "home", "portfolio", "market", "strategies", "assistant", "goals",
-                "analytics", "events", "profile", "settings", "asset", "search",
+                "analytics", "events", "profile", "settings", "asset", "search", "install",
             }
             or any(re.fullmatch(r"[a-z][a-z0-9-]{0,39}", part) is None for part in parts)):
         raise SecurityValueError("oauth_return_to_invalid")

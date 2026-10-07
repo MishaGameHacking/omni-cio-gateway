@@ -60,6 +60,43 @@ def test_operator_configuration_is_explicit_and_credentials_preserve_exact_bytes
         assert optional_uuid("OPERATOR_USER_ID") is None
 
 
+def test_disabled_email_ignores_legacy_smtp_environment_but_enabled_remains_strict() -> None:
+    environment = {
+        "DATABASE_URL": "postgresql://synthetic.invalid/example",
+        "CLIENT_IP_KEY": "synthetic-client-key",
+        "BROKER_TOKEN_CRYPTO_KEY": "synthetic-broker-key",
+        "VKID_FLOW_CRYPTO_KEY": "synthetic-flow-key",
+        "NOTIFICATIONS_ENABLED": "true", "NOTIFICATION_EMAIL_ENABLED": "false",
+        "NOTIFICATION_SMTP_PORT": "invalid", "NOTIFICATION_SMTP_MODE": "invalid",
+        "NOTIFICATION_SMTP_SENDER": "invalid\r\nheader",
+        "NOTIFICATION_SMTP_HOST": "legacy.example.org",
+    }
+    with patch.dict(os.environ, environment, clear=True):
+        cfg = load_settings()
+    assert cfg.notifications_enabled
+    assert not cfg.notification_email_enabled
+    assert cfg.notification_smtp_port == 465
+    assert cfg.notification_smtp_mode == "tls"
+    assert cfg.notification_smtp_sender == cfg.notification_smtp_host == ""
+    with (
+        patch.dict(os.environ, {**environment, "NOTIFICATION_EMAIL_ENABLED": "true"}, clear=True),
+        pytest.raises(ConfigurationError, match="NOTIFICATION_SMTP_PORT"),
+    ):
+        load_settings()
+
+
+def test_install_route_survives_authenticated_oauth_round_trip() -> None:
+    destination = "/#account/install"
+    key = Fernet.generate_key().decode()
+    token = seal_oauth_flow(state="state", code_verifier="v" * 64, legal_versions={},
+                           crypto_key=key, return_to=destination)
+    assert open_oauth_flow(token, crypto_key=key, ttl_seconds=600).return_to == destination
+    for invalid in ("https://example.org/#account/install", "/#account/install\\other",
+                    "/#account/install?next=%0d%0aX-Test:bad"):
+        with pytest.raises(SecurityValueError, match="oauth_return_to_invalid"):
+            validate_auth_return_to(invalid)
+
+
 @pytest.mark.parametrize("raw", ("owner", "000000501", str(UUID(int=0))))
 def test_invalid_operator_configuration_never_assigns_authority(raw: str) -> None:
     with (

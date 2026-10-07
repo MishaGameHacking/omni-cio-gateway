@@ -17,6 +17,11 @@ from omnicio.assistant import AssistantService
 from omnicio.db import Database, UserRecord
 from omnicio.main import CANONICAL_ORIGIN, app
 from omnicio.market import MarketService
+from omnicio.notifications import (
+    NotificationConflict,
+    NotificationRateLimited,
+    NotificationService,
+)
 from omnicio.portfolio_store import SettingsVersionConflict
 from omnicio.research_store import ResearchNotFound, ResearchStore
 from omnicio.security import session_digest
@@ -93,6 +98,89 @@ def test_event_summary_and_filtered_operations_use_the_current_session_owner(
         OWNER.id, from_at=datetime(2026, 9, 1, tzinfo=UTC),
         to_at=datetime(2026, 10, 1, tzinfo=UTC), limit=25, cursor="saved-cursor",
     )
+
+
+def test_push_http_binding_comes_from_the_authenticated_session_only(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    client, _, _, _ = workspace_http
+    service = Mock(spec=NotificationService)
+    service.subscribe_push.return_value = {
+        "id": str(GOAL), "status": "active", "binding_id": str(UUID(int=900)),
+        "current_session": True,
+    }
+    service.status.return_value = {"channels": [], "push_configured": True}
+    service.test_push.return_value = {"id": str(UUID(int=901)), "status": "queued"}
+    with patch.object(app.state, "notification_service", service, create=True):
+        subscribed = client.post("/api/notifications/push", headers=HEADERS, json={
+            "subscription": {"synthetic": True}, "intent": "sync", "label": "My device",
+        })
+        assert subscribed.status_code == 200
+        assert subscribed.json()["current_session"] is True
+        service.subscribe_push.assert_called_once_with(
+            OWNER.id, {"synthetic": True}, label="My device", intent="sync",
+            session_digest=session_digest("owner"),
+        )
+        assert client.get("/api/notifications", headers=HEADERS).status_code == 200
+        service.status.assert_called_once_with(OWNER.id, session_digest=session_digest("owner"))
+        assert client.post("/api/notifications/push/test", headers=HEADERS, json={
+            "channel_id": str(GOAL),
+        }).status_code == 200
+        service.test_push.assert_called_once_with(
+            OWNER.id, GOAL, session_digest=session_digest("owner"),
+        )
+        injected = client.post("/api/notifications/push", headers=HEADERS, json={
+            "subscription": {}, "session_digest": "other", "user_id": str(OTHER.id),
+        })
+    assert injected.status_code == 422
+    assert service.subscribe_push.call_count == 1
+
+
+@pytest.mark.parametrize(("error", "status", "detail"), [
+    (NotificationConflict("notification_device_conflict"), 409, "notification_device_conflict"),
+    (NotificationRateLimited("notification_test_rate_limited"), 429,
+     "notification_test_rate_limited"),
+    (PermissionError("private-session-details"), 401, "session_expired"),
+])
+def test_push_http_safe_failures_preserve_explicit_status(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock], error: Exception, status: int, detail: str,
+) -> None:
+    client, _, _, _ = workspace_http
+    service = Mock(spec=NotificationService)
+    service.test_push.side_effect = error
+    with patch.object(app.state, "notification_service", service, create=True):
+        response = client.post("/api/notifications/push/test", headers=HEADERS,
+                               json={"channel_id": str(GOAL)})
+    assert response.status_code == status
+    assert response.json()["detail"] == detail
+    assert "private-session-details" not in response.text
+    if status == 429:
+        assert response.headers["retry-after"] == "60"
+
+
+def test_push_test_requires_current_legal_profile_and_rechecks_after_queueing(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    client, auth, _, database = workspace_http
+    service = Mock(spec=NotificationService)
+
+    def queued(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        auth.refresh_session.side_effect = None
+        auth.refresh_session.return_value = OTHER
+        return {"id": "private-outbox-id", "status": "queued"}
+
+    service.test_push.side_effect = queued
+    with patch.object(app.state, "notification_service", service, create=True):
+        body = {"channel_id": str(GOAL)}
+        assert client.post("/api/notifications/push/test", json=body).status_code == 403
+        database.has_legal_versions.return_value = False
+        assert client.post("/api/notifications/push/test", headers=HEADERS,
+                           json=body).status_code == 409
+        service.test_push.assert_not_called()
+        database.has_legal_versions.return_value = True
+        response = client.post("/api/notifications/push/test", headers=HEADERS, json=body)
+    assert response.status_code == 409
+    assert "private-outbox-id" not in response.text
 
 
 def test_quote_batch_rechecks_profile_before_disclosing_the_result(

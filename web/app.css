@@ -326,6 +326,58 @@ button .icon {
 .mobile-only,.mobile-brand {
   display:none
 }
+/* Installation remains available after the optional promotion is dismissed. */
+.install-promotion {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:16px;
+  border:1px solid var(--blue-light);
+  border-radius:var(--radius);
+  background:var(--panel);
+  padding:16px 20px;
+  margin:16px 0 24px;
+}
+#public-site > .install-promotion {
+  margin:20px 3.5%;
+}
+.install-promotion p {
+  color:var(--muted);
+  margin:4px 0 0;
+  font-size:var(--font-body);
+}
+.install-promotion .form-actions {
+  margin:0;
+}
+.install-page {
+  width:100%;
+  max-width:900px;
+}
+.install-heading {
+  display:flex;
+  align-items:center;
+  gap:16px;
+}
+.install-heading img {
+  flex:0 0 56px;
+  border-radius:12px;
+}
+.install-heading h2, .install-heading p {
+  margin:0;
+}
+.install-heading p {
+  margin-top:4px;
+  color:var(--muted);
+}
+.install-instructions {
+  border-top:1px solid var(--line);
+  margin-top:20px;
+  padding-top:16px;
+}
+.install-page p, .install-promotion p {
+  overflow-wrap:anywhere;
+}
 /* Public pages */
 #public-site {
   max-width:1800px;

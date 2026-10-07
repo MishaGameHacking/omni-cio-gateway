@@ -102,7 +102,7 @@ displayContext.window.OmniUI.setLocale("ru");
 assert.equal(displayContext.window.OmniUI.navigation.find(([key]) => key === "events")[1], "События", "Labels must be evaluated in the current locale, not frozen at page startup");
 assert.ok(displayContext.window.OmniUI.periods("portfolio", "1d").includes("1Д"));
 const U = displayContext.window.OmniUI;
-for (const hash of ["#demo/market/reference?currency=CNY&reference_period=1y", "#account/portfolio/positions?assets=bond&sort=price&direction=-1", "#account/goals/plan?goal=00000000-0000-4000-8000-000000000001", "#public/features"]) {
+for (const hash of ["#demo/market/reference?currency=CNY&reference_period=1y", "#account/portfolio/positions?assets=bond&sort=price&direction=-1", "#account/goals/plan?goal=00000000-0000-4000-8000-000000000001", "#public/features", "#public/install", "#demo/install", "#account/install"]) {
   const route = U.parseRoute(hash);
   assert.equal(route.invalid, false, "A supported nested screen is a valid bookmark");
   assert.equal(U.routeHash(route), hash, "Mode, screen and controls survive a URL round trip");
@@ -136,11 +136,22 @@ assert.ok(scenario.includes("Месяц 12"));
 assert.ok(!scenario.includes("1970"), "Model months cannot masquerade as observed calendar dates");
 assert.ok(scenario.includes("chart-comparison-0"), "The scenario includes the numerical target series");
 assert.ok(scenario.includes("chart-comparison-1"), "The scenario includes the numerical contributions series");
+const dynamicMessageFamilies = {
+  "install.steps.": ["ios", "android", "desktop"],
+  "install.result.": ["accepted", "dismissed", "unavailable"],
+  "install.state.": ["installed", "pending", "available", "manual"],
+  "push.state.": ["checking", "unauthenticated", "unsupported", "unconfigured", "default", "denied", "granted-pending", "active", "revoked", "error"],
+  "push.test_": ["queued"]
+};
+for (const [prefix, states] of Object.entries(dynamicMessageFamilies)) {
+  for (const state of states) assert.ok(I.has(prefix + state), "Every supported installation and delivery state has an authored bilingual message: " + prefix + state);
+}
 for (const file of ["app.js", "workspace.js"]) {
   const code = readFileSync(join(__dirname, "../web/", file), "utf8");
   for (const match of code.matchAll(/\b[TH]\(("(?:\\.|[^"\\])*")/g)) {
     const key = JSON.parse(match[1]);
-    assert.ok(I.has(key), `${file} has an authored UI message without a translation: ${key}`);
+    const knownFamily = Object.hasOwn(dynamicMessageFamilies, key) && /^\s*\+/.test(code.slice(match.index + match[0].length));
+    assert.ok(I.has(key) || knownFamily, `${file} has an authored UI message without a translation: ${key}`);
   }
 }
 console.log(`PASS i18n: ${I.keys().length} bilingual messages, all tabs, reversible explicit DOM hooks, private-data boundaries and escaped interpolation`);

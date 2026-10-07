@@ -4,7 +4,9 @@
 const assert = require("node:assert/strict");
 const vm = require("node:vm");
 const {
-  createHash
+  createHash,
+  createECDH,
+  randomUUID
 } = require("node:crypto");
 const {
   createServer
@@ -65,6 +67,9 @@ const until = async (read, label, attempts = 150) => {
   throw new Error("Timed out: " + label);
 };
 const clone = value => structuredClone(value);
+const pushFixtureCurve = createECDH("prime256v1");
+pushFixtureCurve.generateKeys();
+const pushFixtureKey = pushFixtureCurve.getPublicKey().toString("base64url");
 // PostgreSQL JSONB need not preserve object-key order; reconciliation must compare meaning.
 const reorderJSON = value => Array.isArray(value) ? value.map(reorderJSON) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).reverse().map(key => [key, reorderJSON(value[key])])) : value;
 const stamp = new Date().toISOString();
@@ -137,6 +142,12 @@ const makeFixture = mode => {
     heldEventReads: [],
     ledgerItems: [{id: "fixture-ledger-1", operation_date: stamp, name: "Контрольная выплата", category: "income", instrument_uid: "synthetic-a", ticker: "SYNA", payment: {value: "12.34", currency: "eur"}}],
     notificationChannels: [],
+    notificationDeliveries: [],
+    pushConfigured: true,
+    failPush: false,
+    holdPush: false,
+    heldPush: [],
+    pushSequence: 0,
     news: [{id: "synthetic-news-1", title: "Изолированная публикация инструмента", summary: "Краткое содержание теста", content: "Полный текст публикации из изолированного API", source: "Изолированный источник", source_url: "https://example.test/news/1", occurred_at: stamp, instrument_uids: ["synthetic-a"], priority: 1}],
     requests: [],
     mutationDelay: 0,
@@ -1053,12 +1064,47 @@ const styleContracts = () => {
   for (const background of avatar.background.match(/#[a-f0-9]{6}\b/gi)) assertTextContrast(avatar.color, background, "Profile avatar text");
   console.log("PASS style contracts: declared tokens and normal-text contrast in both themes");
 };
+function workerBindingDatabase() {
+  const values = new Map(), stores = new Set();
+  const database = {
+    objectStoreNames: {contains: name => stores.has(name)},
+    createObjectStore: name => { stores.add(name); },
+    close() {},
+    transaction() {
+      const transaction = {};
+      let pending = 0, completed = false;
+      const request = operation => {
+        const result = {};
+        pending += 1;
+        queueMicrotask(() => {
+          result.result = operation();
+          result.onsuccess?.({target: result});
+          pending -= 1;
+          queueMicrotask(() => { if (!pending && !completed) { completed = true; transaction.oncomplete?.(); } });
+        });
+        return result;
+      };
+      transaction.objectStore = () => ({get: key => request(() => values.get(key)), put: (value, key) => request(() => values.set(key, structuredClone(value))), delete: key => request(() => values.delete(key))});
+      return transaction;
+    }
+  };
+  return {values, indexedDB: {open() {
+    const request = {};
+    queueMicrotask(() => {
+      request.result = database;
+      if (!stores.size) request.onupgradeneeded?.({target: request});
+      request.onsuccess?.({target: request});
+    });
+    return request;
+  }}};
+}
 const workerContract = async () => {
   const handlers = new Map();
   const tasks = [];
   const cached = [];
   const notifications = [];
   const opened = [];
+  const bindings = workerBindingDatabase();
   let activated = 0;
   const origin = "https://example.test";
   globalThis.self = {
@@ -1077,6 +1123,7 @@ const workerContract = async () => {
       addAll: async paths => cached.push(...paths)
     })
   };
+  globalThis.indexedDB = bindings.indexedDB;
   try {
     require("../web/sw.js");
     handlers.get("install")({
@@ -1116,8 +1163,23 @@ const workerContract = async () => {
     });
     await Promise.all(tasks);
     assert.equal(activated, 1);
+    const workerMessage = async (data, messageOrigin = origin) => {
+      let receipt;
+      const pending = [];
+      handlers.get("message")({origin: messageOrigin, data, ports: [{postMessage: value => { receipt = value; }}], waitUntil: task => pending.push(task)});
+      await Promise.all(pending);
+      return receipt;
+    };
+    const bindingA = "00000000-0000-4000-9000-000000000001";
+    const bindingB = "00000000-0000-4000-9000-000000000002";
+    assert.deepEqual(await workerMessage({type: "PUSH_BINDING", binding_id: bindingA, locale: "ru"}), {handled: true, ok: true, binding_id: bindingA});
+    assert.deepEqual([...bindings.values.values()], [{binding_id: bindingA, locale: "ru"}], "The worker stores only an opaque delivery binding and the interface language");
+    assert.deepEqual(await workerMessage({type: "PUSH_BINDING", binding_id: "not-a-binding"}), {handled: true, ok: false});
+    assert.equal([...bindings.values.values()][0].binding_id, bindingA, "Invalid messages fail without changing the existing binding");
+    assert.equal(await workerMessage({type: "PUSH_BINDING", binding_id: bindingB}, "https://untrusted.invalid"), undefined);
+    assert.equal([...bindings.values.values()][0].binding_id, bindingA, "A foreign-origin message cannot change the installation owner");
     for (const url of ["https://untrusted.invalid/#events", "/#events?event=" + "a".repeat(64), "/?credential=secret#events", "/#settings"]) {
-      handlers.get("push")({data: {json: () => ({title: "PRIVATE GOAL", body: "PRIVATE AMOUNT", url, tag: "a".repeat(64)})}, waitUntil: task => tasks.push(task)});
+      handlers.get("push")({data: {json: () => ({title: "PRIVATE GOAL", body: "PRIVATE AMOUNT", url, tag: "a".repeat(64), binding_id: bindingA})}, waitUntil: task => tasks.push(task)});
     }
     await Promise.all(tasks);
     assert.deepEqual(notifications.map(item => item.options.data.url), ["/#account/events", "/#account/events/detail?event=" + "a".repeat(64), "/#account/events", "/#account/settings/notifications"]);
@@ -1127,10 +1189,50 @@ const workerContract = async () => {
     await Promise.all(tasks);
     assert.equal(closed, true);
     assert.deepEqual(opened, ["/#account/events"]);
+    await workerMessage({type: "PUSH_BINDING", binding_id: bindingB, locale: "en"});
+    assert.deepEqual(await workerMessage({type: "CLEAR_PUSH_BINDING", binding_id: bindingA}), {handled: true, ok: true, cleared: false}, "A delayed old-account cleanup cannot erase the new binding");
+    assert.equal([...bindings.values.values()][0].binding_id, bindingB);
+    handlers.get("push")({data: {json: () => ({url: "/#account/events/detail?event=" + "b".repeat(64), binding_id: bindingA, body: "PRIVATE OLD ACCOUNT"})}, waitUntil: task => tasks.push(task)});
+    await Promise.all(tasks);
+    assert.equal(notifications.at(-1).options.data.url, "/#account/events", "An old account's notification never carries its detail into the current installation");
+    assert.equal(notifications.at(-1).options.data.binding_id, null);
+    assert.ok(notifications.at(-1).options.body.startsWith("New information"));
+    const messages = [], navigated = [];
+    let focused = 0;
+    self.clients.matchAll = async () => [{url: origin + "/legal/privacy.html", focused: true}, {url: "https://untrusted.invalid/", focused: true}, {
+      url: origin + "/?case=draft#account/goals/create", focused: false, visibilityState: "visible",
+      postMessage: (data, ports) => { messages.push(data); ports[0].postMessage({handled: true, navigated: false}); ports[0].close(); },
+      navigate: async path => navigated.push(path), focus: async () => { focused += 1; }
+    }];
+    handlers.get("notificationclick")({notification: {data: {url: "/#account/events/detail?event=" + "c".repeat(64), binding_id: bindingB}, close() {}}, waitUntil: task => tasks.push(task)});
+    await Promise.all(tasks);
+    assert.equal(messages.at(-1).type, "OPEN_NOTIFICATION");
+    assert.equal(messages.at(-1).binding_id, bindingB);
+    assert.equal(messages.at(-1).url, "/#account/events/detail?event=" + "c".repeat(64));
+    assert.equal(focused, 1);
+    assert.deepEqual(navigated, [], "A ready app's deliberate refusal preserves its unsaved draft; the worker does not override it");
+    assert.deepEqual(opened, ["/#account/events"], "An existing app that handled the click cannot spawn a duplicate tab");
+    const stalled = {
+      url: origin + "/#account/goals/create", draft: "A preserved local draft", focused: true,
+      postMessage: (_data, ports) => { ports[0].close(); },
+      navigate: async path => { navigated.push(path); stalled.url = path; stalled.draft = ""; },
+      focus: async () => { focused += 1; }
+    };
+    self.clients.matchAll = async () => [stalled];
+    handlers.get("notificationclick")({notification: {data: {url: "/#account/events", binding_id: bindingB}, close() {}}, waitUntil: task => tasks.push(task)});
+    await Promise.all(tasks);
+    assert.equal(focused, 2, "An unresponsive or older app still receives focus");
+    assert.deepEqual(navigated, [], "No acknowledgement is not permission to replace an existing document");
+    assert.equal(stalled.url, origin + "/#account/goals/create");
+    assert.equal(stalled.draft, "A preserved local draft");
+    assert.deepEqual(opened, ["/#account/events"], "The worker cannot open another tab when an existing app does not acknowledge");
+    assert.deepEqual(await workerMessage({type: "CLEAR_PUSH_BINDING", binding_id: bindingB}), {handled: true, ok: true, cleared: true});
+    assert.equal(bindings.values.size, 0, "Only the matching binding is cleared after a logout or explicit revocation");
     console.log("PASS service worker: private-cache isolation, origin checks, private push redaction and safe notification navigation");
   } finally {
     delete globalThis.self;
     delete globalThis.caches;
+    delete globalThis.indexedDB;
   }
 };
 function captureBrowserLayout() {
@@ -1620,6 +1722,7 @@ const runBrowser = async base => {
     await send("Page.addScriptToEvaluateOnNewDocument", {
       source: 'window.__browserErrors=[];window.__cspViolations=[];addEventListener("error",e=>window.__browserErrors.push(e.error?.stack||e.message));addEventListener("unhandledrejection",e=>window.__browserErrors.push(e.reason?.stack||String(e.reason)));addEventListener("securitypolicyviolation",e=>window.__cspViolations.push(e.effectiveDirective));'
     });
+    await send("Page.addScriptToEvaluateOnNewDocument", {source: `(${installPushBrowserFixture.toString()})(${JSON.stringify(pushFixtureKey)})`});
     const evaluate = async expression => {
       const result = await send("Runtime.evaluate", {
         expression,
@@ -1732,6 +1835,9 @@ const runBrowser = async base => {
       }, null, 2));
     };
     await exerciseStartupRecovery({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot});
+    await exerciseInstallability({send, configureViewport, base, wait, evaluate});
+    await exerciseInstallation({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot});
+    await exercisePushLifecycle({send, configureViewport, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
     const widths = [1440, 1366, 768, 390, 320];
     for (const round of [1, 2]) {
       for (const width of widths) {
@@ -1804,6 +1910,11 @@ const runBrowser = async base => {
 (async () => {
   try {
     displayContracts();
+    await installLifecycleContracts();
+    await pushEndpointContracts();
+    await pushContextContracts();
+    await pushBindingReceiptContracts();
+    await pushPermissionReadFailureContracts();
     await deletedDraftContracts();
     await nativeDialogProtocolContracts();
     styleContracts();
@@ -2469,23 +2580,43 @@ async function holdAssetEnrichment(fixture, kind) {
 async function serveTestNotifications({fixture, path, body, method, response}) {
   if (path === "/api/notifications" && fixture.holdNotifications) await new Promise(release => fixture.heldNotifications.push(release));
   if (path === "/api/notifications" && fixture.failNotifications) return sendJSON(response, {detail: "synthetic_notification_read_failure"}, 503);
-  if (path === "/api/notifications/email/request") {
-    const channel = {id: "00000000-0000-4000-8000-000000000801", kind: "email", label: "t***@example.test", status: "pending", verification_expires_at: new Date(Date.now() + 900000).toISOString(), verification_attempts_remaining: 5};
-    fixture.notificationChannels = [channel];
-    return sendJSON(response, channel);
-  }
-  if (path === "/api/notifications/email/verify") {
-    const channel = fixture.notificationChannels.find(item => item.id === body.channel_id);
-    if (!channel || body.code !== "123456") return sendJSON(response, {detail: "notification_verification_invalid"}, 400);
-    channel.status = "active";
-    channel.verified_at = stamp;
-    return sendJSON(response, {id: channel.id, status: "active"});
+  if (path === "/api/notifications/push") return serveTestPush({fixture, body, response});
+  if (path === "/api/notifications/push/test") {
+    const channel = fixture.notificationChannels.find(item => item.id === body.channel_id && item.current_session);
+    if (!channel) return sendJSON(response, {detail: "notification_channel_not_found"}, 404);
+    if (channel.status !== "active") return sendJSON(response, {detail: "notification_channel_inactive"}, 409);
+    const delivery = {id: `fixture-push-test-${fixture.notificationDeliveries.length + 1}`, kind: "test", status: "queued", attempts: 0, created_at: stamp, next_attempt_at: stamp, channel: {kind: "push", label: channel.label}};
+    fixture.notificationDeliveries.push(delivery);
+    return sendJSON(response, {id: delivery.id, status: "queued"});
   }
   if (method === "DELETE") {
-    fixture.notificationChannels = fixture.notificationChannels.filter(item => item.id !== path.split("/").at(-1));
+    const channel = fixture.notificationChannels.find(item => item.id === path.split("/").at(-1));
+    if (channel) { channel.status = "revoked"; channel.current_session = false; channel.binding_id = null; }
     return sendJSON(response, {revoked: true});
   }
-  return sendJSON(response, {enabled: true, push_configured: false, email_configured: true, vapid_public_key: null, channels: clone(fixture.notificationChannels), deliveries: [], receipt_scope: "provider_acceptance_only"});
+  if (path === "/api/notifications" && method === "GET") return sendJSON(response, {enabled: true, push_configured: fixture.pushConfigured, email_configured: false, vapid_public_key: fixture.pushConfigured ? pushFixtureKey : null, channels: clone(fixture.notificationChannels.filter(item => !fixture.hideRevokedChannels || item.status !== "revoked")), deliveries: clone(fixture.notificationDeliveries), receipt_scope: "provider_acceptance_only"});
+  return sendJSON(response, {detail: "synthetic_notification_route_missing"}, 404);
+}
+async function serveTestPush({fixture, body, response}) {
+  const owner = fixture.user;
+  if (fixture.holdPush) await new Promise(release => fixture.heldPush.push(release));
+  if (owner !== fixture.user || fixture.mode === "guest") return sendJSON(response, {detail: "profile_context_changed"}, 409);
+  if (fixture.failPush) return sendJSON(response, {detail: "notification_push_unavailable"}, 503);
+  if (fixture.pushConflict) return sendJSON(response, {detail: "notification_device_conflict"}, 409);
+  assert.ok(["enable", "sync"].includes(body.intent), "The UI makes explicit activation distinguishable from passive synchronization");
+  const fingerprint = createHash("sha256").update(body.subscription.endpoint).digest("hex");
+  let channel = fixture.notificationChannels.find(item => item.endpoint_fingerprint === fingerprint);
+  if (channel?.status === "revoked" && body.intent === "sync") return sendJSON(response, {id: channel.id, status: "revoked", binding_id: null, current_session: false});
+  if (!channel) {
+    fixture.pushSequence += 1;
+    channel = {id: `00000000-0000-4000-8000-${String(800 + fixture.pushSequence).padStart(12, "0")}`, kind: "push", label: body.label, endpoint_fingerprint: fingerprint};
+    fixture.notificationChannels.push(channel);
+  }
+  channel.status = "active";
+  channel.current_session = true;
+  channel.binding_id ||= randomUUID();
+  channel.verified_at = stamp;
+  return sendJSON(response, {id: channel.id, status: channel.status, binding_id: channel.binding_id, current_session: true});
 }
 async function exerciseEventArchive({fixture, click, fieldValue, wait, evaluate}) {
   const baseEvent = clone(fixture.events[0]);
@@ -2558,24 +2689,11 @@ async function assertEventCounterArchive({evaluate, expected}) {
   assert.equal(visible.filter, "all");
   assert.equal(visible.scroll, 180, "Read receipts and counter polls preserve the inspected archive position");
 }
-async function exerciseNotificationChannels({fixture, click, fieldValue, wait, evaluate}) {
-  await wait('document.querySelector("#notification-email-form [type=submit]") && !document.querySelector("#notification-email-form [type=submit]").disabled', "Configured email delivery form");
-  await fieldValue("#notification-email-form", "email", "test@example.test");
-  await click('#notification-email-form [type="submit"]');
-  const formId = "notification-verify-00000000-0000-4000-8000-000000000801";
-  await wait(`document.querySelector("#${formId} [type=submit]") && !document.querySelector("#${formId} [type=submit]").disabled`, "Pending verified-email channel");
-  assert.equal(fixture.notificationChannels[0].status, "pending", "Request alone cannot opt an unverified address into delivery");
-  await fieldValue(`#${formId}`, "code", "000000");
-  await click(`#${formId} [type="submit"]`);
-  await wait('document.querySelector("#notification-message").textContent.length>0', "Wrong verification code is visible");
-  await fieldValue(`#${formId}`, "code", "123456");
-  await click(`#${formId} [type="submit"]`);
-  await until(() => fixture.notificationChannels[0].status === "active", "Verified channel activation");
-  await wait('!document.querySelector("#notification-settings form[id^=notification-verify]")', "Verified channel state is rendered");
-  await click('#notification-settings [data-action="notification-revoke"]');
-  await until(() => fixture.notificationChannels.length === 0, "Explicit channel opt-out");
-  await wait('document.querySelector("#notification-settings").textContent.includes("Устройства и адреса пока не подключены")', "Revoked channel removed from UI");
-  assert.ok(!await evaluate('document.querySelector("#notification-settings").textContent.includes("test@example.test")'), "Full address is never retained in channel display");
+async function exerciseNotificationChannels({fixture, click, wait, evaluate}) {
+  await click('#view-settings .screen-menu [data-screen="notifications"]');
+  await wait('document.querySelector("#notification-settings [data-device-push-state]")', "The notification page exposes this device's actual delivery state");
+  assert.equal(await evaluate('document.querySelectorAll("#notification-email-form, form[id^=notification-verify]").length'), 0, "Push setup does not ask the user for email, SMS or external credentials");
+  assert.equal(fixture.requests.filter(item => item.path.startsWith("/api/notifications/email/")).length, 0);
 }
 async function exerciseNotificationRetry({fixture, click, fieldValue, wait, evaluate}) {
   const retry = '#notification-settings [data-action="resource-retry"][data-resource="notifications"]';
@@ -2587,7 +2705,7 @@ async function exerciseNotificationRetry({fixture, click, fieldValue, wait, eval
   fixture.failNotifications = false;
   const before = fixture.requests.length;
   await click(retry);
-  await wait('document.querySelector("#notification-email-form") && !document.querySelector("#notification-settings .notice.error")', "The retry restores the failed notification resource");
+  await wait('document.querySelector("#notification-settings [data-device-push-state]") && !document.querySelector("#notification-settings .notice.error")', "The retry restores the failed notification resource");
   const retried = fixture.requests.slice(before);
   assert.equal(retried.filter(item => item.path === "/api/notifications" && item.method === "GET").length, 1);
   assert.equal(retried.filter(item => item.path === "/api/workspace/refresh" && item.method === "POST").length, 0, "A notification read must not start portfolio collection");
@@ -2595,7 +2713,7 @@ async function exerciseNotificationRetry({fixture, click, fieldValue, wait, eval
   await fieldValue("#preferences-form", "quiet_start", previousTime);
   fixture.failNotifications = true;
   await click('#notification-settings [data-action="notifications-reload"]');
-  await wait(`document.querySelector(${JSON.stringify(retry)}) && document.querySelector("#notification-email-form")`, "A failed later read reports its error alongside the last known channels");
+  await wait(`document.querySelector(${JSON.stringify(retry)}) && document.querySelector("#notification-settings [data-device-push-state]")`, "A failed later read reports its error alongside the last known channels");
   fixture.failNotifications = false;
   await click(retry);
   await wait('!document.querySelector("#notification-settings .notice.error")', "A second successful read removes the actual error");
@@ -3362,6 +3480,9 @@ async function serveTestAuthLogout({
   fixture,
   response
 }) {
+  for (const channel of fixture.notificationChannels) {
+    if (channel.kind === "push" && channel.current_session) Object.assign(channel, {status: "revoked", binding_id: null, current_session: false});
+  }
   fixture.mode = "guest";
   response.statusCode = 204;
   return response.end();
@@ -3509,6 +3630,378 @@ async function exerciseAssetEnrichment({send, round, base, wait, evaluate, check
   await checkLayout(`asset-enrichment-${round}`, {minCharts: 1});
   await evaluate('delete window.__enrichmentChart');
   console.log(`PASS asset enrichment round ${round}: held details/facts/news update their panels while preserving the chosen candle, SVG and focus`);
+}
+function installPushBrowserFixture(publicKey) {
+  const params = new URLSearchParams(location.search);
+  if (!(params.get("case") || "").startsWith("push-")) return;
+  const bytes = Uint8Array.from(atob(publicKey.replaceAll("-", "+").replaceAll("_", "/")), char => char.charCodeAt(0));
+  const fixture = {permission: params.get("push_permission") || "default", permissionCalls: 0, subscribeCalls: 0, unsubscribeCalls: 0, holdPermission: false, subscription: null};
+  const subscription = (endpoint, key = bytes) => ({
+    endpoint,
+    options: {applicationServerKey: key.buffer.slice(0)},
+    toJSON: () => ({endpoint, expirationTime: null, keys: {p256dh: publicKey, auth: "AQEBAQEBAQEBAQEBAQEBAQ"}}),
+    async unsubscribe() { fixture.unsubscribeCalls += 1; if (fixture.subscription?.endpoint === endpoint) fixture.subscription = null; return true; }
+  });
+  fixture.setSubscription = (endpoint, oldKey = false) => { fixture.subscription = subscription(endpoint, oldKey ? Uint8Array.from(bytes, value => value ^ 1) : bytes); };
+  if (params.has("push_existing")) fixture.setSubscription("https://fcm.googleapis.com/fcm/send/fixture-existing", params.get("push_existing") === "old-key");
+  const manager = {
+    async getSubscription() {
+      return fixture.subscription;
+    },
+    async subscribe(options) {
+      fixture.subscribeCalls += 1;
+      fixture.lastSubscribeOptions = {userVisibleOnly: options.userVisibleOnly, key: Array.from(options.applicationServerKey)};
+      fixture.subscription = subscription(`https://fcm.googleapis.com/fcm/send/fixture-new-${fixture.subscribeCalls}`);
+      return fixture.subscription;
+    }
+  };
+  class TestNotification {
+    static get permission() { return fixture.permission; }
+    static async requestPermission() {
+      fixture.permissionCalls += 1;
+      if (fixture.holdPermission) await new Promise(resolve => { fixture.releasePermission = resolve; });
+      fixture.permission = fixture.permissionResult || "granted";
+      return fixture.permission;
+    }
+  }
+  Object.defineProperty(window, "Notification", {configurable: true, value: TestNotification});
+  Object.defineProperty(ServiceWorkerRegistration.prototype, "pushManager", {configurable: true, get: () => manager});
+  window.__pushFixture = fixture;
+}
+async function installLifecycleContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const status = app.slice(app.indexOf("  const installStatus ="), app.indexOf("  const installContentsHTML ="));
+  const actions = app.slice(app.indexOf("  const dismissInstall ="), app.indexOf("  const deliveryStateLabels ="));
+  const installState = {prompt: null, installed: false, dismissed: false, busy: false, result: ""};
+  const stored = new Map();
+  let opens = 0, prompts = 0, installed = false;
+  const navigator = {userAgent: "Chrome", platform: "Win32", maxTouchPoints: 0};
+  const context = vm.createContext({installState, navigator, installedDisplay: () => installed, H: value => value, localStorage: {setItem: (key, value) => stored.set(key, value)}, renderInstallState() {}, openInstall: () => { opens += 1; }});
+  vm.runInContext(status + actions + "\nglobalThis.installActions={installStatus,installInstructionsHTML,dismissInstall,promptInstall};", context);
+  const api = context.installActions;
+  assert.equal(api.installStatus(), "manual", "No retained browser event means instructions, not a fake installation button");
+  await api.promptInstall();
+  assert.equal(opens, 1);
+  let complete;
+  installState.prompt = {prompt: async () => { prompts += 1; }, userChoice: new Promise(resolve => { complete = resolve; })};
+  const pending = api.promptInstall();
+  assert.equal(installState.prompt, null, "The native event is consumed before awaiting the user's choice");
+  assert.equal(api.installStatus(), "pending");
+  await api.promptInstall();
+  assert.equal(prompts, 1, "Repeated clicks cannot invoke a single-use native prompt twice");
+  complete({outcome: "dismissed"});
+  await pending;
+  assert.equal(installState.dismissed, true);
+  assert.equal(stored.get("omnicio-install-dismissed"), "true");
+  assert.equal(installState.result, "dismissed");
+  await api.promptInstall();
+  assert.equal(opens, 2, "Dismissing the promotion still leaves the permanent instruction path usable");
+  assert.equal(prompts, 1);
+  installState.prompt = {prompt: async () => { throw new Error("Browser no longer permits the prompt"); }};
+  await api.promptInstall();
+  assert.equal(installState.result, "unavailable");
+  assert.equal(installState.busy, false);
+  installed = true;
+  assert.equal(api.installStatus(), "installed", "Standalone/fullscreen detection suppresses another installation offer");
+  for (const [agent, platform, touches, expected] of [["iPhone", "iPhone", 5, "ios"], ["Safari", "MacIntel", 5, "ios"], ["Android", "Linux", 5, "android"], ["Chrome", "Win32", 0, "desktop"]]) {
+    Object.assign(navigator, {userAgent: agent, platform, maxTouchPoints: touches});
+    assert.ok(api.installInstructionsHTML().includes(`data-install-platform="${expected}"`), "Manual installation steps match the actual device capability, including iPad desktop user agents");
+  }
+  console.log("PASS actual installation lifecycle: single-use prompt, dismissal, persistent entry, installed display and platform instructions");
+}
+async function pushEndpointContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const pushFingerprint ="), app.indexOf("  const withPushDeviceLock ="));
+  const context = vm.createContext({URL, crypto: require("node:crypto").webcrypto, TextEncoder});
+  vm.runInContext(source + "\nglobalThis.fingerprint=pushFingerprint;", context);
+  const endpoint = "https://fcm.googleapis.com/fcm/send/fixture-device?token=one";
+  const expected = createHash("sha256").update(endpoint).digest("hex");
+  assert.equal(await context.fingerprint({endpoint}), expected);
+  assert.equal(await context.fingerprint({endpoint: "https://FCM.GoogleApis.com:443/fcm/send/fixture-device?token=one"}), expected, "Default ports and host casing share the server's canonical endpoint identity");
+  assert.notEqual(await context.fingerprint({endpoint: endpoint.replace("token=one", "token=two")}), expected, "Distinct endpoint query tokens must remain different devices");
+  console.log("PASS actual push endpoint identity: canonical origin, default port and significant provider query");
+}
+async function pushContextContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const pushContext ="), app.indexOf("  const inspectPushDevice ="));
+  const bytes = Uint8Array.from(Buffer.from(pushFixtureKey, "base64url"));
+  const subscription = {endpoint: "https://fcm.googleapis.com/fcm/send/fixture-owner-a", options: {applicationServerKey: bytes.buffer}, toJSON: () => ({endpoint: "https://fcm.googleapis.com/fcm/send/fixture-owner-a"})};
+  const data = {vapid_public_key: pushFixtureKey, channels: []};
+  for (const [boundary, changed] of ["subscription", "receipt"].flatMap(boundary => ["generation", "identity"].map(changed => [boundary, changed]))) {
+    const state = {generation: 1, user: {public_id: "000000123"}, locked: false, tour: false, devicePush: {status: "checking", channel: null, bindingId: null}};
+    const writes = [], bindings = [];
+    let releaseSubscription, releaseReceipt;
+    const registration = {pushManager: {getSubscription: () => boundary === "subscription" ? new Promise(resolve => { releaseSubscription = resolve; }) : Promise.resolve(subscription)}, active: {postMessage: (...args) => bindings.push(args)}};
+    const api = async (path, options) => { writes.push({path, options, publicId: state.user.public_id}); return new Promise(resolve => { releaseReceipt = resolve; }); };
+    const context = vm.createContext({state, navigator: {serviceWorker: {ready: Promise.resolve(registration)}}, window: {}, Uint8Array, URL, atob, crypto: require("node:crypto").webcrypto, TextEncoder, setTimeout, clearTimeout, api, T: value => value});
+    vm.runInContext(source + "\nglobalThis.pushTest={pushContext,readPushSubscription};", context);
+    const pending = context.pushTest.readPushSubscription(data, context.pushTest.pushContext(), true);
+    await until(() => boundary === "subscription" ? releaseSubscription : releaseReceipt, "The actual push helper reaches its controlled " + boundary + " boundary");
+    if (changed === "generation") state.generation += 1;
+    else state.user = {public_id: "000000124"};
+    state.devicePush = {status: "checking", channel: null, bindingId: null};
+    if (boundary === "subscription") releaseSubscription(subscription);
+    else releaseReceipt({id: "channel-a", status: "active", current_session: true, binding_id: "00000000-0000-4000-9000-000000000001"});
+    await pending;
+    assert.deepEqual(state.devicePush, {status: "checking", channel: null, bindingId: null}, "A late " + boundary + " result cannot mutate the next account's device state");
+    assert.equal(bindings.length, 0, "An obsolete account cannot install its worker binding after a context switch");
+    assert.equal(writes.length, boundary === "subscription" ? 0 : 1);
+    if (writes.length) assert.equal(writes[0].publicId, "000000123", "An already sent request retains the old verified owner and is never replayed for the new one");
+  }
+  console.log("PASS actual push owner context: delayed subscription and server receipt cannot cross account generations");
+}
+async function pushBindingReceiptContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const pushContext ="), app.indexOf("  const readPushSubscription ="));
+  const channelId = "00000000-0000-4000-8000-000000000801";
+  const bindingId = "00000000-0000-4000-9000-000000000001";
+  const cases = [
+    {status: "active", messages: 1},
+    {workerAccepted: false, error: "service_worker_unavailable", status: "granted-pending", messages: 1},
+    {currentSession: false, status: "granted-pending", messages: 0},
+    {matchingBinding: false, error: "service_worker_unavailable", status: "granted-pending", messages: 1},
+    {id: "invalid-channel", error: "notification_channel_invalid", status: "checking", messages: 0},
+    {bindingId: "invalid-binding", error: "notification_channel_invalid", status: "checking", messages: 0}
+  ];
+  for (const scenario of cases) {
+    const state = {generation: 1, user: {public_id: "000000123"}, locked: false, tour: false, devicePush: {status: "checking", channel: null, bindingId: null}};
+    const messages = [];
+    const registration = {active: {postMessage(message, ports) { messages.push(message); ports[0].postMessage({handled: true, ok: scenario.workerAccepted !== false, binding_id: scenario.matchingBinding === false ? "00000000-0000-4000-9000-000000000099" : message.binding_id}); ports[0].close(); }}};
+    const context = vm.createContext({state, I: {getLocale: () => "en"}, MessageChannel, setTimeout, clearTimeout, crypto: require("node:crypto").webcrypto, TextEncoder, URL});
+    vm.runInContext(source + "\nglobalThis.pushTest={pushContext,adoptPushReceipt};", context);
+    const receipt = {id: scenario.id || channelId, status: "active", current_session: scenario.currentSession !== false, binding_id: scenario.bindingId || bindingId};
+    const pending = context.pushTest.adoptPushReceipt(receipt, {endpoint: "https://fcm.googleapis.com/fcm/send/fixture-receipt"}, registration, context.pushTest.pushContext());
+    if (scenario.error) await assert.rejects(pending, {message: scenario.error});
+    else await pending;
+    assert.equal(state.devicePush.status, scenario.status, "The active state requires valid channel IDs, the current server session and a durable worker acknowledgement for the same binding");
+    assert.equal(messages.length, scenario.messages);
+    if (messages.length) assert.deepEqual(Object.keys(messages[0]).sort(), ["binding_id", "locale", "type"], "The worker receives no profile ID, source values or account content");
+  }
+  console.log("PASS actual push acknowledgement: current-session receipt and positive worker persistence are both required");
+}
+async function pushPermissionReadFailureContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const inspectPushDevice ="), app.indexOf("  const removeCurrentSubscription ="));
+  for (const [permission, previousStatus, expected] of [["denied", "active", "denied"], ["default", "active", "default"], ["granted", "active", "active"], ["granted", "revoked", "revoked"], ["granted", "checking", "error"]]) {
+    const failure = Object.assign(new Error("Server read failed"), {status: 503});
+    const saved = {push_configured: true, channels: [{id: "00000000-0000-4000-8000-000000000801", status: "active"}]};
+    const state = {user: {public_id: "000000123"}, devicePush: {status: previousStatus, pending: null}, data: {notifications: saved}, errors: {notifications: failure}, resourceRequests: new Map()};
+    const reads = [];
+    const context = vm.createContext({state, Notification: {permission}, pushSupported: () => true, pushContext: () => ({}), currentPushContext: () => true, isCancelled: () => false, renderNotificationPanel() {}, loadResource: async (...args) => { reads.push(args); return saved; }});
+    vm.runInContext(source + "\nglobalThis.refresh=refreshPushDevice;", context);
+    await context.refresh();
+    assert.equal(state.devicePush.status, expected, `Observed ${permission} browser permission and previous ${previousStatus} state remain truthful after a failed server read`);
+    assert.equal(state.devicePush.error, failure, "The actual server error remains visible alongside the observed permission");
+    assert.equal(state.devicePush.pending, null);
+    assert.equal(state.data.notifications, saved, "A failed read does not fabricate a different set of server channels");
+    assert.equal(reads.length, 1);
+    assert.equal(reads[0][1], "/api/notifications");
+  }
+  console.log("PASS actual push permission failure: denied/default override cached active; granted preserves known state and the server error");
+}
+async function exerciseInstallability({send, configureViewport, base, wait, evaluate}) {
+  const key = "guest-installability";
+  fixtures.set(key, makeFixture("guest"));
+  await configureViewport(390);
+  await send("Page.navigate", {url: `${base}?case=${key}#public/welcome`});
+  await wait('document.querySelector("#public-site")?.hidden===false && document.readyState==="complete"', "The real public application is ready for the browser installability check");
+  await evaluate('navigator.serviceWorker.ready.then(() => true)');
+  const manifest = await send("Page.getAppManifest");
+  const installability = await send("Page.getInstallabilityErrors");
+  const logo = readFileSync(join(root, "assets", "brand", "omnicio-logo.png"));
+  const evidence = {manifest, installability, canonical_logo_sha256: createHash("sha256").update(logo).digest("hex")};
+  writeFileSync(join(artifacts, "installability.json"), JSON.stringify(evidence, null, 2));
+  console.log("INSTALLABILITY " + JSON.stringify(evidence));
+  assert.deepEqual(manifest.errors, [], "Chromium parses the actual deployed manifest without errors");
+  assert.equal(new URL(manifest.url).pathname, "/manifest.webmanifest");
+  assert.deepEqual(JSON.parse(manifest.data), JSON.parse(readFileSync(join(root, "web", "manifest.webmanifest"), "utf8")), "Installability uses the repository manifest, not a test substitute");
+  assert.equal(evidence.canonical_logo_sha256, "d9c44905a77858882d99e948a647705afa853fd11cfd01efd37528645b8ca12f", "The installation check retains the approved original logo");
+  assert.deepEqual(installability.installabilityErrors, [], "Chromium accepts the actual manifest and its declared original icon");
+  console.log("PASS actual manifest and original brand installability");
+}
+async function exerciseInstallation({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot}) {
+  const key = "guest-installation";
+  fixtures.set(key, makeFixture("guest"));
+  await evaluate('localStorage.removeItem("omnicio-install-dismissed")');
+  await configureViewport(320);
+  await send("Page.navigate", {url: `${base}?case=${key}#public/welcome`});
+  await wait('document.querySelector("#public-site [data-install-promotion]")?.hidden===false', "A first visit offers installation through an explicit user control");
+  await click('#public-site [data-action="pwa-install-later"]');
+  await wait('[...document.querySelectorAll("[data-install-promotion]")].every(item=>item.hidden)', "Dismissal hides the optional promotion");
+  await click('.public-nav [data-public-page="install"]');
+  await wait('location.hash==="#public/install" && document.querySelector("#install [data-install-state]")', "The permanent installation entry remains reachable after dismissal");
+  await checkLayout("installation manual 320");
+  await screenshot("installation-manual-320.png");
+  const origin = await evaluate("performance.timeOrigin");
+  await send("Page.reload");
+  await wait(`performance.timeOrigin!==${origin} && document.querySelector('#install [data-install-state]')`, "The install page is an independently reloadable route");
+  assert.equal(await evaluate('localStorage.getItem("omnicio-install-dismissed")'), "true");
+  await evaluate('(() => {const event=new Event("beforeinstallprompt",{cancelable:true});window.__installCalls=0;event.prompt=async()=>{window.__installCalls+=1;};event.userChoice=new Promise(resolve=>{window.__resolveInstall=resolve;});dispatchEvent(event);window.__installPrevented=event.defaultPrevented;})()');
+  await wait('document.querySelector("#install [data-install-state=available]")', "A real retained-event consumer offers the browser installation prompt");
+  assert.equal(await evaluate("window.__installPrevented"), true);
+  await click('#install [data-action="pwa-install"]');
+  await wait('document.querySelector("#install [data-install-state=pending]")', "The pending native prompt cannot be invoked twice");
+  assert.equal(await evaluate("window.__installCalls"), 1);
+  await evaluate('window.__resolveInstall({outcome:"accepted"});void 0');
+  await wait('document.querySelector("#install [data-install-state=manual]")', "A browser acceptance is not invented proof of installation");
+  await evaluate('dispatchEvent(new Event("appinstalled"));void 0');
+  await wait('document.querySelector("#install [data-install-state=installed]")', "The browser installation event confirms the installed state");
+  assert.equal(await evaluate('document.querySelectorAll("#install [data-action=pwa-install]").length'), 0);
+  await configureViewport(390);
+  await screenshot("installation-confirmed-390.png");
+  console.log("PASS browser installation: dismiss, permanent link, reload, native single-use prompt and installed acknowledgement");
+}
+const pushPanel = "#notification-settings [data-device-push-state]";
+async function openPushFixture({send, configureViewport, base, wait}, suffix, {permission = "default", existing = "", configure = () => {}} = {}) {
+  const key = `push-${suffix}`, fixture = makeFixture("signed");
+  configure(fixture);
+  fixtures.set(key, fixture);
+  await configureViewport(390);
+  const query = new URLSearchParams({case: key, push_permission: permission});
+  if (existing) query.set("push_existing", existing);
+  await send("Page.navigate", {url: `${base}?${query}#account/settings/notifications`});
+  await wait(`document.querySelector(${JSON.stringify(pushPanel)})`, "Current-device push panel: " + suffix);
+  return fixture;
+}
+const pushWrites = fixture => fixture.requests.filter(item => item.path === "/api/notifications/push" && item.method === "POST");
+const waitPushState = (wait, status) => wait(`document.querySelector(${JSON.stringify(pushPanel)})?.dataset.devicePushState===${JSON.stringify(status)}`, "Current-device state: " + status);
+async function exercisePushLifecycle(context) {
+  const {wait, click, evaluate, screenshot} = context;
+  const fixture = await openPushFixture(context, "default");
+  await waitPushState(wait, "default");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0, "Opening the page cannot ask for OS permission");
+  assert.equal(pushWrites(fixture).length, 0);
+  fixture.holdPush = true;
+  await click('#notification-settings [data-action="notification-push"]');
+  await until(() => fixture.heldPush.length === 1, "Browser permission and subscription exist while server activation is held");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 1);
+  assert.equal(await evaluate("window.__pushFixture.subscribeCalls"), 1);
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(pushPanel)}).dataset.devicePushState==="active"`), false, "A granted browser permission is not proof of an active account channel");
+  fixture.holdPush = false;
+  fixture.heldPush.shift()();
+  await waitPushState(wait, "active");
+  assert.equal(pushWrites(fixture)[0].body.intent, "enable");
+  assert.equal(pushWrites(fixture)[0].profile, fixture.user);
+  assert.equal(await evaluate("window.__pushFixture.lastSubscribeOptions.userVisibleOnly"), true);
+  await click('#notification-settings [data-action="notification-push-test"]');
+  await wait('document.querySelector("[data-push-test-status=queued]")', "A test message acknowledges only its server queue receipt");
+  assert.equal(fixture.notificationDeliveries[0].status, "queued");
+  assert.equal(fixture.notificationDeliveries[0].attempts, 0);
+  await screenshot("push-test-queued-390.png");
+  await click('#notification-settings [data-action="notification-revoke"]');
+  await until(() => fixture.notificationChannels[0].status === "revoked", "Explicit opt-out reaches the server");
+  await wait('window.__pushFixture.unsubscribeCalls===1 && document.querySelector("#notification-settings [data-device-push-state]")?.dataset.devicePushState!=="active"', "Opt-out removes this browser subscription and its active indication");
+  await exerciseExistingPush(context);
+  await exercisePushFailures(context);
+  await exercisePushNotificationNavigation(context);
+  await exerciseLatePushPermission(context);
+  console.log("PASS push browser lifecycle: explicit permission, server receipt, queued test, opt-out, passive sync, rotation, errors and logout isolation");
+}
+async function exerciseExistingPush(context) {
+  const {wait, click, evaluate} = context;
+  const existing = await openPushFixture(context, "existing", {permission: "granted", existing: "current"});
+  await waitPushState(wait, "active");
+  assert.ok(pushWrites(existing).length > 0);
+  assert.ok(pushWrites(existing).every(item => item.body.intent === "sync"), "An already granted subscription is silently reconciled without a new opt-in");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0);
+  assert.equal(await evaluate("window.__pushFixture.subscribeCalls"), 0);
+  const revoked = await openPushFixture(context, "revoked", {permission: "granted", existing: "current", configure: fixture => {
+    fixture.pushSequence = 1;
+    fixture.hideRevokedChannels = true;
+    fixture.notificationChannels.push({id: "00000000-0000-4000-8000-000000000801", kind: "push", label: "This device", status: "revoked", current_session: false, binding_id: null, endpoint_fingerprint: createHash("sha256").update("https://fcm.googleapis.com/fcm/send/fixture-existing").digest("hex")});
+  }});
+  await waitPushState(wait, "revoked");
+  assert.equal(revoked.notificationChannels[0].status, "revoked", "Passive sync cannot reverse explicit opt-out");
+  assert.ok(pushWrites(revoked).length > 0, "The exact sync receipt remains authoritative when the revoked channel is outside the bounded GET list");
+  assert.ok(pushWrites(revoked).every(item => item.body.intent === "sync"));
+  await click('#notification-settings [data-action="notification-push"]');
+  await waitPushState(wait, "active");
+  assert.equal(pushWrites(revoked).at(-1).body.intent, "enable");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0, "Re-enabling a channel with granted OS permission does not ask for it again");
+  const rotated = await openPushFixture(context, "rotation", {permission: "granted", existing: "old-key"});
+  await waitPushState(wait, "granted-pending");
+  assert.equal(await evaluate("window.__pushFixture.unsubscribeCalls"), 0, "A passive read cannot replace an incompatible VAPID subscription");
+  assert.equal(pushWrites(rotated).length, 0);
+  await click('#notification-settings [data-action="notification-push"]');
+  await waitPushState(wait, "active");
+  assert.equal(await evaluate("window.__pushFixture.unsubscribeCalls"), 1);
+  assert.equal(await evaluate("window.__pushFixture.subscribeCalls"), 1);
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0);
+  assert.equal(pushWrites(rotated).at(-1).body.intent, "enable");
+}
+async function exercisePushFailures(context) {
+  const {wait, click, evaluate} = context;
+  const denied = await openPushFixture(context, "denied", {permission: "denied"});
+  await waitPushState(wait, "denied");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0, "A denied permission is explained without repeated browser prompts");
+  assert.equal(pushWrites(denied).length, 0);
+  assert.equal(await evaluate('Boolean(document.querySelector("#notification-settings [data-action=notification-push]:not(:disabled)"))'), false);
+  const refusal = await openPushFixture(context, "permission-refusal");
+  await waitPushState(wait, "default");
+  await evaluate('window.__pushFixture.permissionResult="denied";void 0');
+  await click('#notification-settings [data-action="notification-push"]');
+  await waitPushState(wait, "denied");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 1, "The user's explicit refusal ends this permission attempt");
+  assert.equal(await evaluate("window.__pushFixture.subscribeCalls"), 0);
+  assert.equal(pushWrites(refusal).length, 0);
+  const failed = await openPushFixture(context, "server-error", {permission: "granted", existing: "current", configure: fixture => { fixture.failPush = true; }});
+  await waitPushState(wait, "error");
+  assert.equal(failed.notificationChannels.length, 0);
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0);
+  failed.failPush = false;
+  await click('#notification-settings [data-action="push-retry"]');
+  await waitPushState(wait, "active");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0);
+  await openPushFixture(context, "device-conflict", {permission: "granted", existing: "current", configure: fixture => { fixture.pushConflict = true; }});
+  await waitPushState(wait, "error");
+  assert.equal(await evaluate('document.querySelector("#app-shell").hidden'), false, "A device binding conflict is not an invalid authentication session");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0);
+}
+async function exerciseLatePushPermission(context) {
+  const {wait, click, evaluate} = context;
+  const fixture = await openPushFixture(context, "late-permission");
+  await waitPushState(wait, "default");
+  await evaluate("window.__pushFixture.holdPermission=true;void 0");
+  await click('#notification-settings [data-action="notification-push"]');
+  await wait('typeof window.__pushFixture.releasePermission==="function"', "The user's permission choice is still pending");
+  await click("#profile-button");
+  await click('#profile-menu [data-action="logout"]');
+  await wait('document.querySelector("#public-site").hidden===false', "Logout clears the pending action's account context");
+  await evaluate('window.__pushFixture.releasePermission();void 0');
+  await wait('window.__pushFixture.permission==="granted"', "The old browser permission result arrives after logout");
+  assert.equal(pushWrites(fixture).length, 0, "A late permission result cannot attach a device after its owner session ended");
+  assert.equal(await evaluate("window.__pushFixture.subscribeCalls"), 0);
+}
+async function sendNotificationToPage(evaluate, data) {
+  return evaluate(`(async () => {const registration=await navigator.serviceWorker.ready;const channel=new MessageChannel();const reply=new Promise(resolve=>{channel.port1.onmessage=event=>{channel.port1.close();resolve(event.data);};});navigator.serviceWorker.dispatchEvent(new MessageEvent("message",{origin:location.origin,source:registration.active,data:${JSON.stringify({type: "OPEN_NOTIFICATION", ...data})},ports:[channel.port2]}));return reply;})()`);
+}
+async function exercisePushNotificationNavigation(context) {
+  const {wait, click, evaluate, fieldValue, screenshot} = context;
+  const fixture = await openPushFixture(context, "notification-navigation", {permission: "granted", existing: "current"});
+  await waitPushState(wait, "active");
+  const bindingId = fixture.notificationChannels[0].binding_id;
+  const url = "/#account/events/detail?event=" + fixture.events[0].id;
+  await click('#sidebar-nav [data-route="goals"]');
+  await wait('document.querySelector("#view-goals [data-action=goal-create]")', "The notification destination test starts from a real editable page");
+  await click('#view-goals [data-action="goal-create"]');
+  await fieldValue("#goal-form", "title", "Unsaved notification draft");
+  await evaluate('window.__notificationDraftForm=document.querySelector("#goal-form");window.__notificationDraftForm.elements.title.focus();void 0');
+  const reply = await sendNotificationToPage(evaluate, {url, binding_id: bindingId});
+  assert.equal(reply.handled, true, "The app acknowledges a deliberate refusal so the worker cannot navigate over it");
+  assert.equal(reply.navigated, false);
+  assert.equal(await evaluate("location.hash"), "#account/goals/create");
+  assert.equal(await evaluate('document.querySelector("#goal-form")===window.__notificationDraftForm'), true);
+  assert.equal(await evaluate('document.querySelector("#goal-form").elements.title.value'), "Unsaved notification draft");
+  assert.equal(await evaluate('document.activeElement===document.querySelector("#goal-form").elements.title'), true);
+  await screenshot("push-preserved-draft-390.png");
+  await fieldValue("#goal-form", "title", "");
+  await click('#goal-form [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "Only the user's own action leaves the draft page");
+  const stale = await sendNotificationToPage(evaluate, {url, binding_id: randomUUID()});
+  assert.equal(stale.handled, true);
+  await wait('location.hash==="#account/events"', "An obsolete device binding opens only the current account's generic event page");
+  assert.equal(await evaluate('document.querySelector("#workspace-dialog").open'), false, "A stale binding cannot open its personal event detail");
+  await evaluate("delete window.__notificationDraftForm;void 0");
 }
 async function exerciseStartupRecovery({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot}) {
   await configureViewport(390);

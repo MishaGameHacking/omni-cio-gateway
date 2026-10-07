@@ -10,7 +10,7 @@
 
   const colors = ["#3689ff", "#15c7ce", "#02d59b", "#efa85f", "#ad79f1", "#6ab8de"];
   const navigation = () => ([["home", T("Главная")], ["portfolio", T("Портфель")], ["market", T("Рынок")], ["strategies", T("Стратегии")], ["assistant", T("ИИ-помощник")], ["goals", T("Цели")], ["analytics", T("Аналитика")], ["events", T("События")], ["profile", T("Профиль")], ["settings", T("Настройки")]]);
-  const publicPages = Object.freeze(["welcome", "features", "how-it-works", "strategies", "technology", "pricing", "about", "support"]);
+  const publicPages = Object.freeze(["welcome", "features", "how-it-works", "strategies", "technology", "pricing", "about", "support", "install"]);
   const routeScreens = Object.freeze({
     home: [], portfolio: ["positions", "history", "structure", "income", "operations"],
     market: ["reference", "watchlist", "positions", "news"],
@@ -19,7 +19,7 @@
     analytics: ["history", "performance", "income", "risk"], events: ["detail", "news"],
     profile: ["personal", "identities", "sessions", "plan", "delete"],
     settings: ["appearance", "notifications", "broker", "recovery", "about", "operations", "support"],
-    asset: [], search: []
+    asset: [], search: [], install: []
   });
   const routeFields = Object.freeze({uid: "uid", q: "q", event: "event", goal_id: "goal", run: "run", news: "news", news_source: "news_source", preset: "preset", period: "period", tab: "tab", filter: "filter", asset_filter: "assets", event_filter: "events", currency: "currency", reference_period: "reference_period", strategy_pane: "strategy_pane", sort: "sort", direction: "direction", conversation: "conversation", overlay: "overlay"});
   const parseRoute = (hash = "", fallbackMode = "auto") => {

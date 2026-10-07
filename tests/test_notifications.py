@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 import json
 import smtplib
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 from uuid import uuid4
@@ -12,6 +14,7 @@ from uuid import uuid4
 import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, utils
+from psycopg_pool import PoolClosed, PoolTimeout
 
 from omnicio.db import Database
 from omnicio.notifications import (
@@ -36,6 +39,21 @@ RECEIVER = (
     "aOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4"
 )
 SENDER = "yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw"
+
+
+def test_disabled_email_cannot_break_configured_push_startup() -> None:
+    config = NotificationConfig(
+        crypto_key="test-unused", enabled=True, vapid_private_key=SENDER,
+        vapid_subject="https://omnicio.ru", smtp_port=-1,
+        smtp_mode="invalid", smtp_sender="invalid\r\nheader", smtp_host="legacy.example.org",
+    )
+    database = Mock(spec=Database)
+    service = NotificationService(database, config, legal_versions={})
+    assert service.push_configured
+    assert not service.email_configured
+    enabled = replace(config, email_enabled=True)
+    with pytest.raises(ValueError, match="notification_smtp_invalid"):
+        NotificationService(database, enabled, legal_versions={})
 
 
 def test_worker_failure_logs_only_safe_type_without_original_message_or_traceback(
@@ -96,6 +114,37 @@ def subscription(endpoint: str = "https://fcm.googleapis.com/fcm/send/test-only"
     return {"endpoint": endpoint, "keys": {"p256dh": RECEIVER, "auth": AUTH}}
 
 
+def test_subscription_canonicalizes_only_authority_and_key_encoding() -> None:
+    raw = subscription("https://FCM.GOOGLEAPIS.COM:443/a%2Fb/../opaque?token=%2f%2E")
+    raw["keys"]["auth"] += "=="
+    canonical = normalize_subscription(raw)
+    assert canonical["endpoint"] == "https://fcm.googleapis.com/a%2Fb/../opaque?token=%2f%2E"
+    assert canonical["keys"]["auth"] == AUTH
+    assert normalize_subscription(canonical) == canonical
+
+
+@pytest.mark.parametrize("failure", [PoolTimeout("private-database-detail"),
+                                    PoolClosed("private-database-detail")])
+def test_authorization_preflight_failure_retries_without_a_provider_request(
+    failure: Exception, caplog: pytest.LogCaptureFixture,
+) -> None:
+    database = Mock(spec=Database)
+    database.pool = Mock()
+    database.pool.connection.side_effect = failure
+    transport = NotificationTransport(NotificationConfig(
+        crypto_key="unused", vapid_private_key=SENDER, vapid_subject="https://omnicio.ru",
+    ), database=database)
+    with patch("omnicio.notifications._public_address") as dns, \
+            patch("omnicio.notifications._PinnedHTTPSConnection") as connect:
+        result = transport.send_push(subscription(), {"tag": "test"})
+    assert result.status == "queued"
+    assert result.code == "push_authorization_unavailable"
+    assert result.retry_after == 60
+    assert "private-database-detail" not in caplog.text
+    dns.assert_not_called()
+    connect.assert_not_called()
+
+
 def test_rfc8291_encrypted_payload_matches_published_known_answer() -> None:
     """Section 5 and Appendix A, independent of our own decrypt implementation."""
     private = ec.derive_private_key(int.from_bytes(decode(SENDER)), ec.SECP256R1())
@@ -120,13 +169,54 @@ def test_vapid_jwt_is_bound_to_origin_and_verifies_with_public_key() -> None:
     header, claims, signature = jwt.split(".")
     payload = json.loads(decode(claims))
     assert payload == {"aud": "https://fcm.googleapis.com",
-                       "sub": "mailto:operator@example.org", "exp": int(now.timestamp()) + 3600}
+                       "sub": "mailto:operator@example.org", "exp": int(now.timestamp()) + 7200}
     raw = decode(signature)
     public = ec.EllipticCurvePublicKey.from_encoded_point(
         ec.SECP256R1(), decode(push_public_key(SENDER)),
     )
     public.verify(utils.encode_dss_signature(int.from_bytes(raw[:32]), int.from_bytes(raw[32:])),
                   f"{header}.{claims}".encode(), ec.ECDSA(hashes.SHA256()))
+
+
+def test_vapid_origin_cache_reuses_one_signed_token_concurrently_for_an_hour() -> None:
+    transport = NotificationTransport(NotificationConfig(
+        crypto_key="unused", vapid_private_key=SENDER, vapid_subject="https://omnicio.ru",
+    ))
+    now = datetime(2026, 10, 7, 12, tzinfo=UTC)
+    apple = "https://web.push.apple.com/push/"
+    with ThreadPoolExecutor(max_workers=8) as workers:
+        tokens = list(workers.map(
+            lambda n: transport._authorization(apple + str(n), now), range(32),
+        ))
+    assert tokens[0] is not None
+    assert len(set(tokens)) == 1
+    assert transport._authorization(apple + "later", now + timedelta(seconds=3599)) == tokens[0]
+    google = transport._authorization(subscription()["endpoint"], now)
+    assert google != tokens[0]
+    renewed = transport._authorization(apple + "later", now + timedelta(hours=1))
+    assert renewed is not None and renewed != tokens[0]
+    jwt = renewed.split("t=", 1)[1].split(",", 1)[0]
+    claims = json.loads(decode(jwt.split(".")[1]))
+    assert claims == {"aud": "https://web.push.apple.com", "sub": "https://omnicio.ru",
+                      "exp": int((now + timedelta(hours=3)).timestamp())}
+
+
+def test_vapid_cache_bounds_new_origins_without_eviction_and_handles_clock_jump() -> None:
+    transport = NotificationTransport(NotificationConfig(
+        crypto_key="unused", vapid_private_key=SENDER, vapid_subject="https://omnicio.ru",
+    ))
+    now = datetime(2026, 10, 7, 12, tzinfo=UTC)
+    first = transport._authorization("https://node-0.push.apple.com/path", now)
+    for number in range(1, 128):
+        assert transport._authorization(f"https://node-{number}.push.apple.com/path", now)
+    assert transport._authorization("https://extra.push.apple.com/path", now) is None
+    assert transport._authorization("https://node-0.push.apple.com/other", now) == first
+    earlier = now - timedelta(days=1)
+    repaired = transport._authorization("https://node-0.push.apple.com/path", earlier)
+    assert repaired is not None and repaired != first
+    jwt = repaired.split("t=", 1)[1].split(",", 1)[0]
+    claims = json.loads(decode(jwt.split(".")[1]))
+    assert claims["exp"] == int((earlier + timedelta(hours=2)).timestamp())
 
 
 @pytest.mark.parametrize("endpoint", [
@@ -242,6 +332,55 @@ def test_push_status_and_no_redirect_following(status: int, expected: str, expir
     factory.assert_called_once_with("fcm.googleapis.com", "142.250.1.1")
     assert conn.request.call_count == 1
     assert conn.request.call_args.kwargs["headers"]["Content-Encoding"] == "aes128gcm"
+    assert conn.request.call_args.kwargs["headers"]["TTL"] == "86400"
+
+
+def test_push_uses_the_remaining_test_lifetime_at_the_provider_boundary() -> None:
+    config = NotificationConfig(crypto_key="unused", vapid_private_key=SENDER,
+                                vapid_subject="https://omnicio.ru")
+    conn = Mock()
+    conn.getresponse.return_value.status = 201
+    conn.getresponse.return_value.getheader.return_value = ""
+    transport = NotificationTransport(config)
+    document = subscription()
+    payload = {"tag": "explicit-device-test", "title": "Test", "body": "Generic"}
+    with patch("omnicio.notifications._public_address", return_value="142.250.1.1"), \
+            patch("omnicio.notifications._PinnedHTTPSConnection", return_value=conn):
+        result = transport.send_push(document, payload, ttl_seconds=17)
+    assert result.status == "accepted"
+    assert conn.request.call_args.kwargs["headers"]["TTL"] == "17"
+    assert conn.request.call_count == 1
+    assert conn.close.call_count == 1
+
+
+@pytest.mark.parametrize(("status", "raw_retry", "expected", "delay"), [
+    pytest.param(201, "²", "accepted", 0, id="accepted-unicode-digit"),
+    pytest.param(201, "9" * 9000, "accepted", 0, id="accepted-oversized-digits"),
+    pytest.param(429, "²", "queued", 60, id="rate-limited-unicode-digit"),
+    pytest.param(503, "9" * 9000, "queued", 86400, id="unavailable-oversized-digits"),
+    pytest.param(429, "0" * 9000 + "120", "queued", 120, id="rate-limited-leading-zeros"),
+    pytest.param(503, " 12 ", "queued", 30, id="unavailable-short-delay"),
+    pytest.param(429, "not-a-delay", "queued", 60, id="rate-limited-malformed"),
+])
+def test_push_receipt_ignores_irrelevant_retry_headers_and_bounds_retry_decimal(
+    status: int, raw_retry: str, expected: str, delay: int,
+) -> None:
+    config = NotificationConfig(crypto_key="unused", vapid_private_key=SENDER,
+                                vapid_subject="https://omnicio.ru")
+    conn = Mock()
+    conn.getresponse.return_value.status = status
+    conn.getresponse.return_value.getheader.return_value = raw_retry
+    with patch("omnicio.notifications._public_address", return_value="142.250.1.1"), \
+            patch("omnicio.notifications._PinnedHTTPSConnection", return_value=conn):
+        result = NotificationTransport(config).send_push(subscription(), {
+            "tag": "safe-retry", "title": "Test", "body": "Generic",
+        })
+    assert result.status == expected
+    assert result.retry_after == delay
+    assert conn.request.call_count == 1
+    assert conn.close.call_count == 1
+    if status == 201:
+        conn.getresponse.return_value.getheader.assert_not_called()
 
 
 @pytest.mark.parametrize(("error", "expected"), [

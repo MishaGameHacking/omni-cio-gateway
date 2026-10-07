@@ -112,6 +112,7 @@
     route: {},
     data: {},
     errors: {},
+    devicePush: {status: "checking", subscription: null, channel: null, bindingId: null, error: null, pending: null, testStatus: ""},
     loading: new Set(),
     requests: new Set(),
     resourceVersions: new Map(),
@@ -137,7 +138,6 @@
     eventWrites: new Set(),
     eventWritesOverlapped: false,
     deliveryBusy: false,
-    deliveryDrafts: {},
     searchSequence: 0,
     researchRequest: null,
     researchDraft: {},
@@ -191,7 +191,10 @@
     record: null,
     uncertain: false
   };
-  const views = new Set([...U.navigation.map(([key]) => key), "asset", "search"]);
+  const views = new Set([...U.navigation.map(([key]) => key), "asset", "search", "install"]);
+  const installedDisplay = () => window.matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || navigator.standalone === true;
+  const installState = {prompt: null, installed: installedDisplay(), dismissed: false, busy: false, result: ""};
+  try { installState.dismissed = localStorage.getItem("omnicio-install-dismissed") === "true"; } catch { /* Installation remains available without optional preferences. */ }
   const assetTypes = () => ([["all", T("Все")], ["share", T("Акции")], ["bond", T("Облигации")], ["etf", T("Фонды")], ["currency", T("Валюта")], ["other", T("Другое")]]);
   const strategyIcons = {
     balanced: ["portfolio", "#2b86ff"],
@@ -445,10 +448,13 @@
       notification_email_not_configured: T("Отправка писем ещё не включена администратором."),
       notification_verification_rate_limited: T("Новый код можно запросить через две минуты, не более трёх раз за час."),
       notification_verification_invalid: T("Код неверен, истёк или исчерпаны пять попыток. Проверьте письмо или запросите новый код."),
-      notification_endpoint_invalid: T("Сервис уведомлений этого браузера пока не поддерживается. Выберите email или другой браузер."),
-      notification_channel_limit: T("Можно подключить до восьми устройств и адресов. Отключите неиспользуемый канал."),
+      notification_endpoint_invalid: T("push.endpoint_invalid"),
+      notification_channel_limit: T("push.channel_limit"),
       service_worker_unavailable: T("Браузер не завершил подготовку уведомлений. Обновите страницу и попробуйте ещё раз."),
       push_permission_denied: T("Браузер не разрешил уведомления. Разрешение можно изменить в настройках сайта в браузере."),
+      notification_device_conflict: T("push.device_conflict"),
+      notification_test_rate_limited: T("push.test_rate_limited"),
+      notification_channel_inactive: T("push.channel_inactive"),
       "T-Invest is not connected": T("Подключите свой счёт T-Invest в настройках."),
       "stored T-Invest credential was rejected": T("Срок действия API-токена истёк или доступ отозван. Проверьте подключение."),
       "T-Invest token rejected": T("API-токен не прошёл проверку. Проверьте значение и выбранную среду."),
@@ -627,6 +633,7 @@
     state.pendingTheme = null;
     state.data = {};
     state.errors = {};
+    state.devicePush = {status: "checking", subscription: null, channel: null, bindingId: null, error: null, pending: null, testStatus: ""};
     state.formDrafts = {};
     state.formBaselines = {};
     state.chat = [];
@@ -650,7 +657,6 @@
     state.eventWrites.clear();
     state.eventWritesOverlapped = false;
     state.deliveryBusy = false;
-    state.deliveryDrafts = {};
     state.prefs = {
       server: null,
       draft: null,
@@ -689,7 +695,9 @@
   };
   const lockSession = message => {
     if (state.locked) return;
+    const pushDevice = detachedPushDevice();
     clearPrivateState();
+    void detachPushDevice(pushDevice, state.generation);
     state.locked = true;
     state.tour = false;
     $("#app-shell").hidden = true;
@@ -827,8 +835,9 @@
     const breadcrumb = $("#public-breadcrumb");
     breadcrumb.hidden = page === "welcome";
     breadcrumb.innerHTML = `<button class="button secondary small-button" data-action="route-back">${icon("back", true)} ${H("navigation.back")}</button>`;
-    document.title = `${page === "welcome" ? T("OMNICIO — ваш инвестиционный помощник") : T("public.page." + page)} · OMNICIO`;
-
+    document.title = `${page === "welcome" ? T("OMNICIO — ваш инвестиционный помощник") : T(page === "install" ? "install.title" : "public.page." + page)} · OMNICIO`;
+    if (page === "install") renderInstall();
+    renderInstallPromotion();
   };
   const resolveNavigationRoute = (view, detail) => {
     let mode = detail.mode || state.mode;
@@ -872,13 +881,13 @@
       fromHistory
     });
     if (route.mode === "public") { showPublic(route); restoreNavigationScroll(scrollPosition, sequence); void openRouteScreen(route); return; }
-    if (route.mode === "account" && (!state.user || state.locked)) { sessionSurface(); return; }
+    if (route.mode === "account" && (!state.user || state.locked) && route.view !== "install") { sessionSurface(); return; }
     $("#startup-state").hidden = true;
     $("#public-site").hidden = true;
     $("#app-shell").hidden = false;
     $("#tour-notice").hidden = !state.tour;
     for (const element of $$("[data-view]")) element.hidden = element.dataset.view !== route.view;
-    document.title = `${U.navigation.find(([key]) => key === route.view)?.[1] || (route.view === "asset" ? T("Актив") : T("Поиск"))} · OMNICIO`;
+    document.title = `${U.navigation.find(([key]) => key === route.view)?.[1] || ({asset: T("Актив"), install: T("install.entry")}[route.view] || T("Поиск"))} · OMNICIO`;
     renderNav();
     renderCurrent();
     void loadNavigationScreen(route, scrollPosition, sequence).catch(error => {
@@ -890,6 +899,7 @@
     restoreNavigationScroll(scrollPosition, sequence);
     scheduleTableQuotes(100);
     scheduleEventSummary(100);
+    if (state.devicePush.status === "checking") void refreshPushDevice();
   };
   const loadNavigationScreen = async (route, scrollPosition, sequence) => {
     const resources = loadForView(route.view, route);
@@ -947,7 +957,7 @@
     ...options
   } = {}) => {
     const currentRequest = state.resourceRequests.get(name);
-    if (!force && currentRequest?.path === path) return currentRequest.promise;
+    if ((!force || name === "notifications") && currentRequest?.path === path) return currentRequest.promise;
     if (!force && state.data[name] !== undefined) return state.data[name];
     if (name === "executions") delete state.data.executions;
     const sequence = (state.resourceVersions.get(name) || 0) + 1;
@@ -1136,7 +1146,7 @@
     const generation = state.generation;
     const sequence = state.navigationSequence;
     const current = () => generation === state.generation && sequence === state.navigationSequence && state.view === view;
-    const resources = viewResources.filter(resource => resource.views.includes(view) && (!state.tour || resource.public) && (!resource.operator || state.user?.can_view_operational_metrics === true));
+    const resources = viewResources.filter(resource => resource.views.includes(view) && (resource.public || state.user && !state.tour) && (!resource.operator || state.user?.can_view_operational_metrics === true));
     const resourceWork = resources.map(resource => {
       const historyChanged = resource.name === "workspace" && state.data.workspace?.overview?.history_coverage?.period !== workspacePeriod(view);
       return loadResource(resource.name, typeof resource.path === "function" ? resource.path() : resource.path, {
@@ -1168,6 +1178,7 @@
       return;
     }
     if (!document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent();
+    if (view === "settings") void refreshPushDevice({read: false});
     if (view === "goals" && detail.goal_id) focusGoal(detail.goal_id);
   };
   const loadSelectedAssistantConversation = async () => {
@@ -1207,7 +1218,7 @@
     });
     if (generation !== state.generation || state.view !== view) return;
     if (resource.name === "researchArchive") restoreResearchRequest();
-    if (resource.name === "notifications") renderNotificationPanel();
+    if (resource.name === "notifications") await refreshPushDevice({sync: true, read: false});
     else if (resource.name === "support") await loadSupport($(state.mode === "public" ? "#support" : "#workspace-support"));
     else renderCurrent();
   };
@@ -2079,6 +2090,7 @@
         if (state.data.catalog) renderPublicCatalog(state.data.catalog);
         document.title = `${U.navigation.find(([key]) => key === state.view)?.[1] || T("Поиск")} · OMNICIO`;
         renderCurrent();
+        updatePushLocale();
       }
     }
     updateSaveStatus(kind);
@@ -3513,10 +3525,10 @@
       small: true
     }) + button(T("Прочитать все"), "events-read-all", {
       small: true
-    }))}<section class="card"><div class="card-header"><h2>${H("Лента событий")}</h2><span class="chip" data-event-unread>${esc(eventUnreadLabel(unread))}</span></div>${eventFilters()}${state.errors.events ? dataError("events") : eventsHTML(false)}${previousEvents}<p class="data-footnote">${H("«Прочитать все» охватывает историю до последнего полученного состояния. Пришедшие позже события остаются непрочитанными.")}</p></section>${eventNewsArchiveHTML()}${data?.alerts_suppressed ? ("<p class=\"notice section-gap\">" + H("Сейчас действуют тихие часы. События доступны в ленте; внешняя доставка отложена до их окончания.") + "</p>") : ""}<div class="notice section-gap">${H("Push на устройство и письма включаются отдельно после вашего согласия. Их доступность и результат отправки видны в настройках. SMS не используется.")}<div class="form-actions">${button(T("Настроить уведомления"), "settings", {
+    }))}<section class="card"><div class="card-header"><h2>${H("Лента событий")}</h2><span class="chip" data-event-unread>${esc(eventUnreadLabel(unread))}</span></div>${eventFilters()}${state.errors.events ? dataError("events") : eventsHTML(false)}${previousEvents}<p class="data-footnote">${H("«Прочитать все» охватывает историю до последнего полученного состояния. Пришедшие позже события остаются непрочитанными.")}</p></section>${eventNewsArchiveHTML()}${data?.alerts_suppressed ? ("<p class=\"notice section-gap\">" + H("Сейчас действуют тихие часы. События доступны в ленте; внешняя доставка отложена до их окончания.") + "</p>") : ""}<div class="notice section-gap">${H("push.events_entry")}<div class="form-actions">${button(T("Настроить уведомления"), "settings", {
       route: true,
       small: true
-    })}</div></div>${data?.digest?.frequency && data.digest.frequency !== "off" ? renderEventsCard(data) : ""}`;
+    })}${installLink()}</div></div>${data?.digest?.frequency && data.digest.frequency !== "off" ? renderEventsCard(data) : ""}`;
     applyScreenLayout("events");
     paintEventCounters();
   };
@@ -4071,59 +4083,123 @@
     if (disconnectBlocked()) return T("Перед отключением проверяем ранее начатые исполнения. Если проверка не завершится, обновите историю ниже.");
     return T("Токен хранится на сервере и не возвращается в браузер. Для замены счёта сначала отключите текущее подключение.");
   };
+  const installLink = () => `<a class="button secondary small-button" href="${U.routeHash({mode: state.mode === "public" ? "public" : state.mode, view: "install"})}" data-action="install-open">${H("install.entry")}</a>`;
+  const openInstall = () => navigate("install", {mode: ["public", "demo", "account"].includes(state.mode) ? state.mode : "public"});
+  const installStatus = () => {
+    if (installState.installed || installedDisplay()) return "installed";
+    if (installState.busy) return "pending";
+    if (installState.prompt) return "available";
+    return "manual";
+  };
+  const installInstructionsHTML = () => {
+    const touchApple = /iPad|iPhone|iPod/.test(navigator.userAgent) || navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    const platform = touchApple ? "ios" : /Android/.test(navigator.userAgent) ? "android" : "desktop";
+    return `<div class="install-instructions" data-install-platform="${platform}"><h3>${H("install.steps_title")}</h3><p>${H("install.steps." + platform)}</p><p class="fine-print">${H("install.browser_controls")}</p></div>`;
+  };
+  const installContentsHTML = () => {
+    const status = installStatus();
+    const action = status === "available" ? button(T("install.action"), "pwa-install", {primary: true}) : "";
+    const result = installState.result ? `<p class="notice" role="status">${H("install.result." + installState.result)}</p>` : "";
+    return `<section class="card install-card" data-install-state="${status}"><div class="install-heading"><img src="/assets/brand/omnicio-logo.png" width="56" height="56" alt=""><div><h2>OMNICIO</h2><p>${H("install.description")}</p></div></div><p>${H("install.state." + status)}</p><div class="form-actions">${action}</div>${result}${status === "installed" ? "" : installInstructionsHTML()}</section>`;
+  };
+  const renderInstall = () => {
+    const target = $(state.mode === "public" ? "#install" : "#view-install");
+    if (!target) return;
+    const back = state.mode === "public" ? "" : `<div class="breadcrumb">${button(T("navigation.back"), "route-back", {small: true})}</div>`;
+    target.innerHTML = `${back}${heading(T("install.entry"), T("install.intro"))}${installContentsHTML()}<section class="card section-gap" data-device-push-host>${devicePushHTML()}</section>`;
+  };
+  const renderInstallPromotion = () => {
+    const visible = !installState.dismissed && installStatus() !== "installed" && state.view !== "install" && state.mode !== "auto" && !(state.mode === "account" && (!state.user || state.locked));
+    for (const banner of $$('[data-install-promotion]')) {
+      banner.hidden = !visible;
+      if (visible) banner.innerHTML = `<div><strong>${H("install.promotion")}</strong><p>${H("install.promotion_details")}</p></div><div class="form-actions">${button(T(installState.prompt ? "install.action" : "install.steps_title"), "pwa-install", {primary: true, small: true, extra: installState.busy ? " disabled" : ""})}${button(T("install.later"), "pwa-install-later", {small: true})}</div>`;
+    }
+  };
+  const renderInstallState = () => {
+    renderInstallPromotion();
+    if (state.view === "install") renderInstall();
+  };
+  const dismissInstall = () => {
+    installState.dismissed = true;
+    try { localStorage.setItem("omnicio-install-dismissed", "true"); } catch { /* The permanent installation link does not depend on storage. */ }
+    renderInstallState();
+  };
+  const promptInstall = async () => {
+    if (installState.busy) return;
+    const prompt = installState.prompt;
+    if (!prompt) { openInstall(); return; }
+    installState.prompt = null;
+    installState.busy = true;
+    renderInstallState();
+    try {
+      await prompt.prompt();
+      const choice = await prompt.userChoice;
+      installState.result = choice.outcome === "accepted" ? "accepted" : "dismissed";
+      if (choice.outcome !== "accepted") dismissInstall();
+    } catch {
+      installState.result = "unavailable";
+    } finally {
+      installState.busy = false;
+      renderInstallState();
+    }
+  };
   const deliveryStateLabels = () => ({pending: T("Ожидает подтверждения"), active: T("Подключён"), revoked: T("Отключён"), expired: T("Нужно подключить заново"), queued: T("В очереди"), sending: T("Отправляется"), accepted: T("Принято провайдером"), uncertain: T("Результат не подтверждён"), failed: T("Не отправлено"), cancelled: T("Отменено")});
-  const notificationVerificationHTML = channel => {
-    if (channel.status !== "pending") return "";
-    const formId = "notification-verify-" + channel.id;
-    return `<form id="${esc(formId)}" data-channel-id="${esc(channel.id)}" class="section-gap"><label class="field"><span>${H("Код из письма")}</span><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required value="${esc(state.deliveryDrafts[formId]?.code || "")}" aria-label="${H("Код подтверждения email")}"></label><p class="fine-print">${H("Действует до")} ${esc(date(channel.verification_expires_at, true))} ${H("МСК. Осталось попыток:")} ${esc(channel.verification_attempts_remaining ?? 5)}.</p><button class="button primary small-button" type="submit"${state.deliveryBusy ? " disabled" : ""}>${H("Подтвердить адрес")}</button></form>`;
-  };
   const notificationChannelHTML = channel => {
-    const revokeAttributes = ` data-channel-id="${esc(channel.id)}"${state.deliveryBusy ? " disabled" : ""}`;
-    return `<article class="event-item"><span class="event-icon">${icon(channel.kind === "push" ? "events" : "profile", true)}</span><div class="event-item-body"><h3>${esc(channel.label)}</h3><p class="fine-print">${channel.kind === "push" ? "Push" : "Email"} · ${esc(deliveryStateLabels()[channel.status] || T("Состояние неизвестно"))}</p>${notificationVerificationHTML(channel)}<div class="form-actions">${button(T("Отключить"), "notification-revoke", {small: true, extra: revokeAttributes})}</div></div></article>`;
-  };
-  const pushAvailabilityDescription = (data, supported) => {
-    if (!data.push_configured) return T("Push ещё не включён администратором.");
-    if (!supported) return T("Этот браузер не поддерживает push в текущем режиме. На iPhone или iPad может потребоваться установка сайта на главный экран.");
-    if (Notification.permission === "denied") return T("Разрешение заблокировано. Измените его в настройках сайта в браузере.");
-    return T("Разрешение браузера запрашивается только после нажатия кнопки.");
+    const revokeAttributes = ` data-channel-id="${esc(channel.id)}"${state.deliveryBusy || channel.status === "revoked" ? " disabled" : ""}`;
+    return `<article class="event-item"><span class="event-icon">${icon(channel.kind === "push" ? "events" : "profile", true)}</span><div class="event-item-body"><h3>${esc(channel.label)}</h3><p class="fine-print">${channel.kind === "push" ? "Push" : "Email"} · ${esc(deliveryStateLabels()[channel.status] || T("Состояние неизвестно"))}</p><div class="form-actions">${button(T("Отключить"), "notification-revoke", {small: true, extra: revokeAttributes})}</div></div></article>`;
   };
   const notificationDeliveryHTML = item => {
     const nextAttempt = item.status === "queued" ? ` ${T("· следующая попытка")} ${esc(date(item.next_attempt_at, true))} ${T("МСК")}` : "";
     const detail = item.error ? `<p class="notice error">${esc(item.error.title || T("notifications.delivery_failed"))}</p>` : "";
     const channelKind = item.channel?.kind === "push" ? "Push" : "Email";
+    const uncertain = item.status === "uncertain" ? T(item.channel?.kind === "push" ? "push.delivery_uncertain" : " · повтор автоматически не отправляется; проверьте устройство или почту") : "";
     const channel = item.channel ? `${channelKind} · ${item.channel.label || T("notifications.channel_unavailable")}` : T("notifications.channel_unavailable");
-    return `<li><p class="fine-print">${esc(channel)} · ${H("notifications.attempts")}: ${esc(item.attempts ?? 0)}</p>${detail}<strong>${esc({verification: T("Подтверждение адреса"), event: T("Событие"), digest: T("Дайджест"), operational: T("Состояние сервиса")}[item.kind] || T("Уведомление"))}</strong> · ${esc(deliveryStateLabels()[item.status] || T("Состояние неизвестно"))}<br><span class="fine-print">${esc(date(item.created_at, true))} ${H("МСК")}${nextAttempt}${item.status === "uncertain" ? T(" · повтор автоматически не отправляется; проверьте устройство или почту") : ""}</span></li>`;
+    return `<li><p class="fine-print">${esc(channel)} · ${H("notifications.attempts")}: ${esc(item.attempts ?? 0)}</p>${detail}<strong>${esc({verification: T("Подтверждение адреса"), event: T("Событие"), digest: T("Дайджест"), operational: T("Состояние сервиса"), test: T("push.test_title")}[item.kind] || T("Уведомление"))}</strong> · ${esc(deliveryStateLabels()[item.status] || T("Состояние неизвестно"))}<br><span class="fine-print">${esc(date(item.created_at, true))} ${H("МСК")}${nextAttempt}${esc(uncertain)}</span></li>`;
+  };
+  const devicePushHTML = () => {
+    const current = state.devicePush;
+    const status = !state.user || state.tour ? "unauthenticated" : current.status;
+    const pending = state.deliveryBusy || Boolean(current.pending);
+    let actions = "";
+    if (status === "unauthenticated") actions = button(T("Войти"), "login", {primary: true, small: true});
+    else if (status === "active") actions = button(T("push.test"), "notification-push-test", {small: true, extra: pending ? " disabled" : ""}) + button(T("Отключить"), "notification-revoke", {small: true, extra: ` data-channel-id="${esc(current.channel?.id || "")}"${pending ? " disabled" : ""}`});
+    else if (["default", "granted-pending", "revoked"].includes(status)) actions = button(T("push.enable"), "notification-push", {primary: true, small: true, extra: pending ? " disabled" : ""});
+    else if (status === "error") {
+      actions = button(T("Повторить"), "push-retry", {small: true, extra: pending ? " disabled" : ""});
+      if (current.error?.code === "notification_device_conflict") actions += button(T("push.enable"), "notification-push", {primary: true, small: true, extra: pending ? " disabled" : ""});
+    }
+    const error = current.error ? `<p class="notice error">${esc(humanError(current.error))}</p>` : "";
+    const test = current.testStatus ? `<p class="notice" role="status" data-push-test-status="${esc(current.testStatus)}">${H("push.test_" + current.testStatus)}</p>` : "";
+    return `<div data-device-push-state="${status}"><h2 class="panel-title">${H("push.title")}</h2><p>${H("push.state." + status)}</p><p class="fine-print">${H("push.privacy")} <a href="/legal/privacy.html">${H("Политика конфиденциальности")}</a></p><div class="form-actions">${actions}</div>${error}${test}</div>`;
   };
   const notificationContentsHTML = () => {
     const data = state.data.notifications;
-    if (!data) return `<h2 class="panel-title">${H("Доставка уведомлений")}</h2>${state.errors.notifications ? dataError("notifications") : U.loading(T("Проверяем подключённые каналы…"))}`;
-    const pushSupported = "Notification" in window && "PushManager" in window && "serviceWorker" in navigator && window.isSecureContext;
-    const deliveries = (data.deliveries || []).map(notificationDeliveryHTML).join("");
-    const deliveryList = deliveries ? `<ul class="source-list">${deliveries}</ul>` : ("<p class=\"fine-print\">" + H("Отправок ещё не было.") + "</p>");
-    return `<div class="card-header"><h2>${H("Доставка уведомлений")}</h2>${button(T("Проверить состояние"), "notifications-reload", {small: true})}</div>${dataError("notifications")}<p class="fine-print">${H("Содержание портфеля и личные суммы не включаются в сообщение. Подробности открываются после входа в OMNICIO. Дневной или недельный дайджест заменяет отдельные сообщения; тихие часы откладывают доставку.")}</p><div class="form-actions">${button(T("Включить push на этом устройстве"), "notification-push", {small: true, extra: !data.push_configured || !pushSupported || state.deliveryBusy ? " disabled" : ""})}</div><p class="fine-print">${esc(pushAvailabilityDescription(data, pushSupported))}</p><form id="notification-email-form" class="section-gap"><label class="field"><span>${H("Email для уведомлений")}</span><input name="email" type="email" maxlength="254" autocomplete="email" required value="${esc(state.deliveryDrafts["notification-email-form"]?.email || "")}"${!data.email_configured ? " disabled" : ""}></label><button class="button primary small-button" type="submit"${!data.email_configured || state.deliveryBusy ? " disabled" : ""}>${H("Отправить код подтверждения")}</button><p class="fine-print">${data.email_configured ? T("Подписка включится только после подтверждения адреса. Код действует 15 минут; разрешено пять попыток.") : T("Email-доставка ещё не включена администратором.")}</p></form><output id="notification-message" class="form-message"></output><div class="event-list section-gap">${(data.channels || []).map(notificationChannelHTML).join("") || ("<p class=\"notice\">" + H("Устройства и адреса пока не подключены.") + "</p>")}</div><details class="section-gap"><summary class="details-summary">${H("История отправки")}</summary><p class="fine-print">${H("Статус «Принято провайдером» подтверждает приём сообщения сервисом, но не прочтение человеком.")}</p>${deliveryList}</details>`;
+    const deliveryList = data?.deliveries?.length ? `<ul class="source-list">${data.deliveries.map(notificationDeliveryHTML).join("")}</ul>` : `<p class="fine-print">${H("Отправок ещё не было.")}</p>`;
+    const channels = (data?.channels || []).filter(channel => channel.kind === "push" && channel.id !== state.devicePush.channel?.id).map(notificationChannelHTML).join("");
+    const otherChannels = channels ? `<div class="event-list section-gap">${channels}</div>` : "";
+    return `<div class="card-header"><h2>${H("install.entry")}</h2>${button(T("Проверить состояние"), "notifications-reload", {small: true})}</div>${installLink()}<section class="section-gap" data-device-push-host>${devicePushHTML()}</section>${dataError("notifications")}<output id="notification-message" class="form-message"></output>${otherChannels}<details class="section-gap"><summary class="details-summary">${H("История отправки")}</summary><p class="fine-print">${H("Статус «Принято провайдером» подтверждает приём сообщения сервисом, но не прочтение человеком.")}</p>${deliveryList}</details>`;
   };
   const renderNotificationPanel = () => {
     const target = $("#notification-settings");
     if (target) target.innerHTML = notificationContentsHTML();
+    for (const host of $$("[data-device-push-host]")) host.innerHTML = devicePushHTML();
   };
-  const reloadNotifications = async () => {
-    await loadResource("notifications", "/api/notifications", {force: true});
-    renderNotificationPanel();
-  };
+  const reloadNotifications = () => refreshPushDevice({sync: true});
   const deliveryAction = async operation => {
-    if (!requireUser() || state.deliveryBusy) return;
+    if (!requireUser() || state.deliveryBusy || state.devicePush.pending) return;
     const generation = state.generation;
     state.deliveryBusy = true;
+    state.devicePush.testStatus = "";
     renderNotificationPanel();
     try {
       await operation();
       if (generation !== state.generation) return;
-      await reloadNotifications();
+      await refreshPushDevice({sync: false, mutation: true});
       if (generation === state.generation) toast(T("Состояние уведомлений обновлено."));
     } catch (error) {
       if (generation !== state.generation || isCancelled(error)) return;
-      await reloadNotifications();
-      if (generation === state.generation) showMessage($("#notification-message"), humanError(error), true);
+      await refreshPushDevice({sync: false, mutation: true});
+      if (generation === state.generation) { state.devicePush.error = error; showMessage($("#notification-message"), humanError(error), true); }
     } finally {
       if (generation === state.generation) {
         state.deliveryBusy = false;
@@ -4133,50 +4209,241 @@
       }
     }
   };
+  const pushContext = () => ({generation: state.generation, publicId: state.user?.public_id});
+  const currentPushContext = context => Boolean(context.publicId) && context.generation === state.generation && context.publicId === state.user?.public_id && !state.locked && !state.tour;
+  const pushSupported = () => "Notification" in window && "PushManager" in window && "serviceWorker" in navigator && window.isSecureContext;
+  const pushKeyBytes = key => Uint8Array.from(atob(key.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - key.length % 4) % 4)), char => char.codePointAt(0));
+  const pushKeyMatches = (subscription, bytes) => {
+    const previous = subscription?.options?.applicationServerKey;
+    if (!previous) return true;
+    const old = new Uint8Array(previous);
+    return old.length === bytes.length && old.every((value, index) => value === bytes[index]);
+  };
+  const pushFingerprint = async subscription => {
+    const endpoint = new URL(subscription.endpoint);
+    const canonical = endpoint.origin + endpoint.pathname + endpoint.search;
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
+    return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join("");
+  };
+  const withPushDeviceLock = operation => navigator.locks?.request ? navigator.locks.request("omnicio-push-device", operation) : operation();
+  const pushRegistration = async () => {
+    let timeout;
+    return Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => {
+      timeout = setTimeout(() => reject(Object.assign(new Error("service_worker_unavailable"), {code: "service_worker_unavailable"})), 15000);
+    })]).finally(() => clearTimeout(timeout));
+  };
+  const sendPushBinding = (registration, bindingId, type = "PUSH_BINDING") => new Promise((resolve, reject) => {
+    const worker = registration?.active;
+    if (!worker) { reject(new Error("service_worker_unavailable")); return; }
+    const channel = new MessageChannel();
+    const timeout = setTimeout(() => { channel.port1.close(); reject(new Error("service_worker_unavailable")); }, 5000);
+    channel.port1.onmessage = event => {
+      clearTimeout(timeout);
+      channel.port1.close();
+      const receipt = event.data;
+      const confirmed = type === "PUSH_BINDING" ? receipt?.binding_id === bindingId : typeof receipt?.cleared === "boolean";
+      if (receipt?.handled === true && receipt.ok === true && confirmed) resolve(receipt);
+      else reject(new Error("service_worker_unavailable"));
+    };
+    try { worker.postMessage({type, binding_id: bindingId, locale: I.getLocale()}, [channel.port2]); }
+    catch (error) { clearTimeout(timeout); channel.port1.close(); reject(error); }
+  });
+  const validPushIdentifier = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
+  const adoptPushReceipt = async (receipt, subscription, registration, context) => {
+    if (!currentPushContext(context)) return;
+    if (receipt.status === "active" && (!validPushIdentifier(receipt.id) || !validPushIdentifier(receipt.binding_id))) throw new Error("notification_channel_invalid");
+    const fingerprint = await pushFingerprint(subscription);
+    if (!currentPushContext(context)) return;
+    state.devicePush.subscription = subscription;
+    state.devicePush.channel = {...state.devicePush.channel, kind: "push", endpoint_fingerprint: fingerprint, ...receipt};
+    state.devicePush.status = receipt.status === "revoked" ? "revoked" : "granted-pending";
+    if (receipt.status === "active" && receipt.current_session === true && receipt.binding_id) {
+      await sendPushBinding(registration, receipt.binding_id);
+      if (!currentPushContext(context)) { await sendPushBinding(registration, receipt.binding_id, "CLEAR_PUSH_BINDING"); return; }
+      state.devicePush.bindingId = receipt.binding_id;
+      state.devicePush.status = "active";
+    }
+  };
+  const readPushSubscription = async (data, context, sync) => {
+    const registration = await pushRegistration();
+    if (!currentPushContext(context)) return;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!currentPushContext(context)) return;
+    state.devicePush.subscription = subscription;
+    if (!subscription) {
+      const previous = data.channels?.find(item => item.id === state.devicePush.channel?.id);
+      state.devicePush.status = previous?.status === "revoked" ? "revoked" : "granted-pending";
+      return;
+    }
+    if (!pushKeyMatches(subscription, pushKeyBytes(data.vapid_public_key))) { state.devicePush.status = "granted-pending"; return; }
+    const fingerprint = await pushFingerprint(subscription);
+    if (!currentPushContext(context)) return;
+    const channel = data.channels?.find(item => item.kind === "push" && item.endpoint_fingerprint === fingerprint);
+    state.devicePush.channel = channel || null;
+    if (channel?.status === "revoked") { state.devicePush.status = "revoked"; state.devicePush.bindingId = null; return; }
+    if (!sync) { await adoptPushReceipt(channel || {}, subscription, registration, context); return; }
+    const receipt = await api("/api/notifications/push", {method: "POST", body: {subscription: subscription.toJSON(), label: T("Это устройство"), intent: "sync"}});
+    await adoptPushReceipt(receipt, subscription, registration, context);
+  };
+  const inspectPushDevice = async (context, sync, read) => {
+    const data = read ? await loadResource("notifications", "/api/notifications", {force: !state.resourceRequests.has("notifications")}) : state.data.notifications;
+    if (!currentPushContext(context)) return;
+    if (state.errors.notifications) throw Object.assign(state.errors.notifications, {notificationReadFailed: true});
+    if (!data) throw new Error("request_failed");
+    if (!pushSupported()) { state.devicePush.status = "unsupported"; return; }
+    if (!data.push_configured || !data.vapid_public_key) { state.devicePush.status = "unconfigured"; return; }
+    const permission = Notification.permission;
+    if (permission !== "granted") { state.devicePush.status = permission === "denied" ? "denied" : "default"; return; }
+    await withPushDeviceLock(async () => { if (currentPushContext(context)) await readPushSubscription(data, context, sync); });
+  };
+  const refreshPushDevice = ({sync = true, read = true, mutation = false} = {}) => {
+    if (!state.user || state.tour || state.locked) { renderNotificationPanel(); return Promise.resolve(); }
+    const target = state.devicePush;
+    if (target.pending) return target.pending;
+    if (state.deliveryBusy && !mutation) return Promise.resolve();
+    const context = pushContext();
+    const previousStatus = target.status;
+    target.error = null;
+    const work = inspectPushDevice(context, sync, read).catch(error => {
+      if (!currentPushContext(context) || isCancelled(error)) return;
+      if (error.notificationReadFailed && !["checking", "error"].includes(previousStatus)) {
+        const permission = pushSupported() ? Notification.permission : null;
+        target.status = ["denied", "default"].includes(permission) ? permission : previousStatus;
+      } else target.status = "error";
+      target.error = error;
+    }).finally(() => {
+      if (currentPushContext(context)) { target.pending = null; renderNotificationPanel(); }
+    });
+    target.pending = work;
+    renderNotificationPanel();
+    return work;
+  };
+  const removeCurrentSubscription = async (registration, subscription, context) => {
+    const current = await registration.pushManager.getSubscription();
+    if (!currentPushContext(context) || !current || current.endpoint !== subscription.endpoint) return false;
+    if (!await current.unsubscribe()) throw new Error("push_subscription_invalid");
+    return currentPushContext(context);
+  };
+  const bindEnabledPush = async (registration, subscription, context) => {
+    try {
+      return await api("/api/notifications/push", {method: "POST", body: {subscription: subscription.toJSON(), label: T("Это устройство"), intent: "enable"}});
+    } catch (error) {
+      if (error.code !== "notification_device_conflict" || !currentPushContext(context)) throw error;
+      if (!await removeCurrentSubscription(registration, subscription, context)) return null;
+      const replacement = await registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: pushKeyBytes(state.data.notifications.vapid_public_key)});
+      if (!currentPushContext(context)) return null;
+      const receipt = await api("/api/notifications/push", {method: "POST", body: {subscription: replacement.toJSON(), label: T("Это устройство"), intent: "enable"}});
+      return {receipt, replacement};
+    }
+  };
   const enablePush = async () => {
-    const publicKey = state.data.notifications?.vapid_public_key;
-    if (!publicKey || !("PushManager" in window) || !("Notification" in window)) return;
+    if (!pushSupported() || !state.data.notifications?.push_configured) return;
     await deliveryAction(async () => {
-      const generation = state.generation;
-      const permission = await Notification.requestPermission();
+      const context = pushContext();
+      const permission = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+      if (!currentPushContext(context)) return;
       if (permission !== "granted") throw Object.assign(new Error("push_permission_denied"), {code: "push_permission_denied"});
-      let timeout;
-      const registration = await Promise.race([
-        navigator.serviceWorker.ready,
-        new Promise((_, reject) => { timeout = setTimeout(() => reject(Object.assign(new Error("service_worker_unavailable"), {code: "service_worker_unavailable"})), 15000); })
-      ]).finally(() => clearTimeout(timeout));
-      if (generation !== state.generation) return;
-      const bytes = Uint8Array.from(atob(publicKey.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - publicKey.length % 4) % 4)), char => char.codePointAt(0));
-      let subscription = await registration.pushManager.getSubscription();
-      const previous = subscription?.options?.applicationServerKey;
-      if (previous) {
-        const oldKey = new Uint8Array(previous);
-        if (oldKey.length !== bytes.length || oldKey.some((value, index) => value !== bytes[index])) {
-          if (!await subscription.unsubscribe()) throw new Error("push_subscription_invalid");
+      await withPushDeviceLock(async () => {
+        const registration = await pushRegistration();
+        if (!currentPushContext(context)) return;
+        const bytes = pushKeyBytes(state.data.notifications.vapid_public_key);
+        let subscription = await registration.pushManager.getSubscription();
+        if (!currentPushContext(context)) return;
+        if (subscription && !pushKeyMatches(subscription, bytes)) {
+          if (!await removeCurrentSubscription(registration, subscription, context)) return;
           subscription = null;
         }
-      }
-      subscription ||= await registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: bytes});
-      if (generation !== state.generation) return;
-      await api("/api/notifications/push", {method: "POST", body: {subscription: subscription.toJSON(), label: T("Это устройство")}});
+        if (!subscription) subscription = await registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: bytes});
+        if (!currentPushContext(context)) return;
+        const result = await bindEnabledPush(registration, subscription, context);
+        if (result) await adoptPushReceipt(result.receipt || result, result.replacement || subscription, registration, context);
+      });
     });
+  };
+  const testPush = () => deliveryAction(async () => {
+    const context = pushContext();
+    const channel = state.devicePush.channel;
+    if (state.devicePush.status !== "active" || !channel?.id) return;
+    const result = await api("/api/notifications/push/test", {method: "POST", body: {channel_id: channel.id}});
+    if (currentPushContext(context) && result.status === "queued") state.devicePush.testStatus = "queued";
+  });
+  const detachBoundSubscription = async (registration, subscription, bindingId, allowed) => {
+    if (!allowed() || !bindingId) return;
+    const cleared = await sendPushBinding(registration, bindingId, "CLEAR_PUSH_BINDING");
+    if (!allowed() || !cleared.cleared) return;
+    const notifications = await registration.getNotifications();
+    if (!allowed()) return;
+    for (const notification of notifications) if (notification.data?.binding_id === bindingId) notification.close();
+    const current = await registration.pushManager.getSubscription();
+    if (!allowed() || !current || current.endpoint !== subscription?.endpoint) return;
+    await current.unsubscribe();
+  };
+  const detachedPushDevice = () => ({bindingId: state.devicePush.bindingId, subscription: state.devicePush.subscription});
+  const detachPushDevice = async (device, generation) => {
+    if (!device.bindingId || !pushSupported()) return;
+    const allowed = () => state.generation === generation && !state.user;
+    try {
+      await withPushDeviceLock(async () => {
+        if (!allowed()) return;
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (registration && allowed()) await detachBoundSubscription(registration, device.subscription, device.bindingId, allowed);
+      });
+    } catch { /* The server session is already revoked; a failed local cleanup cannot restore delivery authority. */ }
   };
   const revokeNotification = async control => {
     const id = control.dataset.channelId;
-    const channel = state.data.notifications?.channels?.find(item => item.id === id);
+    const channel = state.data.notifications?.channels?.find(item => item.id === id) || (state.devicePush.channel?.id === id ? state.devicePush.channel : null);
     if (!channel) return;
     await deliveryAction(async () => {
+      const context = pushContext();
       await api(`/api/notifications/channels/${safeSegment(id)}`, {method: "DELETE"});
-      if (channel.kind === "push" && "serviceWorker" in navigator) {
+      if (!currentPushContext(context) || channel.kind !== "push" || !pushSupported()) return;
+      await withPushDeviceLock(async () => {
         const registration = await navigator.serviceWorker.getRegistration();
+        if (!currentPushContext(context)) return;
         const subscription = await registration?.pushManager.getSubscription();
-        if (subscription) {
-          const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(subscription.endpoint));
-          const fingerprint = [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2, "0")).join("");
-          if (fingerprint === channel.endpoint_fingerprint) await subscription.unsubscribe();
-        }
-      }
+        if (!currentPushContext(context) || !subscription) return;
+        const fingerprint = await pushFingerprint(subscription);
+        if (!currentPushContext(context) || fingerprint !== channel.endpoint_fingerprint) return;
+        await detachBoundSubscription(registration, subscription, channel.binding_id, () => currentPushContext(context));
+        if (!currentPushContext(context)) return;
+        state.devicePush.channel = {...channel, status: "revoked"};
+        state.devicePush.bindingId = null;
+        state.devicePush.status = "revoked";
+      });
     });
+  };
+  const updatePushLocale = () => {
+    const context = pushContext();
+    const bindingId = state.devicePush.bindingId;
+    if (!bindingId || !pushSupported()) return;
+    void withPushDeviceLock(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration && currentPushContext(context) && state.devicePush.bindingId === bindingId) await sendPushBinding(registration, bindingId);
+    }).catch(() => { /* A locale update never changes server delivery authority. */ });
+  };
+  const notificationDestination = data => {
+    const fallback = {mode: "account", view: "events"};
+    if (!state.user || state.locked || !data.binding_id || data.binding_id !== state.devicePush.bindingId) return fallback;
+    try {
+      const url = new URL(data.url, location.origin);
+      if (url.origin !== location.origin || url.pathname !== "/" || url.search) return fallback;
+      if (!/^#account\/(?:events(?:\/detail\?event=[a-f0-9]{64})?|settings\/notifications)$/.test(url.hash)) return fallback;
+      return U.parseRoute(url.hash);
+    } catch { return fallback; }
+  };
+  const receiveNotification = event => {
+    if (event.origin !== location.origin || event.data?.type !== "OPEN_NOTIFICATION") return;
+    const reply = navigated => event.ports?.[0]?.postMessage({handled: true, navigated});
+    captureScreenDrafts();
+    if (hasPending() || Object.keys(state.screenDrafts).length || state.assistantDraft.message.trim()) {
+      toast(T("push.navigation_pending"));
+      reply(false);
+      return;
+    }
+    const destination = notificationDestination(event.data);
+    navigate(destination.view, destination);
+    reply(true);
   };
   const operationalStatus = status => ({
     ok: T("ops.ok"), running: T("ops.running"), attention: T("ops.attention"),
@@ -4200,13 +4467,13 @@
   const renderSettings = () => {
     captureScreenDrafts();
     if (state.tour) {
-      $("#view-settings").innerHTML = `${heading(T("Настройки"))}<section class="card">${empty(T("Настройки сохраняются в аккаунте"), T("Для источников данных, уведомлений и личных предпочтений войдите в OMNICIO."), "login", T("Войти"), "settings", true)}</section>`;
+      $("#view-settings").innerHTML = `${heading(T("Настройки"))}<section class="card">${empty(T("Настройки сохраняются в аккаунте"), T("Для источников данных, уведомлений и личных предпочтений войдите в OMNICIO."), "login", T("Войти"), "settings", true)}${installLink()}</section>`;
       return;
     }
     const prefs = state.prefs.draft;
     const timezones = [["Europe/Moscow", T("Москва · UTC+3")], ["Etc/UTC", "UTC"]];
     if (prefs?.quiet_hours?.timezone && !timezones.some(([value]) => value === prefs.quiet_hours.timezone)) timezones.push([prefs.quiet_hours.timezone, prefs.quiet_hours.timezone]);
-    const preferences = prefs ? `<form id="preferences-form"><section class="card"><div class="card-header"><h2>${H("Оформление и приватность")}</h2><span class="save-status" data-save-status="prefs"></span></div><div class="field-grid">${select("theme", T("Тема"), [["system", T("Как на устройстве")], ["dark", T("Тёмная")], ["light", T("Светлая")]], prefs.theme)}${select("locale", T("settings.language"), [["ru", T("Русский · 1 234,56")], ["en", "English · 1,234.56"]], prefs.locale, T("settings.language_help"))}</div>${U.switchControl("mask_balances", T("Скрывать личные суммы"), T("Маскирует баланс, суммы целей и персональные графики на экране."), prefs.mask_balances)}</section><section class="card section-gap"><h2 class="panel-title">${H("Уведомления в кабинете")}</h2>${U.switchControl("notify_portfolio", T("Портфель"), T("Изменения и состояния подключённого счёта."), prefs.notifications.portfolio)}${U.switchControl("notify_payments", T("Выплаты"), T("Подтверждённые купоны, дивиденды и другие поступления."), prefs.notifications.payments)}${U.switchControl("notify_goals", T("Цели"), T("Прогресс и события ваших целей."), prefs.notifications.goals)}${U.switchControl("notify_system", T("Система"), T("Подключение данных и важные состояния сервиса."), prefs.notifications.system)}<p class="notice">${H("Категории управляют лентой и подключёнными каналами доставки. Push и email требуют отдельного подключения ниже; SMS не используется.")}</p><div class="field-grid section-gap">${select("digest_frequency", T("Режим дайджеста"), [["off", T("Отдельные события")], ["daily", T("За день")], ["weekly", T("За неделю")]], prefs.digest_frequency)}${field({name: "digest_time", label: T("notifications.digest_time"), type: "time", value: prefs.digest_time || "09:00", required: true})}${select("digest_timezone", T("notifications.digest_timezone"), timezones, prefs.digest_timezone || "Europe/Moscow")}${select("quiet_timezone", T("Часовой пояс тихих часов"), timezones, prefs.quiet_hours.timezone)}</div>${U.switchControl("quiet_enabled", T("Тихие часы"), T("События остаются в ленте. Внешняя доставка откладывается до окончания тихих часов."), prefs.quiet_hours.enabled)}<div class="field-grid">${field({
+    const preferences = prefs ? `<form id="preferences-form"><section class="card"><div class="card-header"><h2>${H("Оформление и приватность")}</h2><span class="save-status" data-save-status="prefs"></span></div><div class="field-grid">${select("theme", T("Тема"), [["system", T("Как на устройстве")], ["dark", T("Тёмная")], ["light", T("Светлая")]], prefs.theme)}${select("locale", T("settings.language"), [["ru", T("Русский · 1 234,56")], ["en", "English · 1,234.56"]], prefs.locale, T("settings.language_help"))}</div>${U.switchControl("mask_balances", T("Скрывать личные суммы"), T("Маскирует баланс, суммы целей и персональные графики на экране."), prefs.mask_balances)}</section><section class="card section-gap"><h2 class="panel-title">${H("Уведомления в кабинете")}</h2>${U.switchControl("notify_portfolio", T("Портфель"), T("Изменения и состояния подключённого счёта."), prefs.notifications.portfolio)}${U.switchControl("notify_payments", T("Выплаты"), T("Подтверждённые купоны, дивиденды и другие поступления."), prefs.notifications.payments)}${U.switchControl("notify_goals", T("Цели"), T("Прогресс и события ваших целей."), prefs.notifications.goals)}${U.switchControl("notify_system", T("Система"), T("Подключение данных и важные состояния сервиса."), prefs.notifications.system)}<p class="notice">${H("push.categories")}</p><div class="field-grid section-gap">${select("digest_frequency", T("Режим дайджеста"), [["off", T("Отдельные события")], ["daily", T("За день")], ["weekly", T("За неделю")]], prefs.digest_frequency)}${field({name: "digest_time", label: T("notifications.digest_time"), type: "time", value: prefs.digest_time || "09:00", required: true})}${select("digest_timezone", T("notifications.digest_timezone"), timezones, prefs.digest_timezone || "Europe/Moscow")}${select("quiet_timezone", T("Часовой пояс тихих часов"), timezones, prefs.quiet_hours.timezone)}</div>${U.switchControl("quiet_enabled", T("Тихие часы"), T("События остаются в ленте. Внешняя доставка откладывается до окончания тихих часов."), prefs.quiet_hours.enabled)}<div class="field-grid">${field({
       name: "quiet_start",
       label: T("Начало"),
       type: "time",
@@ -5106,7 +5373,7 @@
   }
 
   const renderCurrent = () => {
-    if (state.locked || !state.user && !state.tour) return;
+    if ((state.locked || !state.user && !state.tour) && state.view !== "install") return;
     updateIdentity();
     renderConnectionBanner();
     const renderers = {
@@ -5121,11 +5388,13 @@
       profile: renderProfile,
       settings: renderSettings,
       asset: renderAsset,
-      search: renderSearch
+      search: renderSearch,
+      install: renderInstall
     };
     renderers[state.view]?.();
     updateRefreshControls();
     U.bindCharts($(`#view-${state.view}`));
+    renderInstallPromotion();
   };
   const updateLanguageControls = () => {
     for (const control of $$('[data-action="language"]')) {
@@ -5144,6 +5413,8 @@
       renderAuthConfig();
       if (state.data.catalog) renderPublicCatalog(state.data.catalog);
       renderCurrent();
+      renderInstallState();
+      updatePushLocale();
     }
     $("#workspace-dialog").close();
   };
@@ -5253,7 +5524,7 @@
     const sequence = ++state.session.sequence;
     state.session.status = "checking";
     state.session.error = null;
-    if (state.mode === "account" && !state.user) sessionSurface();
+    if (state.mode === "account" && !state.user && state.view !== "install") sessionSurface();
     const current = () => generation === state.generation && sequence === state.session.sequence;
     const config = api("/api/auth/config", {bootstrap: true}).then(value => {
       if (!current()) return;
@@ -5274,6 +5545,7 @@
       if (state.mode === "auto" || route.mode === "auto") navigate(route.view, {...route, mode: "account"}, {replace: true});
       else if (state.mode === "account") navigate(route.view, route, {replace: true});
       scheduleEventSummary(100);
+      void refreshPushDevice();
       void resumeWorkspaceRefresh();
     }).catch(error => {
       if (!current() || isCancelled(error)) return;
@@ -5283,7 +5555,7 @@
       if (state.mode === "auto") {
         if (error?.status === 401) navigate("public/welcome", {}, {replace: true});
         else { state.mode = "account"; sessionSurface(); }
-      } else if (state.mode === "account") sessionSurface();
+      } else if (state.mode === "account" && state.view !== "install") sessionSurface();
       if (error?.status !== 401) $("#public-access-status").textContent = T("session.retry_title");
       // A failed verification does not turn a chosen demo/public screen into a login screen.
       if (route.mode === "account" && error?.status === 401) state.user = null;
@@ -5436,11 +5708,17 @@
       return;
     }
     if (hasPending() && !window.confirm(T("Есть несохранённые изменения. Выйти и закрыть их?"))) return;
+    const context = pushContext();
+    const pushDevice = detachedPushDevice();
     try {
       await api("/api/auth/logout", {
         method: "POST"
       });
+      if (!currentPushContext(context)) return;
       clearPrivateState();
+      const clearedGeneration = state.generation;
+      await detachPushDevice(pushDevice, clearedGeneration);
+      if (state.generation !== clearedGeneration || state.user) return;
       state.session.status = "guest";
       try { localStorage.removeItem("omnicio-last-route"); } catch { /* Optional navigation state. */ }
       state.tour = false;
@@ -5741,6 +6019,11 @@
     "asset-news-more": loadAssetNewsPage,
     "notifications-reload": reloadNotifications,
     "notification-push": enablePush,
+    "notification-push-test": testPush,
+    "push-retry": reloadNotifications,
+    "install-open": openInstall,
+    "pwa-install": promptInstall,
+    "pwa-install-later": dismissInstall,
     "notification-revoke": revokeNotification,
     "event-destination": () => {
       const destination = state.eventDetail?.destination;
@@ -6062,27 +6345,6 @@
     matches: ({form}) => form.id === "billing-checkout-form",
     run: ({form}) => checkoutBilling(form)
   }, {
-    matches: ({form}) => form.id === "notification-email-form",
-    run: async ({form}) => {
-      if (!form.reportValidity()) return;
-      const email = form.elements.email.value.trim();
-      await deliveryAction(async () => {
-        await api("/api/notifications/email/request", {method: "POST", body: {email}});
-        delete state.deliveryDrafts[form.id];
-      });
-    }
-  }, {
-    matches: ({form}) => form.id.startsWith("notification-verify-"),
-    run: async ({form}) => {
-      if (!form.reportValidity()) return;
-      const channel_id = form.dataset.channelId;
-      const code = form.elements.code.value;
-      await deliveryAction(async () => {
-        await api("/api/notifications/email/verify", {method: "POST", body: {channel_id, code}});
-        delete state.deliveryDrafts[form.id];
-      });
-    }
-  }, {
     matches: ({form}) => form.id === "research-evidence-form",
     run: ({form}) => saveResearchEvidence(form)
   }, {
@@ -6160,7 +6422,6 @@
   });
   document.addEventListener("input", event => {
     const form = event.target.closest("form");
-    if (form && (form.id === "notification-email-form" || form.id.startsWith("notification-verify-"))) state.deliveryDrafts[form.id] = formValues(form);
   });
   $("#app-menu-toggle").addEventListener("click", openDrawer);
   $("#drawer-close").addEventListener("click", () => closeDrawer());
@@ -6252,6 +6513,7 @@
     freshnessBusy = true;
     try {
       await verifySession();
+      void refreshPushDevice();
       const editing = document.activeElement?.matches("input, textarea, select") || $("dialog[open]") || hasPending();
       if (!state.locked && state.user && !editing) await loadForView(state.view, state.route, true);
     } finally {
@@ -6313,6 +6575,21 @@
   prefersDark.addEventListener("change", () => {
     if (themeChoice === "system") applyTheme("system");
   });
+  window.addEventListener("beforeinstallprompt", event => {
+    event.preventDefault();
+    installState.prompt = event;
+    renderInstallState();
+  });
+  window.addEventListener("appinstalled", () => {
+    installState.installed = true;
+    installState.prompt = null;
+    installState.result = "";
+    renderInstallState();
+  });
+  matchMedia("(display-mode: standalone), (display-mode: fullscreen)").addEventListener("change", () => {
+    installState.installed = installedDisplay();
+    renderInstallState();
+  });
   let sessionChannel = null;
   try {
     sessionChannel = new BroadcastChannel("omnicio-session");
@@ -6321,6 +6598,7 @@
     });
   } catch {/* Server profile preconditions remain authoritative without BroadcastChannel. */}
   if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("message", receiveNotification);
     window.addEventListener("load", () => {
       const build = new URL(document.querySelector('script[src*="app.js"]').src).searchParams.get("build") || "";
       void navigator.serviceWorker.register(`/sw.js?build=${encodeURIComponent(build)}`).then(registration => {
@@ -7390,6 +7668,8 @@
       return;
     }
     const submit = form.querySelector("[type=submit]");
+    const context = pushContext();
+    const pushDevice = detachedPushDevice();
     submit.disabled = true;
     try {
       await api("/api/account/delete", {
@@ -7399,7 +7679,11 @@
           confirm_irreversible: form.elements.confirm_irreversible.checked
         }
       });
+      if (!currentPushContext(context)) return;
       clearPrivateState();
+      const clearedGeneration = state.generation;
+      await detachPushDevice(pushDevice, clearedGeneration);
+      if (state.generation !== clearedGeneration || state.user) return;
       state.session.status = "guest";
       try { localStorage.removeItem("omnicio-last-route"); } catch { /* Optional navigation state. */ }
       state.tour = false;

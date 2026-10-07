@@ -7,7 +7,7 @@ import secrets
 import subprocess
 from decimal import Decimal
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -102,6 +102,58 @@ def test_accepted_production_migrations_are_content_immutable() -> None:
         content = (ROOT / "migrations" / name).read_text(encoding="utf-8")
         normalized = content.replace("\r\n", "\n").encode()
         assert hashlib.sha256(normalized).hexdigest() == expected_digest
+
+
+@pytest.mark.skipif(not DATABASE_URL, reason="ephemeral PostgreSQL is required")
+def test_device_binding_migration_expires_all_legacy_owners_without_erasing_receipts() -> None:
+    name = "push_migration_" + secrets.token_hex(6)
+    owners = [uuid4(), uuid4()]
+    migration = ROOT / "migrations" / "0028_notification_device_binding.sql"
+    with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
+        admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name)))
+        try:
+            admin.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(name)))
+            for path in MIGRATIONS:
+                if path != migration:
+                    admin.execute(path.read_text(encoding="utf-8"))
+            for owner in owners:
+                admin.execute("INSERT INTO users (id) VALUES (%s)", (owner,))
+                admin.execute("SELECT set_config('omnicio.user_id', %s, false)", (str(owner),))
+                channel = admin.execute(
+                    "INSERT INTO notification_channels (user_id, kind, destination_hash, "
+                    "destination_ciphertext, label, status) "
+                    "VALUES (%s, 'push', %s, %s, 'Legacy device', 'active') RETURNING id",
+                    (owner, "b" * 64, b"encrypted-synthetic-subscription"),
+                ).fetchone()[0]
+                for status in ("queued", "accepted"):
+                    admin.execute(
+                        "INSERT INTO notification_outbox (user_id, channel_id, message_key, "
+                        "kind, payload_ciphertext, status) VALUES (%s, %s, %s, 'event', %s, %s)",
+                        (owner, channel, status, b"encrypted-synthetic-payload", status),
+                    )
+            content = migration.read_text(encoding="utf-8")
+            admin.execute(content)
+            admin.execute(content)
+            for owner in owners:
+                admin.execute("SELECT set_config('omnicio.user_id', %s, false)", (str(owner),))
+                assert admin.execute(
+                    "SELECT status FROM notification_channels WHERE user_id = %s", (owner,),
+                ).fetchone()[0] == "expired"
+                assert admin.execute(
+                    "SELECT status, last_error FROM notification_outbox WHERE user_id = %s "
+                    "ORDER BY status", (owner,),
+                ).fetchall() == [("accepted", None), ("cancelled", "push_binding_expired")]
+            index = admin.execute(
+                "SELECT indisunique, indisvalid FROM pg_index "
+                "WHERE indexrelid = 'notification_push_active_destination_key'::regclass",
+            ).fetchone()
+            assert index == (True, True)
+            assert admin.execute(
+                "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+                "WHERE oid = 'notification_channels'::regclass",
+            ).fetchone() == (True, True)
+        finally:
+            admin.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(name)))
 
 
 @pytest.mark.skipif(
@@ -405,7 +457,7 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     reason="ephemeral PostgreSQL is required for migration integration coverage",
 )
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0027_assistant_stream_memory.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0028_notification_device_binding.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:

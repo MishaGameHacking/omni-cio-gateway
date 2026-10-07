@@ -46,6 +46,11 @@ LEGAL_OPERATOR_MARKERS = (
     "__OMNICIO_OPERATOR_NAME__",
     "__OMNICIO_OPERATOR_EMAIL__",
 )
+LEGAL_DOCUMENT_KEYS = {
+    "privacy": "privacy_policy",
+    "consent": "personal_data_consent",
+    "terms": "terms",
+}
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
 LEGACY_RESET_MARKER = "/etc/omnicio/legacy-profile-reset-v1.done"
@@ -69,7 +74,8 @@ OPTIONAL_INTEGRATION_KEYS = (
     "TID_CLIENT_ID", "TID_CLIENT_SECRET", "TID_LOGIN_ENABLED", "TID_PKCE_ENABLED",
     "ASSISTANT_BASE_URL", "ASSISTANT_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_ENABLED",
     "ASSISTANT_ALLOWED_ENDPOINTS", "ASSISTANT_DAILY_REQUEST_LIMIT",
-    "NOTIFICATIONS_ENABLED", "NOTIFICATION_CRYPTO_KEY", "NOTIFICATION_VAPID_PRIVATE_KEY",
+    "NOTIFICATIONS_ENABLED", "NOTIFICATION_EMAIL_ENABLED", "NOTIFICATION_CRYPTO_KEY",
+    "NOTIFICATION_VAPID_PRIVATE_KEY",
     "NOTIFICATION_VAPID_SUBJECT", "NOTIFICATION_SMTP_HOST", "NOTIFICATION_SMTP_PORT",
     "NOTIFICATION_SMTP_USERNAME", "NOTIFICATION_SMTP_PASSWORD", "NOTIFICATION_SMTP_SENDER",
     "NOTIFICATION_SMTP_MODE", "OMNICIO_RESTORE_RECEIPT_KEY",
@@ -323,12 +329,17 @@ def validate_product_environment() -> None:
         )
 
 
+def verify_legal_document_version(body: str, path: str) -> None:
+    name = f"LEGAL_{pathlib.PurePosixPath(path).stem.upper()}_VERSION"
+    expected = os.environ.get(name, "").strip()
+    versions = re.findall(r'<p class="legal-meta">OMNICIO · omnicio.ru · версия ([^<]+)</p>', body)
+    if not expected or versions != [expected]:
+        raise InfraError(f"Legal document version does not match deployment config: {path}")
+
+
 def validate_legal_documents(repository_root: pathlib.Path) -> None:
-    for relative in (
-        "web/legal/privacy.html",
-        "web/legal/consent.html",
-        "web/legal/terms.html",
-    ):
+    for public_path in LEGAL_PAGES:
+        relative = "web" + public_path
         path = repository_root / relative
         try:
             body = path.read_text(encoding="utf-8")
@@ -339,6 +350,7 @@ def validate_legal_documents(repository_root: pathlib.Path) -> None:
             raise InfraError(
                 f"Legal document {relative} is missing operator placeholders"
             )
+        verify_legal_document_version(body, public_path)
 
 
 def build_product_environment(*, release_sha: str = "") -> str:
@@ -525,6 +537,12 @@ python3 -m venv "$RELEASE/.venv"
     --only-binary=:all: --require-hashes -r "$RELEASE/requirements-runtime.txt"
 "$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check -q \
     --no-deps --no-build-isolation --no-index --only-binary=:all: "$RELEASE"
+
+# Keep the signing identity outside product.env rollback and release cleanup.
+# The helper preserves an existing key, writes private files atomically, and
+# exposes only a readiness status. SMTP remains separately disabled.
+"$RELEASE/.venv/bin/python" -m omnicio.notification_setup \
+    /etc/omnicio/product.env /etc/omnicio/web-push.key
 
 install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
 install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
@@ -1235,6 +1253,12 @@ def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
     payload = json.loads(body)
     if not isinstance(payload, dict):
         raise InfraError("Public auth config is not an object")
+    expected_legal = {
+        key: os.environ.get(f"LEGAL_{name.upper()}_VERSION", "").strip()
+        for name, key in LEGAL_DOCUMENT_KEYS.items()
+    }
+    if not all(expected_legal.values()) or payload.get("legal_versions") != expected_legal:
+        raise InfraError("Public legal versions do not match deployment config")
     release = payload.get("release")
     expected_build = release_sha[:12]
     if release_sha and (
@@ -1314,12 +1338,13 @@ def verify_public(release_sha: str) -> None:
         config, _ = fetch_public("/api/auth/config", context)
         verify_public_config(config, release_sha=release_sha)
         for path, marker in LEGAL_PAGES.items():
-            body, _ = fetch_public(path, context)
+            body, content_type = fetch_public(path, context)
             rendered = body.decode(errors="replace")
-            if marker not in rendered:
+            if content_type != "text/html" or marker not in rendered:
                 raise InfraError(f"Public legal page verification failed: {path}")
             if "__OMNICIO_OPERATOR_" in rendered:
                 raise InfraError(f"Public legal page contains unresolved operator data: {path}")
+            verify_legal_document_version(rendered, path)
     except (
         urllib.error.URLError, TimeoutError, ssl.SSLError, json.JSONDecodeError, UnicodeDecodeError,
     ) as exc:

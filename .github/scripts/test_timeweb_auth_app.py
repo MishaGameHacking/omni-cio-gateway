@@ -418,7 +418,21 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.update(old)
 
     def test_legal_templates_require_operator_placeholders(self) -> None:
-        MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
+        versions = {
+            f"LEGAL_{name}_VERSION": "2026-10-07-v1.3.0"
+            for name in ("PRIVACY", "CONSENT", "TERMS")
+        }
+        with patch.dict(os.environ, versions):
+            MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
+
+    def test_legal_templates_reject_stale_or_missing_deployment_version(self) -> None:
+        for value in ("2026-10-06-v1.0.0", ""):
+            with (
+                self.subTest(value=value),
+                patch.dict(os.environ, {"LEGAL_PRIVACY_VERSION": value}),
+                self.assertRaisesRegex(MODULE.InfraError, "Legal document version"),
+            ):
+                MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
 
     def test_legacy_reset_is_disabled_without_regulatory_or_live_test_gate(self) -> None:
         old = dict(os.environ)
@@ -756,9 +770,9 @@ class AuthAppDeployTests(unittest.TestCase):
         terms = (root / "web" / "legal" / "terms.html").read_text(encoding="utf-8")
 
         for document, version in (
-            (privacy, "2026-10-06-v1.0.0"),
-            (consent, "2026-10-06-v1.0.0"),
-            (terms, "2026-10-06-v1.0.0"),
+            (privacy, "2026-10-07-v1.3.0"),
+            (consent, "2026-10-07-v1.3.0"),
+            (terms, "2026-10-07-v1.3.0"),
         ):
             self.assertIn('content="noindex,nofollow"', document)
             self.assertIn(version, document)
@@ -927,6 +941,13 @@ class PublicResponse(io.BytesIO):
 class PublicReleaseVerificationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.sha = "a" * 40
+        self.legal_version = "2026-10-07-v1.3.0"
+        environment = patch.dict(os.environ, {
+            f"LEGAL_{name}_VERSION": self.legal_version
+            for name in ("PRIVACY", "CONSENT", "TERMS")
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
         root = " ".join((
             MODULE.SITE_MARKER, MODULE.BRAND_PUBLIC_MARK, MODULE.WEB_MANIFEST_PATH,
             self.sha[:12],
@@ -941,6 +962,11 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             "login_enabled": False,
             "vkid_enabled": False,
             "tid_enabled": False,
+            "legal_versions": {
+                "privacy_policy": self.legal_version,
+                "personal_data_consent": self.legal_version,
+                "terms": self.legal_version,
+            },
         }).encode()
         self.responses = {
             "/": (root, "text/html", 200),
@@ -971,7 +997,9 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             self.responses[f"{path}?build={self.sha[:12]}"] = (body, content_type, 200)
         for path, marker in MODULE.LEGAL_PAGES.items():
             self.responses[path] = (
-                f"{marker} Test Operator operator@example.com".encode(),
+                (f"{marker} Test Operator operator@example.com"
+                 f'<p class="legal-meta">OMNICIO · omnicio.ru · версия {self.legal_version}</p>'
+                 ).encode(),
                 "text/html",
                 200,
             )
@@ -1075,6 +1103,35 @@ class PublicReleaseVerificationTests(unittest.TestCase):
                         self.verify()
                 finally:
                     self.responses[path] = previous
+
+    def test_stale_or_ambiguous_public_legal_document_is_rejected(self) -> None:
+        for path in MODULE.LEGAL_PAGES:
+            original = self.responses[path]
+            body = original[0]
+            for changed in (
+                body.replace(self.legal_version.encode(), b"2026-10-06-v1.0.0"),
+                body.replace(self.legal_version.encode(), b""),
+                body + body,
+            ):
+                with self.subTest(path=path, content=changed[:80]):
+                    self.responses[path] = (changed, "text/html", 200)
+                    try:
+                        with self.assertRaisesRegex(MODULE.InfraError, "Legal document version"):
+                            self.verify()
+                    finally:
+                        self.responses[path] = original
+
+    def test_public_api_legal_versions_must_match_the_deployed_documents(self) -> None:
+        config = json.loads(self.responses["/api/auth/config"][0])
+        current = config["legal_versions"]
+        invalid = [None, {}, dict(current, terms="2026-10-06-v1.0.0")]
+        for legal_versions in invalid:
+            encoded = json.dumps(dict(config, legal_versions=legal_versions)).encode()
+            with (
+                self.subTest(legal_versions=legal_versions),
+                self.assertRaisesRegex(MODULE.InfraError, "Public legal versions"),
+            ):
+                MODULE.verify_public_config(encoded)
 
     def test_excessive_public_response_is_rejected(self) -> None:
         self.responses["/"] = (b"x" * (4 * 1024 * 1024 + 1), "text/html", 200)

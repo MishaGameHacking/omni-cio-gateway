@@ -58,7 +58,13 @@ from .freshness import PORTFOLIO_MAX_AGE, describe_freshness
 from .instrument_facts import instrument_facts
 from .market import MarketService, MarketStreamLimit
 from .news import NewsClient, NewsNotFound, NewsUnavailable
-from .notifications import NotificationConfig, NotificationService, NotificationUnavailable
+from .notifications import (
+    NotificationConfig,
+    NotificationConflict,
+    NotificationRateLimited,
+    NotificationService,
+    NotificationUnavailable,
+)
 from .observer import PortfolioRefreshBusy, PortfolioRefreshCoordinator
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import (
@@ -249,6 +255,11 @@ class EventsReadAllBody(StrictRequestBody):
 class PushSubscriptionBody(StrictRequestBody):
     subscription: dict[str, Any]
     label: str = Field(default="Это устройство", min_length=1, max_length=80)
+    intent: Literal["enable", "sync"] = "enable"
+
+
+class PushTestBody(StrictRequestBody):
+    channel_id: UUID
 
 
 class EmailVerificationRequestBody(StrictRequestBody):
@@ -514,6 +525,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         operator_user_id=cfg.operator_user_id,
         crypto_key=cfg.notification_crypto_key or cfg.broker_token_crypto_key,
         enabled=cfg.notifications_enabled,
+        email_enabled=cfg.notification_email_enabled,
         vapid_private_key=cfg.notification_vapid_private_key,
         vapid_subject=cfg.notification_vapid_subject,
         smtp_host=cfg.notification_smtp_host,
@@ -1969,6 +1981,14 @@ def _notification_write(
         payload = action()
     except NotificationUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except NotificationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except NotificationRateLimited as exc:
+        raise HTTPException(
+            status_code=429, detail=str(exc), headers={"Retry-After": "60"},
+        ) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="session_expired") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _workspace_result(request, token, user, payload, write=True)
@@ -1988,7 +2008,11 @@ def notification_status(
 ) -> dict[str, Any]:
     user = authenticated_user(request, session_token)
     notification = cast(NotificationService, request.app.state.notification_service)
-    return _workspace_result(request, session_token, user, notification.status(user.id))
+    try:
+        payload = notification.status(user.id, session_digest=session_digest(session_token or ""))
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="session_expired") from exc
+    return _workspace_result(request, session_token, user, payload)
 
 
 @app.post(
@@ -2008,7 +2032,20 @@ def notification_subscribe_push(
     user = _workspace_editor(request, session_token)
     notification = cast(NotificationService, request.app.state.notification_service)
     return _notification_write(request, session_token, user, lambda: notification.subscribe_push(
-        user.id, body.subscription, label=body.label,
+        user.id, body.subscription, label=body.label, intent=body.intent,
+        session_digest=session_digest(session_token or ""),
+    ))
+
+
+@app.post("/api/notifications/push/test")
+def notification_test_push(
+    body: PushTestBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    notification = cast(NotificationService, request.app.state.notification_service)
+    return _notification_write(request, session_token, user, lambda: notification.test_push(
+        user.id, body.channel_id, session_digest=session_digest(session_token or ""),
     ))
 
 

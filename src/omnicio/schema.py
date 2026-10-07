@@ -13,6 +13,32 @@ SELECT
     AND to_regclass('public.workspace_events') IS NOT NULL
     AND to_regclass('public.notification_channels') IS NOT NULL
     AND to_regclass('public.notification_outbox') IS NOT NULL
+    AND (
+        SELECT count(*) = 5 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'notification_push_authorizations'
+          AND column_name IN ('origin', 'identity_hash', 'issued_at', 'expires_at',
+                               'authorization_ciphertext') AND is_nullable = 'NO'
+    )
+    AND EXISTS (
+        SELECT 1 FROM pg_index
+        WHERE indexrelid = to_regclass('public.notification_push_active_destination_key')
+          AND indisunique AND indisvalid AND indisready
+    )
+    AND (
+        SELECT count(*) = 2 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'notification_channels'
+          AND column_name IN ('session_id', 'binding_id')
+    )
+    AND EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'notification_outbox'
+          AND column_name = 'binding_id'
+    )
+    AND EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.notification_channels') AND contype = 'f'
+          AND convalidated AND conname = 'notification_channels_session_owner_fkey'
+    )
     AND to_regclass('public.notification_outbox_events') IS NOT NULL
     AND to_regclass('public.notification_outbox_events_message_idx') IS NOT NULL
     AND (
