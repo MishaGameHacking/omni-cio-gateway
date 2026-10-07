@@ -69,9 +69,9 @@ def native(command: list[str], *, timeout: int) -> None:
 def main() -> int:
     if sys.argv[1:] == ["--cleanup-artifact"]:
         # Exactly this job's fixed generated directory; never caller-selected paths.
-        output = restore_artifact_path()
-        if output.is_dir():
-            shutil.rmtree(output)
+        artifact_directory = restore_artifact_path()
+        if artifact_directory.is_dir():
+            shutil.rmtree(artifact_directory)
         return 0
     if sys.argv[1:] or sys.platform != "win32":
         raise RecoveryBlocked("The manual restore drill requires the reviewed Windows runner")
@@ -102,9 +102,9 @@ def main() -> int:
         data = directory / "data"
         password = secrets.token_urlsafe(40)
         password_file = directory / "password"
-        with password_file.open("x", encoding="utf-8") as output:
+        with password_file.open("x", encoding="utf-8") as password_stream:
             os.chmod(password_file, 0o600)
-            output.write(password)
+            password_stream.write(password)
         native([str(binary / "initdb.exe"), "-D", str(data), "-U", "postgres",
                 "--auth=scram-sha-256", "--encoding=UTF8", "--no-locale",
                 "--pwfile", str(password_file)], timeout=60)

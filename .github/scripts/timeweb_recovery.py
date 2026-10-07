@@ -922,8 +922,9 @@ def ensure_recovery_point(
 
 MAX_LOGICAL_ARCHIVE_BYTES = 64 * 1024 * 1024
 RESTORE_ROOT = pathlib.Path(__file__).resolve().parents[2]
+ENCRYPTED_ARCHIVE_NAME = "database.dump.encrypted"
 _RESTORE_ARTIFACT_NAMES = frozenset({
-    "database.dump.encrypted", "manifest.json", "restore-verification.json",
+    ENCRYPTED_ARCHIVE_NAME, "manifest.json", "restore-verification.json",
 })
 
 
@@ -1027,7 +1028,7 @@ def export_logical_archive(
             if not raw.startswith(b"PGDMP"):
                 raise RecoveryBlocked("Expected a PostgreSQL custom archive")
             encrypted = cipher.encrypt(raw)
-            archive = restore_artifact_path("database.dump.encrypted")
+            archive = restore_artifact_path(ENCRYPTED_ARCHIVE_NAME)
             with archive.open("xb") as output:
                 os.chmod(archive, 0o600)
                 output.write(encrypted)
@@ -1081,7 +1082,7 @@ def _read_logical_export(
 
     from omnicio import recovery as contract
 
-    archive = restore_artifact_path("database.dump.encrypted")
+    archive = restore_artifact_path(ENCRYPTED_ARCHIVE_NAME)
     proof = contract.verified_recovery_evidence(envelope, signing_key)
     required = {"kind", "source_kind", "cluster_id", "release_sha", "source_at",
                 "source_system_id", "archive_sha256", "encrypted_sha256",
