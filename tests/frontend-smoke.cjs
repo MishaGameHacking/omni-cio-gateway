@@ -3192,7 +3192,7 @@ async function exerciseStartupRecovery({send, configureViewport, base, wait, cli
   assert.equal(await evaluate("window.OMNICIO_RELEASE === undefined"), true);
   html.legacyHtml = false;
   const htmlOrigin = await evaluate("performance.timeOrigin");
-  await evaluate('Object.defineProperty(window, "caches", {get() {throw new DOMException("Storage is unavailable", "SecurityError");}})');
+  await evaluate('void Object.defineProperty(window, "caches", {get() {throw new DOMException("Storage is unavailable", "SecurityError");}})');
   await click("[data-startup-reload]");
   await wait(`performance.timeOrigin !== ${htmlOrigin} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "Recovery still reloads if the public cache API is unavailable");
   assert.equal(await evaluate("location.hash"), destination);

@@ -143,7 +143,7 @@ class _DeadlineSocketReader(io.RawIOBase):
     def readable(self) -> bool:
         return True
 
-    def readinto(self, buffer: Buffer, /) -> int:
+    def readinto(self, buffer: Buffer) -> int:
         idle_until = (time.monotonic() + self._idle_timeout
                       if self._idle_timeout is not None else None)
         while True:
