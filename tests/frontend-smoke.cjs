@@ -3940,6 +3940,7 @@ async function exercisePushLifecycle(context) {
   await wait('document.querySelector("[data-push-test-status=queued]")', "A test message acknowledges only its server queue receipt");
   assert.equal(fixture.notificationDeliveries[0].status, "queued");
   assert.equal(fixture.notificationDeliveries[0].attempts, 0);
+  await evaluate('document.querySelector("#notification-settings").scrollIntoView({block:"center",behavior:"instant"});void 0');
   await screenshot("push-test-queued-390.png");
   await click('#notification-settings [data-action="notification-revoke"]');
   await until(() => fixture.notificationChannels[0].status === "revoked", "Explicit opt-out reaches the server");
@@ -4642,9 +4643,11 @@ async function exerciseViewport({
     assert.equal(await evaluate('document.querySelector("#main-content").textContent.includes("Тестовая компания")'), false, "Late old-profile response cannot restore data");
     assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Мой профиль");
   }
-  const browserStorage = await evaluate('({local:Object.keys(localStorage),session:Object.keys(sessionStorage),lastRoute:localStorage.getItem("omnicio-last-route")})');
+  const browserStorage = await evaluate('({local:Object.keys(localStorage),session:Object.keys(sessionStorage),lastRoute:localStorage.getItem("omnicio-last-route"),installDismissed:localStorage.getItem("omnicio-install-dismissed")})');
   assert.deepEqual(browserStorage.session, [], "Private session data never enters sessionStorage");
-  assert.ok(browserStorage.local.every(key => ["omnicio-theme", "omnicio-last-route"].includes(key)), "Only display preferences and a sanitized page route may enter localStorage");
+  const unexpectedStorageKeys = browserStorage.local.filter(key => !["omnicio-theme", "omnicio-last-route", "omnicio-install-dismissed"].includes(key));
+  assert.deepEqual(unexpectedStorageKeys, [], "Only display preferences, the installation dismissal and a sanitized page route may enter localStorage");
+  if (browserStorage.local.includes("omnicio-install-dismissed")) assert.equal(browserStorage.installDismissed, "true", "The installation preference stores only the dismissal flag, without identifiers or content");
   if (browserStorage.lastRoute) {
     assert.equal(browserStorage.lastRoute.includes("?"), false, "The persistent last page cannot include personal IDs or search values");
     assert.equal(await evaluate('localStorage.getItem("omnicio-last-route") === window.OmniUI.routeHash(window.OmniUI.resumeRoute(window.OmniUI.parseRoute(localStorage.getItem("omnicio-last-route"))))'), true, "The persistent page passes the same resume allowlist as startup");
