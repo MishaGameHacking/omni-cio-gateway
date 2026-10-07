@@ -3,14 +3,14 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot, BrokerNotConnected
-from omnicio.db import ActiveLiveExecutionError, BrokerConnectionConflict
+from omnicio.db import ActiveLiveExecutionError, BrokerConnectionConflict, Database
 from omnicio.main import app
 from omnicio.market import (
     CBRIndicator,
@@ -718,12 +718,17 @@ def test_broker_disconnect_race_is_a_safe_conflict() -> None:
 
 @pytest.mark.parametrize("active", [False, True])
 def test_broker_replacement_conflict_is_private_and_uses_session_user(active: bool) -> None:
+    database = Mock(spec=Database)
+    database.has_legal_versions.return_value = True
     with (
         patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.service") as auth,
+        patch.object(app.state, "database", database, create=True),
         patch("omnicio.main.broker_service") as broker,
         patch("omnicio.main.settings") as configuration,
     ):
         user.return_value.id = UUID(int=101)
+        auth.return_value.legal_versions.return_value = {"terms": "test"}
         configuration.return_value.terms_version = "test"
         code = (
             "active_live_execution_must_be_reconciled" if active else "broker_disconnect_required"
@@ -743,6 +748,7 @@ def test_broker_replacement_conflict_is_private_and_uses_session_user(active: bo
     assert response.json()["detail"] == code
     assert response.headers["cache-control"] == "private, no-store"
     assert broker.return_value.connect.call_args.kwargs["user_id"] == UUID(int=101)
+    database.has_legal_versions.assert_called_once_with(UUID(int=101), {"terms": "test"})
 
 
 def test_account_delete_race_is_a_safe_conflict() -> None:

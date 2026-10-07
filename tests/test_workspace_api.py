@@ -168,6 +168,9 @@ def test_workspace_write_rechecks_session_and_consent_before_returning_saved_dat
     getattr(store, consumer).side_effect = save
     response = client.request(method, path, json=body, headers=HEADERS)
     assert response.status_code == expected_status
+    if change == "consent":
+        # The browser uses this code to require readback after a committed write.
+        assert response.json()["detail"] == "updated_legal_consent_required"
     assert "private_owner_payload" not in response.text
     assert "deleted" not in response.json()
     assert saved_for == [OWNER.id]
@@ -287,6 +290,7 @@ def test_workspace_writes_require_current_legal_versions(
         headers=HEADERS,
     )
     assert response.status_code == 409
+    assert response.json()["detail"] == "updated_legal_consent_required"
     store.save_preferences.assert_not_called()
 
 

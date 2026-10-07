@@ -94,7 +94,7 @@ VKID_CALLBACK = f"{CANONICAL_ORIGIN}/api/auth/vkid/callback"
 TID_CALLBACK = f"{CANONICAL_ORIGIN}/api/auth/tid/callback"
 INVALID_VKID_CALLBACK = "VK ID callback payload is invalid"
 _TBANK_CREDENTIAL_REJECTED_DETAIL = "stored T-Invest credential was rejected"
-_UPDATED_LEGAL_CONSENT_DETAIL = "updated legal consent required"
+_UPDATED_LEGAL_CONSENT_DETAIL = "updated_legal_consent_required"
 _TBANK_NOT_CONNECTED_DETAIL = "T-Invest is not connected"
 _PRIVATE_NO_STORE = "private, no-store"
 _PUBLIC_ID_PATTERN = r"^[0-9]{9}$"
@@ -2050,8 +2050,7 @@ def tbank_accounts(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
-    require_same_origin(request)
-    authenticated_user(request, session_token)
+    user = _workspace_editor(request, session_token)
     if not body.accept_personal_terms:
         raise HTTPException(
             status_code=400,
@@ -2067,7 +2066,7 @@ def tbank_accounts(
     except TBankUnavailable as exc:
         raise HTTPException(status_code=503, detail="T-Invest API unavailable") from exc
 
-    return {
+    payload = {
         "accounts": [
             {
                 "id": account.id,
@@ -2078,6 +2077,7 @@ def tbank_accounts(
             for account in accounts
         ]
     }
+    return _workspace_result(request, session_token, user, payload, write=True)
 
 
 @app.put(
@@ -2094,8 +2094,7 @@ def connect_tbank(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
-    require_same_origin(request)
-    user = authenticated_user(request, session_token)
+    user = _workspace_editor(request, session_token)
     if not body.accept_personal_terms:
         raise HTTPException(
             status_code=400,

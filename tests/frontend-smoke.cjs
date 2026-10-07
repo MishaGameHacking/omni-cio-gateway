@@ -120,6 +120,8 @@ const makeFixture = mode => {
     lostAck: false,
     activeWrites: 0,
     maxActiveWrites: 0,
+    holdPreferences: false,
+    heldPreferences: [],
     holdWorkspace: false,
     heldWorkspace: [],
     holdGoals: false,
@@ -742,6 +744,12 @@ const workerContract = async () => {
   }
 };
 function captureBrowserLayout() {
+  const readableElements = selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length && getComputedStyle(element).visibility !== "hidden").map(element => ({
+    label: element.getAttribute("aria-label") || element.name || element.textContent.trim().slice(0, 70),
+    fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+    compactAction: element.classList.contains("small-button"),
+    rect: element.getBoundingClientRect().toJSON()
+  }));
   const elementGeometry = element => {
     const parent = element.offsetParent;
     return {
@@ -851,6 +859,12 @@ function captureBrowserLayout() {
     errors: window.__browserErrors,
     csp: window.__cspViolations,
     viewport,
+    readability: {
+      menu: readableElements("#sidebar-nav .nav-link"),
+      fields: readableElements('.field input:not([type=checkbox]):not([type=range]), .field select, .field textarea, .global-search input, .chat-compose textarea'),
+      captions: readableElements(".card-label, .data-footnote, .source-line, .event-meta"),
+      actions: readableElements(".button, .icon-button")
+    },
     navigation,
     charts,
     tables
@@ -959,9 +973,19 @@ function assertMobileNavigation(data, label) {
     viewport
   }));
   for (const link of nav.links) {
-    assert.ok(link.rect.width > 0 && link.rect.height > 0, label + ": navigation link has a visible box " + link.route);
+    assert.ok(link.rect.width >= 44 && link.rect.height >= 44, label + ": navigation link has a comfortable touch target " + link.route);
     assert.ok(link.x >= viewport.offsetLeft && link.x <= right && link.y >= viewport.offsetTop && link.y <= bottom, label + ": navigation center is visible " + link.route);
     assert.equal(link.hit, true, label + ": navigation center receives interaction " + JSON.stringify(link));
+  }
+}
+function assertReadability(data, label) {
+  const minimumMenuSize = data.width <= 960 ? 16 : 15;
+  for (const item of data.readability.menu) assert.ok(item.fontSize >= minimumMenuSize, label + ": readable menu " + JSON.stringify(item));
+  for (const item of data.readability.fields) assert.ok(item.fontSize >= 16, label + ": readable input without mobile focus zoom " + JSON.stringify(item));
+  for (const item of data.readability.captions) assert.ok(item.fontSize >= 12, label + ": readable supporting information " + JSON.stringify(item));
+  for (const item of data.readability.actions) {
+    const minimumHeight = item.compactAction && data.width > 960 ? 40 : 44;
+    assert.ok(item.rect.height >= minimumHeight, label + ": comfortable action height " + JSON.stringify(item));
   }
 }
 function assertChartLayout(charts, label) {
@@ -1114,10 +1138,10 @@ const runBrowser = async base => {
     });
     const send = (method, params = {}) => client.send(method, params, sessionId);
     let requestedViewport = null;
-    const configureViewport = async width => {
+    const configureViewport = async (width, height = 900) => {
       const params = {
         width,
-        height: 900,
+        height,
         deviceScaleFactor: 1,
         mobile: width < 680
       };
@@ -1176,6 +1200,7 @@ const runBrowser = async base => {
       assert.deepEqual(data.errors, [], label + ": runtime errors");
       assert.deepEqual(data.csp, [], label + ": production Content Security Policy");
       assertMobileNavigation(data, label);
+      assertReadability(data, label);
       assertChartLayout(data.charts, label);
       assertTableClipping(data.tables, label);
     };
@@ -1239,6 +1264,7 @@ const runBrowser = async base => {
           fieldValue
         });
       }
+      await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
     }
     const failureKey = "signed-load-failure";
     const failure = makeFixture("signed");
@@ -1890,6 +1916,84 @@ async function exerciseGuestViewport({
     await click('#auth-dialog [data-close-dialog]');
   }
 }
+async function exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot}) {
+  await configureViewport(1440);
+  const key = `signed-theme-${round}`;
+  const fixture = makeFixture("signed");
+  fixture.prefs.document.theme = "light";
+  fixture.prefs.document.notifications.payments = false;
+  fixture.prefs.document.quiet_hours.enabled = true;
+  fixture.holdPreferences = true;
+  fixture.holdWorkspace = true;
+  const original = clone(fixture.prefs);
+  fixtures.set(key, fixture);
+  await send("Page.navigate", {url: `${base}?case=${key}#assistant`});
+  await wait('!document.querySelector("#app-shell").hidden', "Direct assistant route has a theme control");
+  await until(() => fixture.heldPreferences.length === 1, "Preferences load on the direct assistant route");
+  await click('.app-topbar [data-theme-choice="dark"]');
+  await wait('document.documentElement.dataset.theme==="dark"', "Theme responds before slow preferences arrive");
+  await delay(750);
+  assert.equal(fixture.requests.filter(item => item.path === "/api/preferences" && item.method === "PUT").length, 0, "An early theme choice cannot write before either preferences source is known");
+  fixture.holdPreferences = false;
+  fixture.holdWorkspace = false;
+  fixture.heldPreferences.splice(0).forEach(release => release());
+  fixture.heldWorkspace.splice(0).forEach(release => release());
+  await until(() => fixture.prefs.version === original.version + 1, "Early explicit theme is saved against the loaded version");
+  await wait('document.querySelector(".app-topbar [data-theme-choice=dark]").getAttribute("aria-pressed")==="true"', "Late server response cannot replace the chosen theme");
+  assert.deepEqual(fixture.prefs.document, {...original.document, theme: "dark"}, "Bootstrap theme must preserve every unrelated server preference");
+  const firstWrite = fixture.requests.find(item => item.path === "/api/preferences" && item.method === "PUT");
+  assert.equal(firstWrite.body.expected_version, original.version, "Theme uses the actual server revision");
+  assert.equal(firstWrite.profile, fixture.user, "Theme writes retain the profile precondition");
+  await click('#sidebar-nav [data-route="settings"]');
+  await wait('document.querySelector("#preferences-form")', "Settings after an early theme choice");
+  await fieldValue("#preferences-form", "locale", "en");
+  await fieldValue("#preferences-form", "quiet_start", "");
+  const beforeHeader = clone(fixture.prefs);
+  await click('.app-topbar [data-theme-choice="light"]');
+  await until(() => fixture.prefs.version === beforeHeader.version + 1, "Header theme saves despite an unrelated invalid form draft");
+  assert.deepEqual(fixture.prefs.document, {...beforeHeader.document, theme: "light"}, "Unsubmitted form fields cannot accompany a header theme write");
+  assert.deepEqual(await evaluate('(() => {const form=document.querySelector("#preferences-form");return {theme:form.elements.theme.value,locale:form.elements.locale.value,quiet:form.elements.quiet_start.value,valid:form.checkValidity()};})()'), {theme: "light", locale: "en", quiet: "", valid: false}, "Theme field synchronizes while unrelated form edits remain unsubmitted");
+  await click('#preferences-form [type="submit"]');
+  await delay(750);
+  assert.equal(fixture.prefs.version, beforeHeader.version + 1, "Invalid explicit form submit remains blocked");
+  await fieldValue("#preferences-form", "quiet_start", original.document.quiet_hours.start);
+  await click('#preferences-form [type="submit"]');
+  await until(() => fixture.prefs.document.locale === "en", "Other settings save after validation");
+  assert.equal(fixture.prefs.document.theme, "light", "Saving another setting cannot restore the stale form theme");
+  fixture.lostAck = true;
+  await click('.app-topbar [data-theme-choice="system"]');
+  await wait('document.querySelector("[data-save-status=prefs]").dataset.state==="saved" && document.querySelector(".app-topbar [data-theme-choice=system]").getAttribute("aria-pressed")==="true"', "Auto theme reconciles a lost save acknowledgement");
+  assert.equal(fixture.prefs.document.theme, "system", "Auto is stored as a mode");
+  for (const color of ["dark", "light"]) {
+    await send("Emulation.setEmulatedMedia", {features: [{name: "prefers-color-scheme", value: color}]});
+    await wait(`document.documentElement.dataset.theme===${JSON.stringify(color)}`, "Auto follows the operating system: " + color);
+    assert.equal(await evaluate('localStorage.getItem("omnicio-theme")'), "system", "Resolved color cannot replace the stored auto choice");
+    assert.equal(await evaluate('document.querySelector(".app-topbar [data-theme-choice=system]").getAttribute("aria-pressed")'), "true");
+  }
+  const savedVersion = fixture.prefs.version;
+  await click('#sidebar-nav [data-route="assistant"]');
+  await send("Page.reload");
+  await wait('!document.querySelector("#app-shell").hidden && document.querySelector("#profile-name").textContent.includes("Тестовый") && document.documentElement.dataset.theme==="light"', "Auto theme survives direct-route reload");
+  assert.equal(await evaluate('document.querySelector(".app-topbar [data-theme-choice=system]").getAttribute("aria-pressed")'), "true");
+  assert.equal(fixture.prefs.version, savedVersion, "Reload does not rewrite unchanged preferences");
+  await checkLayout(`theme-auto ${round}/1440`);
+  await exerciseShortDrawer({configureViewport, round, click, wait, evaluate, checkLayout, screenshot});
+  await send("Emulation.setEmulatedMedia", {features: []});
+  console.log(`PASS theme round ${round}: direct route, slow load, CAS, unrelated drafts, validation, lost acknowledgement, system changes and reload`);
+}
+async function exerciseShortDrawer({configureViewport, round, click, wait, evaluate, checkLayout, screenshot}) {
+  await configureViewport(390, 568);
+  await click("#app-menu-toggle");
+  await wait('document.querySelector("#app-sidebar").dataset.open==="true"', "Short-screen drawer");
+  await checkLayout(`short-drawer ${round}/390`);
+  const reachability = await evaluate('(() => {const sidebar=document.querySelector("#app-sidebar");const last=document.querySelector("#sidebar-nav [data-route=settings]");last.scrollIntoView({block:"nearest",behavior:"instant"});const rect=last.getBoundingClientRect();return {scrollable:["auto","scroll"].includes(getComputedStyle(sidebar).overflowY),hit:last.contains(document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2)),height:rect.height};})()');
+  assert.equal(reachability.scrollable, true, "The full menu can scroll on a short screen");
+  assert.equal(reachability.hit, true, "The final settings item remains reachable");
+  assert.ok(reachability.height >= 44, "Drawer items retain comfortable touch targets");
+  await screenshot(`drawer-short-${round}-390.png`);
+  await click('#sidebar-nav [data-route="settings"]');
+  await wait('document.querySelector("#app-sidebar").dataset.open!=="true" && document.querySelector("#preferences-form")', "Final drawer item opens its page");
+}
 async function exerciseViewport({
   send,
   configureViewport,
@@ -1929,6 +2033,8 @@ async function exerciseViewport({
   if (width <= 960) {
     await click("#app-menu-toggle");
     await wait('document.querySelector("#app-sidebar").dataset.open==="true"', "Mobile drawer");
+    await checkLayout(`drawer ${round}/${width}`);
+    if (round === 2 && width <= 390) await screenshot(`drawer-${round}-${width}.png`);
     assert.equal(await evaluate('document.querySelector(".app-main").inert'), true, "Drawer traps interaction outside its surface");
     await send("Input.dispatchKeyEvent", {
       type: "keyDown",
@@ -2552,7 +2658,7 @@ async function exerciseRefreshRecovery({
   assert.equal(fixture.mandate, null);
   assert.equal(fixture.requests.filter(item => item.method === "POST" && /proposals|advance|executions$/.test(item.path)).length, 0, "Recovery must never create or advance a plan");
 }
-function serveTestSavedSettings({
+async function serveTestSavedSettings({
   strategy,
   fixture,
   response
@@ -2560,8 +2666,10 @@ function serveTestSavedSettings({
   if (!strategy && fixture.failPreferences || strategy && fixture.failStrategyLoad) return sendJSON(response, {
     detail: "synthetic_load_failure"
   }, 503);
-  return sendJSON(response, reorderJSON(strategy ? {
+  const saved = reorderJSON(strategy ? {
     public_id: fixture.user,
     selection: clone(fixture.selection)
-  } : clone(fixture.prefs)));
+  } : clone(fixture.prefs));
+  if (!strategy && fixture.holdPreferences) await new Promise(release => fixture.heldPreferences.push(release));
+  return sendJSON(response, saved);
 }
