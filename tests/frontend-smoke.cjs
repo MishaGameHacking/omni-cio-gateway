@@ -3479,13 +3479,14 @@ async function exerciseSafeUpdate({send, configureViewport, round, base, wait, c
   assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null, "The temporary stored copy is consumed once");
   assert.equal(fixture.goals.length, 0, "Restoring fields never saves a goal automatically");
   const previousUser = fixture.user;
-  fixture.user = "000000124";
   fixture.holdMe = true;
   const secondOrigin = await evaluate("performance.timeOrigin");
   await click('#dialog-update-banner [data-action="pwa-update"]');
   await until(()=>typeof fixture.releaseMe === "function", "A changed session is deliberately awaiting verification");
   await wait(`performance.timeOrigin !== ${secondOrigin}`, "The second explicit update creates a new document");
   assert.equal(await evaluate('JSON.parse(sessionStorage.getItem("omnicio-update-drafts")).public_id'), previousUser);
+  // Switch identity after the old document leaves, before the held verification replies.
+  fixture.user = "000000124";
   fixture.holdMe = false; fixture.releaseMe(); delete fixture.releaseMe;
   await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#goal-form")?.elements.title.value === ""', "A different verified profile cannot receive the previous draft");
   assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null);
