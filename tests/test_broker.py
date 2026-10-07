@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from functools import partial
 from http.client import HTTPResponse
 from unittest.mock import Mock, patch
 from uuid import UUID
@@ -1378,15 +1379,15 @@ def test_tbank_real_response_failure_is_safe_and_never_replays(failure, consumer
                     assert item["last_price"] is None
                     assert item["errors"]["quote"] == "source_unavailable"
                 else:
+                    operation = (partial(
+                        client.get_last_prices_batch, credential, "prod", ("uid-1",),
+                    ) if consumer == "quote_client" else partial(
+                        client.submit_limit_order, credential, "sandbox", "synthetic-account",
+                        instrument_uid="uid-1", lots=1, price=Decimal("10"),
+                        action="buy", request_id=str(UUID(int=2)),
+                    ))
                     with pytest.raises(TBankUnavailable) as failure_result:
-                        if consumer == "quote_client":
-                            client.get_last_prices_batch(credential, "prod", ("uid-1",))
-                        else:
-                            client.submit_limit_order(
-                                credential, "sandbox", "synthetic-account",
-                                instrument_uid="uid-1", lots=1, price=Decimal("10"),
-                                action="buy", request_id=str(UUID(int=2)),
-                            )
+                        operation()
                     assert credential not in str(failure_result.value)
                     assert "secret" not in str(failure_result.value)
                 request.assert_called_once()
