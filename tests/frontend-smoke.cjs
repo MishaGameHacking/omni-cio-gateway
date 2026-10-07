@@ -1986,11 +1986,15 @@ async function exerciseShortDrawer({configureViewport, round, click, wait, evalu
   await click("#app-menu-toggle");
   await wait('document.querySelector("#app-sidebar").dataset.open==="true"', "Short-screen drawer");
   await checkLayout(`short-drawer ${round}/390`);
-  const reachability = await evaluate('(() => {const sidebar=document.querySelector("#app-sidebar");const last=document.querySelector("#sidebar-nav [data-route=settings]");last.scrollIntoView({block:"nearest",behavior:"instant"});const rect=last.getBoundingClientRect();return {scrollable:["auto","scroll"].includes(getComputedStyle(sidebar).overflowY),hit:last.contains(document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2)),height:rect.height};})()');
-  assert.equal(reachability.scrollable, true, "The full menu can scroll on a short screen");
+  const reachability = await evaluate('(() => {const last=document.querySelector("#sidebar-nav [data-route=settings]");last.scrollIntoView({block:"nearest",behavior:"instant"});const rect=last.getBoundingClientRect();const close=document.querySelector("#drawer-close");const box=close.getBoundingClientRect();return {hit:last.contains(document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2)),height:rect.height,closeVisible:box.top>=0&&box.bottom<=innerHeight,closeHit:close.contains(document.elementFromPoint(box.left+box.width/2,box.top+box.height/2)),closeWidth:box.width,closeHeight:box.height};})()');
   assert.equal(reachability.hit, true, "The final settings item remains reachable");
   assert.ok(reachability.height >= 44, "Drawer items retain comfortable touch targets");
+  assert.equal(reachability.closeVisible, true, "The close control remains entirely visible after scrolling to the last menu item");
+  assert.equal(reachability.closeHit, true, "The close control remains reachable on a short touch screen");
+  assert.ok(reachability.closeWidth >= 44 && reachability.closeHeight >= 44, "The visible close target cannot be reduced to fit the short drawer");
   await screenshot(`drawer-short-${round}-390.png`);
+  await click("#drawer-close");
+  await wait('document.querySelector("#drawer-backdrop").hidden && !document.querySelector(".app-main").inert', "Close control releases the page after scrolling");
   await click('#sidebar-nav [data-route="settings"]');
   await wait('document.querySelector("#app-sidebar").dataset.open!=="true" && document.querySelector("#preferences-form")', "Final drawer item opens its page");
 }

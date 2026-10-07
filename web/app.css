@@ -3180,6 +3180,7 @@ dialog::backdrop {
   }
   .allocation-content {
     flex-direction:row;
+    align-items:center;
     min-height:166px;
     gap:14px
   }
@@ -3269,6 +3270,7 @@ dialog::backdrop {
     transition:transform .2s ease;
     z-index:61;
     padding:24px 14px calc(20px + env(safe-area-inset-bottom));
+    overflow:hidden;
     box-shadow:15px 0 60px #0003
   }
   .sidebar[data-open=true] {
@@ -3286,6 +3288,12 @@ dialog::backdrop {
     inset:7px
   }
   .sidebar-nav {
+    flex:1 1 auto;
+    min-height:0;
+    align-content:start;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    scrollbar-width:thin;
     gap:4px
   }
   .nav-link {
