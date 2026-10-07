@@ -345,6 +345,30 @@ class AssistantClient:
         return payload
 
 
+def _research_context(research: Mapping[str, Any]) -> dict[str, Any]:
+    result = {
+        key: research[key]
+        for key in ("status", "strategy_version", "engine_version", "basis", "created_at")
+        if key in research and isinstance(research[key], (str, int, float, bool))
+    }
+    for section, allowed in {
+        "period": {"from", "to", "train_end", "test_from", "observations", "test_observations"},
+        "metrics": {
+            "ending_nav_rub", "net_return_percent", "max_drawdown_percent",
+            "annualized_volatility_percent", "transaction_costs_rub", "taxes_rub", "trades",
+        },
+    }.items():
+        source = research.get(section)
+        if isinstance(source, Mapping):
+            result[section] = {
+                key: value
+                for key, value in source.items()
+                if key in allowed and (value is None or isinstance(value, (str, int, float, bool)))
+            }
+    result["probability_of_profit"] = None
+    return result
+
+
 def investment_context(
     workspace: Mapping[str, Any],
     *,
@@ -418,38 +442,7 @@ def investment_context(
             if key in strategy and isinstance(strategy[key], (str, int, bool))
         }
     if research is not None:
-        result["research"] = {
-            key: research[key]
-            for key in (
-                "status",
-                "strategy_version",
-                "engine_version",
-                "basis",
-                "created_at",
-            )
-            if key in research and isinstance(research[key], (str, int, float, bool))
-        }
-        for section, allowed in {
-            "period": {"from", "to", "train_end", "test_from", "observations", "test_observations"},
-            "metrics": {
-                "ending_nav_rub",
-                "net_return_percent",
-                "max_drawdown_percent",
-                "annualized_volatility_percent",
-                "transaction_costs_rub",
-                "taxes_rub",
-                "trades",
-            },
-        }.items():
-            source = research.get(section)
-            if isinstance(source, Mapping):
-                result["research"][section] = {
-                    key: value
-                    for key, value in source.items()
-                    if key in allowed
-                    and (value is None or isinstance(value, (str, int, float, bool)))
-                }
-        result["research"]["probability_of_profit"] = None
+        result["research"] = _research_context(research)
     result["coverage"] = {
         key: {"available": len(items), "included": len(result[key])}
         for key, (items, _allowed, _maximum) in selections.items()

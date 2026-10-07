@@ -8,7 +8,6 @@ SMTP/network outcomes are retained for review, never blindly retried as delivere
 from __future__ import annotations
 
 import base64
-import binascii
 import hashlib
 import hmac
 import http.client
@@ -46,6 +45,7 @@ logger = logging.getLogger(__name__)
 _EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9.-]{1,189}")
 _PUSH_HOSTS = {"fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"}
 _PUSH_SUFFIXES = (".push.apple.com", ".notify.windows.com")
+_MAILTO_SCHEME = "mailto:"
 
 
 class NotificationUnavailable(RuntimeError):
@@ -65,6 +65,7 @@ class NotificationConfig:
     smtp_password: str = ""
     smtp_sender: str = ""
     smtp_mode: str = "tls"
+    operator_user_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +81,7 @@ def _decode(value: str, length: int) -> bytes:
         raise ValueError("notification_key_invalid")
     try:
         decoded = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-    except (ValueError, binascii.Error) as exc:
+    except ValueError as exc:
         raise ValueError("notification_key_invalid") from exc
     if len(decoded) != length:
         raise ValueError("notification_key_invalid")
@@ -320,10 +321,10 @@ class NotificationService:
             push_public_key(config.vapid_private_key)
             subject = config.vapid_subject
             if (any(ord(char) < 33 or ord(char) > 126 for char in subject)
-                    or not subject.startswith(("mailto:", "https://"))):
+                    or not subject.startswith((_MAILTO_SCHEME, "https://"))):
                 raise ValueError("notification_vapid_subject_invalid")
-            if subject.startswith("mailto:"):
-                normalize_email(subject.removeprefix("mailto:"))
+            if subject.startswith(_MAILTO_SCHEME):
+                normalize_email(subject.removeprefix(_MAILTO_SCHEME))
 
     @property
     def push_configured(self) -> bool:
@@ -489,7 +490,7 @@ class NotificationService:
                 "expires_at": (now + timedelta(minutes=15)).isoformat()}
 
     def verify_email(self, user_id: UUID, channel_id: UUID, code: str) -> dict[str, Any]:
-        if not isinstance(code, str) or re.fullmatch(r"[0-9]{6}", code) is None:
+        if not isinstance(code, str) or re.fullmatch(r"\d{6}", code, flags=re.ASCII) is None:
             raise ValueError("notification_verification_invalid")
         now = datetime.now(UTC)
         accepted = False
@@ -674,7 +675,8 @@ class NotificationService:
             return self._event_delivery_allowed(cur, user_id, payload, preferences)
         if row["kind"] == "digest":
             return self._digest_delivery_allowed(cur, user_id, payload, preferences)
-        return row["kind"] == "operational" and bool(preferences["notifications"]["system"])
+        return (row["kind"] == "operational" and user_id == self.config.operator_user_id
+                and bool(preferences["notifications"]["system"]))
 
     def _claim(self, user_id: UUID, now: datetime) -> dict[str, Any] | None:
         if not self.config.enabled or not self.database.has_legal_versions(
@@ -763,6 +765,8 @@ class NotificationService:
 
     def queue_operator_alert(self, user_id: UUID, key: str, title: str) -> None:
         """Called only by server-owned operational monitoring, to opted-in channels."""
+        if user_id != self.config.operator_user_id:
+            return
         if re.fullmatch(r"[a-z0-9_-]{1,100}", key) is None or not 1 <= len(title) <= 160:
             raise ValueError("notification_operational_alert_invalid")
         with self.workspace._transaction(user_id) as cur:
@@ -788,7 +792,7 @@ class NotificationService:
             self._maintenance_at = now + timedelta(minutes=15)
         with self.database.pool.connection() as conn:
             rows = conn.execute(
-                "SELECT id, role FROM users WHERE status = 'active' "
+                "SELECT id FROM users WHERE status = 'active' "
                 "AND (%s::uuid IS NULL OR id > %s::uuid) ORDER BY id LIMIT 1000",
                 (self._user_cursor, self._user_cursor),
             ).fetchall()
@@ -802,7 +806,7 @@ class NotificationService:
                 if not self.database.has_legal_versions(user_id, self.legal_versions):
                     continue
                 self.queue_events(user_id)
-                if (cast(dict[str, Any], row)["role"] == "owner"
+                if (user_id == self.config.operator_user_id
                         and metrics["status"] == "attention"):
                     self.queue_operator_alert(
                         user_id, "health-" + now.strftime("%Y%m%d%H"),

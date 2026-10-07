@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from datetime import UTC, timedelta
 from typing import Any
 from unittest.mock import Mock, patch
 from uuid import uuid4
@@ -186,7 +187,9 @@ def test_payment_entitlement_needs_exact_provider_confirmation_and_cannot_double
     assert service.status(owner)["plan"] == "premium"
     repeated = service.reconcile(owner, ident)
     assert repeated["entitlement_until"] == paid["entitlement_until"]
-    assert (paid["entitlement_until"] - paid["entitlement_from"]).days == 30
+    assert (
+        paid["entitlement_until"].astimezone(UTC) - paid["entitlement_from"].astimezone(UTC)
+    ) == timedelta(days=30)
     source["Status"] = "REFUNDED"
     source["Token"] = payment_token(source, cfg.password)
     service.notification(source)

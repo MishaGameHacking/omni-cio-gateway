@@ -80,8 +80,9 @@ def test_model_probability_is_reproducible_conditional_and_has_sampling_interval
     {"target_in_today_money": "true"}, {"extra": "ignored"},
 ])
 def test_invalid_or_unbounded_assumptions_are_rejected(changes: dict[str, Any]) -> None:
+    document = plan(**changes)
     with pytest.raises(ValueError):
-        normalize_goal_plan(plan(**changes))
+        normalize_goal_plan(document)
 
 
 @pytest.mark.parametrize("changes,reason", [

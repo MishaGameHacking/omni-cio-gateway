@@ -2063,6 +2063,7 @@ async function serveTestGoalPlan({fixture,path,method,body,response}) {
   let plan=fixture.goalPlans[id] || {version:0,document:null,forecast:null};
   if(method==="PUT") {
     if(body.expected_version!==plan.version || body.expected_goal_version!==goal.version) return sendJSON(response,{detail:"settings_version_conflict"},409);
+    if(fixture.holdGoalPlanSave) await new Promise(resolve => {fixture.releaseGoalPlanSave=resolve;});
     plan={version:plan.version+1,document:clone(body.document),forecast:{status:"available",method:"geometric_monthly_scenario_v1",projected_amount_rub:"1300.00",inflation_adjusted_target_rub:"1000.00",required_monthly_rub:"75.00",deterministic_months_to_target:9,months:12,assumptions_source:"user_supplied",simulation:null,limitations:["Synthetic UI response; financial math is exercised by Python tests."]}};
     fixture.goalPlans[id]=plan;
   }
@@ -2150,7 +2151,11 @@ async function serveTestAssistantStatus({fixture,path,method,body,url,response})
   }
   const id=path.split("/").at(-1),item=fixture.conversations.find(row=>row.id===id);
   if(!item)return sendJSON(response,{detail:"workspace_item_not_found"},404);
-  if(method==="DELETE"){fixture.conversations=fixture.conversations.filter(row=>row.id!==id);return sendJSON(response,{deleted:true});}
+  if(method==="DELETE"){
+    if(fixture.holdAssistantDelete) await new Promise(resolve => { fixture.releaseAssistantDelete=resolve; });
+    fixture.conversations=fixture.conversations.filter(row=>row.id!==id);
+    return sendJSON(response,{deleted:true});
+  }
   const eligible=item.messages.filter(message=>!url.searchParams.has("before") || message.position<Number(url.searchParams.get("before")));
   const messages=eligible.slice(-50);return sendJSON(response,{...item,messages,next_before:eligible.length>50?messages[0].position:null});
 }
@@ -2167,7 +2172,7 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   await click('#workspace-dialog [data-close-dialog]');
   fixture.ai.enabled=true;
   await click('#view-assistant [data-action="assistant-connect"]');
-  await wait('document.querySelector("[data-action=assistant-health]").disabled===false',"Operator activation is read back");
+  await wait('document.querySelector("[data-action=assistant-health]")?.disabled===false',"Operator activation is read back");
   await click('#workspace-dialog [data-close-dialog]');
   await click('#view-assistant [data-action="assistant-new"]');
   await until(()=>fixture.conversations.length===1,"Create owned conversation");
@@ -2185,6 +2190,23 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   await click('#workspace-dialog [data-action="assistant-delete-confirm"]');
   await until(()=>fixture.conversations.length===0,"Delete owned conversation");
   assert.equal(fixture.ai.quota.used,1,"Deleting conversation does not reset request quota");
+  await wait('!document.querySelector("#workspace-dialog").open && document.querySelector("[data-action=assistant-new]")?.disabled===false',"Deletion finishes in the original dialog");
+  await click('#view-assistant [data-action="assistant-new"]');
+  await until(()=>fixture.conversations.length===1,"Create conversation for deletion race");
+  await wait('document.querySelector("[data-action=chat-clear]")',"New conversation becomes selected");
+  fixture.holdAssistantDelete=true;
+  await click('#view-assistant [data-action="chat-clear"]');
+  await click('#workspace-dialog [data-action="assistant-delete-confirm"]');
+  await until(()=>typeof fixture.releaseAssistantDelete==="function","Deletion request is pending");
+  await click('#workspace-dialog [data-close-dialog]');
+  await click('#view-assistant [data-action="assistant-connect"]');
+  await wait('document.querySelector("#assistant-connection-form")',"Another dialog opens while deletion is pending");
+  fixture.holdAssistantDelete=false;
+  fixture.releaseAssistantDelete();
+  await until(()=>fixture.conversations.length===0,"Delayed deletion is confirmed");
+  await wait('document.querySelector("[data-action=assistant-new]")?.disabled===false',"Deletion result updates the original conversation");
+  assert.equal(await evaluate('document.querySelector("#workspace-dialog").open && Boolean(document.querySelector("#assistant-connection-form"))'),true,"Late conversation deletion cannot close a different dialog");
+  await click('#workspace-dialog [data-close-dialog]');
   await click('#sidebar-nav [data-route="profile"]');
   await wait('document.querySelector("#view-profile [data-session-revoke]")',"Own session list");
   const other=fixture.sessions.find(item=>!item.current);
@@ -2302,8 +2324,14 @@ async function exerciseGoalPlan({fixture,click,fieldValue,wait}) {
   await click('#view-goals [data-goal-plan]');
   await wait('document.querySelector("#goal-plan-form")',"Saved goal assumptions editor");
   for(const [name,value] of Object.entries({monthly_contribution_rub:"100",monthly_income_rub:"0",annual_return_percent:"0",annual_volatility_percent:"0",annual_inflation_percent:"0"}))await fieldValue("#goal-plan-form",name,value);
+  fixture.holdGoalPlanSave=true;
   await click('#goal-plan-form [type="submit"]');
+  await until(()=>typeof fixture.releaseGoalPlanSave==="function","Goal plan save is pending");
+  await wait('Array.from(document.querySelector("#goal-plan-form").elements).every(control=>control.disabled)',"All displayed assumptions are immutable during their save");
+  fixture.holdGoalPlanSave=false;
+  fixture.releaseGoalPlanSave();
   await wait('document.querySelector("#goal-plan-form").dataset.version==="1"',"Goal plan versioned save");
+  await wait('Array.from(document.querySelector("#goal-plan-form").elements).every(control=>!control.disabled)',"Goal plan controls become editable after exact saved result");
   assert.equal(fixture.goalPlans[fixture.goals[0].id].document.monthly_contribution_rub,"100");
   await click('#goal-plan-form [data-close-dialog]');
   await click('#view-goals [data-goal-plan]');

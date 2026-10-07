@@ -187,6 +187,7 @@ jobs:
       TARGET_LOCATION: ru-3
       TARGET_ZONE: msk-1
       VKID_APP_ID: ${{ vars.VKID_APP_ID }}
+      OPERATOR_USER_ID: ${{ vars.OPERATOR_USER_ID }}
       TID_CLIENT_ID: ${{ vars.TID_CLIENT_ID }}
       TID_CLIENT_SECRET: ${{ secrets.TID_CLIENT_SECRET }}
       TID_LOGIN_ENABLED: ${{ vars.TID_LOGIN_ENABLED }}

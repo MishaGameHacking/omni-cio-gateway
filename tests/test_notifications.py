@@ -7,6 +7,7 @@ import json
 import smtplib
 from datetime import UTC, datetime
 from unittest.mock import Mock, patch
+from uuid import uuid4
 
 import pytest
 from cryptography.hazmat.primitives import hashes
@@ -14,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 from omnicio.notifications import (
     NotificationConfig,
+    NotificationService,
     NotificationTransport,
     _public_address,
     delivery_time,
@@ -31,6 +33,36 @@ RECEIVER = (
     "aOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4"
 )
 SENDER = "yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw"
+
+
+@pytest.mark.parametrize("configured", [True, False])
+def test_operational_alert_recipient_is_server_configured_not_a_database_role(
+    configured: bool,
+) -> None:
+    operator, ordinary = uuid4(), uuid4()
+    database = Mock()
+    database.collect_operational_metrics.return_value = {"status": "attention"}
+    database.has_legal_versions.return_value = True
+    database.pool.connection.return_value.__enter__ = Mock(return_value=database)
+    database.pool.connection.return_value.__exit__ = Mock(return_value=False)
+    # The accepted schema keeps every application user's database role 'user'.
+    database.execute.return_value.fetchall.return_value = [
+        {"id": operator, "role": "user"}, {"id": ordinary, "role": "user"},
+    ]
+    service = NotificationService(
+        database,
+        NotificationConfig(crypto_key="test-unused",
+                           operator_user_id=operator if configured else None),
+        legal_versions={}, transport=Mock(),
+    )
+    with patch.object(service, "queue_events") as queue_events, \
+            patch.object(service, "queue_operator_alert") as queue_alert, \
+            patch.object(service, "deliver_one", return_value=False):
+        service.run_pending()
+    assert queue_events.call_count == 2
+    assert queue_alert.call_count == int(configured)
+    if configured:
+        assert queue_alert.call_args.args[0] == operator
 
 
 def decode(value: str) -> bytes:

@@ -343,6 +343,8 @@ def validate_legal_documents(repository_root: pathlib.Path) -> None:
 def build_product_environment() -> str:
     values = {
         "OMNICIO_RECOVERY_STATUS_PATH": REMOTE_STATUS_PATH,
+        # Authority must be explicitly revoked when the workflow variable is cleared.
+        "OPERATOR_USER_ID": os.environ.get("OPERATOR_USER_ID", "").strip(),
         "VKID_APP_ID": os.environ.get("VKID_APP_ID", "").strip(),
         "VKID_LOGIN_ENABLED": "true" if vkid_configuration_ready() else "false",
         "REGISTRATION_ENABLED": "true" if registration_enabled() else "false",

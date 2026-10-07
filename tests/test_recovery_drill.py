@@ -86,8 +86,9 @@ def test_manual_job_still_requires_exact_checkout_and_successful_main_checks(mon
 def test_invalid_receipt_never_touches_runtime(monkeypatch, changes):
     monkeypatch.setenv("OMNICIO_RESTORE_RECEIPT_KEY", KEY)
     remote = Mock()
+    proof = receipt(**changes)
     with pytest.raises(controller.RecoveryBlocked):
-        controller.install_restore_receipt(remote, receipt(**changes), SHA)
+        controller.install_restore_receipt(remote, proof, SHA)
     remote.run.assert_not_called()
 
 
@@ -124,9 +125,26 @@ def test_remote_runtime_independently_verifies_and_preserves_physical_receipts(
             )
             output = io.StringIO()
             with (
+                contextlib.ExitStack() as native,
                 patch.dict(os.environ, {"OMNICIO_RESTORE_RECEIPT_KEY": runtime_key}),
                 contextlib.redirect_stdout(output),
             ):
+                if os.name == "nt":
+                    # The deployed runtime is Linux. Windows cannot open/fsync
+                    # a directory, so substitute only that kernel boundary;
+                    # file writes, atomic replacement, signatures and readback
+                    # still execute against real temporary files.
+                    probe = tmp_path / "directory-sync-probe"
+                    probe.touch()
+                    open_file = os.open
+
+                    def open_directory(path, flags):
+                        assert Path(path) == target.parent
+                        assert flags == os.O_RDONLY | os.O_DIRECTORY
+                        return open_file(probe, os.O_RDWR)
+
+                    native.enter_context(patch.object(os, "O_DIRECTORY", 0x100000, create=True))
+                    native.enter_context(patch.object(os, "open", open_directory))
                 exec(compile(script, "<synthetic-runtime-receipt>", "exec"), {})
             return output.getvalue()
 

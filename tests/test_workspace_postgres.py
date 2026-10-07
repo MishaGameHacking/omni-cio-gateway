@@ -9,6 +9,7 @@ import os
 import secrets
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -236,10 +237,37 @@ def test_notification_queue_deduplicates_and_retries_only_definite_failure(
     assert transport.send_push.call_count == 2
     assert transport.send_push.call_args_list[0].args == transport.send_push.call_args_list[1].args
     state = service.status(owner)["deliveries"][0]
-    assert state["status"] == "accepted" and state["attempts"] == 2
+    assert state["status"] == "accepted"
+    assert state["attempts"] == 2
     assert "destination_ciphertext" not in service.status(owner)["channels"][0]
     assert "payload_ciphertext" not in state
     assert state["channel_id"] == UUID(channel["id"])
+
+
+@pytest.mark.parametrize("replacement_operator", [False, True])
+def test_pending_operational_alert_is_cancelled_when_operator_authority_changes(
+    workspace_database: tuple[Database, str, str], replacement_operator: bool,
+) -> None:
+    database = workspace_database[0]
+    operator, ordinary = user(database), user(database)
+    service, transport, subscription = notification_service(database)
+    service.config = replace(service.config, operator_user_id=operator)
+    service.subscribe_push(operator, subscription)
+    service.queue_operator_alert(ordinary, "health-test", "Operational test")
+    assert service.status(ordinary)["deliveries"] == []
+    service.queue_operator_alert(operator, "health-test", "Operational test")
+    assert service.status(operator)["deliveries"][0]["status"] == "queued"
+    # Recreate the worker as after a restart with operator identity disabled or changed.
+    restarted = NotificationService(
+        database,
+        replace(service.config, operator_user_id=ordinary if replacement_operator else None),
+        legal_versions=service.legal_versions, transport=transport,
+    )
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not restarted.deliver_one(operator, now=datetime.now(UTC) + timedelta(days=1))
+    assert restarted.status(operator)["deliveries"][0]["status"] == "cancelled"
+    transport.send_push.assert_not_called()
+    transport.send_email.assert_not_called()
 
 
 def test_notification_ambiguous_result_is_not_retried_and_revocation_is_tenant_scoped(
@@ -632,7 +660,8 @@ def test_dashboard_uses_latest_operation_correction_and_complete_ledger(
     assert dashboard["performance"]["status"] == "available"
     assert dashboard["performance"]["net_contributions_rub"] == "0"
     assert Decimal(dashboard["performance"]["investment_result_rub"]) == 500
-    assert dashboard["performance"]["return_percent"] is None
+    assert Decimal(dashboard["performance"]["return_percent"]) == 5
+    assert dashboard["performance"]["return_method"] == "modified_dietz"
     assert dashboard["income"]["total_rub"] == "0"
 
     def insert_coupon(state: str, byte: int) -> None:
@@ -818,7 +847,8 @@ def test_full_range_nav_sampling_keeps_exact_covered_performance_endpoints(
     )
     assert daily["performance"]["reason"] == "insufficient_covered_snapshots"
     assert daily["performance"]["investment_result_rub"] is None
-    assert Decimal(daily["income"]["total_rub"]) == 250
+    assert daily["income"]["total_rub"] is None
+    assert daily["income"]["reason"] == "history_incomplete"
 
     with database.pool.connection() as conn:
         conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))

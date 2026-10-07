@@ -1807,14 +1807,17 @@
   "помощник": "assistant",
   "условия использования": "terms of use"
 }).map(([ru, en]) => [ru, [ru, en]])));
+  const validatePair = (key, pair) => {
+    if (!Array.isArray(pair) || pair.length !== 2 || pair.some(value => typeof value !== "string")) throw new Error(`Invalid translation: ${key}`);
+    const placeholders = value => [...value.matchAll(/\{([a-z][a-z0-9_]*)\}/g)].map(match => match[1]).sort((a, b) => a.localeCompare(b)).join(",");
+    if (placeholders(pair[0]) !== placeholders(pair[1])) throw new Error(`Translation placeholders differ: ${key}`);
+    Object.freeze(pair);
+  };
   const literalKeys = new Map();
   for (const [key, pair] of Object.entries(messages)) {
-    if (!Array.isArray(pair) || pair.length !== 2 || pair.some(value => typeof value !== "string")) throw new Error(`Invalid translation: ${key}`);
-    const placeholders = value => [...value.matchAll(/\{([a-z][a-z0-9_]*)\}/g)].map(match => match[1]).sort().join(",");
-    if (placeholders(pair[0]) !== placeholders(pair[1])) throw new Error(`Translation placeholders differ: ${key}`);
+    validatePair(key, pair);
     // Several semantic keys may legitimately use the same wording.
     if (!literalKeys.has(pair[0])) literalKeys.set(pair[0], key);
-    Object.freeze(pair);
   }
   Object.freeze(messages);
   let locale = "ru";
@@ -1825,39 +1828,45 @@
     const pair = Object.hasOwn(messages, key) ? messages[key] : messages[literalKeys.get(key)];
     // Unknown authored messages retain their original wording. Financial values
     // and user data must never be passed through this lookup as translation keys.
-    const template = pair ? pair[normalizeLocale(requestedLocale) === "en" ? 1 : 0] : String(key ?? "");
+    const languageIndex = normalizeLocale(requestedLocale) === "en" ? 1 : 0;
+    const template = pair ? pair[languageIndex] : String(key ?? "");
     return template.replace(/\{([a-z][a-z0-9_]*)\}/g, (placeholder, name) => Object.hasOwn(values, name) ? String(values[name]) : placeholder);
   };
   const escape = value => String(value).replace(/[&<>"']/g, character => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[character]);
   const html = (key, values = {}, requestedLocale = locale) => escape(t(key, values, requestedLocale));
+  const applyTextNodes = (element, selected) => {
+    // Static shell labels may share a parent with icons, links or line breaks.
+    // Explicit per-parent text keys preserve that exact element geometry.
+    let textKeys = [];
+    try { textKeys = JSON.parse(element.getAttribute("data-i18n-text") || "[]"); } catch { return; }
+    if (!Array.isArray(textKeys)) return;
+    for (const node of element.childNodes || []) {
+      if (node.nodeType !== 3) continue;
+      const trimmed = node.data.trim();
+      const textKey = textKeys.find(candidate => {
+        const pair = Object.hasOwn(messages, candidate) ? messages[candidate] : messages[literalKeys.get(candidate)];
+        return pair && (trimmed === pair[0] || trimmed === pair[1]);
+      });
+      if (textKey) node.data = node.data.replace(trimmed, t(textKey, {}, selected));
+    }
+  };
+  const applyElement = (element, selected) => {
+    if (element.closest('[data-user-content],[data-source-content],[data-private-content]')) return;
+    const key = element.getAttribute("data-i18n");
+    // Explicit markers belong on text-only spans, never on icon/button/form
+    // containers. Refuse to destroy their controls when a marker is misplaced.
+    if (key && has(key) && !element.children.length && !/^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName)) element.textContent = t(key, {}, selected);
+    applyTextNodes(element, selected);
+    for (const attribute of ["title", "placeholder", "aria-label"]) {
+      const message = element.getAttribute(`data-i18n-${attribute}`);
+      if (message && has(message)) element.setAttribute(attribute, t(message, {}, selected));
+    }
+  };
   const apply = (root = document, requestedLocale = locale) => {
     const selected = normalizeLocale(requestedLocale);
     const selector = "[data-i18n],[data-i18n-text],[data-i18n-title],[data-i18n-placeholder],[data-i18n-aria-label]";
     const targets = [...(root.matches?.(selector) ? [root] : []), ...root.querySelectorAll(selector)];
-    for (const element of targets) {
-      if (element.closest('[data-user-content],[data-source-content],[data-private-content]')) continue;
-      const key = element.getAttribute("data-i18n");
-      // Explicit markers belong on text-only spans, never on icon/button/form
-      // containers. Refuse to destroy their controls when a marker is misplaced.
-      if (key && has(key) && !element.children.length && !/^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName)) element.textContent = t(key, {}, selected);
-      // Static shell labels may share a parent with icons, links or line breaks.
-      // Explicit per-parent text keys preserve that exact element geometry.
-      let textKeys = [];
-      try { textKeys = JSON.parse(element.getAttribute("data-i18n-text") || "[]"); } catch { /* Invalid markers do not alter the page. */ }
-      if (Array.isArray(textKeys)) for (const node of element.childNodes || []) {
-        if (node.nodeType !== 3) continue;
-        const trimmed = node.data.trim();
-        const textKey = textKeys.find(candidate => {
-          const pair = Object.hasOwn(messages, candidate) ? messages[candidate] : messages[literalKeys.get(candidate)];
-          return pair && (trimmed === pair[0] || trimmed === pair[1]);
-        });
-        if (textKey) node.data = node.data.replace(trimmed, t(textKey, {}, selected));
-      }
-      for (const attribute of ["title", "placeholder", "aria-label"]) {
-        const message = element.getAttribute(`data-i18n-${attribute}`);
-        if (message && has(message)) element.setAttribute(attribute, t(message, {}, selected));
-      }
-    }
+    for (const element of targets) applyElement(element, selected);
     if (root.documentElement) root.documentElement.lang = selected;
   };
   const authoredRecord = (namespace, record) => {

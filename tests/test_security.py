@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
+from omnicio.config import ConfigurationError, load_settings, optional_uuid
 from omnicio.db import Database, UserRecord
 from omnicio.main import CANONICAL_ORIGIN, app, client_ip, require_same_origin
 from omnicio.security import (
@@ -29,6 +30,34 @@ from omnicio.security import (
     pkce_challenge,
     seal_oauth_flow,
 )
+
+
+def test_operator_configuration_is_explicit_and_credentials_preserve_exact_bytes() -> None:
+    environment = {
+        "DATABASE_URL": "postgresql://synthetic.invalid/example",
+        "CLIENT_IP_KEY": "synthetic-client-key",
+        "BROKER_TOKEN_CRYPTO_KEY": "synthetic-broker-key",
+        "VKID_FLOW_CRYPTO_KEY": "synthetic-flow-key",
+        "TID_CLIENT_SECRET": "  synthetic-tid-secret  ",
+        "ASSISTANT_API_KEY": "  synthetic-assistant-key  ",
+        "OPERATOR_USER_ID": str(UUID(int=501)),
+    }
+    with patch.dict(os.environ, environment, clear=True):
+        cfg = load_settings()
+    assert cfg.operator_user_id == UUID(int=501)
+    assert cfg.tid_client_secret == environment["TID_CLIENT_SECRET"]
+    assert cfg.assistant_api_key == environment["ASSISTANT_API_KEY"]
+    with patch.dict(os.environ, {}, clear=True):
+        assert optional_uuid("OPERATOR_USER_ID") is None
+
+
+@pytest.mark.parametrize("raw", ("owner", "000000501", str(UUID(int=0))))
+def test_invalid_operator_configuration_never_assigns_authority(raw: str) -> None:
+    with (
+        patch.dict(os.environ, {"OPERATOR_USER_ID": raw}, clear=True),
+        pytest.raises(ConfigurationError),
+    ):
+        optional_uuid("OPERATOR_USER_ID")
 
 
 def test_public_id_is_exactly_nine_digits() -> None:

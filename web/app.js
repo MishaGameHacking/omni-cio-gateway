@@ -641,7 +641,7 @@
     try {
       const payload = await api(path, options);
       if (generation !== state.generation || state.resourceVersions.get(name) !== sequence) return null;
-      state.data[name] = name === "goals" ? mergeGoalList(payload) : name === "events" ? eventSnapshot(payload) : payload;
+      state.data[name] = resourceSnapshot(name, payload);
       adoptLoadedResource(name, payload, goalsSequence);
       return payload;
     } catch (error) {
@@ -650,6 +650,11 @@
     } finally {
       if (generation === state.generation && state.resourceVersions.get(name) === sequence) state.loading.delete(name);
     }
+  };
+  const resourceSnapshot = (name, payload) => {
+    if (name === "goals") return mergeGoalList(payload);
+    if (name === "events") return eventSnapshot(payload);
+    return payload;
   };
   const adoptWorkspace = (payload, goalsSequence) => {
     if (payload.preferences) adoptPreferences(payload.preferences);
@@ -788,13 +793,7 @@
       });
     }));
     if (generation !== state.generation || state.view !== view) return;
-    if (view === "assistant" && !state.tour && !state.assistantBusy) {
-      const selected = state.assistantConversation?.id || state.data.assistantConversations?.items?.[0]?.id;
-      if (selected) {
-        try { await loadAssistantConversation(selected); }
-        catch (error) { if (!isCancelled(error)) toast(humanError(error), true); }
-      }
-    }
+    if (view === "assistant") await loadSelectedAssistantConversation();
     if (view === "asset" && detail.uid && !state.tour) {
       if (detail.uid === state.route.uid) await loadAssetView(detail.uid, force);
       return;
@@ -807,12 +806,20 @@
     if (view === "events" && detail.event && !state.tour && !$("#workspace-dialog").open) {
       await openEvent(detail.event);
     }
-    if (view === "goals" && detail.goal_id) {
-      const target = $(`[data-goal-id="${CSS.escape(detail.goal_id)}"]`);
-      target?.scrollIntoView({block: "center", behavior: "instant"});
-      target?.setAttribute("tabindex", "-1");
-      target?.focus({preventScroll: true});
-    }
+    if (view === "goals" && detail.goal_id) focusGoal(detail.goal_id);
+  };
+  const loadSelectedAssistantConversation = async () => {
+    if (state.tour || state.assistantBusy) return;
+    const selected = state.assistantConversation?.id || state.data.assistantConversations?.items?.[0]?.id;
+    if (!selected) return;
+    try { await loadAssistantConversation(selected); }
+    catch (error) { if (!isCancelled(error)) toast(humanError(error), true); }
+  };
+  const focusGoal = id => {
+    const target = $(`[data-goal-id="${CSS.escape(id)}"]`);
+    target?.scrollIntoView({block: "center", behavior: "instant"});
+    target?.setAttribute("tabindex", "-1");
+    target?.focus({preventScroll: true});
   };
   const dataError = (name, label = T("Не удалось загрузить данные")) => state.errors[name] ? `<div class="notice error"><strong>${esc(label)}</strong><p>${esc(humanError(state.errors[name]))}</p>${button(T("Повторить загрузку"), "refresh", {
     small: true
@@ -1344,7 +1351,8 @@
       currency
     });
     const notes = [priceUnit === "unknown" ? T("Источник не подтвердил единицы цены.") : "", priceUnit === "percent_nominal" ? T("Цена и история — в процентах номинала, без НКД. Текущий номинал не применяется к старым свечам.") : "", priceUnit === "points" ? T("Котировки в пунктах. Денежная стоимость шага может меняться.") : "", market?.trading_status ? renderAssetFragment3(market) : "", state.assetPeriod === "all" ? T("Доступная история источника.") : "", esc(market?.history_note || ""), T("График показывает цены закрытия свечей.")].filter(Boolean).join(" ");
-    return `<div class="main-value">${esc(marketPrice(current, priceUnit, currency))}</div>${market?.cash_price && priceUnit !== "currency" ? `<p class="fine-print">${H("Текущая чистая цена:")} ${esc(money(market.cash_price, 2, market.cash_price_currency, false))}</p>` : ""}<p class="value-change ${change === null ? "" : renderAssetValue(change)}">${changeLabel}</p>${periods("asset", state.assetPeriod, true)}${chartMarkup}${freshness(market?.source || "T-Invest", market?.quote_time || market?.observed_at, market?.quote_status)}<p class="data-footnote">${notes}</p>`;
+    const cashPrice = market?.cash_price && priceUnit !== "currency" ? `<p class="fine-print">${H("Текущая чистая цена:")} ${esc(money(market.cash_price, 2, market.cash_price_currency, false))}</p>` : "";
+    return `<div class="main-value">${esc(marketPrice(current, priceUnit, currency))}</div>${cashPrice}<p class="value-change ${change === null ? "" : renderAssetValue(change)}">${changeLabel}</p>${periods("asset", state.assetPeriod, true)}${chartMarkup}${freshness(market?.source || "T-Invest", market?.quote_time || market?.observed_at, market?.quote_status)}<p class="data-footnote">${notes}</p>`;
   };
   const assetHoldingNote = ({
     asset,
@@ -1383,7 +1391,14 @@
     const rows = [[T("Открытие периода"), marketPrice(candles[0]?.open, priceUnit, currency)], [T("Максимум периода"), marketPrice(high, priceUnit, currency)], [T("Минимум периода"), marketPrice(low, priceUnit, currency)], [T("Последняя цена"), marketPrice(current, priceUnit, currency)], [T("Время цены"), quoteTime], [T("Свечей в периоде"), candles.length ? String(candles.length) : "—"], [T("Режим торгов"), tradingLabel(market?.trading_status)]];
     return `${infoRows(rows)}<p class="data-footnote">${H("Ценовые показатели рассчитаны только по полученным свечам выбранного периода.")}</p><div class="section-gap">${fundamentalMetricsHTML(asset)}</div>`;
   };
-  const assetNewsHTML = ({asset, details}) => `${details?.sources?.length ? renderAssetDetailsSummary(details) : ""}<h3 class="panel-title section-gap">${H("Новости инструмента")}</h3>${asset.newsError ? `<p class="notice error">${esc(humanError(asset.newsError))}</p>${button(T("Повторить"), "asset-refresh", {small: true})}` : asset.news ? `<div class="event-list">${(asset.news.items || []).map(archiveNewsItem).join("") || ("<p class=\"notice\">" + H("В проверенной части архива нет публикаций об этом инструменте.") + "</p>")}</div>${asset.news.next_cursor ? button(T("Следующая часть архива"), "asset-news-more", {small: true, extra: state.loading.has("asset-news-more") ? " disabled" : ""}) : ("<p class=\"data-footnote\">" + H("Достигнут конец доступного архива источника.") + "</p>")}${freshness(asset.news.source || T("Источник брокера"), asset.news.observed_at)}` : U.loading(T("Проверяем новости инструмента…"))}<details class="section-gap"><summary class="details-summary">${H("Общерыночные новости Банка России")}</summary><p class="fine-print">${H("Отдельная общая лента, без привязки к эмитенту.")}</p>${newsHTML()}</details>`;
+  const assetNewsArchiveHTML = asset => {
+    if (asset.newsError) return `<p class="notice error">${esc(humanError(asset.newsError))}</p>${button(T("Повторить"), "asset-refresh", {small: true})}`;
+    if (!asset.news) return U.loading(T("Проверяем новости инструмента…"));
+    const items = (asset.news.items || []).map(archiveNewsItem).join("") || ("<p class=\"notice\">" + H("В проверенной части архива нет публикаций об этом инструменте.") + "</p>");
+    const next = asset.news.next_cursor ? button(T("Следующая часть архива"), "asset-news-more", {small: true, extra: state.loading.has("asset-news-more") ? " disabled" : ""}) : ("<p class=\"data-footnote\">" + H("Достигнут конец доступного архива источника.") + "</p>");
+    return `<div class="event-list">${items}</div>${next}${freshness(asset.news.source || T("Источник брокера"), asset.news.observed_at)}`;
+  };
+  const assetNewsHTML = ({asset, details}) => `${details?.sources?.length ? renderAssetDetailsSummary(details) : ""}<h3 class="panel-title section-gap">${H("Новости инструмента")}</h3>${assetNewsArchiveHTML(asset)}<details class="section-gap"><summary class="details-summary">${H("Общерыночные новости Банка России")}</summary><p class="fine-print">${H("Отдельная общая лента, без привязки к эмитенту.")}</p>${newsHTML()}</details>`;
   const loadAssetNewsPage = async () => {
     const asset = state.asset;
     if (!asset?.news?.next_cursor || state.loading.has("asset-news-more")) return;
@@ -2244,11 +2259,12 @@
     trades: T("Расчётных сделок"),
     ending_cash_rub: T("Остаток средств")
   });
+  const incompleteResearchHTML = result => `<div class="notice warning"><strong>${H("Недостаточно данных для исследования")}</strong><p>${esc(result.reason || (result.limitations || []).join(" ") || T("Не получена достаточная история цен и доступности инструментов."))}</p></div>${result.missing_requirements?.length ? renderResearchRiskList(result) : ""}${selectionHTML(result.selection, T("Проверка исторической выборки"))}${selectionHTML(result.current_selection, T("Отдельный подбор по сегодняшним данным"))}${result.limitations?.length ? renderResearchDetailsSummary2(result) : ""}${researchRobustnessHTML(result)}`;
   const renderResearch = () => {
     if (state.loading.has("research")) return U.loading(T("Исследуем доступную историю…"));
     const result = state.strategy.research;
     if (!result) return "";
-    if (result.status !== "computed") return `<div class="notice warning"><strong>${H("Недостаточно данных для исследования")}</strong><p>${esc(result.reason || (result.limitations || []).join(" ") || T("Не получена достаточная история цен и доступности инструментов."))}</p></div>${result.missing_requirements?.length ? renderResearchRiskList(result) : ""}${selectionHTML(result.selection, T("Проверка исторической выборки"))}${selectionHTML(result.current_selection, T("Отдельный подбор по сегодняшним данным"))}${result.limitations?.length ? renderResearchDetailsSummary2(result) : ""}${researchRobustnessHTML(result)}`;
+    if (result.status !== "computed") return incompleteResearchHTML(result);
     return `<div class="section-gap"><h3 class="panel-title">${esc(result.return_label || T("Результат исторического исследования"))}</h3>${result.complete_strategy_coverage === false ? renderResearchNotice(result) : ""}<p class="research-period">${esc(date(result.period?.from))} — ${esc(date(result.period?.to))} · ${esc(format(result.period?.observations, 0))} ${H("наблюдений")}</p><div class="assessment-metrics">${Object.entries(researchMetricLabels()).map(([key, label]) => renderResearchAssessmentMetric(label, key, result)).join("")}</div>${chart(result.equity_curve, {
       timeKey: "time",
       valueKey: "nav_rub",
@@ -2256,18 +2272,26 @@
       personal: false
     })}<p class="notice">${esc(result.probability_reason || T("Результат на прошлом периоде не оценивает вероятность будущей прибыли."))}</p>${result.period?.test_from ? renderResearchFinePrint(result) : ""}${result.benchmark ? renderResearchDetailsSummary(result) : ""}${result.missing_requirements?.length ? renderResearchRiskList(result) : ""}${selectionHTML(result.selection, T("Корзина по данным обучающего периода"))}${selectionHTML(result.current_selection, T("Отдельный подбор по сегодняшним данным"))}${researchRobustnessHTML(result)}${result.limitations?.length ? renderResearchDetailsSummary2(result) : ""}${result.sources?.length ? renderResearchSourceList(result) : ""}</div>`;
   };
+  const researchWindowHTML = item => {
+    const result = item.status === "computed" ? infoRows([[T("Результат"), percent(item.metrics?.net_return_percent)], [T("Просадка"), percent(item.metrics?.max_drawdown_percent)]]) : ("<p class=\"notice\">" + H("Недостаточно данных для этого окна.") + "</p>");
+    return `<div class="section-gap"><strong>${esc(date(item.period?.from))} — ${esc(date(item.period?.to))}</strong>${result}</div>`;
+  };
   const researchRobustnessHTML = result => {
     const windows = result.robustness?.windows || [];
     const stress = result.stress_scenario;
-    return `${windows.length ? `<details><summary class="details-summary">${H("Проверка на трёх временных окнах")}</summary><p class="fine-print">${esc(result.robustness.scope)}</p>${windows.map(item => `<div class="section-gap"><strong>${esc(date(item.period?.from))} — ${esc(date(item.period?.to))}</strong>${item.status === "computed" ? infoRows([[T("Результат"), percent(item.metrics?.net_return_percent)], [T("Просадка"), percent(item.metrics?.max_drawdown_percent)]]) : ("<p class=\"notice\">" + H("Недостаточно данных для этого окна.") + "</p>")}</div>`).join("")}</details>` : ""}${stress ? `<details><summary class="details-summary">${H("Стресс-сценарий")}</summary>${infoRows([[T("Стоимость перед шоком"), money(stress.base_nav_rub)], [T("После заданного шока"), money(stress.stressed_nav_rub)], [T("Потери в сценарии"), money(stress.loss_rub)]])}<p class="fine-print">${esc(stress.scope)}</p></details>` : ""}${result.archive ? `<p class="data-footnote">${H("Исследование сохранено")} ${esc(date(result.archive.created_at, true))} ${H("МСК. В истории доступны исходные данные и повторная проверка расчёта.")}</p>` : ""}`;
+    const windowDetails = windows.length ? `<details><summary class="details-summary">${H("Проверка на трёх временных окнах")}</summary><p class="fine-print">${esc(result.robustness.scope)}</p>${windows.map(researchWindowHTML).join("")}</details>` : "";
+    const stressDetails = stress ? `<details><summary class="details-summary">${H("Стресс-сценарий")}</summary>${infoRows([[T("Стоимость перед шоком"), money(stress.base_nav_rub)], [T("После заданного шока"), money(stress.stressed_nav_rub)], [T("Потери в сценарии"), money(stress.loss_rub)]])}<p class="fine-print">${esc(stress.scope)}</p></details>` : "";
+    const archive = result.archive ? `<p class="data-footnote">${H("Исследование сохранено")} ${esc(date(result.archive.created_at, true))} ${H("МСК. В истории доступны исходные данные и повторная проверка расчёта.")}</p>` : "";
+    return windowDetails + stressDetails + archive;
   };
+  const researchArchiveItemHTML = item => `<section class="card section-gap"><h3>${esc(date(item.created_at, true))} ${H("МСК")}</h3><p class="fine-print">${H("Версия стратегии:")} ${esc(item.strategy_version)} · ${esc(item.status === "computed" ? T("Рассчитано") : T("Данные неполные"))}</p>${infoRows([[T("Результат за период"), percent(item.metrics?.net_return_percent)]])}<div class="form-actions"><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="open">${H("Открыть")}</button><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="replay">${H("Проверить повторяемость")}</button><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="export">${H("Скачать входные данные")}</button><button class="button danger small" data-research-run="${esc(item.id)}" data-research-operation="delete">${H("Удалить")}</button></div></section>`;
   const openResearchArchive = async () => {
     if (!requireUser()) return;
     const generation = state.generation;
     try {
       const payload = await api("/api/research/runs?limit=200");
       if (generation !== state.generation) return;
-      openDialog(T("История исследований"), payload.items?.length ? `<p class="fine-print">${H("Каждый запуск сохраняет версию стратегии, заданные издержки, точные входные данные и результат. Повторная проверка не обращается к внешним источникам.")}</p>${payload.items.map(item => `<section class="card section-gap"><h3>${esc(date(item.created_at, true))} ${H("МСК")}</h3><p class="fine-print">${H("Версия стратегии:")} ${esc(item.strategy_version)} · ${esc(item.status === "computed" ? T("Рассчитано") : T("Данные неполные"))}</p>${infoRows([[T("Результат за период"), percent(item.metrics?.net_return_percent)]])}<div class="form-actions"><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="open">${H("Открыть")}</button><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="replay">${H("Проверить повторяемость")}</button><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="export">${H("Скачать входные данные")}</button><button class="button danger small" data-research-run="${esc(item.id)}" data-research-operation="delete">${H("Удалить")}</button></div></section>`).join("")}` : ("<p class=\"notice\">" + H("Сохранённых исследований пока нет.") + "</p>"));
+      openDialog(T("История исследований"), payload.items?.length ? `<p class="fine-print">${H("Каждый запуск сохраняет версию стратегии, заданные издержки, точные входные данные и результат. Повторная проверка не обращается к внешним источникам.")}</p>${payload.items.map(researchArchiveItemHTML).join("")}` : ("<p class=\"notice\">" + H("Сохранённых исследований пока нет.") + "</p>"));
     } catch (error) { if (!isCancelled(error)) toast(humanError(error), true); }
   };
   const openResearchEvidence = async () => {
@@ -2377,9 +2401,23 @@
     }
     openDialog(T("execution.title"), `<form id="execution-plan-form" data-strategy-version="${version}"><p class="notice">${H("execution.shadow_notice")}</p>${select("research_run_id", T("execution.research"), runs.map(item => [item.id, date(item.created_at, true) + " · " + percent(item.metrics?.net_return_percent)]), runs[0].id)}<p class="fine-print">${H("execution.inputs")}</p>${infoRows([[T("execution.order_cap"), money(caps.max_order_notional_rub)], [T("execution.daily_cap"), money(caps.max_daily_notional_rub)], [T("execution.validity"), T("execution.two_minutes")]])}<div class="form-actions"><button class="button primary" type="submit">${H("execution.calculate")}</button>${button(T("execution.refresh_snapshot"), "workspace-refresh")}</div><output id="execution-plan-message" class="form-message"></output></form>`);
   };
+  const executionPlanLegHTML = leg => `<article class="recovery-leg"><h3>${esc(leg.action === "buy" ? T("Покупка") : T("Продажа"))} · ${esc(leg.ticker || leg.instrument_uid)}</h3>${infoRows([[T("execution.lots"), format(leg.lots, 0)], [T("execution.lot_size"), format(leg.lot_size, 0)], [T("execution.limit"), money(leg.limit_price, 4, "RUB", false)], [T("execution.gross"), money(leg.gross_amount_rub)], [T("execution.commission"), money(leg.commission_cap_rub)], [T("execution.tax"), money(leg.tax_reserve_rub)]])}</article>`;
   const executionPlanHTML = plan => {
     const payload = plan.payload;
-    return `<p class="notice">${H("execution.shadow_notice")}</p>${infoRows([[T("execution.nav"), money(payload.nav_rub)], [T("execution.cash_before"), money(payload.cash_before_rub)], [T("execution.cash_after"), money(payload.cash_after_rub)], [T("execution.reserve"), money(payload.reserve_rub)], [T("execution.turnover"), money(payload.gross_turnover_rub)], [T("execution.expires"), date(plan.expires_at, true)]])}<div class="recovery-legs">${payload.legs.map(leg => `<article class="recovery-leg"><h3>${esc(leg.action === "buy" ? T("Покупка") : T("Продажа"))} · ${esc(leg.ticker || leg.instrument_uid)}</h3>${infoRows([[T("execution.lots"), format(leg.lots, 0)], [T("execution.lot_size"), format(leg.lot_size, 0)], [T("execution.limit"), money(leg.limit_price, 4, "RUB", false)], [T("execution.gross"), money(leg.gross_amount_rub)], [T("execution.commission"), money(leg.commission_cap_rub)], [T("execution.tax"), money(leg.tax_reserve_rub)]])}</article>`).join("")}</div><p class="fine-print">${H("execution.quoted")}</p><label class="check-field section-gap"><input id="execution-review-consent" type="checkbox"><span>${H("execution.review_consent")}</span></label><div class="form-actions">${button(T("execution.confirm"), "execution-confirm", {primary: true})}${button(T("execution.recalculate"), "execution-plan")}</div><output id="execution-plan-message" class="form-message"></output>`;
+    return `<p class="notice">${H("execution.shadow_notice")}</p>${infoRows([[T("execution.nav"), money(payload.nav_rub)], [T("execution.cash_before"), money(payload.cash_before_rub)], [T("execution.cash_after"), money(payload.cash_after_rub)], [T("execution.reserve"), money(payload.reserve_rub)], [T("execution.turnover"), money(payload.gross_turnover_rub)], [T("execution.expires"), date(plan.expires_at, true)]])}<div class="recovery-legs">${payload.legs.map(executionPlanLegHTML).join("")}</div><p class="fine-print">${H("execution.quoted")}</p><label class="check-field section-gap"><input id="execution-review-consent" type="checkbox"><span>${H("execution.review_consent")}</span></label><div class="form-actions">${button(T("execution.confirm"), "execution-confirm", {primary: true})}${button(T("execution.recalculate"), "execution-plan")}</div><output id="execution-plan-message" class="form-message"></output>`;
+  };
+  const displayExecutionPlan = result => {
+    if (result.status !== "blocked" && result.status !== "no_change") {
+      state.executionPlan = result;
+      openDialog(T("execution.review"), executionPlanHTML(result));
+      return;
+    }
+    const items = (result.blockers || []).map(code => `<li>${esc(executionProblem(code) || code)}</li>`).join("");
+    const blockers = items ? `<ul class="source-list">${items}</ul>` : "";
+    openDialog(T("execution.title"), `<p class="notice">${esc(result.status === "no_change" ? T("execution.no_change") : T("execution.blocked"))}</p>${blockers}`);
+  };
+  const setPlanFormDisabled = (form, disabled) => {
+    for (const control of $$("button", form)) control.disabled = disabled;
   };
   const calculateExecutionPlan = async form => {
     if (!requireUser() || state.executionBusy || !form.reportValidity()) return;
@@ -2387,7 +2425,7 @@
     const sequence = state.eventRequest;
     const current = () => generation === state.generation && sequence === state.eventRequest && form.isConnected && $("#workspace-dialog").open;
     state.executionBusy = true;
-    for (const control of $$('button', form)) control.disabled = true;
+    setPlanFormDisabled(form, true);
     try {
       const archive = await api(`/api/research/runs/${safeSegment(form.elements.research_run_id.value)}`);
       if (!current()) return;
@@ -2397,17 +2435,12 @@
         mode: "shadow"
       }});
       if (!current()) return;
-      if (result.status === "blocked" || result.status === "no_change") {
-        openDialog(T("execution.title"), `<p class="notice">${esc(result.status === "no_change" ? T("execution.no_change") : T("execution.blocked"))}</p>${result.blockers?.length ? `<ul class="source-list">${result.blockers.map(code => `<li>${esc(executionProblem(code) || code)}</li>`).join("")}</ul>` : ""}`);
-      } else {
-        state.executionPlan = result;
-        openDialog(T("execution.review"), executionPlanHTML(result));
-      }
+      displayExecutionPlan(result);
     } catch (error) {
       if (current() && !isCancelled(error)) showMessage($("#execution-plan-message"), executionError(error), true);
     } finally {
       if (generation === state.generation) state.executionBusy = false;
-      if (form.isConnected) for (const control of $$('button', form)) control.disabled = false;
+      if (form.isConnected) setPlanFormDisabled(form, false);
     }
   };
   const confirmExecutionPlan = async control => {
@@ -2491,41 +2524,46 @@
     if (!forecast) return ("<p class=\"notice\">" + H("Задайте собственные предположения и сохраните план для расчёта.") + "</p>");
     if (forecast.status !== "available") return `<p class="notice warning">${esc({goal_target_date_required: T("Укажите дату достижения в настройках цели."), goal_progress_unavailable: T("Для расчёта нужен подтверждённый текущий прогресс."), goal_plan_horizon_out_of_range: T("Выберите будущий срок не более 30 лет.")}[forecast.reason] || T("Данных для расчёта пока недостаточно."))}</p>`;
     const simulation = forecast.simulation;
-    return `${infoRows([[T("Расчётный срок, месяцев"), format(forecast.months, 0)], [T("Целевая сумма с инфляцией"), money(forecast.inflation_adjusted_target_rub)], [T("Сумма в заданном сценарии"), money(forecast.projected_amount_rub)], [forecast.required_monthly_kind === "income" ? T("Необходимые поступления в месяц") : T("Необходимый взнос в месяц"), money(forecast.required_monthly_rub)], [T("Месяцев до цели в сценарии"), forecast.deterministic_months_to_target ?? T("За выбранный срок не достигается")]])}${simulation ? `<h3 class="panel-title section-gap">${H("Условная модель вероятности")}</h3>${infoRows([[T("Достигнуто в модельных траекториях"), percent(simulation.conditional_probability_percent)], [T("Точность моделирования, интервал 95%"), simulation.sampling_interval_95_percent.map(value => percent(value)).join(" — ")], [T("10-й процентиль суммы"), money(simulation.terminal_percentiles_rub["10"])], [T("Медиана суммы"), money(simulation.terminal_percentiles_rub["50"])], [T("90-й процентиль суммы"), money(simulation.terminal_percentiles_rub["90"])]])}<p class="notice warning">${H("Это доля успешных траекторий при ваших предположениях, а не установленная вероятность будущей прибыли. Модель использует независимые логнормальные доходности; кризисы, дефолты и изменение связей между активами в неё не входят. Интервал отражает только погрешность симуляции.")}</p>` : ""}<p class="fine-print">${H("Поступления — в конце месяца, оставшаяся часть текущего месяца считается отдельным периодом. Доходность задана после издержек. Для цели по выплатам рост стоимости капитала не считается доходом.")}</p>`;
+    const probabilityModel = simulation ? `<h3 class="panel-title section-gap">${H("Условная модель вероятности")}</h3>${infoRows([[T("Достигнуто в модельных траекториях"), percent(simulation.conditional_probability_percent)], [T("Точность моделирования, интервал 95%"), simulation.sampling_interval_95_percent.map(value => percent(value)).join(" — ")], [T("10-й процентиль суммы"), money(simulation.terminal_percentiles_rub["10"])], [T("Медиана суммы"), money(simulation.terminal_percentiles_rub["50"])], [T("90-й процентиль суммы"), money(simulation.terminal_percentiles_rub["90"])]])}<p class="notice warning">${H("Это доля успешных траекторий при ваших предположениях, а не установленная вероятность будущей прибыли. Модель использует независимые логнормальные доходности; кризисы, дефолты и изменение связей между активами в неё не входят. Интервал отражает только погрешность симуляции.")}</p>` : "";
+    return `${infoRows([[T("Расчётный срок, месяцев"), format(forecast.months, 0)], [T("Целевая сумма с инфляцией"), money(forecast.inflation_adjusted_target_rub)], [T("Сумма в заданном сценарии"), money(forecast.projected_amount_rub)], [forecast.required_monthly_kind === "income" ? T("Необходимые поступления в месяц") : T("Необходимый взнос в месяц"), money(forecast.required_monthly_rub)], [T("Месяцев до цели в сценарии"), forecast.deterministic_months_to_target ?? T("За выбранный срок не достигается")]])}${probabilityModel}<p class="fine-print">${H("Поступления — в конце месяца, оставшаяся часть текущего месяца считается отдельным периодом. Доходность задана после издержек. Для цели по выплатам рост стоимости капитала не считается доходом.")}</p>`;
   };
   const openGoalPlan = async id => {
     if (!requireUser()) return;
     const generation = state.generation;
+    openDialog(T("План достижения цели"), U.loading(T("state.loading")));
+    const sequence = state.eventRequest;
     try {
       const saved = await api(`/api/goals/${safeSegment(id)}/plan`);
-      if (generation !== state.generation) return;
+      if (generation !== state.generation || sequence !== state.eventRequest || !$("#workspace-dialog").open) return;
       const doc = saved.document || {};
       const fields = [["monthly_contribution_rub", T("Ежемесячный взнос в капитал, ₽"), 0, 1000000000000], ["monthly_income_rub", T("Ежемесячные выплаты для цели по доходу, ₽"), 0, 1000000000000], ["annual_return_percent", T("Годовой темп роста после издержек, %"), -99, 100], ["annual_volatility_percent", T("Годовая волатильность для модели, %"), 0, 200], ["annual_inflation_percent", T("Предполагаемая инфляция, %"), -20, 100]];
       openDialog(T("План достижения цели"), `<form id="goal-plan-form" data-id="${esc(id)}" data-version="${saved.version}" data-goal-version="${saved.goal_version}"><p class="notice">${H("Введите собственные сценарные предположения. Эти поля не являются прогнозом OMNICIO. Ноль также нужно указать явно.")}</p><div class="field-grid">${fields.map(([name, label, min, max]) => field({name, label, type: "number", min, max, step: "0.0001", required: true, value: doc[name] ?? ""})).join("")}${field({name: "seed", label: T("Номер воспроизводимого расчёта"), type: "number", min: 0, max: 4294967295, step: 1, required: true, value: doc.seed ?? 42})}</div>${U.switchControl("target_in_today_money", T("Цель в сегодняшних ценах"), T("Будущая целевая сумма увеличивается на заданную инфляцию."), doc.target_in_today_money ?? true)}<div class="form-actions"><button class="button primary" type="submit">${H("Сохранить и рассчитать")}</button><button class="button secondary" type="button" data-close-dialog>${H("Закрыть")}</button></div><output class="form-message" id="goal-plan-message"></output><section id="goal-plan-result" class="section-gap">${goalForecastHTML(saved.forecast)}</section></form>`);
-    } catch (error) { if (!isCancelled(error)) toast(humanError(error), true); }
+    } catch (error) { if (generation === state.generation && sequence === state.eventRequest && !isCancelled(error)) toast(humanError(error), true); }
   };
   const saveGoalPlan = async form => {
     if (!requireUser() || form.dataset.busy === "true" || !form.reportValidity()) return;
     form.dataset.busy = "true";
-    const control = form.querySelector('[type="submit"]');
-    control.disabled = true;
     const generation = state.generation;
+    const sequence = state.eventRequest;
+    const current = () => generation === state.generation && sequence === state.eventRequest && form.isConnected && $("#workspace-dialog").open;
     const data = new FormData(form);
     const document = Object.fromEntries(["monthly_contribution_rub", "monthly_income_rub", "annual_return_percent", "annual_volatility_percent", "annual_inflation_percent"].map(key => [key, data.get(key)]));
     document.seed = Number(data.get("seed"));
     document.target_in_today_money = data.has("target_in_today_money");
+    const controls = Array.from(form.elements, control => [control, control.disabled]);
+    for (const [control] of controls) control.disabled = true;
     try {
       const saved = await api(`/api/goals/${safeSegment(form.dataset.id)}/plan`, {method: "PUT", body: {document, expected_version: Number(form.dataset.version), expected_goal_version: Number(form.dataset.goalVersion)}});
-      if (generation !== state.generation || !form.isConnected) return;
+      if (!current()) return;
       form.dataset.version = saved.version;
       form.dataset.goalVersion = saved.goal_version;
       $("#goal-plan-result", form).innerHTML = goalForecastHTML(saved.forecast);
       showMessage($("#goal-plan-message", form), T("План сохранён; расчёт использует показанные предположения."));
     } catch (error) {
-      if (!isCancelled(error) && generation === state.generation && form.isConnected) showMessage($("#goal-plan-message", form), `${humanError(error)} ${T("При конфликте или неопределённом результате закройте окно и откройте сохранённый план снова.")}`, true);
+      if (!isCancelled(error) && current()) showMessage($("#goal-plan-message", form), `${humanError(error)} ${T("При конфликте или неопределённом результате закройте окно и откройте сохранённый план снова.")}`, true);
     } finally {
       form.dataset.busy = "false";
-      control.disabled = false;
+      if (current()) for (const [control, disabled] of controls) control.disabled = disabled;
     }
   };
   const localToday = () => new Intl.DateTimeFormat("en-CA", {
@@ -2767,14 +2805,23 @@
       small: true
     })}</div><p data-goal-readback-status></p>`;
   };
+  const eventNewsArchiveHTML = () => {
+    if (state.tour) return "";
+    const archive = state.data.marketArchive;
+    const articles = (archive?.items || []).map(archiveNewsItem).join("") || ("<p class=\"notice\">" + H("В загруженной части архива публикаций нет.") + "</p>");
+    const content = state.errors.marketArchive ? dataError("marketArchive") : `<div class="event-list">${articles}</div>`;
+    const previous = archive?.next_cursor ? button(T("Предыдущие публикации"), "news-more", {small: true, extra: state.loading.has("news-more") ? " disabled" : ""}) : "";
+    return `<section class="card section-gap"><h2 class="panel-title">${H("Архив новостей источника")}</h2>${content}${previous}</section>`;
+  };
   const renderEvents = () => {
     const data = state.data.events;
     const unread = number(data?.unread_count) || 0;
+    const previousEvents = data?.next_cursor ? `<div class="form-actions">${button(T("Загрузить предыдущие события"), "events-more", {small: true, extra: state.loading.has("events-more") ? " disabled" : ""})}</div>` : "";
     $("#view-events").innerHTML = `${heading(T("События"), T("Подтверждённые изменения портфеля, выплат и целей"), button(T("Обновить"), "refresh", {
       small: true
     }) + (unread ? button(T("Прочитать все"), "events-read-all", {
       small: true
-    }) : ""))}<section class="card"><div class="card-header"><h2>${H("Лента событий")}</h2><span class="chip">${unread} ${H("непрочитанных")}</span></div>${eventFilters()}${state.errors.events ? dataError("events") : eventsHTML(false)}${data?.next_cursor ? `<div class="form-actions">${button(T("Загрузить предыдущие события"), "events-more", {small: true, extra: state.loading.has("events-more") ? " disabled" : ""})}</div>` : ""}<p class="data-footnote">${H("«Прочитать все» охватывает историю до последнего полученного состояния. Пришедшие позже события остаются непрочитанными.")}</p></section>${!state.tour ? `<section class="card section-gap"><h2 class="panel-title">${H("Архив новостей источника")}</h2>${state.errors.marketArchive ? dataError("marketArchive") : `<div class="event-list">${(state.data.marketArchive?.items || []).map(archiveNewsItem).join("") || ("<p class=\"notice\">" + H("В загруженной части архива публикаций нет.") + "</p>")}</div>`}${state.data.marketArchive?.next_cursor ? button(T("Предыдущие публикации"), "news-more", {small: true, extra: state.loading.has("news-more") ? " disabled" : ""}) : ""}</section>` : ""}${data?.alerts_suppressed ? ("<p class=\"notice section-gap\">" + H("Сейчас действуют тихие часы. События доступны в ленте; внешняя доставка отложена до их окончания.") + "</p>") : ""}<div class="notice section-gap">${H("Push на устройство и письма включаются отдельно после вашего согласия. Их доступность и результат отправки видны в настройках. SMS не используется.")}<div class="form-actions">${button(T("Настроить уведомления"), "settings", {
+    }) : ""))}<section class="card"><div class="card-header"><h2>${H("Лента событий")}</h2><span class="chip">${unread} ${H("непрочитанных")}</span></div>${eventFilters()}${state.errors.events ? dataError("events") : eventsHTML(false)}${previousEvents}<p class="data-footnote">${H("«Прочитать все» охватывает историю до последнего полученного состояния. Пришедшие позже события остаются непрочитанными.")}</p></section>${eventNewsArchiveHTML()}${data?.alerts_suppressed ? ("<p class=\"notice section-gap\">" + H("Сейчас действуют тихие часы. События доступны в ленте; внешняя доставка отложена до их окончания.") + "</p>") : ""}<div class="notice section-gap">${H("Push на устройство и письма включаются отдельно после вашего согласия. Их доступность и результат отправки видны в настройках. SMS не используется.")}<div class="form-actions">${button(T("Настроить уведомления"), "settings", {
       route: true,
       small: true
     })}</div></div>${data?.digest?.frequency && data.digest.frequency !== "off" ? renderEventsCard(data) : ""}`;
@@ -2839,17 +2886,26 @@
       }
     }
   };
+  const eventSourceLabel = type => ({operation: T("Операция брокера"), payout: T("Календарь выплат"), risk: T("Оценка инструмента"), goal: T("Цель"), audit: T("Журнал аккаунта"), job: T("Сбор данных")})[type] || type || T("Серверный факт");
   const eventSourceHTML = event => {
     const source = event.source;
     if (!source || typeof source !== "object") return `<p class="fine-print">${esc(typeof source === "string" ? source : T("Источник не указан"))}</p>`;
-    const rows = [[T("Источник"), {operation: T("Операция брокера"), payout: T("Календарь выплат"), risk: T("Оценка инструмента"), goal: T("Цель"), audit: T("Журнал аккаунта"), job: T("Сбор данных")}[source.type] || source.type || T("Серверный факт")]];
+    const rows = [[T("Источник"), eventSourceLabel(source.type)]];
     if (source.instrument_uid) rows.push([T("Инструмент"), source.instrument_uid]);
     if (source.amount !== undefined) rows.push([T("Сумма операции"), money(source.amount, 2, source.currency || "")]);
-    if (source.amount_per_security !== undefined && source.amount_per_security !== null) rows.push([T("На одну бумагу"), money(source.amount_per_security, 2, source.currency || "", false)]);
+    if (source.amount_per_security != null) rows.push([T("На одну бумагу"), money(source.amount_per_security, 2, source.currency || "", false)]);
     if (source.expected_at) rows.push([T("Плановая дата выплаты"), date(source.expected_at)]);
     if (source.due_date) rows.push([T("Плановая дата цели"), date(source.due_date)]);
     if (source.state || source.status) rows.push([T("Состояние источника"), source.state || source.status]);
-    return `${infoRows(rows)}${source.url ? `<p class="fine-print">${U.sourceLink(source.url, T("Открыть первоисточник"))}</p>` : ""}`;
+    const link = source.url ? `<p class="fine-print">${U.sourceLink(source.url, T("Открыть первоисточник"))}</p>` : "";
+    return infoRows(rows) + link;
+  };
+  const eventDestinationButton = destination => {
+    if (!destination || !views.has(destination.view)) return "";
+    let label = T("Открыть раздел");
+    if (destination.uid) label = T("Открыть инструмент");
+    else if (destination.goal_id) label = T("Открыть цель");
+    return button(label, "event-destination", {primary: true});
   };
   const openEvent = async id => {
     if (!requireUser() || !/^[a-f0-9]{64}$/.test(id)) return;
@@ -2860,7 +2916,7 @@
       const event = await api(`/api/events/${id}`);
       if (generation !== state.generation || request !== state.eventRequest || !$("#workspace-dialog").open) return;
       state.eventDetail = event;
-      openDialog(event.title, `<p class="help-copy">${esc(event.detail || T("Подтверждённое событие вашего аккаунта."))}</p><p class="fine-print">${esc(date(event.occurred_at, true))} ${H("МСК")}</p>${eventSourceHTML(event)}${event.destination && views.has(event.destination.view) ? button(event.destination.uid ? T("Открыть инструмент") : event.destination.goal_id ? T("Открыть цель") : T("Открыть раздел"), "event-destination", {primary: true}) : ""}`);
+      openDialog(event.title, `<p class="help-copy">${esc(event.detail || T("Подтверждённое событие вашего аккаунта."))}</p><p class="fine-print">${esc(date(event.occurred_at, true))} ${H("МСК")}</p>${eventSourceHTML(event)}${eventDestinationButton(event.destination)}`);
       if (!event.read_at) void markEvents([id]);
     } catch (error) {
       if (generation === state.generation && request === state.eventRequest && $("#workspace-dialog").open && !isCancelled(error)) openDialog(T("Событие недоступно"), `<p class="notice error">${esc(humanError(error))}</p>`);
@@ -2878,6 +2934,7 @@
     const income = ws?.income || {};
     const analysis = state.data.analysis?.analysis;
     const result = number(performance.investment_result_rub);
+    const incomePeriod = income.from ? `${esc(date(income.from))} — ${esc(date(income.to))}<br>` : "";
     $("#view-analytics").innerHTML = `${heading(T("Аналитика"), T("Результат, денежные потоки и полнота исходных данных"), button(T("Обновить"), "refresh", {
       small: true
     }))}${periods("analytics", state.analyticsPeriod)}<div class="metric-grid">${[[T("Финансовый результат"), money(result)], [T("Чистые пополнения"), money(performance.net_contributions_rub)], [T("Полученные выплаты"), money(income.total_rub)], [T("Налоги"), money(performance.taxes_rub)]].map(([label, value]) => renderAnalyticsCard(label, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader(T("Стоимость по наблюдениям"))}${chart(ws?.overview?.history)}${freshness("T-Invest", ws?.overview?.observed_at, ws?.overview?.status)}<p class="data-footnote">${H("Изменение стоимости включает движение денег. Доходность не выводится из разницы крайних точек.")}</p></section><section class="card">${cardHeader(T("Из чего складывается результат"))}${infoRows([[T("Стоимость в начале"), money(performance.start_nav_rub)], [T("Стоимость в конце"), money(performance.end_nav_rub)], [T("Изменение стоимости"), money(performance.nav_change_rub)], [T("Чистые пополнения / выводы"), money(performance.net_contributions_rub)], [T("Результат после внешних потоков"), money(performance.investment_result_rub)], [T("Комиссии за период"), money(performance.fees_rub)], [T("Налоговые списания"), money(performance.taxes_rub)]])}<p class="data-footnote">${performance.from ? renderAnalyticsFragment(performance) : ""}${H("Метод: изменение стоимости минус внешние денежные потоки. Комиссии и налоги уже отражаются в результате; повторно они не вычитаются.")}</p></section></div><div class="two-column section-gap"><section class="card">${cardHeader(T("Выплаты до налоговых списаний"))}${income.by_month?.length ? chart(income.by_month.map(item => ({
@@ -2888,24 +2945,32 @@
       valueKey: "total_rub",
       label: T("Подтверждённые выплаты по месяцам"),
       tone: "purple"
-    }) : empty(T("История выплат пока недоступна"), T("Для расчёта нужны подтверждённые операции брокера."), "", "", "wallet")}${infoRows([[T("Купоны"), money(income.coupons_rub)], [T("Дивиденды"), money(income.dividends_rub)], [T("Прочие доходы"), money(income.other_income_rub)], [T("Погашения капитала"), money(income.redemptions_rub)]])}<p class="data-footnote">${income.from ? `${esc(date(income.from))} — ${esc(date(income.to))}<br>` : ""}${H("Погашение возвращает капитал и не включается в доход. Налоговые списания учитываются отдельно в финансовом результате.")}</p></section><section class="card">${cardHeader(T("Полнота данных и риски"))}${analysis ? renderAnalyticsFragment3(analysis) : empty(T("Анализ ещё не получен"), T("Проверьте подключение счёта и наличие наблюдений."), "connect", T("Проверить подключение"), "analytics")}${dataError("analysis")}</section></div>${performance.status === "unavailable" ? ("<p class=\"notice section-gap\">" + H("Финансовый результат не рассчитан: недостаточно подтверждённых снимков или истории денежных потоков. Пропуски не заменяются нулями.") + "</p>") : ""}<section class="card section-gap">${cardHeader(T("Проверка выбранной стратегии"), "strategies", T("Открыть"))}<p class="fine-print">${esc(strategyTitle())}${H(". Подробные ограничения, проверка состава и исследование на истории находятся в разделе стратегий.")}</p></section>`;
+    }) : empty(T("История выплат пока недоступна"), T("Для расчёта нужны подтверждённые операции брокера."), "", "", "wallet")}${infoRows([[T("Купоны"), money(income.coupons_rub)], [T("Дивиденды"), money(income.dividends_rub)], [T("Прочие доходы"), money(income.other_income_rub)], [T("Погашения капитала"), money(income.redemptions_rub)]])}<p class="data-footnote">${incomePeriod}${H("Погашение возвращает капитал и не включается в доход. Налоговые списания учитываются отдельно в финансовом результате.")}</p></section><section class="card">${cardHeader(T("Полнота данных и риски"))}${analysis ? renderAnalyticsFragment3(analysis) : empty(T("Анализ ещё не получен"), T("Проверьте подключение счёта и наличие наблюдений."), "connect", T("Проверить подключение"), "analytics")}${dataError("analysis")}</section></div>${performance.status === "unavailable" ? ("<p class=\"notice section-gap\">" + H("Финансовый результат не рассчитан: недостаточно подтверждённых снимков или истории денежных потоков. Пропуски не заменяются нулями.") + "</p>") : ""}<section class="card section-gap">${cardHeader(T("Проверка выбранной стратегии"), "strategies", T("Открыть"))}<p class="fine-print">${esc(strategyTitle())}${H(". Подробные ограничения, проверка состава и исследование на истории находятся в разделе стратегий.")}</p></section>`;
   };
   const billingLabel = status => ({
     creating: T("Платёж создаётся"), pending: T("Ожидает оплаты"), paid: T("Оплачен"),
     cancelled: T("Отменён"), refunded: T("Возвращён"), partial_refund: T("Частичный возврат"),
     uncertain: T("Результат требует сверки")
   })[status] || T("Статус не подтверждён");
+  const billingHistoryItemHTML = item => {
+    const canOpen = item.status === "pending" && !item.cancel_attempted_at && U.external(item.checkout_url) && ["securepay.tinkoff.ru", "securepayments.tinkoff.ru"].includes(new URL(item.checkout_url).hostname);
+    const cancelNotice = item.cancel_attempted_at && ["pending", "uncertain"].includes(item.status) ? `<p class="notice">${H("execution.cancel_pending")}</p>` : "";
+    const checkoutLink = canOpen ? `<a class="button primary small" href="${esc(item.checkout_url)}" target="_blank" rel="noopener noreferrer">${H("Открыть оплату в банке")}</a>` : "";
+    const cancelControl = ["creating", "pending", "uncertain"].includes(item.status) && !item.cancel_attempted_at ? `<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="cancel"${state.billingBusy ? " disabled" : ""}>${H("Отменить оплату")}</button>` : "";
+    return `<li class="section-gap"><strong>${esc(billingLabel(item.status))} · ${esc(money(item.amount_kopecks / 100, 2, "RUB", false))}</strong><p class="fine-print">${esc(date(item.created_at, true))} ${H("МСК ·")} ${esc(format(item.period_days, 0))} ${H("дней")}</p>${cancelNotice}<div class="form-actions">${checkoutLink}<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="reconcile"${state.billingBusy ? " disabled" : ""}>${H("Сверить с банком")}</button>${cancelControl}</div></li>`;
+  };
   const billingHTML = () => {
     const value = state.data.billing;
     if (!value) return dataError("billing") || U.loading(T("Проверяем план и оплаты…"));
     const active = value.plan === "premium";
     const offer = value.offer;
     const pending = (value.payments || []).some(item => ["creating", "pending", "uncertain"].includes(item.status));
-    const history = (value.payments || []).map(item => {
-      const canOpen = item.status === "pending" && !item.cancel_attempted_at && U.external(item.checkout_url) && ["securepay.tinkoff.ru", "securepayments.tinkoff.ru"].includes(new URL(item.checkout_url).hostname);
-      return `<li class="section-gap"><strong>${esc(billingLabel(item.status))} · ${esc(money(item.amount_kopecks / 100, 2, "RUB", false))}</strong><p class="fine-print">${esc(date(item.created_at, true))} ${H("МСК ·")} ${esc(format(item.period_days, 0))} ${H("дней")}</p>${item.cancel_attempted_at && ["pending", "uncertain"].includes(item.status) ? `<p class="notice">${H("execution.cancel_pending")}</p>` : ""}<div class="form-actions">${canOpen ? `<a class="button primary small" href="${esc(item.checkout_url)}" target="_blank" rel="noopener noreferrer">${H("Открыть оплату в банке")}</a>` : ""}<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="reconcile"${state.billingBusy ? " disabled" : ""}>${H("Сверить с банком")}</button>${["creating", "pending", "uncertain"].includes(item.status) && !item.cancel_attempted_at ? `<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="cancel"${state.billingBusy ? " disabled" : ""}>${H("Отменить оплату")}</button>` : ""}</div></li>`;
-    }).join("");
-    return `<p class="help-copy">${H("Текущий план:")} <strong>${active ? "Premium" : T("Личный кабинет")}</strong></p>${active ? `<p>${H("Доступ действует до")} ${esc(date(value.valid_until, true))} ${H("МСК.")}</p>` : ""}<p class="fine-print">${H("Портфель, цели, стратегии, аналитика и настройки доступны в личном кабинете. Автоматические списания не используются.")}</p>${offer && !active && !pending ? `<form id="billing-checkout-form" data-offer="${esc(offer.version)}" data-request-id="${crypto.randomUUID()}"><h3 class="panel-title">${esc(offer.description)}</h3><p class="help-copy">${esc(money(offer.amount_kopecks / 100, 2, "RUB", false))} ${H("за")} ${esc(format(offer.period_days, 0))} ${H("дней")}</p>${field({name: "receipt_email", label: T("Email для банковского чека"), type: "email", required: true})}<label class="check-field"><input name="accept_offer" type="checkbox" required><span>${H("Подтверждаю выбранный срок и сумму.")} <a href="/legal/terms.html" target="_blank" rel="noopener">${H("Условия использования")}</a></span></label><button class="button primary" type="submit"${state.billingBusy ? " disabled" : ""}>${H("Создать платёж")}</button></form>` : !value.configured ? ("<p class=\"notice\">" + H("Приём оплаты ещё не включён. Тариф появится после настройки реального терминала, стоимости и условий оператором.") + "</p>") : ""}<output id="billing-message" class="form-message"></output>${pending ? ("<p class=\"notice\">" + H("Есть незавершённая оплата. Сверьте её состояние перед созданием новой.") + "</p>") : ""}<details class="section-gap" ${pending ? "open" : ""}><summary class="details-summary">${H("История оплат ·")} ${(value.payments || []).length}</summary><ul class="source-list">${history || ("<li>" + H("Оплат ещё не было.") + "</li>")}</ul></details><p class="fine-print section-gap">${H("Доступ обновляется после подтверждения банка. Возврат на сайт после оплаты не подтверждает списание.")}</p>`;
+    const history = (value.payments || []).map(billingHistoryItemHTML).join("");
+    const activeUntil = active ? `<p>${H("Доступ действует до")} ${esc(date(value.valid_until, true))} ${H("МСК.")}</p>` : "";
+    let checkout = "";
+    if (offer && !active && !pending) checkout = `<form id="billing-checkout-form" data-offer="${esc(offer.version)}" data-request-id="${crypto.randomUUID()}"><h3 class="panel-title">${esc(offer.description)}</h3><p class="help-copy">${esc(money(offer.amount_kopecks / 100, 2, "RUB", false))} ${H("за")} ${esc(format(offer.period_days, 0))} ${H("дней")}</p>${field({name: "receipt_email", label: T("Email для банковского чека"), type: "email", required: true})}<label class="check-field"><input name="accept_offer" type="checkbox" required><span>${H("Подтверждаю выбранный срок и сумму.")} <a href="/legal/terms.html" target="_blank" rel="noopener">${H("Условия использования")}</a></span></label><button class="button primary" type="submit"${state.billingBusy ? " disabled" : ""}>${H("Создать платёж")}</button></form>`;
+    else if (!value.configured) checkout = ("<p class=\"notice\">" + H("Приём оплаты ещё не включён. Тариф появится после настройки реального терминала, стоимости и условий оператором.") + "</p>");
+    return `<p class="help-copy">${H("Текущий план:")} <strong>${active ? "Premium" : T("Личный кабинет")}</strong></p>${activeUntil}<p class="fine-print">${H("Портфель, цели, стратегии, аналитика и настройки доступны в личном кабинете. Автоматические списания не используются.")}</p>${checkout}<output id="billing-message" class="form-message"></output>${pending ? ("<p class=\"notice\">" + H("Есть незавершённая оплата. Сверьте её состояние перед созданием новой.") + "</p>") : ""}<details class="section-gap" ${pending ? "open" : ""}><summary class="details-summary">${H("История оплат ·")} ${(value.payments || []).length}</summary><ul class="source-list">${history || ("<li>" + H("Оплат ещё не было.") + "</li>")}</ul></details><p class="fine-print section-gap">${H("Доступ обновляется после подтверждения банка. Возврат на сайт после оплаты не подтверждает списание.")}</p>`;
   };
   const openBilling = async () => {
     if (!requireUser()) return;
@@ -2988,12 +3053,19 @@
     restoreEditableForm("profile-form");
     updateSaveStatus("prefs");
   };
+  const sessionItemHTML = item => {
+    const action = item.current ? ("<span class=\"chip\">" + H("Это устройство") + "</span>") : `<button class="button secondary small" data-session-revoke="${esc(item.id)}">${H("Завершить")}</button>`;
+    return `<div class="setting-row"><div><strong>${item.current ? T("Текущая сессия") : T("Другой вход")} · ${esc({vkid: "VK ID", tid: "T-ID"}[item.auth_provider] || T("Провайдер не записан"))}</strong><p class="fine-print">${H("Вход:")} ${esc(date(item.created_at, true))} ${H("· Активность:")} ${esc(date(item.last_seen_at, true))} ${H("МСК")}<br>${H("Действует до")} ${esc(date(item.expires_at, true))}</p></div>${action}</div>`;
+  };
+  const identityUnlinkHTML = (provider, count) => `<button class="button secondary small" data-identity-unlink="${esc(provider)}"${count < 2 ? " disabled" : ""}>${H("Отвязать")} ${provider === "tid" ? "T-ID" : "VK ID"}</button>`;
   const sessionsHTML = () => {
     const payload = state.data.sessions;
     const sessions = payload?.sessions || [];
-    const content = state.errors.sessions ? dataError("sessions") : sessions.length ? sessions.map(item => `<div class="setting-row"><div><strong>${item.current ? T("Текущая сессия") : T("Другой вход")} · ${esc({vkid: "VK ID", tid: "T-ID"}[item.auth_provider] || T("Провайдер не записан"))}</strong><p class="fine-print">${H("Вход:")} ${esc(date(item.created_at, true))} ${H("· Активность:")} ${esc(date(item.last_seen_at, true))} ${H("МСК")}<br>${H("Действует до")} ${esc(date(item.expires_at, true))}</p></div>${item.current ? ("<span class=\"chip\">" + H("Это устройство") + "</span>") : `<button class="button secondary small" data-session-revoke="${esc(item.id)}">${H("Завершить")}</button>`}</div>`).join("") : U.loading(T("Загружаем активные сессии…"));
+    let content = U.loading(T("Загружаем активные сессии…"));
+    if (state.errors.sessions) content = dataError("sessions");
+    else if (sessions.length) content = sessions.map(sessionItemHTML).join("");
     const providers = state.data.identities?.providers || [];
-    return `<section class="card wide"><div class="card-header"><h2>${H("Активные сессии")}</h2>${sessions.length > 1 ? ("<button class=\"button secondary small\" data-session-revoke=\"others\">" + H("Завершить остальные") + "</button>") : ""}</div>${content}${payload?.truncated ? ("<p class=\"notice\">" + H("Показаны последние 100 сессий. Кнопка завершения остальных применяется ко всем другим действующим сессиям.") + "</p>") : ""}</section><section class="card wide"><h2 class="panel-title">${H("Управление привязками входа")}</h2><p class="fine-print">${H("Для отвязки сначала повторно войдите через другой привязанный и доступный способ. Подтверждение действует 5 минут. Последний способ входа удалить нельзя.")}</p><div class="form-actions">${providers.map(provider => `<button class="button secondary small" data-identity-unlink="${esc(provider)}"${providers.length < 2 ? " disabled" : ""}>${H("Отвязать")} ${provider === "tid" ? "T-ID" : "VK ID"}</button>`).join("")}</div></section>`;
+    return `<section class="card wide"><div class="card-header"><h2>${H("Активные сессии")}</h2>${sessions.length > 1 ? ("<button class=\"button secondary small\" data-session-revoke=\"others\">" + H("Завершить остальные") + "</button>") : ""}</div>${content}${payload?.truncated ? ("<p class=\"notice\">" + H("Показаны последние 100 сессий. Кнопка завершения остальных применяется ко всем другим действующим сессиям.") + "</p>") : ""}</section><section class="card wide"><h2 class="panel-title">${H("Управление привязками входа")}</h2><p class="fine-print">${H("Для отвязки сначала повторно войдите через другой привязанный и доступный способ. Подтверждение действует 5 минут. Последний способ входа удалить нельзя.")}</p><div class="form-actions">${providers.map(provider => identityUnlinkHTML(provider, providers.length)).join("")}</div></section>`;
   };
   const revokeSession = async id => {
     if (!requireUser()) return;
@@ -3207,13 +3279,32 @@
     return T("Токен хранится на сервере и не возвращается в браузер. Для замены счёта сначала отключите текущее подключение.");
   };
   const deliveryStateLabels = () => ({pending: T("Ожидает подтверждения"), active: T("Подключён"), revoked: T("Отключён"), expired: T("Нужно подключить заново"), queued: T("В очереди"), sending: T("Отправляется"), accepted: T("Принято провайдером"), uncertain: T("Результат не подтверждён"), failed: T("Не отправлено"), cancelled: T("Отменено")});
-  const notificationChannelHTML = channel => `<article class="event-item"><span class="event-icon">${icon(channel.kind === "push" ? "events" : "profile", true)}</span><div class="event-item-body"><h3>${esc(channel.label)}</h3><p class="fine-print">${channel.kind === "push" ? "Push" : "Email"} · ${esc(deliveryStateLabels()[channel.status] || T("Состояние неизвестно"))}</p>${channel.status === "pending" ? `<form id="notification-verify-${esc(channel.id)}" data-channel-id="${esc(channel.id)}" class="section-gap"><label class="field"><span>${H("Код из письма")}</span><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required value="${esc(state.deliveryDrafts[`notification-verify-${channel.id}`]?.code || "")}" aria-label="${H("Код подтверждения email")}"></label><p class="fine-print">${H("Действует до")} ${esc(date(channel.verification_expires_at, true))} ${H("МСК. Осталось попыток:")} ${esc(channel.verification_attempts_remaining ?? 5)}.</p><button class="button primary small-button" type="submit"${state.deliveryBusy ? " disabled" : ""}>${H("Подтвердить адрес")}</button></form>` : ""}<div class="form-actions">${button(T("Отключить"), "notification-revoke", {small: true, extra: ` data-channel-id="${esc(channel.id)}"${state.deliveryBusy ? " disabled" : ""}`})}</div></div></article>`;
+  const notificationVerificationHTML = channel => {
+    if (channel.status !== "pending") return "";
+    const formId = "notification-verify-" + channel.id;
+    return `<form id="${esc(formId)}" data-channel-id="${esc(channel.id)}" class="section-gap"><label class="field"><span>${H("Код из письма")}</span><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required value="${esc(state.deliveryDrafts[formId]?.code || "")}" aria-label="${H("Код подтверждения email")}"></label><p class="fine-print">${H("Действует до")} ${esc(date(channel.verification_expires_at, true))} ${H("МСК. Осталось попыток:")} ${esc(channel.verification_attempts_remaining ?? 5)}.</p><button class="button primary small-button" type="submit"${state.deliveryBusy ? " disabled" : ""}>${H("Подтвердить адрес")}</button></form>`;
+  };
+  const notificationChannelHTML = channel => {
+    const revokeAttributes = ` data-channel-id="${esc(channel.id)}"${state.deliveryBusy ? " disabled" : ""}`;
+    return `<article class="event-item"><span class="event-icon">${icon(channel.kind === "push" ? "events" : "profile", true)}</span><div class="event-item-body"><h3>${esc(channel.label)}</h3><p class="fine-print">${channel.kind === "push" ? "Push" : "Email"} · ${esc(deliveryStateLabels()[channel.status] || T("Состояние неизвестно"))}</p>${notificationVerificationHTML(channel)}<div class="form-actions">${button(T("Отключить"), "notification-revoke", {small: true, extra: revokeAttributes})}</div></div></article>`;
+  };
+  const pushAvailabilityDescription = (data, supported) => {
+    if (!data.push_configured) return T("Push ещё не включён администратором.");
+    if (!supported) return T("Этот браузер не поддерживает push в текущем режиме. На iPhone или iPad может потребоваться установка сайта на главный экран.");
+    if (Notification.permission === "denied") return T("Разрешение заблокировано. Измените его в настройках сайта в браузере.");
+    return T("Разрешение браузера запрашивается только после нажатия кнопки.");
+  };
+  const notificationDeliveryHTML = item => {
+    const nextAttempt = item.status === "queued" ? ` ${T("· следующая попытка")} ${esc(date(item.next_attempt_at, true))} ${T("МСК")}` : "";
+    return `<li><strong>${esc({verification: T("Подтверждение адреса"), event: T("Событие"), digest: T("Дайджест"), operational: T("Состояние сервиса")}[item.kind] || T("Уведомление"))}</strong> · ${esc(deliveryStateLabels()[item.status] || T("Состояние неизвестно"))}<br><span class="fine-print">${esc(date(item.created_at, true))} ${H("МСК")}${nextAttempt}${item.status === "uncertain" ? T(" · повтор автоматически не отправляется; проверьте устройство или почту") : ""}</span></li>`;
+  };
   const notificationContentsHTML = () => {
     const data = state.data.notifications;
     if (!data) return `<h2 class="panel-title">${H("Доставка уведомлений")}</h2>${state.errors.notifications ? dataError("notifications") : U.loading(T("Проверяем подключённые каналы…"))}`;
     const pushSupported = "Notification" in window && "PushManager" in window && "serviceWorker" in navigator && window.isSecureContext;
-    const deliveries = (data.deliveries || []).map(item => `<li><strong>${esc({verification: T("Подтверждение адреса"), event: T("Событие"), digest: T("Дайджест"), operational: T("Состояние сервиса")}[item.kind] || T("Уведомление"))}</strong> · ${esc(deliveryStateLabels()[item.status] || T("Состояние неизвестно"))}<br><span class="fine-print">${esc(date(item.created_at, true))} ${H("МСК")}${item.status === "queued" ? ` ${T("· следующая попытка")} ${esc(date(item.next_attempt_at, true))} ${T("МСК")}` : ""}${item.status === "uncertain" ? T(" · повтор автоматически не отправляется; проверьте устройство или почту") : ""}</span></li>`).join("");
-    return `<div class="card-header"><h2>${H("Доставка уведомлений")}</h2>${button(T("Проверить состояние"), "notifications-reload", {small: true})}</div><p class="fine-print">${H("Содержание портфеля и личные суммы не включаются в сообщение. Подробности открываются после входа в OMNICIO. Дневной или недельный дайджест заменяет отдельные сообщения; тихие часы откладывают доставку.")}</p><div class="form-actions">${button(T("Включить push на этом устройстве"), "notification-push", {small: true, extra: !data.push_configured || !pushSupported || state.deliveryBusy ? " disabled" : ""})}</div><p class="fine-print">${!data.push_configured ? T("Push ещё не включён администратором.") : !pushSupported ? T("Этот браузер не поддерживает push в текущем режиме. На iPhone или iPad может потребоваться установка сайта на главный экран.") : Notification.permission === "denied" ? T("Разрешение заблокировано. Измените его в настройках сайта в браузере.") : T("Разрешение браузера запрашивается только после нажатия кнопки.")}</p><form id="notification-email-form" class="section-gap"><label class="field"><span>${H("Email для уведомлений")}</span><input name="email" type="email" maxlength="254" autocomplete="email" required value="${esc(state.deliveryDrafts["notification-email-form"]?.email || "")}"${!data.email_configured ? " disabled" : ""}></label><button class="button primary small-button" type="submit"${!data.email_configured || state.deliveryBusy ? " disabled" : ""}>${H("Отправить код подтверждения")}</button><p class="fine-print">${data.email_configured ? T("Подписка включится только после подтверждения адреса. Код действует 15 минут; разрешено пять попыток.") : T("Email-доставка ещё не включена администратором.")}</p></form><output id="notification-message" class="form-message"></output><div class="event-list section-gap">${(data.channels || []).map(notificationChannelHTML).join("") || ("<p class=\"notice\">" + H("Устройства и адреса пока не подключены.") + "</p>")}</div><details class="section-gap"><summary class="details-summary">${H("История отправки")}</summary><p class="fine-print">${H("Статус «Принято провайдером» подтверждает приём сообщения сервисом, но не прочтение человеком.")}</p>${deliveries ? `<ul class="source-list">${deliveries}</ul>` : ("<p class=\"fine-print\">" + H("Отправок ещё не было.") + "</p>")}</details>`;
+    const deliveries = (data.deliveries || []).map(notificationDeliveryHTML).join("");
+    const deliveryList = deliveries ? `<ul class="source-list">${deliveries}</ul>` : ("<p class=\"fine-print\">" + H("Отправок ещё не было.") + "</p>");
+    return `<div class="card-header"><h2>${H("Доставка уведомлений")}</h2>${button(T("Проверить состояние"), "notifications-reload", {small: true})}</div><p class="fine-print">${H("Содержание портфеля и личные суммы не включаются в сообщение. Подробности открываются после входа в OMNICIO. Дневной или недельный дайджест заменяет отдельные сообщения; тихие часы откладывают доставку.")}</p><div class="form-actions">${button(T("Включить push на этом устройстве"), "notification-push", {small: true, extra: !data.push_configured || !pushSupported || state.deliveryBusy ? " disabled" : ""})}</div><p class="fine-print">${esc(pushAvailabilityDescription(data, pushSupported))}</p><form id="notification-email-form" class="section-gap"><label class="field"><span>${H("Email для уведомлений")}</span><input name="email" type="email" maxlength="254" autocomplete="email" required value="${esc(state.deliveryDrafts["notification-email-form"]?.email || "")}"${!data.email_configured ? " disabled" : ""}></label><button class="button primary small-button" type="submit"${!data.email_configured || state.deliveryBusy ? " disabled" : ""}>${H("Отправить код подтверждения")}</button><p class="fine-print">${data.email_configured ? T("Подписка включится только после подтверждения адреса. Код действует 15 минут; разрешено пять попыток.") : T("Email-доставка ещё не включена администратором.")}</p></form><output id="notification-message" class="form-message"></output><div class="event-list section-gap">${(data.channels || []).map(notificationChannelHTML).join("") || ("<p class=\"notice\">" + H("Устройства и адреса пока не подключены.") + "</p>")}</div><details class="section-gap"><summary class="details-summary">${H("История отправки")}</summary><p class="fine-print">${H("Статус «Принято провайдером» подтверждает приём сообщения сервисом, но не прочтение человеком.")}</p>${deliveryList}</details>`;
   };
   const renderNotificationPanel = () => {
     const target = $("#notification-settings");
@@ -3355,6 +3446,12 @@
     const extended = form.elements.context.value === "investment";
     for (const name of ["include_news", "research_run_id"]) if (form.elements[name]) form.elements[name].disabled = !extended || state.assistantBusy;
   };
+  const assistantSidebarHTML = ({status, selected, history, enabled}) => {
+    const conversationActions = selected ? `<div class="form-actions">${button(T("Обновить историю"), "assistant-history-reload", {small: true})}${button(T("Удалить разговор"), "chat-clear", {small: true, extra: state.assistantBusy ? "disabled" : ""})}</div>` : "";
+    const quotaLabel = status?.quota ? esc(`${status.quota.used || 0} ${T("из")} ${status.quota.limit || 0}`) : T("Не получен");
+    const quotaReset = status?.quota?.resets_at ? `${T("Обновление лимита:")} ${esc(date(status.quota.resets_at, true))} ${T("МСК")}` : "";
+    return `<aside class="card assistant-side"><h2 class="panel-title">${H("Ваши разговоры")}</h2>${button(T("Новый разговор"), "assistant-new", {small: true, extra: state.assistantBusy || state.tour ? "disabled" : ""})}<div class="assistant-history section-gap">${history || ("<p class=\"fine-print\">" + H("Сохранённых разговоров ещё нет.") + "</p>")}</div>${dataError("assistantConversations")}${conversationActions}<h3 class="panel-title section-gap">${H("Лимит запросов")}</h3><p>${quotaLabel}</p><p class="fine-print">${quotaReset}</p><h3 class="panel-title section-gap">${H("Начать с вопроса")}</h3><div class="assistant-prompts">${[T("Как читать структуру моего портфеля?"), T("Что означает просадка?"), T("Какие данные нужны для оценки стратегии?")].map(text => renderAssistantButton(text, enabled)).join("")}</div><p class="section-gap fine-print">${H("Ответ ИИ не изменяет настройки и не отправляет заявки брокеру.")}</p></aside>`;
+  };
   const renderAssistant = () => {
     const status = state.data.assistantStatus;
     const enabled = Boolean(status?.enabled && status?.configured && !state.tour);
@@ -3363,9 +3460,13 @@
     const rows = state.data.assistantConversations?.items || [];
     const runs = state.data.assistantResearch?.items || [];
     const requestState = value => ({running: T("Запрос выполняется"), uncertain: T("Ответ не подтверждён. Автоматической повторной отправки нет."), cancelled: T("Запрос остановлен")})[value] || "";
-    const chat = state.chat.map(item => `<article class="chat-message ${item.role === "user" ? "user" : ""}"><small>${item.role === "user" ? T("Вы") : T("OMNICIO · ИИ")} · ${esc(date(item.created_at, true))} ${H("МСК")}</small>${esc(item.content)}${item.sources?.length ? renderAssistantSourceList(item) : ""}${requestState(item.request_status) ? `<p class="fine-print">${esc(requestState(item.request_status))}</p>` : ""}</article>`).join("");
+    const chat = state.chat.map(item => {
+      const requestNotice = requestState(item.request_status) ? `<p class="fine-print">${esc(requestState(item.request_status))}</p>` : "";
+      return `<article class="chat-message ${item.role === "user" ? "user" : ""}"><small>${item.role === "user" ? T("Вы") : T("OMNICIO · ИИ")} · ${esc(date(item.created_at, true))} ${H("МСК")}</small>${esc(item.content)}${item.sources?.length ? renderAssistantSourceList(item) : ""}${requestNotice}</article>`;
+    }).join("");
     const history = rows.map(item => `<button class="recovery-row" data-assistant-conversation="${esc(item.id)}"${state.assistantBusy ? " disabled" : ""}${selected?.id === item.id ? ' aria-current="true"' : ""}><span><strong>${esc(item.title)}</strong><small>${esc(date(item.updated_at, true))} ${H("МСК")}</small></span></button>`).join("");
-    $("#view-assistant").innerHTML = `${heading(T("ИИ-помощник"), T("Разговоры и выбранные вами данные"), button(T("Настроить подключение"), "assistant-connect", {small: true}))}<div class="assistant-layout"><section class="card chat-card"><div class="assistant-status">${icon("assistant")}<strong>${esc(selected?.title || T("Персональный помощник"))}</strong><span class="chip">${esc(assistantHealthLabel(status))}</span></div>${!status?.enabled ? ("<p class=\"notice\">" + H("Внешний ИИ будет включён после завершения и проверки остальной системы. Настройки подключения и история уже доступны.") + "</p>") : ""}<div id="chat-messages" class="chat-messages" role="log" aria-label="${H("Переписка с ИИ")}">${selected?.next_before ? button(T("Предыдущие сообщения"), "assistant-history-more", {small: true, extra: state.assistantBusy ? "disabled" : ""}) : ""}${chat || empty(T("Начните новый разговор"), T("Выберите контекст и задайте вопрос после активации модели."), "", "", "assistant", true)}${state.assistantBusy ? U.loading(T("Ожидаем подтверждённый ответ…")) : ""}</div><form id="assistant-form"><div class="assistant-context">${select("context", T("Данные для этого вопроса"), [["general", T("Общий вопрос · без личных данных")], ["portfolio", T("Сводные показатели портфеля")], ["investment", T("Портфель, позиции, цели и стратегия")]], draft.context)}<div class="field-grid">${select("research_run_id", T("Сохранённое исследование"), [["", T("Не передавать")], ...runs.map(run => [run.id, `${date(run.created_at, true)} · ${run.strategy_version || ""}`])], draft.research_run_id)}<label class="check-field"><input name="include_news" type="checkbox"${draft.include_news ? " checked" : ""}><span>${H("Добавить последние новости Банка России")}</span></label></div><p class="fine-print">${H("Личные данные отправляются только с выбранным контекстом. История хранится в вашем аккаунте и доступна после повторного входа.")}</p></div><div class="chat-compose"><textarea name="message" aria-label="${H("Сообщение помощнику")}" maxlength="4000" required placeholder="${H("Задайте свой вопрос…")}"${!enabled || state.assistantBusy ? " disabled" : ""}>${esc(draft.message)}</textarea><button class="button primary" type="submit"${!enabled || state.assistantBusy ? " disabled" : ""}>${H("Отправить")}</button></div><output id="assistant-message" class="form-message chat-form-message"></output></form>${dataError("assistantStatus")}</section><aside class="card assistant-side"><h2 class="panel-title">${H("Ваши разговоры")}</h2>${button(T("Новый разговор"), "assistant-new", {small: true, extra: state.assistantBusy || state.tour ? "disabled" : ""})}<div class="assistant-history section-gap">${history || ("<p class=\"fine-print\">" + H("Сохранённых разговоров ещё нет.") + "</p>")}</div>${dataError("assistantConversations")}${selected ? `<div class="form-actions">${button(T("Обновить историю"), "assistant-history-reload", {small: true})}${button(T("Удалить разговор"), "chat-clear", {small: true, extra: state.assistantBusy ? "disabled" : ""})}</div>` : ""}<h3 class="panel-title section-gap">${H("Лимит запросов")}</h3><p>${status?.quota ? esc(`${status.quota.used || 0} ${T("из")} ${status.quota.limit || 0}`) : T("Не получен")}</p><p class="fine-print">${status?.quota?.resets_at ? `${T("Обновление лимита:")} ${esc(date(status.quota.resets_at, true))} ${T("МСК")}` : ""}</p><h3 class="panel-title section-gap">${H("Начать с вопроса")}</h3><div class="assistant-prompts">${[T("Как читать структуру моего портфеля?"), T("Что означает просадка?"), T("Какие данные нужны для оценки стратегии?")].map(text => renderAssistantButton(text, enabled)).join("")}</div><p class="section-gap fine-print">${H("Ответ ИИ не изменяет настройки и не отправляет заявки брокеру.")}</p></aside></div>`;
+    const researchOptions = [["", T("Не передавать")], ...runs.map(run => [run.id, `${date(run.created_at, true)} · ${run.strategy_version || ""}`])];
+    $("#view-assistant").innerHTML = `${heading(T("ИИ-помощник"), T("Разговоры и выбранные вами данные"), button(T("Настроить подключение"), "assistant-connect", {small: true}))}<div class="assistant-layout"><section class="card chat-card"><div class="assistant-status">${icon("assistant")}<strong>${esc(selected?.title || T("Персональный помощник"))}</strong><span class="chip">${esc(assistantHealthLabel(status))}</span></div>${!status?.enabled ? ("<p class=\"notice\">" + H("Внешний ИИ будет включён после завершения и проверки остальной системы. Настройки подключения и история уже доступны.") + "</p>") : ""}<div id="chat-messages" class="chat-messages" role="log" aria-label="${H("Переписка с ИИ")}">${selected?.next_before ? button(T("Предыдущие сообщения"), "assistant-history-more", {small: true, extra: state.assistantBusy ? "disabled" : ""}) : ""}${chat || empty(T("Начните новый разговор"), T("Выберите контекст и задайте вопрос после активации модели."), "", "", "assistant", true)}${state.assistantBusy ? U.loading(T("Ожидаем подтверждённый ответ…")) : ""}</div><form id="assistant-form"><div class="assistant-context">${select("context", T("Данные для этого вопроса"), [["general", T("Общий вопрос · без личных данных")], ["portfolio", T("Сводные показатели портфеля")], ["investment", T("Портфель, позиции, цели и стратегия")]], draft.context)}<div class="field-grid">${select("research_run_id", T("Сохранённое исследование"), researchOptions, draft.research_run_id)}<label class="check-field"><input name="include_news" type="checkbox"${draft.include_news ? " checked" : ""}><span>${H("Добавить последние новости Банка России")}</span></label></div><p class="fine-print">${H("Личные данные отправляются только с выбранным контекстом. История хранится в вашем аккаунте и доступна после повторного входа.")}</p></div><div class="chat-compose"><textarea name="message" aria-label="${H("Сообщение помощнику")}" maxlength="4000" required placeholder="${H("Задайте свой вопрос…")}"${!enabled || state.assistantBusy ? " disabled" : ""}>${esc(draft.message)}</textarea><button class="button primary" type="submit"${!enabled || state.assistantBusy ? " disabled" : ""}>${H("Отправить")}</button></div><output id="assistant-message" class="form-message chat-form-message"></output></form>${dataError("assistantStatus")}</section>${assistantSidebarHTML({status, selected, history, enabled})}</div>`;
     updateAssistantContext();
   };
   const loadAssistantConversation = async (id, more = false) => {
@@ -3373,7 +3474,8 @@
     const generation = state.generation;
     const sequence = state.assistantLoadSequence = (state.assistantLoadSequence || 0) + 1;
     const before = more && state.assistantConversation?.id === id ? state.assistantConversation.next_before : null;
-    const payload = await api(`/api/assistant/conversations/${safeSegment(id)}?limit=50${before ? `&before=${before}` : ""}`);
+    const cursor = before ? "&before=" + before : "";
+    const payload = await api(`/api/assistant/conversations/${safeSegment(id)}?limit=50${cursor}`);
     if (generation !== state.generation || sequence !== state.assistantLoadSequence) return;
     if (payload.id !== id || !Array.isArray(payload.messages)) throw new Error("invalid_server_response");
     state.chat = more ? [...new Map([...payload.messages, ...state.chat].map(item => [item.position, item])).values()].sort((a,b) => a.position - b.position) : payload.messages;
@@ -3404,16 +3506,31 @@
     if (!requireUser() || state.assistantBusy || !selected) return;
     if (!confirmed) {
       openDialog(T("Удалить разговор?"), `<p class="help-copy">${H("Сообщения «")}${esc(selected.title)}${H("» будут удалены из вашего аккаунта. Счётчик использованных запросов сохранится до обновления дневного лимита.")}</p>${button(T("Удалить разговор"), "assistant-delete-confirm", {primary: true})}`);
+      state.assistantDeleteConfirmation = {id: selected.id, sequence: state.eventRequest};
       return;
     }
+    const confirmation = state.assistantDeleteConfirmation;
+    if (confirmation?.id !== selected.id || confirmation.sequence !== state.eventRequest) return;
+    state.assistantDeleteConfirmation = null;
     const generation = state.generation;
-    await api(`/api/assistant/conversations/${safeSegment(selected.id)}`, {method: "DELETE"});
-    if (generation !== state.generation) return;
-    state.assistantConversation = null;
-    state.chat = [];
-    $("#workspace-dialog").close();
-    await loadResource("assistantConversations", "/api/assistant/conversations", {force: true});
-    if (generation === state.generation && state.view === "assistant") renderAssistant();
+    state.assistantBusy = true;
+    state.assistantLoadSequence = (state.assistantLoadSequence || 0) + 1;
+    renderAssistant();
+    try {
+      await api(`/api/assistant/conversations/${safeSegment(selected.id)}`, {method: "DELETE"});
+      if (generation !== state.generation) return;
+      if (state.assistantConversation?.id === selected.id) {
+        state.assistantConversation = null;
+        state.chat = [];
+      }
+      if (confirmation.sequence === state.eventRequest && $("#workspace-dialog").open) $("#workspace-dialog").close();
+      await loadResource("assistantConversations", "/api/assistant/conversations", {force: true});
+    } finally {
+      if (generation === state.generation) {
+        state.assistantBusy = false;
+        if (state.view === "assistant") renderAssistant();
+      }
+    }
   };
   const openAssistantConnection = async () => {
     if (!requireUser()) return;
@@ -3425,7 +3542,9 @@
     const status = state.data.assistantStatus;
     if (!status) { toast(humanError(state.errors.assistantStatus), true); return; }
     const endpoints = status.allowed_endpoints || [];
-    openDialog(T("Подключение ИИ"), `<p class="help-copy">${esc(assistantHealthLabel(status))}</p><p class="fine-print">${H("Сервис проверяет наличие указанной модели и доступность API отдельно от сохранения настроек.")}</p>${endpoints.length ? `<form id="assistant-connection-form" data-version="${status.connection_version}">${select("provider", T("Протокол"), [["ollama", "Ollama"], ["openai_compatible", "OpenAI compatible"]], status.provider || "ollama")}${select("base_url", T("Адрес, разрешённый оператором"), endpoints.map(url => [url,url]), status.base_url || endpoints[0])}${field({name: "model", label: T("Идентификатор модели"), value: status.model || "", required: true})}<label class="field"><span>${H("API-ключ")}</span><input type="password" name="api_key" autocomplete="new-password" maxlength="4096" placeholder="${status.has_key ? T("Оставьте пустым, чтобы сохранить ключ") : T("Ключ провайдера")}"><small>${H("Ключ шифруется на сервере и не возвращается в интерфейс.")}</small></label><button class="button primary" type="submit">${H("Сохранить подключение")}</button><output id="assistant-connection-message" class="form-message"></output></form>` : ("<p class=\"notice\">" + H("Оператор ещё не указал разрешённые адреса моделей.") + "</p>")}<div class="form-actions">${button(T("Проверить соединение"), "assistant-health", {small: true, extra: !status.enabled || !status.configured ? "disabled" : ""})}${status.connection_version ? button(T("Удалить подключение"), "assistant-disconnect", {small: true}) : ""}</div><p class="fine-print">${status.health?.checked_at ? `${T("Последняя проверка:")} ${esc(date(status.health.checked_at,true))} ${T("МСК")}` : T("Соединение ещё не проверено.")}</p>`);
+    const connectionForm = endpoints.length ? `<form id="assistant-connection-form" data-version="${status.connection_version}">${select("provider", T("Протокол"), [["ollama", "Ollama"], ["openai_compatible", "OpenAI compatible"]], status.provider || "ollama")}${select("base_url", T("Адрес, разрешённый оператором"), endpoints.map(url => [url,url]), status.base_url || endpoints[0])}${field({name: "model", label: T("Идентификатор модели"), value: status.model || "", required: true})}<label class="field"><span>${H("API-ключ")}</span><input type="password" name="api_key" autocomplete="new-password" maxlength="4096" placeholder="${status.has_key ? T("Оставьте пустым, чтобы сохранить ключ") : T("Ключ провайдера")}"><small>${H("Ключ шифруется на сервере и не возвращается в интерфейс.")}</small></label><button class="button primary" type="submit">${H("Сохранить подключение")}</button><output id="assistant-connection-message" class="form-message"></output></form>` : ("<p class=\"notice\">" + H("Оператор ещё не указал разрешённые адреса моделей.") + "</p>");
+    const checkedAt = status.health?.checked_at ? `${T("Последняя проверка:")} ${esc(date(status.health.checked_at,true))} ${T("МСК")}` : T("Соединение ещё не проверено.");
+    openDialog(T("Подключение ИИ"), `<p class="help-copy">${esc(assistantHealthLabel(status))}</p><p class="fine-print">${H("Сервис проверяет наличие указанной модели и доступность API отдельно от сохранения настроек.")}</p>${connectionForm}<div class="form-actions">${button(T("Проверить соединение"), "assistant-health", {small: true, extra: !status.enabled || !status.configured ? "disabled" : ""})}${status.connection_version ? button(T("Удалить подключение"), "assistant-disconnect", {small: true}) : ""}</div><p class="fine-print">${checkedAt}</p>`);
   };
   const saveAssistantConnection = async form => {
     if (!requireUser() || !form.reportValidity() || form.dataset.busy === "true") return;
@@ -3457,6 +3576,21 @@
     state.data.assistantStatus = saved;
     if (sequence === state.eventRequest && $("#workspace-dialog").open) await openAssistantConnection();
   };
+  const ensureAssistantConversation = async (message, generation) => {
+    if (state.assistantConversation) return;
+    const created = await api("/api/assistant/conversations", {method: "POST", body: {title: message.slice(0, 120)}});
+    if (generation === state.generation) state.assistantConversation = {...created, messages: [], next_before: null};
+  };
+  const reportAssistantFailure = async (error, generation) => {
+    if (generation !== state.generation || isCancelled(error)) return;
+    state.assistantBusy = false;
+    if (state.assistantConversation) await loadAssistantConversation(state.assistantConversation.id).catch(() => null);
+    if (generation !== state.generation) return;
+    if (state.view === "assistant") {
+      renderAssistant();
+      showMessage($("#assistant-message"), humanError(error) + T(" Проверьте историю перед отправкой нового вопроса."), true);
+    } else toast(humanError(error), true);
+  };
   const sendAssistant = async form => {
     if (!requireUser() || state.assistantBusy || !state.data.assistantStatus?.enabled || !state.data.assistantStatus?.configured || !form.reportValidity()) return;
     const draft = assistantDraftFromForm(form);
@@ -3467,11 +3601,8 @@
     state.assistantBusy = true;
     renderAssistant();
     try {
-      if (!state.assistantConversation) {
-        const created = await api("/api/assistant/conversations", {method: "POST", body: {title: message.slice(0, 120)}});
-        if (generation !== state.generation) return;
-        state.assistantConversation = {...created, messages: [], next_before: null};
-      }
+      await ensureAssistantConversation(message, generation);
+      if (generation !== state.generation) return;
       const selected = state.assistantConversation;
       state.assistantBusy = true;
       renderAssistant();
@@ -3490,13 +3621,7 @@
         $("#chat-messages").scrollTop = $("#chat-messages").scrollHeight;
       }
     } catch (error) {
-      if (generation !== state.generation || isCancelled(error)) return;
-      state.assistantBusy = false;
-      if (state.assistantConversation) await loadAssistantConversation(state.assistantConversation.id).catch(() => null);
-      if (state.view === "assistant") {
-        renderAssistant();
-        showMessage($("#assistant-message"), humanError(error) + T(" Проверьте историю перед отправкой нового вопроса."), true);
-      } else toast(humanError(error), true);
+      await reportAssistantFailure(error, generation);
     } finally { if (generation === state.generation) state.assistantBusy = false; }
   };
 
@@ -3992,7 +4117,11 @@
     },
     "mandate-revoke": askMandateRevoke,
     "mandate-revoke-confirm": revokeMandate,
-    language: () => openDialog(T("settings.language"), `<div class="form-actions">${button(T("Русский"), "language-ru", {extra: `aria-pressed="${I.getLocale() === "ru"}"`})}${button("English", "language-en", {extra: `aria-pressed="${I.getLocale() === "en"}"`})}</div><p class="fine-print">${H("settings.language_help")}</p>`),
+    language: () => {
+      const russian = button(T("Русский"), "language-ru", {extra: `aria-pressed="${I.getLocale() === "ru"}"`});
+      const english = button("English", "language-en", {extra: `aria-pressed="${I.getLocale() === "en"}"`});
+      openDialog(T("settings.language"), `<div class="form-actions">${russian}${english}</div><p class="fine-print">${H("settings.language_help")}</p>`);
+    },
     "language-ru": () => chooseLocale("ru"),
     "language-en": () => chooseLocale("en"),
     premium: openBilling,

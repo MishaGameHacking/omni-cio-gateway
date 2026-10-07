@@ -465,6 +465,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_optional_integration_configuration_survives_unrelated_deployment(self) -> None:
         with patch.dict(os.environ, {"VKID_APP_ID": "123456"}, clear=True):
+            self.assertIn('OPERATOR_USER_ID=""\n', MODULE.build_product_environment())
             ssh = FakeSsh(True)
             MODULE.write_product_environment(ssh, release_sha="b" * 40)
         tokens = shlex.split(ssh.commands[0])
@@ -473,6 +474,7 @@ class AuthAppDeployTests(unittest.TestCase):
             old = pathlib.Path(directory) / "previous.env"
             new = pathlib.Path(directory) / "candidate.env"
             old.write_text(
+                'OPERATOR_USER_ID="00000000-0000-0000-0000-0000000001f5"\n'
                 'TID_CLIENT_ID="existing-app"\n'
                 'TID_CLIENT_SECRET="test-only-value"\n'
                 'TID_LOGIN_ENABLED="true"\n'
@@ -482,6 +484,7 @@ class AuthAppDeployTests(unittest.TestCase):
                 encoding="utf-8",
             )
             new.write_text(
+                'OPERATOR_USER_ID=""\n'
                 'TID_CLIENT_ID="replacement-app"\n'
                 'ASSISTANT_ENABLED="false"\n'
                 'REGISTRATION_ENABLED="false"\n',
@@ -493,6 +496,7 @@ class AuthAppDeployTests(unittest.TestCase):
             )
             result = new.read_text(encoding="utf-8").splitlines()
         self.assertEqual(result, [
+            'OPERATOR_USER_ID=""',
             'TID_CLIENT_ID="replacement-app"',
             'ASSISTANT_ENABLED="false"',
             'REGISTRATION_ENABLED="false"',

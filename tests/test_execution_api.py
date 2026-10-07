@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from omnicio.db import Database, UserRecord
 from omnicio.execution import ExecutionStateError
 from omnicio.execution_service import ExecutionServiceError, PortfolioExecutionService
+from omnicio.execution_store import ExecutionLedgerError
 from omnicio.main import CANONICAL_ORIGIN, app
 from omnicio.security import session_digest
 from omnicio.service import AuthService
@@ -120,7 +121,6 @@ def test_plan_rejects_ambiguous_or_authority_bearing_input(execution_http, field
     (
         (ExecutionServiceError("execution_proposal_expired"), 409),
         (ExecutionStateError("execution_quote_incomplete_or_stale"), 409),
-        (ExecutionServiceError("proposal_not_found"), 404),
         (TBankUnavailable("private provider detail"), 503),
     ),
 )
@@ -130,6 +130,23 @@ def test_execution_conflicts_and_unavailability_are_actionable(execution_http, e
     response = client.post("/api/portfolio/proposals/plan", json=PLAN, headers=HEADERS)
     assert response.status_code == code
     assert "private provider detail" not in response.text
+
+
+@pytest.mark.parametrize(("path", "body", "method", "error"), (
+    (f"/api/portfolio/proposals/{REFERENCE}/confirm", CONFIRM, "confirm",
+     ExecutionLedgerError("execution_proposal_not_found")),
+    (f"/api/portfolio/executions/{REFERENCE}/dispatch",
+     {"expected_leg_id": str(REFERENCE)}, "dispatch",
+     ExecutionServiceError("execution_leg_not_found")),
+))
+def test_missing_or_foreign_execution_objects_use_actual_store_error_codes(
+    execution_http, path, body, method, error,
+):
+    client, _, _, executor = execution_http
+    getattr(executor, method).side_effect = error
+    response = client.post(path, json=body, headers=HEADERS)
+    assert response.status_code == 404
+    assert response.json()["detail"] == error.code
 
 
 def test_dispatch_does_not_accept_order_replacement_or_client_costs(execution_http):

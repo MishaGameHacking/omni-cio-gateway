@@ -335,23 +335,27 @@ def test_expired_session_cleanup_is_bounded_and_preserves_recent_sessions_and_hi
     assert database.refresh_session_digest(current, session_ttl_seconds=3600) == owner
 
 
-def test_operational_metrics_require_owner_and_aggregate_without_tenant_identifiers(
+def test_operational_metrics_require_configured_operator_and_aggregate_without_tenant_identifiers(
     workspace_database: tuple[Database, str, str],
 ) -> None:
     database = workspace_database[0]
     owner, _, current = login(database)
     other, _, other_session = login(database)
+    assert owner.role == "user"
     with pytest.raises(PermissionError, match="operator_required"):
-        database.operational_metrics(other.id, other_session)
+        database.operational_metrics(other.id, other_session, configured_operator_id=owner.id)
+    with pytest.raises(PermissionError, match="operator_required"):
+        database.operational_metrics(owner.id, current, configured_operator_id=None)
+    with pytest.raises(PermissionError):
+        database.operational_metrics(owner.id, other_session, configured_operator_id=owner.id)
     with database.pool.connection() as conn:
-        conn.execute("UPDATE users SET role = 'owner' WHERE id = %s", (owner.id,))
         conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(other.id),))
         conn.execute(
             "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, requested_at) "
             "VALUES (%s, 'portfolio_refresh', NULL, 'queued', now() - interval '31 minutes')",
             (other.id,),
         )
-    result = database.operational_metrics(owner.id, current)
+    result = database.operational_metrics(owner.id, current, configured_operator_id=owner.id)
     assert result["observer"]["stale"] >= 1
     assert result["status"] == "attention"
     assert str(owner.id) not in str(result) and str(other.id) not in str(result)
@@ -391,13 +395,13 @@ def test_operational_metrics_do_not_borrow_a_second_connection_under_authority_l
 ) -> None:
     database = workspace_database[0]
     owner, _, current = login(database)
-    with database.pool.connection() as conn:
-        conn.execute("UPDATE users SET role='owner' WHERE id=%s", (owner.id,))
     single = Database(database.pool.conninfo)
     single.pool.resize(min_size=1, max_size=1)
     single.pool.timeout = 1
     single.open()
     try:
-        assert "observer" in single.operational_metrics(owner.id, current)
+        assert "observer" in single.operational_metrics(
+            owner.id, current, configured_operator_id=owner.id,
+        )
     finally:
         single.close()

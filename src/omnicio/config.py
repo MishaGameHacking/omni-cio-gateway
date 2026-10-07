@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from uuid import UUID
 
 
 class ConfigurationError(RuntimeError):
@@ -44,6 +45,19 @@ def boolean(name: str, default: bool = False) -> bool:
 
 def positive_numeric_id(value: str) -> bool:
     return value.isdigit() and int(value) > 0
+
+
+def optional_uuid(name: str) -> UUID | None:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = UUID(raw)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be a nonzero UUID") from exc
+    if value.int == 0:
+        raise ConfigurationError(f"{name} must be a nonzero UUID")
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +107,7 @@ class Settings:
     assistant_enabled: bool = False
     assistant_allowed_endpoints: tuple[str, ...] = ()
     assistant_daily_request_limit: int = 30
+    operator_user_id: UUID | None = None
 
     @property
     def vkid_ready(self) -> bool:
@@ -139,12 +154,12 @@ def load_settings() -> Settings:
         portfolio_live_max_order_rub=live_max_order,
         portfolio_live_max_daily_rub=live_max_daily,
         tid_client_id=os.environ.get("TID_CLIENT_ID", "").strip(),
-        tid_client_secret=os.environ.get("TID_CLIENT_SECRET", "").strip(),
+        tid_client_secret=os.environ.get("TID_CLIENT_SECRET", ""),
         tid_login_enabled=boolean("TID_LOGIN_ENABLED", False),
         tid_pkce_enabled=boolean("TID_PKCE_ENABLED", True),
         assistant_base_url=(os.environ.get("ASSISTANT_BASE_URL", "").strip()
                             if boolean("ASSISTANT_ENABLED", False) else ""),
-        assistant_api_key=os.environ.get("ASSISTANT_API_KEY", "").strip(),
+        assistant_api_key=os.environ.get("ASSISTANT_API_KEY", ""),
         assistant_model=os.environ.get("ASSISTANT_MODEL", "").strip(),
         notifications_enabled=boolean("NOTIFICATIONS_ENABLED", False),
         notification_crypto_key=os.environ.get("NOTIFICATION_CRYPTO_KEY", "").strip(),
@@ -171,4 +186,5 @@ def load_settings() -> Settings:
             if value.strip()
         ),
         assistant_daily_request_limit=positive_int("ASSISTANT_DAILY_REQUEST_LIMIT", 30),
+        operator_user_id=optional_uuid("OPERATOR_USER_ID"),
     )

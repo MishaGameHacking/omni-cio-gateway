@@ -11,7 +11,12 @@ from typing import Any, cast
 from uuid import UUID
 
 from .backtest import history_candidate, split_adjusted_history
-from .broker import BrokerConnectionError, BrokerService
+from .broker import (
+    BrokerConnectionError,
+    BrokerObservationBundle,
+    BrokerPortfolioSnapshot,
+    BrokerService,
+)
 from .execution import (
     ExecutionLegStatus,
     ExecutionStateError,
@@ -28,7 +33,7 @@ from .execution_store import (
 from .portfolio_store import PortfolioStore
 from .research_store import ResearchStore
 from .strategy import document_hash, normalize_document
-from .strategy_assessment import select_strategy_candidates
+from .strategy_assessment import StrategyCandidateFacts, select_strategy_candidates
 from .strategy_service import research_assets_from_inputs
 from .tbank import (
     TBankMoney,
@@ -114,34 +119,10 @@ class PortfolioExecutionService:
             legal_versions=self.legal_versions,
             payload=payload,
         )
-        if (
-            mode == "live"
-            and payload["environment"] != "prod"
-            or mode == "sandbox"
-            and payload["environment"] != "sandbox"
-        ):
-            raise ExecutionServiceError("execution_mode_account_mismatch")
-        if self.research_store is None or self.portfolio_store is None:
-            raise ExecutionServiceError("execution_planning_unavailable")
-        archive = self.research_store.run(user_id, research_run_id)
+        archive, evidence, now = self._planning_archive(
+            user_id, research_run_id, payload, commission_bps, slippage_bps, mode
+        )
         inputs = archive["inputs"]
-        now = datetime.now(UTC)
-        if (
-            archive["account_id"] != payload["account_id"]
-            or archive["environment"] != payload["environment"]
-            or archive["strategy_version"] != expected_version
-            or inputs["document"] != payload["document"]
-            or not 0
-            <= (now - datetime.fromisoformat(inputs["observed_at"])).total_seconds()
-            <= 86400
-            or not 0 <= (now - datetime.fromisoformat(inputs["to_at"])).total_seconds() <= 4 * 86400
-            or Decimal(inputs["commission_bps"]) != commission_bps
-            or Decimal(inputs["slippage_bps"]) != slippage_bps
-        ):
-            raise ExecutionServiceError("execution_current_research_required")
-        evidence = self.research_store.evidence(user_id)
-        if evidence["version"] != archive["evidence_version"]:
-            raise ExecutionServiceError("execution_research_evidence_changed")
         assets = research_assets_from_inputs(inputs)
         candidates = [
             history_candidate(
@@ -159,58 +140,8 @@ class PortfolioExecutionService:
                 "blockers": selection["missing_requirements"],
                 "selection": selection,
             }
-        context = self.portfolio_store.latest_balancing_context(user_id)
-        if (
-            context is None
-            or context["account_id"] != payload["account_id"]
-            or not 0 <= (now - cast(datetime, context["captured_at"])).total_seconds() <= 300
-        ):
-            raise ExecutionServiceError("execution_refresh_snapshot_required")
-        bundle = self.broker.observation_bundle(user_id)
-        if (
-            bundle.account_id != payload["account_id"]
-            or bundle.environment != payload["environment"]
-            or bundle.positions.limits_loading_in_progress
-            or bundle.analysis.status == "needs_reconciliation"
-            or any(
-                item.currency.upper() != "RUB" and Decimal(item.value) != 0
-                for item in bundle.positions.money
-            )
-        ):
-            raise ExecutionServiceError("execution_portfolio_incomplete")
-        uids = {row["instrument_uid"] for row in selection["selected"]}
-        uids.update(
-            position.instrument_uid
-            for position in bundle.portfolio.positions
-            if position.instrument_type != "currency" and Decimal(position.quantity) != 0
-        )
-        if len(uids) > 12 or not uids <= {row.instrument_uid for row in candidates}:
-            raise ExecutionServiceError("execution_held_evidence_missing")
-        qualification = self.broker.user_info(user_id)
-        quotes = {}
-        for uid in sorted(uids):
-            metadata = self.broker.execution_instrument(user_id, uid)
-            status = self.broker.market_trading_status(user_id, uid)
-            if (
-                not status.limit_order_available
-                or not status.api_trade_available
-                or status.only_best_price
-                or metadata.api_trade_available is not True
-                or metadata.buy_available is not True
-                or metadata.sell_available is not True
-                or metadata.for_qual_investor is None
-                or metadata.for_qual_investor
-                and not qualification.qualified
-                or metadata.required_tests
-            ):
-                raise ExecutionServiceError("execution_instrument_permission_unverified")
-            book = self.broker.candidate_order_book(user_id, uid, depth=50)
-            quotes[uid] = execution_quote(
-                metadata, book, slippage_bps=slippage_bps, now=datetime.now(UTC)
-            )
-            candidate = next(row for row in candidates if row.instrument_uid == uid)
-            if candidate.lot_size != metadata.lot:
-                raise ExecutionServiceError("execution_lot_changed")
+        context, bundle = self._planning_snapshot(user_id, payload, now)
+        quotes = self._planning_quotes(user_id, selection, bundle, candidates, slippage_bps)
         cash = sum(
             (
                 Decimal(value.value)
@@ -227,6 +158,7 @@ class PortfolioExecutionService:
             ),
             Decimal(0),
         )
+        max_order, max_daily = self._planning_caps(mode, Decimal(bundle.analysis.nav_rub))
         result = strategy_order_plan(
             payload["document"],
             candidates,
@@ -237,16 +169,8 @@ class PortfolioExecutionService:
             blocked_cash=blocked,
             commission_bps=commission_bps,
             now=now,
-            max_order=(
-                Decimal(bundle.analysis.nav_rub)
-                if mode == "shadow" and self.max_order_rub == 0
-                else self.max_order_rub
-            ),
-            max_daily=(
-                Decimal(bundle.analysis.nav_rub)
-                if mode == "shadow" and self.max_daily_rub == 0
-                else self.max_daily_rub
-            ),
+            max_order=max_order,
+            max_daily=max_daily,
         )
         if result["blockers"] or not result["legs"]:
             return {
@@ -290,6 +214,122 @@ class PortfolioExecutionService:
             session_digest=session_digest,
             legal_versions=self.legal_versions,
         )
+
+    def _planning_caps(self, mode: str, observed_nav: Decimal) -> tuple[Decimal, Decimal]:
+        order = observed_nav if mode == "shadow" and self.max_order_rub == 0 else self.max_order_rub
+        daily = observed_nav if mode == "shadow" and self.max_daily_rub == 0 else self.max_daily_rub
+        return order, daily
+
+    def _planning_archive(
+        self,
+        user_id: UUID,
+        research_run_id: UUID,
+        payload: dict[str, Any],
+        commission_bps: Decimal,
+        slippage_bps: Decimal,
+        mode: str,
+    ) -> tuple[dict[str, Any], dict[str, Any], datetime]:
+        if (
+            mode == "live"
+            and payload["environment"] != "prod"
+            or mode == "sandbox"
+            and payload["environment"] != "sandbox"
+        ):
+            raise ExecutionServiceError("execution_mode_account_mismatch")
+        if self.research_store is None or self.portfolio_store is None:
+            raise ExecutionServiceError("execution_planning_unavailable")
+        archive = self.research_store.run(user_id, research_run_id)
+        inputs = archive["inputs"]
+        now = datetime.now(UTC)
+        if (
+            archive["account_id"] != payload["account_id"]
+            or archive["environment"] != payload["environment"]
+            or archive["strategy_version"] != payload["strategy_version"]
+            or inputs["document"] != payload["document"]
+            or not 0
+            <= (now - datetime.fromisoformat(inputs["observed_at"])).total_seconds()
+            <= 86400
+            or not 0 <= (now - datetime.fromisoformat(inputs["to_at"])).total_seconds() <= 4 * 86400
+            or Decimal(inputs["commission_bps"]) != commission_bps
+            or Decimal(inputs["slippage_bps"]) != slippage_bps
+        ):
+            raise ExecutionServiceError("execution_current_research_required")
+        evidence = self.research_store.evidence(user_id)
+        if evidence["version"] != archive["evidence_version"]:
+            raise ExecutionServiceError("execution_research_evidence_changed")
+        return archive, evidence, now
+
+    def _planning_snapshot(
+        self,
+        user_id: UUID,
+        payload: dict[str, Any],
+        now: datetime,
+    ) -> tuple[dict[str, Any], BrokerObservationBundle]:
+        if self.portfolio_store is None:
+            raise ExecutionServiceError("execution_planning_unavailable")
+        context = self.portfolio_store.latest_balancing_context(user_id)
+        if (
+            context is None
+            or context["account_id"] != payload["account_id"]
+            or not 0 <= (now - cast(datetime, context["captured_at"])).total_seconds() <= 300
+        ):
+            raise ExecutionServiceError("execution_refresh_snapshot_required")
+        bundle = self.broker.observation_bundle(user_id)
+        if (
+            bundle.account_id != payload["account_id"]
+            or bundle.environment != payload["environment"]
+            or bundle.positions.limits_loading_in_progress
+            or bundle.analysis.status == "needs_reconciliation"
+            or any(
+                item.currency.upper() != "RUB" and Decimal(item.value) != 0
+                for item in bundle.positions.money
+            )
+        ):
+            raise ExecutionServiceError("execution_portfolio_incomplete")
+        return context, bundle
+
+    def _planning_quotes(
+        self,
+        user_id: UUID,
+        selection: dict[str, Any],
+        bundle: BrokerObservationBundle,
+        candidates: list[StrategyCandidateFacts],
+        slippage_bps: Decimal,
+    ) -> dict[str, Any]:
+        uids = {row["instrument_uid"] for row in selection["selected"]}
+        uids.update(
+            position.instrument_uid
+            for position in bundle.portfolio.positions
+            if position.instrument_type != "currency" and Decimal(position.quantity) != 0
+        )
+        if len(uids) > 12 or not uids <= {row.instrument_uid for row in candidates}:
+            raise ExecutionServiceError("execution_held_evidence_missing")
+        qualification = self.broker.user_info(user_id)
+        quotes = {}
+        for uid in sorted(uids):
+            metadata = self.broker.execution_instrument(user_id, uid)
+            status = self.broker.market_trading_status(user_id, uid)
+            if (
+                not status.limit_order_available
+                or not status.api_trade_available
+                or status.only_best_price
+                or metadata.api_trade_available is not True
+                or metadata.buy_available is not True
+                or metadata.sell_available is not True
+                or metadata.for_qual_investor is None
+                or metadata.for_qual_investor
+                and not qualification.qualified
+                or metadata.required_tests
+            ):
+                raise ExecutionServiceError("execution_instrument_permission_unverified")
+            book = self.broker.candidate_order_book(user_id, uid, depth=50)
+            quotes[uid] = execution_quote(
+                metadata, book, slippage_bps=slippage_bps, now=datetime.now(UTC)
+            )
+            candidate = next(row for row in candidates if row.instrument_uid == uid)
+            if candidate.lot_size != metadata.lot:
+                raise ExecutionServiceError("execution_lot_changed")
+        return quotes
 
     def _check_order_estimate(self, user_id: UUID, leg: dict[str, Any]) -> None:
         estimate = self.broker.estimate_limit_order(
@@ -390,23 +430,8 @@ class PortfolioExecutionService:
             return self._run_payload(user_id, run_id)
         if run.status in {"succeeded", "cancelled", "failed"}:
             return self._run_payload(user_id, run_id)
-        proposal = self.store.strategy_proposal(user_id, run.proposal_id)
+        proposal = self._dispatch_authority(user_id, run, session_digest)
         payload = proposal["payload"]
-        if not hmac.compare_digest(bytes(proposal["created_session_digest"]), session_digest):
-            raise ExecutionServiceError("execution_confirmation_session_mismatch")
-        self.store.authorize_strategy(
-            user_id,
-            session_digest=session_digest,
-            legal_versions=self.legal_versions,
-            payload=payload,
-        )
-        if (
-            run.mode == "live"
-            and not self.live_enabled
-            or run.mode == "sandbox"
-            and not self.sandbox_enabled
-        ):
-            raise ExecutionServiceError("execution_deployment_disabled")
         current = next((leg for leg in legs if leg.status not in {"filled", "shadow_filled"}), None)
         if current is None:
             return self._run_payload(user_id, run_id)
@@ -428,66 +453,112 @@ class PortfolioExecutionService:
         self._dispatch_preflight(user_id, current, leg_payload, payload, legs, run.mode)
         authority = (session_digest, self.legal_versions, payload)
         if run.mode == "shadow":
-            self.store.transition_leg(
+            self._fill_shadow_leg(user_id, run_id, current, leg_payload, authority)
+        else:
+            self._submit_pending_leg(user_id, run, current, payload, authority)
+        return self._run_payload(user_id, run_id)
+
+    def _fill_shadow_leg(
+        self,
+        user_id: UUID,
+        run_id: UUID,
+        current: ExecutionLegRecord,
+        leg_payload: dict[str, Any],
+        authority: tuple[bytes, dict[str, str], dict[str, Any]],
+    ) -> None:
+        self.store.transition_leg(
+            user_id,
+            run_id=run_id,
+            leg_id=current.id,
+            expected_statuses=("pending",),
+            new_status="shadow_filled",
+            event_type="explicit_shadow_fill",
+            details={"broker_order_submitted": False},
+            lots_executed=current.lots_requested,
+            executed_amount_rub=Decimal(
+                leg_payload["max_spend_rub"]
+                if current.action == "buy"
+                else leg_payload["min_proceeds_rub"]
+            ),
+            executed_commission_rub=Decimal(leg_payload["commission_cap_rub"]),
+            strategy_authority=authority,
+        )
+
+    def _dispatch_authority(
+        self,
+        user_id: UUID,
+        run: ExecutionRunRecord,
+        session_digest: bytes,
+    ) -> dict[str, Any]:
+        proposal = self.store.strategy_proposal(user_id, run.proposal_id)
+        payload = proposal["payload"]
+        if not hmac.compare_digest(bytes(proposal["created_session_digest"]), session_digest):
+            raise ExecutionServiceError("execution_confirmation_session_mismatch")
+        self.store.authorize_strategy(
+            user_id,
+            session_digest=session_digest,
+            legal_versions=self.legal_versions,
+            payload=payload,
+        )
+        if (
+            run.mode == "live"
+            and not self.live_enabled
+            or run.mode == "sandbox"
+            and not self.sandbox_enabled
+        ):
+            raise ExecutionServiceError("execution_deployment_disabled")
+        return proposal
+
+    def _submit_pending_leg(
+        self,
+        user_id: UUID,
+        run: ExecutionRunRecord,
+        current: ExecutionLegRecord,
+        payload: dict[str, Any],
+        authority: tuple[bytes, dict[str, str], dict[str, Any]],
+    ) -> None:
+        run_id = run.id
+        self.store.transition_leg(
+            user_id,
+            run_id=run_id,
+            leg_id=current.id,
+            expected_statuses=("pending",),
+            new_status="submitting",
+            event_type="explicit_limit_submission_claimed",
+            details={"request_id": str(current.request_id)},
+            strategy_authority=authority,
+            strategy_limits=(self.max_order_rub, self.max_daily_rub),
+        )
+        try:
+            state = self.broker.submit_limit_order(
+                user_id,
+                expected_account_id=run.account_id,
+                expected_verified_at=datetime.fromisoformat(payload["connection_verified_at"]),
+                instrument_uid=current.instrument_uid,
+                lots=current.lots_requested,
+                price=current.limit_price,
+                action=current.action,
+                request_id=str(current.request_id),
+            )
+        except (TBankUnavailable, TBankTokenRejected, BrokerConnectionError):
+            self.store.mark_run_reconciling(
                 user_id,
                 run_id=run_id,
                 leg_id=current.id,
-                expected_statuses=("pending",),
-                new_status="shadow_filled",
-                event_type="explicit_shadow_fill",
-                details={"broker_order_submitted": False},
-                lots_executed=current.lots_requested,
-                executed_amount_rub=Decimal(
-                    leg_payload["max_spend_rub"]
-                    if current.action == "buy"
-                    else leg_payload["min_proceeds_rub"]
-                ),
-                executed_commission_rub=Decimal(leg_payload["commission_cap_rub"]),
-                strategy_authority=authority,
+                error_code="submission_outcome_unknown",
+                details={"request_id": str(current.request_id), "retry_post_order": False},
+                now=datetime.now(UTC),
             )
         else:
-            self.store.transition_leg(
+            self._record_provider_state(
                 user_id,
-                run_id=run_id,
-                leg_id=current.id,
-                expected_statuses=("pending",),
-                new_status="submitting",
-                event_type="explicit_limit_submission_claimed",
-                details={"request_id": str(current.request_id)},
-                strategy_authority=authority,
-                strategy_limits=(self.max_order_rub, self.max_daily_rub),
+                run,
+                current,
+                state,
+                datetime.now(UTC),
+                expected_statuses=("submitting",),
+                event_type="explicit_limit_submitted",
             )
-            try:
-                state = self.broker.submit_limit_order(
-                    user_id,
-                    expected_account_id=run.account_id,
-                    expected_verified_at=datetime.fromisoformat(payload["connection_verified_at"]),
-                    instrument_uid=current.instrument_uid,
-                    lots=current.lots_requested,
-                    price=current.limit_price,
-                    action=current.action,
-                    request_id=str(current.request_id),
-                )
-            except (TBankUnavailable, TBankTokenRejected, BrokerConnectionError):
-                self.store.mark_run_reconciling(
-                    user_id,
-                    run_id=run_id,
-                    leg_id=current.id,
-                    error_code="submission_outcome_unknown",
-                    details={"request_id": str(current.request_id), "retry_post_order": False},
-                    now=datetime.now(UTC),
-                )
-            else:
-                self._record_provider_state(
-                    user_id,
-                    run,
-                    current,
-                    state,
-                    datetime.now(UTC),
-                    expected_statuses=("submitting",),
-                    event_type="explicit_limit_submitted",
-                )
-        return self._run_payload(user_id, run_id)
 
     def _dispatch_preflight(
         self,
@@ -498,37 +569,7 @@ class PortfolioExecutionService:
         legs: tuple[ExecutionLegRecord, ...],
         mode: str,
     ) -> None:
-        metadata = self.broker.execution_instrument(user_id, leg.instrument_uid)
-        status = self.broker.market_trading_status(user_id, leg.instrument_uid)
-        if (
-            metadata.lot != leg_payload["lot_size"]
-            or metadata.api_trade_available is not True
-            or not status.limit_order_available
-            or not status.api_trade_available
-            or status.only_best_price
-            or (
-                metadata.buy_available is not True
-                if leg.action == "buy"
-                else metadata.sell_available is not True
-            )
-        ):
-            raise ExecutionServiceError("execution_instrument_changed")
-        book = self.broker.candidate_order_book(user_id, leg.instrument_uid, depth=50)
-        quote = execution_quote(metadata, book, slippage_bps=Decimal(0), now=datetime.now(UTC))
-        acceptable = (
-            quote["buy_limit"] <= leg.limit_price
-            if leg.action == "buy"
-            else quote["sell_limit"] >= leg.limit_price
-        )
-        depth = execution_depth(
-            book,
-            action=leg.action,
-            limit_price=leg.limit_price,
-            cash_price_factor=quote["cash_price_factor"],
-        )
-        if not acceptable or depth < leg.lots_requested:
-            raise ExecutionServiceError("execution_quote_moved_outside_limit")
-        self._check_order_estimate(user_id, leg_payload)
+        self._dispatch_market_preflight(user_id, leg, leg_payload)
         snapshot = self.broker.portfolio(user_id)
         if (
             snapshot.account_id != payload["account_id"]
@@ -568,6 +609,64 @@ class PortfolioExecutionService:
             if position is None or position.blocked
             else Decimal(position.quantity_lots) - Decimal(position.blocked_lots)
         )
+        self._check_execution_balances(snapshot, cash, payload, legs, mode)
+        if mode == "shadow":
+            cash, available_lots = self._shadow_execution_balances(
+                cash, available_lots, leg.instrument_uid, legs
+            )
+        if leg.action == "sell" and available_lots < leg.lots_requested:
+            raise ExecutionServiceError("execution_free_inventory_changed")
+        if leg.action == "buy" and cash - blocked - Decimal(leg_payload["max_spend_rub"]) < Decimal(
+            payload["reserve_rub"]
+        ) - Decimal(payload["blocked_cash_rub"]):
+            raise ExecutionServiceError("execution_free_cash_changed")
+
+    def _dispatch_market_preflight(
+        self,
+        user_id: UUID,
+        leg: ExecutionLegRecord,
+        leg_payload: dict[str, Any],
+    ) -> None:
+        metadata = self.broker.execution_instrument(user_id, leg.instrument_uid)
+        status = self.broker.market_trading_status(user_id, leg.instrument_uid)
+        if (
+            metadata.lot != leg_payload["lot_size"]
+            or metadata.api_trade_available is not True
+            or not status.limit_order_available
+            or not status.api_trade_available
+            or status.only_best_price
+            or (
+                metadata.buy_available is not True
+                if leg.action == "buy"
+                else metadata.sell_available is not True
+            )
+        ):
+            raise ExecutionServiceError("execution_instrument_changed")
+        book = self.broker.candidate_order_book(user_id, leg.instrument_uid, depth=50)
+        quote = execution_quote(metadata, book, slippage_bps=Decimal(0), now=datetime.now(UTC))
+        acceptable = (
+            quote["buy_limit"] <= leg.limit_price
+            if leg.action == "buy"
+            else quote["sell_limit"] >= leg.limit_price
+        )
+        depth = execution_depth(
+            book,
+            action=leg.action,
+            limit_price=leg.limit_price,
+            cash_price_factor=quote["cash_price_factor"],
+        )
+        if not acceptable or depth < leg.lots_requested:
+            raise ExecutionServiceError("execution_quote_moved_outside_limit")
+        self._check_order_estimate(user_id, leg_payload)
+
+    @staticmethod
+    def _check_execution_balances(
+        snapshot: BrokerPortfolioSnapshot,
+        cash: Decimal,
+        payload: dict[str, Any],
+        legs: tuple[ExecutionLegRecord, ...],
+        mode: str,
+    ) -> None:
         expected_lots = dict(payload["initial_lots"])
         expected_cash = Decimal(payload["cash_before_rub"])
         if mode != "shadow":
@@ -588,27 +687,27 @@ class PortfolioExecutionService:
             cash - expected_cash
         ) > Decimal("0.01"):
             raise ExecutionServiceError("execution_portfolio_changed")
-        if mode == "shadow":
-            for previous in legs:
-                if previous.status != "shadow_filled":
-                    continue
-                cash += (
-                    previous.executed_amount_rub
-                    if previous.action == "sell"
-                    else -previous.executed_amount_rub
+
+    @staticmethod
+    def _shadow_execution_balances(
+        cash: Decimal,
+        available_lots: Decimal,
+        instrument_uid: str,
+        legs: tuple[ExecutionLegRecord, ...],
+    ) -> tuple[Decimal, Decimal]:
+        for previous in legs:
+            if previous.status != "shadow_filled":
+                continue
+            cash += (
+                previous.executed_amount_rub
+                if previous.action == "sell"
+                else -previous.executed_amount_rub
+            )
+            if previous.instrument_uid == instrument_uid:
+                available_lots += (
+                    previous.lots_executed if previous.action == "buy" else -previous.lots_executed
                 )
-                if previous.instrument_uid == leg.instrument_uid:
-                    available_lots += (
-                        previous.lots_executed
-                        if previous.action == "buy"
-                        else -previous.lots_executed
-                    )
-        if leg.action == "sell" and available_lots < leg.lots_requested:
-            raise ExecutionServiceError("execution_free_inventory_changed")
-        if leg.action == "buy" and cash - blocked - Decimal(leg_payload["max_spend_rub"]) < Decimal(
-            payload["reserve_rub"]
-        ) - Decimal(payload["blocked_cash_rub"]):
-            raise ExecutionServiceError("execution_free_cash_changed")
+        return cash, available_lots
 
     def _execution_snapshot(
         self,

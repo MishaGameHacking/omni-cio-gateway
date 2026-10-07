@@ -110,6 +110,7 @@ _PROFILE_CONTEXT_CONFLICT_DESCRIPTION = "Viewed profile is missing or differs fr
 _PROFILE_CHANGED_EVENT = 'event: status\ndata: {"state":"profile_context_changed"}\n\n'
 logger = logging.getLogger(__name__)
 _API_FAILURES: dict[int | str, dict[str, Any]] = {
+    400: {"description": "The request cannot be accepted in its current form"},
     401: {"description": "An active session is required"},
     403: {"description": "Origin, operator authority or provider signature rejected"},
     404: {"description": "The requested object does not belong to this account"},
@@ -117,6 +118,7 @@ _API_FAILURES: dict[int | str, dict[str, Any]] = {
     413: {"description": "The request exceeds its bounded payload size"},
     422: {"description": "The request document is invalid"},
     429: {"description": "Admission or quota limit reached"},
+    500: {"description": "An unexpected error is recorded under a private server trace"},
     502: {"description": "An external service returned an invalid response"},
     503: {"description": "The required source or integration is unavailable"},
 }
@@ -475,6 +477,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.portfolio_refresh = refresh
     notifications = NotificationService(database, NotificationConfig(
+        operator_user_id=cfg.operator_user_id,
         crypto_key=cfg.notification_crypto_key or cfg.broker_token_crypto_key,
         enabled=cfg.notifications_enabled,
         vapid_private_key=cfg.notification_vapid_private_key,
@@ -621,11 +624,16 @@ def _start_oauth(
     )}
 
 
-@app.post("/api/auth/vkid/start", responses={
-    400: {"description": "Required legal acknowledgments are missing"},
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-    503: {"description": "VK ID login is not configured"},
-})
+@app.post(
+    "/api/auth/vkid/start",
+    responses={
+        400: {"description": "Required legal acknowledgments are missing"},
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        503: {"description": "VK ID login is not configured"},
+    },
+)
 def start_vkid(
     body: StartOAuthBody, request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -633,11 +641,16 @@ def start_vkid(
     return _start_oauth("vkid", body, request, response, session_token)
 
 
-@app.post("/api/auth/tid/start", responses={
-    400: {"description": "Required legal acknowledgments are missing"},
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-    503: {"description": "T-ID login is not configured"},
-})
+@app.post(
+    "/api/auth/tid/start",
+    responses={
+        400: {"description": "Required legal acknowledgments are missing"},
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        503: {"description": "T-ID login is not configured"},
+    },
+)
 def start_tid(
     body: StartOAuthBody, request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -740,9 +753,13 @@ def _oauth_callback(
     return response
 
 
-@app.get("/api/auth/vkid/callback", responses={
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-})
+@app.get(
+    "/api/auth/vkid/callback",
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
+)
 def vkid_callback(
     request: Request,
     flow_cookie: str | None = Cookie(default=None, alias=VKID_FLOW_COOKIE),
@@ -751,9 +768,13 @@ def vkid_callback(
     return _oauth_callback("vkid", request, flow_cookie, session_token)
 
 
-@app.get("/api/auth/tid/callback", responses={
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-})
+@app.get(
+    "/api/auth/tid/callback",
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
+)
 def tid_callback(
     request: Request,
     flow_cookie: str | None = Cookie(default=None, alias=TID_FLOW_COOKIE),
@@ -764,7 +785,10 @@ def tid_callback(
 
 @app.get(
     "/api/me",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def me(
     request: Request,
@@ -790,9 +814,13 @@ def me(
     }
 
 
-@app.get("/api/auth/identities", responses={
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-})
+@app.get(
+    "/api/auth/identities",
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
+)
 def auth_identities(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -828,8 +856,30 @@ def _assistant_action(
     return _workspace_result(request, token, user, payload, write=write)
 
 
-@app.get("/api/assistant/status")
-@app.get("/api/assistant/connection")
+@app.get(
+    "/api/assistant/status",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        502: _API_FAILURES[502],
+        503: _API_FAILURES[503],
+    },
+)
+@app.get(
+    "/api/assistant/connection",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        502: _API_FAILURES[502],
+        503: _API_FAILURES[503],
+    },
+)
 def assistant_status(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -840,7 +890,18 @@ def assistant_status(
                              lambda: assistant.status(user.id), write=False)
 
 
-@app.put("/api/assistant/connection")
+@app.put(
+    "/api/assistant/connection",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        502: _API_FAILURES[502],
+        503: _API_FAILURES[503],
+    },
+)
 def assistant_connection_save(
     body: WorkspaceSaveBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -852,7 +913,18 @@ def assistant_connection_save(
     ))
 
 
-@app.delete("/api/assistant/connection")
+@app.delete(
+    "/api/assistant/connection",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        502: _API_FAILURES[502],
+        503: _API_FAILURES[503],
+    },
+)
 def assistant_connection_delete(
     body: WorkspaceVersionBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -864,7 +936,18 @@ def assistant_connection_delete(
     ))
 
 
-@app.post("/api/assistant/connection/check")
+@app.post(
+    "/api/assistant/connection/check",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        502: _API_FAILURES[502],
+        503: _API_FAILURES[503],
+    },
+)
 def assistant_connection_check(
     body: StrictRequestBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -875,7 +958,18 @@ def assistant_connection_check(
                              lambda: assistant.check_connection(user.id))
 
 
-@app.get("/api/assistant/conversations")
+@app.get(
+    "/api/assistant/conversations",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        502: _API_FAILURES[502],
+        503: _API_FAILURES[503],
+    },
+)
 def assistant_conversations(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -886,7 +980,19 @@ def assistant_conversations(
                              lambda: assistant.list_conversations(user.id), write=False)
 
 
-@app.post("/api/assistant/conversations", status_code=201)
+@app.post(
+    "/api/assistant/conversations",
+    status_code=201,
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        502: _API_FAILURES[502],
+        503: _API_FAILURES[503],
+    },
+)
 def assistant_conversation_create(
     body: AssistantConversationBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -897,7 +1003,18 @@ def assistant_conversation_create(
                              lambda: assistant.create_conversation(user.id, body.title))
 
 
-@app.get("/api/assistant/conversations/{conversation_id}")
+@app.get(
+    "/api/assistant/conversations/{conversation_id}",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        502: _API_FAILURES[502],
+        503: _API_FAILURES[503],
+    },
+)
 def assistant_conversation(
     conversation_id: UUID, request: Request,
     before: int | None = Query(default=None, ge=1),
@@ -911,7 +1028,18 @@ def assistant_conversation(
     ), write=False)
 
 
-@app.delete("/api/assistant/conversations/{conversation_id}")
+@app.delete(
+    "/api/assistant/conversations/{conversation_id}",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        502: _API_FAILURES[502],
+        503: _API_FAILURES[503],
+    },
+)
 def assistant_conversation_delete(
     conversation_id: UUID, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -923,63 +1051,93 @@ def assistant_conversation_delete(
     })
 
 
+def _assistant_research_context(
+    request: Request, user: UserRecord, run_id: UUID | None,
+) -> dict[str, Any] | None:
+    if run_id is None:
+        return None
+    try:
+        saved = cast(ResearchStore, request.app.state.research_store).run(user.id, run_id)
+    except ResearchNotFound as exc:
+        raise HTTPException(status_code=404, detail="research_run_not_found") from exc
+    return cast(dict[str, Any], saved["result"])
+
+
+def _assistant_news_context(request: Request, include_news: bool) -> list[dict[str, Any]]:
+    if not include_news:
+        return []
+    try:
+        payload = cast(NewsClient, request.app.state.news_client).headlines()
+        return cast(list[dict[str, Any]], payload["items"])
+    except NewsUnavailable as exc:
+        raise HTTPException(status_code=503, detail="news_unavailable") from exc
+
+
+def _assistant_position_context(
+    item: dict[str, Any], captured_at: object,
+) -> dict[str, Any]:
+    position = {key: item.get(key) for key in ("ticker", "name", "instrument_type")}
+    for source, destination in (
+        ("quantity", "quantity"), ("value_rub", "value_rub"), ("nav_percent", "weight_percent"),
+    ):
+        value = item.get(source)
+        position[destination] = str(value) if value is not None else None
+    position["observed_at"] = str(captured_at or "")
+    return position
+
+
+def _assistant_investment_context(
+    request: Request, user: UserRecord, body: AssistantMessageBody, snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    visualization = portfolio_store(request).portfolio_visualization(user.id, history_limit=2)
+    strategy = portfolio_store(request).current_strategy_draft(user.id)
+    research = _assistant_research_context(request, user, body.research_run_id)
+    news = _assistant_news_context(request, body.include_news)
+    goals = [{**goal, "progress_amount_rub": goal.get("progress", {}).get("amount_rub"),
+              "progress_percent": goal.get("progress", {}).get("percent")}
+             for goal in snapshot.get("goals", {}).get("items", [])]
+    latest = cast(dict[str, Any], visualization.get("latest") or {})
+    positions = [_assistant_position_context(item, latest.get("captured_at"))
+                 for item in latest.get("positions", [])]
+    selected_strategy = ({"template_id": strategy["document"]["base_preset_id"],
+                          "version": strategy["version"]} if strategy else None)
+    return investment_context(
+        snapshot, positions=positions, goals=goals,
+        strategy=selected_strategy, research=research, news=news,
+    )
+
+
 def _selected_assistant_context(
     request: Request, user: UserRecord, body: AssistantMessageBody,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if body.context != "investment" and (body.include_news or body.research_run_id is not None):
+        raise HTTPException(status_code=422, detail="assistant_context_selection_invalid")
     if body.context == "general":
-        if body.include_news or body.research_run_id is not None:
-            raise HTTPException(status_code=422, detail="assistant_context_selection_invalid")
         return None, None
     snapshot = workspace_store(request).dashboard(user.id)
     if body.context == "portfolio":
-        if body.include_news or body.research_run_id is not None:
-            raise HTTPException(status_code=422, detail="assistant_context_selection_invalid")
         context = portfolio_context(snapshot)
     else:
-        visualization = portfolio_store(request).portfolio_visualization(user.id, history_limit=2)
-        strategy = portfolio_store(request).current_strategy_draft(user.id)
-        research = None
-        if body.research_run_id is not None:
-            try:
-                saved = cast(ResearchStore, request.app.state.research_store).run(
-                    user.id, body.research_run_id,
-                )
-            except ResearchNotFound as exc:
-                raise HTTPException(status_code=404, detail="research_run_not_found") from exc
-            research = saved["result"]
-        news: list[dict[str, Any]] = []
-        if body.include_news:
-            try:
-                news = cast(NewsClient, request.app.state.news_client).headlines()["items"]
-            except NewsUnavailable as exc:
-                raise HTTPException(status_code=503, detail="news_unavailable") from exc
-        goals = [{**goal, "progress_amount_rub": goal.get("progress", {}).get("amount_rub"),
-                  "progress_percent": goal.get("progress", {}).get("percent")}
-                 for goal in snapshot.get("goals", {}).get("items", [])]
-        latest = cast(dict[str, Any], visualization.get("latest") or {})
-        positions = [{
-            "ticker": item.get("ticker"), "name": item.get("name"),
-            "instrument_type": item.get("instrument_type"),
-            "quantity": str(item["quantity"]) if item.get("quantity") is not None else None,
-            "value_rub": str(item["value_rub"]) if item.get("value_rub") is not None else None,
-            "weight_percent": str(item["nav_percent"])
-            if item.get("nav_percent") is not None else None,
-            "observed_at": str(latest.get("captured_at") or ""),
-        } for item in latest.get("positions", [])]
-        selected_strategy = ({"template_id": strategy["document"]["base_preset_id"],
-                              "version": strategy["version"]} if strategy else None)
-        context = investment_context(
-            snapshot, positions=positions, goals=goals,
-            strategy=selected_strategy, research=research, news=news,
-        )
+        context = _assistant_investment_context(request, user, body, snapshot)
     context["_selection"] = {
         "scope": body.context, "include_news": body.include_news,
         "research_run_id": str(body.research_run_id) if body.research_run_id else None,
     }
     return context, snapshot.get("connection")
 
-
-@app.post("/api/assistant/messages")
+@app.post(
+    "/api/assistant/messages",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        502: _API_FAILURES[502],
+        503: _API_FAILURES[503],
+    },
+)
 def assistant_message(
     body: AssistantMessageBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1015,10 +1173,15 @@ def assistant_message(
     return _assistant_action(request, session_token, user, send)
 
 
-@app.get("/api/workspace", responses={
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-    422: {"description": "Portfolio history period is invalid"},
-})
+@app.get(
+    "/api/workspace",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: {"description": "Portfolio history period is invalid"},
+    },
+)
 def get_workspace(
     request: Request,
     history_period: Literal["1d", "1w", "1m", "3m", "1y", "all"] = Query(default="all"),
@@ -1031,7 +1194,10 @@ def get_workspace(
 
 @app.get(
     "/api/workspace/refresh",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def get_workspace_refresh(
     request: Request, response: Response,
@@ -1048,6 +1214,8 @@ def get_workspace_refresh(
 @app.post(
     "/api/workspace/refresh",
     responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         429: {"description": "Refresh admission slots are temporarily occupied"},
     },
@@ -1070,9 +1238,14 @@ def request_workspace_refresh(
     return {**payload, "public_id": format_public_id(user.public_id)}
 
 
-@app.get("/api/preferences", responses={
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-})
+@app.get(
+    "/api/preferences",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
+)
 def get_preferences(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1104,10 +1277,15 @@ def _workspace_result(
     return payload
 
 
-@app.put("/api/preferences", responses={
-    409: {"description": "Preferences version or current legal consent changed"},
-    422: {"description": "Preferences document is invalid"},
-})
+@app.put(
+    "/api/preferences",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": "Preferences version or current legal consent changed"},
+        422: {"description": "Preferences document is invalid"},
+    },
+)
 def save_preferences(
     body: WorkspaceSaveBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1124,9 +1302,14 @@ def save_preferences(
     return _workspace_result(request, session_token, user, payload, write=True)
 
 
-@app.get("/api/goals", responses={
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-})
+@app.get(
+    "/api/goals",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
+)
 def get_goals(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1136,10 +1319,16 @@ def get_goals(
     return _workspace_result(request, session_token, user, payload)
 
 
-@app.post("/api/goals", status_code=201, responses={
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-    422: {"description": "Goal document or allocation is invalid"},
-})
+@app.post(
+    "/api/goals",
+    status_code=201,
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: {"description": "Goal document or allocation is invalid"},
+    },
+)
 def create_goal(
     body: WorkspaceDocumentBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1152,11 +1341,16 @@ def create_goal(
     return _workspace_result(request, session_token, user, payload, write=True)
 
 
-@app.put("/api/goals/{goal_id}", responses={
-    404: {"description": "Goal does not exist in the current profile"},
-    409: {"description": "Goal version or current legal consent changed"},
-    422: {"description": "Goal document or allocation is invalid"},
-})
+@app.put(
+    "/api/goals/{goal_id}",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: {"description": "Goal does not exist in the current profile"},
+        409: {"description": "Goal version or current legal consent changed"},
+        422: {"description": "Goal document or allocation is invalid"},
+    },
+)
 def update_goal(
     goal_id: UUID, body: WorkspaceSaveBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1173,9 +1367,14 @@ def update_goal(
     return _workspace_result(request, session_token, user, payload, write=True)
 
 
-@app.delete("/api/goals/{goal_id}", responses={
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-})
+@app.delete(
+    "/api/goals/{goal_id}",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
+)
 def delete_goal(
     goal_id: UUID, body: WorkspaceVersionBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1187,7 +1386,14 @@ def delete_goal(
     return _workspace_result(request, session_token, user, payload, write=True)
 
 
-@app.get("/api/goals/{goal_id}/plan")
+@app.get(
+    "/api/goals/{goal_id}/plan",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+    },
+)
 def get_goal_plan(
     goal_id: UUID, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1197,7 +1403,15 @@ def get_goal_plan(
     return _workspace_result(request, session_token, user, payload)
 
 
-@app.put("/api/goals/{goal_id}/plan")
+@app.put(
+    "/api/goals/{goal_id}/plan",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+    },
+)
 def save_goal_plan(
     goal_id: UUID, body: GoalPlanBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1215,9 +1429,15 @@ def save_goal_plan(
     return _workspace_result(request, session_token, user, payload, write=True)
 
 
-@app.get("/api/events", responses={
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-})
+@app.get(
+    "/api/events",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: _API_FAILURES[422],
+    },
+)
 def get_events(
     request: Request,
     limit: int = Query(default=50, ge=1, le=100),
@@ -1238,7 +1458,15 @@ def get_events(
     return _workspace_result(request, session_token, user, payload)
 
 
-@app.get("/api/events/{event_id}")
+@app.get(
+    "/api/events/{event_id}",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+    },
+)
 def get_event(
     event_id: str, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1251,7 +1479,15 @@ def get_event(
     return _workspace_result(request, session_token, user, payload)
 
 
-@app.post("/api/events/read-all")
+@app.post(
+    "/api/events/read-all",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+    },
+)
 def mark_all_events_read(
     body: EventsReadAllBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1266,10 +1502,15 @@ def mark_all_events_read(
     return _workspace_result(request, session_token, user, payload, write=True)
 
 
-@app.post("/api/events/read", responses={
-    409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
-    422: {"description": "Event identifiers are invalid"},
-})
+@app.post(
+    "/api/events/read",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: {"description": "Event identifiers are invalid"},
+    },
+)
 def mark_events_read(
     body: EventsReadBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1284,7 +1525,10 @@ def mark_events_read(
 
 @app.get(
     "/api/me/activity",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def account_activity(
     request: Request,
@@ -1309,7 +1553,15 @@ def _billing_action(
     return _workspace_result(request, token, user, payload, write=write)
 
 
-@app.get("/api/billing")
+@app.get(
+    "/api/billing",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        503: _API_FAILURES[503],
+    },
+)
 def billing_status(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1321,7 +1573,15 @@ def billing_status(
     )
 
 
-@app.post("/api/billing/checkout")
+@app.post(
+    "/api/billing/checkout",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        503: _API_FAILURES[503],
+    },
+)
 def billing_checkout(
     body: BillingCheckoutBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1334,7 +1594,15 @@ def billing_checkout(
     ))
 
 
-@app.post("/api/billing/payments/{payment_id}/reconcile")
+@app.post(
+    "/api/billing/payments/{payment_id}/reconcile",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        503: _API_FAILURES[503],
+    },
+)
 def billing_reconcile(
     payment_id: UUID, body: StrictRequestBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1346,7 +1614,15 @@ def billing_reconcile(
     )
 
 
-@app.post("/api/billing/payments/{payment_id}/cancel")
+@app.post(
+    "/api/billing/payments/{payment_id}/cancel",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        503: _API_FAILURES[503],
+    },
+)
 def billing_cancel(
     payment_id: UUID, body: StrictRequestBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1358,7 +1634,15 @@ def billing_cancel(
     )
 
 
-@app.post("/api/billing/notification")
+@app.post(
+    "/api/billing/notification",
+    responses={
+        403: _API_FAILURES[403],
+        413: _API_FAILURES[413],
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
+)
 async def billing_notification(request: Request) -> PlainTextResponse:
     raw = bytearray()
     async for chunk in request.stream():
@@ -1394,7 +1678,14 @@ def _notification_write(
     return _workspace_result(request, token, user, payload, write=True)
 
 
-@app.get("/api/notifications")
+@app.get(
+    "/api/notifications",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+    },
+)
 def notification_status(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1404,7 +1695,16 @@ def notification_status(
     return _workspace_result(request, session_token, user, notification.status(user.id))
 
 
-@app.post("/api/notifications/push")
+@app.post(
+    "/api/notifications/push",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
+)
 def notification_subscribe_push(
     body: PushSubscriptionBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1416,7 +1716,16 @@ def notification_subscribe_push(
     ))
 
 
-@app.post("/api/notifications/email/request")
+@app.post(
+    "/api/notifications/email/request",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
+)
 def notification_request_email(
     body: EmailVerificationRequestBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1429,7 +1738,16 @@ def notification_request_email(
     )
 
 
-@app.post("/api/notifications/email/verify")
+@app.post(
+    "/api/notifications/email/verify",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
+)
 def notification_verify_email(
     body: EmailVerificationBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1441,7 +1759,16 @@ def notification_verify_email(
     ))
 
 
-@app.delete("/api/notifications/channels/{channel_id}")
+@app.delete(
+    "/api/notifications/channels/{channel_id}",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
+)
 def notification_revoke_channel(
     channel_id: UUID, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1466,7 +1793,15 @@ def _session_action(
     return _workspace_result(request, token, user, payload, write=write)
 
 
-@app.get("/api/me/sessions")
+@app.get(
+    "/api/me/sessions",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+    },
+)
 def active_sessions(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1478,7 +1813,15 @@ def active_sessions(
     ), write=False)
 
 
-@app.post("/api/me/sessions/revoke")
+@app.post(
+    "/api/me/sessions/revoke",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+    },
+)
 def revoke_session(
     body: SessionRevokeBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1490,7 +1833,15 @@ def revoke_session(
                                          body.session_id)})
 
 
-@app.post("/api/me/sessions/revoke-others")
+@app.post(
+    "/api/me/sessions/revoke-others",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+    },
+)
 def revoke_other_sessions(
     body: StrictRequestBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1501,7 +1852,15 @@ def revoke_other_sessions(
         database.revoke_other_sessions(user.id, session_digest(session_token or ""))})
 
 
-@app.post("/api/me/identities/{provider}/unlink")
+@app.post(
+    "/api/me/identities/{provider}/unlink",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+    },
+)
 def unlink_identity(
     provider: Literal["tid", "vkid"], body: StrictRequestBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1517,23 +1876,36 @@ def unlink_identity(
                                  enabled_providers=enabled)})
 
 
-@app.get("/api/system/metrics")
+@app.get(
+    "/api/system/metrics",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+    },
+)
 def operational_metrics(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, Any]:
     user = authenticated_user(request, session_token)
-    if user.role != "owner":
+    configured_operator_id = settings(request).operator_user_id
+    if configured_operator_id is None or user.id != configured_operator_id:
         raise HTTPException(status_code=403, detail="operator_required")
     database = cast(Database, request.app.state.database)
     return _session_action(request, session_token, user, lambda: database.operational_metrics(
         user.id, session_digest(session_token or ""),
+        configured_operator_id=configured_operator_id,
     ), write=False)
 
 
 @app.get(
     "/api/system/recovery",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def system_recovery(
     request: Request,
@@ -1556,7 +1928,16 @@ def public_news(request: Request) -> dict[str, Any]:
         ) from exc
 
 
-@app.get("/api/news")
+@app.get(
+    "/api/news",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
+)
 def instrument_news(
     request: Request, instrument_uid: str | None = Query(default=None, max_length=128),
     cursor: str | None = Query(default=None, max_length=64),
@@ -1715,7 +2096,10 @@ async def _usd_rub_market_events(
 
 @app.get(
     "/api/market/usd-rub/stream",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 async def usd_rub_market_stream(
     request: Request,
@@ -1998,7 +2382,10 @@ def _balancing_policy_payload(
 
 @app.get(
     "/api/profile/investment",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def investment_profile(
     request: Request,
@@ -2041,7 +2428,10 @@ def get_strategy_catalog(response: Response) -> dict[str, Any]:
 
 @app.get(
     "/api/profile/strategy",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def get_strategy_draft(
     request: Request, response: Response,
@@ -2056,6 +2446,8 @@ def get_strategy_draft(
 @app.put(
     "/api/profile/strategy",
     responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         422: {"description": "Invalid strategy document or preset selection"},
     },
@@ -2080,6 +2472,8 @@ def save_strategy_draft(
 @app.post(
     "/api/profile/strategy/account-assessment",
     responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         429: {"description": "An account assessment is already running or cooling down"},
         503: {"description": "Account evidence is unavailable or not coherent"},
@@ -2120,6 +2514,8 @@ def strategy_account_assessment(
 @app.post(
     "/api/profile/strategy/research",
     responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         422: {"description": "Invalid research period or explicit cost assumptions"},
         429: {"description": "Research is already running or cooling down"},
@@ -2160,7 +2556,14 @@ def research_strategy(
     return {**payload, "public_id": format_public_id(user.public_id)}
 
 
-@app.get("/api/research/evidence")
+@app.get(
+    "/api/research/evidence",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+    },
+)
 def research_evidence(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2170,7 +2573,15 @@ def research_evidence(
     return _workspace_result(request, session_token, user, store.evidence(user.id))
 
 
-@app.put("/api/research/evidence")
+@app.put(
+    "/api/research/evidence",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+    },
+)
 def save_research_evidence(
     body: WorkspaceSaveBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2188,7 +2599,14 @@ def save_research_evidence(
     return _workspace_result(request, session_token, user, payload, write=True)
 
 
-@app.get("/api/research/runs")
+@app.get(
+    "/api/research/runs",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+    },
+)
 def research_runs(
     request: Request, limit: int = Query(default=50, ge=1, le=200),
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2200,7 +2618,15 @@ def research_runs(
     )
 
 
-@app.get("/api/research/runs/{run_id}")
+@app.get(
+    "/api/research/runs/{run_id}",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: _API_FAILURES[409],
+    },
+)
 def research_run(
     run_id: UUID, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2214,7 +2640,15 @@ def research_run(
     return _workspace_result(request, session_token, user, payload)
 
 
-@app.delete("/api/research/runs/{run_id}")
+@app.delete(
+    "/api/research/runs/{run_id}",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: _API_FAILURES[409],
+    },
+)
 def delete_research_run(
     run_id: UUID, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2228,7 +2662,15 @@ def delete_research_run(
     return _workspace_result(request, session_token, user, {"deleted": True}, write=True)
 
 
-@app.post("/api/research/runs/{run_id}/replay")
+@app.post(
+    "/api/research/runs/{run_id}/replay",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: _API_FAILURES[409],
+    },
+)
 def replay_research_run(
     run_id: UUID, body: StrictRequestBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2253,7 +2695,10 @@ def replay_research_run(
 
 @app.get(
     "/api/profile/balancing",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def balancing_policy(
     request: Request,
@@ -2271,7 +2716,10 @@ def balancing_policy(
 
 @app.get(
     "/api/broker/tbank",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def tbank_connection_status(
     request: Request,
@@ -2358,9 +2806,10 @@ def portfolio_visualization(
 @app.get(
     "/api/portfolio/instruments/{instrument_uid}/visualization",
     responses={
-        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         401: {"description": "Authenticated session required"},
         404: {"description": "Instrument is not present in the current account history"},
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: _API_FAILURES[422],
     },
 )
 def portfolio_instrument_visualization(
@@ -2393,7 +2842,10 @@ def portfolio_instrument_visualization(
 
 @app.get(
     "/api/portfolio/proposals",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def portfolio_proposals(
     request: Request,
@@ -2505,7 +2957,10 @@ def _execution_error(exc: Exception) -> HTTPException:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         )
-    if code in {"proposal_not_found", "execution_not_found", "research_run_not_found"}:
+    if code in {
+        "execution_proposal_not_found", "execution_not_found", "execution_leg_not_found",
+        "research_run_not_found",
+    }:
         return HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=code,
@@ -2550,7 +3005,14 @@ def _execution_write(
     return _workspace_result(request, token, user, payload, write=True)
 
 
-@app.get("/api/portfolio/execution-capabilities")
+@app.get(
+    "/api/portfolio/execution-capabilities",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: _API_FAILURES[409],
+    },
+)
 def portfolio_execution_capabilities(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2571,7 +3033,17 @@ def portfolio_execution_capabilities(
     })
 
 
-@app.post("/api/portfolio/proposals/plan")
+@app.post(
+    "/api/portfolio/proposals/plan",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
+)
 def plan_portfolio_execution(
     body: ExecutionPlanBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2584,7 +3056,17 @@ def plan_portfolio_execution(
     ))
 
 
-@app.post("/api/portfolio/proposals/{proposal_id}/confirm")
+@app.post(
+    "/api/portfolio/proposals/{proposal_id}/confirm",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
+)
 def confirm_portfolio_execution(
     proposal_id: UUID, body: ExecutionConfirmBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2600,7 +3082,17 @@ def confirm_portfolio_execution(
     )
 
 
-@app.post("/api/portfolio/executions/{run_id}/dispatch")
+@app.post(
+    "/api/portfolio/executions/{run_id}/dispatch",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
+)
 def dispatch_portfolio_execution(
     run_id: UUID, body: ExecutionDispatchBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2614,7 +3106,17 @@ def dispatch_portfolio_execution(
     )
 
 
-@app.post("/api/portfolio/live-execution/mandate")
+@app.post(
+    "/api/portfolio/live-execution/mandate",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
+)
 def create_portfolio_execution_mandate(
     body: ExecutionMandateBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -2634,7 +3136,10 @@ def create_portfolio_execution_mandate(
 
 @app.get(
     "/api/portfolio/live-execution/mandate",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def portfolio_live_execution_mandate(
     request: Request,
@@ -2657,7 +3162,11 @@ def portfolio_live_execution_mandate(
 @app.delete(
     "/api/portfolio/live-execution/mandate",
     status_code=204,
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def revoke_portfolio_live_execution_mandate(
     request: Request,
@@ -2673,7 +3182,10 @@ def revoke_portfolio_live_execution_mandate(
 
 @app.get(
     "/api/portfolio/executions",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def portfolio_executions(
     request: Request,
@@ -2696,7 +3208,11 @@ def portfolio_executions(
 
 @app.get(
     "/api/portfolio/executions/{run_id}",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        404: _API_FAILURES[404],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def portfolio_execution(
     run_id: UUID,
@@ -2732,7 +3248,14 @@ def portfolio_execution(
 
 @app.post(
     "/api/portfolio/executions/{run_id}/reconcile",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
 )
 def reconcile_portfolio_execution(
     run_id: UUID,
@@ -2761,7 +3284,14 @@ def reconcile_portfolio_execution(
 
 @app.post(
     "/api/portfolio/executions/{run_id}/cancel",
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: _API_FAILURES[422],
+        503: _API_FAILURES[503],
+    },
 )
 def cancel_portfolio_execution(
     run_id: UUID,
@@ -2836,9 +3366,10 @@ def tbank_instrument_search(
 @app.post(
     "/api/broker/tbank/accounts",
     responses={
-        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         400: {"description": "Broker credential or terms acknowledgment is invalid"},
         401: {"description": "Authenticated session required"},
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
         503: {"description": "T-Invest API is temporarily unavailable"},
     },
 )
@@ -2882,6 +3413,7 @@ def tbank_accounts(
     responses={
         400: {"description": "Broker credential, account, or terms are invalid"},
         401: {"description": "Authenticated session required"},
+        403: _API_FAILURES[403],
         409: {"description": "Disconnect the previous account or reconcile active execution"},
         503: {"description": "Broker connection storage or T-Invest API is unavailable"},
     },
@@ -2950,7 +3482,11 @@ def connect_tbank(
 @app.delete(
     "/api/broker/tbank",
     status_code=204,
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def disconnect_tbank(
     request: Request,
@@ -2980,7 +3516,12 @@ def disconnect_tbank(
 @app.post(
     "/api/account/delete",
     status_code=204,
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        400: _API_FAILURES[400],
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def delete_account(
     body: DeleteAccountBody,
@@ -3039,7 +3580,10 @@ def delete_account(
 @app.post(
     "/api/auth/logout",
     status_code=204,
-    responses={409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION}},
+    responses={
+        403: _API_FAILURES[403],
+        409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+    },
 )
 def logout(
     request: Request,

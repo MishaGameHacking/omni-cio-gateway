@@ -531,14 +531,15 @@ class Database:
                 )
             return changed
 
-    def operational_metrics(self, operator_user_id: UUID, current_digest: bytes) -> dict[str, Any]:
-        """Owner-only aggregate evidence; no tenant rows, IDs or credentials escape."""
+    def operational_metrics(
+        self, operator_user_id: UUID, current_digest: bytes, *,
+        configured_operator_id: UUID | None,
+    ) -> dict[str, Any]:
+        """Server-configured operator only; browser roles never grant this authority."""
+        if configured_operator_id is None or operator_user_id != configured_operator_id:
+            raise PermissionError("operator_required")
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             self._active_session(cur, operator_user_id, current_digest)
-            cur.execute("SELECT role FROM users WHERE id = %s", (operator_user_id,))
-            operator = cast(dict[str, Any] | None, cur.fetchone())
-            if operator is None or operator["role"] != "owner":
-                raise PermissionError("operator_required")
         # Do not borrow a second pool connection while holding the authorization
         # lock: simultaneous owner requests could otherwise exhaust the pool.
         return self.collect_operational_metrics()

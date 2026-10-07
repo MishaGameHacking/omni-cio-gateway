@@ -120,7 +120,7 @@ class PaymentClient:
             raise BillingUnavailable("billing_provider_outcome_unknown")
         try:
             result = json.loads(raw)
-        except (ValueError, UnicodeDecodeError) as exc:
+        except ValueError as exc:
             raise BillingUnavailable("billing_provider_outcome_unknown") from exc
         if not isinstance(result, dict) or result.get("Success") is not True:
             raise BillingUnavailable("billing_provider_rejected")
@@ -128,7 +128,7 @@ class PaymentClient:
 
 
 def _payment_id(value: object) -> str:
-    if type(value) not in {str, int} or re.fullmatch(r"[0-9]{1,50}", str(value)) is None:
+    if type(value) not in {str, int} or re.fullmatch(r"\d{1,50}", str(value), re.ASCII) is None:
         raise BillingUnavailable("billing_provider_identity_invalid")
     return str(value)
 

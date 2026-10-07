@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
 from uuid import UUID
@@ -13,6 +14,7 @@ from fastapi.testclient import TestClient
 from omnicio.db import Database, UserRecord
 from omnicio.main import CANONICAL_ORIGIN, app
 from omnicio.portfolio_store import SettingsVersionConflict
+from omnicio.security import session_digest
 from omnicio.service import AuthService
 from omnicio.workspace_store import WorkspaceNotFound, WorkspaceStore
 
@@ -114,6 +116,42 @@ def test_workspace_invalid_history_period_does_not_read_storage(
     response = client.get("/api/workspace", params={"history_period": "unbounded"})
     assert response.status_code == 422
     store.dashboard.assert_not_called()
+
+
+@pytest.mark.parametrize("configured_id", (None, OTHER.id))
+def test_metrics_reject_disabled_or_other_operator_even_with_claimed_identity(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock], configured_id: UUID | None,
+) -> None:
+    client, _, _, database = workspace_http
+    with patch.object(app.state, "settings", SimpleNamespace(
+        operator_user_id=configured_id,
+    ), create=True):
+        result = client.get("/api/system/metrics", params={
+            "user_id": str(OWNER.id), "role": "owner", "operator_user_id": str(OWNER.id),
+        })
+    assert result.status_code == 403
+    database.operational_metrics.assert_not_called()
+
+
+def test_metrics_require_configured_identity_and_recheck_session_after_collection(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    client, auth, _, database = workspace_http
+    database.operational_metrics.return_value = {"queues": {"pending": 2}}
+    with patch.object(app.state, "settings", SimpleNamespace(
+        operator_user_id=OWNER.id,
+    ), create=True):
+        result = client.get("/api/system/metrics", headers=HEADERS)
+        assert result.status_code == 200
+        assert result.json() == {"queues": {"pending": 2}}
+        database.operational_metrics.assert_called_once_with(
+            OWNER.id, session_digest("owner"), configured_operator_id=OWNER.id,
+        )
+        auth.refresh_session.side_effect = [OWNER, None]
+        revoked = client.get("/api/system/metrics", headers=HEADERS)
+    assert revoked.status_code == 401
+    assert "queues" not in revoked.text
+    assert revoked.headers["cache-control"] == "private, no-store"
 
 
 @pytest.mark.parametrize(

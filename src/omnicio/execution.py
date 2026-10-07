@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import Any, Literal
@@ -150,22 +151,26 @@ def execution_quote(
     }
 
 
-def strategy_order_plan(
-    document: Mapping[str, Any],
-    candidates: Sequence[StrategyCandidateFacts],
-    selected: Sequence[Mapping[str, Any]],
-    positions: Sequence[TBankPortfolioPosition],
-    quotes: Mapping[str, Mapping[str, Any]],
-    *,
-    cash: Decimal,
-    blocked_cash: Decimal,
-    commission_bps: Decimal,
-    now: datetime,
-    max_order: Decimal,
-    max_daily: Decimal,
-) -> dict[str, Any]:
-    """No-margin integer orders, sells first, using only broker position quantities."""
-    by_uid = {row.instrument_uid: row for row in candidates}
+@dataclass(frozen=True, slots=True)
+class _ExecutionInventory:
+    held: dict[str, int]
+    free: dict[str, int]
+    cost_basis: dict[str, Decimal]
+
+
+@dataclass(frozen=True, slots=True)
+class _OrderSizing:
+    nav: Decimal
+    reserve: Decimal
+    max_order: Decimal
+    commission_bps: Decimal
+    policy: Mapping[str, Any]
+    now: datetime
+
+
+def _execution_inventory(
+    positions: Sequence[TBankPortfolioPosition], quotes: Mapping[str, Mapping[str, Any]]
+) -> _ExecutionInventory:
     held: dict[str, int] = {}
     free: dict[str, int] = {}
     cost_basis: dict[str, Decimal] = {}
@@ -191,6 +196,122 @@ def strategy_order_plan(
         average = position.average_price_fifo
         if average is not None and average.currency == "RUB":
             cost_basis[uid] = Decimal(average.value) * quote["lot"]
+    return _ExecutionInventory(held, free, cost_basis)
+
+
+def _order_tax(
+    action: str,
+    uid: str,
+    amount: Decimal,
+    fee: Decimal,
+    lots: int,
+    inventory: _ExecutionInventory,
+    tax_rate: Decimal,
+) -> Decimal:
+    if action != "sell" or not tax_rate:
+        return Decimal(0)
+    if uid not in inventory.cost_basis:
+        raise ExecutionStateError("execution_cost_basis_missing")
+    return max(Decimal(0), amount - fee - inventory.cost_basis[uid]) * lots * tax_rate
+
+
+def _planned_order_leg(
+    action: str,
+    uid: str,
+    candidate: StrategyCandidateFacts | None,
+    quote: Mapping[str, Any],
+    inventory: _ExecutionInventory,
+    sizing: _OrderSizing,
+    *,
+    target_weight: Decimal,
+    available: Decimal,
+    remaining: Decimal,
+) -> dict[str, Any] | None:
+    if candidate is None:
+        raise ExecutionStateError("execution_held_evidence_missing")
+    mark = quote["mark"] * quote["lot"]
+    current = inventory.held.get(uid, 0) * mark
+    target = sizing.nav * target_weight / 100
+    delta = int(target / mark) - inventory.held.get(uid, 0)
+    band = Decimal(sizing.policy["no_trade_band_percent"])
+    if (
+        not delta
+        or (delta > 0) != (action == "buy")
+        or abs(target - current) / sizing.nav * 100 <= band
+    ):
+        return None
+    volume = candidate.facts.get("daily_volume_lots")
+    if volume is None or volume.available_at > sizing.now:
+        raise ExecutionStateError("execution_volume_missing")
+    participation = Decimal(sizing.policy["max_daily_turnover_participation_percent"]) / 100
+    volume_cap = int(Decimal(str(volume.value)) * participation)
+    amount = (quote[action + "_limit"] + quote["nkd"]) * quote["lot"]
+    fee = amount * sizing.commission_bps / 10000
+    lots = min(
+        abs(delta),
+        volume_cap,
+        int(quote[action + "_depth"]),
+        int(sizing.max_order / (amount + fee)),
+        int(remaining / (amount + fee)),
+    )
+    if action == "buy":
+        lots = min(lots, max(0, int((available - sizing.reserve) / (amount + fee))))
+    else:
+        lots = min(lots, inventory.free.get(uid, 0))
+    if lots <= 0:
+        return None
+    signed_lots = lots if action == "buy" else -lots
+    reduction = abs(target - current) - abs(target - current - signed_lots * mark)
+    if reduction - lots * fee < Decimal(sizing.policy["min_replace_benefit_rub"]):
+        return None
+    tax = _order_tax(
+        action,
+        uid,
+        amount,
+        fee,
+        lots,
+        inventory,
+        Decimal(sizing.policy["securities_tax_rate_percent"]) / 100,
+    )
+    gross, commission = lots * amount, lots * fee
+    spend = gross + commission
+    proceeds = max(Decimal(0), gross - commission - tax)
+    return {
+        "action": action,
+        "instrument_uid": uid,
+        "ticker": candidate.ticker,
+        "lots": lots,
+        "lot_size": quote["lot"],
+        "limit_price": str(quote[action + "_limit"]),
+        "limit_price_type": "currency",
+        "native_price_unit": quote["price_unit"],
+        "quote_at": quote["quote_at"],
+        "gross_amount_rub": str(gross),
+        "commission_cap_rub": str(commission),
+        "tax_reserve_rub": str(tax),
+        "max_spend_rub": str(spend) if action == "buy" else None,
+        "min_proceeds_rub": str(proceeds) if action == "sell" else None,
+    }
+
+
+def strategy_order_plan(
+    document: Mapping[str, Any],
+    candidates: Sequence[StrategyCandidateFacts],
+    selected: Sequence[Mapping[str, Any]],
+    positions: Sequence[TBankPortfolioPosition],
+    quotes: Mapping[str, Mapping[str, Any]],
+    *,
+    cash: Decimal,
+    blocked_cash: Decimal,
+    commission_bps: Decimal,
+    now: datetime,
+    max_order: Decimal,
+    max_daily: Decimal,
+) -> dict[str, Any]:
+    """No-margin integer orders, sells first, using only broker position quantities."""
+    by_uid = {row.instrument_uid: row for row in candidates}
+    inventory = _execution_inventory(positions, quotes)
+    held = inventory.held
     if cash < 0 or blocked_cash < 0 or blocked_cash > cash:
         raise ExecutionStateError("execution_cash_inconsistent")
     nav = cash + sum(
@@ -212,79 +333,32 @@ def strategy_order_plan(
     )
     available = cash
     remaining = min(max_daily, nav * Decimal(document["policy"]["turnover_budget_percent"]) / 100)
-    participation = Decimal(document["policy"]["max_daily_turnover_participation_percent"]) / 100
-    band = Decimal(document["policy"]["no_trade_band_percent"])
-    benefit = Decimal(document["policy"]["min_replace_benefit_rub"])
-    tax_rate = Decimal(document["policy"]["securities_tax_rate_percent"]) / 100
+    sizing = _OrderSizing(nav, reserve, max_order, commission_bps, document["policy"], now)
     legs = []
     projected = dict(held)
     for action in ("sell", "buy"):
         for uid in sorted(set(weights) | set(held)):
-            quote, candidate = quotes[uid], by_uid.get(uid)
-            if candidate is None:
-                raise ExecutionStateError("execution_held_evidence_missing")
-            mark = quote["mark"] * quote["lot"]
-            current, target = held.get(uid, 0) * mark, nav * weights.get(uid, Decimal(0)) / 100
-            delta = int(target / mark) - held.get(uid, 0)
-            if (
-                not delta
-                or (delta > 0) != (action == "buy")
-                or abs(target - current) / nav * 100 <= band
-            ):
-                continue
-            volume = candidate.facts.get("daily_volume_lots")
-            if volume is None or volume.available_at > now:
-                raise ExecutionStateError("execution_volume_missing")
-            volume_cap = int(Decimal(str(volume.value)) * participation)
-            amount = (quote[action + "_limit"] + quote["nkd"]) * quote["lot"]
-            fee = amount * commission_bps / 10000
-            lots = min(
-                abs(delta),
-                volume_cap,
-                int(quote[action + "_depth"]),
-                int(max_order / (amount + fee)),
-                int(remaining / (amount + fee)),
+            leg = _planned_order_leg(
+                action,
+                uid,
+                by_uid.get(uid),
+                quotes[uid],
+                inventory,
+                sizing,
+                target_weight=weights.get(uid, Decimal(0)),
+                available=available,
+                remaining=remaining,
             )
-            if action == "buy":
-                lots = min(lots, max(0, int((available - reserve) / (amount + fee))))
+            if leg is None:
+                continue
+            if action == "sell":
+                available += Decimal(leg["min_proceeds_rub"])
+                projected[uid] = projected.get(uid, 0) - leg["lots"]
             else:
-                lots = min(lots, free.get(uid, 0))
-            if lots <= 0:
-                continue
-            reduction = abs(target - current) - abs(
-                target - current - (lots if action == "buy" else -lots) * mark
-            )
-            if reduction - lots * fee < benefit:
-                continue
-            tax = Decimal(0)
-            if action == "sell" and tax_rate:
-                if uid not in cost_basis:
-                    raise ExecutionStateError("execution_cost_basis_missing")
-                tax = max(Decimal(0), amount - fee - cost_basis[uid]) * lots * tax_rate
-            gross, commission = lots * amount, lots * fee
-            spend = gross + commission
-            proceeds = max(Decimal(0), gross - commission - tax)
-            available += proceeds if action == "sell" else -spend
-            remaining -= spend
-            projected[uid] = projected.get(uid, 0) + (lots if action == "buy" else -lots)
-            legs.append(
-                {
-                    "action": action,
-                    "instrument_uid": uid,
-                    "ticker": candidate.ticker,
-                    "lots": lots,
-                    "lot_size": quote["lot"],
-                    "limit_price": str(quote[action + "_limit"]),
-                    "limit_price_type": "currency",
-                    "native_price_unit": quote["price_unit"],
-                    "quote_at": quote["quote_at"],
-                    "gross_amount_rub": str(gross),
-                    "commission_cap_rub": str(commission),
-                    "tax_reserve_rub": str(tax),
-                    "max_spend_rub": str(spend) if action == "buy" else None,
-                    "min_proceeds_rub": str(proceeds) if action == "sell" else None,
-                }
-            )
+                available -= Decimal(leg["max_spend_rub"])
+                projected[uid] = projected.get(uid, 0) + leg["lots"]
+            remaining -= Decimal(leg["gross_amount_rub"]) + Decimal(leg["commission_cap_rub"])
+            legs.append(leg)
     after_nav = available + sum(
         (
             Decimal(count) * quotes[uid]["lot"] * quotes[uid]["mark"]

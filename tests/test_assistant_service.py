@@ -74,7 +74,8 @@ def test_openai_transport_has_bounded_compatible_request_and_usage(model: str) -
     assert "tool_calls" not in reply
     if model.startswith("gpt-5"):
         assert payload["max_completion_tokens"] == 1024
-        assert "temperature" not in payload and "max_tokens" not in payload
+        assert "temperature" not in payload
+        assert "max_tokens" not in payload
     else:
         assert payload["max_tokens"] == 1024
     assert reply["usage"] == {"input_tokens": 10, "output_tokens": 4}
