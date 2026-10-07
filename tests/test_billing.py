@@ -109,13 +109,15 @@ def test_client_uses_signed_bounded_tls_request_and_never_follows_redirect() -> 
     assert body["Token"] == payment_token(body, cfg.password)
     assert "Password" not in body
     response.status = 302
+    client = PaymentClient(cfg)
     with (
         patch("omnicio.billing.http.client.HTTPSConnection", return_value=connection),
         pytest.raises(BillingUnavailable, match="unknown"),
     ):
-        PaymentClient(cfg).call("Init", {"OrderId": "test"})
+        client.call("Init", {"OrderId": "test"})
+    disabled = PaymentClient(BillingConfig())
     with pytest.raises(BillingUnavailable, match="not_configured"):
-        PaymentClient(BillingConfig()).call("Init", {})
+        disabled.call("Init", {})
 
 
 def test_forged_callbacks_are_rejected_before_tenant_lookup() -> None:
@@ -151,7 +153,8 @@ def test_payment_entitlement_needs_exact_provider_confirmation_and_cannot_double
                 }
             )
             assert payload["Receipt"]["Items"][0]["Amount"] == 12345
-            assert payload["PayType"] == "O" and "Recurrent" not in payload
+            assert payload["PayType"] == "O"
+            assert "Recurrent" not in payload
             return {
                 **source,
                 "PaymentURL": "https://securepayments.tinkoff.ru/test",
@@ -216,7 +219,8 @@ def test_ambiguous_checkout_is_recorded_and_not_automatically_retried(
     saved = service.checkout(
         owner, ident, expected_offer=cfg.offer_key, receipt_email="test@example.com"
     )
-    assert saved["status"] == "uncertain" and saved["checkout_url"] is None
+    assert saved["status"] == "uncertain"
+    assert saved["checkout_url"] is None
     client.call.assert_called_once()
 
 
@@ -286,10 +290,12 @@ def test_bank_callback_is_bounded_and_signature_authorized_without_browser_sessi
         billing.notification.assert_not_called()
         billing.notification.side_effect = PermissionError("untrusted-data")
         rejected = client.post("/api/billing/notification", json={"Token": "bad"})
-        assert rejected.status_code == 403 and "untrusted-data" not in rejected.text
+        assert rejected.status_code == 403
+        assert "untrusted-data" not in rejected.text
         billing.notification.side_effect = None
         confirmed = client.post("/api/billing/notification", json={"Token": "fixture"})
-        assert confirmed.status_code == 200 and confirmed.text == "OK"
+        assert confirmed.status_code == 200
+        assert confirmed.text == "OK"
 
 
 @pytest.mark.skipif(not DATABASE_URL, reason="ephemeral PostgreSQL is required")
@@ -330,7 +336,8 @@ def test_out_of_order_partial_refund_never_becomes_a_new_full_entitlement(
             "Amount": cfg.amount_kopecks,
         },
     )
-    assert late["status"] == "partial_refund" and late["entitlement_until"] is None
+    assert late["status"] == "partial_refund"
+    assert late["entitlement_until"] is None
     service._apply_provider_state(owner, ident, {**source, "Status": "REFUNDED", "Amount": 0})
     repeated = service._apply_provider_state(owner, ident, source)
     assert repeated["status"] == "refunded"

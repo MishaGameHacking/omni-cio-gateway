@@ -17,6 +17,7 @@ from omnicio.notifications import (
     NotificationConfig,
     NotificationService,
     NotificationTransport,
+    _log_worker_failure,
     _public_address,
     delivery_time,
     encrypt_push,
@@ -33,6 +34,26 @@ RECEIVER = (
     "aOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4"
 )
 SENDER = "yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw"
+
+
+def test_worker_failure_logs_only_safe_type_without_original_message_or_traceback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "private-provider-token-canary"
+    try:
+        raise ValueError(secret)
+    except ValueError as error:
+        _log_worker_failure("notification_worker_failed", error)
+    assert secret not in caplog.text
+    assert "notification_worker_failed" in caplog.text
+    assert "ValueError" in caplog.text
+    record = caplog.records[-1]
+    assert record.exc_info is not None
+    assert record.exc_info[2] is None
+    sanitized = record.exc_info[1]
+    assert sanitized is not None
+    assert sanitized.__context__ is None
+    assert sanitized.__cause__ is None
 
 
 @pytest.mark.parametrize("configured", [True, False])
@@ -113,8 +134,9 @@ def test_vapid_jwt_is_bound_to_origin_and_verifies_with_public_key() -> None:
     "https://fcm.googleapis.com/send/a#fragment", "https://notify.windows.com.evil.test/send/a",
 ])
 def test_push_endpoints_cannot_target_arbitrary_or_insecure_servers(endpoint: str) -> None:
+    document = subscription(endpoint)
     with pytest.raises(ValueError):
-        normalize_subscription(subscription(endpoint))
+        normalize_subscription(document)
 
 
 def test_push_validation_rejects_non_curve_key_and_dns_rebinding_targets() -> None:

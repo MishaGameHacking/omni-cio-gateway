@@ -27,6 +27,7 @@ from timeweb_recovery import (
     export_logical_archive,
     install_restore_receipt,
     load_policy,
+    restore_artifact_path,
     validate_export_source,
     verify_logical_archive,
 )
@@ -34,9 +35,6 @@ from timeweb_ssh_trust import managed_server_identity, trusted_host_entry
 from verify_main_release import GitHubClient, release_context, require_checkout, wait_for_release
 
 from omnicio.recovery import sign_recovery_evidence
-
-ROOT = pathlib.Path(__file__).resolve().parents[2]
-OUTPUT = ROOT / "artifacts" / "restore"
 
 
 def authorize() -> tuple[str, str]:
@@ -71,8 +69,9 @@ def native(command: list[str], *, timeout: int) -> None:
 def main() -> int:
     if sys.argv[1:] == ["--cleanup-artifact"]:
         # Exactly this job's fixed generated directory; never caller-selected paths.
-        if OUTPUT.is_dir():
-            shutil.rmtree(OUTPUT)
+        output = restore_artifact_path()
+        if output.is_dir():
+            shutil.rmtree(output)
         return 0
     if sys.argv[1:] or sys.platform != "win32":
         raise RecoveryBlocked("The manual restore drill requires the reviewed Windows runner")
@@ -92,9 +91,8 @@ def main() -> int:
     if server.get("id") != managed_id or public_ipv4(server) != managed_ip:
         raise RecoveryBlocked("Runtime server differs from the reviewed deployment target")
     trusted_host_entry(os.environ.get("TIMEWEB_SSH_KNOWN_HOSTS", ""), managed_ip)
-    if OUTPUT.exists():
+    if restore_artifact_path().exists():
         raise RecoveryBlocked("A previous restore artifact must be cleaned before another drill")
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     receipt = None
     # Plaintext backup and restored rows never enter uploaded artifact paths.
     # The directory remains owned by this invocation and is removed before proof installation.
@@ -119,11 +117,11 @@ def main() -> int:
             target = make_conninfo(host="127.0.0.1", port=port, dbname="postgres",
                                   user="postgres", password=password, connect_timeout=10)
             manifest = export_logical_archive(
-                source, binary, OUTPUT, cluster_id=load_policy().cluster_id,
+                source, binary, cluster_id=load_policy().cluster_id,
                 release_sha=sha, signing_key=signing_key, archive_key=archive_key,
             )
             receipt = verify_logical_archive(
-                target, binary, OUTPUT / "database.dump.encrypted", manifest,
+                target, binary, manifest,
                 release_sha=sha, signing_key=signing_key, archive_key=archive_key,
             )
         finally:
@@ -131,7 +129,7 @@ def main() -> int:
                 native([*control, "-m", "fast", "stop"], timeout=45)
     if receipt is None:
         raise RecoveryBlocked("No isolated restore proof was produced")
-    _private_json(OUTPUT / "restore-verification.json", receipt)
+    _private_json("restore-verification.json", receipt)
     # Refuse an obsolete source checkout before touching operational runtime state.
     require_checkout(sha)
     wait_for_release(GitHubClient(token, deadline=time.monotonic() + 600), sha)

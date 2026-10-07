@@ -7,12 +7,15 @@ import importlib
 import io
 import json
 import os
+import runpy
+import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
+from cryptography.fernet import Fernet
 
 from omnicio.recovery import sign_recovery_evidence
 
@@ -118,7 +121,8 @@ def test_remote_runtime_independently_verifies_and_preserves_physical_receipts(
     class LocalRuntime:
         def run(self, command, *, input_text):
             assert "/etc/omnicio/product.env" in command
-            assert KEY not in input_text and "archive_key" not in input_text
+            assert KEY not in input_text
+            assert "archive_key" not in input_text
             script = input_text.replace(
                 "pathlib.Path('/opt/omnicio/current').resolve().name",
                 repr(release),
@@ -148,12 +152,13 @@ def test_remote_runtime_independently_verifies_and_preserves_physical_receipts(
                 exec(compile(script, "<synthetic-runtime-receipt>", "exec"), {})
             return output.getvalue()
 
+    runtime = LocalRuntime()
     with patch.object(controller, "REMOTE_STATUS_PATH", str(target)):
         if success:
-            controller.install_restore_receipt(LocalRuntime(), proof, SHA)
+            controller.install_restore_receipt(runtime, proof, SHA)
         else:
             with pytest.raises(SystemExit):
-                controller.install_restore_receipt(LocalRuntime(), proof, SHA)
+                controller.install_restore_receipt(runtime, proof, SHA)
     restored = json.loads(target.read_text())
     if success:
         assert restored == {**initial, "restore_verification": proof}
@@ -172,3 +177,90 @@ def test_native_child_does_not_inherit_production_credentials(monkeypatch):
     assert "OMNICIO_RESTORE_ARCHIVE_KEY" not in proc.call_args.kwargs["env"]
     for channel in ("stdin", "stdout", "stderr"):
         assert proc.call_args.kwargs[channel] == runner.subprocess.DEVNULL
+
+
+@pytest.mark.parametrize("name", ["../outside", "/absolute-output", r"..\outside",
+                                  "nested/manifest.json", "unexpected.json"])
+def test_restore_artifact_names_cannot_select_paths(monkeypatch, tmp_path, name):
+    monkeypatch.setattr(controller, "RESTORE_ROOT", tmp_path)
+    with pytest.raises(controller.RecoveryBlocked, match="Unexpected restore artifact"):
+        controller._private_json(name, {})
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("arguments", [
+    ["--directory", "../outside"], ["--postgres-bin", "/unreviewed/binaries"],
+    ["--cleanup-artifact", "../outside"],
+])
+def test_restore_runner_rejects_paths_before_authorization_or_io(monkeypatch, arguments):
+    monkeypatch.setattr(sys, "argv", ["run_recovery_drill.py", *arguments])
+    monkeypatch.setattr(sys, "platform", "win32")
+    with patch.object(runner, "authorize") as authorize, \
+            patch.object(runner, "export_logical_archive") as export, \
+            pytest.raises(controller.RecoveryBlocked):
+        runner.main()
+    authorize.assert_not_called()
+    export.assert_not_called()
+
+
+def test_retired_restore_cli_cannot_write_caller_destination(monkeypatch, tmp_path):
+    outside = tmp_path / "unreviewed-output"
+    script = str(SCRIPTS / "timeweb_recovery.py")
+    monkeypatch.setattr(sys, "argv", [script, "export-logical", "--directory", str(outside),
+                                     "--postgres-bin", str(tmp_path)])
+    with pytest.raises(SystemExit, match="standalone paths are refused"):
+        runpy.run_path(script, run_name="__main__")
+    assert not outside.exists()
+
+
+@pytest.mark.parametrize("linked_component", ["artifacts", "restore"])
+def test_restore_rejects_symlink_or_junction_before_database_process_and_cleanup(
+    monkeypatch, tmp_path, linked_component,
+):
+    root, outside = tmp_path / "checkout", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    marker = outside / "must-remain"
+    marker.write_bytes(b"outside-owned-restore-area")
+    link = root / "artifacts"
+    if linked_component == "restore":
+        link.mkdir()
+        link = link / "restore"
+    if os.name == "nt":
+        # Directory junctions need no symlink privilege on the native Windows CI.
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(outside)],
+                       check=True, capture_output=True, timeout=5)
+    else:
+        link.symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(controller, "RESTORE_ROOT", root)
+    monkeypatch.setattr(sys, "argv", ["run_recovery_drill.py", "--cleanup-artifact"])
+    archive_key = Fernet.generate_key().decode()
+    with patch("psycopg.connect") as database, \
+            patch.object(controller, "_postgres_process") as process:
+        with pytest.raises(controller.RecoveryBlocked, match="link or escapes"):
+            controller.export_logical_archive(
+                "never-opened-source", tmp_path, cluster_id=4215095, release_sha=SHA,
+                signing_key=KEY, archive_key=archive_key,
+            )
+        with pytest.raises(controller.RecoveryBlocked, match="link or escapes"):
+            runner.main()
+    database.assert_not_called()
+    process.assert_not_called()
+    assert marker.read_bytes() == b"outside-owned-restore-area"
+    assert len(list(outside.iterdir())) == 1
+
+
+def test_fixed_restore_cleanup_preserves_neighboring_artifacts(monkeypatch, tmp_path):
+    monkeypatch.setattr(controller, "RESTORE_ROOT", tmp_path)
+    destination = controller.restore_artifact_path()
+    destination.mkdir(parents=True)
+    neighbor = destination.parent / "unrelated.txt"
+    neighbor.write_text("preserve", encoding="utf-8")
+    controller._private_json("manifest.json", {"test": "owned"})
+    assert json.loads(controller.restore_artifact_path("manifest.json").read_text()) == {
+        "test": "owned",
+    }
+    monkeypatch.setattr(sys, "argv", ["run_recovery_drill.py", "--cleanup-artifact"])
+    assert runner.main() == 0
+    assert not destination.exists()
+    assert neighbor.read_text(encoding="utf-8") == "preserve"

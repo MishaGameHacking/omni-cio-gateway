@@ -218,14 +218,16 @@ def test_research_archive_and_evidence_are_owner_scoped_and_versioned(workspace_
     archived = store.run(owner, run_id)
     assert replay_research_inputs(archived["inputs"])["data_hash"] == result["data_hash"]
     store.save_evidence(owner, {"assets": []}, expected_version=1)
+    owner_account = str(owner)
+    verified_at = database.tbank_connection(owner).verified_at
     with pytest.raises(SettingsVersionConflict):
         store.save_run(
             owner,
             result=result,
             inputs=inputs,
-            account_id=str(owner),
+            account_id=owner_account,
             environment="prod",
-            connection_verified_at=database.tbank_connection(owner).verified_at,
+            connection_verified_at=verified_at,
             strategy_version=draft["version"],
             evidence_version=1,
         )
@@ -254,7 +256,8 @@ def test_candidate_limit_does_not_let_large_bond_catalog_hide_other_classes(work
             conn.execute(
                 "INSERT INTO instrument_catalog (provider, instrument_uid, ticker, "
                 "instrument_type, currency, provider_retrieved_at) "
-                "VALUES ('tbank', %s, %s, %s, 'RUB', now())", (uid, uid, kind),
+                "VALUES ('tbank', %s, %s, %s, 'RUB', now())",
+                (uid, uid, kind),
             )
             conn.execute(
                 "INSERT INTO account_instrument_access (user_id, account_id, provider, "

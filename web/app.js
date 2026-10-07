@@ -1530,12 +1530,15 @@
     slot.draft = selection ? clone(selection.document) : null;
     slot.error = null;
   }
+  const strategySaveUnavailable = slot => !slot.server || slot.dirty || slot.busy || Boolean(slot.error);
   const updateStrategySaveControls = slot => {
-    const unavailable = !slot.server || slot.dirty || slot.busy || Boolean(slot.error);
+    const unavailable = strategySaveUnavailable(slot);
     const assess = $('[data-action="assess-strategy"]');
     if (assess) assess.disabled = unavailable || state.loading.has("assessment");
     const research = $('#research-form [type="submit"]');
     if (research) research.disabled = unavailable || state.loading.has("research");
+    const planner = $('#view-strategies [data-action="execution-plan"]');
+    if (planner) planner.disabled = unavailable || state.executionBusy;
     const title = $(".strategy-heading h2");
     if (title) title.textContent = strategyEditorTitle();
     for (const option of $$("[data-select-strategy]")) option.setAttribute("aria-pressed", String(!slot.draft?.customized && option.dataset.selectStrategy === slot.draft?.base_preset_id));
@@ -1955,8 +1958,8 @@
     $("#view-strategies").innerHTML = `${heading(T("Стратегии"), T("Десять подходов. Ваши цели, ограничения и данные."), button(T("Обновить"), "refresh", {
       small: true
     }))}<div class="strategy-layout">${list}${editor}</div>${dataError("investmentProfile")}${dataError("balancingPolicy")}`;
-    updateSaveStatus("strategy");
     if (document) $("#view-strategies .strategy-editor")?.insertAdjacentHTML("beforeend", executionPlannerCard());
+    updateSaveStatus("strategy");
     U.bindCharts($("#view-strategies"));
   };
   const documentChanged = () => {
@@ -2358,7 +2361,7 @@
     } catch (error) { if (!isCancelled(error)) toast(humanError(error), true); }
     finally { if (control.isConnected) control.disabled = false; }
   };
-  const executionPlannerCard = () => `<section class="card"><h3 class="panel-title">${H("execution.title")}</h3><p class="fine-print">${H("execution.help")}</p><div class="form-actions">${button(T("execution.prepare"), "execution-plan", {primary: true, extra: state.strategy.dirty || state.strategy.busy || state.executionBusy ? "disabled" : ""})}${button(T("execution.history"), "execution-history")}</div></section>`;
+  const executionPlannerCard = () => `<section class="card"><h3 class="panel-title">${H("execution.title")}</h3><p class="fine-print">${H("execution.help")}</p><div class="form-actions">${button(T("execution.prepare"), "execution-plan", {primary: true, extra: strategySaveUnavailable(state.strategy) || state.executionBusy ? "disabled" : ""})}${button(T("execution.history"), "execution-history")}</div></section>`;
   const executionProblem = code => ({
     execution_policy_incomplete: T("execution.error.policy"),
     execution_current_research_required: T("execution.error.research"),
@@ -2379,7 +2382,7 @@
   const executionError = error => executionProblem(error.code || error.message) || humanError(error);
   const openExecutionPlanner = async () => {
     if (!requireUser() || state.executionBusy) return;
-    if (state.strategy.dirty || state.strategy.busy || !state.strategy.server) {
+    if (strategySaveUnavailable(state.strategy)) {
       toast(T("execution.save_first"), true);
       return;
     }
@@ -2953,11 +2956,12 @@
     uncertain: T("Результат требует сверки")
   })[status] || T("Статус не подтверждён");
   const billingHistoryItemHTML = item => {
+    const disabled = state.billingBusy ? " disabled" : "";
     const canOpen = item.status === "pending" && !item.cancel_attempted_at && U.external(item.checkout_url) && ["securepay.tinkoff.ru", "securepayments.tinkoff.ru"].includes(new URL(item.checkout_url).hostname);
     const cancelNotice = item.cancel_attempted_at && ["pending", "uncertain"].includes(item.status) ? `<p class="notice">${H("execution.cancel_pending")}</p>` : "";
     const checkoutLink = canOpen ? `<a class="button primary small" href="${esc(item.checkout_url)}" target="_blank" rel="noopener noreferrer">${H("Открыть оплату в банке")}</a>` : "";
-    const cancelControl = ["creating", "pending", "uncertain"].includes(item.status) && !item.cancel_attempted_at ? `<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="cancel"${state.billingBusy ? " disabled" : ""}>${H("Отменить оплату")}</button>` : "";
-    return `<li class="section-gap"><strong>${esc(billingLabel(item.status))} · ${esc(money(item.amount_kopecks / 100, 2, "RUB", false))}</strong><p class="fine-print">${esc(date(item.created_at, true))} ${H("МСК ·")} ${esc(format(item.period_days, 0))} ${H("дней")}</p>${cancelNotice}<div class="form-actions">${checkoutLink}<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="reconcile"${state.billingBusy ? " disabled" : ""}>${H("Сверить с банком")}</button>${cancelControl}</div></li>`;
+    const cancelControl = ["creating", "pending", "uncertain"].includes(item.status) && !item.cancel_attempted_at ? `<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="cancel"${disabled}>${H("Отменить оплату")}</button>` : "";
+    return `<li class="section-gap"><strong>${esc(billingLabel(item.status))} · ${esc(money(item.amount_kopecks / 100, 2, "RUB", false))}</strong><p class="fine-print">${esc(date(item.created_at, true))} ${H("МСК ·")} ${esc(format(item.period_days, 0))} ${H("дней")}</p>${cancelNotice}<div class="form-actions">${checkoutLink}<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="reconcile"${disabled}>${H("Сверить с банком")}</button>${cancelControl}</div></li>`;
   };
   const billingHTML = () => {
     const value = state.data.billing;
@@ -3350,7 +3354,7 @@
         new Promise((_, reject) => { timeout = setTimeout(() => reject(Object.assign(new Error("service_worker_unavailable"), {code: "service_worker_unavailable"})), 15000); })
       ]).finally(() => clearTimeout(timeout));
       if (generation !== state.generation) return;
-      const bytes = Uint8Array.from(atob(publicKey.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - publicKey.length % 4) % 4)), char => char.charCodeAt(0));
+      const bytes = Uint8Array.from(atob(publicKey.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - publicKey.length % 4) % 4)), char => char.codePointAt(0));
       let subscription = await registration.pushManager.getSubscription();
       const previous = subscription?.options?.applicationServerKey;
       if (previous) {
@@ -3542,7 +3546,8 @@
     const status = state.data.assistantStatus;
     if (!status) { toast(humanError(state.errors.assistantStatus), true); return; }
     const endpoints = status.allowed_endpoints || [];
-    const connectionForm = endpoints.length ? `<form id="assistant-connection-form" data-version="${status.connection_version}">${select("provider", T("Протокол"), [["ollama", "Ollama"], ["openai_compatible", "OpenAI compatible"]], status.provider || "ollama")}${select("base_url", T("Адрес, разрешённый оператором"), endpoints.map(url => [url,url]), status.base_url || endpoints[0])}${field({name: "model", label: T("Идентификатор модели"), value: status.model || "", required: true})}<label class="field"><span>${H("API-ключ")}</span><input type="password" name="api_key" autocomplete="new-password" maxlength="4096" placeholder="${status.has_key ? T("Оставьте пустым, чтобы сохранить ключ") : T("Ключ провайдера")}"><small>${H("Ключ шифруется на сервере и не возвращается в интерфейс.")}</small></label><button class="button primary" type="submit">${H("Сохранить подключение")}</button><output id="assistant-connection-message" class="form-message"></output></form>` : ("<p class=\"notice\">" + H("Оператор ещё не указал разрешённые адреса моделей.") + "</p>");
+    const keyPlaceholder = status.has_key ? T("Оставьте пустым, чтобы сохранить ключ") : T("Ключ провайдера");
+    const connectionForm = endpoints.length ? `<form id="assistant-connection-form" data-version="${status.connection_version}">${select("provider", T("Протокол"), [["ollama", "Ollama"], ["openai_compatible", "OpenAI compatible"]], status.provider || "ollama")}${select("base_url", T("Адрес, разрешённый оператором"), endpoints.map(url => [url,url]), status.base_url || endpoints[0])}${field({name: "model", label: T("Идентификатор модели"), value: status.model || "", required: true})}<label class="field"><span>${H("API-ключ")}</span><input type="password" name="api_key" autocomplete="new-password" maxlength="4096" placeholder="${esc(keyPlaceholder)}"><small>${H("Ключ шифруется на сервере и не возвращается в интерфейс.")}</small></label><button class="button primary" type="submit">${H("Сохранить подключение")}</button><output id="assistant-connection-message" class="form-message"></output></form>` : ("<p class=\"notice\">" + H("Оператор ещё не указал разрешённые адреса моделей.") + "</p>");
     const checkedAt = status.health?.checked_at ? `${T("Последняя проверка:")} ${esc(date(status.health.checked_at,true))} ${T("МСК")}` : T("Соединение ещё не проверено.");
     openDialog(T("Подключение ИИ"), `<p class="help-copy">${esc(assistantHealthLabel(status))}</p><p class="fine-print">${H("Сервис проверяет наличие указанной модели и доступность API отдельно от сохранения настроек.")}</p>${connectionForm}<div class="form-actions">${button(T("Проверить соединение"), "assistant-health", {small: true, extra: !status.enabled || !status.configured ? "disabled" : ""})}${status.connection_version ? button(T("Удалить подключение"), "assistant-disconnect", {small: true}) : ""}</div><p class="fine-print">${checkedAt}</p>`);
   };
@@ -4365,7 +4370,7 @@
       };
       const handler = clickHandlers.find(candidate => candidate.matches(context));
       if (handler) {
-        await handler.run(context);
+        await Promise.resolve(handler.run(context));
       }
     } catch (error) {
       if (!isCancelled(error)) toast(humanError(error), true);
@@ -5491,7 +5496,7 @@
     control
   }) {
     event.preventDefault();
-    openEvent(control.dataset.eventOpen);
+    await openEvent(control.dataset.eventOpen);
   }
   async function handleClickEventRead({
     event,

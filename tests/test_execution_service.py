@@ -110,7 +110,11 @@ def _service() -> tuple[PortfolioExecutionService, Mock, Mock]:
     store = Mock()
     broker = Mock(spec=BrokerService)
     broker.status.return_value = BrokerConnectionStatus(
-        True, "sandbox", "sandbox-account", "Synthetic", NOW,
+        True,
+        "sandbox",
+        "sandbox-account",
+        "Synthetic",
+        NOW,
     )
     service = PortfolioExecutionService(
         store=store,  # type: ignore[arg-type]
@@ -161,9 +165,9 @@ def test_partial_fill_is_persisted_without_advancing_next_leg() -> None:
     assert result == "partially_filled"
     kwargs = store.transition_leg.call_args.kwargs
     assert kwargs["new_status"] == "partially_filled"
-    assert kwargs["lots_executed"] == 1
-    assert kwargs["executed_amount_rub"] == Decimal("1100")
-    assert kwargs["executed_commission_rub"] == Decimal("5")
+    assert kwargs["observation"].lots_executed == 1
+    assert kwargs["observation"].executed_amount_rub == Decimal("1100")
+    assert kwargs["observation"].executed_commission_rub == Decimal("5")
 
 
 def test_sandbox_account_must_match_persisted_execution_account() -> None:
@@ -182,18 +186,31 @@ def test_sandbox_account_must_match_persisted_execution_account() -> None:
 
 
 @pytest.mark.parametrize("mode", ["sandbox", "live"])
-@pytest.mark.parametrize("leg_status", [
-    "submitting", "submitted", "partially_filled", "cancel_requested", "reconciling",
-])
+@pytest.mark.parametrize(
+    "leg_status",
+    [
+        "submitting",
+        "submitted",
+        "partially_filled",
+        "cancel_requested",
+        "reconciling",
+    ],
+)
 def test_reconcile_reads_one_old_request_and_never_posts_cancels_or_advances(mode, leg_status):
     service, store, broker = _service()
     environment = "prod" if mode == "live" else "sandbox"
     run = replace(
-        _run(), mode=mode, provider_environment=environment,
+        _run(),
+        mode=mode,
+        provider_environment=environment,
         live_mandate_id=UUID(int=71) if mode == "live" else None,
     )
     broker.status.return_value = BrokerConnectionStatus(
-        True, environment, run.account_id, "Synthetic", NOW,
+        True,
+        environment,
+        run.account_id,
+        "Synthetic",
+        NOW,
     )
     leg = _leg(status=leg_status, submitted_at=NOW - timedelta(days=3))
     pending = replace(_leg(), id=UUID(int=72), request_id=UUID(int=73), leg_index=1)
@@ -303,7 +320,7 @@ def test_new_dispatch_timeout_is_reconciled_without_reposting_or_advancing():
     broker.submit_limit_order.assert_called_once()
     assert broker.submit_limit_order.call_args.kwargs["request_id"] == str(REQUEST_ID)
     assert store.transition_leg.call_args.kwargs["new_status"] == "submitting"
-    assert store.transition_leg.call_args.kwargs["strategy_authority"][0] == session
+    assert store.transition_leg.call_args.kwargs["strategy_context"].session_digest == session
     broker.sandbox_order_state.assert_called_once_with(
         USER_ID, request_id=str(REQUEST_ID), price_type="point"
     )

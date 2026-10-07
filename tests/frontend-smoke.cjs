@@ -841,6 +841,12 @@ function captureBrowserLayout() {
       };
     })
   } : {required: false};
+  const heroDecorations = !visibleApp && !modal && innerWidth > 680 && innerWidth <= 960 ? {
+    required: true,
+    rect: document.querySelector(".hero").getBoundingClientRect().toJSON(),
+    labels: [...document.querySelectorAll(".hero .orbit-node")].map(element => ({text:element.textContent.trim(),rect:element.getBoundingClientRect().toJSON(),visible:Boolean(element.getClientRects().length)})),
+    protected: [...document.querySelectorAll(".hero-copy,.hero-insight,.hero-data,.hero-signature")].map(element => ({name:element.className,rect:element.getBoundingClientRect().toJSON()}))
+  } : {required:false};
   const drawer = document.querySelector("#app-sidebar").dataset.open === "true";
   const nav = document.querySelector(visibleApp ? "#mobile-nav" : ".public-mobile-nav");
   const viewport = {
@@ -943,6 +949,7 @@ function captureBrowserLayout() {
       actions: readableElements(".button, .icon-button")
     },
     hero,
+    heroDecorations,
     navigation,
     charts,
     tables
@@ -1077,6 +1084,18 @@ function assertMobileHero(data, label) {
     if (previous) assert.ok(region.rect.top >= previous.rect.bottom - 1, label + ": mobile hero content follows the preceding region without overlap " + JSON.stringify({previous, region}));
     if (region.name === "lead") assert.ok(region.fontSize >= 16, label + ": the complete hero description remains readable " + JSON.stringify(region));
     previous = region;
+  }
+}
+function assertHeroDecorations(data, label) {
+  const decorations = data.heroDecorations;
+  if (!decorations.required) return;
+  assert.equal(decorations.labels.length,7,label+": all reference asset labels remain present on tablets");
+  const intersects = (a,b) => a.left-4 < b.right && a.right+4 > b.left && a.top-4 < b.bottom && a.bottom+4 > b.top;
+  for (const [index,item] of decorations.labels.entries()) {
+    assert.ok(item.visible && item.rect.width > 0 && item.rect.height > 0,label+": decorative label stays visible "+item.text);
+    assert.ok(item.rect.left >= decorations.rect.left+4 && item.rect.right <= decorations.rect.right-4 && item.rect.top >= decorations.rect.top+4 && item.rect.bottom <= decorations.rect.bottom-4,label+": decorative label fits the planet area "+item.text);
+    for (const region of decorations.protected) assert.equal(intersects(item.rect,region.rect),false,label+": decorative marker cannot cross text, controls or information cards "+JSON.stringify({item,region}));
+    for (const previous of decorations.labels.slice(0,index)) assert.equal(intersects(item.rect,previous.rect),false,label+": decorative labels do not overlap each other "+JSON.stringify({item,previous}));
   }
 }
 function assertChartLayout(charts, label) {
@@ -1293,6 +1312,7 @@ const runBrowser = async base => {
       assertMobileNavigation(data, label);
       assertReadability(data, label);
       assertMobileHero(data, label);
+      assertHeroDecorations(data, label);
       assertChartLayout(data.charts, label);
       assertTableClipping(data.tables, label);
     };
@@ -2093,6 +2113,9 @@ function serveTestExecutionPlans({fixture,path,body,response}) {
     assert.equal(body.mode, "shadow");
     const research = fixture.researchRuns.find(item => item.id === body.research_run_id);
     assert.ok(research, "The planner must use an owned research record");
+    assert.equal(research.strategy_version,fixture.selection.version,"Research must describe the exact saved strategy");
+    assert.ok(Date.now()-Date.parse(research.created_at)<86400000,"Research is within the 24-hour planning window");
+    assert.equal(fixture.selection.document.profile.reserve_rub,"5000","Execution fixture needs an explicit known reserve");
     assert.equal(body.commission_bps, research.inputs.commission_bps);
     assert.equal(body.slippage_bps, research.inputs.slippage_bps);
     const payload={strategy_version:fixture.selection.version,nav_rub:"150000.25",cash_before_rub:"100000.25",cash_after_rub:"97998.25",reserve_rub:"5000",gross_turnover_rub:"2000",mode:"shadow",account_id:"synthetic-account",legs:[{action:"buy",instrument_uid:"synthetic-a",ticker:"SYNA",lots:2,lot_size:10,limit_price:"100",gross_amount_rub:"2000",commission_cap_rub:"2",tax_reserve_rub:"0"}]};
@@ -2226,7 +2249,11 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   await checkLayout("payments-and-assistant");
   await click('#workspace-dialog [data-close-dialog]');
 }
-async function exerciseExecutionPlanner({fixture,click,wait,evaluate,screenshot,checkLayout,round}) {
+async function exerciseExecutionPlanner({fixture,click,fieldValue,wait,evaluate,screenshot,checkLayout,round}) {
+  await fieldValue('#strategy-form','strategy.profile.reserve_rub','5000');
+  await wait('document.querySelector("#view-strategies [data-action=execution-plan]")?.disabled===true',"Planner is blocked while edited parameters are unsaved");
+  await until(()=>fixture.selection.document.profile.reserve_rub==="5000","Explicit reserve is saved before planning");
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved" && document.querySelector("#view-strategies [data-action=execution-plan]")?.disabled===false',"Planner becomes available after the same strategy version is acknowledged");
   fixture.researchRuns=[{id:require("node:crypto").randomUUID(),strategy_version:fixture.selection.version,status:"computed",created_at:new Date().toISOString(),metrics:{net_return_percent:"1.25"},inputs:{commission_bps:"10",slippage_bps:"20"}}];
   const prepare = async () => {
     await click('#view-strategies [data-action="execution-plan"]');

@@ -164,16 +164,17 @@ def test_saved_goal_scenarios_enforce_two_version_cas_tenant_and_cascade(
                                  expected_goal_version=1)
     assert first["version"] == 1
     assert first["forecast"]["status"] == "available"
+    document = plan()
     with pytest.raises(WorkspaceNotFound):
         store.goal_plan(other, goal_id)
     with pytest.raises(WorkspaceNotFound):
-        store.save_goal_plan(other, goal_id, plan(), expected_version=0, expected_goal_version=1)
+        store.save_goal_plan(other, goal_id, document, expected_version=0, expected_goal_version=1)
     with pytest.raises(SettingsVersionConflict):
-        store.save_goal_plan(owner, goal_id, plan(), expected_version=0, expected_goal_version=1)
+        store.save_goal_plan(owner, goal_id, document, expected_version=0, expected_goal_version=1)
     store.update_goal(owner, goal_id, goal_document(target_date=target, title="Updated"),
                       expected_version=1)
     with pytest.raises(SettingsVersionConflict):
-        store.save_goal_plan(owner, goal_id, plan(), expected_version=1, expected_goal_version=1)
+        store.save_goal_plan(owner, goal_id, document, expected_version=1, expected_goal_version=1)
 
     def concurrent_save(monthly: str) -> bool:
         try:

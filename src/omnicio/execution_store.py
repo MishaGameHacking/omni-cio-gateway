@@ -31,6 +31,23 @@ class ExecutionLedgerError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class StrategyExecutionContext:
+    session_digest: bytes
+    legal_versions: dict[str, str]
+    payload: dict[str, Any]
+    limits: tuple[Decimal, Decimal] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionLegObservation:
+    provider_order_id: str | None = None
+    provider_status: str | None = None
+    lots_executed: int | None = None
+    executed_amount_rub: Decimal | None = None
+    executed_commission_rub: Decimal | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionRunRecord:
     id: UUID
     user_id: UUID
@@ -784,17 +801,13 @@ class ExecutionStore:
         new_status: ExecutionLegStatus,
         event_type: str,
         details: dict[str, object],
-        provider_order_id: str | None = None,
-        provider_status: str | None = None,
-        lots_executed: int | None = None,
-        executed_amount_rub: Decimal | None = None,
-        executed_commission_rub: Decimal | None = None,
+        observation: ExecutionLegObservation | None = None,
         now: datetime | None = None,
-        strategy_authority: tuple[bytes, dict[str, str], dict[str, Any]] | None = None,
-        strategy_limits: tuple[Decimal, Decimal] | None = None,
+        strategy_context: StrategyExecutionContext | None = None,
     ) -> tuple[ExecutionRunRecord, ExecutionLegRecord]:
         _validate_leg_transition_request(expected_statuses, event_type)
         observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+        update = observation or ExecutionLegObservation()
 
         with (
             self.database.pool.connection() as conn,
@@ -802,12 +815,21 @@ class ExecutionStore:
             conn.cursor() as cur,
         ):
             self._tenant(cur, user_id)
-            if strategy_authority is not None:
-                digest, legal_versions, payload = strategy_authority
-                self._strategy_authority(cur, user_id, digest, legal_versions, payload)
-                if strategy_limits is not None:
+            if strategy_context is not None:
+                self._strategy_authority(
+                    cur,
+                    user_id,
+                    strategy_context.session_digest,
+                    strategy_context.legal_versions,
+                    strategy_context.payload,
+                )
+                if strategy_context.limits is not None:
                     self._validate_plan_budget(
-                        cur, user_id, payload, *strategy_limits, exclude_run_id=run_id
+                        cur,
+                        user_id,
+                        strategy_context.payload,
+                        *strategy_context.limits,
+                        exclude_run_id=run_id,
                     )
             cur.execute(
                 """
@@ -890,9 +912,9 @@ class ExecutionStore:
 
             next_lots, next_amount, next_commission = _transition_values(
                 leg,
-                lots_executed=lots_executed,
-                executed_amount_rub=executed_amount_rub,
-                executed_commission_rub=executed_commission_rub,
+                lots_executed=update.lots_executed,
+                executed_amount_rub=update.executed_amount_rub,
+                executed_commission_rub=update.executed_commission_rub,
             )
 
             terminal_at = observed_at if new_status in _TERMINAL_LEGS else None
@@ -950,14 +972,14 @@ class ExecutionStore:
                 """,
                 (
                     new_status,
-                    provider_order_id,
-                    provider_status,
+                    update.provider_order_id,
+                    update.provider_status,
                     next_lots,
                     next_amount,
                     next_commission,
                     new_status,
                     observed_at,
-                    provider_status,
+                    update.provider_status,
                     observed_at,
                     terminal_at,
                     leg_id,

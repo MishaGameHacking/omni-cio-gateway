@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import math
@@ -11,7 +10,6 @@ import pathlib
 import re
 import secrets
 import subprocess
-import sys
 import tempfile
 import time
 import tomllib
@@ -923,9 +921,30 @@ def ensure_recovery_point(
 
 
 MAX_LOGICAL_ARCHIVE_BYTES = 64 * 1024 * 1024
+RESTORE_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_RESTORE_ARTIFACT_NAMES = frozenset({
+    "database.dump.encrypted", "manifest.json", "restore-verification.json",
+})
 
 
-def _private_json(path: pathlib.Path, payload: dict[str, Any]) -> None:
+def restore_artifact_path(name: str | None = None) -> pathlib.Path:
+    """Only this checkout's fixed artifact tree; never follow links or caller paths."""
+    if name is not None and name not in _RESTORE_ARTIFACT_NAMES:
+        raise RecoveryBlocked("Unexpected restore artifact name")
+    root = RESTORE_ROOT
+    if not root.is_absolute() or not root.is_dir() or root.resolve() != root:
+        raise RecoveryBlocked("Restore workspace is not the owned checkout")
+    current = root
+    parts = ("artifacts", "restore") + ((name,) if name is not None else ())
+    for part in parts:
+        current = current / part
+        if current.is_symlink() or current.is_junction() or current.resolve() != current:
+            raise RecoveryBlocked("Restore artifact path contains a link or escapes its workspace")
+    return current
+
+
+def _private_json(name: str, payload: dict[str, Any]) -> None:
+    path = restore_artifact_path(name)
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
     with path.open("x", encoding="utf-8") as output:
         os.chmod(path, 0o600)
@@ -961,7 +980,7 @@ def _postgres_process(binary: pathlib.Path, arguments: list[str], dsn: str) -> N
 
 
 def export_logical_archive(
-    source_dsn: str, binary: pathlib.Path, destination: pathlib.Path, *,
+    source_dsn: str, binary: pathlib.Path, *,
     cluster_id: int, release_sha: str, signing_key: str, archive_key: str,
 ) -> dict[str, Any]:
     """Explicit operator export, not the scheduled physical-backup reconciler."""
@@ -970,14 +989,16 @@ def export_logical_archive(
 
     from omnicio import recovery as contract
 
-    # Validate custody before opening the source. The CLI separately proves the
-    # source host against Timeweb and accepted main before invoking this function.
+    # Validate custody before opening the source. The accepted-main runner proves
+    # the source host against Timeweb before invoking this function.
     contract.sign_recovery_evidence({}, signing_key)
     cipher = Fernet(archive_key)
-    destination.mkdir(mode=0o700, parents=False, exist_ok=False)
+    destination = restore_artifact_path()
+    destination.parent.mkdir(mode=0o700, exist_ok=True)
+    restore_artifact_path().mkdir(mode=0o700, exist_ok=False)
     suffix = ".exe" if os.name == "nt" else ""
     try:
-        with tempfile.TemporaryDirectory(prefix="logical-", dir=destination) as temporary:
+        with tempfile.TemporaryDirectory(prefix="omnicio-logical-") as temporary:
             dump = pathlib.Path(temporary) / "database.dump"
             with psycopg.connect(source_dsn) as source:
                 source.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
@@ -1006,7 +1027,7 @@ def export_logical_archive(
             if not raw.startswith(b"PGDMP"):
                 raise RecoveryBlocked("Expected a PostgreSQL custom archive")
             encrypted = cipher.encrypt(raw)
-            archive = destination / "database.dump.encrypted"
+            archive = restore_artifact_path("database.dump.encrypted")
             with archive.open("xb") as output:
                 os.chmod(archive, 0o600)
                 output.write(encrypted)
@@ -1020,7 +1041,7 @@ def export_logical_archive(
                 "schema_digest": contract.evidence_digest(guards),
             }
             envelope = contract.sign_recovery_evidence(payload, signing_key)
-            _private_json(destination / "manifest.json", envelope)
+            _private_json("manifest.json", envelope)
             return envelope
     except (OSError, ValueError, psycopg.Error):
         raise RecoveryBlocked("Logical export failed; no restore proof exists") from None
@@ -1041,26 +1062,26 @@ def _restore_tenant_checks(connection: Any, role: str, guards: list[Any]) -> Non
         connection.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(role)))
         for identity in [None, *users]:
             connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (identity or "",))
+            predicate = sql.SQL("") if identity is None else sql.SQL(" WHERE user_id <> %s::uuid")
+            parameters = () if identity is None else (identity,)
             for name in tables:
                 query = sql.SQL("SELECT count(*) FROM {}{}").format(
-                    sql.Identifier("public", name),
-                    sql.SQL("") if identity is None else sql.SQL(" WHERE user_id <> %s::uuid"),
+                    sql.Identifier("public", name), predicate,
                 )
-                count = connection.execute(
-                    query, () if identity is None else (identity,),
-                ).fetchone()[0]
+                count = connection.execute(query, parameters).fetchone()[0]
                 if count != 0:
                     raise RecoveryBlocked("Restored tenant isolation check failed")
 
 
 def _read_logical_export(
-    archive: pathlib.Path, envelope: object, *, release_sha: str,
+    envelope: object, *, release_sha: str,
     signing_key: str, archive_key: str,
 ) -> tuple[dict[str, Any], bytes]:
     from cryptography.fernet import Fernet, InvalidToken
 
     from omnicio import recovery as contract
 
+    archive = restore_artifact_path("database.dump.encrypted")
     proof = contract.verified_recovery_evidence(envelope, signing_key)
     required = {"kind", "source_kind", "cluster_id", "release_sha", "source_at",
                 "source_system_id", "archive_sha256", "encrypted_sha256",
@@ -1085,7 +1106,7 @@ def _read_logical_export(
 
 
 def verify_logical_archive(
-    isolated_dsn: str, binary: pathlib.Path, archive: pathlib.Path, envelope: object, *,
+    isolated_dsn: str, binary: pathlib.Path, envelope: object, *,
     release_sha: str, signing_key: str, archive_key: str,
 ) -> dict[str, Any]:
     """Restore only into a newly created database on another loopback cluster."""
@@ -1096,7 +1117,7 @@ def verify_logical_archive(
     from omnicio import recovery as contract
 
     proof, raw = _read_logical_export(
-        archive, envelope, release_sha=release_sha, signing_key=signing_key,
+        envelope, release_sha=release_sha, signing_key=signing_key,
         archive_key=archive_key,
     )
     options = conninfo_to_dict(isolated_dsn)
@@ -1256,55 +1277,5 @@ print('restore_receipt_installed')
         raise RecoveryBlocked("Runtime restore proof installation was not confirmed")
 
 
-def restore_cli() -> int:
-    """Manual accepted-main job only; never called by scheduled backup reconciliation."""
-    from timeweb_auth_postgres import TimewebClient
-    from verify_main_release import (
-        GitHubClient,
-        release_context,
-        require_checkout,
-        wait_for_release,
-    )
-
-    parser = argparse.ArgumentParser(description="Isolated logical recovery verification")
-    parser.add_argument("action", choices=("export-logical", "verify-logical"))
-    parser.add_argument("--directory", type=pathlib.Path, required=True)
-    parser.add_argument("--postgres-bin", type=pathlib.Path, required=True)
-    args = parser.parse_args()
-    sha, token = release_context()
-    if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch":
-        raise RecoveryBlocked("Logical recovery requires an explicit manual accepted-main run")
-    require_checkout(sha)
-    wait_for_release(GitHubClient(token, deadline=time.monotonic() + 600), sha)
-    signing_key = os.environ.get("OMNICIO_RESTORE_RECEIPT_KEY", "")
-    archive_key = os.environ.get("OMNICIO_RESTORE_ARCHIVE_KEY", "")
-    if args.action == "export-logical":
-        source = os.environ.get("OMNICIO_RESTORE_SOURCE_DSN", "")
-        validate_export_source(source, TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", "")))
-        export_logical_archive(
-            source, args.postgres_bin, args.directory, cluster_id=load_policy().cluster_id,
-            release_sha=sha, signing_key=signing_key, archive_key=archive_key,
-        )
-        print("Encrypted logical export created; restoration is not yet verified.")
-    else:
-        manifest = args.directory / "manifest.json"
-        if manifest.stat().st_size > 16384:
-            raise RecoveryBlocked("Export manifest exceeds the reviewed size limit")
-        envelope = json.loads(manifest.read_text(encoding="utf-8"))
-        result = verify_logical_archive(
-            os.environ.get("OMNICIO_RESTORE_ISOLATED_DSN", ""), args.postgres_bin,
-            args.directory / "database.dump.encrypted", envelope, release_sha=sha,
-            signing_key=signing_key, archive_key=archive_key,
-        )
-        _private_json(args.directory / "restore-verification.json", result)
-        print("Isolated logical restoration verified. Physical snapshot restoration is unverified.")
-    return 0
-
-
 if __name__ == "__main__":
-    try:
-        raise SystemExit(restore_cli())
-    except Exception as exc:
-        # Exceptions from database/OS/native clients may embed a DSN or file data.
-        print(f"Recovery verification failed: {type(exc).__name__}", file=sys.stderr)
-        raise SystemExit(1) from None
+    raise SystemExit("Use the accepted-main manual restore workflow; standalone paths are refused")

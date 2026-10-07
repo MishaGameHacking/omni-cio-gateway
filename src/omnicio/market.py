@@ -460,16 +460,7 @@ def _market_price_units(
     if kind in {"share", "etf"}:
         return "currency" if currency else "unknown", currency, price, currency
     if kind == "bond":
-        nominal = metadata.nominal
-        cash_price = None
-        if nominal is not None and price is not None and nominal.currency.upper() == currency:
-            try:
-                value = Decimal(nominal.value)
-            except InvalidOperation as exc:
-                raise TBankUnavailable("instrument_nominal_invalid") from exc
-            if not value.is_finite() or value <= 0:
-                raise TBankUnavailable("instrument_nominal_invalid")
-            cash_price = format(Decimal(price) * value / 100, "f")
+        cash_price = _bond_cash_price(metadata, price)
         return "percent_nominal", None, cash_price, currency if cash_price is not None else None
     if kind in {"futures", "option"}:
         return "points", None, None, None
@@ -478,6 +469,21 @@ def _market_price_units(
         # incorrectly imply that it is already a per-unit cash valuation.
         return "per_nominal", currency, None, None
     return "unknown", None, None, None
+
+
+def _bond_cash_price(metadata: TBankInstrumentMetadata, price: str | None) -> str | None:
+    nominal = metadata.nominal
+    currency = metadata.currency.upper() or None
+    if (nominal is None or price is None
+            or nominal.currency.upper() != currency):
+        return None
+    try:
+        value = Decimal(nominal.value)
+    except InvalidOperation as exc:
+        raise TBankUnavailable("instrument_nominal_invalid") from exc
+    if not value.is_finite() or value <= 0:
+        raise TBankUnavailable("instrument_nominal_invalid")
+    return format(Decimal(price) * value / 100, "f")
 
 
 def _reference_rate(rate: CBRRate) -> MarketReferenceRate:

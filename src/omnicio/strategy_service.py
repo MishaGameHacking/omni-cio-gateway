@@ -45,7 +45,7 @@ from .strategy_assessment import (
     rating_notch,
     select_strategy_candidates,
 )
-from .tbank import TBankHistoricCandle, TBankUnavailable
+from .tbank import TBankAssetFundamental, TBankHistoricCandle, TBankUnavailable
 
 
 def _identity_time(row: Mapping[str, Any], prefix: str, now: datetime) -> datetime | None:
@@ -240,28 +240,7 @@ def _research_price_bars(
         by_day = {datetime.fromisoformat(item["time"]).date(): item for item in values}
         if any(bar.time.date() not in by_day for bar in bars):
             return ()
-        result = []
-        for bar in bars:
-            value = by_day[bar.time.date()]
-            nominal = Decimal(value["nominal_rub"])
-            opening = Decimal(value["accrued_interest_open_rub"])
-            closing = Decimal(value["accrued_interest_close_rub"])
-            result.append(
-                replace(
-                    bar,
-                    open=str(Decimal(bar.open) * nominal / 100 + opening) if bar.open else None,
-                    close=str(Decimal(bar.close) * nominal / 100 + closing),
-                    # Conservative intraday bounds; only exact opening/closing NKD
-                    # affect order fills and valuation in this daily model.
-                    high=str(Decimal(bar.high) * nominal / 100 + max(opening, closing))
-                    if bar.high
-                    else None,
-                    low=str(Decimal(bar.low) * nominal / 100 + min(opening, closing))
-                    if bar.low
-                    else None,
-                )
-            )
-        return tuple(result)
+        return tuple(_dirty_bond_bar(bar, by_day[bar.time.date()]) for bar in bars)
     if (
         str(row.get("nominal_currency") or "").upper() != "RUB"
         or row.get("amortization") is not False
@@ -274,22 +253,43 @@ def _research_price_bars(
         return ()
     if not nominal.is_finite() or nominal <= 0:
         return ()
-    result = []
-    for bar in bars:
-        values = {}
-        for name in ("open", "high", "low", "close"):
-            raw = getattr(bar, name)
-            values[name] = str(Decimal(raw) * nominal / 100) if raw is not None else None
-        result.append(
-            replace(
-                bar,
-                open=values["open"],
-                high=values["high"],
-                low=values["low"],
-                close=str(Decimal(bar.close) * nominal / 100),
-            )
-        )
-    return tuple(result)
+    return tuple(_clean_bond_bar(bar, nominal) for bar in bars)
+
+
+def _dirty_bond_bar(bar: TBankHistoricCandle, value: Mapping[str, Any]) -> TBankHistoricCandle:
+    nominal = Decimal(value["nominal_rub"])
+    opening = Decimal(value["accrued_interest_open_rub"])
+    closing = Decimal(value["accrued_interest_close_rub"])
+    # Intraday bounds are conservative; only exact opening/closing NKD affect fills/NAV.
+    return TBankHistoricCandle(
+        instrument_uid=bar.instrument_uid,
+        volume_lots=bar.volume_lots,
+        time=bar.time,
+        is_complete=bar.is_complete,
+        source=bar.source,
+        open=str(Decimal(bar.open) * nominal / 100 + opening) if bar.open else None,
+        close=str(Decimal(bar.close) * nominal / 100 + closing),
+        high=str(Decimal(bar.high) * nominal / 100 + max(opening, closing)) if bar.high else None,
+        low=str(Decimal(bar.low) * nominal / 100 + min(opening, closing)) if bar.low else None,
+    )
+
+
+def _clean_bond_bar(bar: TBankHistoricCandle, nominal: Decimal) -> TBankHistoricCandle:
+    values = {}
+    for name in ("open", "high", "low", "close"):
+        raw = getattr(bar, name)
+        values[name] = str(Decimal(raw) * nominal / 100) if raw is not None else None
+    return TBankHistoricCandle(
+        instrument_uid=bar.instrument_uid,
+        volume_lots=bar.volume_lots,
+        time=bar.time,
+        is_complete=bar.is_complete,
+        source=bar.source,
+        open=values["open"],
+        high=values["high"],
+        low=values["low"],
+        close=str(Decimal(bar.close) * nominal / 100),
+    )
 
 
 def _research_fundamentals(
@@ -305,36 +305,38 @@ def _research_fundamentals(
         values = broker.candidate_fundamentals(user_id, ids)
     except TBankUnavailable:
         return {}
+    return {item.asset_uid: _fundamental_facts(item, now) for item in values}
+
+
+def _fundamental_facts(item: TBankAssetFundamental, now: datetime) -> dict[str, StrategyFact]:
     source = "https://developer.tbank.ru/invest/api/instruments-service-get-asset-fundamentals"
-    result = {}
-    for item in values:
-        facts = {}
-        for key, raw in (
-            ("debt_to_ebitda", item.total_debt_to_ebitda_mrq),
-            ("free_cash_flow_ttm", item.free_cash_flow_ttm),
-            ("net_income_ttm", item.net_income_ttm),
-        ):
-            if raw is not None:
-                number = Decimal(raw)
-                if number.is_finite() and number != 0:
-                    facts[key] = StrategyFact(number, now, source)
-        capitalization = item.market_capitalization
-        cashflow = item.free_cash_flow_ttm
-        if isinstance(capitalization, str) and isinstance(cashflow, str):
-            cap, flow = Decimal(capitalization), Decimal(cashflow)
-            if cap.is_finite() and flow.is_finite() and cap > 0 and flow != 0:
-                facts["free_cashflow_yield_percent"] = StrategyFact(flow / cap * 100, now, source)
-        payout = item.dividend_payout_ratio_fy
-        if isinstance(payout, str):
-            ratio = Decimal(payout)
-            if ratio.is_finite() and ratio > 0:
-                facts["payout_ratio_percent"] = StrategyFact(ratio, now, source)
-        # The source does not document ROE's numeric scale, so its raw value
-        # cannot satisfy a percentage-based profitability threshold.
-        # The provider does not expose publication time in this DTO. These facts
-        # may support today's screen, never selection inside an earlier backtest.
-        result[item.asset_uid] = facts
-    return result
+    facts = {}
+    for key, raw in (
+        ("debt_to_ebitda", item.total_debt_to_ebitda_mrq),
+        ("free_cash_flow_ttm", item.free_cash_flow_ttm),
+        ("net_income_ttm", item.net_income_ttm),
+    ):
+        if raw is None:
+            continue
+        number = Decimal(raw)
+        if number.is_finite() and number != 0:
+            facts[key] = StrategyFact(number, now, source)
+    capitalization = item.market_capitalization
+    cashflow = item.free_cash_flow_ttm
+    if isinstance(capitalization, str) and isinstance(cashflow, str):
+        cap, flow = Decimal(capitalization), Decimal(cashflow)
+        if cap.is_finite() and flow.is_finite() and cap > 0 and flow != 0:
+            facts["free_cashflow_yield_percent"] = StrategyFact(flow / cap * 100, now, source)
+    payout = item.dividend_payout_ratio_fy
+    if isinstance(payout, str):
+        ratio = Decimal(payout)
+        if ratio.is_finite() and ratio > 0:
+            facts["payout_ratio_percent"] = StrategyFact(ratio, now, source)
+    # The source does not document ROE's numeric scale, so its raw value
+    # cannot satisfy a percentage-based profitability threshold.
+    # The provider does not expose publication time in this DTO. These facts
+    # may support today's screen, never selection inside an earlier backtest.
+    return facts
 
 
 def _user_asset_evidence(

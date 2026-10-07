@@ -342,15 +342,18 @@ def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_e
     monkeypatch.syspath_prepend(str(script.parent))
     runner = importlib.import_module("run_recovery_drill")
     spec = importlib.util.spec_from_file_location("synthetic_operator_restore", script)
-    assert spec and spec.loader
+    assert spec is not None
+    assert spec.loader is not None
     recovery = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, spec.name, recovery)
     spec.loader.exec_module(recovery)
+    monkeypatch.setattr(recovery, "RESTORE_ROOT", tmp_path)
     binary = Path(os.environ["OMNICIO_TEST_POSTGRES_BIN"])
     suffix = ".exe" if os.name == "nt" else ""
     base = os.environ["OMNICIO_TEST_DATABASE_URL"]
     options = conninfo_to_dict(base)
-    assert options["host"] == "127.0.0.1" and options["dbname"] == "omnicio_test"
+    assert options["host"] == "127.0.0.1"
+    assert options["dbname"] == "omnicio_test"
     source_name = "omnicio_export_" + uuid4().hex
     target_data = tmp_path / "target"
     with socket.socket() as listener:
@@ -383,25 +386,25 @@ def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_e
                             "VALUES (%s, 1, %s::jsonb)",
                             (owner, json.dumps(default_preferences())),
                         )
-                directory = tmp_path / "export"
                 manifest = recovery.export_logical_archive(
-                    source_dsn, binary, directory, cluster_id=recovery.load_policy().cluster_id,
+                    source_dsn, binary, cluster_id=recovery.load_policy().cluster_id,
                     release_sha=release_sha, signing_key=signing_key, archive_key=archive_key,
                 )
-                archive = directory / "database.dump.encrypted"
+                archive = recovery.restore_artifact_path("database.dump.encrypted")
                 assert not archive.read_bytes().startswith(b"PGDMP")
                 with pytest.raises(recovery.RecoveryBlocked, match="same PostgreSQL cluster"):
                     recovery.verify_logical_archive(
-                        base, binary, archive, manifest, release_sha=release_sha,
+                        base, binary, manifest, release_sha=release_sha,
                         signing_key=signing_key, archive_key=archive_key,
                     )
                 isolated = f"postgresql://postgres@127.0.0.1:{port}/postgres"
                 receipt = recovery.verify_logical_archive(
-                    isolated, binary, archive, manifest, release_sha=release_sha,
+                    isolated, binary, manifest, release_sha=release_sha,
                     signing_key=signing_key, archive_key=archive_key,
                 )
                 proof = verified_recovery_evidence(receipt, signing_key)
-                assert proof is not None and all(proof["checks"].values())
+                assert proof is not None
+                assert all(proof["checks"].values())
                 assert proof["source_system_id"] != proof["target_system_id"]
                 with psycopg.connect(isolated) as target:
                     assert target.execute(

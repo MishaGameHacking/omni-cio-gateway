@@ -3468,7 +3468,14 @@ dialog::backdrop {
     font-size:47px
   }
   .hero-art {
-    background-position:45% center
+    background-position:45% center;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    align-content:flex-end;
+    justify-content:center;
+    gap:8px 12px;
+    padding:0 18px 9px
   }
   .hero-facts {
     max-width:480px
@@ -3503,34 +3510,10 @@ dialog::backdrop {
   .hero-benefits {
     max-width:440px
   }
-  .node-property {
-    left:51%;
-    top:76%
-  }
-  .node-shares {
-    left:66%
-  }
-  .node-bonds {
-    left:67%;
-    top:42%
-  }
-  .node-funds {
-    left:55%;
-    top:26%
-  }
-  .node-currency {
-    left:62%;
-    top:69%
-  }
-  .node-metals {
-    left:55%;
-    top:56%
-  }
-  .node-commodity {
-    left:58%;
-    top:80%
-  }
   .hero .orbit-node {
+    position:static;
+    flex:0 0 auto;
+    white-space:nowrap;
     font-size:var(--font-caption)
   }
   .public-section {

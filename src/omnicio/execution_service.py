@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hmac
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
@@ -26,9 +26,11 @@ from .execution import (
     strategy_order_plan,
 )
 from .execution_store import (
+    ExecutionLegObservation,
     ExecutionLegRecord,
     ExecutionRunRecord,
     ExecutionStore,
+    StrategyExecutionContext,
 )
 from .portfolio_store import PortfolioStore
 from .research_store import ResearchStore
@@ -451,7 +453,7 @@ class PortfolioExecutionService:
             raise ExecutionServiceError("execution_research_evidence_changed")
         leg_payload = payload["legs"][current.leg_index]
         self._dispatch_preflight(user_id, current, leg_payload, payload, legs, run.mode)
-        authority = (session_digest, self.legal_versions, payload)
+        authority = StrategyExecutionContext(session_digest, self.legal_versions, payload)
         if run.mode == "shadow":
             self._fill_shadow_leg(user_id, run_id, current, leg_payload, authority)
         else:
@@ -464,7 +466,7 @@ class PortfolioExecutionService:
         run_id: UUID,
         current: ExecutionLegRecord,
         leg_payload: dict[str, Any],
-        authority: tuple[bytes, dict[str, str], dict[str, Any]],
+        authority: StrategyExecutionContext,
     ) -> None:
         self.store.transition_leg(
             user_id,
@@ -474,14 +476,16 @@ class PortfolioExecutionService:
             new_status="shadow_filled",
             event_type="explicit_shadow_fill",
             details={"broker_order_submitted": False},
-            lots_executed=current.lots_requested,
-            executed_amount_rub=Decimal(
-                leg_payload["max_spend_rub"]
-                if current.action == "buy"
-                else leg_payload["min_proceeds_rub"]
+            observation=ExecutionLegObservation(
+                lots_executed=current.lots_requested,
+                executed_amount_rub=Decimal(
+                    leg_payload["max_spend_rub"]
+                    if current.action == "buy"
+                    else leg_payload["min_proceeds_rub"]
+                ),
+                executed_commission_rub=Decimal(leg_payload["commission_cap_rub"]),
             ),
-            executed_commission_rub=Decimal(leg_payload["commission_cap_rub"]),
-            strategy_authority=authority,
+            strategy_context=authority,
         )
 
     def _dispatch_authority(
@@ -515,7 +519,7 @@ class PortfolioExecutionService:
         run: ExecutionRunRecord,
         current: ExecutionLegRecord,
         payload: dict[str, Any],
-        authority: tuple[bytes, dict[str, str], dict[str, Any]],
+        authority: StrategyExecutionContext,
     ) -> None:
         run_id = run.id
         self.store.transition_leg(
@@ -526,8 +530,7 @@ class PortfolioExecutionService:
             new_status="submitting",
             event_type="explicit_limit_submission_claimed",
             details={"request_id": str(current.request_id)},
-            strategy_authority=authority,
-            strategy_limits=(self.max_order_rub, self.max_daily_rub),
+            strategy_context=replace(authority, limits=(self.max_order_rub, self.max_daily_rub)),
         )
         try:
             state = self.broker.submit_limit_order(
@@ -1088,11 +1091,13 @@ class PortfolioExecutionService:
                 "amount_rub": str(amount),
                 "commission_rub": str(commission),
             },
-            provider_order_id=state.order_id,
-            provider_status=state.execution_report_status,
-            lots_executed=state.lots_executed,
-            executed_amount_rub=amount,
-            executed_commission_rub=commission,
+            observation=ExecutionLegObservation(
+                provider_order_id=state.order_id,
+                provider_status=state.execution_report_status,
+                lots_executed=state.lots_executed,
+                executed_amount_rub=amount,
+                executed_commission_rub=commission,
+            ),
             now=observed_at,
         )
         return local_status

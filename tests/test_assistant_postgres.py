@@ -114,7 +114,8 @@ def test_private_connection_cas_ciphertext_and_forced_rls(workspace_database):
         "api_key": "private-personal-key",
     }
     status = service.save_connection(owner, document, expected_version=0)
-    assert status["connection_version"] == 1 and status["has_key"]
+    assert status["connection_version"] == 1
+    assert status["has_key"]
     assert "private-personal-key" not in str(status)
     ciphertext = service.store.connection(owner)["key_ciphertext"]
     assert b"private-personal-key" not in bytes(ciphertext)

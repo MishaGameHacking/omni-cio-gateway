@@ -215,7 +215,8 @@ def test_self_service_sessions_are_owner_scoped_and_preserve_current_session(
     _, _, previous = login(database, subject=subject)
     other, _, foreign = login(database)
     listing = database.active_sessions(owner.id, current)
-    assert listing["total"] == 2 and listing["truncated"] is False
+    assert listing["total"] == 2
+    assert listing["truncated"] is False
     assert listing["sessions"][0]["current"] is True
     assert listing["sessions"][0]["auth_provider"] == "tid"
     assert all(set(row) == {
@@ -260,9 +261,10 @@ def test_identity_unlink_requires_recent_other_identity_and_revokes_removed_prov
     assert not database.unlink_identity(
         owner.id, tid_session, "vkid", enabled_providers=frozenset({"tid", "vkid"}),
     )
+    enabled_providers = frozenset({"tid", "vkid"})
     with pytest.raises(PermissionError, match="reauthentication_required"):
         database.unlink_identity(
-            owner.id, tid_session, "tid", enabled_providers=frozenset({"tid", "vkid"}),
+            owner.id, tid_session, "tid", enabled_providers=enabled_providers,
         )
     # Replacement uses the remaining authenticated identity and the existing
     # explicit OAuth-link flow; no intermediate step can leave zero identities.
@@ -358,8 +360,10 @@ def test_operational_metrics_require_configured_operator_and_aggregate_without_t
     result = database.operational_metrics(owner.id, current, configured_operator_id=owner.id)
     assert result["observer"]["stale"] >= 1
     assert result["status"] == "attention"
-    assert str(owner.id) not in str(result) and str(other.id) not in str(result)
-    assert "token" not in str(result) and "digest" not in str(result)
+    assert str(owner.id) not in str(result)
+    assert str(other.id) not in str(result)
+    assert "token" not in str(result)
+    assert "digest" not in str(result)
     with database.pool.connection() as conn:
         assert conn.execute("SELECT current_setting('omnicio.user_id', true)").fetchone()[
             "current_setting"

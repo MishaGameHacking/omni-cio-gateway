@@ -46,6 +46,14 @@ _EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9.-]{1,189}
 _PUSH_HOSTS = {"fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"}
 _PUSH_SUFFIXES = (".push.apple.com", ".notify.windows.com")
 _MAILTO_SCHEME = "mailto:"
+_SETTINGS_TARGET = "/#settings"
+
+
+def _log_worker_failure(code: str, error: Exception) -> None:
+    # Preserve a useful failure class without provider messages, destinations,
+    # credentials, chained exceptions or the original traceback in logs.
+    sanitized = RuntimeError(type(error).__name__)
+    logger.exception(code, exc_info=(RuntimeError, sanitized, None))
 
 
 class NotificationUnavailable(RuntimeError):
@@ -256,7 +264,7 @@ class NotificationTransport:
         message["To"] = normalize_email(destination["email"])
         message["Subject"] = payload["title"]
         message["Message-ID"] = f"<{payload['tag']}@{urlsplit(self.config.public_origin).hostname}>"
-        message.set_content(payload["body"] + "\n\n" + self.config.public_origin + "/#settings")
+        message.set_content(payload["body"] + "\n\n" + self.config.public_origin + _SETTINGS_TARGET)
         context = ssl.create_default_context()
         try:
             client = (smtplib.SMTP_SSL(self.config.smtp_host, self.config.smtp_port,
@@ -483,7 +491,7 @@ class NotificationService:
                 "body": f"Ваш код подтверждения: {code}. Срок действия — 15 минут. "
                         "Введите его в настройках OMNICIO. Если вы не запрашивали подключение, "
                         "проигнорируйте письмо. Финансовые действия этот код не разрешает.",
-                "url": "/#settings",
+                "url": _SETTINGS_TARGET,
             }, now)
         self._wake.set()
         return {"id": str(ident), "status": "pending", "label": label,
@@ -780,9 +788,23 @@ class NotificationService:
             for channel in cur.fetchall():
                 self._enqueue(cur, user_id, channel["id"], "operational:" + key,
                               "operational", {"title": "Состояние OMNICIO", "body": title,
-                                              "url": "/#settings"},
+                                              "url": _SETTINGS_TARGET},
                               delivery_time(prefs, datetime.now(UTC)))
         self._wake.set()
+
+    def _process_pending_user(self, user_id: UUID, now: datetime, needs_attention: bool) -> None:
+        if not self.database.has_legal_versions(user_id, self.legal_versions):
+            return
+        self.queue_events(user_id)
+        if user_id == self.config.operator_user_id and needs_attention:
+            self.queue_operator_alert(
+                user_id, "health-" + now.strftime("%Y%m%d%H"),
+                "Мониторинг обнаружил задержку или ошибку обновления данных. "
+                "Откройте состояние сервиса в настройках для проверки.",
+            )
+        for _ in range(5):
+            if self._stop.is_set() or not self.deliver_one(user_id):
+                break
 
     def run_pending(self) -> None:
         now = datetime.now(UTC)
@@ -803,23 +825,11 @@ class NotificationService:
                 return
             user_id = UUID(str(cast(dict[str, Any], row)["id"]))
             try:
-                if not self.database.has_legal_versions(user_id, self.legal_versions):
-                    continue
-                self.queue_events(user_id)
-                if (user_id == self.config.operator_user_id
-                        and metrics["status"] == "attention"):
-                    self.queue_operator_alert(
-                        user_id, "health-" + now.strftime("%Y%m%d%H"),
-                        "Мониторинг обнаружил задержку или ошибку обновления данных. "
-                        "Откройте состояние сервиса в настройках для проверки.",
-                    )
-                for _ in range(5):
-                    if self._stop.is_set() or not self.deliver_one(user_id):
-                        break
+                self._process_pending_user(user_id, now, metrics["status"] == "attention")
             except Exception as exc:
                 # A single unavailable tenant must not starve every other owner's
                 # queue. No destination, code, body, or identity is logged.
-                logger.error("notification_owner_failed error_type=%s", type(exc).__name__)
+                _log_worker_failure("notification_owner_failed", exc)
 
     def start(self) -> None:
         if self._thread is not None:
@@ -838,6 +848,6 @@ class NotificationService:
             try:
                 self.run_pending()
             except Exception as exc:
-                logger.error("notification_worker_failed error_type=%s", type(exc).__name__)
+                _log_worker_failure("notification_worker_failed", exc)
             self._wake.wait(timeout=30)
             self._wake.clear()

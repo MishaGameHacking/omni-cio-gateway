@@ -136,17 +136,14 @@ def test_native_bond_points_tick_and_nkd_are_separate_from_cash_order_price():
     assert quote["sell_limit"] == Decimal(999)
     assert quote["mark"] == Decimal(1015)
     assert quote["nkd"] == 15
+    stale_book = book(now - timedelta(seconds=31))
+    current_book = book(now)
+    no_slippage = Decimal(0)
+    foreign_nominal = replace(metadata, nominal=TBankMoney("USD", "1000"))
     with pytest.raises(ExecutionStateError, match="stale"):
-        execution_quote(
-            metadata, book(now - timedelta(seconds=31)), slippage_bps=Decimal(0), now=now
-        )
+        execution_quote(metadata, stale_book, slippage_bps=no_slippage, now=now)
     with pytest.raises(ExecutionStateError, match="nominal_or_accrual"):
-        execution_quote(
-            replace(metadata, nominal=TBankMoney("USD", "1000")),
-            book(now),
-            slippage_bps=Decimal(0),
-            now=now,
-        )
+        execution_quote(foreign_nominal, current_book, slippage_bps=no_slippage, now=now)
 
 
 def test_integer_sizing_respects_cash_fees_caps_and_post_trade_exposure():

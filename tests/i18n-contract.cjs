@@ -28,6 +28,7 @@ assert.equal(I.setLocale("de"), "ru", "Unsupported locale has a deterministic su
 
 const element = (attributes, text, {tagName = "SPAN", children = [], protectedContent = false} = {}) => ({
   attributes: {...attributes}, textContent: text, tagName, children,
+  get dataset() { return Object.fromEntries(Object.entries(this.attributes).filter(([key]) => key.startsWith("data-")).map(([key,value]) => [key.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase()), value])); },
   getAttribute(key) { return this.attributes[key] || null; },
   setAttribute(key, value) { this.attributes[key] = value; },
   closest() { return protectedContent ? this : null; }

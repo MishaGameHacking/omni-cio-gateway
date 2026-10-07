@@ -1838,7 +1838,7 @@
     // Static shell labels may share a parent with icons, links or line breaks.
     // Explicit per-parent text keys preserve that exact element geometry.
     let textKeys = [];
-    try { textKeys = JSON.parse(element.getAttribute("data-i18n-text") || "[]"); } catch { return; }
+    try { textKeys = JSON.parse(element.dataset.i18nText || "[]"); } catch { return; }
     if (!Array.isArray(textKeys)) return;
     for (const node of element.childNodes || []) {
       if (node.nodeType !== 3) continue;
@@ -1852,7 +1852,7 @@
   };
   const applyElement = (element, selected) => {
     if (element.closest('[data-user-content],[data-source-content],[data-private-content]')) return;
-    const key = element.getAttribute("data-i18n");
+    const key = element.dataset.i18n;
     // Explicit markers belong on text-only spans, never on icon/button/form
     // containers. Refuse to destroy their controls when a marker is misplaced.
     if (key && has(key) && !element.children.length && !/^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName)) element.textContent = t(key, {}, selected);
@@ -1883,7 +1883,7 @@
   const api = Object.freeze({t, html, has, setLocale, getLocale: () => locale, normalizeLocale, apply, keys: () => Object.keys(messages), preset: record => authoredRecord("preset", record), catalogSource: record => authoredRecord("catalog_source", record)});
   if (typeof window !== "undefined") window.OMNICIO_I18N = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
-  if (typeof document !== "undefined" && document.documentElement.hasAttribute("data-i18n-device-locale")) {
+  if (typeof document !== "undefined" && Object.hasOwn(document.documentElement.dataset, "i18nDeviceLocale")) {
     setLocale(typeof navigator !== "undefined" ? navigator.language : "ru");
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => apply(document), {once: true});
     else apply(document);

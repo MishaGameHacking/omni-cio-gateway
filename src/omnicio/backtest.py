@@ -28,6 +28,7 @@ MIN_TRAIN_OBSERVATIONS = 60
 MIN_TEST_OBSERVATIONS = 20
 _ZERO, _ONE, _HUNDRED = Decimal(0), Decimal(1), Decimal(100)
 _DAY = timedelta(days=1)
+_HTTPS_PREFIX = "https://"
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,7 +271,7 @@ def _cashflow_reasons(events: Sequence[HistoricalCashflow]) -> list[str]:
             or event.paid_at < event.entitlement_at
             or not event.amount_per_unit_rub.is_finite()
             or event.amount_per_unit_rub < 0
-            or not event.source_url.startswith("https://")
+            or not event.source_url.startswith(_HTTPS_PREFIX)
             or event.kind not in {"income", "principal"}
         ):
             reasons.append("invalid_distribution_event")
@@ -293,7 +294,7 @@ def _corporate_action_reasons(
         split.time.tzinfo is None
         or not split.ratio.is_finite()
         or split.ratio <= 0
-        or not split.source_url.startswith("https://")
+        or not split.source_url.startswith(_HTTPS_PREFIX)
         for split in asset.splits
     ):
         reasons.append("split_evidence_invalid")
@@ -314,7 +315,7 @@ def _bond_history_reasons(asset: ResearchAsset, from_at: datetime, to_at: dateti
             reasons.append("bond_valuation_history_incomplete")
         if any(
             row.time.tzinfo is None
-            or not row.source_url.startswith("https://")
+            or not row.source_url.startswith(_HTTPS_PREFIX)
             or any(
                 not number.is_finite() or number < 0
                 for number in (
@@ -336,7 +337,7 @@ def _factor_history_reasons(asset: ResearchAsset) -> list[str]:
         row.time.tzinfo is None
         or row.available_at.tzinfo is None
         or row.available_at < row.time
-        or not row.source_url.startswith("https://")
+        or not row.source_url.startswith(_HTTPS_PREFIX)
         or not row.growth_change.is_finite()
         or not row.inflation_change.is_finite()
         for row in asset.factors
@@ -354,7 +355,7 @@ def _asset_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> 
     if asset.basis == "verified_total_return" and not (
         asset.lot_history_verified
         and asset.cashflow_history_verified
-        and asset.verification_source.startswith("https://")
+        and asset.verification_source.startswith(_HTTPS_PREFIX)
     ):
         reasons.append("total_return_basis_not_verified")
     if asset.basis == "unadjusted_price" and asset.cashflows:

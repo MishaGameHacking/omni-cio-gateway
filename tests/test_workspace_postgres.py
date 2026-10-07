@@ -177,8 +177,9 @@ def test_event_pagination_search_and_read_all_cover_more_than_fifty(
     assert seen == expected
     assert store.events(owner, query="event 114")["items"][0]["title"] == "Confirmed event 114"
     assert store.events(other)["items"] == []
+    foreign_event_id = next(iter(expected))
     with pytest.raises(WorkspaceNotFound):
-        store.get_event(other, next(iter(expected)))
+        store.get_event(other, foreign_event_id)
     # New data with an older occurrence date is still beyond the revision cutoff.
     added = insert_notification_event(store, owner, 116, at=at - timedelta(days=1))
     refreshed = store.mark_all_events_read(owner, through_revision=first["read_all_before"])

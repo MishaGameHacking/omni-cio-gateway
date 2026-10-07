@@ -1482,21 +1482,35 @@ def candidate_weight_constraints(
             missing.add("held_instrument_evidence_missing:" + uid)
             continue
         classes[candidate.asset_class] += weight
-        cap = _amount(data["policy"]["max_instrument_percent"])
-        if cap is None or weight > cap:
-            missing.add("instrument_cap:" + uid)
-        if candidate.asset_class in data["excluded"]:
-            missing.add("excluded_class:" + candidate.asset_class)
-        if candidate.asset_class == "funds" and weight > Decimal(
-            data["rules"]["fund_wrapper_cap_percent"]
-        ):
-            missing.add("fund_wrapper_cap:" + uid)
+        _holding_weight_limits(candidate, weight, data, missing)
         for name, key, exposure, limit in _candidate_exposure_limits(
             candidate, data, as_of, missing
         ):
             used[name, key] += weight * exposure
             if used[name, key] > limit:
                 missing.add("exposure_cap:" + name + ":" + key)
+    _class_weight_limits(classes, data, missing)
+    return sorted(missing)
+
+
+def _holding_weight_limits(
+    candidate: StrategyCandidateFacts, weight: Decimal, data: Mapping[str, Any], missing: set[str]
+) -> None:
+    uid = candidate.instrument_uid
+    cap = _amount(data["policy"]["max_instrument_percent"])
+    if cap is None or weight > cap:
+        missing.add("instrument_cap:" + uid)
+    if candidate.asset_class in data["excluded"]:
+        missing.add("excluded_class:" + candidate.asset_class)
+    if candidate.asset_class == "funds" and weight > Decimal(
+        data["rules"]["fund_wrapper_cap_percent"]
+    ):
+        missing.add("fund_wrapper_cap:" + uid)
+
+
+def _class_weight_limits(
+    classes: Mapping[str, Decimal], data: Mapping[str, Any], missing: set[str]
+) -> None:
     for kind, total in classes.items():
         key = {
             "shares": "max_share_percent",
@@ -1506,4 +1520,3 @@ def candidate_weight_constraints(
         class_limit = _amount(data["policy"][key])
         if class_limit is None or total > class_limit:
             missing.add("class_cap:" + kind)
-    return sorted(missing)

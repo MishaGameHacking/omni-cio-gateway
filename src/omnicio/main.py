@@ -1651,7 +1651,7 @@ async def billing_notification(request: Request) -> PlainTextResponse:
         raw.extend(chunk)
     try:
         payload = json.loads(raw)
-    except (ValueError, UnicodeDecodeError) as exc:
+    except ValueError as exc:
         raise HTTPException(status_code=422, detail="billing_notification_invalid") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail="billing_notification_invalid")

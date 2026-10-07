@@ -108,7 +108,7 @@ class AuthAppDeployTests(unittest.TestCase):
                              for target in node.targets))
         database_source = (source / "db.py").read_text(encoding="utf-8")
         self.assertIn("from .schema import READINESS_QUERY", database_source)
-        self.assertTrue("cur.execute(READINESS_QUERY)" in database_source)
+        self.assertIn("cur.execute(READINESS_QUERY)", database_source)
         predicate = query.strip().removeprefix("SELECT").removesuffix("AS ready")
         expected = f"SELECT CASE WHEN {predicate} THEN 'ready' ELSE 'missing' END"
         ssh = FakeSsh(True)

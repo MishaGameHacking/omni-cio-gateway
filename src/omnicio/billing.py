@@ -137,6 +137,20 @@ def _public(row: Mapping[str, Any]) -> dict[str, Any]:
     return {key: row.get(key) for key in _PUBLIC_PAYMENT_FIELDS}
 
 
+def _provider_status(current: str, status: object) -> str:
+    """Preserve refund precedence when signed provider observations arrive late."""
+    if status in {"REFUNDED", "REVERSED"}:
+        return "refunded"
+    if status == "PARTIAL_REFUNDED" and current != "refunded":
+        return "partial_refund"
+    if status == "CONFIRMED" and current not in {"refunded", "partial_refund"}:
+        return "paid"
+    if (status in {"CANCELED", "REJECTED", "DEADLINE_EXPIRED"}
+            and current not in {"paid", "partial_refund", "refunded"}):
+        return "cancelled"
+    return "pending" if current in {"creating", "uncertain"} else current
+
+
 class BillingService:
     def __init__(
         self, database: Database, config: BillingConfig, *, client: PaymentClient | None = None,
@@ -250,19 +264,7 @@ class BillingService:
             if (not refunded and amount != row["amount_kopecks"]
                     or refunded and not 0 <= amount <= row["amount_kopecks"]):
                 raise BillingUnavailable("billing_provider_amount_mismatch")
-            current = row["status"]
-            new = current
-            if status in {"REFUNDED", "REVERSED"}:
-                new = "refunded"
-            elif status == "PARTIAL_REFUNDED" and current != "refunded":
-                new = "partial_refund"
-            elif status == "CONFIRMED" and current not in {"refunded", "partial_refund"}:
-                new = "paid"
-            elif (status in {"CANCELED", "REJECTED", "DEADLINE_EXPIRED"}
-                  and current not in {"paid", "partial_refund", "refunded"}):
-                new = "cancelled"
-            elif current in {"creating", "uncertain"}:
-                new = "pending"
+            new = _provider_status(row["status"], status)
             start, end = row["entitlement_from"], row["entitlement_until"]
             if new == "paid" and start is None:
                 start = datetime.now(UTC)
@@ -332,7 +334,8 @@ class BillingService:
                 not in {"CANCELED", "REJECTED", "DEADLINE_EXPIRED"}):
             raise PermissionError("billing_notification_invalid")
         order = payload.get("OrderId")
-        if not isinstance(order, str) or re.fullmatch(r"[0-9]{9}-[0-9a-f]{32}", order) is None:
+        if (not isinstance(order, str)
+                or re.fullmatch(r"\d{9}-[0-9a-f]{32}", order, re.ASCII) is None):
             raise PermissionError("billing_notification_invalid")
         # The signed merchant order selects a tenant only after signature validation.
         # A browser request never chooses its tenant using this route.
