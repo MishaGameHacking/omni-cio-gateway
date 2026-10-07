@@ -632,6 +632,7 @@
   } = {}) => {
     if (!force && state.data[name] !== undefined) return state.data[name];
     if (state.loading.has(name) && !force) return null;
+    if (name === "executions") delete state.data.executions;
     const sequence = (state.resourceVersions.get(name) || 0) + 1;
     state.resourceVersions.set(name, sequence);
     const generation = state.generation;
@@ -2958,7 +2959,7 @@
   const billingHistoryItemHTML = item => {
     const disabled = state.billingBusy ? " disabled" : "";
     const canOpen = item.status === "pending" && !item.cancel_attempted_at && U.external(item.checkout_url) && ["securepay.tinkoff.ru", "securepayments.tinkoff.ru"].includes(new URL(item.checkout_url).hostname);
-    const cancelNotice = item.cancel_attempted_at && ["pending", "uncertain"].includes(item.status) ? `<p class="notice">${H("execution.cancel_pending")}</p>` : "";
+    const cancelNotice = item.cancel_attempted_at && ["pending", "uncertain"].includes(item.status) ? `<p class="notice">${H("billing.cancel_pending")}</p>` : "";
     const checkoutLink = canOpen ? `<a class="button primary small" href="${esc(item.checkout_url)}" target="_blank" rel="noopener noreferrer">${H("Открыть оплату в банке")}</a>` : "";
     const cancelControl = ["creating", "pending", "uncertain"].includes(item.status) && !item.cancel_attempted_at ? `<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="cancel"${disabled}>${H("Отменить оплату")}</button>` : "";
     return `<li class="section-gap"><strong>${esc(billingLabel(item.status))} · ${esc(money(item.amount_kopecks / 100, 2, "RUB", false))}</strong><p class="fine-print">${esc(date(item.created_at, true))} ${H("МСК ·")} ${esc(format(item.period_days, 0))} ${H("дней")}</p>${cancelNotice}<div class="form-actions">${checkoutLink}<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="reconcile"${disabled}>${H("Сверить с банком")}</button>${cancelControl}</div></li>`;
@@ -3127,7 +3128,10 @@
   const recoveryPanelHTML = () => {
     if (state.errors.executions) return `<section class="card section-gap"><h2 class="panel-title">${H("Ранее начатые исполнения")}</h2>${dataError("executions", T("История исполнений недоступна"))}<p class="fine-print">${H("Перед отключением источника требуется проверить незавершённые заявки.")}</p></section>`;
     const data = state.data.executions;
-    if (!data) return `<section class="card section-gap">${U.loading(T("Проверяем ранее начатые исполнения…"))}</section>`;
+    if (!data) {
+      if (state.loading.has("executions")) return `<section class="card section-gap">${U.loading(T("Проверяем ранее начатые исполнения…"))}</section>`;
+      return `<section class="card section-gap"><h2 class="panel-title">${H("Ранее начатые исполнения")}</h2><p class="notice">${H("История исполнений недоступна")}</p><p class="fine-print">${H("Перед отключением источника требуется проверить незавершённые заявки.")}</p>${button(T("Проверить историю"), "recovery-reload", {small: true})}</section>`;
+    }
     if (!data.executions.length && !data.live_mandate) return `<section class="card section-gap"><h2 class="panel-title">${H("Ранее начатые исполнения")}</h2><p class="fine-print">${H("execution.history_empty")}</p>${button(T("Проверить историю"), "recovery-reload", {
       small: true
     })}</section>`;
@@ -3164,15 +3168,17 @@
       small: true
     })}</div>`;
   };
-  const executionLegHTML = leg => {
+  const executionLegHTML = (leg, mode) => {
     const action = {
       buy: T("Покупка"),
       sell: T("Продажа")
     }[leg.action] || T("Действие не определено");
-    return `<article class="recovery-leg"><h3>${esc(action)} · ${esc(executionStatus(leg.status))}</h3>${infoRows([[T("Инструмент"), leg.instrument_uid], [T("Запрошено лотов"), format(leg.lots_requested, 0)], [T("Исполнено лотов"), format(leg.lots_executed, 0)], [T("ID запроса"), leg.request_id || T("Не получен")], [T("ID заявки брокера"), leg.provider_order_id || T("Не подтверждён")], [T("Статус брокера"), leg.provider_status || T("Не получен")], [T("Последняя сверка"), leg.last_checked_at ? date(leg.last_checked_at, true) + T(" МСК") : T("Ещё не выполнена")]])}</article>`;
+    const rows = [[T("Инструмент"), leg.instrument_uid], [T("Запрошено лотов"), format(leg.lots_requested, 0)], [T("Исполнено лотов"), format(leg.lots_executed, 0)], [T("ID запроса"), leg.request_id || T("Не получен")]];
+    if (mode !== "shadow") rows.push([T("ID заявки брокера"), leg.provider_order_id || T("Не подтверждён")], [T("Статус брокера"), leg.provider_status || T("Не получен")], [T("Последняя сверка"), leg.last_checked_at ? date(leg.last_checked_at, true) + T(" МСК") : T("Ещё не выполнена")]);
+    return `<article class="recovery-leg"><h3>${esc(action)} · ${esc(executionStatus(leg.status))}</h3>${infoRows(rows)}</article>`;
   };
   const storedExecutionErrorHTML = code => `<p class="notice error">${esc(recoveryErrorReason(code) || T("Ранее получена ошибка. Сверьте состояние заявки перед следующим действием."))}</p>`;
-  const recoveryDetailsHTML = execution => `${infoRows([[T("Состояние"), executionStatus(execution.status)], [T("Среда"), executionMode(execution.mode)], [T("Счёт"), execution.account_id], [T("ID исполнения"), execution.id], [T("Обновлено"), date(execution.updated_at, true) + T(" МСК")]])}${execution.error_code ? storedExecutionErrorHTML(execution.error_code) : ""}<div class="recovery-legs">${(execution.legs || []).map(executionLegHTML).join("")}</div>${recoveryButtons(execution)}<div id="recovery-confirmation"></div><output id="recovery-message" class="form-message"></output><p class="fine-print section-gap">${H("Отмена относится к ближайшему незавершённому шагу. Запрошенная отмена подтверждается состоянием брокера; фактически исполненные лоты остаются исполненными.")}</p>`;
+  const recoveryDetailsHTML = execution => `${infoRows([[T("Состояние"), executionStatus(execution.status)], [T("Среда"), executionMode(execution.mode)], [T("Счёт"), execution.account_id], [T("ID исполнения"), execution.id], [T("Обновлено"), date(execution.updated_at, true) + T(" МСК")]])}${execution.error_code ? storedExecutionErrorHTML(execution.error_code) : ""}<div class="recovery-legs">${(execution.legs || []).map(leg => executionLegHTML(leg, execution.mode)).join("")}</div>${recoveryButtons(execution)}<div id="recovery-confirmation"></div><output id="recovery-message" class="form-message"></output><p class="fine-print section-gap">${execution.mode === "shadow" ? H("execution.cancel_pending") : H("Отмена относится к ближайшему незавершённому шагу. Запрошенная отмена подтверждается состоянием брокера; фактически исполненные лоты остаются исполненными.")}</p>`;
   const recoveryStatusButton = () => button(T("Обновить статус"), "recovery-detail-reload", {
     small: true
   });

@@ -61,6 +61,7 @@
     "execution.history_help": ["Здесь сохраняются подтверждённые планы и результаты их шагов. Теневые исполнения используют текущие котировки и отдельный журнал; ранее отправленные реальные заявки проверяются у брокера.", "Confirmed plans and step outcomes are saved here. Shadow executions use current quotes and a separate ledger; previously submitted live orders are checked with the broker."],
     "execution.history_empty": ["Сохранённых исполнений пока нет. Подготовьте и подтвердите план в разделе стратегий.", "There are no saved executions yet. Prepare and confirm a plan in Strategies."],
     "execution.cancel_pending": ["Неисполненные шаги теневого плана будут закрыты. Уже записанные модельные исполнения сохранятся в журнале; реальные заявки это действие не создаёт.", "Unfilled steps in the shadow plan will be closed. Simulated fills already recorded will remain in the ledger; this action does not create live orders."],
+    "billing.cancel_pending": ["Отмена запрошена. Итог платежа пока не подтверждён; используйте «Сверить с банком». Повторная отмена не отправляется.", "Cancellation was requested. The payment outcome is not yet confirmed; use ‘Reconcile with bank’. Cancellation will not be sent again."],
     "nav.home": ["Главная", "Overview"],
     "nav.portfolio": ["Портфель", "Portfolio"],
     "nav.market": ["Рынок", "Market"],

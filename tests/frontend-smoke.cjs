@@ -2254,6 +2254,21 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   await wait('document.querySelector("#dialog-content").textContent.includes("Premium")',"Confirmed plan readback");
   await checkLayout("payments-and-assistant");
   await click('#workspace-dialog [data-close-dialog]');
+  await exercisePendingBillingCancellation({fixture, click, wait, evaluate});
+}
+async function exercisePendingBillingCancellation({fixture, click, wait, evaluate}) {
+  const pending = ["pending", "uncertain"].map(status => ({...clone(fixture.billing.payments[0]), id: require("node:crypto").randomUUID(), status, cancel_attempted_at: stamp, entitlement_from: null, entitlement_until: null}));
+  fixture.billing.payments.push(...pending);
+  await click('#view-profile [data-action="premium"]');
+  for (const payment of pending) {
+    const selector = `#dialog-content [data-billing-id="${payment.id}"]`;
+    await wait(`document.querySelector(${JSON.stringify(selector)})`, "Cancellation awaiting bank confirmation is visible: " + payment.status);
+    const row = await evaluate(`(() => { const item=document.querySelector(${JSON.stringify(selector)}).closest('li'); return {text:item.textContent, checkout:Boolean(item.querySelector('a')), cancel:Boolean(item.querySelector('[data-billing-operation="cancel"]')), reconcile:Boolean(item.querySelector('[data-billing-operation="reconcile"]'))}; })()`);
+    assert.ok(row.text.includes("Итог платежа пока не подтверждён") && row.text.includes("Сверить с банком"), "Payment cancellation directs the user to bank reconciliation");
+    assert.ok(!row.text.includes("теневого плана") && !row.text.includes("модельные исполнения"), "Payment cancellation cannot display investment execution instructions");
+    assert.deepEqual({checkout:row.checkout, cancel:row.cancel, reconcile:row.reconcile}, {checkout:false, cancel:false, reconcile:true}, "Unconfirmed cancellation offers readback without another payment or cancellation");
+  }
+  await click('#workspace-dialog [data-close-dialog]');
 }
 async function exerciseExecutionPlanner({fixture,click,fieldValue,wait,evaluate,screenshot,checkLayout,round}) {
   await fieldValue('#strategy-form','strategy.profile.reserve_rub','5000');
@@ -2289,6 +2304,10 @@ async function exerciseExecutionPlanner({fixture,click,fieldValue,wait,evaluate,
   assert.equal(dispatched[0].body.expected_leg_id,leg.id,"Dispatch carries the exact reviewed pending leg UUID");
   assert.equal(leg.provider_order_id,null,"Shadow dispatch never invents a real broker order ID");
   assert.equal(leg.lots_executed,leg.lots_requested);
+  const shadowDetails = await evaluate('document.querySelector("#dialog-content").textContent');
+  for (const label of ["ID заявки брокера", "Статус брокера", "Последняя сверка", "Запрошенная отмена подтверждается состоянием брокера"]) assert.ok(!shadowDetails.includes(label), "Shadow details do not imply broker state: " + label);
+  assert.ok(shadowDetails.includes("Уже записанные модельные исполнения сохранятся в журнале"), "Shadow cancellation explains the separate model ledger");
+  assert.ok(shadowDetails.includes(run.id) && shadowDetails.includes(leg.request_id), "Model execution and request IDs remain visible");
   await screenshot(`execution-shadow-result-${round}-390.png`);
   await click('#workspace-dialog [data-close-dialog]');
   await prepare();
@@ -2338,7 +2357,7 @@ async function exerciseEnglishLocale({send,configureViewport,round,base,wait,cli
     }
     if(view==="strategies") {
       await wait('document.querySelector("[data-select-strategy=balanced] strong").textContent==="Balanced"',"Canonical preset title is translated by ID");
-      assert.ok(await evaluate('document.querySelector(".strategy-note").textContent.includes("historical volatility")'),"Canonical preset description is translated");
+      assert.equal(await evaluate('document.querySelector("#view-strategies .strategy-note").textContent'),"Allocation across asset classes with a preference for lower historical volatility.","The visible canonical preset description is translated exactly");
     }
     await checkLayout(`english-${view}-${round}-390`);
   }
@@ -3106,6 +3125,23 @@ async function exerciseProfileDraft({
   await click('#sidebar-nav [data-route="settings"]');
   await wait('document.querySelector("#preferences-form")', "Return to settings");
 }
+async function exerciseInterruptedRecoveryRead({fixture, click, wait, evaluate}) {
+  fixture.holdExecutionReads = true;
+  await click('[data-action="recovery-reload"]');
+  await until(() => fixture.heldExecutionReads.length > 0, "Terminal history verification is in flight before pagehide");
+  try {
+    await evaluate('window.dispatchEvent(new PageTransitionEvent("pagehide",{persisted:true}))');
+    await wait('document.querySelector("#recovery-settings").textContent.includes("История исполнений недоступна") && !document.querySelector("#recovery-settings .loading-panel") && document.querySelector("#recovery-settings [data-action=recovery-reload]")?.disabled===false', "Aborted history readback ends loading with an explicit unknown state and retry");
+    assert.equal(await evaluate('Boolean(document.querySelector("#recovery-settings .recovery-row"))'), false, "Cancelled verification cannot restore the previous terminal history as authoritative");
+    assert.equal(await evaluate('document.querySelector("[data-action=disconnect-start]").disabled'), true, "Disconnect stays blocked after cancellation has finished, not only while loading");
+  } finally {
+    fixture.holdExecutionReads = false;
+    fixture.heldExecutionReads.splice(0).forEach(release => release());
+  }
+  await evaluate('window.dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}))');
+  await click('[data-action="recovery-reload"]');
+  await wait('document.querySelector(\'#recovery-settings [data-recovery-id="synthetic-run"] strong\')?.textContent==="Отменено" && document.querySelector("[data-action=disconnect-start]").disabled===false', "Only a new successful terminal readback restores disconnect after cancellation");
+}
 async function exerciseRefreshRecovery({
   fixture,
   click,
@@ -3174,6 +3210,7 @@ async function exerciseRefreshRecovery({
   assert.equal(await evaluate('document.querySelector("[data-action=disconnect-start]").disabled'), true, "Active order blocks a simple broker disconnect");
   await click('[data-action="recovery-open"]');
   await wait('document.querySelector(".recovery-leg")', "Persisted execution details");
+  assert.ok(await evaluate('document.querySelector(".recovery-leg").textContent.includes("ID заявки брокера") && document.querySelector(".recovery-leg").textContent.includes("synthetic-order")'), "Live recovery still displays the persisted broker order");
   await checkLayout("Recovery details at 390px");
   await click('[data-action="recovery-reconcile"]');
   await wait('document.querySelector("#recovery-message").textContent.includes("Состояние получено")', "Read-only reconciliation");
@@ -3188,6 +3225,7 @@ async function exerciseRefreshRecovery({
   await click('#workspace-dialog [data-close-dialog]');
   await click('[data-action="recovery-reload"]');
   await wait('document.querySelector("[data-action=disconnect-start]").disabled===false', "Terminal order allows disconnect");
+  await exerciseInterruptedRecoveryRead({fixture, click, wait, evaluate});
   await click('[data-action="mandate-revoke"]');
   await click('[data-action="mandate-revoke-confirm"]');
   await wait('!document.querySelector("#workspace-dialog").open && !document.querySelector("[data-action=mandate-revoke]")', "Server-side mandate revoked");
