@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Literal, Never, cast
+from urllib.parse import urlsplit
 from uuid import UUID
 
 TBankEnvironment = Literal["prod", "sandbox"]
@@ -179,6 +180,14 @@ class TBankOrderState:
     order_type: str
 
 
+@dataclass(frozen=True, slots=True)
+class TBankOrderEstimate:
+    lots_requested: int
+    total_order_amount: TBankMoney
+    initial_order_amount: TBankMoney
+    commission: TBankMoney
+
+
 TBankSandboxOrderState = TBankOrderState
 
 
@@ -244,6 +253,8 @@ class TBankInstrumentMetadata:
     liquidity: bool | None = None
     exchange: str = ""
     first_1day_candle_date: datetime | None = None
+    min_price_increment: str | None = None
+    accrued_interest: TBankMoney | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,6 +397,32 @@ class TBankAssetFundamental:
     forward_annual_dividend_yield: str | None = None
     dividend_payout_ratio_fy: str | None = None
     free_cash_flow_to_price: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TBankFundProfile:
+    asset_uid: str
+    total_expense_percent: str | None
+    primary_index: str
+
+
+@dataclass(frozen=True, slots=True)
+class TBankNewsItem:
+    id: str
+    title: str
+    summary: str
+    content: str
+    source: str
+    source_url: str | None
+    occurred_at: datetime
+    instrument_uids: tuple[str, ...]
+    priority: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TBankNewsPage:
+    items: tuple[TBankNewsItem, ...]
+    next_cursor: str | None
 
 
 def _market_value_quotes(
@@ -674,6 +711,8 @@ def _instrument_metadata(
         liquidity=_optional_bool(item, "liquidityFlag"),
         exchange=_text(item.get("exchange")).strip(),
         first_1day_candle_date=_optional_provider_timestamp(item.get("first1dayCandleDate")),
+        min_price_increment=_quotation(item.get("minPriceIncrement")),
+        accrued_interest=_money(item.get("aciValue")),
     )
 
 
@@ -829,6 +868,36 @@ def _historic_exchange_candle(
     )
 
 
+def _news_item(raw: object) -> TBankNewsItem:
+    item = _required_object(raw, "news item")
+    ident, title = str(item.get("id", "")), _text(item.get("title")).strip()
+    when = _optional_provider_timestamp(item.get("ts"))
+    priority = item.get("priority", False)
+    if (not ident.isdecimal() or len(ident) > 19 or not title or len(title) > 1000
+            or when is None or type(priority) is not bool):
+        raise TBankUnavailable("news item invalid")
+    source = _text(item.get("source")).strip()
+    try:
+        parsed = urlsplit(source)
+    except ValueError as exc:
+        raise TBankUnavailable("news source invalid") from exc
+    source_url = source if (parsed.scheme == "https" and parsed.hostname
+                            and not parsed.username and not parsed.password) else None
+    uids = []
+    for raw_link in _optional_list(item, "instrumentId"):
+        link = _required_object(raw_link, "news instrument link")
+        instrument = _required_object(link.get("instrument"), "news instrument")
+        uid = _text(instrument.get("instrumentUid")).strip()
+        if not uid or len(uid) > 200:
+            raise TBankUnavailable("news instrument identity invalid")
+        uids.append(uid)
+    summary, content = _text(item.get("summary")), _text(item.get("content"))
+    if len(summary) > 20000 or len(content) > 200000 or len(source) > 2000 or len(uids) > 200:
+        raise TBankUnavailable("news content exceeded limit")
+    return TBankNewsItem(ident, title, summary, content, source, source_url, when,
+                         tuple(dict.fromkeys(uids)), priority)
+
+
 def _raise_tbank_http_error(
     method: str,
     exc: urllib.error.HTTPError,
@@ -913,6 +982,52 @@ def _decode_tbank_response(raw: str) -> dict[str, object]:
 class TBankInvestClient:
     timeout_seconds: int = 10
 
+    def get_news(
+        self, token: str, environment: TBankEnvironment, *, cursor: str | None = None,
+        limit: int = 50,
+    ) -> TBankNewsPage:
+        if type(limit) is not int or not 1 <= limit <= 50 or (
+            cursor is not None and (not isinstance(cursor, str) or not cursor.isdecimal()
+                                   or len(cursor) > 19 or int(cursor) > 2**63 - 1)
+        ):
+            raise ValueError("news_page_parameters_invalid")
+        body: dict[str, object] = {"limit": limit}
+        if cursor is not None:
+            body["cursor"] = cursor
+        payload = self._post(token=token, environment=environment,
+                             service="InstrumentsService", method="News", body=body)
+        raw_items = _required_list(payload, "items")
+        if len(raw_items) > limit:
+            raise TBankUnavailable("news page exceeded requested limit")
+        items = tuple(_news_item(raw) for raw in raw_items)
+        if len({item.id for item in items}) != len(items):
+            raise TBankUnavailable("duplicate news identity")
+        next_cursor = str(payload.get("nextCursor", "0"))
+        if not next_cursor.isdecimal() or len(next_cursor) > 19 or int(next_cursor) > 2**63 - 1:
+            raise TBankUnavailable("news cursor invalid")
+        if cursor is not None and next_cursor == cursor and items:
+            raise TBankUnavailable("news cursor did not advance")
+        return TBankNewsPage(items, next_cursor if next_cursor != "0" else None)
+
+    def get_fund_profile(
+        self, token: str, environment: TBankEnvironment, asset_uid: str,
+    ) -> TBankFundProfile:
+        """GetAssetBy's documented ETF fields; a name is never constituent evidence."""
+        ident = _validate_provider_id(asset_uid, "asset uid")
+        payload = self._post(token=token, environment=environment,
+                             service="InstrumentsService", method="GetAssetBy", body={"id": ident})
+        asset = _required_object(payload.get("asset"), "asset")
+        if asset.get("uid") != ident:
+            raise TBankUnavailable("fund profile identity mismatch")
+        security = _required_object(asset.get("security"), "asset security")
+        if security.get("type") != "etf":
+            raise TBankUnavailable("fund profile type mismatch")
+        fund = _required_object(security.get("etf"), "asset fund")
+        expense = _quotation(fund.get("totalExpense"))
+        if expense is not None and not 0 <= Decimal(expense) <= 100:
+            raise TBankUnavailable("fund expenses invalid")
+        return TBankFundProfile(ident, expense, _text(fund.get("primaryIndex")).strip())
+
     def get_instrument_metadata(
         self, token: str, environment: TBankEnvironment, instrument_type: str,
     ) -> tuple[TBankInstrumentMetadata, ...]:
@@ -953,6 +1068,48 @@ class TBankInvestClient:
     ) -> TBankInstrumentMetadata:
         item = self._instrument_by(token, environment, instrument_uid)
         return _instrument_metadata(item, _text(item.get("instrumentType")).strip())
+
+    def get_execution_instrument(
+        self, token: str, environment: TBankEnvironment, instrument_uid: str,
+    ) -> TBankInstrumentMetadata:
+        value = self.get_instrument_overview(token, environment, instrument_uid)
+        if value.instrument_type == "bond":
+            value = _instrument_metadata(self._instrument_by(
+                token, environment, instrument_uid, method="BondBy"), "bond")
+        return value
+
+    def estimate_limit_order(
+        self, token: str, environment: TBankEnvironment, account_id: str, *,
+        instrument_uid: str, lots: int, price: Decimal, action: str,
+    ) -> TBankOrderEstimate:
+        body = _limit_order_body(account_id, instrument_uid, lots, price, action)
+        payload = self._post(token=token, environment=environment,
+            service="SandboxService" if environment == "sandbox" else "OrdersService",
+            method="GetSandboxOrderPrice" if environment == "sandbox" else "GetOrderPrice",
+            body=body)
+        total = _money(payload.get("totalOrderAmount"))
+        initial = _money(payload.get("initialOrderAmount"))
+        commission = _money(payload.get("executedCommission"))
+        if (_int_value(payload.get("lotsRequested"), "lotsRequested") != lots or
+                any(value is None or value.currency.upper() != "RUB" or
+                    Decimal(value.value) < 0 for value in (total, initial, commission))):
+            raise TBankUnavailable("order estimate is incomplete")
+        assert total is not None and initial is not None and commission is not None
+        return TBankOrderEstimate(lots, total, initial, commission)
+
+    def submit_limit_order(
+        self, token: str, environment: TBankEnvironment, account_id: str, *,
+        instrument_uid: str, lots: int, price: Decimal, action: str, request_id: str,
+    ) -> TBankOrderState:
+        ident = str(UUID(request_id))
+        body = _limit_order_body(account_id, instrument_uid, lots, price, action)
+        body.update({"orderId": ident, "orderType": "ORDER_TYPE_LIMIT",
+                     "priceType": "PRICE_TYPE_CURRENCY", "timeInForce": "TIME_IN_FORCE_FILL_AND_KILL",
+                     "confirmMarginTrade": False})
+        payload = self._post(token=token, environment=environment,
+            service="SandboxService" if environment == "sandbox" else "OrdersService",
+            method="PostSandboxOrder" if environment == "sandbox" else "PostOrder", body=body)
+        return _order_state(payload, expected_request_id=ident)
 
     def get_bond_ratings(
         self,
@@ -1931,6 +2088,20 @@ def _provider_price_type(value: Literal["point", "currency"]) -> str:
         "point": "PRICE_TYPE_POINT",
         "currency": "PRICE_TYPE_CURRENCY",
     }[value]
+
+
+def _limit_order_body(
+    account_id: str, instrument_uid: str, lots: int, price: Decimal, action: str,
+) -> dict[str, object]:
+    if (type(lots) is not int or not 0 < lots <= 10**9 or action not in {"buy", "sell"}
+            or not price.is_finite() or not 0 < price <= Decimal("1e12")
+            or price * 10**9 != (price * 10**9).to_integral_value()):
+        raise ValueError("limit_order_parameters_invalid")
+    units = int(price)
+    return {"accountId": _validate_provider_id(account_id, "account id"),
+            "instrumentId": _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD),
+            "quantity": str(lots), "price": {"units": str(units), "nano": int((price-units)*10**9)},
+            "direction": "ORDER_DIRECTION_BUY" if action == "buy" else "ORDER_DIRECTION_SELL"}
 
 
 def _order_state(

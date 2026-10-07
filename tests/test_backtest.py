@@ -6,7 +6,15 @@ from decimal import Decimal
 
 import pytest
 
-from omnicio.backtest import HistoricalCashflow, ResearchAsset, ResearchCosts, run_strategy_backtest
+from omnicio.backtest import (
+    FactorObservation,
+    HistoricalCashflow,
+    HistoricalSplit,
+    ResearchAsset,
+    ResearchCosts,
+    history_candidate,
+    run_strategy_backtest,
+)
 from omnicio.strategy import preset_document
 from omnicio.strategy_assessment import StrategyCandidateFacts, StrategyFact
 from omnicio.tbank import TBankHistoricCandle
@@ -325,3 +333,129 @@ def test_future_window_and_nonfinite_costs_are_rejected_before_research():
         )
     with pytest.raises(ValueError, match="decimal"):
         run(costs=nonfinite_costs)
+
+
+def test_rebalance_band_and_minimum_effect_control_actual_simulated_orders():
+    ordinary = research_document()
+    baseline = run(document=ordinary)
+    ordinary["policy"]["no_trade_band_percent"] = "100"
+    band = run(document=ordinary)
+    assert baseline["metrics"]["trades"] > 0
+    assert band["metrics"]["trades"] == 0
+    ordinary["policy"]["no_trade_band_percent"] = "0"
+    ordinary["policy"]["min_replace_benefit_rub"] = "1000000000"
+    minimum = run(document=ordinary)
+    assert minimum["metrics"]["trades"] == 0
+
+
+def test_tax_and_stress_are_explicit_consumers_not_probability_claims():
+    asset = prices()
+    cashflow = HistoricalCashflow(
+        START + timedelta(days=160), START + timedelta(days=170), Decimal(10), SOURCE
+    )
+    asset = replace(
+        asset,
+        basis="verified_total_return",
+        cashflows=(cashflow,),
+        lot_history_verified=True,
+        cashflow_history_verified=True,
+        verification_source=SOURCE,
+    )
+    document = research_document()
+    document["policy"]["securities_tax_rate_percent"] = "13"
+    document["policy"]["uncertainty_haircut_percent"] = "25"
+    result = run([asset], document=document)
+    assert result["status"] == "computed"
+    assert Decimal(result["metrics"]["taxes_rub"]) == Decimal("130")
+    stress = result["stress_scenario"]
+    assert Decimal(stress["loss_rub"]) > 0
+    assert stress["probability"] is None
+    assert result["assumptions"]["tax_method"] == (
+        "positive_realized_gain_and_distributions_no_offsets"
+    )
+
+
+def test_robustness_has_three_declared_windows_without_best_period_selection():
+    from omnicio.backtest import research_robustness
+
+    result = research_robustness(
+        research_document(),
+        [prices(increasing=True)],
+        from_at=START,
+        to_at=END,
+        initial_capital_rub=Decimal(10000),
+        costs=ZERO_COSTS,
+        now=END,
+    )
+    assert result["computed_windows"] == 3
+    assert [row["period"]["to"] for row in result["windows"]] == [
+        (START + timedelta(days=days)).isoformat() for days in (120, 160, 200)
+    ]
+    assert all(
+        row["period"]["train_end"] <= row["period"]["test_from"] for row in result["windows"]
+    )
+
+
+def test_split_changes_units_without_fabricating_loss_and_unknown_actions_block():
+    asset = prices()
+    when = START + timedelta(days=165)
+    bars = tuple(
+        replace(bar, open="50", high="51", low="49", close="50") if bar.time >= when else bar
+        for bar in asset.candles
+    )
+    asset = replace(asset, candles=bars, corporate_action_dates=(when,))
+    assert run([asset])["status"] == "insufficient_data"
+    asset = replace(asset, splits=(HistoricalSplit(when, Decimal(2), SOURCE),))
+    result = run([asset])
+    assert result["status"] == "computed", result["missing_requirements"]
+    assert Decimal(result["metrics"]["ending_nav_rub"]) == 10000
+    assert Decimal(result["metrics"]["max_drawdown_percent"]) == 0
+    assert result["selection"] == run([prices()])["selection"]
+
+
+def test_reverse_split_requiring_fractional_settlement_is_explicitly_incomplete():
+    asset = prices()
+    when = START + timedelta(days=165)
+    bars = tuple(
+        replace(bar, open="200", high="201", low="199", close="200") if bar.time >= when else bar
+        for bar in asset.candles
+    )
+    result = run(
+        [replace(asset, candles=bars, splits=(HistoricalSplit(when, Decimal("0.5"), SOURCE),))],
+        capital="10100",
+    )
+    assert result["status"] == "insufficient_data"
+    assert "fractional_split_cash_settlement_required" in result["missing_requirements"]
+    assert result["metrics"] is None
+
+
+def test_dalio_factors_are_jointly_estimated_only_from_published_observations():
+    asset, prior, bars, factors = prices(), Decimal(100), [], []
+    for index, bar in enumerate(asset.candles):
+        growth = Decimal(index % 5 - 2) / 1000
+        inflation = Decimal(index % 7 - 3) / 1000
+        close = prior * (1 + 2 * growth - 3 * inflation)
+        bars.append(
+            replace(
+                bar,
+                open=str(prior),
+                close=str(close),
+                high=str(max(prior, close) + 1),
+                low=str(min(prior, close) - 1),
+            )
+        )
+        factors.append(
+            FactorObservation(bar.time, bar.time + timedelta(days=1), growth, inflation, SOURCE)
+        )
+        prior = close
+    cutoff = START + timedelta(days=140)
+    result = history_candidate(asset.candidate, bars, factors=factors, as_of=cutoff)
+    assert abs(result.facts["growth_beta"].value - 2) < Decimal("1e-20")
+    assert abs(result.facts["inflation_beta"].value + 3) < Decimal("1e-20")
+    assert result.facts["factor_observations"].value == 139
+    unpublished = [replace(row, available_at=END) for row in factors]
+    missing = history_candidate(asset.candidate, bars, factors=unpublished, as_of=cutoff)
+    assert "growth_beta" not in missing.facts
+    singular = [replace(row, inflation_change=row.growth_change) for row in factors]
+    missing = history_candidate(asset.candidate, bars, factors=singular, as_of=cutoff)
+    assert "growth_beta" not in missing.facts

@@ -71,6 +71,28 @@ class Settings:
     assistant_base_url: str = ""
     assistant_api_key: str = ""
     assistant_model: str = ""
+    notifications_enabled: bool = False
+    notification_crypto_key: str = ""
+    notification_vapid_private_key: str = ""
+    notification_vapid_subject: str = ""
+    notification_smtp_host: str = ""
+    notification_smtp_port: int = 465
+    notification_smtp_username: str = ""
+    notification_smtp_password: str = ""
+    notification_smtp_sender: str = ""
+    notification_smtp_mode: str = "tls"
+    billing_enabled: bool = False
+    billing_terminal_key: str = ""
+    billing_password: str = ""
+    billing_amount_kopecks: int = 0
+    billing_period_days: int = 30
+    billing_offer_version: str = ""
+    billing_description: str = ""
+    billing_taxation: str = ""
+    billing_tax: str = ""
+    assistant_enabled: bool = False
+    assistant_allowed_endpoints: tuple[str, ...] = ()
+    assistant_daily_request_limit: int = 30
 
     @property
     def vkid_ready(self) -> bool:
@@ -121,7 +143,32 @@ def load_settings() -> Settings:
         tid_login_enabled=boolean("TID_LOGIN_ENABLED", False),
         tid_pkce_enabled=boolean("TID_PKCE_ENABLED", True),
         assistant_base_url=(os.environ.get("ASSISTANT_BASE_URL", "").strip()
-                            if boolean("ASSISTANT_ENABLED", True) else ""),
+                            if boolean("ASSISTANT_ENABLED", False) else ""),
         assistant_api_key=os.environ.get("ASSISTANT_API_KEY", "").strip(),
         assistant_model=os.environ.get("ASSISTANT_MODEL", "").strip(),
+        notifications_enabled=boolean("NOTIFICATIONS_ENABLED", False),
+        notification_crypto_key=os.environ.get("NOTIFICATION_CRYPTO_KEY", "").strip(),
+        notification_vapid_private_key=os.environ.get("NOTIFICATION_VAPID_PRIVATE_KEY", "").strip(),
+        notification_vapid_subject=os.environ.get("NOTIFICATION_VAPID_SUBJECT", "").strip(),
+        notification_smtp_host=os.environ.get("NOTIFICATION_SMTP_HOST", "").strip(),
+        notification_smtp_port=positive_int("NOTIFICATION_SMTP_PORT", 465),
+        notification_smtp_username=os.environ.get("NOTIFICATION_SMTP_USERNAME", "").strip(),
+        notification_smtp_password=os.environ.get("NOTIFICATION_SMTP_PASSWORD", ""),
+        notification_smtp_sender=os.environ.get("NOTIFICATION_SMTP_SENDER", "").strip(),
+        notification_smtp_mode=os.environ.get("NOTIFICATION_SMTP_MODE", "tls").strip(),
+        billing_enabled=boolean("BILLING_ENABLED", False),
+        billing_terminal_key=os.environ.get("BILLING_TERMINAL_KEY", "").strip(),
+        billing_password=os.environ.get("BILLING_PASSWORD", ""),
+        billing_amount_kopecks=positive_int("BILLING_AMOUNT_KOPECKS", 0),
+        billing_period_days=positive_int("BILLING_PERIOD_DAYS", 30),
+        billing_offer_version=os.environ.get("BILLING_OFFER_VERSION", "").strip(),
+        billing_description=os.environ.get("BILLING_DESCRIPTION", "").strip(),
+        billing_taxation=os.environ.get("BILLING_TAXATION", "").strip(),
+        billing_tax=os.environ.get("BILLING_TAX", "").strip(),
+        assistant_enabled=boolean("ASSISTANT_ENABLED", False),
+        assistant_allowed_endpoints=tuple(
+            value.strip() for value in os.environ.get("ASSISTANT_ALLOWED_ENDPOINTS", "").split(",")
+            if value.strip()
+        ),
+        assistant_daily_request_limit=positive_int("ASSISTANT_DAILY_REQUEST_LIMIT", 30),
     )

@@ -23,8 +23,10 @@ from omnicio.market import MarketService
 from omnicio.security import encrypt_secret
 from omnicio.tbank import (
     TBankHistoricCandle,
+    TBankInstrumentMetadata,
     TBankInvestClient,
     TBankLastPrice,
+    TBankMoney,
     TBankTradingStatus,
     TBankUnavailable,
 )
@@ -59,6 +61,9 @@ def history_broker(first: datetime | None = None) -> Mock:
     broker.market_history_start.return_value = first
     broker.market_exchange_candles.return_value = ()
     broker.market_last_price.return_value = TBankLastPrice(UID, "101", NOW)
+    broker.market_instrument_metadata.return_value = TBankInstrumentMetadata(
+        UID, "History instrument", "HIST", "", "share", "", "RU", False, currency="rub",
+    )
     broker.market_trading_status.return_value = TBankTradingStatus(
         UID,
         "SECURITY_TRADING_STATUS_NORMAL_TRADING",
@@ -73,6 +78,39 @@ def history_broker(first: datetime | None = None) -> Mock:
 
 def market(broker: Mock) -> MarketService:
     return MarketService(broker=broker, cbr=Mock(spec=CBRClient))
+
+
+@pytest.mark.parametrize("surface", ["1m", "live"])
+@pytest.mark.parametrize(
+    "kind, nominal, unit, cash_price", [
+        ("share", None, "currency", "101"),
+        ("bond", TBankMoney("rub", "1000"), "percent_nominal", "1010"),
+        ("bond", TBankMoney("usd", "1000"), "percent_nominal", None),
+        ("bond", None, "percent_nominal", None),
+        ("futures", None, "points", None),
+        ("currency", None, "per_nominal", None),
+        ("unrecognized", None, "unknown", None),
+    ],
+)
+def test_native_market_units_are_explicit_and_history_never_uses_current_nominal(
+    surface: str, kind: str, nominal: TBankMoney | None, unit: str, cash_price: str | None,
+) -> None:
+    broker = history_broker()
+    broker.market_instrument_metadata.return_value = replace(
+        broker.market_instrument_metadata.return_value, instrument_type=kind, nominal=nominal,
+    )
+    broker.market_exchange_candles.return_value = (candle(NOW - timedelta(days=1)),)
+    with patch("omnicio.market.datetime", FixedDatetime):
+        result = (
+            market(broker).instrument_live_state(OWNER.id, UID) if surface == "live"
+            else market(broker).instrument_snapshot(OWNER.id, UID, period=surface)
+        )
+    assert result.price_unit == unit
+    assert result.last_price == "101"
+    assert result.cash_price == cash_price
+    assert result.price_currency == ("RUB" if kind in {"share", "currency"} else None)
+    if surface != "live":
+        assert result.candles[0].close == "101"
 
 
 def test_all_history_uses_real_first_date_ten_year_chunks_and_unique_sorted_months() -> None:

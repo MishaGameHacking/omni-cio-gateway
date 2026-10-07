@@ -6,7 +6,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
@@ -24,6 +24,7 @@ from .tbank import (
     TBankCancelResult,
     TBankDividend,
     TBankEnvironment,
+    TBankFundProfile,
     TBankFxQuote,
     TBankHistoricCandle,
     TBankInstrument,
@@ -33,6 +34,7 @@ from .tbank import (
     TBankMarketYield,
     TBankOperationsPage,
     TBankOrderBook,
+    TBankOrderEstimate,
     TBankOrderState,
     TBankPortfolio,
     TBankPositions,
@@ -303,6 +305,48 @@ class BrokerService:
             raise TBankUnavailable("instrument fundamental identity mismatch")
         return metadata, next(iter(fundamentals), None)
 
+    def market_instrument_metadata(
+        self, user_id: UUID, instrument_uid: str,
+    ) -> TBankInstrumentMetadata:
+        """Typed quote units without coupling quote availability to fundamentals."""
+        record, credential, environment = self._connected_credential(user_id)
+        metadata = self.tbank.get_instrument_overview(credential, environment, instrument_uid)
+        self._require_current_connection(record)
+        if metadata.uid != instrument_uid.strip():
+            raise TBankUnavailable("instrument metadata identity mismatch")
+        return metadata
+
+    def execution_instrument(self, user_id: UUID, instrument_uid: str) -> TBankInstrumentMetadata:
+        record, credential, environment = self._connected_credential(user_id)
+        result = self.tbank.get_execution_instrument(credential, environment, instrument_uid)
+        self._require_current_connection(record)
+        return result
+
+    def estimate_limit_order(
+        self, user_id: UUID, *, instrument_uid: str, lots: int, price: Decimal, action: str,
+    ) -> TBankOrderEstimate:
+        record, credential, environment = self._connected_credential(user_id)
+        result = self.tbank.estimate_limit_order(credential, environment, record.account_id,
+            instrument_uid=instrument_uid, lots=lots, price=price, action=action)
+        self._require_current_connection(record)
+        return result
+
+    def submit_limit_order(
+        self, user_id: UUID, *, expected_account_id: str, expected_verified_at: datetime,
+        instrument_uid: str, lots: int, price: Decimal, action: str, request_id: str,
+    ) -> TBankOrderState:
+        record, credential, environment = self._connected_credential(user_id)
+        if environment == "prod":
+            record, credential, environment = self._live_credential(user_id)
+        if record.account_id != expected_account_id or record.verified_at != expected_verified_at:
+            raise BrokerConnectionError("execution_account_changed")
+        self._require_current_connection(record)
+        result = self.tbank.submit_limit_order(credential, environment, record.account_id,
+            instrument_uid=instrument_uid, lots=lots, price=price, action=action,
+            request_id=request_id)
+        self._require_current_connection(record)
+        return result
+
     def market_exchange_candles(
         self,
         user_id: UUID,
@@ -356,6 +400,40 @@ class BrokerService:
                 to_at=to_at,
             ),
         )
+
+    def candidate_dividends(
+        self, user_id: UUID, instrument_uid: str, *, from_at: datetime, to_at: datetime,
+    ) -> tuple[TBankDividend, ...]:
+        record, credential, environment = self._connected_credential(user_id)
+        result = self._paced_evidence_read(self.tbank.get_dividends, credential, environment,
+                                           instrument_uid, from_at=from_at, to_at=to_at)
+        self._require_current_connection(record)
+        return cast(tuple[TBankDividend, ...], result)
+
+    def candidate_fund_profile(self, user_id: UUID, asset_uid: str) -> TBankFundProfile:
+        record, credential, environment = self._connected_credential(user_id)
+        result = self._paced_evidence_read(self.tbank.get_fund_profile, credential,
+                                           environment, asset_uid)
+        self._require_current_connection(record)
+        return cast(TBankFundProfile, result)
+
+    def instrument_news(
+        self, user_id: UUID, instrument_uid: str | None = None, *,
+        cursor: str | None = None, limit: int = 50,
+    ) -> dict[str, Any]:
+        """Read one bounded page; exact provider UID links select company news."""
+        if instrument_uid is not None and (not instrument_uid.strip() or len(instrument_uid) > 200):
+            raise ValueError("instrument_uid_invalid")
+        record, credential, environment = self._connected_credential(user_id)
+        page = self.tbank.get_news(credential, environment, cursor=cursor, limit=limit)
+        self._require_current_connection(record)
+        items = [asdict(item) for item in page.items
+                 if instrument_uid is None or instrument_uid in item.instrument_uids]
+        return {"items": items, "next_cursor": page.next_cursor,
+                "scanned_items": len(page.items), "instrument_uid": instrument_uid,
+                "source": "T-Invest InstrumentsService.News",
+                "source_url": "https://developer.tbank.ru/invest/services/instruments/methods",
+                "observed_at": datetime.now(UTC).isoformat(), "status": "available"}
 
     def candidate_bond_events(
         self,

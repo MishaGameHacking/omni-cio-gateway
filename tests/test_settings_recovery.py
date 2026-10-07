@@ -528,6 +528,7 @@ def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -
 
     from omnicio import main
     from omnicio.broker import BrokerConnectionStatus, BrokerService
+    from omnicio.research_store import ResearchStore
 
     user = UserRecord(A, 123, "active", "user")
     database = Mock(spec=Database)
@@ -554,11 +555,16 @@ def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -
     }
     broker = Mock(spec=BrokerService)
     broker.status.return_value = BrokerConnectionStatus(
-        connected=True, environment="prod", account_id="synthetic-a",
+        connected=True, environment="prod", account_id="synthetic-a", verified_at=START,
     )
     broker.candidate_fundamentals.return_value = ()
     broker.candidate_daily_exchange_candles.return_value = prices("a").candles
     research = Mock(wraps=main.strategy_research)
+    archive = Mock(spec=ResearchStore)
+    archive.evidence.return_value = {"version": 0, "document": {"assets": []}, "received_at": None}
+    archive.save_run.return_value = {"id": str(UUID(int=900)), "replay_available": True}
+    monkeypatch.setattr(app.state, "research_store", archive, raising=False)
+    monkeypatch.setattr(main, "market_service", lambda request: Mock(cbr=None))
     monkeypatch.setattr(main, "portfolio_store", lambda request: store)
     monkeypatch.setattr(main, "broker_service", lambda request: broker)
     monkeypatch.setattr(main, "strategy_research", research)
@@ -582,6 +588,7 @@ def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -
         user_id=user.id, expected_version=4, store=store, broker=broker,
         from_at=START, to_at=END, commission_bps=Decimal("10"),
         slippage_bps=Decimal("5"), initial_capital_rub=Decimal("20000"),
+        research_store=archive, cbr=None,
     )
     broker.candidate_daily_exchange_candles.assert_called_once_with(
         user.id, "a", from_at=START, to_at=END,

@@ -100,19 +100,16 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("column_name = 'role'", ready.commands[0])
 
     def test_runtime_gate_matches_application_database_readiness(self) -> None:
-        database_path = SCRIPT_DIR.parent.parent / "src" / "omnicio" / "db.py"
-        tree = ast.parse(database_path.read_text(encoding="utf-8"))
-        healthcheck = next(
-            node for node in ast.walk(tree)
-            if isinstance(node, ast.FunctionDef) and node.name == "healthcheck"
-        )
-        queries = [
-            node.value for node in ast.walk(healthcheck)
-            if isinstance(node, ast.Constant) and isinstance(node.value, str)
-            and node.value.lstrip().startswith("SELECT")
-        ]
-        self.assertEqual(len(queries), 1)
-        predicate = queries[0].strip().removeprefix("SELECT").removesuffix("AS ready")
+        source = SCRIPT_DIR.parent.parent / "src/omnicio"
+        tree = ast.parse((source / "schema.py").read_text(encoding="utf-8"))
+        query = next(ast.literal_eval(node.value) for node in tree.body
+                     if isinstance(node, ast.Assign)
+                     and any(isinstance(target, ast.Name) and target.id == "READINESS_QUERY"
+                             for target in node.targets))
+        database_source = (source / "db.py").read_text(encoding="utf-8")
+        self.assertIn("from .schema import READINESS_QUERY", database_source)
+        self.assertTrue("cur.execute(READINESS_QUERY)" in database_source)
+        predicate = query.strip().removeprefix("SELECT").removesuffix("AS ready")
         expected = f"SELECT CASE WHEN {predicate} THEN 'ready' ELSE 'missing' END"
         ssh = FakeSsh(True)
         self.assertTrue(MODULE.runtime_is_ready(ssh))

@@ -6,6 +6,8 @@ not silently switch to another account, and incomplete evidence stays unavailabl
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import re
 from collections.abc import Iterator, Mapping, Sequence
@@ -14,8 +16,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from .db import Database, live_execution_lock_key
+from .goal_planning import goal_forecast, normalize_goal_plan
 from .portfolio_store import SettingsVersionConflict
 from .workspace import (
     CATEGORIES,
@@ -87,6 +91,47 @@ def _version(expected: int, actual: int) -> None:
 
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+
+
+def _event_cursor(value: str | None) -> tuple[datetime | None, str | None, int | None]:
+    if value is None:
+        return None, None, None
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,512}", value):
+        raise ValueError("workspace_event_cursor_invalid")
+    try:
+        decoded = json.loads(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
+        if not isinstance(decoded, list) or len(decoded) != 3:
+            raise ValueError("workspace_event_cursor_invalid")
+        at, ident, ceiling = decoded
+        parsed = timestamp(at)
+        if (parsed is None or not isinstance(ident, str)
+                or re.fullmatch(r"[0-9a-f]{64}", ident) is None
+                or type(ceiling) is not int or not 0 <= ceiling < 2**63):
+            raise ValueError("workspace_event_cursor_invalid")
+        return parsed, ident, ceiling
+    except (ValueError, TypeError, binascii.Error) as exc:
+        raise ValueError("workspace_event_cursor_invalid") from exc
+
+
+def _event_record(row: Mapping[str, Any]) -> dict[str, Any]:
+    result = dict(row)
+    source = result["source"]
+    destination: dict[str, str] = {
+        "view": {"overview": "home", "income": "analytics"}.get(
+            result["target"], result["target"],
+        ),
+    }
+    uid = source.get("instrument_uid")
+    if isinstance(uid, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", uid):
+        destination = {"view": "asset", "uid": uid}
+    elif source.get("goal_id"):
+        try:
+            goal = str(UUID(str(source["goal_id"])))
+            destination = {"view": "goals", "goal_id": goal}
+        except ValueError:
+            pass
+    result["destination"] = destination
+    return result
 
 
 class WorkspaceStore:
@@ -309,6 +354,48 @@ class WorkspaceStore:
             basis = self._basis(cur, user_id)
             return {"items": [self._goal(row, basis, now) for row in self._goal_rows(cur, user_id)]}
 
+    def goal_plan(self, user_id: UUID, goal_id: UUID) -> dict[str, Any]:
+        now = datetime.now(UTC)
+        with self._transaction(user_id) as cur:
+            cur.execute("SELECT * FROM investment_goals WHERE user_id = %s AND id = %s",
+                        (user_id, goal_id))
+            row = cur.fetchone()
+            if row is None:
+                raise WorkspaceNotFound("workspace_goal_not_found")
+            goal = self._goal(row, self._basis(cur, user_id), now)
+            cur.execute("SELECT version, document, updated_at FROM goal_plans "
+                        "WHERE user_id = %s AND goal_id = %s", (user_id, goal_id))
+            plan = cur.fetchone()
+            saved = dict(plan) if plan else {"version": 0, "document": None, "updated_at": None}
+        return {**saved, "goal_id": str(goal_id), "goal_version": goal["version"],
+                "forecast": goal_forecast(
+                    goal, saved["document"], today=now.astimezone(ZoneInfo("Europe/Moscow")).date(),
+                )
+                if saved["document"] else None}
+
+    def save_goal_plan(
+        self, user_id: UUID, goal_id: UUID, document: object, *,
+        expected_version: int, expected_goal_version: int,
+    ) -> dict[str, Any]:
+        normalized = normalize_goal_plan(document)
+        with self._transaction(user_id) as cur:
+            cur.execute("SELECT version FROM investment_goals WHERE user_id = %s "
+                        "AND id = %s FOR UPDATE", (user_id, goal_id))
+            row = cur.fetchone()
+            if row is None:
+                raise WorkspaceNotFound("workspace_goal_not_found")
+            _version(expected_goal_version, row["version"])
+            cur.execute("SELECT version FROM goal_plans WHERE user_id = %s AND goal_id = %s",
+                        (user_id, goal_id))
+            existing = cur.fetchone()
+            _version(expected_version, existing["version"] if existing else 0)
+            cur.execute("INSERT INTO goal_plans (user_id, goal_id, version, document) "
+                        "VALUES (%s, %s, 1, %s::jsonb) ON CONFLICT (user_id, goal_id) "
+                        "DO UPDATE SET version = goal_plans.version + 1, "
+                        "document = EXCLUDED.document, updated_at = now()",
+                        (user_id, goal_id, _json(normalized)))
+        return self.goal_plan(user_id, goal_id)
+
     def _goal_binding(
         self,
         cur: Any,
@@ -512,6 +599,11 @@ class WorkspaceStore:
             "occurred_at, target, source) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb) "
             "ON CONFLICT (user_id, id) DO UPDATE SET title = EXCLUDED.title, "
             "detail = EXCLUDED.detail, severity = EXCLUDED.severity, source = EXCLUDED.source, "
+            "revision = CASE WHEN workspace_events.source IS DISTINCT FROM EXCLUDED.source "
+            "THEN nextval(pg_get_serial_sequence('workspace_events', 'revision')) "
+            "ELSE workspace_events.revision END, "
+            "updated_at = CASE WHEN workspace_events.source IS DISTINCT FROM EXCLUDED.source "
+            "THEN now() ELSE workspace_events.updated_at END, "
             "read_at = CASE WHEN workspace_events.source IS DISTINCT FROM EXCLUDED.source "
             "THEN NULL ELSE workspace_events.read_at END, "
             "occurred_at = CASE WHEN workspace_events.source IS DISTINCT FROM EXCLUDED.source "
@@ -788,11 +880,25 @@ class WorkspaceStore:
         limit: int = 50,
         unread_only: bool = False,
         category: str = "all",
+        cursor: str | None = None,
+        query: str = "",
     ) -> dict[str, Any]:
         if type(limit) is not int or not 1 <= limit <= 200:
             raise ValueError("workspace_event_limit")
         if category not in (*CATEGORIES, "all") or type(unread_only) is not bool:
             raise ValueError("workspace_event_filter")
+        if (not isinstance(query, str) or len(query) > 200
+                or any(ord(char) < 32 for char in query)):
+            raise ValueError("workspace_event_query_invalid")
+        before, before_id, ceiling = _event_cursor(cursor)
+        cur.execute(
+            "SELECT COALESCE(max(revision), 0) AS revision FROM workspace_events "
+            "WHERE user_id = %s", (user_id,),
+        )
+        current_revision = int(cur.fetchone()["revision"])
+        if ceiling is not None and ceiling > current_revision:
+            raise ValueError("workspace_event_cursor_invalid")
+        ceiling = current_revision if ceiling is None else ceiling
         enabled = [
             key
             for key in CATEGORIES
@@ -800,12 +906,24 @@ class WorkspaceStore:
         ]
         cur.execute(
             "SELECT id, category, kind, severity, title, detail, occurred_at, read_at, "
-            "target, source "
+            "target, source, revision "
             "FROM workspace_events WHERE user_id = %s AND category = ANY (%s) "
-            "AND (NOT %s OR read_at IS NULL) ORDER BY occurred_at DESC, id DESC LIMIT %s",
-            (user_id, enabled, unread_only, limit),
+            "AND (NOT %s OR read_at IS NULL) AND revision <= %s "
+            "AND (%s::timestamptz IS NULL OR (occurred_at, id) < (%s, %s)) "
+            "AND (%s = '' OR position(lower(%s) IN lower(title || ' ' || detail "
+            "|| ' ' || source::text)) > 0) "
+            "ORDER BY occurred_at DESC, id DESC LIMIT %s",
+            (user_id, enabled, unread_only, ceiling, before, before, before_id,
+             query.strip(), query.strip(), limit + 1),
         )
-        items = [dict(row) for row in cur.fetchall()]
+        rows = cur.fetchall()
+        items = [_event_record(row) for row in rows[:limit]]
+        next_cursor = None
+        if len(rows) > limit:
+            last = items[-1]
+            next_cursor = base64.urlsafe_b64encode(_json([
+                last["occurred_at"], last["id"], ceiling,
+            ]).encode()).decode().rstrip("=")
         cur.execute(
             "SELECT count(*) AS total FROM workspace_events WHERE user_id = %s "
             "AND category = ANY (%s) AND read_at IS NULL",
@@ -828,6 +946,8 @@ class WorkspaceStore:
             "unread_count": unread,
             "alerts_suppressed": quiet_now(preferences, now),
             "digest": digest,
+            "next_cursor": next_cursor,
+            "read_all_before": ceiling,
         }
 
     def events(
@@ -837,6 +957,8 @@ class WorkspaceStore:
         limit: int = 50,
         unread_only: bool = False,
         category: str = "all",
+        cursor: str | None = None,
+        query: str = "",
     ) -> dict[str, Any]:
         now = datetime.now(UTC)
         with self._transaction(user_id) as cur:
@@ -851,7 +973,55 @@ class WorkspaceStore:
                 limit=limit,
                 unread_only=unread_only,
                 category=category,
+                cursor=cursor,
+                query=query,
             )
+
+    def synchronize_events(self, user_id: UUID) -> None:
+        """Collect persisted facts even while the owner's browser is closed."""
+        now = datetime.now(UTC)
+        with self._transaction(user_id) as cur:
+            basis = self._basis(cur, user_id)
+            goals = [self._goal(row, basis, now) for row in self._goal_rows(cur, user_id)]
+            self._sync_events(cur, user_id, basis, goals, now)
+
+    def get_event(self, user_id: UUID, ident: str) -> dict[str, Any]:
+        if not isinstance(ident, str) or re.fullmatch(r"[0-9a-f]{64}", ident) is None:
+            raise ValueError("workspace_event_ids_invalid")
+        with self._transaction(user_id) as cur:
+            cur.execute(
+                "SELECT id, category, kind, severity, title, detail, occurred_at, read_at, "
+                "target, source, revision FROM workspace_events WHERE user_id = %s AND id = %s",
+                (user_id, ident),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise WorkspaceNotFound("workspace_event_not_found")
+            return _event_record(row)
+
+    def mark_all_events_read(
+        self, user_id: UUID, *, through_revision: int, category: str = "all",
+    ) -> dict[str, Any]:
+        if (type(through_revision) is not int or not 0 <= through_revision < 2**63
+                or category not in (*CATEGORIES, "all")):
+            raise ValueError("workspace_event_cutoff_invalid")
+        now = datetime.now(UTC)
+        with self._transaction(user_id) as cur:
+            preferences = self._preferences(cur, user_id)["document"]
+            cur.execute(
+                "SELECT COALESCE(max(revision), 0) AS revision FROM workspace_events "
+                "WHERE user_id = %s", (user_id,),
+            )
+            if through_revision > int(cur.fetchone()["revision"]):
+                raise ValueError("workspace_event_cutoff_invalid")
+            enabled = [key for key in CATEGORIES
+                       if preferences["notifications"][key] and category in {"all", key}]
+            cur.execute(
+                "UPDATE workspace_events SET read_at = %s WHERE user_id = %s "
+                "AND category = ANY (%s) AND read_at IS NULL AND revision <= %s",
+                (now, user_id, enabled, through_revision),
+            )
+            return self._events_payload(cur, user_id, preferences, now, category=category)
 
     def mark_events_read(
         self,

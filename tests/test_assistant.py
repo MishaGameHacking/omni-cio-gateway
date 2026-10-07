@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
 from typing import Any
 from unittest.mock import Mock, patch
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +18,7 @@ from omnicio.assistant import (
     AssistantBusy,
     AssistantClient,
     AssistantNotConfigured,
+    AssistantService,
     AssistantUnavailable,
     portfolio_context,
 )
@@ -256,11 +258,22 @@ def test_portfolio_context_is_an_allowlist_and_preserves_missing_values() -> Non
     assert "private" not in json.dumps(context).lower()
 
 
+def chat_body(**changes: Any) -> dict[str, Any]:
+    return {
+        "message": "Вопрос",
+        "conversation_id": str(uuid4()),
+        "request_id": str(uuid4()),
+        "expected_version": 0,
+        **changes,
+    }
+
+
 def test_assistant_http_releases_only_server_allowlisted_context_for_explicit_request(
     workspace_http: tuple[TestClient, Mock, Mock, Mock],
 ) -> None:
     client, auth, store, _ = workspace_http
-    assistant = Mock(spec=AssistantClient)
+    assistant = Mock(spec=AssistantService)
+    assistant.status.return_value = {"enabled": True, "configured": True}
     assistant.chat.return_value = {"reply": "Ответ", "context_used": "portfolio"}
     store.dashboard.return_value = {
         "connection": {"connected": True, "account_id": "account-a", "environment": "prod"},
@@ -270,7 +283,7 @@ def test_assistant_http_releases_only_server_allowlisted_context_for_explicit_re
     broker = Mock(spec=BrokerService)
     broker.status.return_value = BrokerConnectionStatus(True, "prod", "account-a")
     with (
-        patch.object(app.state, "assistant_client", assistant, create=True),
+        patch.object(app.state, "assistant_service", assistant, create=True),
         patch.object(
             app.state,
             "broker_service",
@@ -278,33 +291,34 @@ def test_assistant_http_releases_only_server_allowlisted_context_for_explicit_re
             create=True,
         ),
     ):
-        general = client.post(
-            "/api/assistant/messages", json={"message": "Вопрос"}, headers=HEADERS
-        )
+        general = client.post("/api/assistant/messages", json=chat_body(), headers=HEADERS)
         assert general.status_code == 200
         store.dashboard.assert_not_called()
         assert assistant.chat.call_args.kwargs["context"] is None
         response = client.post(
             "/api/assistant/messages",
-            json={"message": "Вопрос", "context": "portfolio"},
+            json=chat_body(context="portfolio"),
             headers=HEADERS,
         )
         assert response.status_code == 200
         store.dashboard.assert_called_once_with(OWNER.id)
         assert "private" not in json.dumps(assistant.chat.call_args.kwargs["context"]).lower()
         calls = assistant.chat.call_count
-        for extra in ({"tools": []}, {"base_url": "http://169.254.169.254"}, {"user_id": "other"}):
+        for extra in (
+            {"tools": []},
+            {"base_url": "http://169.254.169.254"},
+            {"user_id": "other"},
+            {"history": []},
+        ):
             rejected = client.post(
                 "/api/assistant/messages",
-                json={"message": "Вопрос", **extra},
+                json=chat_body(**extra),
                 headers=HEADERS,
             )
             assert rejected.status_code == 422
         assert assistant.chat.call_count == calls
         auth.refresh_session.side_effect = [OWNER, None]
-        revoked = client.post(
-            "/api/assistant/messages", json={"message": "Вопрос"}, headers=HEADERS
-        )
+        revoked = client.post("/api/assistant/messages", json=chat_body(), headers=HEADERS)
         assert revoked.status_code == 401
         assert "reply" not in revoked.json()
 
@@ -316,12 +330,13 @@ def test_assistant_http_discards_reply_after_account_switch(
     store.dashboard.return_value = {
         "connection": {"connected": True, "account_id": "old", "environment": "prod"},
     }
-    assistant = Mock(spec=AssistantClient)
+    assistant = Mock(spec=AssistantService)
+    assistant.status.return_value = {"enabled": True, "configured": True}
     assistant.chat.return_value = {"reply": "private-old-account-analysis"}
     broker = Mock(spec=BrokerService)
     broker.status.return_value = BrokerConnectionStatus(True, "prod", "new")
     with (
-        patch.object(app.state, "assistant_client", assistant, create=True),
+        patch.object(app.state, "assistant_service", assistant, create=True),
         patch.object(
             app.state,
             "broker_service",
@@ -331,7 +346,7 @@ def test_assistant_http_discards_reply_after_account_switch(
     ):
         response = client.post(
             "/api/assistant/messages",
-            json={"message": "Вопрос", "context": "portfolio"},
+            json=chat_body(context="portfolio"),
             headers=HEADERS,
         )
     assert response.status_code == 409

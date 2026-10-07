@@ -33,6 +33,8 @@ from omnicio.tbank import (
     TBankLastPrice,
     TBankMarketYield,
     TBankMoney,
+    TBankNewsItem,
+    TBankNewsPage,
     TBankOrderBook,
     TBankOrderLevel,
     TBankPortfolio,
@@ -59,6 +61,63 @@ class FakeResponse:
 
     def read(self) -> bytes:
         return json.dumps(self.payload).encode()
+
+
+def test_fund_profile_reads_explicit_expense_percent_and_preserves_provider_identity():
+    payload = {
+        "asset": {
+            "uid": "fund-asset",
+            "security": {
+                "type": "etf",
+                "etf": {"totalExpense": {"units": "0", "nano": 750000000}, "primaryIndex": "IMOEX"},
+            },
+        }
+    }
+    client = TBankInvestClient()
+    with patch.object(TBankInvestClient, "_post", return_value=payload) as post:
+        value = client.get_fund_profile("test-fixture", "prod", "fund-asset")
+    assert value.total_expense_percent == "0.75"
+    assert value.primary_index == "IMOEX"
+    assert post.call_args.kwargs["body"] == {"id": "fund-asset"}
+    payload["asset"]["uid"] = "another-asset"
+    with (
+        patch.object(TBankInvestClient, "_post", return_value=payload),
+        pytest.raises(TBankUnavailable),
+    ):
+        client.get_fund_profile("test-fixture", "prod", "fund-asset")
+
+
+def test_provider_news_keeps_exact_instrument_links_cursor_and_untrusted_text():
+    payload = {
+        "nextCursor": "15",
+        "items": [
+            {
+                "id": "18",
+                "title": "<b>Title</b>",
+                "source": "https://example.invalid/news/18",
+                "ts": "2026-10-06T10:00:00Z",
+                "instrumentId": [{"instrument": {"instrumentUid": "exact-uid"}}],
+                "priority": True,
+            }
+        ],
+    }
+    client = TBankInvestClient()
+    with patch.object(TBankInvestClient, "_post", return_value=payload) as post:
+        page = client.get_news("test-fixture", "prod", cursor="20", limit=3)
+    assert page.next_cursor == "15"
+    assert page.items[0].instrument_uids == ("exact-uid",)
+    assert page.items[0].title == "<b>Title</b>"
+    assert page.items[0].source_url == "https://example.invalid/news/18"
+    assert post.call_args.kwargs["body"] == {"cursor": "20", "limit": 3}
+    payload["items"][0]["source"] = "javascript:alert(1)"
+    with patch.object(TBankInvestClient, "_post", return_value=payload):
+        assert client.get_news("test-fixture", "prod").items[0].source_url is None
+    payload["nextCursor"] = "20"
+    with (
+        patch.object(TBankInvestClient, "_post", return_value=payload),
+        pytest.raises(TBankUnavailable),
+    ):
+        client.get_news("test-fixture", "prod", cursor="20")
 
 
 def test_tbank_get_accounts_uses_bearer_without_exposing_token() -> None:
@@ -1448,6 +1507,27 @@ def test_broker_read_discards_result_after_connection_changes(operation: str) ->
         pytest.raises(BrokerConnectionError, match="connection changed"),
     ):
         read(user_id)
+
+
+@pytest.mark.parametrize("operation", ["market_instrument_metadata", "instrument_news"])
+def test_new_source_reads_recheck_original_connection_after_provider_io(operation):
+    database, provider, user_id = FakeDatabase(), FakeTBank(), UUID(int=1)
+    service = BrokerService(database, credential_key=Fernet.generate_key().decode(), tbank=provider)
+    service.connect(user_id=user_id, credential="t.fake-owner-credential-1234567890",
+                    environment="prod", account_id="account-1", terms_version="2026-10-01-v2")
+    item = TBankNewsItem("1", "Fixture", "", "", "Publisher", None,
+                         datetime.now(UTC), ("uid",), False)
+    page = TBankNewsPage((item,), None)
+    method = "get_news" if operation == "instrument_news" else "get_instrument_overview"
+
+    def revoke(*args, **kwargs):
+        database.delete_tbank_connection(user_id)
+        return page if operation == "instrument_news" else Mock(uid="uid")
+
+    with patch.object(provider, method, side_effect=revoke, create=True), pytest.raises(
+        BrokerConnectionError, match="connection changed"
+    ):
+        getattr(service, operation)(user_id, "uid")
 
 
 def test_broker_service_keeps_two_users_strictly_isolated() -> None:
