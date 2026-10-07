@@ -19,6 +19,7 @@ from omnicio.db import Database, UserRecord
 from omnicio.main import CANONICAL_ORIGIN, app, lifespan
 from omnicio.observer import PortfolioRefreshBusy, PortfolioRefreshCoordinator
 from omnicio.service import AuthService
+from omnicio.tbank import TBankAccount
 
 OWNER = UserRecord(UUID(int=1801), 1801, "active", "user")
 OTHER = UserRecord(UUID(int=1802), 1802, "active", "user")
@@ -35,6 +36,7 @@ CONNECT = {
     "credential": "synthetic-user-provider-token", "environment": "prod",
     "account_id": "synthetic-selected-account", "accept_personal_terms": True,
 }
+PREVIEW = {key: value for key, value in CONNECT.items() if key != "account_id"}
 
 
 @pytest.fixture
@@ -47,6 +49,7 @@ def refresh_http() -> Iterator[tuple[TestClient, Mock, Mock, Mock, Mock]]:
     refresh = Mock(spec=PortfolioRefreshCoordinator)
     refresh.request.return_value = refresh.status.return_value = JOB
     broker = Mock(spec=BrokerService)
+    broker.preview_accounts.return_value = ()
     broker.connect.return_value = BrokerConnectionStatus(
         True, "prod", CONNECT["account_id"], "Synthetic", NOW,
     )
@@ -157,6 +160,71 @@ def test_refresh_rechecks_consent_after_enqueue_and_reports_busy_without_new_aut
     assert response.json()["detail"] == "portfolio_refresh_busy"
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("POST", "/api/broker/tbank/accounts", PREVIEW),
+        ("PUT", "/api/broker/tbank", CONNECT),
+    ],
+)
+def test_broker_token_requires_current_consent_before_provider_access_or_storage(
+    refresh_http: tuple[TestClient, Mock, Mock, Mock, Mock],
+    method: str, path: str, body: dict[str, Any],
+) -> None:
+    client, _, database, refresh, broker = refresh_http
+    database.has_legal_versions.return_value = False
+    response = client.request(method, path, json=body, headers=HEADERS)
+    assert response.status_code == 409
+    assert response.json()["detail"] == "updated_legal_consent_required"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert CONNECT["credential"] not in response.text
+    assert broker.mock_calls == []
+    refresh.request.assert_not_called()
+
+
+def test_broker_preview_returns_account_metadata_with_current_consent(
+    refresh_http: tuple[TestClient, Mock, Mock, Mock, Mock],
+) -> None:
+    client, _, _, refresh, broker = refresh_http
+    broker.preview_accounts.return_value = (
+        TBankAccount(CONNECT["account_id"], "Synthetic", "BROKER", "OPEN"),
+    )
+    response = client.post("/api/broker/tbank/accounts", json=PREVIEW, headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json() == {"accounts": [{
+        "id": CONNECT["account_id"], "name": "Synthetic", "type": "BROKER", "status": "OPEN",
+    }]}
+    assert CONNECT["credential"] not in response.text
+    broker.preview_accounts.assert_called_once_with(
+        credential=CONNECT["credential"], environment=CONNECT["environment"],
+    )
+    broker.connect.assert_not_called()
+    refresh.request.assert_not_called()
+
+
+@pytest.mark.parametrize("change", ["logout", "other_user", "consent"])
+def test_broker_preview_discards_accounts_after_authority_changes_during_provider_read(
+    refresh_http: tuple[TestClient, Mock, Mock, Mock, Mock], change: str,
+) -> None:
+    client, auth, database, refresh, broker = refresh_http
+
+    def changed(**kwargs: Any) -> tuple[TBankAccount, ...]:
+        if change == "consent":
+            database.has_legal_versions.return_value = False
+        else:
+            auth.refresh_session.side_effect = None
+            auth.refresh_session.return_value = None if change == "logout" else OTHER
+        return (TBankAccount(CONNECT["account_id"], "Synthetic", "BROKER", "OPEN"),)
+
+    broker.preview_accounts.side_effect = changed
+    response = client.post("/api/broker/tbank/accounts", json=PREVIEW, headers=HEADERS)
+    assert response.status_code == (401 if change == "logout" else 409)
+    assert "accounts" not in response.json()
+    assert CONNECT["account_id"] not in response.text
+    broker.connect.assert_not_called()
+    refresh.request.assert_not_called()
+
+
 @pytest.mark.parametrize("busy", [False, True])
 def test_first_broker_connect_queues_observation_without_rolling_back_valid_connection(
     refresh_http: tuple[TestClient, Mock, Mock, Mock, Mock], busy: bool,
@@ -176,20 +244,24 @@ def test_first_broker_connect_queues_observation_without_rolling_back_valid_conn
     broker.disconnect.assert_not_called()
 
 
-def test_broker_connect_does_not_queue_when_session_changes_during_provider_read(
-    refresh_http: tuple[TestClient, Mock, Mock, Mock, Mock],
+@pytest.mark.parametrize("change", ["logout", "other_user", "consent"])
+def test_broker_connect_does_not_queue_when_authority_changes_during_provider_read(
+    refresh_http: tuple[TestClient, Mock, Mock, Mock, Mock], change: str,
 ) -> None:
-    client, auth, _, refresh, broker = refresh_http
+    client, auth, database, refresh, broker = refresh_http
     connection = broker.connect.return_value
 
     def replace_session(**kwargs: Any) -> BrokerConnectionStatus:
-        auth.refresh_session.side_effect = None
-        auth.refresh_session.return_value = OTHER
+        if change == "consent":
+            database.has_legal_versions.return_value = False
+        else:
+            auth.refresh_session.side_effect = None
+            auth.refresh_session.return_value = None if change == "logout" else OTHER
         return connection
 
     broker.connect.side_effect = replace_session
     response = client.put("/api/broker/tbank", json=CONNECT, headers=HEADERS)
-    assert response.status_code == 409
+    assert response.status_code == (401 if change == "logout" else 409)
     assert "account_id" not in response.json()
     refresh.request.assert_not_called()
 

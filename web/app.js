@@ -82,7 +82,8 @@
     assistantBusy: false,
     drawerReturn: null,
     verifying: false,
-    authMode: "login"
+    authMode: "login",
+    pendingTheme: null
   };
   state.formDrafts = {};
   state.formBaselines = {};
@@ -347,6 +348,7 @@
       uncertain: false
     };
     state.user = null;
+    state.pendingTheme = null;
     state.data = {};
     state.errors = {};
     state.formDrafts = {};
@@ -592,7 +594,7 @@
     public: true
   }, {
     name: "preferences",
-    views: ["market", "asset", "settings", "profile"],
+    views: [...views],
     path: "/api/preferences"
   }, {
     name: "connection",
@@ -1260,10 +1262,14 @@
     slot.server = clone(payload);
     slot.draft = clone(payload.document);
     slot.error = null;
-    U.setPrivacy(Boolean(payload.document.mask_balances));
-    U.setLocale?.(payload.document.locale);
-    applyTheme(payload.document.theme);
-    updateIdentity();
+    if (state.pendingTheme && state.user && !state.tour) {
+      const choice = state.pendingTheme;
+      state.pendingTheme = null;
+      editPreferences(document => {
+        document.theme = choice;
+      });
+    }
+    applySavedEffects("prefs");
   }
   function adoptStrategy(payload) {
     const selection = payload?.selection;
@@ -1315,6 +1321,7 @@
     if (kind === "prefs") {
       U.setPrivacy(Boolean(state.prefs.draft?.mask_balances));
       U.setLocale?.(state.prefs.draft?.locale);
+      applyTheme(state.prefs.draft?.theme);
       updateIdentity();
     }
     updateSaveStatus(kind);
@@ -1388,7 +1395,7 @@
   const canSaveVersioned = (kind, slot) => {
     if (slot.busy || !slot.dirty || slot.error || !slot.draft || !state.user || state.locked) return false;
     if (kind === "prefs" && !slot.server) return false;
-    const activeForm = $(`#${kind === "strategy" ? "strategy-form" : "preferences-form"}`);
+    const activeForm = kind === "strategy" ? $("#strategy-form") : null;
     if (activeForm && !activeForm.checkValidity()) {
       slot.error = Object.assign(new Error("invalid_values"), {
         status: 422
@@ -4254,11 +4261,35 @@
   }) {
     event.preventDefault();
     const choice = control.dataset.themeChoice;
-    if (state.user && !state.tour) {
-      if (editPreferences(document => {
-        document.theme = choice;
-      })) applyTheme(choice);
-    } else applyTheme(choice);
+    if (!["dark", "light", "system"].includes(choice)) return;
+    if (!state.user || state.tour || !state.prefs.server) {
+      state.pendingTheme = choice;
+      applyTheme(choice);
+      if (state.user && !state.tour && !state.loading.has("preferences")) {
+        const generation = state.generation;
+        await loadResource("preferences", "/api/preferences", {
+          force: true
+        });
+        if (generation === state.generation && state.pendingTheme && state.errors.preferences) toast("Тема применена на этом устройстве. Настройки аккаунта не загрузились; повторите выбор темы после восстановления связи.", true);
+      }
+      return;
+    }
+    if (editPreferences(document => {
+      document.theme = choice;
+    })) syncThemeForm(choice);
+  }
+  function syncThemeForm(choice) {
+    const formId = "preferences-form";
+    const baseline = state.formBaselines[formId];
+    const draft = state.formDrafts[formId];
+    if (baseline) baseline.theme = choice;
+    if (draft) {
+      draft.theme = choice;
+      if (same(draft, baseline)) delete state.formDrafts[formId];
+    }
+    const input = $("#preferences-form [name=theme]");
+    if (input) input.value = choice;
+    updateSaveStatus("prefs");
   }
   async function handleClickPublicView({
     event,
@@ -4563,7 +4594,6 @@
     });
     if (changed) {
       acceptFormSubmission(form);
-      applyTheme(controls.theme.value);
     }
   }
   async function handleSubmitBroker({
