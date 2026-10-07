@@ -764,6 +764,29 @@ function captureBrowserLayout() {
   };
   const visibleApp = !document.querySelector("#app-shell").hidden;
   const modal = Boolean(document.querySelector("dialog[open]"));
+  const hero = !visibleApp && !modal && innerWidth <= 680 ? {
+    required: true,
+    rect: document.querySelector(".hero").getBoundingClientRect().toJSON(),
+    regions: [
+      ["eyebrow", ".hero-copy>.eyebrow"],
+      ["heading", "#hero-title"],
+      ["lead", ".hero-lead"],
+      ["data", ".hero-data"],
+      ["actions", ".hero-buttons"],
+      ["facts", ".hero-facts"]
+    ].map(([name, selector]) => {
+      const element = document.querySelector(selector);
+      if (!element) return {name, visible: false};
+      const style = getComputedStyle(element);
+      return {
+        name,
+        visible: Boolean(element.getClientRects().length) && style.visibility === "visible" && Number(style.opacity) > 0,
+        text: element.innerText.trim(),
+        fontSize: Number.parseFloat(style.fontSize),
+        rect: element.getBoundingClientRect().toJSON()
+      };
+    })
+  } : {required: false};
   const drawer = document.querySelector("#app-sidebar").dataset.open === "true";
   const nav = document.querySelector(visibleApp ? "#mobile-nav" : ".public-mobile-nav");
   const viewport = {
@@ -865,6 +888,7 @@ function captureBrowserLayout() {
       captions: readableElements(".card-label, .data-footnote, .source-line, .event-meta"),
       actions: readableElements(".button, .icon-button")
     },
+    hero,
     navigation,
     charts,
     tables
@@ -986,6 +1010,19 @@ function assertReadability(data, label) {
   for (const item of data.readability.actions) {
     const minimumHeight = item.compactAction && data.width > 960 ? 40 : 44;
     assert.ok(item.rect.height >= minimumHeight, label + ": comfortable action height " + JSON.stringify(item));
+  }
+}
+function assertMobileHero(data, label) {
+  const hero = data.hero;
+  if (!hero.required) return;
+  let previous = null;
+  for (const region of hero.regions) {
+    assert.equal(region.visible, true, label + ": hero content remains visible " + region.name);
+    assert.ok(region.text.length > 0 && region.rect.width > 0 && region.rect.height > 0, label + ": hero content has a rendered text region " + JSON.stringify(region));
+    assert.ok(region.rect.left >= hero.rect.left - 1 && region.rect.right <= hero.rect.right + 1 && region.rect.top >= hero.rect.top - 1 && region.rect.bottom <= hero.rect.bottom + 1, label + ": hero content stays inside its unclipped section " + JSON.stringify(region));
+    if (previous) assert.ok(region.rect.top >= previous.rect.bottom - 1, label + ": mobile hero content follows the preceding region without overlap " + JSON.stringify({previous, region}));
+    if (region.name === "lead") assert.ok(region.fontSize >= 16, label + ": the complete hero description remains readable " + JSON.stringify(region));
+    previous = region;
   }
 }
 function assertChartLayout(charts, label) {
@@ -1201,6 +1238,7 @@ const runBrowser = async base => {
       assert.deepEqual(data.csp, [], label + ": production Content Security Policy");
       assertMobileNavigation(data, label);
       assertReadability(data, label);
+      assertMobileHero(data, label);
       assertChartLayout(data.charts, label);
       assertTableClipping(data.tables, label);
     };
