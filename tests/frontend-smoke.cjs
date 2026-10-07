@@ -1886,6 +1886,8 @@ async function exerciseGuestViewport({
     url: `${base}?case=${guestKey}`
   });
   await wait('document.querySelectorAll(".public-strategy-card").length===10', "Public canonical catalog");
+  const publicVersions = await evaluate('({hero:document.querySelector(".hero-facts>div:last-child strong").textContent,footer:document.querySelector(".public-footer [data-release-version]").textContent})');
+  assert.deepEqual(publicVersions, {hero: version, footer: version}, "The public release badge and footer show the current build version");
   await checkLayout(`public ${round}/${width}`);
   await screenshot(`public-${round}-${width}.png`);
   await click('[data-action="tour"]');
