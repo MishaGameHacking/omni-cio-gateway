@@ -282,17 +282,18 @@ def test_stop_or_deadline_unblocks_detached_http_response_and_releases_resources
     connection = http.client.HTTPConnection("model.example.invalid", timeout=24)
     connection.sock = transport
     responses: list[http.client.HTTPResponse] = []
+    original_read = http.client.HTTPResponse.read
+    original_readline = http.client.HTTPResponse.readline
+    release_peer = provider.shutdown
 
-    class ReadingResponse(http.client.HTTPResponse):
-        def read(self, amt=None):
-            reading.set()
-            return super().read(amt)
+    def read(response, amt=None):
+        reading.set()
+        return original_read(response, amt)
 
-        def readline(self, limit=-1):
-            reading.set()
-            return super().readline(limit)
+    def readline(response, limit=-1):
+        reading.set()
+        return original_readline(response, limit)
 
-    connection.response_class = ReadingResponse
     original = connection.getresponse
 
     def headers():
@@ -312,6 +313,9 @@ def test_stop_or_deadline_unblocks_detached_http_response_and_releases_resources
         with (
             patch.object(client, "_connection", return_value=(connection, "/api/chat")),
             patch.object(connection, "getresponse", side_effect=headers),
+            patch.object(http.client.HTTPResponse, "read", read),
+            patch.object(http.client.HTTPResponse, "readline", readline),
+            patch.object(socket.socket, "shutdown") as shutdown,
             patch("omnicio.assistant.threading.Timer") as timer,
             ThreadPoolExecutor(max_workers=1) as workers,
         ):
@@ -338,9 +342,10 @@ def test_stop_or_deadline_unblocks_detached_http_response_and_releases_resources
                     with pytest.raises(error, match=code):
                         pending.result(timeout=3)
                 timer.return_value.cancel.assert_called_once()
+                shutdown.assert_not_called()
             finally:
                 # Release a failed regression's reader before joining its worker.
-                provider.shutdown(socket.SHUT_RDWR)
+                release_peer(socket.SHUT_RDWR)
     finally:
         provider.close()
         transport.close()
@@ -352,6 +357,56 @@ def test_stop_or_deadline_unblocks_detached_http_response_and_releases_resources
     assert all(admitted)
     for _ in admitted:
         client._slots.release()
+
+
+@pytest.mark.parametrize("complete", (True, False))
+def test_polling_preserves_slow_valid_response_and_original_idle_timeout(complete: bool) -> None:
+    client, timed_out = configured(), Event()
+    transport, provider = socket.socketpair()
+    transport.settimeout(1)
+    connection = http.client.HTTPConnection("model.example.invalid", timeout=24)
+    connection.sock = transport
+    original_recv, timeout_count = socket.socket.recv_into, 0
+    body = json.dumps({"message": {"role": "assistant", "content": "Slow valid answer"},
+                       "done": True, "done_reason": "stop"}).encode() + b"\n"
+    provider.sendall(b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: "
+                     + str(len(body)).encode() + b"\r\n\r\n")
+
+    def receive(sock, buffer, *args):
+        nonlocal timeout_count
+        try:
+            return original_recv(sock, buffer, *args)
+        except TimeoutError:
+            timeout_count += 1
+            if timeout_count >= 2:
+                timed_out.set()
+            raise
+
+    def call():
+        return list(client.stream(message="Вопрос", history=[]))
+
+    try:
+        with (
+            patch.object(client, "_connection", return_value=(connection, "/api/chat")),
+            patch.object(socket.socket, "recv_into", receive),
+            patch("omnicio.assistant._READ_POLL_SECONDS", 0.05),
+            ThreadPoolExecutor(max_workers=1) as workers,
+        ):
+            pending = workers.submit(call)
+            try:
+                assert timed_out.wait(timeout=3)
+                if complete:
+                    provider.sendall(body)
+                    assert pending.result(timeout=3)[-1]["result"]["reply"] == "Slow valid answer"
+                else:
+                    with pytest.raises(AssistantUnavailable, match="assistant_unavailable"):
+                        pending.result(timeout=3)
+            finally:
+                provider.shutdown(socket.SHUT_RDWR)
+    finally:
+        provider.close()
+        transport.close()
+    assert transport.fileno() == -1
 
 
 def test_portfolio_context_is_an_allowlist_and_preserves_missing_values() -> None:

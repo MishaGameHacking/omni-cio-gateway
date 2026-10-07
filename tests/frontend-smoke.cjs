@@ -102,6 +102,8 @@ const makeFixture = mode => {
   preset.policy.securities_tax_rate_percent = "13";
   return {
     mode,
+    missingBundle: "",
+    legacyHtml: false,
     tidEnabled: true,
     vkidEnabled: true,
     user: "000000123",
@@ -614,6 +616,12 @@ const server = createServer(async (request, response) => {
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     if (url.pathname.startsWith("/api/")) return await serveTestApiRequest(request, response, url);
+    const page = new URL(request.headers.referer || url.href);
+    const fixture = fixtures.get((url.pathname === "/" ? url : page).searchParams.get("case"));
+    if (fixture?.missingBundle === url.pathname) {
+      response.statusCode = 404;
+      return response.end();
+    }
     if (url.pathname === "/version.js") {
       response.setHeader("Content-Type", "text/javascript");
       response.end(`window.OMNICIO_RELEASE=${JSON.stringify({
@@ -638,7 +646,9 @@ const server = createServer(async (request, response) => {
       ".webmanifest": "application/manifest+json"
     }[extname(file)] || "application/octet-stream");
     const raw = readFileSync(file);
-    response.end([".html", ".js", ".css"].includes(extname(file)) ? raw.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version) : raw);
+    let content = [".html", ".js", ".css"].includes(extname(file)) ? raw.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version) : raw;
+    if (fixture?.legacyHtml && path === "/index.html") content = content.replace(/<main id="startup-state"[\s\S]*?<\/main>/, "").replace('<div id="public-site" hidden>', '<div id="public-site">');
+    response.end(content);
   } catch (error) {
     response.statusCode = 500;
     response.end("Synthetic test server failure");
@@ -679,11 +689,25 @@ const displayContracts = () => {
   ui.setPrivacy(false);
   ui.setLocale("en");
   assert.equal(ui.format("1234.56"), "1,234.56", "Locale setting has a real consumer");
+  startupBuildContracts();
   goalVersionContracts(ui);
   chartAxisContracts(ui);
   viewportSizeContracts();
   console.log("PASS display contracts: unknown values, source escaping, privacy, real-series requirements and locale");
 };
+function startupBuildContracts() {
+  for (const [bundleBuild, releaseBuild] of [["__OMNICIO_BUILD__", undefined], [build, undefined], [build, build]]) {
+    const reachedApplication = new Error("compatible modules reached document initialization");
+    const document = {currentScript: {src: `http://127.0.0.1/assets/app.js?build=${bundleBuild}`}, documentElement: {dataset: {}}, querySelector: selector => selector === "#startup-state" ? {} : null};
+    const context = vm.createContext({window: {}, document, URL});
+    if (releaseBuild) context.window.OMNICIO_RELEASE = {build: releaseBuild};
+    for (const name of ["i18n", "workspace"]) vm.runInContext(readFileSync(join(root, "web", `${name}.js`), "utf8").replaceAll("__OMNICIO_BUILD__", bundleBuild), context);
+    context.window.OMNICIO_I18N = {...context.window.OMNICIO_I18N, apply() { throw reachedApplication; }};
+    const app = readFileSync(join(root, "web", "app.js"), "utf8").replaceAll("__OMNICIO_BUILD__", bundleBuild);
+    assert.throws(() => vm.runInContext(app, context), error => error === reachedApplication, "A coherent raw/dev or stamped bundle starts without relying on optional version.js metadata");
+  }
+  console.log("PASS startup build contracts: coherent dev and stamped bundles reach initialization even without release metadata");
+}
 function goalVersionContracts(ui) {
   const known = [{
     id: "goal-a",
@@ -873,6 +897,7 @@ function captureBrowserLayout() {
     };
   };
   const visibleApp = !document.querySelector("#app-shell").hidden;
+  const visiblePublic = !document.querySelector("#public-site").hidden;
   const modal = Boolean(document.querySelector("dialog[open]"));
   const heroVisible = visible(document.querySelector(".hero"));
   const hero = !visibleApp && !modal && heroVisible && innerWidth <= 680 ? {
@@ -936,7 +961,7 @@ function captureBrowserLayout() {
   });
   const navStyle = getComputedStyle(nav);
   const navigation = {
-    required: innerWidth <= 960 && !modal && !drawer,
+    required: (visibleApp || visiblePublic) && innerWidth <= 960 && !modal && !drawer,
     modal,
     drawer,
     rect: nav.getBoundingClientRect().toJSON(),
@@ -1429,6 +1454,7 @@ const runBrowser = async base => {
         requests
       }, null, 2));
     };
+    await exerciseStartupRecovery({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot});
     const widths = [1440, 1366, 768, 390, 320];
     for (const round of [1, 2]) {
       for (const width of widths) {
@@ -3109,6 +3135,70 @@ async function exerciseIndependentPageLoads({send, configureViewport, round, bas
   assert.equal(await evaluate("location.hash"), "#account/settings/support");
   await checkLayout(`independent-support-${round}`);
   console.log(`PASS independent reads round ${round}: asset, search, article and support become usable before unrelated responses`);
+}
+async function exerciseStartupRecovery({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot}) {
+  await configureViewport(390);
+  const destination = "#account/settings/appearance";
+  const missingKey = "signed-startup-missing";
+  const missing = makeFixture("signed");
+  missing.missingBundle = "/assets/i18n.js";
+  fixtures.set(missingKey, missing);
+  await send("Page.navigate", {url: `${base}?case=${missingKey}${destination}`});
+  await wait('document.querySelector("#startup-state")?.dataset.status === "unavailable" && document.querySelector("[data-startup-reload]")?.getClientRects().length', "A missing translation bundle has an independent recovery screen");
+  assert.equal(await evaluate("window.OMNICIO_I18N === undefined"), true, "The missing bundle is not replaced with a permissive mock translator");
+  assert.equal(await evaluate("location.hash"), destination);
+  assert.equal(missing.requests.length, 0, "Incompatible startup cannot read or mutate the account");
+  await checkLayout("startup-missing-390");
+  missing.missingBundle = "";
+  const firstOrigin = await evaluate("performance.timeOrigin");
+  await click("[data-startup-reload]");
+  await wait(`performance.timeOrigin !== ${firstOrigin} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "An explicit startup retry reopens the requested personal page");
+  assert.equal(await evaluate("location.hash"), destination);
+  await wait("Boolean(navigator.serviceWorker.controller)", "The cache regression uses the actual installed service worker");
+  await evaluate(`(async () => {
+    const resource = "/assets/workspace.js?build=" + ${JSON.stringify(build)};
+    const source = await (await fetch(resource)).text();
+    const legacy = source + "\\n{const {compiledBuild, ...legacy} = window.OmniUI; window.OmniUI = Object.freeze(legacy);}";
+    const cache = await caches.open("omnicio-public-" + ${JSON.stringify(build)});
+    await cache.put(resource, new Response(legacy, {headers: {"Content-Type": "text/javascript"}}));
+    await caches.open("synthetic-startup-preserved");
+    sessionStorage.setItem("synthetic-startup-preserved", "retained");
+  })()`);
+  const cachedKey = "signed-startup-cached";
+  const cached = makeFixture("signed");
+  fixtures.set(cachedKey, cached);
+  await send("Page.navigate", {url: `${base}?case=${cachedKey}${destination}`});
+  await wait('document.querySelector("#startup-state")?.dataset.status === "unavailable"', "A cached workspace without a build marker is rejected before routing");
+  assert.equal(await evaluate("window.OmniUI.compiledBuild === undefined && typeof window.OmniUI.parseRoute === 'function'"), true, "The marker itself is mandatory even when old exports happen to be callable");
+  assert.equal(cached.requests.length, 0);
+  const cachedOrigin = await evaluate("performance.timeOrigin");
+  await screenshot("startup-cache-recovery-390.png");
+  assert.equal(await evaluate("performance.timeOrigin"), cachedOrigin, "Startup recovery never starts an automatic reload cycle");
+  await click("[data-startup-reload]");
+  await wait(`performance.timeOrigin !== ${cachedOrigin} && window.OmniUI?.compiledBuild === ${JSON.stringify(build)} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "Manual recovery evicts the corrupted public cache and starts compatible modules");
+  assert.equal(await evaluate("location.hash"), destination);
+  assert.equal(await evaluate('sessionStorage.getItem("synthetic-startup-preserved")'), "retained", "Recovery does not clear session state");
+  assert.equal(await evaluate('(async () => (await caches.keys()).includes("synthetic-startup-preserved"))()'), true, "Only OMNICIO public asset caches may be removed");
+  await evaluate('(async () => {sessionStorage.removeItem("synthetic-startup-preserved");await caches.delete("synthetic-startup-preserved");})()');
+  const htmlKey = "signed-startup-old-html";
+  const html = makeFixture("signed");
+  html.legacyHtml = true;
+  html.missingBundle = "/version.js";
+  fixtures.set(htmlKey, html);
+  await send("Page.navigate", {url: `${base}?case=${htmlKey}${destination}`});
+  await wait('document.querySelector("#startup-state")?.dataset.status === "unavailable" && document.querySelector("#public-site").hidden && document.querySelector("#app-shell").hidden', "Old HTML receives a newly created recovery surface and cannot show the obsolete homepage");
+  assert.equal(html.requests.length, 0);
+  assert.equal(await evaluate('document.querySelector("#startup-state img").getAttribute("src")'), "/assets/brand/omnicio-logo.png");
+  assert.equal(await evaluate("window.OMNICIO_RELEASE === undefined"), true);
+  html.legacyHtml = false;
+  const htmlOrigin = await evaluate("performance.timeOrigin");
+  await evaluate('Object.defineProperty(window, "caches", {get() {throw new DOMException("Storage is unavailable", "SecurityError");}})');
+  await click("[data-startup-reload]");
+  await wait(`performance.timeOrigin !== ${htmlOrigin} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "Recovery still reloads if the public cache API is unavailable");
+  assert.equal(await evaluate("location.hash"), destination);
+  assert.equal(await evaluate("window.OMNICIO_RELEASE === undefined"), true, "Stamped script URLs and matching modules remain sufficient when version.js is unavailable");
+  assert.ok(html.requests.length > 0 && html.requests.every(item => item.clientBuild === build), "The compiled build identifies API requests without optional release metadata");
+  console.log("PASS startup recovery: missing bundle, legacy public cache, old HTML, unavailable cache API and preserved deep links");
 }
 async function exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
   await configureViewport(390);

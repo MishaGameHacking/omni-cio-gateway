@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import io
 import ipaddress
 import json
 import queue
@@ -11,7 +12,7 @@ import re
 import socket
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Buffer, Callable, Iterator, Mapping, Sequence
 from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -28,6 +29,8 @@ from .workspace_store import WorkspaceNotFound
 
 _MAX_REPLY_BYTES = 131_072
 _STREAM_TIMEOUT_SECONDS = 120.0
+_READ_POLL_SECONDS = 0.25
+_JSON_MEDIA_TYPE = "application/json"
 _STREAM_ERRORS = {
     "assistant_activation_disabled", "assistant_not_configured",
     "assistant_context_changed", "assistant_memory_changed", "assistant_busy",
@@ -69,7 +72,6 @@ class _Cancellation:
         self._timeout_error = timeout_error
         self._lock = threading.Lock()
         self._connection: http.client.HTTPConnection | None = None
-        self._socket: socket.socket | None = None
         self._response: http.client.HTTPResponse | None = None
 
     @contextmanager
@@ -87,16 +89,6 @@ class _Cancellation:
     def attach(self, connection: http.client.HTTPConnection) -> None:
         with self._lock:
             self._connection = connection
-        if self.event.is_set() or self._expired.is_set():
-            self._interrupt()
-
-    def capture_socket(self) -> None:
-        # getresponse() detaches connection.sock for Connection: close. Keep
-        # the original socket while HTTPResponse's file still owns its fd.
-        with self._lock:
-            self._socket = self._connection.sock if self._connection is not None else None
-        if self.event.is_set() or self._expired.is_set():
-            self._interrupt()
 
     def attach_response(self, response: http.client.HTTPResponse) -> None:
         with self._lock:
@@ -104,29 +96,16 @@ class _Cancellation:
 
     def cancel(self) -> None:
         self.event.set()
-        self._interrupt()
 
     def expire(self) -> None:
         self._expired.set()
-        self._interrupt()
-
-    def _interrupt(self) -> None:
-        with self._lock:
-            connection = self._connection
-            transport = self._socket
-        if transport is None and connection is not None:
-            transport = connection.sock
-        if transport is not None:
-            with suppress(OSError):
-                transport.shutdown(socket.SHUT_RDWR)
 
     def close(self) -> None:
-        # Only the reading worker closes the buffered response; the watchdog
-        # shuts down its socket to unblock that worker without a file-lock race.
-        self._interrupt()
+        # Cancellation is checked inside each bounded receive. Only its reader
+        # closes the socket and buffered file; no concurrent Winsock close is needed.
         with self._lock:
             connection, response = self._connection, self._response
-            self._connection, self._response, self._socket = None, None, None
+            self._connection, self._response = None, None
         if response is not None:
             with suppress(OSError):
                 response.close()
@@ -141,6 +120,76 @@ class _Cancellation:
             self._deadline is not None and time.monotonic() >= self._deadline
         ):
             raise AssistantUnavailable(self._timeout_error)
+
+    def poll_timeout(self) -> float:
+        self.check()
+        if self._deadline is None:
+            return _READ_POLL_SECONDS
+        return min(_READ_POLL_SECONDS, max(0.001, self._deadline - time.monotonic()))
+
+
+class _DeadlineSocketReader(io.RawIOBase):
+    """Preserve HTTPResponse buffering while checking cancellation inside raw reads."""
+
+    def __init__(self, transport: socket.socket, stop: _Cancellation) -> None:
+        super().__init__()
+        self._transport, self._stop = transport, stop
+        self._owner: socket.SocketIO | None = None
+        self._idle_timeout = transport.gettimeout()
+        # SocketIO only owns this reference: reading it would permanently poison
+        # its buffer after a timeout. Connection: close cannot drop this live fd.
+        self._owner = transport.makefile("rb", buffering=0)
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Buffer, /) -> int:
+        idle_until = (time.monotonic() + self._idle_timeout
+                      if self._idle_timeout is not None else None)
+        while True:
+            timeout = self._stop.poll_timeout()
+            if idle_until is not None:
+                timeout = min(timeout, idle_until - time.monotonic())
+                if timeout <= 0:
+                    raise TimeoutError("assistant_inactivity_timeout")
+            self._transport.settimeout(timeout)
+            try:
+                size = self._transport.recv_into(buffer)
+            except TimeoutError:
+                continue
+            self._stop.check()
+            return size
+
+    def close(self) -> None:
+        try:
+            if self._owner is not None:
+                self._owner.close()
+        finally:
+            super().close()
+
+
+def _bounded_response_class(stop: _Cancellation) -> type[http.client.HTTPResponse]:
+    class BoundedResponse(http.client.HTTPResponse):
+        def __init__(
+            self, sock: socket.socket, debuglevel: int = 0,
+            method: str | None = None, url: str | None = None,
+        ) -> None:
+            super().__init__(sock, debuglevel=debuglevel, method=method, url=url)
+            # __init__ has not read any bytes; HTTPResponse.begin still parses
+            # all headers and framing through the standard buffered interface.
+            previous, reader = self.fp, None
+            try:
+                reader = _DeadlineSocketReader(sock, stop)
+                self.fp = io.BufferedReader(reader)
+            except Exception:
+                if reader is not None:
+                    reader.close()
+                self.close()
+                raise
+            finally:
+                previous.close()
+
+    return BoundedResponse
 
 
 def _stream_lines(response: http.client.HTTPResponse, stop: _Cancellation) -> Iterator[bytes]:
@@ -811,8 +860,8 @@ class AssistantClient:
             raise AssistantUnavailable("assistant_stream_invalid")
         return delta, usage, done
 
-    def _headers(self, accept: str = "application/json") -> dict[str, str]:
-        headers = {"Content-Type": "application/json", "Accept": accept}
+    def _headers(self, accept: str = _JSON_MEDIA_TYPE) -> dict[str, str]:
+        headers = {"Content-Type": _JSON_MEDIA_TYPE, "Accept": accept}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         return headers
@@ -826,7 +875,7 @@ class AssistantClient:
 
     def _open_response(
         self, stop: _Cancellation, method: str, path: str | None, body: dict[str, Any] | None, *,
-        accept: str = "application/json",
+        accept: str = _JSON_MEDIA_TYPE,
     ) -> http.client.HTTPResponse:
         connection, provider_path = self._connection()
         stop.attach(connection)
@@ -834,8 +883,8 @@ class AssistantClient:
         encoded = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
         connection.request(method, path or provider_path, body=encoded,
                            headers=self._headers(accept))
-        stop.capture_socket()
         stop.check()
+        connection.response_class = _bounded_response_class(stop)
         response = connection.getresponse()
         stop.attach_response(response)
         stop.check()

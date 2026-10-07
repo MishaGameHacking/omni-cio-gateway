@@ -11,8 +11,9 @@ import json
 import re
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -314,10 +315,10 @@ class WorkspaceStore:
             basis.watermark is not None
             and len(operations) <= _MAX_OPERATIONS
         )
-        result: _Basis = replace(
-            basis, operations=operations[:_MAX_OPERATIONS], complete=complete,
+        return _Basis(
+            connection=basis.connection, latest=basis.latest,
+            operations=operations[:_MAX_OPERATIONS], watermark=basis.watermark, complete=complete,
         )
-        return result
 
     @staticmethod
     def _history(
@@ -902,7 +903,9 @@ class WorkspaceStore:
             if goal["status"] != "active":
                 continue
             progress = goal["progress"]
-            if progress["status"] == "available" and amount(progress["percent"]) >= 100:
+            # This ratio comes from validated amounts. Its calculated scale can
+            # exceed the input-money precision without making the progress invalid.
+            if progress["status"] == "available" and Decimal(progress["percent"]) >= 100:
                 self._insert_event(
                     cur,
                     user_id,

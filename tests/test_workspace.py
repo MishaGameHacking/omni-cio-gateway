@@ -4,6 +4,8 @@ import copy
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from unittest.mock import Mock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -56,6 +58,33 @@ def operation(
         "payment_currency": currency,
         **changes,
     }
+
+
+@pytest.mark.parametrize(("target", "payment", "reached"), (
+    ("100000.00", "100.000000000", False),
+    ("3.00", "2.000000000", False),
+    ("100.00", "200.000000000", True),
+))
+def test_goal_events_accept_calculated_percent_precision_from_stored_money(
+    target: str, payment: str, reached: bool,
+) -> None:
+    owner = uuid4()
+    goal = goal_document(
+        id=str(uuid4()), version=1, kind="income", progress_source="income",
+        target_amount_rub=Decimal(target), allocation_percent=Decimal("50.00"),
+        manual_amount_rub=None, target_date=None, account_id="account", environment="prod",
+    )
+    goal["progress"] = goal_progress(
+        goal, connection={"account_id": "account", "environment": "prod"}, snapshot=None,
+        operations=[operation("COUPON", payment)], watermark=END, history_complete=True, now=END,
+    )
+    assert goal["progress"]["status"] == "available"
+    store = WorkspaceStore(Mock())
+    with patch.object(store, "_insert_event") as insert:
+        store._goal_events(Mock(), owner, [goal], END)
+    assert insert.call_count == int(reached)
+    if reached:
+        assert insert.call_args.kwargs["kind"] == "goal_reached"
 
 
 def test_income_uses_selected_period_and_keeps_principal_separate() -> None:

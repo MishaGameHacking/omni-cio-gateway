@@ -7,7 +7,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from uuid import UUID, uuid4
@@ -577,8 +577,16 @@ class MarketService:
             live_after_seconds=self.live_after_seconds,
             metadata=metadata,
         )
-        result: InstrumentLiveState = replace(
-            live, quote_status="unavailable" if quote_error else live.quote_status,
+        return InstrumentLiveState(
+            instrument_uid=live.instrument_uid, observed_at=live.observed_at,
+            last_price=live.last_price, quote_time=live.quote_time,
+            quote_age_seconds=live.quote_age_seconds,
+            quote_status="unavailable" if quote_error else live.quote_status,
+            trading_status=live.trading_status, api_trade_available=live.api_trade_available,
+            limit_order_available=live.limit_order_available,
+            market_order_available=live.market_order_available,
+            price_unit=live.price_unit, price_currency=live.price_currency,
+            cash_price=live.cash_price, cash_price_currency=live.cash_price_currency,
             trading_status_status=(
                 "unavailable" if trading_error or live.errors.get("trading_status") else "available"
             ),
@@ -588,7 +596,6 @@ class MarketService:
                     "metadata": "source_unavailable" if metadata_status == "unavailable"
                     else live.errors.get("metadata")},
         )
-        return result
 
 
 def _checked_quote_batch(

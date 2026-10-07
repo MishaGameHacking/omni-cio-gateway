@@ -3,12 +3,73 @@
 (() => {
   "use strict";
 
+  const compiledBuild = "__OMNICIO_BUILD__";
+  function compatibleStartup(translations, ui) {
+    if (!translations || !ui || !document.querySelector("#startup-state")) return false;
+    const required = [translations.t, translations.html, translations.apply, translations.getLocale, ui.parseRoute, ui.routeHash, ui.resumeRoute];
+    if (required.some(value => typeof value !== "function")) return false;
+    const requested = document.currentScript?.src && new URL(document.currentScript.src).searchParams.get("build");
+    const expected = requested || compiledBuild;
+    if ([compiledBuild, translations.compiledBuild, ui.compiledBuild].some(value => value !== expected)) return false;
+    const release = window.OMNICIO_RELEASE?.build;
+    return release === undefined || release === expected;
+  }
+  async function reloadStartup(control) {
+    control.disabled = true;
+    let deadline;
+    try {
+      const cleanup = window.caches?.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("omnicio-public-")).map(key => caches.delete(key))));
+      await Promise.race([cleanup, new Promise(resolve => { deadline = setTimeout(resolve, 2000); })]);
+    } catch { /* Reload remains available when public cache storage is unavailable. */ }
+    finally { clearTimeout(deadline); location.reload(); }
+  }
+  function startupMessage(key, fallback, locale) {
+    const translations = window.OMNICIO_I18N;
+    if (translations?.compiledBuild === compiledBuild && typeof translations.t === "function") {
+      try { return translations.t(key, {}, locale); } catch { /* Recovery also works without the translation module. */ }
+    }
+    return fallback[locale === "en" ? 1 : 0];
+  }
+  function recoverStartup() {
+    const root = document.querySelector("#startup-state") || document.createElement("main");
+    root.id = "startup-state";
+    root.className = "startup-state";
+    root.hidden = false;
+    root.dataset.status = "unavailable";
+    root.setAttribute("aria-live", "polite");
+    const locale = navigator.language.toLowerCase().startsWith("en") ? "en" : "ru";
+    root.lang = locale;
+    const card = document.createElement("section");
+    card.className = "card startup-card";
+    const logo = document.createElement("img");
+    logo.className = "brand-image";
+    logo.src = "/assets/brand/omnicio-logo.png";
+    logo.alt = "OMNICIO";
+    logo.width = 88;
+    logo.height = 88;
+    const title = document.createElement("h1");
+    title.textContent = startupMessage("startup.unavailable", ["Приложение не загрузилось", "The application did not load"], locale);
+    const detail = document.createElement("p");
+    detail.textContent = startupMessage("startup.recover", ["Некоторые файлы приложения не загрузились или относятся к другой версии. Повторите загрузку — текущий адрес страницы сохранится.", "Some application files are missing or belong to a different version. Reload to retry; the current page address will be preserved."], locale);
+    const control = document.createElement("button");
+    control.type = "button";
+    control.className = "button primary";
+    control.dataset.startupReload = "";
+    control.textContent = startupMessage("Повторить загрузку", ["Повторить загрузку", "Reload"], locale);
+    control.addEventListener("click", () => { void reloadStartup(control); }, {once: true});
+    card.append(logo, title, detail, control);
+    root.replaceChildren(card);
+    for (const element of document.querySelectorAll("#public-site, #app-shell")) element.hidden = true;
+    if (!root.isConnected) document.body.prepend(root);
+    control.focus({preventScroll: true});
+  }
   const I = window.OMNICIO_I18N;
+  const U = window.OmniUI;
+  if (!compatibleStartup(I, U)) { recoverStartup(); return; }
   const T = (key, values) => I.t(key, values);
   const H = (key, values) => I.html(key, values);
   I.apply(document);
 
-  const U = window.OmniUI;
   const {
     escape: esc,
     icon,
@@ -267,7 +328,7 @@
     }, timeout);
     const headers = new Headers({
       Accept: "application/json",
-      "X-Omnicio-Client-Build": window.OMNICIO_RELEASE?.build || "__OMNICIO_BUILD__"
+      "X-Omnicio-Client-Build": window.OMNICIO_RELEASE?.build || compiledBuild
     });
     if (body !== undefined) headers.set("Content-Type", "application/json");
     if (context.profile && !bootstrap) headers.set("X-Omnicio-Profile", context.profile);
@@ -282,7 +343,7 @@
         signal: controller.signal
       });
       const serverBuild = response.headers.get("X-Omnicio-Build");
-      if (serverBuild && serverBuild !== (window.OMNICIO_RELEASE?.build || "__OMNICIO_BUILD__")) flagApplicationUpdate();
+      if (serverBuild && serverBuild !== (window.OMNICIO_RELEASE?.build || compiledBuild)) flagApplicationUpdate();
       if (onStream && response.ok) { ensureResponseContext(context); return await onStream(response, () => ensureResponseContext(context)); }
       return await readApiResponse(response, context);
     } catch (error) {
@@ -4451,8 +4512,6 @@
       if (hash) navigate(route.view, {...route, mode: "account"}, {replace: true});
       else { state.mode = "auto"; sessionSurface(); }
     } else navigate(route.view, route, {replace: true});
-    const expected = window.OMNICIO_RELEASE?.build;
-    if (expected && [U.compiledBuild, I.compiledBuild, "__OMNICIO_BUILD__"].some(build => build && build !== expected)) flagApplicationUpdate();
   }
   function enterRouteScreen(view, screen, detail = {}) {
     if (state.view === view && state.route.screen === screen && Object.entries(detail).every(([key, value]) => state.route[key] === value)) return false;

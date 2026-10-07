@@ -3294,9 +3294,6 @@ dialog::backdrop {
   .assistant-layout {
     grid-template-columns:1fr
   }
-  .assistant-side {
-    display:none
-  }
   .asset-detail-layout {
     grid-template-columns:1fr
   }

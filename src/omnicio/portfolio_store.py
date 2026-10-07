@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from math import ceil
@@ -15,7 +15,7 @@ from uuid import UUID
 
 from psycopg import DatabaseError
 
-from .broker import BrokerObservationBundle
+from .broker import AnalysisSource, BrokerObservationBundle
 from .db import Database, live_execution_lock_key
 from .freshness import PORTFOLIO_MAX_AGE
 from .intelligence import (
@@ -1310,13 +1310,17 @@ class PortfolioStore:
         metadata = (*bundle.metadata, *(TBankInstrumentMetadata(**row) for row in rows))
         if bundle.metadata:
             times.extend(source.retrieved_at for source in bundle.sources if source.id == "catalog")
-        sources = tuple(replace(source, retrieved_at=min(times), status="cached", methods=())
-                        if source.id == "catalog" else source for source in bundle.sources)
-        result: BrokerObservationBundle = replace(
-            bundle, metadata=metadata, sources=sources,
+        sources = tuple(AnalysisSource(
+            id=source.id, name=source.name, url=source.url,
+            retrieved_at=min(times), status="cached", methods=(),
+        ) if source.id == "catalog" else source for source in bundle.sources)
+        return BrokerObservationBundle(
+            account_id=bundle.account_id, account_name=bundle.account_name,
+            environment=bundle.environment, refreshed_at=bundle.refreshed_at,
+            portfolio=bundle.portfolio, positions=bundle.positions,
+            metadata=metadata, sources=sources,
             analysis=analyze_portfolio(bundle.portfolio, bundle.positions, metadata),
         )
-        return result
 
     def _save_snapshot_catalog(
         self,

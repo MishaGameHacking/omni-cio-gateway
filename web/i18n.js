@@ -1820,7 +1820,11 @@
     "pwa.review_drafts": ["Проверьте несохранённые данные","Review unsaved data"],
     "pwa.goal_readback": ["Сначала нажмите «Проверить список» в форме цели: сервер мог уже сохранить её. Обновление не повторяет отправку.","Use “Check list” in the goal form first: the server may have already saved it. Updating never resends the request."],
     "pwa.unsupported_drafts": ["Эти данные не сохраняются при обновлении. Остальные допустимые поля будут восстановлены после проверки того же аккаунта.","These entries cannot be preserved during an update. Other allowed fields will be restored after verification of the same account."],
-    "pwa.discard_and_update": ["Отбросить перечисленное и обновить","Discard listed entries and update"]
+    "pwa.discard_and_update": ["Отбросить перечисленное и обновить","Discard listed entries and update"],
+    "startup.loading": ["Загружаем приложение","Loading the application"],
+    "startup.wait": ["Если загрузка не завершится, проверьте соединение и обновите страницу кнопкой браузера. Текущий адрес можно открыть снова.","If loading does not finish, check your connection and refresh using the browser. You can reopen the current address."],
+    "startup.unavailable": ["Приложение не загрузилось","The application did not load"],
+    "startup.recover": ["Некоторые файлы приложения не загрузились или относятся к другой версии. Повторите загрузку — текущий адрес страницы сохранится.","Some application files are missing or belong to a different version. Reload to retry; the current page address will be preserved."]
   };
   const validatePair = (key, pair) => {
     if (!Array.isArray(pair) || pair.length !== 2 || pair.some(value => typeof value !== "string")) throw new Error(`Invalid translation: ${key}`);

@@ -475,7 +475,8 @@ def _record_cashflow(
             metric_errors = income_reasons if key in _INCOME_PAYMENT_FIELDS else reasons
             totals.metric_reasons[key].update(metric_errors)
     else:
-        _record_payment(totals, operation, *parsed, reasons, income_reasons)
+        kind, at = parsed
+        _record_payment(totals, operation, kind, at, reasons, income_reasons)
     totals.reasons.update(reasons)
     totals.income_reasons.update(income_reasons)
 
