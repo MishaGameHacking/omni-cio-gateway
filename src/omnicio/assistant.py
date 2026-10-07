@@ -12,7 +12,7 @@ import socket
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import closing, suppress
+from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -21,12 +21,13 @@ from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from .assistant_store import AssistantQuotaExceeded as AssistantQuotaExceeded
-from .assistant_store import AssistantRequestConflict, AssistantStore
+from .assistant_store import AssistantRequestConflict, AssistantStore, assistant_sources_json
 from .db import Database
 from .security import decrypt_secret, encrypt_secret
 from .workspace_store import WorkspaceNotFound
 
 _MAX_REPLY_BYTES = 131_072
+_STREAM_TIMEOUT_SECONDS = 120.0
 _STREAM_ERRORS = {
     "assistant_activation_disabled", "assistant_not_configured",
     "assistant_context_changed", "assistant_memory_changed", "assistant_busy",
@@ -61,41 +62,93 @@ class AssistantCancelled(AssistantRequestConflict):
 
 
 class _Cancellation:
-    def __init__(self) -> None:
+    def __init__(self, *, timeout_error: str = "assistant_stream_timeout") -> None:
         self.event = threading.Event()
+        self._expired = threading.Event()
+        self._deadline: float | None = None
+        self._timeout_error = timeout_error
         self._lock = threading.Lock()
         self._connection: http.client.HTTPConnection | None = None
+        self._socket: socket.socket | None = None
+        self._response: http.client.HTTPResponse | None = None
+
+    @contextmanager
+    def bounded(self, timeout_seconds: float) -> Iterator[None]:
+        self._deadline = time.monotonic() + timeout_seconds
+        watchdog = threading.Timer(timeout_seconds, self.expire)
+        watchdog.daemon = True
+        try:
+            with closing(self):
+                watchdog.start()
+                yield
+        finally:
+            watchdog.cancel()
 
     def attach(self, connection: http.client.HTTPConnection) -> None:
         with self._lock:
             self._connection = connection
-        if self.event.is_set():
-            self.cancel()
+        if self.event.is_set() or self._expired.is_set():
+            self._interrupt()
+
+    def capture_socket(self) -> None:
+        # getresponse() detaches connection.sock for Connection: close. Keep
+        # the original socket while HTTPResponse's file still owns its fd.
+        with self._lock:
+            self._socket = self._connection.sock if self._connection is not None else None
+        if self.event.is_set() or self._expired.is_set():
+            self._interrupt()
+
+    def attach_response(self, response: http.client.HTTPResponse) -> None:
+        with self._lock:
+            self._response = response
 
     def cancel(self) -> None:
         self.event.set()
+        self._interrupt()
+
+    def expire(self) -> None:
+        self._expired.set()
+        self._interrupt()
+
+    def _interrupt(self) -> None:
         with self._lock:
             connection = self._connection
+            transport = self._socket
+        if transport is None and connection is not None:
+            transport = connection.sock
+        if transport is not None:
+            with suppress(OSError):
+                transport.shutdown(socket.SHUT_RDWR)
+
+    def close(self) -> None:
+        # Only the reading worker closes the buffered response; the watchdog
+        # shuts down its socket to unblock that worker without a file-lock race.
+        self._interrupt()
+        with self._lock:
+            connection, response = self._connection, self._response
+            self._connection, self._response, self._socket = None, None, None
+        if response is not None:
+            with suppress(OSError):
+                response.close()
         if connection is not None:
-            if connection.sock is not None:
-                with suppress(OSError):
-                    connection.sock.shutdown(socket.SHUT_RDWR)
-            connection.close()
+            with suppress(OSError):
+                connection.close()
 
     def check(self) -> None:
         if self.event.is_set():
             raise AssistantCancelled("assistant_request_cancelled")
+        if self._expired.is_set() or (
+            self._deadline is not None and time.monotonic() >= self._deadline
+        ):
+            raise AssistantUnavailable(self._timeout_error)
 
 
-def _stream_lines(
-    response: http.client.HTTPResponse, stop: _Cancellation, *, started: float,
-) -> Iterator[bytes]:
+def _stream_lines(response: http.client.HTTPResponse, stop: _Cancellation) -> Iterator[bytes]:
     consumed = 0
     while True:
         stop.check()
-        if time.monotonic() - started > 120:
-            raise AssistantUnavailable("assistant_stream_timeout")
         line = response.readline(_MAX_REPLY_BYTES + 1)
+        stop.check()
         if not line:
             return
         consumed += len(line)
@@ -139,14 +192,47 @@ def _append_stream_text(text: str, delta: str, *, finished: bool) -> str:
     return text
 
 
+def _ollama_stream_values(payload: Mapping[str, Any]) -> tuple[Any, dict[str, Any], bool]:
+    message = payload.get("message")
+    if (not isinstance(message, dict) or message.get("role") != "assistant"
+            or message.get("tool_calls")):
+        raise AssistantUnavailable("assistant_stream_invalid")
+    done = payload.get("done") is True
+    if done and payload.get("done_reason") not in {None, "stop"}:
+        raise AssistantUnavailable("assistant_response_incomplete")
+    usage = {"input_tokens": payload.get("prompt_eval_count"),
+             "output_tokens": payload.get("eval_count")} if done else {}
+    return message.get("content", ""), usage, done
+
+
+def _openai_stream_values(payload: Mapping[str, Any]) -> tuple[Any, dict[str, Any], bool]:
+    choices = payload.get("choices")
+    measured = payload.get("usage") or {}
+    if not isinstance(measured, dict):
+        raise AssistantUnavailable("assistant_stream_invalid")
+    usage = {"input_tokens": measured.get("prompt_tokens"),
+             "output_tokens": measured.get("completion_tokens")} if measured else {}
+    if choices == [] and measured:
+        return "", usage, False
+    if (not isinstance(choices, list) or len(choices) != 1
+            or not isinstance(choices[0], dict)):
+        raise AssistantUnavailable("assistant_stream_invalid")
+    choice = choices[0]
+    message = choice.get("delta")
+    if (not isinstance(message, dict) or message.get("role") not in {None, "assistant"}
+            or message.get("tool_calls") or message.get("function_call")):
+        raise AssistantUnavailable("assistant_stream_invalid")
+    if choice.get("finish_reason") not in {None, "stop"}:
+        raise AssistantUnavailable("assistant_response_incomplete")
+    return message.get("content") or "", usage, choice.get("finish_reason") == "stop"
+
+
 def _source_hash(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False,
                                     default=str, separators=(",", ":")).encode()).hexdigest()
 
 
-def _source_catalog(context: Mapping[str, Any] | None) -> list[dict[str, Any]]:
-    if not context:
-        return []
+def _snapshot_sources(context: Mapping[str, Any]) -> list[dict[str, Any]]:
     result = []
     sections = {
         "overview": ("portfolio_snapshot", "Стоимость портфеля"),
@@ -167,23 +253,33 @@ def _source_catalog(context: Mapping[str, Any] | None) -> list[dict[str, Any]]:
         result.append({"id": section + ":" + digest, "kind": kind, "label": label,
                        "sha256": digest, "observed_at": observed_at or context.get("generated_at"),
                        "scope": "selected_server_facts", "content": evidence})
+    return result
+
+
+def _valid_news_source_url(url: object) -> bool:
+    if not isinstance(url, str):
+        return False
+    try:
+        parsed = urlsplit(url)
+        return not (
+            parsed.scheme != "https" or parsed.hostname not in {"www.cbr.ru", "cbr.ru"}
+            or parsed.username or parsed.password or parsed.port or parsed.fragment
+            or any(ord(char) < 33 for char in url)
+        )
+    except ValueError:
+        return False
+
+
+def _source_catalog(context: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    if not context:
+        return []
+    result = _snapshot_sources(context)
     for item in context.get("news", []):
-        if not isinstance(item, Mapping):
-            continue
-        url = item.get("url")
-        if not isinstance(url, str):
-            continue
-        try:
-            parsed = urlsplit(url)
-            if (parsed.scheme != "https" or parsed.hostname not in {"www.cbr.ru", "cbr.ru"}
-                    or parsed.username or parsed.password or parsed.port or parsed.fragment
-                    or any(ord(char) < 33 for char in url)):
-                continue
-        except ValueError:
+        if not isinstance(item, Mapping) or not _valid_news_source_url(item.get("url")):
             continue
         digest = _source_hash(item)
         result.append({"id": "news:" + digest, "kind": "official_news",
-                       "label": str(item.get("title", "Банк России")), "url": url,
+                       "label": str(item.get("title", "Банк России")), "url": item["url"],
                        "published_at": item.get("published_at"), "sha256": digest,
                        "scope": "selected_headline", "content": dict(item)})
     for item in context.get("_memory", []):
@@ -213,9 +309,7 @@ def source_references(context: Mapping[str, Any] | None) -> list[dict[str, Any]]
 
 
 def _stored_sources(context: Mapping[str, Any] | None) -> list[dict[str, Any]]:
-    encoded = json.dumps(_source_catalog(context), ensure_ascii=False, default=str)
-    if len(encoded.encode()) > 65536:
-        raise ValueError("assistant_sources_too_large")
+    encoded = assistant_sources_json(_source_catalog(context))
     return cast(list[dict[str, Any]], json.loads(encoded))
 
 
@@ -685,19 +779,12 @@ class AssistantClient:
         )
         text, finished = "", False
         usage: dict[str, Any] = {}
-        started = time.monotonic()
         try:
-            connection, path = self._connection()
-            with closing(connection) as conn:
-                stop.attach(conn)
-                stop.check()
-                conn.request("POST", path, body=json.dumps(
-                    self._body(messages, context, stream=True), ensure_ascii=False,
-                ).encode(), headers=self._headers(accept))
-                response = conn.getresponse()
-                if response.status != 200:
-                    raise AssistantUnavailable("assistant_unavailable")
-                lines = _stream_lines(response, stop, started=started)
+            with stop.bounded(_STREAM_TIMEOUT_SECONDS):
+                response = self._open_response(
+                    stop, "POST", None, self._body(messages, context, stream=True), accept=accept,
+                )
+                lines = _stream_lines(response, stop)
                 for payload in _stream_payloads(lines, self.provider):
                     delta, measured, done = self._stream_values(payload)
                     text = _append_stream_text(text, delta, finished=finished)
@@ -717,37 +804,9 @@ class AssistantClient:
 
     def _stream_values(self, payload: Mapping[str, Any]) -> tuple[str, dict[str, Any], bool]:
         if self.provider == "ollama":
-            message = payload.get("message")
-            if (not isinstance(message, dict) or message.get("role") != "assistant"
-                    or message.get("tool_calls")):
-                raise AssistantUnavailable("assistant_stream_invalid")
-            delta = message.get("content", "")
-            done = payload.get("done") is True
-            if done and payload.get("done_reason") not in {None, "stop"}:
-                raise AssistantUnavailable("assistant_response_incomplete")
-            usage = {"input_tokens": payload.get("prompt_eval_count"),
-                     "output_tokens": payload.get("eval_count")} if done else {}
+            delta, usage, done = _ollama_stream_values(payload)
         else:
-            choices = payload.get("choices")
-            measured = payload.get("usage") or {}
-            if not isinstance(measured, dict):
-                raise AssistantUnavailable("assistant_stream_invalid")
-            usage = {"input_tokens": measured.get("prompt_tokens"),
-                     "output_tokens": measured.get("completion_tokens")} if measured else {}
-            if choices == [] and measured:
-                return "", usage, False
-            if (not isinstance(choices, list) or len(choices) != 1
-                    or not isinstance(choices[0], dict)):
-                raise AssistantUnavailable("assistant_stream_invalid")
-            choice = choices[0]
-            message = choice.get("delta")
-            if (not isinstance(message, dict) or message.get("role") not in {None, "assistant"}
-                    or message.get("tool_calls") or message.get("function_call")):
-                raise AssistantUnavailable("assistant_stream_invalid")
-            if choice.get("finish_reason") not in {None, "stop"}:
-                raise AssistantUnavailable("assistant_response_incomplete")
-            delta = message.get("content") or ""
-            done = choice.get("finish_reason") == "stop"
+            delta, usage, done = _openai_stream_values(payload)
         if not isinstance(delta, str):
             raise AssistantUnavailable("assistant_stream_invalid")
         return delta, usage, done
@@ -765,25 +824,42 @@ class AssistantClient:
         )
         return connection_type(host, port=port, timeout=self.timeout_seconds), path
 
+    def _open_response(
+        self, stop: _Cancellation, method: str, path: str | None, body: dict[str, Any] | None, *,
+        accept: str = "application/json",
+    ) -> http.client.HTTPResponse:
+        connection, provider_path = self._connection()
+        stop.attach(connection)
+        stop.check()
+        encoded = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
+        connection.request(method, path or provider_path, body=encoded,
+                           headers=self._headers(accept))
+        stop.capture_socket()
+        stop.check()
+        response = connection.getresponse()
+        stop.attach_response(response)
+        stop.check()
+        if response.status != 200:
+            raise AssistantUnavailable("assistant_unavailable")
+        return response
+
     def _request(
         self, method: str, path: str, body: dict[str, Any] | None = None
     ) -> dict[str, Any]:
+        stop = _Cancellation(timeout_error="assistant_unavailable")
         try:
-            connection, _ = self._connection()
-            with closing(connection) as conn:
-                encoded = (
-                    json.dumps(body, ensure_ascii=False).encode() if body is not None else None
-                )
-                conn.request(method, path, body=encoded, headers=self._headers())
-                response = conn.getresponse()
-                if response.status != 200:
-                    raise AssistantUnavailable("assistant_unavailable")
+            with stop.bounded(self.timeout_seconds):
+                response = self._open_response(stop, method, path, body)
                 raw = response.read(_MAX_REPLY_BYTES + 1)
+                stop.check()
                 if len(raw) > _MAX_REPLY_BYTES:
                     raise AssistantUnavailable("assistant_response_too_large")
                 payload = json.loads(raw)
+                stop.check()
         except (OSError, ValueError, http.client.HTTPException) as exc:
+            stop.check()
             raise AssistantUnavailable("assistant_unavailable") from exc
+        stop.check()
         if not isinstance(payload, dict):
             raise AssistantUnavailable("assistant_response_invalid")
         return payload

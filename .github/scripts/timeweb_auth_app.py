@@ -50,6 +50,7 @@ RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
 LEGACY_RESET_MARKER = "/etc/omnicio/legacy-profile-reset-v1.done"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
+INVALID_RELEASE_SHA = "Release SHA must be a full lowercase 40-character SHA"
 BRAND_SOURCE = "assets/brand/omnicio-logo.png"
 # The unchanged owner-provided PNG and the two existing backgrounds total 6 MiB.
 # Keep a bounded archive budget that includes that explicit brand requirement.
@@ -342,7 +343,7 @@ def validate_legal_documents(repository_root: pathlib.Path) -> None:
 
 def build_product_environment(*, release_sha: str = "") -> str:
     if release_sha and not RELEASE_RE.fullmatch(release_sha):
-        raise InfraError("Release SHA must be a full lowercase 40-character SHA")
+        raise InfraError(INVALID_RELEASE_SHA)
     values = {
         "OMNICIO_RECOVERY_STATUS_PATH": REMOTE_STATUS_PATH,
         # Authority must be explicitly revoked when the workflow variable is cleared.
@@ -380,7 +381,7 @@ def build_product_environment(*, release_sha: str = "") -> str:
 
 def product_environment_backup_paths(release_sha: str) -> tuple[str, str]:
     if not RELEASE_RE.fullmatch(release_sha):
-        raise InfraError("Release SHA must be a full lowercase 40-character SHA")
+        raise InfraError(INVALID_RELEASE_SHA)
     return (
         f"{PRODUCT_ENV}.pre-{release_sha}",
         f"{PRODUCT_ENV}.pre-{release_sha}.state",
@@ -1340,7 +1341,7 @@ def reconcile(
     availability_zone: str,
 ) -> int:
     if not RELEASE_RE.fullmatch(release_sha):
-        raise InfraError("Release SHA must be a full lowercase 40-character SHA")
+        raise InfraError(INVALID_RELEASE_SHA)
 
     add_summary("## OmniCIO auth application deploy")
     validate_product_environment()

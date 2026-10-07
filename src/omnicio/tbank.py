@@ -125,6 +125,12 @@ class TBankLastPrice:
 
 
 @dataclass(frozen=True, slots=True)
+class TBankLastPriceBatch:
+    prices: tuple[TBankLastPrice, ...]
+    unavailable_uids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class TBankTradingStatus:
     instrument_uid: str
     trading_status: str
@@ -1306,6 +1312,16 @@ class TBankInvestClient:
         environment: TBankEnvironment,
         instrument_uids: tuple[str, ...],
     ) -> tuple[TBankLastPrice, ...]:
+        batch = self.get_last_prices_batch(token, environment, instrument_uids)
+        if batch.unavailable_uids:
+            # Existing planning/execution readers require all returned evidence
+            # to be valid. UI display has a separate, explicitly partial contract.
+            raise TBankUnavailable("T-Invest last price is missing required fields")
+        return batch.prices
+
+    def get_last_prices_batch(
+        self, token: str, environment: TBankEnvironment, instrument_uids: tuple[str, ...],
+    ) -> TBankLastPriceBatch:
         clean = tuple(
             dict.fromkeys(
                 _validate_provider_id(value, _INSTRUMENT_UID_FIELD)
@@ -1313,7 +1329,7 @@ class TBankInvestClient:
             )
         )
         if not clean:
-            return ()
+            return TBankLastPriceBatch(())
         payload = self._post(
             token=token,
             environment=environment,
@@ -1328,16 +1344,21 @@ class TBankInvestClient:
         requested = set(clean)
         seen: set[str] = set()
         result: list[TBankLastPrice] = []
+        unavailable: list[str] = []
         for raw in _required_list(payload, "lastPrices"):
             item = _required_object(raw, "last price")
             uid = _text(item.get("instrumentUid")).strip()
             if not uid or uid not in requested or uid in seen:
                 raise TBankUnavailable("T-Invest last prices returned invalid instrument uid")
             seen.add(uid)
-            price = _quotation(item.get("price"))
-            quote_time = _optional_provider_timestamp(item.get("time"))
-            if price is None or Decimal(price) <= 0 or quote_time is None:
-                raise TBankUnavailable("T-Invest last price is missing required fields")
+            try:
+                price = _quotation(item.get("price"))
+                quote_time = _optional_provider_timestamp(item.get("time"))
+                if price is None or Decimal(price) <= 0 or quote_time is None:
+                    raise TBankUnavailable("T-Invest last price is missing required fields")
+            except TBankUnavailable:
+                unavailable.append(uid)
+                continue
             result.append(
                 TBankLastPrice(
                     instrument_uid=uid,
@@ -1345,7 +1366,7 @@ class TBankInvestClient:
                     time=quote_time,
                 )
             )
-        return tuple(result)
+        return TBankLastPriceBatch(tuple(result), tuple(unavailable))
 
     def get_accrued_interests(
         self,

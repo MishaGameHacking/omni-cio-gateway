@@ -322,6 +322,7 @@ def test_oauth_returns_to_the_signed_original_screen(
     assert response.status_code == 200
     state = parse_qs(urlsplit(response.json()["authorize_url"]).query)["state"][0]
     flow_cookie = response.cookies[f"omnicio_{provider_name}_flow"]
+    assert len(response.headers["set-cookie"].encode("ascii")) <= 4096
     assert target not in response.json()["authorize_url"]
     flow = open_oauth_flow(
         flow_cookie, crypto_key=auth_http.cfg.vkid_flow_crypto_key,
@@ -348,6 +349,26 @@ def test_oauth_rejects_non_application_return_destinations(
     )
     assert result.status_code == 422
     auth_http.tid.authorization_url.assert_not_called()
+    assert not result.cookies
+
+
+@pytest.mark.parametrize("provider_name", ["tid", "vkid"])
+def test_oauth_rejects_encrypted_flow_that_cannot_fit_a_browser_cookie(
+    auth_http: AuthHTTP, provider_name: str,
+) -> None:
+    target = "/#account/search?" + "&".join(
+        key + "=" + "Ж" * count
+        for key, count in (("q", 512), ("x", 512), ("y", 512), ("z", 450))
+    )
+    assert len(target) < 2048  # Character validation alone did not protect the cookie.
+    result = auth_http.client.post(
+        f"/api/auth/{provider_name}/start", headers=HEADERS,
+        json={**CONSENT, "return_to": target},
+    )
+    assert result.status_code == 422
+    assert result.json()["detail"] == "oauth_return_to_invalid"
+    auth_http.tid.authorization_url.assert_not_called()
+    auth_http.vkid.authorization_url.assert_not_called()
     assert not result.cookies
 
 

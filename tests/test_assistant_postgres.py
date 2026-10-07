@@ -20,6 +20,7 @@ from omnicio.assistant import (
     AssistantRequestConflict,
     AssistantService,
     AssistantUnavailable,
+    _source_catalog,
 )
 from omnicio.db import Database
 from omnicio.portfolio_store import SettingsVersionConflict
@@ -372,6 +373,68 @@ def test_general_question_does_not_receive_previous_attached_personal_context(wo
     assert len(history["messages"]) == 4
 
 
+@pytest.mark.parametrize("next_selection", [
+    "general_with_memory", "portfolio_only", "edited_memory", "removed_memory",
+])
+def test_new_question_carries_only_current_explicit_sources_and_general_history(
+    workspace_database, next_selection: str,
+):
+    service, owner, conversation = setup(workspace_database[0])
+    memory, personal_request, next_request = uuid4(), uuid4(), uuid4()
+    service.save_memory(owner, memory, "OLD MEMORY NOTE", "context",
+                        expected_version=0, confirmed=True)
+    with patch.object(service.default_client, "chat", side_effect=[
+        {"reply": "GENERAL ANSWER"}, {"reply": "PERSONAL ANSWER"}, {"reply": "CURRENT ANSWER"},
+    ]) as provider:
+        general = service.chat(owner, conversation, message="GENERAL QUESTION", context=None,
+                               request_id=uuid4(), expected_version=0)
+        personal = service.chat(owner, conversation, message="PERSONAL QUESTION",
+            context={"overview": {"nav_rub": "12345"}, "goals": [{"name": "PRIVATE GOAL"}],
+                     "research": {"status": "PRIVATE RESEARCH"}},
+            memory_ids=[memory], request_id=personal_request, expected_version=general["version"])
+        context = None
+        memory_ids = [memory]
+        if next_selection == "portfolio_only":
+            context, memory_ids = {"overview": {"nav_rub": "1000"}}, []
+        elif next_selection == "edited_memory":
+            service.save_memory(owner, memory, "NEW MEMORY NOTE", "context",
+                                expected_version=1, confirmed=True)
+        elif next_selection == "removed_memory":
+            assert service.delete_memory(owner, memory, expected_version=1)
+            memory_ids = []
+        reply = service.chat(owner, conversation, message="CURRENT QUESTION", context=context,
+            memory_ids=memory_ids, request_id=next_request, expected_version=personal["version"])
+        sent = provider.call_args.kwargs
+        assert sent["history"] == [
+            {"role": "user", "content": "GENERAL QUESTION"},
+            {"role": "assistant", "content": "GENERAL ANSWER"},
+        ]
+        serialized = json.dumps(sent, ensure_ascii=False)
+        for excluded in (
+            "PERSONAL QUESTION", "PERSONAL ANSWER", "PRIVATE GOAL", "PRIVATE RESEARCH",
+        ):
+            assert excluded not in serialized
+        if next_selection == "general_with_memory":
+            assert sent["context"]["_memory"][0]["content"] == "OLD MEMORY NOTE"
+        else:
+            assert "OLD MEMORY NOTE" not in serialized
+        if next_selection == "edited_memory":
+            assert sent["context"]["_memory"][0]["content"] == "NEW MEMORY NOTE"
+        if next_selection == "portfolio_only":
+            assert sent["context"]["overview"]["nav_rub"] == "1000"
+        replay = service.chat(owner, conversation, message="CURRENT QUESTION", context=context,
+            memory_ids=memory_ids, request_id=next_request, expected_version=personal["version"])
+    assert reply == replay
+    assert provider.call_count == 3
+    assert reply["version"] == personal["version"] + 2
+    assert service.store.quota(owner, 30)["used"] == 3
+    assert "PERSONAL ANSWER" in json.dumps(service.conversation(owner, conversation), default=str)
+    saved_memory = next(source for source in personal["sources"]
+                        if source["kind"] == "explicit_memory")
+    saved = service.read_request_source(owner, personal_request, saved_memory["id"])
+    assert saved["content"]["content"] == "OLD MEMORY NOTE"
+
+
 def test_durable_stream_prefix_cancel_and_completed_readback_do_not_restart_provider(
     workspace_database,
 ):
@@ -417,3 +480,48 @@ def test_completed_evidence_above_legacy_eight_kib_is_readable_and_tenant_scoped
     assert service.delete_conversation(owner, conversation)
     with pytest.raises(WorkspaceNotFound):
         service.read_request_source(owner, request, source_id)
+
+
+def test_source_boundary_matches_postgresql_before_quota_and_in_both_durable_copies(
+    workspace_database,
+):
+    service, owner, conversation = setup(workspace_database[0], limit=1)
+    context = {"research": {"observations": [1e308] * 200,
+                            "description": "Факты ₽ — исходный текст", "padding": ""}}
+    with service.store._transaction(owner) as cur:
+        cur.execute("SELECT octet_length(%s::jsonb::text) AS size",
+                    (json.dumps(_source_catalog(context), ensure_ascii=False),))
+        size = cur.fetchone()["size"]
+    context["research"]["padding"] = "x" * (65536 - size)
+    with service.store._transaction(owner) as cur:
+        encoded = json.dumps(_source_catalog(context), ensure_ascii=False)
+        cur.execute("SELECT octet_length(%s::jsonb::text) AS size", (encoded,))
+        assert cur.fetchone()["size"] == 65536
+    assert len(encoded.encode()) < 10000  # E-notation is small on the wire, large in JSONB text.
+    oversized = {"research": {**context["research"],
+                              "padding": context["research"]["padding"] + "x"}}
+    request = uuid4()
+    with patch.object(service.default_client, "stream", return_value=iter([
+        {"delta": "Источник приложен"}, {"result": {"reply": "Источник приложен"}},
+    ])) as provider:
+        with pytest.raises(ValueError, match="assistant_sources_too_large"):
+            service.stream(owner, conversation, message="Источники", context=oversized,
+                           request_id=uuid4(), expected_version=0)
+        assert service.store.quota(owner, 1)["used"] == 0
+        provider.assert_not_called()
+        events = list(service.stream(owner, conversation, message="Источники", context=context,
+                                     request_id=request, expected_version=0))
+    assert events[-1]["event"] == "complete"
+    assert service.store.quota(owner, 1)["used"] == 1
+    provider.assert_called_once()
+    with service.store._transaction(owner) as cur:
+        cur.execute(
+            "SELECT octet_length(r.source_refs::text) AS request_size, "
+            "octet_length(m.sources::text) AS message_size FROM assistant_requests r "
+            "JOIN assistant_messages m ON r.user_id = m.user_id AND r.id = m.request_id "
+            "WHERE r.user_id = %s AND r.id = %s AND m.role = 'assistant'",
+            (owner, request),
+        )
+        sizes = cur.fetchone()
+    assert sizes["request_size"] == 65536
+    assert sizes["message_size"] == 65536

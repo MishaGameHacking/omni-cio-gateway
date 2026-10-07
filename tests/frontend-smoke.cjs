@@ -129,6 +129,7 @@ const makeFixture = mode => {
       source: {type: "operation", amount: "125.50", currency: "RUB", expected_at: stamp, instrument_uid: "synthetic-a", state: "executed"},
       destination: {view: "asset", uid: "synthetic-a"}
     }],
+    ledgerItems: [{id: "fixture-ledger-1", operation_date: stamp, name: "Контрольная выплата", category: "income", instrument_uid: "synthetic-a", ticker: "SYNA", payment: {value: "12.34", currency: "eur"}}],
     notificationChannels: [],
     news: [{id: "synthetic-news-1", title: "Изолированная публикация инструмента", summary: "Краткое содержание теста", content: "Полный текст публикации из изолированного API", source: "Изолированный источник", source_url: "https://example.test/news/1", occurred_at: stamp, instrument_uids: ["synthetic-a"], priority: 1}],
     requests: [],
@@ -137,6 +138,8 @@ const makeFixture = mode => {
     failWorkspace: false,
     failStrategyLoad: false,
     failNotifications: false,
+    holdNotifications: false,
+    heldNotifications: [],
     conflict: false,
     lostAck: false,
     activeWrites: 0,
@@ -493,7 +496,7 @@ const testApiHandlers = [{
   run: ({url,response}) => sendJSON(response,{items:(url.searchParams.get("instrument_uids") || "").split(",").filter(Boolean).map(uid=>({...marketEvent,instrument_uid:uid,metadata_status:"available"})),source:"T-Invest",observed_at:stamp,refresh_after_seconds:10})
 }, {
   matches: ({path}) => path === "/api/workspace/operations",
-  run: ({response}) => sendJSON(response,{items:[],next_cursor:null,status:"available",source:"T-Invest",observed_at:stamp})
+  run: ({fixture,response}) => sendJSON(response,{items:clone(fixture.ledgerItems),next_cursor:null,status:"available",source:"T-Invest",observed_at:stamp})
 }, {
   matches: ({
     path
@@ -850,7 +853,8 @@ const workerContract = async () => {
   }
 };
 function captureBrowserLayout() {
-  const readableElements = selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length && getComputedStyle(element).visibility !== "hidden").map(element => ({
+  const visible = element => element.getClientRects().length && getComputedStyle(element).visibility !== "hidden";
+  const readableElements = selector => [...document.querySelectorAll(selector)].filter(visible).map(element => ({
     label: element.getAttribute("aria-label") || element.name || element.textContent.trim().slice(0, 70),
     fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
     compactAction: element.classList.contains("small-button"),
@@ -870,7 +874,8 @@ function captureBrowserLayout() {
   };
   const visibleApp = !document.querySelector("#app-shell").hidden;
   const modal = Boolean(document.querySelector("dialog[open]"));
-  const hero = !visibleApp && !modal && innerWidth <= 680 ? {
+  const heroVisible = visible(document.querySelector(".hero"));
+  const hero = !visibleApp && !modal && heroVisible && innerWidth <= 680 ? {
     required: true,
     rect: document.querySelector(".hero").getBoundingClientRect().toJSON(),
     regions: [
@@ -893,7 +898,7 @@ function captureBrowserLayout() {
       };
     })
   } : {required: false};
-  const heroDecorations = !visibleApp && !modal && innerWidth > 680 && innerWidth <= 960 ? {
+  const heroDecorations = !visibleApp && !modal && heroVisible && innerWidth > 680 && innerWidth <= 960 ? {
     required: true,
     rect: document.querySelector(".hero").getBoundingClientRect().toJSON(),
     labels: [...document.querySelectorAll(".hero .orbit-node")].map(element => ({text:element.textContent.trim(),rect:element.getBoundingClientRect().toJSON(),visible:Boolean(element.getClientRects().length)})),
@@ -945,7 +950,8 @@ function captureBrowserLayout() {
     inert: nav.inert,
     links
   };
-  const charts = [...document.querySelectorAll('.view:not([hidden]) .chart-plot')].map(plot => {
+  const surface = document.querySelector("dialog[open]") || document;
+  const charts = [...surface.querySelectorAll('.chart-plot')].filter(visible).map(plot => {
     const svg = plot.querySelector("svg");
     const axes = [...plot.querySelectorAll(".chart-axis")].map(axis => {
       const style = getComputedStyle(axis);
@@ -965,7 +971,7 @@ function captureBrowserLayout() {
       axes
     };
   });
-  const tables = [...document.querySelectorAll('.view:not([hidden]) .table-scroll')].map(container => {
+  const tables = [...surface.querySelectorAll('.table-scroll')].filter(visible).map(container => {
     const style = getComputedStyle(container);
     const table = container.querySelector("table");
     const hiddenHeaders = [...container.querySelectorAll("th .sr-only")].map(header => {
@@ -998,7 +1004,7 @@ function captureBrowserLayout() {
       menu: readableElements("#sidebar-nav .nav-link"),
       fields: readableElements('.field input:not([type=checkbox]):not([type=range]), .field select, .field textarea, .global-search input, .chat-compose textarea'),
       captions: readableElements(".card-label, .data-footnote, .source-line, .event-meta"),
-      actions: readableElements(".button, .icon-button")
+      actions: readableElements(".button, .icon-button, .screen-menu-item")
     },
     hero,
     heroDecorations,
@@ -1364,7 +1370,7 @@ const runBrowser = async base => {
       await Promise.allSettled(finite.map(animation => animation.finished));
       await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
     })()`);
-    const checkLayout = async label => {
+    const checkLayout = async (label, {minCharts = 0, minTables = 0} = {}) => {
       await settleLayout();
       const data = await recordLayout(label);
       assertViewportSize(data, label);
@@ -1374,8 +1380,11 @@ const runBrowser = async base => {
       assertReadability(data, label);
       assertMobileHero(data, label);
       assertHeroDecorations(data, label);
+      assert.ok(data.charts.length >= minCharts, label + ": the requested chart is visible on its page");
+      assert.ok(data.tables.length >= minTables, label + ": the requested table is visible on its page");
       assertChartLayout(data.charts, label);
       assertTableClipping(data.tables, label);
+      return data;
     };
     const screenshot = async (name, {
       validate = true
@@ -1438,6 +1447,7 @@ const runBrowser = async base => {
         });
       }
       await exerciseCanonicalNavigation({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
+      await exerciseIndependentPageLoads({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseEnglishLocale({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
@@ -2136,6 +2146,7 @@ async function serveTestNews({fixture, url, response}) {
   return sendJSON(response, {items: clone(items.slice(offset, offset + limit)), next_cursor: offset + limit < items.length ? String(offset + limit) : null, scanned_items: Math.min(limit, items.length - offset), instrument_uid: uid, source: "Изолированный источник", observed_at: stamp, status: items.length ? "received" : "empty"});
 }
 async function serveTestNotifications({fixture, path, body, method, response}) {
+  if (path === "/api/notifications" && fixture.holdNotifications) await new Promise(release => fixture.heldNotifications.push(release));
   if (path === "/api/notifications" && fixture.failNotifications) return sendJSON(response, {detail: "synthetic_notification_read_failure"}, 503);
   if (path === "/api/notifications/email/request") {
     const channel = {id: "00000000-0000-4000-8000-000000000801", kind: "email", label: "t***@example.test", status: "pending", verification_expires_at: new Date(Date.now() + 900000).toISOString(), verification_attempts_remaining: 5};
@@ -2228,6 +2239,7 @@ async function exerciseNotificationRetry({fixture, click, fieldValue, wait, eval
 async function exerciseAnalyticsReadConsistency({fixture, click, wait, evaluate, checkLayout, screenshot, round}) {
   fixture.periodResults = {"1y": "123456", "1w": "7654"};
   await click('#sidebar-nav [data-route="analytics"]');
+  await click('#view-analytics .screen-menu [data-screen="history"]');
   const metricValues = '[...document.querySelectorAll("#view-analytics .metric-grid .main-value")].map(item=>item.textContent)';
   await wait('document.querySelector("#view-analytics [data-history-period=\\"1y\\"]") && document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("123456")', "The initial year has its own financial result");
   fixture.holdWorkspace = true;
@@ -2248,26 +2260,29 @@ async function exerciseAnalyticsReadConsistency({fixture, click, wait, evaluate,
   await wait('document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("7654") && document.querySelector("#view-analytics [data-history-period=\\"1w\\"]")', "The successful retry displays only the selected week's snapshot");
   assert.ok(fixture.requests.slice(before).some(item => item.path === "/api/workspace" && new URLSearchParams(item.query).get("history_period") === "1w"));
   assert.equal(fixture.requests.slice(before).some(item => item.path === "/api/workspace/refresh" && item.method === "POST"), false);
-  await checkLayout(`analytics-period-recovered-${round}-390`);
+  await checkLayout(`analytics-period-recovered-${round}-390`, {minCharts: 1});
 }
 async function exerciseSearchReadConsistency({fixture, click, fieldValue, wait, evaluate}) {
   fixture.holdPublicNews = true;
   await fieldValue("#global-search-form", "q", "older-query");
   await evaluate('document.querySelector("#global-search-form").requestSubmit()');
-  await until(() => fixture.heldPublicNews.length === 1, "The earlier search is waiting for a shared resource");
+  await until(() => fixture.heldPublicNews.length === 1, "The general news feed is deliberately waiting");
+  await until(() => fixture.requests.some(item => item.path === "/api/broker/tbank/instruments/search" && new URLSearchParams(item.query).get("q") === "older-query"), "The first query starts independently of that shared feed");
   await fieldValue("#global-search-form", "q", "newer-query");
   await evaluate('document.querySelector("#global-search-form").requestSubmit()');
   await wait('document.querySelector("#view-search .view-header").textContent.includes("newer-query")', "The current route query is visible during loading");
+  await wait('document.querySelector("#view-search .search-result") && !document.querySelector("#view-search .loading-panel")', "The newer query finishes while the unrelated feed is still pending");
+  const searches = fixture.requests.filter(item => item.path === "/api/broker/tbank/instruments/search");
+  assert.deepEqual(searches.map(item => new URLSearchParams(item.query).get("q")), ["older-query", "newer-query"], "Each explicit route starts its own search without a shared-data gate");
   fixture.holdPublicNews = false;
   fixture.heldPublicNews.splice(0).forEach(release => release());
-  await wait('document.querySelector("#view-search .search-result") && !document.querySelector("#view-search .loading-panel")', "The newer query finishes after the shared response");
-  const searches = fixture.requests.filter(item => item.path === "/api/broker/tbank/instruments/search");
-  assert.deepEqual(searches.map(item => new URLSearchParams(item.query).get("q")), ["newer-query"], "An older route cannot start a new search after its dependency resolves");
+  await wait(`${completedResourceCount("/api/public/news")} > 0`, "The shared feed finally completes");
+  assert.equal(fixture.requests.filter(item => item.path === "/api/broker/tbank/instruments/search").length, 2, "A late shared read cannot launch the old query again");
   assert.equal(await evaluate('document.querySelector("#global-search").value'), "newer-query");
   assert.ok(await evaluate('document.querySelector("#view-search .view-header").textContent.includes("newer-query")'));
   await click('#sidebar-nav [data-route="goals"]');
 }
-async function exerciseGoalSourceContract({fixture, click, wait, evaluate, screenshot, round}) {
+async function exerciseGoalSourceContract({fixture, click, wait, evaluate, screenshot, checkLayout, round}) {
   const goal = clone(serverContracts.goal_available);
   fixture.goals = [goal];
   fixture.goalPlans = {[goal.id]: {version: 1, document: clone(serverContracts.goal_plan_document), forecast: clone(serverContracts.goal_forecast_available)}};
@@ -2278,6 +2293,9 @@ async function exerciseGoalSourceContract({fixture, click, wait, evaluate, scree
   assert.ok(await evaluate('document.querySelector("#goal-plan-result").textContent.includes("Сумма в заданном сценарии")'));
   const sourceDate = await evaluate(`window.OmniUI.date(${JSON.stringify(serverContracts.goal_forecast_available.source_as_of)}, true)`);
   assert.ok((await evaluate('document.querySelector("#goal-plan-result .goal-forecast-source").textContent')).includes(sourceDate));
+  await wait('document.querySelector("#goal-plan-result .chart-plot")?.getClientRects().length', "The model scenario has its own visible numerical chart");
+  await checkLayout(`goal-scenario-${round}-390`, {minCharts: 1});
+  await screenshot(`goal-scenario-${round}-390.png`);
   await click('#workspace-dialog [data-close-dialog]');
   fixture.goals[0] = clone(serverContracts.goal_stale);
   fixture.goalPlans[goal.id].forecast = clone(serverContracts.goal_forecast_stale);
@@ -2386,7 +2404,10 @@ async function exerciseResearchLateResult({fixture,click,fieldValue,wait,evaluat
   fixture.researchHoldAcknowledgment=false;
   fixture.researchHeldAcknowledgments.splice(0).forEach(release=>release());
   await wait('document.querySelector("[data-research-state=completed]")?.textContent.includes("ранее выбранным условиям")',"A late old-version result stays in the archive");
+  assert.equal(await evaluate('location.hash'), '#account/strategies/editor', "A late research result cannot replace the page being edited");
   assert.equal(await evaluate('document.querySelector("#strategy-research").textContent.includes("Нет достаточной истории")'),false,"The old calculation cannot replace the current editor's result");
+  await click('#view-strategies .screen-menu [data-screen="research"]');
+  await wait('document.querySelector("#strategy-research")?.getClientRects().length', "Research status remains reachable on its own page");
 }
 async function exerciseResearchPagination({fixture,click,wait,evaluate,screenshot,checkLayout,round}) {
   fixture.billing=clone(serverContracts.billing_disabled);
@@ -2416,14 +2437,18 @@ async function exerciseResearchPagination({fixture,click,wait,evaluate,screensho
   await checkLayout(`research-archive-${round}-390`);
   const oldest=fixture.researchRuns.at(-1);
   await click(`[data-research-run="${oldest.id}"][data-research-operation="open"]`);
-  await wait('!document.querySelector("#workspace-dialog").open && document.querySelector("#strategy-research").textContent.includes("Архивная контрольная запись")',"The oldest retained record opens across the former 200-record boundary");
-  assert.ok(await evaluate('document.querySelector("#strategy-research").textContent.includes("Архивная версия")'));
+  await wait(`document.querySelector("#workspace-dialog").open && location.hash.includes("/strategies/result?run=${oldest.id}") && document.querySelector("#dialog-content").textContent.includes("Архивная контрольная запись")`,"The oldest retained record opens on its own route across the former 200-record boundary");
+  assert.ok(await evaluate('document.querySelector("#dialog-content").textContent.includes("Архивная версия")'));
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('location.hash === "#account/strategies/archive" && document.querySelector("#research-archive")?.getClientRects().length', "Back returns from a research result to its archive");
 }
 async function exerciseOperatorCapability({fixture,send,base,round,wait,click,evaluate,screenshot,checkLayout}) {
   assert.equal(fixture.requests.some(item=>item.path==="/api/system/metrics"),false,"Ordinary signed-in users never request operator aggregates");
   fixture.canViewOperationalMetrics=true;
   await send("Page.navigate",{url:`${base}?case=signed-read-contracts-${round}&operator=1#settings`});
   await wait('document.querySelector("#operations-settings")?.textContent.includes("Требует внимания оператора")',"The explicit server capability enables the operator panel");
+  await click('#view-settings .screen-menu [data-screen="operations"]');
+  await wait('document.querySelector("#operations-settings")?.getClientRects().length', "Operator evidence is opened through its actual settings menu");
   const text=await evaluate('document.querySelector("#operations-settings").textContent');
   assert.ok(text.includes("Счета без своевременного обновления") && text.includes("Неопределённый результат отправки") && text.includes("Подтверждение запуска не получено"));
   assert.ok(!text.includes("worker_not_reported") && !text.includes("stale_success_accounts"),"Operator codes are translated into meaningful statuses");
@@ -2687,6 +2712,8 @@ async function serveTestAssistantStatus({fixture,path,method,body,url,response})
 }
 
 async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evaluate,checkLayout}) {
+  await click('#view-assistant [data-screen="conversation"]');
+  assert.equal(await evaluate('document.querySelector("#assistant-history-context").textContent === window.OMNICIO_I18N.t("assistant.history_context_help")'), true, "The context selector explains the history scope enforced by the server");
   await click('#view-assistant [data-screen="memory"]');
   await wait('document.querySelector("#assistant-memory-form")', "Explicit memory editor is available with AI disabled");
   await fieldValue("#assistant-memory-form", "content", "Prefer explanations with source timestamps");
@@ -2791,7 +2818,7 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   await click(`#view-profile [data-session-revoke="${other.id}"]`);
   await until(()=>fixture.sessions.length===1,"Revoke another session");
   fixture.billing.configured=true;fixture.billing.offer=clone(serverContracts.billing_enabled.offer);
-  await click('#view-profile [data-action="premium"]');
+  await click('#view-profile .screen-menu [data-screen="plan"]');
   await wait('document.querySelector("#billing-checkout-form")',"Configured hosted checkout");
   const comparison=await evaluate('[...document.querySelectorAll(".plan-comparison tbody tr")].map(row=>[...row.querySelectorAll("td")].map(cell=>cell.textContent))');
   assert.deepEqual(comparison[0],[String(serverContracts.billing_enabled.plans.personal.research_runs),String(serverContracts.billing_enabled.plans.premium.research_runs)],"The two archive limits come from the actual billing contract");
@@ -2812,7 +2839,7 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
 async function exercisePendingBillingCancellation({fixture, click, wait, evaluate}) {
   const pending = ["pending", "uncertain"].map(status => ({...clone(fixture.billing.payments[0]), id: require("node:crypto").randomUUID(), status, cancel_attempted_at: stamp, entitlement_from: null, entitlement_until: null}));
   fixture.billing.payments.push(...pending);
-  await click('#view-profile [data-action="premium"]');
+  await click('#view-profile .screen-menu [data-screen="plan"]');
   for (const payment of pending) {
     const selector = `#dialog-content [data-billing-id="${payment.id}"]`;
     await wait(`document.querySelector(${JSON.stringify(selector)})`, "Cancellation awaiting bank confirmation is visible: " + payment.status);
@@ -2832,7 +2859,7 @@ async function exerciseBillingInitializationRecovery({fixture,click,wait,evaluat
   const resolved={...clone(unsent),id:require("node:crypto").randomUUID(),resolution:"provider_order_absent"};
   fixture.billing.payments.push(absent,unsent,resolved);
   const before=fixture.requests.length;
-  await click('#view-profile [data-action="premium"]');
+  await click('#view-profile .screen-menu [data-screen="plan"]');
   await wait('document.querySelector("#dialog-content").textContent.includes("отправка запроса на оплату в банк не начиналась")',"An unsent initialization has its actual local resolution");
   const text=await evaluate('document.querySelector("#dialog-content").textContent');
   assert.ok(text.includes("Результат начала оплаты не подтверждён") && text.includes("подтверждающих проверок банка"),"Ambiguous and resolved initialization have distinct explanations");
@@ -2851,7 +2878,7 @@ async function exerciseExecutionPlanner({fixture,click,fieldValue,wait,evaluate,
   await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved" && document.querySelector("#view-strategies [data-action=execution-plan]")?.disabled===false',"Planner becomes available after the same strategy version is acknowledged");
   fixture.researchRuns=[{id:require("node:crypto").randomUUID(),strategy_version:fixture.selection.version,status:"computed",created_at:new Date().toISOString(),metrics:{net_return_percent:"1.25"},inputs:{commission_bps:"10",slippage_bps:"20"}}];
   const prepare = async () => {
-    await click('#view-strategies [data-action="execution-plan"]');
+    await click('#view-strategies .screen-menu [data-screen="plan"]');
     await wait('document.querySelector("#execution-plan-form")', "Saved research and current account planning inputs");
     await click('#execution-plan-form [type="submit"]');
     await wait('document.querySelector("#execution-review-consent")', "Review exact plan before confirmation");
@@ -2894,11 +2921,11 @@ async function exerciseExecutionPlanner({fixture,click,fieldValue,wait,evaluate,
   assert.equal(fixture.executions[1].legs[0].lots_executed,0);
   assert.equal(fixture.requests.filter(item=>item.path.endsWith("/dispatch")).length,1,"Cancelling a pending shadow plan cannot execute it");
   await click('#workspace-dialog [data-close-dialog]');
-  await click('#view-strategies [data-action="execution-history"]');
+  await click('#view-strategies .screen-menu [data-screen="executions"]');
   await wait('document.querySelectorAll("#dialog-content [data-recovery-id]").length===2',"Both terminal plans remain in execution history");
   await click('#workspace-dialog [data-close-dialog]');
   fixture.holdResearchReads=true;
-  await click('#view-strategies [data-action="execution-plan"]');
+  await click('#view-strategies .screen-menu [data-screen="plan"]');
   await until(()=>fixture.heldResearchReads.length>0,"Delayed planner prerequisites are in flight");
   await click('#workspace-dialog [data-close-dialog]');
   fixture.holdResearchReads=false;
@@ -2930,10 +2957,12 @@ async function exerciseEnglishLocale({send,configureViewport,round,base,wait,cli
       assert.ok(await evaluate('document.querySelector("#view-home").textContent.includes("Тестовая компания")'),"Issuer names remain in their original language");
     }
     if(view==="strategies") {
+      await click('#view-strategies .screen-menu [data-screen="catalog"]');
       await wait('document.querySelector("[data-select-strategy=balanced] strong").textContent==="Balanced"',"Canonical preset title is translated by ID");
       assert.equal(await evaluate('document.querySelector("#view-strategies .strategy-note").textContent'),"Allocation across asset classes with a preference for lower historical volatility.","The visible canonical preset description is translated exactly");
     }
     await checkLayout(`english-${view}-${round}-390`);
+    await exerciseScreenPages({view, label: `english-${view}-${round}-390`, click, wait, evaluate, checkLayout, screenshot, width: 390});
   }
   const origin=await evaluate("performance.timeOrigin");
   await send("Page.reload");
@@ -2996,7 +3025,7 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   await click('.public-nav [data-public-page="features"]');
   await wait('location.hash === "#public/features"', "Public menu is a page route");
   assert.deepEqual(await evaluate('[...document.querySelectorAll("#public-content > section")].filter(element=>element.getClientRects().length).map(element=>element.id)'), ["features"]);
-  assert.equal(await evaluate('document.querySelectorAll("a[href^=\"/legal/\"][target=\"_blank\"]").length'), 0, "Internal legal pages keep browser Back available");
+  assert.equal(await evaluate("document.querySelectorAll('a[href^=\"/legal/\"][target=\"_blank\"]').length"), 0, "Internal legal pages keep browser Back available");
   await evaluate("history.back()");
   await wait('location.hash === "#public/welcome"', "Public page Back restores the welcome screen");
   const lateKey = `signed-late-session-${round}`;
@@ -3025,16 +3054,61 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   await click('#view-goals [data-action="goal-create"]');
   await wait('document.querySelector("#goal-form") && document.querySelector("#workspace-dialog").open', "Goal creation is an addressable screen");
   await fieldValue("#goal-form", "title", "Unsubmitted navigation draft");
+  await fieldValue("#goal-form", "kind", "income");
   assert.ok((await evaluate("location.hash")).startsWith("#account/goals/create"));
+  await evaluate('document.querySelector("#workspace-dialog").scrollTop = 180');
+  await wait('history.state.dialogScroll > 100', "The routed form records its own scroll position");
+  const dialogScroll = await evaluate('document.querySelector("#workspace-dialog").scrollTop');
   await click('#workspace-dialog [data-close-dialog]');
   await wait('!document.querySelector("#workspace-dialog").open && location.hash === "#account/goals"', "Back closes the form and restores the list");
   await evaluate("history.forward()");
   await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#goal-form")?.elements.title.value === "Unsubmitted navigation draft"', "Forward restores the unsaved draft");
+  assert.equal(await evaluate('document.querySelector("#goal-form").elements.progress_source.value'), "income", "Draft restoration rebuilds the source options for the restored goal kind");
+  await wait(`Math.abs(document.querySelector("#workspace-dialog").scrollTop - ${dialogScroll}) < 2`, "Forward restores the long form's own scroll position");
   await fieldValue("#goal-form", "title", "");
+  await fieldValue("#goal-form", "kind", "capital");
   await click('#workspace-dialog [data-close-dialog]');
   await wait('!document.querySelector("#workspace-dialog").open', "Draft was returned to its initial state");
   assert.equal(failure.requests.filter(item=>item.method === "POST" && item.path === "/api/goals").length, 0, "Navigating and restoring a draft cannot create a goal");
   console.log(`PASS canonical navigation round ${round}: repeated demo reload, public screens, Back, control restoration, late bootstrap, retry and draft history`);
+}
+async function exerciseIndependentPageLoads({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
+  await configureViewport(390);
+  const key = `signed-independent-reads-${round}`;
+  const fixture = makeFixture("signed");
+  fixture.holdPublicNews = true;
+  fixture.holdNotifications = true;
+  fixtures.set(key, fixture);
+  await send("Page.navigate", {url: `${base}?case=${key}#account/asset?uid=synthetic-a`});
+  await until(() => fixture.heldPublicNews.length === 1, "The asset page's unrelated general news request is held");
+  await wait('document.querySelector("#view-asset .chart-plot")?.getClientRects().length && document.querySelector("#view-asset [data-market-quote] .main-value")?.textContent.includes("251,75")', "Quotes and the chart arrive before the general news feed");
+  assert.equal(fixture.heldPublicNews.length, 1, "The unrelated response has not been released to make the chart pass");
+  await checkLayout(`independent-asset-${round}`, {minCharts: 1});
+  await fieldValue("#global-search-form", "q", "SYNA");
+  await evaluate('document.querySelector("#global-search-form").requestSubmit()');
+  await wait('document.querySelector("#view-search .search-result")?.getClientRects().length && !document.querySelector("#view-search .loading-panel")', "Instrument search also finishes independently of the general feed");
+  assert.equal(fixture.heldPublicNews.length, 1);
+  const newsId = "a".repeat(64);
+  await evaluate(`location.hash = ${JSON.stringify("#account/events/news?news=" + newsId + "&news_source=public")}`);
+  await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#dialog-content").textContent.includes("Подтверждённый текст")', "A news deep link reads its own article without waiting for the general feed");
+  assert.equal(fixture.heldPublicNews.length, 1);
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "The independent article returns through Back");
+  fixture.holdPublicNews = false;
+  fixture.heldPublicNews.splice(0).forEach(release => release());
+  await click('#sidebar-nav [data-route="settings"]');
+  await until(() => fixture.heldNotifications.length === 1, "Notification delivery is deliberately pending");
+  await click('#view-settings .screen-menu [data-screen="support"]');
+  await wait("document.querySelector('#workspace-support a[href^=\"mailto:\"]')?.getClientRects().length && !document.querySelector('#workspace-support .loading-panel')", "Support arrives before unrelated notification delivery");
+  assert.equal(fixture.heldNotifications.length, 1);
+  const completed = await evaluate(completedResourceCount("/api/notifications"));
+  fixture.holdNotifications = false;
+  fixture.heldNotifications.splice(0).forEach(release => release());
+  await wait(`${completedResourceCount("/api/notifications")} > ${completed}`, "The delayed notification read completes after support");
+  await wait("document.querySelector('#workspace-support a[href^=\"mailto:\"]')?.getClientRects().length && !document.querySelector('#workspace-support .loading-panel')", "A late background repaint preserves the loaded contact");
+  assert.equal(await evaluate("location.hash"), "#account/settings/support");
+  await checkLayout(`independent-support-${round}`);
+  console.log(`PASS independent reads round ${round}: asset, search, article and support become usable before unrelated responses`);
 }
 async function exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
   await configureViewport(390);
@@ -3045,6 +3119,7 @@ async function exerciseSafeUpdate({send, configureViewport, round, base, wait, c
   await send("Page.navigate", {url: `${base}?case=${key}#account/goals/create`});
   await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#goal-form") && !document.querySelector("#dialog-update-banner").hidden', "A changed server build is visible inside a routed form");
   await fieldValue("#goal-form", "title", "Typed update draft");
+  await fieldValue("#goal-form", "kind", "income");
   await fieldValue("#goal-form", "target_amount_rub", "123456.789");
   await fieldValue("#goal-form", "allocation_percent", "10");
   await click('#goal-form [type="submit"]');
@@ -3060,11 +3135,12 @@ async function exerciseSafeUpdate({send, configureViewport, round, base, wait, c
   const saved = await evaluate('JSON.parse(sessionStorage.getItem("omnicio-update-drafts"))');
   assert.equal(saved.public_id, fixture.user);
   assert.ok(saved.expires_at > Date.now() && saved.expires_at <= Date.now() + 1800000);
-  assert.deepEqual(saved.drafts, {"goal-form:":{title:"Typed update draft",target_amount_rub:"123456.789",allocation_percent:"10"}}, "Only changed whitelisted inputs are stored; no saved snapshot or untouched API-backed field is included");
+  assert.deepEqual(saved.drafts, {"goal-form:":{title:"Typed update draft",kind:"income",target_amount_rub:"123456.789",progress_source:"income",allocation_percent:"10"}}, "Only changed whitelisted inputs are stored; no saved snapshot or untouched API-backed field is included");
   assert.equal(await evaluate('Boolean(document.querySelector("#goal-form"))'), false, "Private forms are not restored before /api/me confirms the same profile");
   fixture.holdMe = false; fixture.releaseMe(); delete fixture.releaseMe;
   await wait('document.querySelector("#goal-form")?.elements.title.value === "Typed update draft"', "The verified profile receives its typed draft after update");
   assert.equal(await evaluate('document.querySelector("#goal-form").elements.target_amount_rub.value'), "123456.789");
+  assert.equal(await evaluate('document.querySelector("#goal-form").elements.progress_source.value'), "income", "Updated goal forms restore a valid type-specific source");
   assert.equal(await evaluate('location.hash'), "#account/goals/create");
   assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null, "The temporary stored copy is consumed once");
   assert.equal(fixture.goals.length, 0, "Restoring fields never saves a goal automatically");
@@ -3084,7 +3160,7 @@ async function exerciseSafeUpdate({send, configureViewport, round, base, wait, c
   const thirdOrigin = await evaluate("performance.timeOrigin");
   await send("Page.reload");
   await wait(`performance.timeOrigin !== ${thirdOrigin} && document.querySelector("#goal-form")?.elements.title.value === ""`, "Expired drafts are discarded");
-  const filtered = {version:1,public_id:fixture.user,expires_at:Date.now()+60000,drafts:{"goal-form:":{title:"Allowed field",credential:"NEVER_RESTORE",nav_rub:"999999999"},"research-evidence-form:":{document:"NEVER_RESTORE"}}};
+  const filtered = {version:1,public_id:fixture.user,expires_at:Date.now()+60000,drafts:{"goal-form:":{title:"Allowed field",credential:"NEVER_RESTORE",nav_rub:"999999999"},"assistant-form:":{context:"investment",include_news:true},"research-evidence-form:":{document:"NEVER_RESTORE"}}};
   await evaluate(`sessionStorage.setItem("omnicio-update-drafts", ${JSON.stringify(JSON.stringify(filtered))})`);
   const fourthOrigin = await evaluate("performance.timeOrigin");
   await send("Page.reload");
@@ -3094,6 +3170,15 @@ async function exerciseSafeUpdate({send, configureViewport, round, base, wait, c
   await fieldValue("#goal-form", "title", "");
   await click('#workspace-dialog [data-close-dialog]');
   await wait('!document.querySelector("#workspace-dialog").open', "The restored form can return through the normal Back control");
+  await click('#sidebar-nav [data-route="assistant"]');
+  await click('#view-assistant [data-screen="conversation"]');
+  await wait('document.querySelector("#assistant-form")?.elements.context.value === "investment"', "The verified profile also restores the chosen assistant context");
+  assert.equal(await evaluate('document.querySelector("#assistant-form").elements.include_news.disabled'), false, "Related assistant controls follow the restored context without a change event");
+  assert.equal(await evaluate('document.querySelector("#assistant-form").elements.include_news.checked'), true);
+  assert.equal(await evaluate('document.querySelector("#assistant-form").elements.research_run_id.disabled'), false);
+  assert.equal(fixture.requests.filter(item=>!["GET","HEAD"].includes(item.method)).length, 0, "Restoring dependent controls cannot save preferences or send a question");
+  await click('#assistant-form [name="include_news"]');
+  await fieldValue("#assistant-form", "context", "general");
   await evaluate(`sessionStorage.setItem("omnicio-update-drafts", ${JSON.stringify(JSON.stringify(filtered))})`);
   await click('#profile-button');
   await click('#profile-menu [data-action="logout"]');
@@ -3234,6 +3319,34 @@ async function exerciseShortDrawer({configureViewport, round, click, wait, evalu
   await click('#sidebar-nav [data-route="settings"]');
   await wait('document.querySelector("#app-sidebar").dataset.open!=="true" && document.querySelector("#preferences-form")', "Final drawer item opens its page");
 }
+const screenPages = {
+  portfolio: [["history", 1, 0], ["structure", 0, 0], ["positions", 0, 1], ["income", 0, 0], ["operations", 0, 1]],
+  market: [["reference", 1, 0], ["watchlist", 0, 0], ["positions", 0, 1], ["news", 0, 0]],
+  strategies: [["catalog", 0, 0], ["editor", 0, 0], ["assessment", 0, 0], ["research", 0, 0]],
+  analytics: [["history", 1, 0], ["performance", 0, 0], ["income", 0, 0], ["risk", 0, 0]],
+  profile: [["personal", 0, 0], ["identities", 0, 0], ["sessions", 0, 0], ["delete", 0, 0]],
+  settings: [["appearance", 0, 0], ["notifications", 0, 0], ["broker", 0, 0], ["recovery", 0, 0], ["about", 0, 0], ["support", 0, 0]],
+  assistant: [["conversation", 0, 0], ["history", 0, 0], ["memory", 0, 0], ["sources", 0, 0]]
+};
+async function exerciseScreenPages({view, label, click, wait, evaluate, checkLayout, screenshot, width}) {
+  for (const [screen, minCharts, minTables] of screenPages[view] || []) {
+    await click(`#view-${view} .screen-menu [data-screen="${screen}"]`);
+    const selector = `#view-${view} [data-screen-content="${screen}"]`;
+    await wait(`location.hash.startsWith(${JSON.stringify(`#account/${view}/${screen}`)}) && document.querySelector(${JSON.stringify(selector)})?.getClientRects().length`, `${label}: open ${screen} through its menu`);
+    if (minCharts) await wait(`document.querySelector(${JSON.stringify(selector + " .chart-plot")})?.getClientRects().length`, `${label}/${screen}: confirmed observations render a chart`);
+    if (minTables) await wait(`document.querySelector(${JSON.stringify(selector + " .table-scroll tbody tr")})?.getClientRects().length`, `${label}/${screen}: real rows render a table`);
+    const visible = await evaluate(`[...document.querySelectorAll(${JSON.stringify(`#view-${view} [data-screen-content]`)})].filter(element=>element.getClientRects().length).map(element=>element.dataset.screenContent)`);
+    assert.ok(visible.length > 0 && visible.every(value => value === screen), `${label}/${screen}: only the selected information page is visible`);
+    if (view === "strategies" && screen === "editor") assert.equal(await evaluate('Boolean(document.querySelector("#strategy-form")?.getClientRects().length)'), true, "The strategy editor has its own reachable page");
+    if (view === "settings" && screen === "support") await wait("document.querySelector('#workspace-support a[href^=\"mailto:\"]')", "Support displays the configured user-initiated contact");
+    await checkLayout(`${label}/${screen}`, {minCharts, minTables});
+    if (width === 390 && (minCharts || minTables)) await screenshot(`${view}-${screen}-${label.replaceAll(/[^a-z0-9-]/gi, "-")}.png`);
+  }
+  if (screenPages[view]) {
+    await click(`#sidebar-nav [data-route="${view}"]`);
+    await wait(`location.hash === ${JSON.stringify(`#account/${view}`)}`, `${label}: return to section overview`);
+  }
+}
 async function exerciseViewport({
   send,
   configureViewport,
@@ -3295,6 +3408,7 @@ async function exerciseViewport({
     await delay(80);
     await checkLayout(`${view} ${round}/${width}`);
     if (width <= 390) await screenshot(`${view}-${round}-${width}.png`);
+    await exerciseScreenPages({view, label: `${view} ${round}/${width}`, click, wait, evaluate, checkLayout, screenshot, width});
   }
   assert.equal(await evaluate('document.querySelector("#assistant-form textarea").disabled'), true, "Disconnected AI cannot fabricate answers");
   if (width === 390) await exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evaluate,checkLayout});
@@ -3448,9 +3562,13 @@ async function exerciseViewport({
     assert.equal(await evaluate('document.querySelector("#main-content").textContent.includes("Тестовая компания")'), false, "Late old-profile response cannot restore data");
     assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Мой профиль");
   }
-  const browserStorage = await evaluate('({local:Object.keys(localStorage),session:Object.keys(sessionStorage)})');
+  const browserStorage = await evaluate('({local:Object.keys(localStorage),session:Object.keys(sessionStorage),lastRoute:localStorage.getItem("omnicio-last-route")})');
   assert.deepEqual(browserStorage.session, [], "Private session data never enters sessionStorage");
-  assert.ok(browserStorage.local.every(key => key === "omnicio-theme"), "Only a display theme may enter localStorage");
+  assert.ok(browserStorage.local.every(key => ["omnicio-theme", "omnicio-last-route"].includes(key)), "Only display preferences and a sanitized page route may enter localStorage");
+  if (browserStorage.lastRoute) {
+    assert.equal(browserStorage.lastRoute.includes("?"), false, "The persistent last page cannot include personal IDs or search values");
+    assert.equal(await evaluate('localStorage.getItem("omnicio-last-route") === window.OmniUI.routeHash(window.OmniUI.resumeRoute(window.OmniUI.parseRoute(localStorage.getItem("omnicio-last-route"))))'), true, "The persistent page passes the same resume allowlist as startup");
+  }
   assert.deepEqual(await evaluate("window.__browserErrors"), [], "No browser errors after workflows");
   console.log(`PASS round ${round}, ${width}px: layout, navigation, search, real charts, strategies, goals, events, settings, session isolation`);
 }
@@ -3464,7 +3582,8 @@ async function assertStrategyPane(evaluate, pane, focused = false) {
       return {id:tab.id,selected:tab.getAttribute('aria-selected')==='true',tabIndex:tab.tabIndex,panel:panel?.id,role:panel?.getAttribute('role'),labelledBy:panel?.getAttribute('aria-labelledby'),hidden:panel?.hidden};
     }),
     visibleOptions:[...document.querySelectorAll('.strategy-option')].filter(option=>option.getClientRects().length).length,
-    editor:Boolean(document.querySelector('#strategy-form')?.getClientRects().length)
+    editorPresent:Boolean(document.querySelector('#strategy-form')),
+    editorVisible:Boolean(document.querySelector('#strategy-form')?.getClientRects().length)
   }))()`);
   assert.equal(state.tabs.length, 2, "The strategy source control exposes two tabs");
   for (const tab of state.tabs) {
@@ -3476,7 +3595,8 @@ async function assertStrategyPane(evaluate, pane, focused = false) {
     assert.equal(tab.hidden, !selected, "Inactive source panels are hidden");
   }
   assert.equal(state.visibleOptions, pane === "catalog" ? 10 : 0, "The ten preset choices belong only to the catalog panel");
-  assert.equal(state.editor, true, "Browsing sources preserves the current strategy editor");
+  assert.equal(state.editorPresent, true, "Browsing sources preserves the current strategy form");
+  assert.equal(state.editorVisible, false, "The current strategy editor has a separate page from its source catalogue");
   if (focused) assert.equal(state.focused, "strategy-tab-" + pane, "Keyboard tab selection preserves focus on the selected tab");
 }
 async function exerciseStrategyTabs({
@@ -3486,6 +3606,7 @@ async function exerciseStrategyTabs({
   send,
   wait
 }) {
+  await click('#view-strategies .screen-menu [data-screen="catalog"]');
   await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved" && !document.querySelector("[data-action=strategy-apply-custom]").disabled', "Saved strategy and personal conditions before tab navigation");
   const version = fixture.selection.version;
   const document = clone(fixture.selection.document);

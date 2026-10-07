@@ -33,6 +33,7 @@ from .tbank import (
     TBankInstrumentMetadata,
     TBankInvestClient,
     TBankLastPrice,
+    TBankLastPriceBatch,
     TBankMarketYield,
     TBankOperationsPage,
     TBankOrderBook,
@@ -535,6 +536,15 @@ class BrokerService:
     ) -> TBankLastPrice | None:
         prices = self.candidate_last_prices(user_id, (instrument_uid,))
         return next(iter(prices), None)
+
+    def market_last_prices(
+        self, user_id: UUID, instrument_uids: tuple[str, ...],
+    ) -> TBankLastPriceBatch:
+        """Partial quote display never changes strict execution readers."""
+        record, credential, environment = self._connected_credential(user_id)
+        result = self.tbank.get_last_prices_batch(credential, environment, instrument_uids)
+        self._require_current_connection(record)
+        return result
 
     def candidate_fundamentals(
         self,

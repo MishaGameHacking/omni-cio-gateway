@@ -144,6 +144,20 @@ def _operation_cursor(
         raise ValueError("workspace_operation_cursor_invalid") from exc
 
 
+def _validate_operation_page(
+    limit: int, from_at: datetime | None, to_at: datetime | None, now: datetime,
+) -> None:
+    if type(limit) is not int or not 1 <= limit <= 200:
+        raise ValueError("workspace_operation_limit")
+    if any(value is not None and (not isinstance(value, datetime) or value.tzinfo is None)
+           for value in (from_at, to_at)):
+        raise ValueError("workspace_operation_period_invalid")
+    if (to_at is not None and to_at > now) or (
+        from_at is not None and to_at is not None and from_at > to_at
+    ):
+        raise ValueError("workspace_operation_period_invalid")
+
+
 def _event_record(row: Mapping[str, Any]) -> dict[str, Any]:
     result = dict(row)
     source = result["source"]
@@ -300,7 +314,10 @@ class WorkspaceStore:
             basis.watermark is not None
             and len(operations) <= _MAX_OPERATIONS
         )
-        return replace(basis, operations=operations[:_MAX_OPERATIONS], complete=complete)
+        result: _Basis = replace(
+            basis, operations=operations[:_MAX_OPERATIONS], complete=complete,
+        )
+        return result
 
     @staticmethod
     def _history(
@@ -453,16 +470,8 @@ class WorkspaceStore:
         Ingestion is frozen at the first page time. Later corrections cannot
         cause duplicates or omissions halfway through the same pagination.
         """
-        if type(limit) is not int or not 1 <= limit <= 200:
-            raise ValueError("workspace_operation_limit")
         now = datetime.now(UTC)
-        if any(value is not None and (not isinstance(value, datetime) or value.tzinfo is None)
-               for value in (from_at, to_at)):
-            raise ValueError("workspace_operation_period_invalid")
-        if (to_at is not None and to_at > now) or (
-            from_at is not None and to_at is not None and from_at > to_at
-        ):
-            raise ValueError("workspace_operation_period_invalid")
+        _validate_operation_page(limit, from_at, to_at, now)
         with self._transaction(user_id) as cur:
             basis = self._basis(cur, user_id, include_operations=False)
             connection = basis.connection

@@ -1456,8 +1456,9 @@ def test_operations_pages_freeze_ingestion_and_bind_account_filters(
     )["items"]} == {"alpha", "gamma"}
     with pytest.raises(ValueError, match="cursor_invalid"):
         store.operations(other, from_at=lower, cursor=first["next_cursor"])
+    changed_lower = lower - timedelta(days=1)
     with pytest.raises(ValueError, match="cursor_invalid"):
-        store.operations(owner, from_at=lower - timedelta(days=1), cursor=first["next_cursor"])
+        store.operations(owner, from_at=changed_lower, cursor=first["next_cursor"])
 
 
 def test_selected_history_limit_is_applied_after_corrections_and_before_old_lifetime_rows(

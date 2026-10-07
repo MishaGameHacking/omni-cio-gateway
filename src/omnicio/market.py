@@ -18,9 +18,12 @@ from .tbank import (
     TBankHistoricCandle,
     TBankInstrumentMetadata,
     TBankLastPrice,
+    TBankLastPriceBatch,
     TBankTradingStatus,
     TBankUnavailable,
 )
+
+type _QuoteCacheEntry = tuple[float, TBankLastPrice | None, datetime, str | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,8 +170,7 @@ class MarketService:
             tuple[float, Future[TBankInstrumentMetadata]],
         ] = OrderedDict()
         self._quotes: OrderedDict[
-            tuple[UUID, BrokerConnectionStatus, str],
-            tuple[float, TBankLastPrice | None, datetime, str | None],
+            tuple[UUID, BrokerConnectionStatus, str], _QuoteCacheEntry,
         ] = OrderedDict()
         self._trading: OrderedDict[
             tuple[UUID, BrokerConnectionStatus, str], tuple[float, TBankTradingStatus],
@@ -278,57 +280,66 @@ class MarketService:
                 ) for char in uid) for uid in instrument_uids)):
             raise ValueError("market_instrument_limit")
         connection = self.broker.status(user_id)
+        entries = self._batch_quote_entries(user_id, connection, instrument_uids)
+        now = datetime.now(UTC)
+        items = [self._batch_quote_item(user_id, connection, uid, entries[uid], now)
+                 for uid in instrument_uids]
+        if self.broker.status(user_id) != connection:
+            raise BrokerConnectionError("market_account_changed")
+        return {"items": items, "source": "T-Invest", "observed_at": now.isoformat(),
+                "refresh_after_seconds": 10}
+
+    def _batch_quote_entries(
+        self, user_id: UUID, connection: BrokerConnectionStatus, instrument_uids: tuple[str, ...],
+    ) -> dict[str, _QuoteCacheEntry]:
         with self._cache_lock:
             cached = {uid: self._quotes.get((user_id, connection, uid)) for uid in instrument_uids}
         missing = tuple(uid for uid, entry in cached.items()
                         if entry is None or entry[0] <= time.monotonic())
         if missing:
-            prices, error = _market_component(
-                lambda: self.broker.candidate_last_prices(user_id, missing),
+            quote_batch, error = _market_component(
+                lambda: _checked_quote_batch(
+                    self.broker.market_last_prices(user_id, missing), missing,
+                ),
             )
-            by_uid = {item.instrument_uid: item for item in prices or ()}
-            if set(by_uid) - set(missing) or (prices is not None and len(by_uid) != len(prices)):
-                by_uid, error = {}, "source_unavailable"
+            by_uid, unavailable = quote_batch if quote_batch is not None else ({}, set())
             fetched_at = datetime.now(UTC)
             with self._cache_lock:
                 for uid in missing:
-                    entry = (time.monotonic() + 10, by_uid.get(uid), fetched_at, error)
+                    quote_error = "source_unavailable" if uid in unavailable else error
+                    entry = (time.monotonic() + 10, by_uid.get(uid), fetched_at, quote_error)
                     self._quotes[(user_id, connection, uid)] = entry
                     self._quotes.move_to_end((user_id, connection, uid))
                     cached[uid] = entry
                 while len(self._quotes) > 2048:
                     self._quotes.popitem(last=False)
-        items = []
-        now = datetime.now(UTC)
-        for uid in instrument_uids:
-            metadata, metadata_status = self._instrument_metadata(
-                user_id, connection, uid, wait=False,
-            )
-            quote_entry = cached[uid]
-            assert quote_entry is not None
-            live = _instrument_live_state(
-                uid, observed=now, last_price=quote_entry[1], trading=None,
-                live_after_seconds=self.live_after_seconds, metadata=metadata,
-            )
-            payload = asdict(live)
-            for key in ("trading_status", "api_trade_available", "limit_order_available",
-                        "market_order_available", "trading_status_status"):
-                payload.pop(key)
-            payload["observed_at"] = quote_entry[2].isoformat()
-            payload["metadata_status"] = (
-                "unavailable" if live.errors.get("metadata") else metadata_status
-            )
-            payload["errors"] = {"quote": quote_entry[3] or live.errors.get("quote"), "metadata": (
-                "source_unavailable" if metadata_status == "unavailable"
-                else live.errors.get("metadata")
-            )}
-            if quote_entry[3] is not None:
-                payload["quote_status"] = "unavailable"
-            items.append(payload)
-        if self.broker.status(user_id) != connection:
-            raise BrokerConnectionError("market_account_changed")
-        return {"items": items, "source": "T-Invest", "observed_at": now.isoformat(),
-                "refresh_after_seconds": 10}
+        return {uid: entry for uid, entry in cached.items() if entry is not None}
+
+    def _batch_quote_item(
+        self, user_id: UUID, connection: BrokerConnectionStatus, uid: str,
+        quote_entry: _QuoteCacheEntry, now: datetime,
+    ) -> dict[str, object]:
+        metadata, metadata_status = self._instrument_metadata(user_id, connection, uid, wait=False)
+        live = _instrument_live_state(
+            uid, observed=now, last_price=quote_entry[1], trading=None,
+            live_after_seconds=self.live_after_seconds, metadata=metadata,
+        )
+        payload = asdict(live)
+        for key in ("trading_status", "api_trade_available", "limit_order_available",
+                    "market_order_available", "trading_status_status"):
+            payload.pop(key)
+        payload["observed_at"] = quote_entry[2].isoformat()
+        payload["metadata_status"] = (
+            "unavailable" if live.errors.get("metadata") else metadata_status
+        )
+        payload["errors"] = {
+            "quote": quote_entry[3] or live.errors.get("quote"),
+            "metadata": "source_unavailable" if metadata_status == "unavailable"
+            else live.errors.get("metadata"),
+        }
+        if quote_entry[3] is not None:
+            payload["quote_status"] = "unavailable"
+        return payload
 
     def cbr_indicators(self) -> CBRIndicatorSnapshot:
         indicators = self.cbr.latest_indicators()
@@ -566,7 +577,7 @@ class MarketService:
             live_after_seconds=self.live_after_seconds,
             metadata=metadata,
         )
-        return replace(
+        result: InstrumentLiveState = replace(
             live, quote_status="unavailable" if quote_error else live.quote_status,
             trading_status_status=(
                 "unavailable" if trading_error or live.errors.get("trading_status") else "available"
@@ -577,6 +588,18 @@ class MarketService:
                     "metadata": "source_unavailable" if metadata_status == "unavailable"
                     else live.errors.get("metadata")},
         )
+        return result
+
+
+def _checked_quote_batch(
+    batch: TBankLastPriceBatch, requested: tuple[str, ...],
+) -> tuple[dict[str, TBankLastPrice], set[str]]:
+    prices = {item.instrument_uid: item for item in batch.prices}
+    unavailable = set(batch.unavailable_uids)
+    if (set(prices) - set(requested) or unavailable - set(requested)
+            or set(prices) & unavailable or len(prices) != len(batch.prices)):
+        raise TBankUnavailable("market_quote_batch_identity_mismatch")
+    return prices, unavailable
 
 
 def _market_component[T](read: Callable[[], T]) -> tuple[T | None, str | None]:

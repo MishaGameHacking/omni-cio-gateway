@@ -579,3 +579,19 @@ def test_oversized_source_catalog_is_rejected_before_quota_claim_or_provider_use
                      request_id=uuid4(), expected_version=0)
     system.store.claim.assert_not_called()
     provider.assert_not_called()
+
+
+@pytest.mark.parametrize("context", [
+    {"research": {"observations": [1e308] * 212}},
+    {"research": {"measurement": float("nan")}},
+    {"research": {"measurement": float("inf")}},
+    {"research": {"description": "invalid\x00text"}},
+], ids=("expanded_numeric_limit", "nonfinite_nan", "nonfinite_infinity", "null_character"))
+def test_unpersistable_sources_never_claim_quota_or_start_provider(context: dict) -> None:
+    system, owner = service(), uuid4()
+    assert len(json.dumps(context).encode()) < 48000
+    with patch.object(system.default_client, "stream") as provider, pytest.raises(ValueError):
+        system.stream(owner, uuid4(), message="Вопрос", context=context,
+                      request_id=uuid4(), expected_version=0)
+    system.store.claim.assert_not_called()
+    provider.assert_not_called()

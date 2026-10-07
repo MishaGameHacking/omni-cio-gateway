@@ -602,7 +602,8 @@ button .icon {
 }
 .public-section {
   padding:74px 6%;
-  scroll-margin-top:24px
+  scroll-margin-top:24px;
+  min-height:min(64dvh,620px)
 }
 .section-heading {
   max-width:730px;
@@ -4532,7 +4533,6 @@ body.drawer-open {
 }
 
 /* Canonical screens retain navigation state while presenting one focused pane. */
-[hidden] { display: none !important; }
 .brand-image { width: 42px; height: 42px; object-fit: contain; flex: 0 0 auto; border-radius: 0; }
 .mobile-brand .brand-image { width: 32px; height: 32px; }
 .startup-state { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
@@ -4540,7 +4540,6 @@ body.drawer-open {
 .startup-card .brand-image { width: 88px; height: 88px; margin: 0 auto 20px; }
 .startup-card .form-actions { justify-content: center; }
 .public-breadcrumb { max-width: 1360px; margin: 22px auto 0; padding-inline: clamp(20px, 5vw, 80px); }
-.public-section { min-height: min(64dvh, 620px); }
 .public-nav [aria-current="page"] { color: var(--blue-light); text-decoration: underline; text-underline-offset: 7px; }
 .screen-navigation { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
 .screen-menu { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; margin-bottom: 24px; }
@@ -4550,7 +4549,7 @@ body.drawer-open {
 .screen-menu-item small { display: block; color: var(--muted); margin-top: 5px; }
 .screen-menu-item:hover, .screen-menu-item.selected { border-color: var(--blue-light); background: var(--panel-hover); }
 .has-screen-menu:not([data-screen=""]) > .screen-menu { display: flex; flex-wrap: wrap; gap: 8px; }
-.has-screen-menu:not([data-screen=""]) > .screen-menu .screen-menu-item { min-height: 42px; padding: 10px 14px; border-radius: 12px; font-size: 13px; }
+.has-screen-menu:not([data-screen=""]) > .screen-menu .screen-menu-item { min-height: 44px; padding: 10px 14px; border-radius: 12px; font-size: 13px; }
 .has-screen-menu:not([data-screen=""]) > .screen-menu .icon { display: none; }
 .has-screen-menu .screen-layout { display: contents; }
 .has-screen-menu [data-screen-content]:not([hidden]) { margin-bottom: 22px; min-width: 0; }
@@ -4583,6 +4582,6 @@ body.drawer-open {
   .route-dialog .dialog-header h2 { font-size: 20px; }
 }
 
-.assistant-prefix, .source-document { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; }
+.assistant-prefix, .source-document { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
 .source-document { background: var(--panel-deep); padding: 18px; border-radius: 12px; font-size: 14px; line-height: 1.65; }
 .assistant-stream { margin-block: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }

@@ -22,7 +22,9 @@ from omnicio.tbank import (
     TBankFxQuote,
     TBankHistoricCandle,
     TBankInstrumentMetadata,
+    TBankInvestClient,
     TBankLastPrice,
+    TBankLastPriceBatch,
     TBankTradingStatus,
     TBankUnavailable,
 )
@@ -604,10 +606,10 @@ def test_batch_quotes_do_not_wait_for_metadata_and_cache_is_connection_scoped() 
     broker = Mock()
     first = BrokerConnectionStatus(True, "prod", "first", verified_at=datetime.now(UTC))
     broker.status.return_value = first
-    broker.candidate_last_prices.return_value = (
+    broker.market_last_prices.return_value = TBankLastPriceBatch((
         TBankLastPrice("uid-1", "10", datetime.now(UTC)),
         TBankLastPrice("uid-2", "NaN", datetime.now(UTC)),
-    )
+    ))
     release = Event()
 
     def metadata_read(user_id: UUID, uid: str) -> TBankInstrumentMetadata:
@@ -626,12 +628,56 @@ def test_batch_quotes_do_not_wait_for_metadata_and_cache_is_connection_scoped() 
         assert rows[1]["quote_status"] == "unavailable"
         assert rows[1]["last_price"] is None
         service.batch_quotes(owner, ("uid-1", "uid-2"))
-        assert broker.candidate_last_prices.call_count == 1
+        assert broker.market_last_prices.call_count == 1
         broker.status.return_value = BrokerConnectionStatus(True, "prod", "second")
         service.batch_quotes(owner, ("uid-1", "uid-2"))
-        assert broker.candidate_last_prices.call_count == 2
+        assert broker.market_last_prices.call_count == 2
     finally:
         release.set()
+        service.close()
+
+
+@pytest.mark.parametrize(
+    "failure", ["non_finite", "price_missing", "timestamp", "uid", "duplicate"],
+)
+def test_quote_batch_uses_real_parser_and_keeps_strict_consumers_fail_closed(failure: str) -> None:
+    owner, now = UUID(int=1), datetime.now(UTC)
+    good = {"instrumentUid": "good", "price": {"units": "100", "nano": 0},
+            "time": now.isoformat()}
+    bad = {**good, "instrumentUid": "bad"}
+    changes = {
+        "non_finite": {"price": {"units": "NaN"}}, "price_missing": {"price": None},
+        "timestamp": {"time": "not-a-timestamp"}, "uid": {"instrumentUid": "unexpected"},
+        "duplicate": {"instrumentUid": "good"},
+    }
+    bad.update(changes[failure])
+    client, broker = TBankInvestClient(), Mock()
+    broker.status.return_value = BrokerConnectionStatus(True, "prod", "synthetic")
+    broker.market_last_prices.side_effect = lambda _user, uids: client.get_last_prices_batch(
+        "synthetic-token", "prod", uids,
+    )
+    broker.market_instrument_metadata.side_effect = lambda _user, uid: TBankInstrumentMetadata(
+        uid, uid, uid, "", "share", "", "RU", False, currency="RUB",
+    )
+    service = MarketService(broker=broker, cbr=FakeCBR())  # type: ignore[arg-type]
+    try:
+        with patch.object(TBankInvestClient, "_post", return_value={"lastPrices": [good, bad]}):
+            result = service.batch_quotes(owner, ("good", "bad", "absent"))
+            with pytest.raises(TBankUnavailable):
+                client.get_last_prices("synthetic-token", "prod", ("good", "bad", "absent"))
+        items = {item["instrument_uid"]: item for item in result["items"]}
+        if failure in {"uid", "duplicate"}:
+            assert all(item["quote_status"] == "unavailable" for item in items.values())
+            assert all(item["last_price"] is None for item in items.values())
+        else:
+            assert items["good"]["quote_status"] == "live"
+            assert items["good"]["last_price"] == "100"
+            assert items["bad"]["quote_status"] == "unavailable"
+            assert items["bad"]["last_price"] is None
+            assert items["bad"]["quote_time"] is None
+            assert items["absent"]["quote_status"] == "missing"
+        assert items["bad"]["errors"]["quote"] == "source_unavailable"
+    finally:
         service.close()
 
 

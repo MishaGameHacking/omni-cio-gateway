@@ -686,6 +686,10 @@ def _start_oauth(
         link_session_digest=session_digest(session_token or "").hex() if user else None,
         return_to=return_to,
     )
+    # Reserve space for the name and attributes within RFC 6265's 4 KiB baseline.
+    # The encrypted, escaped payload can be much larger than the input route.
+    if len(flow) > 3600:
+        raise HTTPException(status_code=422, detail="oauth_return_to_invalid")
     response.set_cookie(
         VKID_FLOW_COOKIE if provider == "vkid" else TID_FLOW_COOKIE,
         flow, max_age=cfg.vkid_flow_ttl_seconds, httponly=True, secure=True,
@@ -1739,7 +1743,7 @@ def get_events(
     return _workspace_result(request, session_token, user, payload)
 
 
-@app.get("/api/events/summary")
+@app.get("/api/events/summary", responses=_API_FAILURES)
 def get_events_summary(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),

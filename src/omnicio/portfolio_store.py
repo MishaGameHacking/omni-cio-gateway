@@ -1312,10 +1312,11 @@ class PortfolioStore:
             times.extend(source.retrieved_at for source in bundle.sources if source.id == "catalog")
         sources = tuple(replace(source, retrieved_at=min(times), status="cached", methods=())
                         if source.id == "catalog" else source for source in bundle.sources)
-        return replace(
+        result: BrokerObservationBundle = replace(
             bundle, metadata=metadata, sources=sources,
             analysis=analyze_portfolio(bundle.portfolio, bundle.positions, metadata),
         )
+        return result
 
     def _save_snapshot_catalog(
         self,

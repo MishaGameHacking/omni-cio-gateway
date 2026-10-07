@@ -231,14 +231,7 @@
     });
     return error;
   };
-  const api = async (path, {
-    method = "GET",
-    body,
-    timeout = 30000,
-    bootstrap = false,
-    onStream = null
-  } = {}) => {
-    const url = apiPath(path);
+  const ensureApiRequest = (path, method, bootstrap) => {
     if (state.locked && !bootstrap) throw contextError();
     const completionRequest = path.startsWith("/api/auth/") || /\/(cancel|revoke|reconcile)$/.test(path) || method === "DELETE";
     if (state.outdated && !["GET", "HEAD"].includes(method) && !completionRequest) throw Object.assign(new Error("frontend_update_required"), {status: 409, definite: true});
@@ -249,6 +242,16 @@
       status: 0,
       definite: true
     });
+  };
+  const api = async (path, {
+    method = "GET",
+    body,
+    timeout = 30000,
+    bootstrap = false,
+    onStream = null
+  } = {}) => {
+    const url = apiPath(path);
+    ensureApiRequest(path, method, bootstrap);
     const context = {
       generation: state.generation,
       profile: state.user?.public_id,
@@ -671,10 +674,10 @@
   const activeRoute = () => ({...state.route, mode: state.mode, view: state.view});
   const saveNavigationPosition = () => {
     if (!history.state?.omnicio) return;
-    history.replaceState({...history.state, scroll: window.scrollY}, "", location.href);
+    history.replaceState({...history.state, scroll: window.scrollY, dialogScroll: $("dialog[open]")?.scrollTop || 0}, "", location.href);
   };
   const rememberRoute = route => {
-    try { localStorage.setItem("omnicio-last-route", U.routeHash(route)); } catch { /* Navigation has no session authority. */ }
+    try { localStorage.setItem("omnicio-last-route", U.routeHash(U.resumeRoute(route))); } catch { /* Navigation has no session authority. */ }
   };
   const updateRouteHistory = (view, detail, {replace, fromHistory}) => {
     const route = {...detail, mode: state.mode, view};
@@ -683,11 +686,11 @@
     if (fromHistory) return;
     const previous = history.state?.omnicio ? history.state : null;
     const append = location.hash !== hash && !replace;
-    if (append) saveNavigationPosition();
     const scroll = replace && previous ? previous.scroll || 0 : 0;
+    const dialogScroll = replace && previous ? previous.dialogScroll || 0 : 0;
     const index = (previous?.index || 0) + Number(Boolean(previous && append));
     const previousRoute = append ? location.hash : previous?.previous || null;
-    const entry = {omnicio: true, view, route, scroll, index, previous: previousRoute};
+    const entry = {omnicio: true, view, route, scroll, dialogScroll, index, previous: previousRoute};
     history[append ? "pushState" : "replaceState"](entry, "", hash);
   };
   const restoreRouteControls = route => {
@@ -712,6 +715,7 @@
     if (["catalog", "custom"].includes(route.strategy_pane)) state.strategyPane = route.strategy_pane;
   };
   const updateViewRoute = (detail, {replace = false} = {}) => {
+    saveNavigationPosition();
     state.route = {...state.route, ...detail};
     updateRouteHistory(state.view, state.route, {replace, fromHistory: false});
   };
@@ -775,6 +779,8 @@
   } = {}) => {
     const route = resolveNavigationRoute(view, detail);
     if (route.invalid) { showRouteError(); return; }
+    const scrollPosition = fromHistory ? {top: history.state?.scroll || 0, dialogTop: history.state?.dialogScroll || 0} : {top: 0, dialogTop: 0};
+    if (!fromHistory) saveNavigationPosition();
     captureScreenDrafts();
     state.viewState[state.view] = {...state.route};
     closeRouteDialogs();
@@ -799,7 +805,7 @@
       replace,
       fromHistory
     });
-    if (route.mode === "public") { showPublic(route); restoreNavigationScroll(fromHistory, sequence); void openRouteScreen(route); return; }
+    if (route.mode === "public") { showPublic(route); restoreNavigationScroll(scrollPosition, sequence); void openRouteScreen(route); return; }
     if (route.mode === "account" && (!state.user || state.locked)) { sessionSurface(); return; }
     $("#startup-state").hidden = true;
     $("#public-site").hidden = true;
@@ -809,21 +815,40 @@
     document.title = `${U.navigation.find(([key]) => key === route.view)?.[1] || (route.view === "asset" ? T("Актив") : T("Поиск"))} · OMNICIO`;
     renderNav();
     renderCurrent();
-    void loadForView(route.view, route).then(() => {
-      if (sequence !== state.navigationSequence) return;
-      restoreNavigationScroll(fromHistory, sequence);
-      void openRouteScreen(route);
-    }).catch(error => { if (!isCancelled(error)) showRouteLoadError(error); });
+    void loadNavigationScreen(route, scrollPosition, sequence).catch(error => {
+      if (sequence === state.navigationSequence && !isCancelled(error)) showRouteLoadError(error);
+    });
     $("#main-content").focus({
       preventScroll: true
     });
-    restoreNavigationScroll(fromHistory, sequence);
+    restoreNavigationScroll(scrollPosition, sequence);
     scheduleTableQuotes(100);
     scheduleEventSummary(100);
   };
-  const restoreNavigationScroll = (fromHistory, sequence) => {
-    const top = fromHistory ? history.state?.scroll || 0 : 0;
-    requestAnimationFrame(() => { if (sequence === state.navigationSequence) window.scrollTo({top, behavior: "instant"}); });
+  const loadNavigationScreen = async (route, scrollPosition, sequence) => {
+    const resources = loadForView(route.view, route);
+    const independent = routeScreenHasData(route);
+    if (independent) {
+      void resources.catch(error => {
+        if (sequence === state.navigationSequence && !isCancelled(error)) toast(humanError(error), true);
+      });
+    } else await resources;
+    if (sequence !== state.navigationSequence) return;
+    await openRouteScreen(route);
+    restoreNavigationScroll(scrollPosition, sequence);
+  };
+  const routeScreenHasData = route => {
+    if (route.view === "settings" && route.screen === "support" || route.view === "events" && route.screen === "news") return true;
+    if (route.view !== "goals") return false;
+    if (route.screen === "create") return true;
+    return ["edit", "plan"].includes(route.screen) && Boolean(state.data.goals?.items?.some(goal => goal.id === route.goal_id));
+  };
+  const restoreNavigationScroll = ({top, dialogTop}, sequence) => {
+    requestAnimationFrame(() => {
+      if (sequence !== state.navigationSequence) return;
+      window.scrollTo({top, behavior: "instant"});
+      $("dialog[open]")?.scrollTo({top: dialogTop, behavior: "instant"});
+    });
   };
   const showRouteError = () => {
     $("#public-site").hidden = true;
@@ -1034,6 +1059,8 @@
   };
   const loadForView = async (view, detail = {}, force = false) => {
     const generation = state.generation;
+    const sequence = state.navigationSequence;
+    const current = () => generation === state.generation && sequence === state.navigationSequence && state.view === view;
     const resources = viewResources.filter(resource => resource.views.includes(view) && (!state.tour || resource.public) && (!resource.operator || state.user?.can_view_operational_metrics === true));
     const resourceWork = resources.map(resource => {
       const historyChanged = resource.name === "workspace" && state.data.workspace?.overview?.history_coverage?.period !== workspacePeriod(view);
@@ -1044,11 +1071,16 @@
       });
     });
     if (state.view === view) renderCurrent();
-    await Promise.allSettled(resourceWork);
-    if (generation !== state.generation || state.view !== view) return;
+    const secondary = Promise.allSettled(resourceWork);
+    if (["asset", "search"].includes(view)) {
+      if (current()) await renderLoadedView(view, detail, force);
+      return;
+    }
+    await secondary;
+    if (!current()) return;
     if (view === "strategies") restoreResearchRequest();
     if (view === "assistant") await loadSelectedAssistantConversation();
-    if (generation !== state.generation || state.view !== view) return;
+    if (!current()) return;
     await renderLoadedView(view, detail, force);
   };
   const renderLoadedView = async (view, detail, force) => {
@@ -1098,12 +1130,11 @@
       read: resource.read,
       timeout: resource.timeout || 30000
     });
-    if (generation === state.generation && state.view === view) {
-      if (resource.name === "researchArchive") restoreResearchRequest();
-      if (resource.name === "notifications") renderNotificationPanel();
-      else if (resource.name === "support") await loadSupport($(state.mode === "public" ? "#support" : "#workspace-support"));
-      else renderCurrent();
-    }
+    if (generation !== state.generation || state.view !== view) return;
+    if (resource.name === "researchArchive") restoreResearchRequest();
+    if (resource.name === "notifications") renderNotificationPanel();
+    else if (resource.name === "support") await loadSupport($(state.mode === "public" ? "#support" : "#workspace-support"));
+    else renderCurrent();
   };
   const updateIdentity = () => {
     const name = state.tour ? T("Знакомство") : state.prefs.draft?.display_name?.trim() || T("Мой профиль");
@@ -3011,11 +3042,14 @@
     const allGoals = state.tour ? [] : state.data.goals?.items || [];
     const selected = state.route.screen === "archive" ? "archive" : state.route.filter || "active";
     const goals = allGoals.filter(goal => selected === "all" || selected === "archive" ? (selected === "all" || goal.status !== "active") : goal.status === selected);
+    let content = renderGoalsValue6(goals);
+    if (state.loading.has("goals") && !state.data.goals) content = U.loading(T("state.loading"));
+    else if (state.errors.goals) content = dataError("goals");
     $("#view-goals").innerHTML = `${heading(T("Цели"), T("Капитал, сроки и прогресс из выбранного источника"), button(T("Добавить цель"), "goal-create", {
       primary: true
     }) + button(T("Обновить"), "refresh", {
       small: true
-    }))}${screenLinks("goals", [["", T("goals.active")], ["archive", T("goals.archive")]])}${state.loading.has("goals") && !state.data.goals ? U.loading(T("state.loading")) : state.errors.goals ? dataError("goals") : renderGoalsValue6(goals)}<p class="notice section-gap">${H("Доли активных целей проверяет сервер. Прогресс по портфелю зависит от стоимости счёта; выплаты учитываются до отдельных налоговых списаний.")}</p>`;
+    }))}${screenLinks("goals", [["", T("goals.active")], ["archive", T("goals.archive")]])}${content}<p class="notice section-gap">${H("Доли активных целей проверяет сервер. Прогресс по портфелю зависит от стоимости счёта; выплаты учитываются до отдельных налоговых списаний.")}</p>`;
     applyScreenLayout("goals");
   };
   const goalForecastHTML = forecast => {
@@ -3455,7 +3489,10 @@
     if (!item) {
       openDialog(T("Новости"), U.loading(T("state.loading")));
       try { item = await api(`/api/${publicSource ? "public/news" : "news"}/${safeSegment(id)}`); }
-      catch (error) { if (!isCancelled(error) && sequence === state.navigationSequence) openDialog(T("Новости"), `<p class="notice error">${esc(humanError(error))}</p>${button(T("Повторить"), "route-retry")}`); return; }
+      catch (error) {
+        if (!isCancelled(error) && sequence === state.navigationSequence) openDialog(T("Новости"), `<p class="notice error">${esc(humanError(error))}</p>${button(T("Повторить"), "route-retry")}`);
+        return;
+      }
     }
     if (sequence !== state.navigationSequence) return;
     openDialog(item.title, `<p class="fine-print">${esc(item.source || T("Источник брокера"))} · ${esc(date(item.occurred_at || item.published_at, true))} ${H("МСК")}</p><p class="help-copy">${esc(item.content || item.text || item.summary || T("Источник не предоставил полный текст."))}</p>${item.source_url || item.url ? U.sourceLink(item.source_url || item.url, T("Первоисточник")) : ("<p class=\"fine-print\">" + H("Публикация предоставлена API источника; внешняя ссылка отсутствует.") + "</p>")}`);
@@ -3856,7 +3893,8 @@
   const notificationDeliveryHTML = item => {
     const nextAttempt = item.status === "queued" ? ` ${T("· следующая попытка")} ${esc(date(item.next_attempt_at, true))} ${T("МСК")}` : "";
     const detail = item.error ? `<p class="notice error">${esc(item.error.title || T("notifications.delivery_failed"))}</p>` : "";
-    const channel = item.channel ? `${item.channel.kind === "push" ? "Push" : "Email"} · ${item.channel.label || T("notifications.channel_unavailable")}` : T("notifications.channel_unavailable");
+    const channelKind = item.channel?.kind === "push" ? "Push" : "Email";
+    const channel = item.channel ? `${channelKind} · ${item.channel.label || T("notifications.channel_unavailable")}` : T("notifications.channel_unavailable");
     return `<li><p class="fine-print">${esc(channel)} · ${H("notifications.attempts")}: ${esc(item.attempts ?? 0)}</p>${detail}<strong>${esc({verification: T("Подтверждение адреса"), event: T("Событие"), digest: T("Дайджест"), operational: T("Состояние сервиса")}[item.kind] || T("Уведомление"))}</strong> · ${esc(deliveryStateLabels()[item.status] || T("Состояние неизвестно"))}<br><span class="fine-print">${esc(date(item.created_at, true))} ${H("МСК")}${nextAttempt}${item.status === "uncertain" ? T(" · повтор автоматически не отправляется; проверьте устройство или почту") : ""}</span></li>`;
   };
   const notificationContentsHTML = () => {
@@ -4050,7 +4088,7 @@
     }).join("");
     const history = rows.map(item => `<button class="recovery-row" data-assistant-conversation="${esc(item.id)}"${state.assistantBusy ? " disabled" : ""}${selected?.id === item.id ? ' aria-current="true"' : ""}><span><strong>${esc(item.title)}</strong><small>${esc(date(item.updated_at, true))} ${H("МСК")}</small></span></button>`).join("");
     const researchOptions = [["", T("Не передавать")], ...runs.map(run => [run.id, `${date(run.created_at, true)} · ${run.strategy_version || ""}`])];
-    $("#view-assistant").innerHTML = `${heading(T("ИИ-помощник"), T("Разговоры и выбранные вами данные"), button(T("Настроить подключение"), "assistant-connect", {small: true}))}<div class="assistant-layout"><section class="card chat-card"><div class="assistant-status">${icon("assistant")}<strong>${esc(selected?.title || T("Персональный помощник"))}</strong><span class="chip">${esc(assistantHealthLabel(status))}</span></div>${!status?.enabled ? ("<p class=\"notice\">" + H("Внешний ИИ будет включён после завершения и проверки остальной системы. Настройки подключения и история уже доступны.") + "</p>") : ""}<div id="chat-messages" class="chat-messages" role="log" aria-label="${H("Переписка с ИИ")}">${selected?.next_before ? button(T("Предыдущие сообщения"), "assistant-history-more", {small: true, extra: state.assistantBusy ? "disabled" : ""}) : ""}${chat || empty(T("Начните новый разговор"), T("Выберите контекст и задайте вопрос после активации модели."), "", "", "assistant", true)}<div id="assistant-request">${assistantRequestHTML()}</div></div><form id="assistant-form"><div class="assistant-context">${select("context", T("Данные для этого вопроса"), [["general", T("Общий вопрос · без личных данных")], ["portfolio", T("Сводные показатели портфеля")], ["investment", T("Портфель, позиции, цели и стратегия")]], draft.context)}<div class="field-grid">${select("research_run_id", T("Сохранённое исследование"), researchOptions, draft.research_run_id)}<label class="check-field"><input name="include_news" type="checkbox"${draft.include_news ? " checked" : ""}><span>${H("Добавить последние новости Банка России")}</span></label></div><p class="fine-print">${H("Личные данные отправляются только с выбранным контекстом. История хранится в вашем аккаунте и доступна после повторного входа.")}</p></div>${assistantMemoryChoices()}<div class="chat-compose"><textarea name="message" aria-label="${H("Сообщение помощнику")}" maxlength="4000" required placeholder="${H("Задайте свой вопрос…")}"${!enabled || state.assistantBusy ? " disabled" : ""}>${esc(draft.message)}</textarea><button class="button primary" type="submit"${!enabled || state.assistantBusy ? " disabled" : ""}>${H("Отправить")}</button></div><output id="assistant-message" class="form-message chat-form-message"></output></form>${dataError("assistantStatus")}</section>${assistantSidebarHTML({status, selected, history, enabled})}</div>`;
+    $("#view-assistant").innerHTML = `${heading(T("ИИ-помощник"), T("Разговоры и выбранные вами данные"), button(T("Настроить подключение"), "assistant-connect", {small: true}))}<div class="assistant-layout"><section class="card chat-card"><div class="assistant-status">${icon("assistant")}<strong>${esc(selected?.title || T("Персональный помощник"))}</strong><span class="chip">${esc(assistantHealthLabel(status))}</span></div>${!status?.enabled ? ("<p class=\"notice\">" + H("Внешний ИИ будет включён после завершения и проверки остальной системы. Настройки подключения и история уже доступны.") + "</p>") : ""}<div id="chat-messages" class="chat-messages" role="log" aria-label="${H("Переписка с ИИ")}">${selected?.next_before ? button(T("Предыдущие сообщения"), "assistant-history-more", {small: true, extra: state.assistantBusy ? "disabled" : ""}) : ""}${chat || empty(T("Начните новый разговор"), T("Выберите контекст и задайте вопрос после активации модели."), "", "", "assistant", true)}<div id="assistant-request">${assistantRequestHTML()}</div></div><form id="assistant-form"><div class="assistant-context">${select("context", T("Данные для этого вопроса"), [["general", T("Общий вопрос · без личных данных")], ["portfolio", T("Сводные показатели портфеля")], ["investment", T("Портфель, позиции, цели и стратегия")]], draft.context)}<div class="field-grid">${select("research_run_id", T("Сохранённое исследование"), researchOptions, draft.research_run_id)}<label class="check-field"><input name="include_news" type="checkbox"${draft.include_news ? " checked" : ""}><span>${H("Добавить последние новости Банка России")}</span></label></div><p class="fine-print">${H("Личные данные отправляются только с выбранным контекстом. История хранится в вашем аккаунте и доступна после повторного входа.")}</p><p id="assistant-history-context" class="fine-print">${H("assistant.history_context_help")}</p></div>${assistantMemoryChoices()}<div class="chat-compose"><textarea name="message" aria-label="${H("Сообщение помощнику")}" maxlength="4000" required placeholder="${H("Задайте свой вопрос…")}"${!enabled || state.assistantBusy ? " disabled" : ""}>${esc(draft.message)}</textarea><button class="button primary" type="submit"${!enabled || state.assistantBusy ? " disabled" : ""}>${H("Отправить")}</button></div><output id="assistant-message" class="form-message chat-form-message"></output></form>${dataError("assistantStatus")}</section>${assistantSidebarHTML({status, selected, history, enabled})}</div>`;
     updateAssistantContext();
     applyScreenLayout("assistant");
   };
@@ -4226,7 +4264,8 @@
     const running = request.status === "running";
     const status = {running: T("assistant.generating"), uncertain: T("assistant.incomplete"), cancelled: T("assistant.cancelled"), completed: T("assistant.completed")}[request.status] || T("assistant.incomplete");
     const text = request.reply_prefix || "";
-    return `<section class="assistant-stream" aria-live="polite"><p class="fine-print">${esc(status)}</p>${text && request.status !== "completed" ? `<p class="notice warning">${H("assistant.provisional")}</p><p class="assistant-prefix">${esc(text)}</p>` : ""}<div class="form-actions">${running ? button(T("assistant.stop"), "assistant-cancel", {small: true}) : ""}${request.status !== "completed" ? button(T("assistant.readback"), "assistant-request-read", {small: true}) : ""}</div></section>`;
+    const provisional = text && request.status !== "completed" ? `<p class="notice warning">${H("assistant.provisional")}</p><p class="assistant-prefix">${esc(text)}</p>` : "";
+    return `<section class="assistant-stream" aria-live="polite"><p class="fine-print">${esc(status)}</p>${provisional}<div class="form-actions">${running ? button(T("assistant.stop"), "assistant-cancel", {small: true}) : ""}${request.status !== "completed" ? button(T("assistant.readback"), "assistant-request-read", {small: true}) : ""}</div></section>`;
   }
   function paintAssistantRequest() { const element = $("#assistant-request"); if (element) element.innerHTML = assistantRequestHTML(); }
   async function readAssistantStream(response, request, ensure) {
@@ -4298,7 +4337,9 @@
     if (state.tour) return empty(T("assistant.memory"), T("assistant.memory_help"), "login", T("Войти"));
     const data = state.data.assistantMemory;
     const rows = (data?.items || []).map(item => `<article class="event-item"><div class="event-item-body"><p>${esc(item.content)}</p><p class="fine-print">${esc(item.category === "preference" ? T("assistant.preference") : T("assistant.context"))} · ${H("Версия")}: ${esc(item.version)}</p><div class="form-actions"><button class="button secondary small-button" data-memory-edit="${esc(item.id)}">${H("assistant.memory_edit")}</button><button class="button danger small-button" data-memory-delete="${esc(item.id)}">${H("Удалить")}</button></div></div></article>`).join("");
-    return `${cardHeader(T("assistant.memory"))}<p class="fine-print">${H("assistant.memory_help")}</p>${dataError("assistantMemory")}${!data && !state.errors.assistantMemory ? U.loading(T("state.loading")) : rows || `<p class="notice">${H("assistant.memory_empty")}</p>`}<div id="assistant-memory-editor">${assistantMemoryForm()}</div>`;
+    const content = rows || `<p class="notice">${H("assistant.memory_empty")}</p>`;
+    const loading = !data && !state.errors.assistantMemory;
+    return `${cardHeader(T("assistant.memory"))}<p class="fine-print">${H("assistant.memory_help")}</p>${dataError("assistantMemory")}${loading ? U.loading(T("state.loading")) : content}<div id="assistant-memory-editor">${assistantMemoryForm()}</div>`;
   }
   function assistantMemoryForm(item = null) {
     return `<form id="assistant-memory-form" class="section-gap" data-id="${esc(item?.id || (state.assistantMemoryDraftId ||= crypto.randomUUID()))}" data-version="${item?.version || 0}">${select("category", T("assistant.memory_kind"), [["preference", T("assistant.preference")], ["context", T("assistant.context")]], item?.category || "preference")}<label class="field"><span>${H("assistant.memory_content")}</span><textarea name="content" maxlength="1000" rows="4" required>${esc(item?.content || "")}</textarea></label><label class="check-field"><input type="checkbox" name="confirmed" required><span>${H("assistant.memory_confirm")}</span></label><div class="form-actions"><button class="button primary" type="submit">${H("Сохранить")}</button></div><output id="assistant-memory-message" class="form-message"></output></form>`;
@@ -4399,7 +4440,10 @@
     let hash = location.hash;
     const standalone = matchMedia("(display-mode: standalone)").matches || matchMedia("(display-mode: fullscreen)").matches || navigator.standalone;
     if (!hash && standalone) {
-      try { hash = localStorage.getItem("omnicio-last-route") || ""; } catch { /* Last route is optional. */ }
+      try {
+        const saved = localStorage.getItem("omnicio-last-route");
+        if (saved) hash = U.routeHash(U.resumeRoute(U.parseRoute(saved)));
+      } catch { /* Last route is optional. */ }
     }
     const route = U.parseRoute(hash);
     if (route.invalid) { showRouteError(); return; }
@@ -4415,41 +4459,55 @@
     navigate(view, {...detail, screen});
     return true;
   }
+  async function restoreRouteOverlay(route) {
+    if (route.mode === "public" && route.view === "support") {
+      await loadSupport($("#support"));
+      return true;
+    }
+    if (route.overlay === "auth") {
+      openAuth(state.authMode || "login");
+      return true;
+    }
+    const saved = transientDialogs.get(route.overlay);
+    if (!saved) return false;
+    openDialog(saved.title, saved.content);
+    return true;
+  }
+  async function openResearchResult(route, sequence) {
+    if (!route.run) return;
+    const payload = await api(`/api/research/runs/${safeSegment(route.run)}`);
+    if (sequence !== state.navigationSequence) return;
+    state.strategy.research = {...payload.result, archive: {id: payload.id, created_at: payload.created_at, strategy_version: payload.strategy_version}};
+    openDialog(T("Исследование на истории"), renderResearch());
+  }
+  const routeScreenHandlers = {
+    "goals/create": () => openGoal(),
+    "goals/edit": route => openGoal(route.goal_id),
+    "goals/plan": route => openGoalPlan(route.goal_id),
+    "events/detail": route => openEvent(route.event),
+    "events/news": route => openNews(route.news),
+    "strategies/archive": () => openResearchArchive(),
+    "strategies/evidence": () => openResearchEvidence(),
+    "strategies/detail": route => openPublicStrategy(route.preset),
+    "strategies/plan": () => openExecutionPlanner(),
+    "strategies/executions": () => openExecutionHistory(),
+    "strategies/result": openResearchResult,
+    "assistant/connection": () => openAssistantConnection(),
+    "profile/plan": () => openBilling(),
+    "settings/support": () => loadSupport($("#workspace-support"))
+  };
   async function openRouteScreen(route) {
     if (route.mode !== "public" && route.mode !== "demo" && (!state.user || state.locked)) return;
     const sequence = state.navigationSequence;
     state.openingRoute = true;
     try {
-      if (route.mode === "public" && route.view === "support") { await loadSupport($("#support")); return; }
-      if (route.overlay === "auth") { openAuth(state.authMode || "login"); return; }
-      if (route.overlay && transientDialogs.has(route.overlay)) {
-        const saved = transientDialogs.get(route.overlay);
-        openDialog(saved.title, saved.content);
-        return;
-      }
-      const key = `${route.view}/${route.screen}`;
-      if (key === "goals/create") openGoal();
-      else if (key === "goals/edit") openGoal(route.goal_id);
-      else if (key === "goals/plan") await openGoalPlan(route.goal_id);
-      else if (key === "events/detail") await openEvent(route.event);
-      else if (key === "events/news") await openNews(route.news);
-      else if (key === "strategies/archive") await openResearchArchive();
-      else if (key === "strategies/evidence") await openResearchEvidence();
-      else if (key === "strategies/detail") openPublicStrategy(route.preset);
-      else if (key === "strategies/plan") await openExecutionPlanner();
-      else if (key === "strategies/executions") await openExecutionHistory();
-      else if (key === "assistant/connection") await openAssistantConnection();
-      else if (key === "profile/plan") await openBilling();
-      else if (key === "settings/support") await loadSupport($("#workspace-support"));
-      else if (key === "strategies/result" && route.run) {
-        const payload = await api(`/api/research/runs/${safeSegment(route.run)}`);
-        if (sequence !== state.navigationSequence) return;
-        state.strategy.research = {...payload.result, archive: {id: payload.id, created_at: payload.created_at, strategy_version: payload.strategy_version}};
-        openDialog(T("Исследование на истории"), renderResearch());
-      }
+      if (await restoreRouteOverlay(route)) return;
+      if (sequence !== state.navigationSequence) return;
+      const handler = routeScreenHandlers[`${route.view}/${route.screen}`];
+      if (handler) await handler(route, sequence);
     } catch (error) {
       if (sequence === state.navigationSequence && !isCancelled(error)) openDialog(T("state.load_failed"), `<p class="notice error">${esc(humanError(error))}</p>${button(T("Повторить загрузку"), "route-retry")}`);
-    } finally { state.openingRoute = false; }
+    } finally { if (sequence === state.navigationSequence) state.openingRoute = false; }
   }
   function draftKey(form) { return `${form.id}:${form.dataset.goalId || form.dataset.id || ""}`; }
   function draftForms(root = document) {
@@ -4468,20 +4526,29 @@
       else delete state.screenDrafts[key];
     }
   }
+  function restoreFormFields(form, draft) {
+    if (form.id === "goal-form" && draft.kind) {
+      form.elements.kind.value = draft.kind;
+      updateGoalFields(true);
+    }
+    for (const [name, value] of Object.entries(draft)) {
+      const control = form.elements.namedItem(name);
+      if (!control || control.type === "password" || control.type === "file") continue;
+      if (control.type === "checkbox") control.checked = value === true;
+      else control.value = value;
+    }
+    if (form.id === "goal-form") updateGoalFields();
+    if (form.id === "goal-plan-form") updateGoalPlanFields();
+    if (form.id === "assistant-form") updateAssistantContext();
+    form.dataset.draftRestored = "true";
+  }
   function restoreScreenDrafts(root) {
     if (state.tour) return;
     for (const form of draftForms(root)) {
       const key = draftKey(form);
       const draft = state.screenDrafts[key];
       if (!draft || state.screenBaselines[key] === undefined) state.screenBaselines[key] = JSON.stringify(draftValues(form));
-      if (!draft) continue;
-      for (const [name, value] of Object.entries(draft)) {
-        const control = form.elements.namedItem(name);
-        if (!control || control.type === "password" || control.type === "file") continue;
-        if (control.type === "checkbox") control.checked = value === true;
-        else control.value = value;
-      }
-      form.dataset.draftRestored = "true";
+      if (draft) restoreFormFields(form, draft);
     }
   }
   function clearScreenDraft(form) {
@@ -4497,6 +4564,89 @@
   function screenLinks(view, panes) {
     return `<nav class="screen-menu" aria-label="${H("navigation.sections")}">${panes.map(pane => screenLink(view, pane)).join("")}</nav>`;
   }
+  function layoutMarket({root, attach}) {
+    const columns = $$(":scope > .two-column > section", root);
+    attach("reference", T("Курсы Банка России"), [columns[0], $(".market-indicators", root)]);
+    attach("watchlist", T("Избранное"), columns[1]);
+    const sections = $$(":scope > section", root);
+    attach("positions", T("Активы вашего счёта"), sections[0]);
+    attach("news", T("Новости Банка России"), sections[1]);
+  }
+  function layoutPortfolio({root, screen, panes, attach}) {
+    const columns = $$(":scope > .two-column > section", root);
+    attach("history", T("Стоимость портфеля"), columns[0]);
+    attach("structure", T("Структура портфеля"), columns[1]);
+    attach("positions", T("Мои активы"), $(":scope > section", root));
+    panes.push(["income", T("Полученные выплаты")], ["operations", T("portfolio.operations")]);
+    if (screen === "income") root.insertAdjacentHTML("beforeend", `<section class="card" data-screen-content="income">${cardHeader(T("Полученные выплаты"))}${incomePaneHTML()}</section>`);
+    if (screen === "operations") root.insertAdjacentHTML("beforeend", `<section id="ledger-screen" class="card" data-screen-content="operations">${ledgerHTML()}</section>`);
+  }
+  function layoutAnalytics({root, attach}) {
+    const groups = $$(":scope > .two-column", root);
+    attach("history", T("Стоимость по наблюдениям"), groups[0]?.children[0]);
+    attach("performance", T("Из чего складывается результат"), groups[0]?.children[1]);
+    attach("income", T("Выплаты до налоговых списаний"), groups[1]?.children[0]);
+    attach("risk", T("Полнота данных и риски"), groups[1]?.children[1]);
+  }
+  function layoutSettings({root, screen, panes, attach}) {
+    if (state.tour) return;
+    const form = $("#preferences-form", root);
+    const sections = form ? $$(":scope > section", form) : [];
+    attach("appearance", T("Оформление и приватность"), sections[0]);
+    attach("notifications", T("Уведомления"), [sections[1], $("#notification-settings", root)]);
+    if (sections[0]) sections[0].insertAdjacentHTML("beforeend", `<div class="form-actions"><button class="button primary" type="submit">${H("Сохранить настройки")}</button></div>${saveErrorHTML("prefs")}`);
+    attach("broker", T("Подключение T-Invest"), $("#broker-settings", root));
+    attach("recovery", T("Ранее начатые исполнения"), $("#recovery-settings", root));
+    const right = $$(".settings-layout > div:last-child > section", root);
+    for (const item of right.filter(item => !item.id)) {
+      if ($('[data-action="legal"]', item)) attach("about", T("О приложении"), item);
+      else item.hidden = true;
+    }
+    attach("operations", T("ops.title"), $("#operations-settings", root));
+    panes.push(["support", T("support.title")]);
+    if (screen === "support") root.insertAdjacentHTML("beforeend", `<section id="workspace-support" class="card" data-screen-content="support">${supportHTML()}</section>`);
+  }
+  function layoutProfile({root, attach}) {
+    if (state.tour) return;
+    const sections = $$(".settings-layout > section", root);
+    attach("personal", T("Мой профиль"), sections[0]);
+    attach("identities", T("Способы входа"), [sections[1], sections[4]]);
+    attach("delete", T("Удаление аккаунта"), sections[2]);
+    attach("sessions", T("Активные сессии"), sections[3]);
+    attach("plan", T("План и подписка"), sections[5]);
+  }
+  function layoutAssistant({root, screen, panes, attach}) {
+    attach("conversation", T("assistant.chat"), $(".chat-card", root));
+    attach("history", T("Ваши разговоры"), $(".assistant-side", root));
+    panes.push(["memory", T("assistant.memory")], ["sources", T("assistant.sources")], ["connection", T("Подключение ИИ")]);
+    if (!screen) root.insertAdjacentHTML("beforeend", `<section class="card"><p class="notice">${esc(assistantHealthLabel(state.data.assistantStatus))}</p><p>${H("assistant.workspace_help")}</p></section>`);
+    if (screen === "memory") root.insertAdjacentHTML("beforeend", `<section id="assistant-memory-screen" class="card" data-screen-content="memory">${assistantMemoryHTML()}</section>`);
+    if (screen === "sources") root.insertAdjacentHTML("beforeend", `<section id="assistant-sources-screen" class="card" data-screen-content="sources">${assistantSourcesHTML()}</section>`);
+  }
+  function layoutStrategies({root, screen, panes, attach}) {
+    attach("catalog", T("Готовые стратегии"), $(".strategy-catalog", root));
+    const editors = $$(".strategy-editor > section", root);
+    attach("editor", T("Моя настройка"), editors[0]);
+    attach("assessment", T("Проверка на вашем счёте"), editors[1]);
+    attach("research", T("Исследование на истории"), editors[2]);
+    attach("plan", T("execution.title"), editors[3]);
+    panes.push(["archive", T("Архив исследований")], ["evidence", T("Дополнительные источники исследования")], ["executions", T("execution.history")]);
+    if (!state.tour && !state.strategy.draft && screen && screen !== "catalog") {
+      const placeholder = $(".strategy-layout > section", root);
+      if (placeholder) placeholder.hidden = false;
+    }
+  }
+  const screenLayoutHandlers = {market: layoutMarket, portfolio: layoutPortfolio, analytics: layoutAnalytics, settings: layoutSettings, profile: layoutProfile, assistant: layoutAssistant, strategies: layoutStrategies};
+  function addScreenNavigation(root, view, screen, panes) {
+    root.classList.add("has-screen-menu");
+    root.dataset.screen = screen;
+    const label = panes.find(([key]) => key === screen)?.[1] || T("Подробности");
+    const chip = screen ? `<span class="chip">${esc(label)}</span>` : "";
+    root.insertAdjacentHTML("afterbegin", `<div class="screen-navigation"><button class="button secondary small-button" data-action="route-back">${icon("back", true)} ${H("navigation.back")}</button>${chip}</div>`);
+    const header = $(".view-header", root);
+    if (header) header.insertAdjacentHTML("afterend", screenLinks(view, panes));
+    for (const wrapper of $$(".two-column,.settings-layout,.settings-layout > div,.strategy-layout,.strategy-editor,.assistant-layout", root)) wrapper.classList.add("screen-layout");
+  }
   function applyScreenLayout(view) {
     if (state.view !== view) return;
     const root = $(`#view-${view}`);
@@ -4509,78 +4659,8 @@
       panes.push([key, title]);
       for (const node of nodes) { node.dataset.screenContent = key; node.hidden = screen !== key; }
     };
-    if (view === "market") {
-      const columns = $$(":scope > .two-column > section", root);
-      attach("reference", T("Курсы Банка России"), [columns[0], $(".market-indicators", root)]);
-      attach("watchlist", T("Избранное"), columns[1]);
-      const sections = $$(":scope > section", root);
-      attach("positions", T("Активы вашего счёта"), sections[0]);
-      attach("news", T("Новости Банка России"), sections[1]);
-    } else if (view === "portfolio") {
-      const columns = $$(":scope > .two-column > section", root);
-      attach("history", T("Стоимость портфеля"), columns[0]);
-      attach("structure", T("Структура портфеля"), columns[1]);
-      attach("positions", T("Мои активы"), $(":scope > section", root));
-      panes.push(["income", T("Полученные выплаты")], ["operations", T("portfolio.operations")]);
-      if (screen === "income") root.insertAdjacentHTML("beforeend", `<section class="card">${cardHeader(T("Полученные выплаты"))}${incomePaneHTML()}</section>`);
-      if (screen === "operations") root.insertAdjacentHTML("beforeend", `<section id="ledger-screen" class="card">${ledgerHTML()}</section>`);
-    } else if (view === "analytics") {
-      const groups = $$(":scope > .two-column", root);
-      attach("history", T("Стоимость по наблюдениям"), groups[0]?.children[0]);
-      attach("performance", T("Из чего складывается результат"), groups[0]?.children[1]);
-      attach("income", T("Выплаты до налоговых списаний"), groups[1]?.children[0]);
-      attach("risk", T("Полнота данных и риски"), groups[1]?.children[1]);
-    } else if (view === "settings" && !state.tour) {
-      const form = $("#preferences-form", root);
-      const sections = form ? $$(":scope > section", form) : [];
-      attach("appearance", T("Оформление и приватность"), sections[0]);
-      attach("notifications", T("Уведомления"), [sections[1], $("#notification-settings", root)]);
-      if (sections[0]) sections[0].insertAdjacentHTML("beforeend", `<div class="form-actions"><button class="button primary" type="submit">${H("Сохранить настройки")}</button></div>${saveErrorHTML("prefs")}`);
-      attach("broker", T("Подключение T-Invest"), $("#broker-settings", root));
-      attach("recovery", T("Ранее начатые исполнения"), $("#recovery-settings", root));
-      const right = $$(".settings-layout > div:last-child > section", root);
-      for (const item of right) if (!item.id) {
-        if ($('[data-action="legal"]', item)) attach("about", T("О приложении"), item);
-        else item.hidden = true;
-      }
-      attach("operations", T("ops.title"), $("#operations-settings", root));
-      panes.push(["support", T("support.title")]);
-      if (screen === "support") root.insertAdjacentHTML("beforeend", `<section id="workspace-support" class="card">${U.loading(T("state.loading"))}</section>`);
-    } else if (view === "profile" && !state.tour) {
-      const sections = $$(".settings-layout > section", root);
-      attach("personal", T("Мой профиль"), sections[0]);
-      attach("identities", T("Способы входа"), [sections[1], sections[4]]);
-      attach("delete", T("Удаление аккаунта"), sections[2]);
-      attach("sessions", T("Активные сессии"), sections[3]);
-      attach("plan", T("План и подписка"), sections[5]);
-    } else if (view === "assistant") {
-      attach("conversation", T("assistant.chat"), $(".chat-card", root));
-      attach("history", T("Ваши разговоры"), $(".assistant-side", root));
-      panes.push(["memory", T("assistant.memory")], ["sources", T("assistant.sources")], ["connection", T("Подключение ИИ")]);
-      if (!screen) root.insertAdjacentHTML("beforeend", `<section class="card"><p class="notice">${esc(assistantHealthLabel(state.data.assistantStatus))}</p><p>${H("assistant.workspace_help")}</p></section>`);
-      if (screen === "memory") root.insertAdjacentHTML("beforeend", `<section id="assistant-memory-screen" class="card">${assistantMemoryHTML()}</section>`);
-      if (screen === "sources") root.insertAdjacentHTML("beforeend", `<section id="assistant-sources-screen" class="card">${assistantSourcesHTML()}</section>`);
-    } else if (view === "strategies") {
-      attach("catalog", T("Готовые стратегии"), $(".strategy-catalog", root));
-      const editors = $$(".strategy-editor > section", root);
-      attach("editor", T("Моя настройка"), editors[0]);
-      attach("assessment", T("Проверка на вашем счёте"), editors[1]);
-      attach("research", T("Исследование на истории"), editors[2]);
-      attach("plan", T("execution.title"), editors[3]);
-      panes.push(["archive", T("Архив исследований")], ["evidence", T("Дополнительные источники исследования")], ["executions", T("execution.history")]);
-      if (!state.tour && !state.strategy.draft && screen && screen !== "catalog") {
-        const placeholder = $(".strategy-layout > section", root);
-        if (placeholder) placeholder.hidden = false;
-      }
-    }
-    if (panes.length) {
-      root.classList.add("has-screen-menu");
-      root.dataset.screen = screen;
-      root.insertAdjacentHTML("afterbegin", `<div class="screen-navigation"><button class="button secondary small-button" data-action="route-back">${icon("back", true)} ${H("navigation.back")}</button>${screen ? `<span class="chip">${esc(panes.find(([key]) => key === screen)?.[1] || T("Подробности"))}</span>` : ""}</div>`);
-      const header = $(".view-header", root);
-      if (header) header.insertAdjacentHTML("afterend", screenLinks(view, panes));
-      for (const wrapper of $$(".two-column,.settings-layout,.settings-layout > div,.strategy-layout,.strategy-editor,.assistant-layout", root)) wrapper.classList.add("screen-layout");
-    }
+    screenLayoutHandlers[view]?.({root, screen, panes, attach});
+    if (panes.length) addScreenNavigation(root, view, screen, panes);
     for (const anchor of $$('a[href^="/legal/"]', root)) { anchor.removeAttribute("target"); anchor.removeAttribute("rel"); }
     restoreScreenDrafts(root);
   }
@@ -4614,14 +4694,25 @@
     } catch (error) { if (generation === state.generation && !isCancelled(error)) state.errors.ledger = error; }
     finally { state.loading.delete("ledger-more"); if (generation === state.generation && state.view === "portfolio") renderPortfolio(); }
   }
+  function supportAddress(value) {
+    if (typeof value !== "string" || value.length > 254 || /[\s<>]/.test(value)) return "";
+    const parts = value.split("@");
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return "";
+    const domain = parts[1];
+    const dot = domain.lastIndexOf(".");
+    return dot > 0 && dot < domain.length - 1 ? value : "";
+  }
+  function supportHTML() {
+    const data = state.data.support;
+    if (!data) return dataError("support") || U.loading(T("state.loading"));
+    const address = supportAddress(data.email);
+    const compose = address ? `<a class="button primary" href="mailto:${esc(encodeURIComponent(address))}?subject=${encodeURIComponent("OMNICIO " + (window.OMNICIO_RELEASE?.version || ""))}">${H("support.compose")}</a>` : `<p class="notice">${H("support.unavailable")}</p>`;
+    return `${heading(T("support.title"))}<p>${H("support.description")}</p>${infoRows([[T("support.operator"), data.name || "—"], ["Email", address || "—"], [T("Версия"), window.OMNICIO_RELEASE?.version || "—"], [T("support.route"), U.routeHash(activeRoute())]])}<p class="fine-print">${H("support.safe_details")}</p>${compose}`;
+  }
   async function loadSupport(target) {
     if (!target) return;
-    const data = await loadResource("support", "/api/public/support");
-    if (!target.isConnected) return;
-    if (!data) { target.innerHTML = dataError("support") || `<p class="notice">${H("support.unavailable")}</p>${button(T("Повторить"), "route-retry")}`; return; }
-    const address = typeof data.email === "string" && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(data.email) ? data.email : "";
-    const compose = address ? `<a class="button primary" href="mailto:${esc(address)}?subject=${encodeURIComponent("OMNICIO " + (window.OMNICIO_RELEASE?.version || ""))}">${H("support.compose")}</a>` : `<p class="notice">${H("support.unavailable")}</p>`;
-    target.innerHTML = `${heading(T("support.title"))}<p>${H("support.description")}</p>${infoRows([[T("support.operator"), data.name || "—"], ["Email", address || "—"], [T("Версия"), window.OMNICIO_RELEASE?.version || "—"], [T("support.route"), U.routeHash(activeRoute())]])}<p class="fine-print">${H("support.safe_details")}</p>${compose}`;
+    await loadResource("support", "/api/public/support");
+    if (target.isConnected) target.innerHTML = supportHTML();
   }
   function flagApplicationUpdate() {
     state.outdated = true;
@@ -4734,6 +4825,16 @@
     if (state.mode !== "account" || !state.user || state.locked || document.visibilityState !== "visible" || !["home", "portfolio", "market"].includes(state.view)) return;
     tableQuotesTimer = setTimeout(() => void pollTableQuotes(), delay);
   }
+  function adoptTableQuotes(items, uids) {
+    for (const item of items || []) {
+      if (uids.includes(item.instrument_uid)) state.quotes[item.instrument_uid] = item;
+    }
+    paintTableQuotes();
+  }
+  function markTableQuotesUnavailable(uids) {
+    for (const uid of uids) state.quotes[uid] = {...state.quotes[uid], quote_status: "unavailable"};
+    paintTableQuotes();
+  }
   async function pollTableQuotes() {
     if (tableQuotesBusy || !navigator.onLine) { scheduleTableQuotes(15000); return; }
     const generation = state.generation;
@@ -4747,15 +4848,10 @@
         const chunk = uids.slice(offset, offset + 50);
         const payload = await api(`/api/market/quotes?instrument_uids=${encodeURIComponent(chunk.join(","))}`);
         if (generation !== state.generation || state.tour) return;
-        for (const item of payload.items || []) if (chunk.includes(item.instrument_uid)) state.quotes[item.instrument_uid] = item;
-        paintTableQuotes();
+        adoptTableQuotes(payload.items, chunk);
       }
-      paintTableQuotes();
     } catch (error) {
-      if (generation === state.generation && !isCancelled(error)) {
-        for (const uid of uids) state.quotes[uid] = {...state.quotes[uid], quote_status: "unavailable"};
-        paintTableQuotes();
-      }
+      if (generation === state.generation && !isCancelled(error)) markTableQuotesUnavailable(uids);
     } finally { tableQuotesBusy = false; scheduleTableQuotes(); }
   }
   function tableQuoteHTML(item) {
@@ -5649,6 +5745,13 @@
     }) => control.dataset.action && actions[control.dataset.action],
     run: handleClickAction
   }];
+  function openAssistantMemoryEditor(id) {
+    const item = state.data.assistantMemory?.items?.find(row => row.id === id);
+    if (!item) return;
+    captureScreenDrafts();
+    $("#assistant-memory-editor").innerHTML = assistantMemoryForm(item);
+    restoreScreenDrafts($("#assistant-memory-editor"));
+  }
   document.addEventListener("click", async event => {
     if (event.target.closest(".skip-link")) { event.preventDefault(); $(state.mode === "public" ? "#public-content" : "#main-content").focus({preventScroll: false}); return; }
     const control = event.target.closest("button,a[data-route],a[data-public-open],a[data-public-page]");
@@ -5656,7 +5759,7 @@
     if (!control || control.disabled) return;
     try {
       if (control.dataset.publicNews) { navigate("events", {screen: "news", news: control.dataset.publicNews, news_source: "public"}); return; }
-      if (control.dataset.memoryEdit) { const item = state.data.assistantMemory?.items?.find(row => row.id === control.dataset.memoryEdit); if (item) { captureScreenDrafts(); $("#assistant-memory-editor").innerHTML = assistantMemoryForm(item); restoreScreenDrafts($("#assistant-memory-editor")); } return; }
+      if (control.dataset.memoryEdit) { openAssistantMemoryEditor(control.dataset.memoryEdit); return; }
       if (control.dataset.memoryDelete) { openDialog(T("assistant.memory_delete"), `<p>${H("assistant.memory_delete_help")}</p><button class="button danger" data-memory-delete-confirm="${esc(control.dataset.memoryDelete)}">${H("Удалить")}</button>`); return; }
       if (control.dataset.memoryDeleteConfirm) { await deleteAssistantMemory(control.dataset.memoryDeleteConfirm); return; }
       if (control.dataset.assistantSource) { await readAssistantSource(control.dataset.assistantSource, control.dataset.assistantSourceRequest || ""); return; }
@@ -5898,11 +6001,15 @@
   });
   const historyNavigation = () => {
     const route = parseRoute();
-    if (route.mode === "auto") route.mode = state.mode === "public" ? (state.user ? "account" : "demo") : state.mode;
+    if (route.mode === "auto") {
+      route.mode = state.mode;
+      if (state.mode === "public") route.mode = state.user ? "account" : "demo";
+    }
     if (U.routeHash(route) !== U.routeHash(activeRoute())) navigate(route.view, route, {fromHistory: true});
   };
   for (const dialog of $$("dialog")) {
     if (dialog.id === "session-dialog") continue;
+    dialog.addEventListener("scroll", () => { if (dialog.open) saveNavigationPosition(); }, {passive: true});
     dialog.addEventListener("cancel", event => { event.preventDefault(); captureScreenDrafts(); routeBack(); });
     dialog.addEventListener("close", () => {
       if (dialog.dataset.routeClosing === "true") { delete dialog.dataset.routeClosing; return; }
@@ -6046,9 +6153,6 @@
       return "dark";
     }
     return "light";
-  }
-  function renderNavigateFragment(query) {
-    return `?${query}`;
   }
   function renderAdoptWorkspaceValue(payload) {
     if (payload.connection?.connected) {
@@ -6502,7 +6606,8 @@
     return T("Без фиксированного срока");
   }
   function renderGoalsDataFootnote(goal) {
-    return `${freshness(goal.progress_source === "manual" ? T("Сумма указана вами") : "T-Invest", goal.progress.as_of, goal.progress.status)}${goal.progress.status === "stale" ? `<p class="notice warning">${H("goals.source_stale")}</p>` : ""}`;
+    const warning = goal.progress.status === "stale" ? `<p class="notice warning">${H("goals.source_stale")}</p>` : "";
+    return `${freshness(goal.progress_source === "manual" ? T("Сумма указана вами") : "T-Invest", goal.progress.as_of, goal.progress.status)}${warning}`;
   }
   function renderGoalsValue5(goal) {
     if (goal.progress?.as_of) {

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
@@ -13,6 +14,38 @@ from .portfolio_store import SettingsVersionConflict
 from .workspace_store import WorkspaceNotFound
 
 _REQUEST_SQL = "SELECT * FROM assistant_requests WHERE user_id = %s AND id = %s"
+
+
+def _jsonb_text_size(value: Any) -> int:
+    """Conservative UTF-8 size of JSONB text, including numeric E-notation expansion."""
+    if isinstance(value, Decimal):
+        return len(format(value, "f"))
+    if isinstance(value, str):
+        if "\x00" in value:
+            raise ValueError("assistant_sources_invalid")
+        return len(json.dumps(value, ensure_ascii=False).encode())
+    if isinstance(value, dict):
+        return 2 + max(0, len(value) - 1) * 2 + sum(
+            _jsonb_text_size(key) + 2 + _jsonb_text_size(item) for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return 2 + max(0, len(value) - 1) * 2 + sum(_jsonb_text_size(item) for item in value)
+    return len(json.dumps(value))
+
+
+def assistant_sources_json(sources: object) -> str:
+    """One representation/bound for pre-admission validation and both durable copies."""
+    if not isinstance(sources, list):
+        raise ValueError("assistant_sources_invalid")
+    try:
+        encoded = json.dumps(sources, ensure_ascii=False, default=str, allow_nan=False)
+        encoded.encode()  # Reject invalid UTF-8 before admitting any provider work.
+        size = _jsonb_text_size(json.loads(encoded, parse_float=Decimal))
+    except (ValueError, TypeError) as error:
+        raise ValueError("assistant_sources_invalid") from error
+    if size > 65536:
+        raise ValueError("assistant_sources_too_large")
+    return encoded
 
 
 class AssistantQuotaExceeded(RuntimeError):
@@ -409,12 +442,14 @@ class AssistantStore:
             if updated is None:
                 raise SettingsVersionConflict("settings_version_conflict")
             version = updated["version"]
+            # Attached portfolio/memory evidence is authorized for one request.
+            # Past private answers stay readable, but cannot widen a later selection.
             cur.execute(
                 "SELECT m.role, m.content FROM assistant_messages m JOIN assistant_requests r "
                 "ON r.user_id = m.user_id AND r.id = m.request_id WHERE m.user_id = %s "
                 "AND m.conversation_id = %s AND r.status = 'completed' "
-                "AND (%s OR NOT r.context_used) ORDER BY m.position DESC LIMIT 20",
-                (user_id, conversation_id, context_used),
+                "AND NOT r.context_used ORDER BY m.position DESC LIMIT 20",
+                (user_id, conversation_id),
             )
             history = list(reversed(cur.fetchall()))
             while sum(len(item["content"]) for item in history) > 24000:
@@ -474,8 +509,9 @@ class AssistantStore:
     def update_stream(
         self, user_id: UUID, request_id: UUID, prefix: str, sources: list[dict[str, Any]],
     ) -> int:
-        if len(prefix) > 16000 or len(json.dumps(sources, default=str).encode()) > 65536:
+        if len(prefix) > 16000:
             raise ValueError("assistant_stream_invalid")
+        source_json = assistant_sources_json(sources)
         with self._transaction(user_id) as cur:
             connection = self._connection(cur, user_id)
             cur.execute(
@@ -483,7 +519,7 @@ class AssistantStore:
                 "stream_sequence = stream_sequence + 1, updated_at = now() "
                 "WHERE user_id = %s AND id = %s AND status = 'running' "
                 "AND connection_version = %s RETURNING stream_sequence",
-                (prefix, json.dumps(sources, ensure_ascii=False, default=str), user_id, request_id,
+                (prefix, source_json, user_id, request_id,
                  connection["version"] if connection else 0),
             )
             updated = cur.fetchone()
@@ -497,6 +533,7 @@ class AssistantStore:
         request_id: UUID,
         result: dict[str, Any],
     ) -> dict[str, Any]:
+        source_json = assistant_sources_json(result.get("sources", []))
         with self._transaction(user_id) as cur:
             cur.execute(
                 _REQUEST_SQL,
@@ -529,7 +566,7 @@ class AssistantStore:
                     updated["version"],
                     request_id,
                     result["reply"],
-                    json.dumps(result.get("sources", []), ensure_ascii=False, default=str),
+                    source_json,
                 ),
             )
             cur.execute(
@@ -539,7 +576,7 @@ class AssistantStore:
                 "updated_at = now() "
                 "WHERE user_id = %s AND id = %s RETURNING *",
                 (usage.get("input_tokens"), usage.get("output_tokens"), result["reply"],
-                 json.dumps(result.get("sources", []), ensure_ascii=False, default=str),
+                 source_json,
                  user_id, request_id),
             )
             return self._request_result(cur, user_id, cast(dict[str, Any], cur.fetchone()))

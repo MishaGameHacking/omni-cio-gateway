@@ -13,6 +13,7 @@ from omnicio.workspace import (
     event_digest,
     event_id,
     goal_progress,
+    income_goal_start,
     normalize_goal,
     normalize_preferences,
     portfolio_performance,
@@ -322,6 +323,15 @@ def test_unknown_external_flows_block_performance(row: dict[str, Any], reason: s
     assert flow["net_contributions_rub"] is None
 
 
+def test_repeated_invalid_flow_preserves_the_actual_reason_for_each_metric() -> None:
+    flow = cashflow_summary(
+        [operation("INPUT", "-100"), operation("INPUT", "-50", day=11)],
+        from_at=START, to_at=END, complete=True,
+    )
+    assert flow["metrics"]["net_contributions_rub"]["reason"] == "external_flow_sign_invalid"
+    assert flow["income"]["total_rub"] == "0"
+
+
 def test_canceled_pending_and_outside_period_operations_are_excluded() -> None:
     rows = [
         operation("INPUT", "10", operation_state="OPERATION_STATE_CANCELED"),
@@ -340,8 +350,10 @@ def test_incomplete_history_never_displays_zero_as_known_income() -> None:
     assert flow["income"]["status"] == "unavailable"
     assert flow["income"]["total_rub"] is None
     assert flow["income"]["by_month"] == []
+    assert flow["income"]["metric_coverage"]["coupons_rub"]["status"] == "unavailable"
     no_payments = cashflow_summary([], from_at=START, to_at=END, complete=True)
     assert no_payments["income"]["total_rub"] == "0"
+    assert no_payments["income"]["metric_coverage"]["coupons_rub"]["status"] == "complete"
 
 
 def test_performance_never_extrapolates_after_sync_watermark() -> None:
@@ -416,6 +428,14 @@ def test_income_goal_uses_only_allocated_received_income() -> None:
         now=END,
     )
     assert result["amount_rub"] == "250"
+
+
+def test_income_goal_start_accepts_stored_date_and_serialized_calendar_date() -> None:
+    expected = datetime(2025, 12, 31, 21, tzinfo=UTC)
+    assert income_goal_start({"start_date": "2026-01-01"}) == expected
+    assert income_goal_start({"start_date": START.date()}) == expected
+    with pytest.raises(ValueError, match="workspace_date_invalid"):
+        income_goal_start({"start_date": START})
 
 
 def test_income_goal_calendar_start_includes_midnight_without_earlier_payments() -> None:

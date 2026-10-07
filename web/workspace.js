@@ -46,6 +46,15 @@
     for (const [field, key] of Object.entries(routeFields)) if (route[field] !== undefined && route[field] !== null && String(route[field]) !== "") query.set(key, String(route[field]));
     return `#${mode}/${route.view || (mode === "public" ? "welcome" : "home")}${route.screen ? "/" + route.screen : ""}${query.size ? "?" + query.toString() : ""}`;
   };
+  const resumeRoute = route => {
+    const parsed = parseRoute(routeHash({mode: route.mode, view: route.view, screen: route.screen}));
+    if (route.invalid || parsed.invalid) return {mode: "public", view: "welcome", screen: ""};
+    const result = {mode: parsed.mode, view: parsed.view, screen: parsed.screen};
+    if (["asset", "search"].includes(result.view)) return {...result, view: "market", screen: ""};
+    const requiresIdentifier = {goals: ["edit", "plan"], events: ["detail", "news"], strategies: ["detail", "result"]};
+    if (requiresIdentifier[result.view]?.includes(result.screen)) result.screen = "";
+    return result;
+  };
   const pendingCharts = new Map();
   let chartSequence = 0;
   let privateValuesHidden = false;
@@ -164,6 +173,24 @@
     const suffix = {percent_nominal: T("% номинала"), points: T("пунктов"), per_nominal: `${currency} ${T("за номинал")}`, unknown: T("ед. источника")}[unit] || T("ед. источника");
     return number(value) === null ? "—" : `${format(value, 2)} ${suffix}`;
   };
+  const chartPoints = (rows, timeKey, valueKey, comparison, xKind) => {
+    const unique = new Map();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const time = xKind === "model_month" ? number(row[timeKey]) : new Date(row[timeKey]).getTime();
+      const value = number(row[valueKey]);
+      if (time !== null && Number.isFinite(time) && value !== null) unique.set(time, {
+        time,
+        value,
+        comparison: comparison.map(series => number(row[series.key]))
+      });
+    }
+    return [...unique.values()].sort((left, right) => left.time - right.time);
+  };
+  const chartLegend = (comparison, points, label, currency, personal) => {
+    if (!comparison.length) return "";
+    const values = comparison.map((series, index) => `<span class="chart-comparison-${index % 2}">${escape(series.label)}: <strong data-chart-comparison="${index}">${escape(money(points.at(-1).comparison[index], 0, currency, personal))}</strong></span>`).join("");
+    return `<div class="chart-legend"><span>${escape(label)}</span>${values}</div>`;
+  };
   const chart = (rows, {
     timeKey = "captured_at",
     valueKey = "nav_rub",
@@ -177,18 +204,8 @@
     xKind = "date"
   } = {}) => {
     if (personal && privateValuesHidden) return ("<div class=\"chart-empty\">" + H("Значения скрыты настройкой конфиденциальности.") + "</div>");
-    const unique = new Map();
-    for (const row of Array.isArray(rows) ? rows : []) {
-      const time = xKind === "model_month" ? number(row[timeKey]) : new Date(row[timeKey]).getTime();
-      const value = number(row[valueKey]);
-      if (time !== null && Number.isFinite(time) && value !== null) unique.set(time, {
-        time,
-        value,
-        comparison: comparison.map(series => number(row[series.key]))
-      });
-    }
     const timeLabel = value => xKind === "model_month" ? T("goals.model_month", {month: format(value, 0)}) : date(value, true);
-    const points = [...unique.values()].sort((left, right) => left.time - right.time);
+    const points = chartPoints(rows, timeKey, valueKey, comparison, xKind);
     if (points.length < 2) return ("<div class=\"chart-empty\">" + H("Для графика нужны минимум два реальных наблюдения.") + "</div>");
     const width = 480;
     const height = 180;
@@ -230,7 +247,7 @@
       const line = selected.map((point, pointIndex) => `${pointIndex ? "L" : "M"}${x(point.time).toFixed(2)} ${y(point.comparison[index]).toFixed(2)}`).join(" ");
       return `<path class="chart-path chart-comparison chart-comparison-${index % 2}" d="${line}"/>`;
     }).join("");
-    const legend = comparison.length ? `<div class="chart-legend"><span>${escape(label)}</span>${comparison.map((series, index) => `<span class="chart-comparison-${index % 2}">${escape(series.label)}: <strong data-chart-comparison="${index}">${escape(money(points.at(-1).comparison[index], 0, currency, personal))}</strong></span>`).join("")}</div>` : "";
+    const legend = chartLegend(comparison, points, label, currency, personal);
     return `<div class="chart-block${tone === "purple" ? " chart-purple" : ""}"><div class="chart-plot${compact ? " chart-compact" : ""}"><svg class="chart-svg" data-chart="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" tabindex="0" role="group" aria-label="${escape(label)}${H(". Используйте стрелки для просмотра значений.")}">${grid}<path class="chart-area" d="${path} L${right} ${bottom} L${left} ${bottom} Z"/><path class="chart-path" d="${path}"/>${compared}<g class="chart-hover" visibility="hidden"><line class="chart-cursor" y1="${top}" y2="${bottom}"/><circle class="chart-point" r="4"/></g></svg>${compact ? "" : renderChartAxes(points, low, high, timeLabel)}</div><div class="chart-readout" aria-live="off"><span>${escape(timeLabel(points.at(-1).time))}</span><strong>${escape(marketPrice(points.at(-1).value, priceUnit, currency, personal))}</strong></div>${legend}</div>`;
   };
   const bindCharts = (container = document) => {
@@ -365,7 +382,7 @@
     get navigation() { return navigation(); },
     marketPrice,
     compiledBuild: "__OMNICIO_BUILD__",
-    publicPages, routeScreens, parseRoute, routeHash
+    publicPages, routeScreens, parseRoute, routeHash, resumeRoute
   });
   if (typeof document !== "undefined") document.querySelector("[data-offline-retry]")?.addEventListener("click", () => window.location.reload());
   function renderPercentValue(signed, numeric) {

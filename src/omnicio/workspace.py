@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -53,6 +54,8 @@ _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
 _MAX_MONEY = Decimal("1000000000000")
 _INCOME_FIELDS = ("coupons_rub", "dividends_rub", "other_income_rub")
+_INCOME_PAYMENT_FIELDS = (*_INCOME_FIELDS, "redemptions_rub")
+_PAYMENT_FIELDS = (*_INCOME_PAYMENT_FIELDS, "net_contributions_rub", "fees_rub", "taxes_rub")
 _SOURCE = "https://developer.tbank.ru/invest/services/operations/methods"
 
 
@@ -110,6 +113,42 @@ def default_preferences() -> dict[str, Any]:
     return copy.deepcopy(DEFAULT_PREFERENCES)
 
 
+def _preference_clock(value: object, error_code: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(
+        r"(?:[01]\d|2[0-3]):[0-5]\d", value, flags=re.ASCII,
+    ):
+        raise ValueError(error_code)
+    return value
+
+
+def _preference_timezone(value: object) -> str:
+    timezone = _text(value, maximum=64)
+    try:
+        ZoneInfo(timezone)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError("workspace_timezone_invalid") from exc
+    return timezone
+
+
+def _preference_watchlist(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, list) or len(value) > 50:
+        raise ValueError("workspace_watchlist_limit")
+    instruments = []
+    seen = set()
+    for raw in value:
+        item = _exact(raw, ("instrument_uid", "ticker", "name"))
+        uid = _text(item["instrument_uid"], maximum=128)
+        if not re.fullmatch(r"[\w-]+", uid, flags=re.ASCII) or uid in seen:
+            raise ValueError("workspace_watchlist_identity")
+        seen.add(uid)
+        instruments.append({
+            "instrument_uid": uid,
+            "ticker": _text(item["ticker"], maximum=64, empty=True),
+            "name": _text(item["name"], maximum=256, empty=True),
+        })
+    return instruments
+
+
 def normalize_preferences(value: object) -> dict[str, Any]:
     # Legacy clients/documents retain the original midnight delivery schedule.
     if isinstance(value, dict) and set(value) == set(DEFAULT_PREFERENCES) - {
@@ -123,47 +162,13 @@ def normalize_preferences(value: object) -> dict[str, Any]:
     quiet = _exact(data["quiet_hours"], ("enabled", "start", "end", "timezone"))
     enabled = _boolean(quiet["enabled"])
     for key in ("start", "end"):
-        if not isinstance(quiet[key], str) or not re.fullmatch(
-            r"(?:[01]\d|2[0-3]):[0-5]\d",
-            quiet[key],
-            flags=re.ASCII,
-        ):
-            raise ValueError("workspace_quiet_time_invalid")
+        _preference_clock(quiet[key], "workspace_quiet_time_invalid")
     if enabled and quiet["start"] == quiet["end"]:
         raise ValueError("workspace_quiet_interval_empty")
-    timezone = _text(quiet["timezone"], maximum=64)
-    try:
-        ZoneInfo(timezone)
-    except (ZoneInfoNotFoundError, ValueError) as exc:
-        raise ValueError("workspace_timezone_invalid") from exc
-    digest_time = data["digest_time"]
-    if not isinstance(digest_time, str) or not re.fullmatch(
-        r"(?:[01]\d|2[0-3]):[0-5]\d", digest_time, flags=re.ASCII,
-    ):
-        raise ValueError("workspace_digest_time_invalid")
-    digest_timezone = _text(data["digest_timezone"], maximum=64)
-    try:
-        ZoneInfo(digest_timezone)
-    except (ZoneInfoNotFoundError, ValueError) as exc:
-        raise ValueError("workspace_timezone_invalid") from exc
-    watchlist = data["watchlist"]
-    if not isinstance(watchlist, list) or len(watchlist) > 50:
-        raise ValueError("workspace_watchlist_limit")
-    instruments = []
-    seen = set()
-    for raw in watchlist:
-        item = _exact(raw, ("instrument_uid", "ticker", "name"))
-        uid = _text(item["instrument_uid"], maximum=128)
-        if not re.fullmatch(r"[\w-]+", uid, flags=re.ASCII) or uid in seen:
-            raise ValueError("workspace_watchlist_identity")
-        seen.add(uid)
-        instruments.append(
-            {
-                "instrument_uid": uid,
-                "ticker": _text(item["ticker"], maximum=64, empty=True),
-                "name": _text(item["name"], maximum=256, empty=True),
-            }
-        )
+    timezone = _preference_timezone(quiet["timezone"])
+    digest_time = _preference_clock(data["digest_time"], "workspace_digest_time_invalid")
+    digest_timezone = _preference_timezone(data["digest_timezone"])
+    instruments = _preference_watchlist(data["watchlist"])
     result: dict[str, Any] = {
         "display_name": _text(data["display_name"], maximum=80, empty=True),
         "locale": _choice(data["locale"], ("ru", "en")),
@@ -425,6 +430,105 @@ def _accumulate_cashflow(
         monthly[key] += payment
 
 
+@dataclass(slots=True)
+class _PaymentTotals:
+    values: dict[str, Decimal]
+    months: dict[str, dict[str, Decimal]]
+    native: dict[str, dict[str, Decimal]]
+    reasons: set[str]
+    income_reasons: set[str]
+    metric_reasons: dict[str, set[str]]
+    metric_counts: dict[str, int]
+
+
+def _record_payment(
+    totals: _PaymentTotals, operation: Mapping[str, Any], kind: str, at: datetime,
+    reasons: set[str], income_reasons: set[str],
+) -> None:
+    currency = str(operation.get("payment_currency") or "").upper()
+    try:
+        native_payment = amount(operation.get("payment_value"))
+    except ValueError:
+        native_payment = None
+    if native_payment is not None and re.fullmatch(r"[A-Z]{3}", currency):
+        currency_values = totals.native.setdefault(currency, dict.fromkeys(_PAYMENT_FIELDS, _ZERO))
+        _accumulate_cashflow(kind, at, native_payment, currency_values, {})
+    metric = _cashflow_metric(kind)
+    payment = _cashflow_payment(operation, kind, reasons, income_reasons)
+    if payment is None:
+        totals.metric_reasons[metric].update(reasons)
+        return
+    totals.metric_counts[metric] += 1
+    _accumulate_cashflow(kind, at, payment, totals.values, totals.months)
+
+
+def _record_cashflow(
+    totals: _PaymentTotals, operation: Mapping[str, Any], from_at: datetime, to_at: datetime,
+) -> None:
+    # Errors belong to the current operation before they are merged. Repeating
+    # an error already seen in another category must not hide its metric impact.
+    reasons: set[str] = set()
+    income_reasons: set[str] = set()
+    parsed = _executed_cashflow(operation, from_at, to_at, reasons, income_reasons)
+    if parsed is None:
+        for key in totals.values:
+            metric_errors = income_reasons if key in _INCOME_PAYMENT_FIELDS else reasons
+            totals.metric_reasons[key].update(metric_errors)
+    else:
+        _record_payment(totals, operation, *parsed, reasons, income_reasons)
+    totals.reasons.update(reasons)
+    totals.income_reasons.update(income_reasons)
+
+
+def _payment_metrics(totals: _PaymentTotals) -> dict[str, dict[str, Any]]:
+    metrics = {}
+    for key, value in totals.values.items():
+        reasons, count = totals.metric_reasons[key], totals.metric_counts[key]
+        status = "complete"
+        if reasons:
+            status = "partial" if count else "unavailable"
+        metrics[key] = {
+            "status": status,
+            "value_rub": decimal_text(value) if not reasons else None,
+            "observed_rub": decimal_text(value) if count else None,
+            "reason": ",".join(sorted(reasons)) or None,
+        }
+    return metrics
+
+
+def _native_payment_sums(
+    native: Mapping[str, Mapping[str, Decimal]], fields: Sequence[str],
+) -> dict[str, dict[str, str]]:
+    return {currency: {key.removesuffix("_rub"): decimal_text(row[key]) for key in fields}
+            for currency, row in sorted(native.items())}
+
+
+def _income_summary(
+    totals: _PaymentTotals, metrics: Mapping[str, dict[str, Any]],
+    from_at: datetime, to_at: datetime,
+) -> dict[str, Any]:
+    reasons = totals.income_reasons
+    values = totals.values
+    income_total = sum((values[key] for key in _INCOME_FIELDS), _ZERO)
+    months = [{"month": month, **{key: decimal_text(row[key]) for key in _INCOME_FIELDS},
+               "total_rub": decimal_text(sum(row.values(), _ZERO))}
+              for month, row in sorted(totals.months.items())]
+    return {
+        "status": "available" if not reasons else "unavailable",
+        "reason": ",".join(sorted(reasons)) or None,
+        "from": from_at.isoformat(),
+        "to": to_at.isoformat(),
+        **{key: decimal_text(values[key]) if not reasons else None
+           for key in _INCOME_PAYMENT_FIELDS},
+        "total_rub": decimal_text(income_total) if not reasons else None,
+        "by_month": [] if reasons else months,
+        "source_url": _SOURCE,
+        "tax_basis": "broker_payments_before_separate_tax_operations",
+        "metric_coverage": {key: metrics[key] for key in _INCOME_PAYMENT_FIELDS},
+        "native_payment_sums": _native_payment_sums(totals.native, _INCOME_PAYMENT_FIELDS),
+    }
+
+
 def cashflow_summary(
     operations: Sequence[Mapping[str, Any]],
     *,
@@ -437,99 +541,29 @@ def cashflow_summary(
     Noncash transfers, card purchases and unfamiliar operations prevent a return
     assertion. Redemption is returned principal, separate from investment income.
     """
-    values = dict.fromkeys(
-        (*_INCOME_FIELDS, "redemptions_rub", "net_contributions_rub", "fees_rub", "taxes_rub"),
-        _ZERO,
-    )
-    months: dict[str, dict[str, Decimal]] = {}
     reasons = set() if complete else {"history_incomplete"}
-    income_reasons = set(reasons)
-    metric_reasons = {key: set(reasons) for key in values}
-    metric_counts = dict.fromkeys(values, 0)
-    native: dict[str, dict[str, Decimal]] = {}
+    totals = _PaymentTotals(
+        values=dict.fromkeys(_PAYMENT_FIELDS, _ZERO), months={}, native={},
+        reasons=reasons, income_reasons=set(reasons),
+        metric_reasons={key: set(reasons) for key in _PAYMENT_FIELDS},
+        metric_counts=dict.fromkeys(_PAYMENT_FIELDS, 0),
+    )
     for operation in operations:
-        previous_reasons, previous_income_reasons = set(reasons), set(income_reasons)
-        parsed = _executed_cashflow(operation, from_at, to_at, reasons, income_reasons)
-        if parsed is None:
-            for key in values:
-                new_reasons = (income_reasons - previous_income_reasons
-                               if key in (*_INCOME_FIELDS, "redemptions_rub")
-                               else reasons - previous_reasons)
-                metric_reasons[key].update(new_reasons)
-            continue
-        kind, at = parsed
-        metric = _cashflow_metric(kind)
-        currency = str(operation.get("payment_currency") or "").upper()
-        try:
-            native_payment = amount(operation.get("payment_value"))
-        except ValueError:
-            native_payment = None
-        if native_payment is not None and re.fullmatch(r"[A-Z]{3}", currency):
-            currency_values = native.setdefault(currency, dict.fromkeys(values, _ZERO))
-            _accumulate_cashflow(kind, at, native_payment, currency_values, {})
-        payment = _cashflow_payment(operation, kind, reasons, income_reasons)
-        if payment is None:
-            metric_reasons[metric].update(reasons - previous_reasons or {
-                "payment_currency_or_amount_unavailable",
-            })
-            continue
-        metric_counts[metric] += 1
-        _accumulate_cashflow(kind, at, payment, values, months)
-    income_total = sum((values[key] for key in _INCOME_FIELDS), _ZERO)
+        _record_cashflow(totals, operation, from_at, to_at)
+    metrics = _payment_metrics(totals)
     return {
         "status": "available" if not reasons else "unavailable",
         "reason": ",".join(sorted(reasons)) or None,
-        "from": from_at.isoformat(),
-        "to": to_at.isoformat(),
-        **{key: decimal_text(value) if not reasons else None for key, value in values.items()},
-        "metrics": {key: {
-            "status": "complete" if not metric_reasons[key] else (
-                "partial" if metric_counts[key] else "unavailable"
-            ),
-            "value_rub": decimal_text(value) if not metric_reasons[key] else None,
-            "observed_rub": decimal_text(value) if metric_counts[key] else None,
-            "reason": ",".join(sorted(metric_reasons[key])) or None,
-        } for key, value in values.items()},
+        "from": from_at.isoformat(), "to": to_at.isoformat(),
+        **{key: decimal_text(value) if not reasons else None
+           for key, value in totals.values.items()},
+        "metrics": metrics,
         "native_payment_sums": {
             "basis": "observed_executed_payments_without_fx_conversion",
             "history_complete": complete,
-            "currencies": {currency: {
-                key.removesuffix("_rub"): decimal_text(value) for key, value in row.items()
-            } for currency, row in sorted(native.items())},
+            "currencies": _native_payment_sums(totals.native, _PAYMENT_FIELDS),
         },
-        "income": {
-            "status": "available" if not income_reasons else "unavailable",
-            "reason": ",".join(sorted(income_reasons)) or None,
-            "from": from_at.isoformat(),
-            "to": to_at.isoformat(),
-            **{
-                key: decimal_text(values[key]) if not income_reasons else None
-                for key in (*_INCOME_FIELDS, "redemptions_rub")
-            },
-            "total_rub": decimal_text(income_total) if not income_reasons else None,
-            "by_month": [
-                {
-                    "month": month,
-                    **{key: decimal_text(row[key]) for key in _INCOME_FIELDS},
-                    "total_rub": decimal_text(sum(row.values(), _ZERO)),
-                }
-                for month, row in sorted(months.items())
-            ]
-            if not income_reasons
-            else [],
-            "source_url": _SOURCE,
-            "tax_basis": "broker_payments_before_separate_tax_operations",
-            "metric_coverage": {key: {
-                "status": "complete" if not metric_reasons[key] else "partial",
-                "value_rub": decimal_text(values[key]) if not metric_reasons[key] else None,
-                "observed_rub": decimal_text(values[key]) if metric_counts[key] else None,
-                "reason": ",".join(sorted(metric_reasons[key])) or None,
-            } for key in (*_INCOME_FIELDS, "redemptions_rub")},
-            "native_payment_sums": {currency: {
-                key.removesuffix("_rub"): decimal_text(row[key])
-                for key in (*_INCOME_FIELDS, "redemptions_rub")
-            } for currency, row in sorted(native.items())},
-        },
+        "income": _income_summary(totals, metrics, from_at, to_at),
     }
 
 
@@ -684,8 +718,10 @@ def _portfolio_goal_amount(
 
 def income_goal_start(goal: Mapping[str, Any]) -> datetime:
     """The goal's inclusive Moscow calendar boundary, shared with ledger selection."""
+    value = goal["start_date"]
+    started = value if type(value) is date else _date(value)
     return datetime.combine(
-        _date(goal["start_date"]), time.min, ZoneInfo(_MOSCOW_TIMEZONE),
+        started, time.min, ZoneInfo(_MOSCOW_TIMEZONE),
     ).astimezone(UTC)
 
 

@@ -11,6 +11,14 @@ assert.equal(I.t("nav.events"), "События");
 assert.equal(I.setLocale("en-US"), "en");
 assert.equal(I.t("nav.events"), "Events");
 assert.equal(I.t("События"), "Events", "Explicit authored literals share the semantic registry");
+assert.equal(I.t("goals.active", {}, "ru"), "Активные цели", "The final authored override remains authoritative");
+assert.equal(I.t("goals.active", {}, "en"), "Active goals");
+assert.equal(I.t("Активная", {}, "en"), "Active", "The old status phrase remains a separate supported alias");
+assert.equal(I.t("Ранее начатые исполнения", {}, "en"), "Previous executions");
+assert.equal(I.t("Обновить приложение", {}, "en"), "Update app", "Shared phrases retain first-insertion fallback precedence");
+assert.equal(I.t("pwa.apply", {}, "en"), "Update application", "A semantic key retains its own authored wording");
+assert.equal(I.t("Ограничение", {}, "en"), "Constraint", "An explicit phrase key wins over a semantic fallback");
+assert.equal(I.t("billing.limit", {}, "en"), "Limit");
 for (const key of ["home", "portfolio", "market", "strategies", "assistant", "goals", "analytics", "events", "profile", "settings"]) {
   assert.notEqual(I.t(`nav.${key}`, {}, "en"), I.t(`nav.${key}`, {}, "ru"), "Each primary tab has a translation");
 }
@@ -56,6 +64,17 @@ assert.equal(root.documentElement.lang, "en");
 I.apply(root, "ru");
 assert.equal(menu.textContent, "Портфель", "Locale switching is reversible from canonical messages");
 assert.equal(root.documentElement.lang, "ru");
+const bootLabel = element({"data-i18n": "nav.events"}, "События");
+const bootDocument = {
+  documentElement: {dataset: {i18nDeviceLocale: ""}, lang: "ru"},
+  readyState: "complete",
+  querySelectorAll: () => [bootLabel]
+};
+const bootContext = {window: {}, document: bootDocument, navigator: {language: "en-US"}};
+vm.runInNewContext(readFileSync(join(__dirname, "../web/i18n.js"), "utf8"), bootContext);
+assert.equal(bootContext.window.OMNICIO_I18N.getLocale(), "en", "The device-locale API is ready synchronously");
+assert.equal(bootDocument.documentElement.lang, "en");
+assert.equal(bootLabel.textContent, "Events", "Initial rendering needs no additional asset or asynchronous catalog request");
 const textNode = {nodeType: 3, data: "  Закрыть  "};
 const iconButton = element({"data-i18n-text": '["Закрыть"]'}, "", {tagName: "BUTTON", children: [{tagName: "SVG"}]});
 iconButton.childNodes = [{nodeType: 1, tagName: "SVG"}, textNode];
@@ -94,10 +113,29 @@ assert.equal(U.parseRoute("#demo/unsupported").invalid, true);
 assert.equal(U.parseRoute("#account/settings/unknown").invalid, true);
 assert.equal(U.parseRoute("#public/features/unknown").invalid, true);
 assert.equal(U.parseRoute("#account/home?user_id=other").user_id, undefined, "Navigation never accepts tenant authority fields");
+for (const [hash, expected] of [
+  ["#account/asset?uid=private-instrument", "#account/market"],
+  ["#demo/search?q=private-search", "#demo/market"],
+  ["#account/goals/edit?goal=private-goal", "#account/goals"],
+  ["#account/goals/plan?goal=private-goal", "#account/goals"],
+  ["#account/events/detail?event=private-event", "#account/events"],
+  ["#demo/events/news?news=private-news", "#demo/events"],
+  ["#account/strategies/detail?preset=private-preset", "#account/strategies"],
+  ["#account/strategies/result?run=private-run", "#account/strategies"],
+  ["#account/portfolio/positions?assets=bond&sort=price&overlay=private-overlay", "#account/portfolio/positions"],
+  ["#public/features?q=private-search", "#public/features"],
+  ["#account/market/reference/extra", "#public/welcome"],
+  ["#account/unsupported", "#public/welcome"]
+]) {
+  const resumed = U.resumeRoute(U.parseRoute(hash));
+  assert.equal(U.routeHash(resumed), expected, "Resume keeps a usable screen without saved identifiers or query text");
+  assert.deepEqual(Array.from(Object.keys(resumed)).sort(), ["mode", "screen", "view"], "Stored resume metadata cannot contain q, uid, event, goal_id or overlay");
+}
 const scenario = U.chart([{month: 0, amount_rub: "100", target_rub: "200", contributions_rub: "0"}, {month: 12, amount_rub: "220", target_rub: "240", contributions_rub: "120"}], {timeKey: "month", valueKey: "amount_rub", xKind: "model_month", comparison: [{key: "target_rub", label: "Target"}, {key: "contributions_rub", label: "Contributions"}]});
 assert.ok(scenario.includes("Месяц 12"));
 assert.ok(!scenario.includes("1970"), "Model months cannot masquerade as observed calendar dates");
-assert.ok(scenario.includes("chart-comparison-0") && scenario.includes("chart-comparison-1"), "Scenario, target and contributions are separate real numerical series");
+assert.ok(scenario.includes("chart-comparison-0"), "The scenario includes the numerical target series");
+assert.ok(scenario.includes("chart-comparison-1"), "The scenario includes the numerical contributions series");
 for (const file of ["app.js", "workspace.js"]) {
   const code = readFileSync(join(__dirname, "../web/", file), "utf8");
   for (const match of code.matchAll(/\b[TH]\(("(?:\\.|[^"\\])*")/g)) {
