@@ -35,6 +35,7 @@ from timeweb_ssh_trust import (
     trusted_host_entry,
     trusted_host_fingerprint,
 )
+from verify_main_release import ReleaseBlocked, release_context, require_checkout
 
 API_ROOT = "https://api.timeweb.cloud/api"
 REMOTE_SECRET_PATH = "/etc/omnicio/auth-secrets.env"
@@ -887,7 +888,10 @@ def reconcile(
     vpc_name: str,
     migration_sqls: list[str],
     backup_only: bool = False,
+    release_sha: str | None = None,
 ) -> int:
+    if backup_only and release_sha is not None:
+        raise InfraError("Scheduled verification cannot authorize a pre-release copy")
     add_summary("## OmniCIO auth PostgreSQL")
     add_summary(
         f"- Desired: PostgreSQL {desired.postgres_version}, "
@@ -976,7 +980,7 @@ def reconcile(
                 "Managed PostgreSQL cluster is not attached to approved VPC"
             )
 
-        ensure_recovery_point(client, ssh, cluster)
+        ensure_recovery_point(client, ssh, cluster, release_sha=release_sha)
         inspect_restore_capacity(client, ssh, cluster_id)
         if backup_only:
             set_output("status", "recovery_point_ready")
@@ -1054,6 +1058,10 @@ def main() -> int:
     args = parse_args()
     try:
         migration_sqls = load_migrations(args.migration)
+        release_sha = None
+        if not args.backup_only:
+            release_sha, _ = release_context()
+            require_checkout(release_sha)
         client = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
         return reconcile(
             client,
@@ -1074,8 +1082,11 @@ def main() -> int:
             vpc_name=args.vpc_name,
             migration_sqls=migration_sqls,
             backup_only=args.backup_only,
+            release_sha=release_sha,
         )
-    except (InfraError, TimewebApiError, AmbiguousProviderError, RecoveryBlocked) as exc:
+    except (
+        InfraError, TimewebApiError, AmbiguousProviderError, RecoveryBlocked, ReleaseBlocked,
+    ) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
 

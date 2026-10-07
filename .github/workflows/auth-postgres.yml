@@ -162,6 +162,8 @@ jobs:
       - name: Reconcile PostgreSQL and schema
         id: postgres
         shell: cmd
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           "%OMNICIO_PYTHON%" .github\scripts\timeweb_auth_postgres.py ^
             %BACKUP_ONLY% ^

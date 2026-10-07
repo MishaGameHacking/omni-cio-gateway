@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import pathlib
+import re
 import time
 import tomllib
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ WEEKLY_PREFIX = "Managed by OmniCIO: weekly recovery point v1 "
 WEEKLY_RETIRE = "weekly_retire_attempted"
 WEEKLY_CREATE = "weekly_create"
 WEEKLY_OWNED = "weekly_owned"
+RELEASE_COPY = "release_copy"
+RELEASE_PREFIX = "Managed by OmniCIO: prerelease recovery point v1 "
 BACKUP_TIMEZONE = timezone(timedelta(hours=3))
 INSPECTION_DETAIL_LIMIT = 20
 
@@ -46,7 +49,7 @@ class BackupPolicy:
 
     @property
     def max_copies(self) -> int:
-        # Include both the bootstrap and one temporary copy during weekly rotation.
+        # Two shared spare slots cover bootstrap/prerelease and weekly rotation.
         return self.copies + self.weekly_copies + 2
 
 
@@ -200,6 +203,8 @@ def _inspection_comment(value: Any) -> str:
         return "bootstrap_tag"
     if isinstance(value, str) and value.startswith(WEEKLY_PREFIX):
         return "weekly_tag"
+    if isinstance(value, str) and value.startswith(RELEASE_PREFIX):
+        return "prerelease_tag"
     return "other" if value else "absent"
 
 
@@ -298,12 +303,13 @@ def inspect_provider_recovery(client: Provider) -> dict[str, Any]:
     return report
 
 
-def mutate_once(client: Provider, method: str, path: str, **kwargs: Any) -> None:
+def mutate_once(client: Provider, method: str, path: str, **kwargs: Any) -> dict[str, Any] | None:
     """Only a subsequent read may confirm an operation, including after a lost response."""
     try:
-        client.request(method, path, **kwargs)
+        return client.request(method, path, **kwargs)
     except (RuntimeError, OSError, ValueError):
         print("Provider mutation was not confirmed; reconciling by read without repeating it.")
+        return None
 
 
 def reconcile_schedule(
@@ -370,6 +376,203 @@ def ensure_initial_copy(
             raise RecoveryBlocked("Provider reports a failed backup; schema remains unchanged")
         time.sleep(10)
     raise RecoveryBlocked("No completed backup younger than 24 hours; create was not repeated")
+
+
+def _require_release_sha(value: Any) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None:
+        raise RecoveryBlocked("Prerelease recovery requires an exact accepted commit identity")
+    return value
+
+
+def _release_receipt(state: dict[str, Any], policy: BackupPolicy) -> dict[str, Any] | None:
+    if RELEASE_COPY not in state:
+        return None
+    receipt = state[RELEASE_COPY]
+    if not isinstance(receipt, dict) or receipt.get("cluster_id") != policy.cluster_id:
+        raise RecoveryBlocked("Invalid prerelease recovery receipt")
+    sha = _require_release_sha(receipt.get("release_sha"))
+    if receipt.get("comment") != RELEASE_PREFIX + sha:
+        raise RecoveryBlocked("Prerelease recovery comment differs from its receipt")
+    if timestamp(receipt.get("attempted_at")) > datetime.now(UTC):
+        raise RecoveryBlocked("Prerelease recovery receipt is in the future")
+    baseline = receipt.get("baseline_ids")
+    if not isinstance(baseline, list) or len(baseline) > policy.max_copies - 2:
+        raise RecoveryBlocked("Invalid prerelease recovery baseline")
+    validate_inventory([{"id": value} for value in baseline], None)
+    if receipt.get("response_invalid"):
+        raise RecoveryBlocked("Prerelease creation response requires independent investigation")
+    _validate_release_identities(receipt, baseline)
+    return receipt
+
+
+def _validate_release_identities(receipt: dict[str, Any], baseline: list[Any]) -> None:
+    for field in ("response_id", "confirmed_id"):
+        if field in receipt:
+            identity = receipt[field]
+            if type(identity) is not int or identity <= 0 or identity in baseline:
+                raise RecoveryBlocked("Invalid recorded prerelease recovery identity")
+    if (
+        "response_id" in receipt and "confirmed_id" in receipt
+        and receipt["response_id"] != receipt["confirmed_id"]
+    ):
+        raise RecoveryBlocked("Prerelease response and confirmation identities differ")
+
+
+def _verify_release_item(item: dict[str, Any], receipt: dict[str, Any]) -> None:
+    if (
+        item.get("type") != "manual" or item.get("comment") != receipt["comment"]
+        or item.get("id") in receipt["baseline_ids"]
+        or not completed_backup(item, datetime.now(UTC))
+        or timestamp(item.get("created_at")) < timestamp(receipt["attempted_at"])
+    ):
+        raise RecoveryBlocked("Prerelease recovery copy differs from its recorded operation")
+    for field in ("response_id", "confirmed_id"):
+        if field in receipt and item["id"] != receipt[field]:
+            raise RecoveryBlocked("Recorded prerelease recovery identity changed")
+
+
+def _release_candidate(
+    backups: list[dict[str, Any]], receipt: dict[str, Any],
+) -> dict[str, Any] | None:
+    marked = [item for item in backups
+              if str(item.get("comment", "")).startswith(RELEASE_PREFIX)]
+    if len(marked) > 1 or any(item.get("comment") != receipt["comment"] for item in marked):
+        raise RecoveryBlocked("Prerelease recovery inventory has conflicting ownership")
+    if not marked:
+        return None
+    item = marked[0]
+    if item["id"] in receipt["baseline_ids"] or item.get("type") != "manual":
+        raise RecoveryBlocked("Prerelease recovery candidate is not a new manual copy")
+    if item.get("status") == "fail":
+        raise RecoveryBlocked("Prerelease recovery copy failed; create was not repeated")
+    if item.get("status") != "done":
+        if item.get("status") in ("precreate", "create"):
+            return None
+        raise RecoveryBlocked("Prerelease recovery copy has an unexpected status")
+    _verify_release_item(item, receipt)
+    return item
+
+
+def _finish_release_copy(
+    client: Provider, ssh: Remote, state: dict[str, Any], policy: BackupPolicy,
+    receipt: dict[str, Any],
+) -> list[dict[str, Any]]:
+    for _ in range(30):
+        backups = get_backups(client, policy.cluster_id)
+        if len(backups) > policy.max_copies:
+            raise RecoveryBlocked("Prerelease inventory exceeds the reviewed allowance")
+        candidate = _release_candidate(backups, receipt)
+        if candidate is not None:
+            detail = confirm_backup(client, policy.cluster_id, candidate["id"])
+            _verify_release_item(detail, receipt)
+            receipt["confirmed_id"] = detail["id"]
+            write_state(ssh, state)
+            return backups
+        time.sleep(10)
+    raise RecoveryBlocked("Prerelease recovery create is unconfirmed; it will not be repeated")
+
+
+def _require_retired_bootstrap(state: dict[str, Any], backups: list[dict[str, Any]]) -> None:
+    bootstrap = state.get("bootstrap_attempted")
+    retired = state.get("retire_attempted")
+    if bootstrap is True:
+        if type(retired) is not int or retired <= 0 or any(row["id"] == retired for row in backups):
+            raise RecoveryBlocked("Bootstrap recovery ownership is unresolved")
+    elif (bootstrap is not None and bootstrap is not False) or retired is not None:
+        raise RecoveryBlocked("Invalid bootstrap recovery receipt")
+
+
+def _require_resolved_backup_receipts(
+    state: dict[str, Any], backups: list[dict[str, Any]], records: list[dict[str, Any]],
+) -> None:
+    _require_retired_bootstrap(state, backups)
+    if state.get(WEEKLY_RETIRE) is not None:
+        raise RecoveryBlocked("Weekly retirement must finish before prerelease creation")
+    weekly = state.get(WEEKLY_CREATE)
+    if weekly is None:
+        return
+    if not isinstance(weekly, dict) or type(weekly.get("confirmed_id")) is not int:
+        raise RecoveryBlocked("Weekly creation must finish before prerelease creation")
+    if not any(row["id"] == weekly["confirmed_id"] and row["period"] == weekly.get("period")
+               for row in records):
+        raise RecoveryBlocked("Weekly creation receipt differs from its confirmed ledger")
+    if timestamp(weekly.get("attempted_at")) > datetime.now(UTC):
+        raise RecoveryBlocked("Weekly creation receipt is in the future")
+
+
+def _require_release_capacity(
+    client: Provider, state: dict[str, Any], policy: BackupPolicy,
+    backups: list[dict[str, Any]],
+) -> None:
+    if len(backups) > policy.max_copies - 2:
+        raise RecoveryBlocked("Prerelease copy must leave capacity for weekly rotation")
+    if any(str(row.get("comment", "")).startswith(RELEASE_PREFIX) for row in backups):
+        raise RecoveryBlocked("Prerelease inventory has no matching durable receipt")
+    now = datetime.now(UTC)
+    if any(row.get("type") not in ("auto", "manual")
+           or not completed_backup(row, now, max_age=None) for row in backups):
+        raise RecoveryBlocked("Prerelease creation requires a complete settled backup inventory")
+    automatic = [row for row in backups if row["type"] == "auto"]
+    manual_ids = {row["id"] for row in backups if row["type"] == "manual"}
+    records = weekly_ledger(state, policy)
+    if len(automatic) > policy.copies or len(records) > policy.weekly_copies:
+        raise RecoveryBlocked("Prerelease copy would exceed the reviewed retention allowance")
+    if manual_ids != {row["id"] for row in records}:
+        raise RecoveryBlocked("Foreign or bootstrap manual copies occupy prerelease capacity")
+    _require_resolved_backup_receipts(state, backups, records)
+    confirm_weekly_inventory(client, state, policy, backups)
+
+
+def _record_release_response(
+    ssh: Remote, state: dict[str, Any], receipt: dict[str, Any],
+    response: dict[str, Any] | None,
+) -> None:
+    if response is None:
+        return
+    if isinstance(response, dict) and response.get("backup") is None:
+        return
+    item = response.get("backup") if isinstance(response, dict) else None
+    identity = item.get("id") if isinstance(item, dict) else None
+    if type(identity) is int and identity > 0 and identity not in receipt["baseline_ids"]:
+        receipt["response_id"] = identity
+        write_state(ssh, state)
+        return
+    receipt["response_invalid"] = True
+    write_state(ssh, state)
+    raise RecoveryBlocked("Prerelease creation response has an invalid identity")
+
+
+def ensure_release_copy(
+    client: Provider, ssh: Remote, state: dict[str, Any], policy: BackupPolicy,
+    backups: list[dict[str, Any]], *, release_sha: str | None,
+) -> list[dict[str, Any]]:
+    receipt = _release_receipt(state, policy)
+    if receipt is not None:
+        if "confirmed_id" not in receipt:
+            return _finish_release_copy(client, ssh, state, policy, receipt)
+        owned = next((row for row in backups if row["id"] == receipt["confirmed_id"]), None)
+        if owned is not None and completed_backup(owned, datetime.now(UTC)):
+            _verify_release_item(owned, receipt)
+            detail = confirm_backup(client, policy.cluster_id, receipt["confirmed_id"])
+            _verify_release_item(detail, receipt)
+        return backups
+    if release_sha is None or any(completed_backup(row, datetime.now(UTC)) for row in backups):
+        return backups
+    _require_release_capacity(client, state, policy, backups)
+    # This singleton is never cleared or replaced, including for a later accepted release.
+    receipt = {
+        "cluster_id": policy.cluster_id, "release_sha": release_sha,
+        "comment": RELEASE_PREFIX + release_sha,
+        "attempted_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
+        "baseline_ids": sorted(row["id"] for row in backups),
+    }
+    state[RELEASE_COPY] = receipt
+    write_state(ssh, state)
+    response = mutate_once(client, "POST", f"/dbs/{policy.cluster_id}/backups", payload={
+        "comment": receipt["comment"],
+    })
+    _record_release_response(ssh, state, receipt, response)
+    return _finish_release_copy(client, ssh, state, policy, receipt)
 
 
 def retirement_candidate(
@@ -643,7 +846,11 @@ print(json.dumps({
 """
 
 
-def ensure_recovery_point(client: Provider, ssh: Remote, cluster: dict[str, Any]) -> None:
+def ensure_recovery_point(
+    client: Provider, ssh: Remote, cluster: dict[str, Any], *, release_sha: str | None = None,
+) -> None:
+    if release_sha is not None:
+        _require_release_sha(release_sha)
     policy = load_policy()
     if cluster.get("id") != policy.cluster_id:
         raise RecoveryBlocked("Backup policy does not authorize this database cluster")
@@ -659,6 +866,9 @@ def ensure_recovery_point(client: Provider, ssh: Remote, cluster: dict[str, Any]
             raise RecoveryBlocked("Backup inventory exceeds the reviewed storage allowance")
         reconcile_schedule(client, ssh, state, policy, now)
         backups = get_backups(client, policy.cluster_id)
+        backups = ensure_release_copy(
+            client, ssh, state, policy, backups, release_sha=release_sha,
+        )
         backups = ensure_initial_copy(client, ssh, state, policy, backups)
         now = datetime.now(UTC)
         retire_bootstrap(client, ssh, state, policy, backups, now)
