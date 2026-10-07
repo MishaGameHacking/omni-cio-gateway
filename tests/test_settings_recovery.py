@@ -133,8 +133,12 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
             "ALTER TABLE billing_payments RENAME cancel_attempted_at TO missing_cancel_receipt",
             "ALTER TABLE billing_payments RENAME init_started_at TO missing_init_receipt",
             "ALTER TABLE notification_channels RENAME digest_cursor_at TO missing_digest_cursor",
+            "ALTER TABLE notification_outbox_events NO FORCE ROW LEVEL SECURITY",
+            "ALTER TABLE worker_heartbeats RENAME completed_status TO missing_completed_status",
             "ALTER TABLE strategy_research_requests NO FORCE ROW LEVEL SECURITY",
             "ALTER TABLE strategy_research_runs DROP CONSTRAINT strategy_research_runs_inputs_size",
+            "ALTER TABLE strategy_research_evidence "
+            "DROP CONSTRAINT strategy_research_evidence_size",
             "DROP TABLE worker_heartbeats",
         ):
             with admin.transaction(force_rollback=True):

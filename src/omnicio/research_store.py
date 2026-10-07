@@ -23,6 +23,7 @@ MAX_RESEARCH_RUN_PAGE = 200
 MAX_ARCHIVE_DOCUMENT_BYTES = 32 * 1024 * 1024
 MAX_EVIDENCE_DOCUMENT_BYTES = 16 * 1024 * 1024
 _REQUEST_FIELDS = "id, status, run_id, error_code, created_at, updated_at, expires_at"
+_REQUEST_SELECT = "SELECT " + _REQUEST_FIELDS
 _REQUEST_LIMIT = 20000
 _FACT_KEYS = frozenset(
     {
@@ -527,10 +528,11 @@ class ResearchStore:
             cur.execute(
                 "DELETE FROM strategy_research_requests WHERE user_id = %s "
                 "AND status IN ('failed', 'expired', 'deleted') AND run_id IS NULL "
-                "AND updated_at < clock_timestamp() - interval '30 days'", (user_id,),
+                "AND updated_at < clock_timestamp() - interval '30 days'",
+                (user_id,),
             )
             cur.execute(
-                "SELECT " + _REQUEST_FIELDS + ", input_hash "
+                _REQUEST_SELECT + ", input_hash "
                 "FROM strategy_research_requests WHERE user_id = %s AND id = %s",
                 (user_id, request_id),
             )
@@ -556,8 +558,7 @@ class ResearchStore:
         with self._transaction(user_id) as cur:
             self._expire_requests(cur, user_id)
             cur.execute(
-                "SELECT " + _REQUEST_FIELDS + " FROM strategy_research_requests "
-                "WHERE user_id = %s AND id = %s",
+                _REQUEST_SELECT + " FROM strategy_research_requests WHERE user_id = %s AND id = %s",
                 (user_id, request_id),
             )
             record = cur.fetchone()
@@ -569,7 +570,8 @@ class ResearchStore:
         with self._transaction(user_id) as cur:
             cur.execute(
                 "UPDATE strategy_research_requests SET status = 'failed', error_code = %s, "
-                "updated_at = clock_timestamp() WHERE user_id = %s AND id = %s AND status = 'running'",
+                "updated_at = clock_timestamp() WHERE user_id = %s AND id = %s "
+                "AND status = 'running'",
                 (error_code, user_id, request_id),
             )
 
@@ -612,8 +614,9 @@ class ResearchStore:
             records = [dict(row) for row in cur.fetchall()]
             self._expire_requests(cur, user_id)
             cur.execute(
-                "SELECT " + _REQUEST_FIELDS + " FROM strategy_research_requests "
-                "WHERE user_id = %s ORDER BY (status = 'running') DESC, created_at DESC, id DESC LIMIT 1",
+                _REQUEST_SELECT + " FROM strategy_research_requests "
+                "WHERE user_id = %s ORDER BY (status = 'running') DESC, "
+                "created_at DESC, id DESC LIMIT 1",
                 (user_id,),
             )
             recent = cur.fetchone()

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hmac
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from time import monotonic
 from typing import Any, cast
 from uuid import UUID
 
@@ -44,12 +46,16 @@ from .strategy import document_hash, normalize_document
 from .strategy_assessment import StrategyCandidateFacts, select_strategy_candidates
 from .strategy_service import research_assets_from_inputs
 from .tbank import (
+    TBankInstrumentMetadata,
     TBankMoney,
     TBankNotFound,
     TBankOrderState,
     TBankTokenRejected,
     TBankUnavailable,
 )
+
+_PLANNING_READ_WORKERS = 4
+_PLANNING_DEADLINE_SECONDS = 35
 
 
 class ExecutionServiceError(RuntimeError):
@@ -116,6 +122,7 @@ class PortfolioExecutionService:
         slippage_bps: Decimal,
         mode: str = "shadow",
     ) -> dict[str, Any]:
+        deadline = monotonic() + _PLANNING_DEADLINE_SECONDS
         if mode not in {"shadow", "sandbox", "live"} or any(
             not cost.is_finite() or not 0 <= cost <= 1000 for cost in (commission_bps, slippage_bps)
         ):
@@ -151,8 +158,16 @@ class PortfolioExecutionService:
                 "blockers": selection["missing_requirements"],
                 "selection": selection,
             }
+        self._require_planning_budget(deadline)
         context, bundle = self._planning_snapshot(user_id, payload, now)
-        quotes = self._planning_quotes(user_id, selection, bundle, candidates, slippage_bps)
+        quotes = self._planning_quotes(
+            user_id,
+            selection,
+            bundle,
+            candidates,
+            slippage_bps,
+            deadline=deadline,
+        )
         cash = sum(
             (
                 Decimal(value.value)
@@ -189,9 +204,15 @@ class PortfolioExecutionService:
                 **result,
                 "selection": selection,
             }
-        for leg in result["legs"]:
-            self._check_order_estimate(user_id, leg)
+        with ThreadPoolExecutor(max_workers=_PLANNING_READ_WORKERS) as reads:
+            estimates = [
+                reads.submit(self._check_order_estimate, user_id, leg, deadline)
+                for leg in result["legs"]
+            ]
+            for estimate in estimates:
+                estimate.result()
         # All read side-effects are complete before the short authority transaction.
+        self._require_planning_budget(deadline)
         issued = datetime.now(UTC)
         if any(
             issued - datetime.fromisoformat(quote["quote_at"]) > timedelta(seconds=30)
@@ -312,6 +333,8 @@ class PortfolioExecutionService:
         bundle: BrokerObservationBundle,
         candidates: list[StrategyCandidateFacts],
         slippage_bps: Decimal,
+        *,
+        deadline: float | None = None,
     ) -> dict[str, Any]:
         uids = {row["instrument_uid"] for row in selection["selected"]}
         uids.update(
@@ -323,34 +346,89 @@ class PortfolioExecutionService:
             row.instrument_uid for row in candidates
         }:
             raise ExecutionServiceError("execution_held_evidence_missing")
+        deadline = deadline if deadline is not None else monotonic() + _PLANNING_DEADLINE_SECONDS
+        self._require_planning_budget(deadline)
         qualification = self.broker.user_info(user_id)
-        quotes = {}
-        for uid in sorted(uids):
-            metadata = self.broker.execution_instrument(user_id, uid)
-            status = self.broker.market_trading_status(user_id, uid)
-            if (
-                not status.limit_order_available
-                or not status.api_trade_available
-                or status.only_best_price
-                or metadata.api_trade_available is not True
-                or metadata.buy_available is not True
-                or metadata.sell_available is not True
-                or metadata.for_qual_investor is None
-                or metadata.for_qual_investor
-                and not qualification.qualified
-                or metadata.required_tests
-            ):
-                raise ExecutionServiceError("execution_instrument_permission_unverified")
-            book = self.broker.candidate_order_book(user_id, uid, depth=50)
-            quotes[uid] = execution_quote(
-                metadata, book, slippage_bps=slippage_bps, now=datetime.now(UTC)
-            )
-            candidate = next(row for row in candidates if row.instrument_uid == uid)
-            if candidate.lot_size != metadata.lot:
-                raise ExecutionServiceError("execution_lot_changed")
-        return quotes
+        by_uid = {row.instrument_uid: row for row in candidates}
+        # The just-read full catalog already contains the execution metadata.
+        # Finish exceptional individual fallbacks before starting fresh books.
+        metadata = {row.uid: row for row in bundle.metadata if row.uid in uids}
+        with ThreadPoolExecutor(max_workers=_PLANNING_READ_WORKERS) as reads:
+            fallback = {
+                uid: reads.submit(self._planning_metadata, user_id, uid, deadline)
+                for uid in sorted(uids - metadata.keys())
+            }
+            metadata.update({uid: future.result() for uid, future in fallback.items()})
+            self._require_planning_budget(deadline)
+            pending = {
+                uid: reads.submit(
+                    self._planning_quote,
+                    user_id,
+                    by_uid[uid],
+                    metadata[uid],
+                    qualification.qualified,
+                    slippage_bps,
+                    deadline,
+                )
+                for uid in sorted(uids)
+            }
+            return {uid: future.result() for uid, future in pending.items()}
 
-    def _check_order_estimate(self, user_id: UUID, leg: dict[str, Any]) -> None:
+    @staticmethod
+    def _require_planning_budget(deadline: float) -> None:
+        if monotonic() >= deadline:
+            raise ExecutionServiceError("execution_planning_read_budget_exhausted")
+
+    def _planning_metadata(
+        self,
+        user_id: UUID,
+        instrument_uid: str,
+        deadline: float,
+    ) -> TBankInstrumentMetadata:
+        self._require_planning_budget(deadline)
+        metadata = self.broker.execution_instrument(user_id, instrument_uid)
+        self._require_planning_budget(deadline)
+        return metadata
+
+    def _planning_quote(
+        self,
+        user_id: UUID,
+        candidate: StrategyCandidateFacts,
+        metadata: TBankInstrumentMetadata,
+        qualified: bool,
+        slippage_bps: Decimal,
+        deadline: float,
+    ) -> dict[str, Any]:
+        uid = candidate.instrument_uid
+        self._require_planning_budget(deadline)
+        status = self.broker.market_trading_status(user_id, uid)
+        if (
+            not status.limit_order_available
+            or not status.api_trade_available
+            or status.only_best_price
+            or metadata.api_trade_available is not True
+            or metadata.buy_available is not True
+            or metadata.sell_available is not True
+            or metadata.for_qual_investor is None
+            or metadata.for_qual_investor
+            and not qualified
+            or metadata.required_tests
+        ):
+            raise ExecutionServiceError("execution_instrument_permission_unverified")
+        if candidate.lot_size != metadata.lot:
+            raise ExecutionServiceError("execution_lot_changed")
+        self._require_planning_budget(deadline)
+        book = self.broker.candidate_order_book(user_id, uid, depth=50)
+        return execution_quote(metadata, book, slippage_bps=slippage_bps, now=datetime.now(UTC))
+
+    def _check_order_estimate(
+        self,
+        user_id: UUID,
+        leg: dict[str, Any],
+        deadline: float | None = None,
+    ) -> None:
+        if deadline is not None:
+            self._require_planning_budget(deadline)
         estimate = self.broker.estimate_limit_order(
             user_id,
             instrument_uid=leg["instrument_uid"],

@@ -40,6 +40,7 @@ _PUBLIC_PAYMENT_FIELDS = (
 )
 _CHECKOUT_LIFETIME = timedelta(minutes=30)
 _ABSENCE_CONFIRMATION_DELAY = timedelta(minutes=1)
+_PAYMENT_FOR_UPDATE = "SELECT * FROM billing_payments WHERE user_id = %s AND id = %s FOR UPDATE"
 _BENEFITS_VERSION = "research_archive_v1"
 _PLAN_LIMITS = {
     "personal": {"research_runs": 200, "research_storage_bytes": 256 * 1024 * 1024},
@@ -315,8 +316,7 @@ class BillingService:
     def _claim_initialization(self, user_id: UUID, ident: UUID) -> tuple[dict[str, Any], bool]:
         """Commit the I/O receipt before Init, conditional on an unclosed local intent."""
         with self.workspace._transaction(user_id) as cur:
-            cur.execute("SELECT * FROM billing_payments WHERE user_id = %s AND id = %s FOR UPDATE",
-                        (user_id, ident))
+            cur.execute(_PAYMENT_FOR_UPDATE, (user_id, ident))
             row = cur.fetchone()
             if row is None:
                 raise WorkspaceNotFound("billing_payment_not_found")
@@ -347,8 +347,7 @@ class BillingService:
         provider_id = _payment_id(payload.get("PaymentId"))
         status = payload.get("Status")
         with self.workspace._transaction(user_id) as cur:
-            cur.execute("SELECT * FROM billing_payments WHERE user_id = %s AND id = %s FOR UPDATE",
-                        (user_id, ident))
+            cur.execute(_PAYMENT_FOR_UPDATE, (user_id, ident))
             row = cur.fetchone()
             if row is None:
                 raise WorkspaceNotFound("billing_payment_not_found")
@@ -377,8 +376,7 @@ class BillingService:
 
     def reconcile(self, user_id: UUID, ident: UUID) -> dict[str, Any]:
         with self.workspace._transaction(user_id) as cur:
-            cur.execute("SELECT * FROM billing_payments WHERE user_id = %s AND id = %s FOR UPDATE",
-                        (user_id, ident))
+            cur.execute(_PAYMENT_FOR_UPDATE, (user_id, ident))
             row = cur.fetchone()
             if row is None:
                 raise WorkspaceNotFound("billing_payment_not_found")
@@ -392,26 +390,31 @@ class BillingService:
             result = self.client.call("GetState", {"PaymentId": row["provider_payment_id"]})
         else:
             request_started_at = datetime.now(UTC)
-            try:
-                result = self.client.call("CheckOrder", {"OrderId": row["order_id"]})
-            except BillingOrderNotFound:
+            payment = self._check_order(row)
+            if payment is None:
                 return self._reconcile_absent_order(
                     user_id, ident, request_started_at=request_started_at,
                 )
-            if (result.get("TerminalKey") != row["terminal_key"]
-                    or result.get("OrderId") != row["order_id"]):
-                raise BillingUnavailable("billing_provider_identity_invalid")
-            payments = result.get("Payments")
-            if payments == [] and result.get("Success") is True:
-                return self._reconcile_absent_order(
-                    user_id, ident, request_started_at=request_started_at,
-                )
-            if (not isinstance(payments, list) or len(payments) != 1
-                    or not isinstance(payments[0], dict)):
-                raise BillingUnavailable("billing_order_outcome_unknown")
-            result = {**payments[0], "OrderId": result.get("OrderId"),
-                      "TerminalKey": result.get("TerminalKey")}
+            result = payment
         return self._apply_provider_state(user_id, ident, result)
+
+    def _check_order(self, row: Mapping[str, Any]) -> dict[str, Any] | None:
+        """Return one identified payment, or a specifically authenticated absence."""
+        try:
+            result = self.client.call("CheckOrder", {"OrderId": row["order_id"]})
+        except BillingOrderNotFound:
+            return None
+        if (result.get("TerminalKey") != row["terminal_key"]
+                or result.get("OrderId") != row["order_id"]):
+            raise BillingUnavailable("billing_provider_identity_invalid")
+        payments = result.get("Payments")
+        if payments == [] and result.get("Success") is True:
+            return None
+        if (not isinstance(payments, list) or len(payments) != 1
+                or not isinstance(payments[0], dict)):
+            raise BillingUnavailable("billing_order_outcome_unknown")
+        return {**payments[0], "OrderId": result.get("OrderId"),
+                "TerminalKey": result.get("TerminalKey")}
 
     def _reconcile_absent_order(
         self, user_id: UUID, ident: UUID, *, request_started_at: datetime,
@@ -427,8 +430,7 @@ class BillingService:
         absence evidence. Existing pre-1.2 intents get a conservative 90-day expiry.
         """
         with self.workspace._transaction(user_id) as cur:
-            cur.execute("SELECT * FROM billing_payments WHERE user_id = %s AND id = %s FOR UPDATE",
-                        (user_id, ident))
+            cur.execute(_PAYMENT_FOR_UPDATE, (user_id, ident))
             row = cur.fetchone()
             if row is None:
                 raise WorkspaceNotFound("billing_payment_not_found")
@@ -458,8 +460,7 @@ class BillingService:
         if current["status"] == "cancelled":
             return current
         with self.workspace._transaction(user_id) as cur:
-            cur.execute("SELECT * FROM billing_payments "
-                        "WHERE user_id = %s AND id = %s FOR UPDATE", (user_id, ident))
+            cur.execute(_PAYMENT_FOR_UPDATE, (user_id, ident))
             row = cur.fetchone()
             if row is None or row["provider_payment_id"] is None:
                 raise BillingUnavailable("billing_order_outcome_unknown")

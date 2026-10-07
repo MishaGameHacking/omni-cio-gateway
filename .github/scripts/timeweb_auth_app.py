@@ -643,7 +643,7 @@ cat > "$OBSERVER_SERVICE.new" <<'EOF'
 Description=OmniCIO daily portfolio observer
 After=network-online.target omnicio-auth.service
 Wants=network-online.target
-StartLimitIntervalSec=1800
+StartLimitIntervalSec=60
 StartLimitBurst=3
 
 [Service]
@@ -913,6 +913,20 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_connect_timeout 5s;
         proxy_read_timeout 120s;
+        proxy_send_timeout 30s;
+    }
+
+    location = /api/portfolio/proposals/plan {
+        limit_req zone=omnicio_api burst=60 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
         proxy_send_timeout 30s;
     }
 

@@ -318,9 +318,13 @@ class BrokerService:
 
     def execution_instrument(self, user_id: UUID, instrument_uid: str) -> TBankInstrumentMetadata:
         record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.get_execution_instrument(credential, environment, instrument_uid)
+        # The fallback adapter makes up to two InstrumentsService reads for a bond.
+        result = self._paced_evidence_read(
+            self.tbank.get_execution_instrument, credential, environment, instrument_uid,
+            _request_count=2,
+        )
         self._require_current_connection(record)
-        return result
+        return cast(TBankInstrumentMetadata, result)
 
     def estimate_limit_order(
         self, user_id: UUID, *, instrument_uid: str, lots: int, price: Decimal, action: str,
@@ -728,6 +732,7 @@ class BrokerService:
         with ThreadPoolExecutor(max_workers=3) as catalog_reads:
             pending = {
                 kind: catalog_reads.submit(
+                    self._paced_evidence_read,
                     self.tbank.get_instrument_metadata,
                     credential,
                     environment,
@@ -754,6 +759,7 @@ class BrokerService:
         operation: Callable[..., Any],
         /,
         *args: Any,
+        _request_count: int = 1,
         **kwargs: Any,
     ) -> Any:
         with self._instrument_evidence_lock:
@@ -763,7 +769,7 @@ class BrokerService:
                 time.sleep(delay)
                 now = time.monotonic()
             self._next_instrument_evidence_at = (
-                now + INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS
+                now + INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS * _request_count
             )
         return operation(*args, **kwargs)
 

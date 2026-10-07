@@ -1190,6 +1190,28 @@ def test_tbank_accrued_interest_preserves_value_and_timestamp() -> None:
     }
 
 
+@pytest.mark.parametrize("invalid", ["negative_nkd", "zero_nominal", "duplicate_date"])
+def test_accrued_interest_never_accepts_invalid_money_or_ambiguous_observations(invalid):
+    row = {
+        "date": "2026-10-03T00:00:00Z",
+        "value": {"units": "17", "nano": 250000000},
+        "valuePercent": {"units": "1", "nano": 725000000},
+        "nominal": {"units": "1000", "nano": 0},
+    }
+    if invalid == "negative_nkd":
+        row["value"] = {"units": "-1", "nano": 0}
+    if invalid == "zero_nominal":
+        row["nominal"] = {"units": "0", "nano": 0}
+    payload = {"accruedInterests": [row, row] if invalid == "duplicate_date" else [row]}
+    client = TBankInvestClient()
+    begin, end = datetime(2026, 10, 2, tzinfo=UTC), datetime(2026, 10, 3, tzinfo=UTC)
+    with (
+        patch.object(TBankInvestClient, "_post", return_value=payload),
+        pytest.raises(TBankUnavailable),
+    ):
+        client.get_accrued_interests("fixture", "prod", "bond-uid", from_at=begin, to_at=end)
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -1418,6 +1440,29 @@ def test_evidence_reads_are_paced_across_concurrent_users() -> None:
     assert second == "second"
     sleep_mock.assert_called_once()
     assert sleep_mock.call_args.args[0] == pytest.approx(0.21)
+
+
+def test_research_accrual_read_uses_only_owner_credential_and_rechecks_replacement():
+    database, adapter, owner = FakeDatabase(), FakeTBank(), UUID(int=1)
+    broker = BrokerService(database, credential_key=Fernet.generate_key().decode(), tbank=adapter)
+    broker.connect(user_id=owner, credential="t.fake-owner-credential-1234567890",
+                   environment="prod", account_id="account-1", terms_version="2026-10-01-v2")
+    begin, end = datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 10, 2, tzinfo=UTC)
+    other = UUID(int=2)
+
+    def changed_connection(*args, **kwargs):
+        database.delete_tbank_connection(owner)
+        return ()
+
+    with patch.object(adapter, "get_accrued_interests", create=True) as read:
+        with pytest.raises(BrokerNotConnected):
+            broker.candidate_accrued_interests(other, "bond-uid", from_at=begin, to_at=end)
+        read.assert_not_called()
+        read.side_effect = changed_connection
+        with pytest.raises(BrokerConnectionError, match="changed during the read"):
+            broker.candidate_accrued_interests(owner, "bond-uid", from_at=begin, to_at=end)
+        read.assert_called_once_with("t.fake-owner-credential-1234567890", "prod", "bond-uid",
+                                     from_at=begin, to_at=end)
 
 
 def test_broker_service_encrypts_credential_and_returns_safe_status() -> None:
@@ -1785,12 +1830,15 @@ def test_tbank_bond_events_preserve_documented_default_date() -> None:
                     "instrumentId": "bond-uid",
                     "eventNumber": 8,
                     "eventDate": "2026-09-20T00:00:00Z",
-                    "eventType": "EVENT_TYPE_COUPON",
+                    "eventType": "EVENT_TYPE_CPN",
                     "defaultDate": "2026-09-30T00:00:00Z",
                     "payDate": "2026-09-25T00:00:00Z",
                     "payOneBond": {"currency": "rub", "units": "50", "nano": 0},
-                    "execution": "not_executed",
-                    "operationType": "OPERATION_TYPE_COUPON",
+                    "execution": "D",
+                    "operationType": "Фиксированный",
+                    "fixDate": "2026-09-19T00:00:00Z",
+                    "rateDate": "2026-06-25T00:00:00Z",
+                    "value": {"units": "20", "nano": 500000000},
                     "note": "",
                 }
             ]
@@ -1808,6 +1856,9 @@ def test_tbank_bond_events_preserve_documented_default_date() -> None:
 
     assert events[0].default_date == datetime(2026, 9, 30, tzinfo=UTC)
     assert events[0].pay_one_bond == TBankMoney("RUB", "50")
+    assert events[0].fix_date == datetime(2026, 9, 19, tzinfo=UTC)
+    assert events[0].rate_date == datetime(2026, 6, 25, tzinfo=UTC)
+    assert events[0].value == "20.5"
     request = urlopen.call_args.args[0]
     assert request.full_url.endswith("InstrumentsService/GetBondEvents")
     assert json.loads(request.data.decode()) == {

@@ -37,6 +37,40 @@ END;
 $omnicio$;
 ALTER TABLE notification_outbox ALTER COLUMN updated_at SET DEFAULT clock_timestamp();
 ALTER TABLE notification_outbox ALTER COLUMN updated_at SET NOT NULL;
+DO $omnicio$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'notification_outbox'::regclass
+                   AND conname = 'notification_outbox_owner_channel_id_key') THEN
+        ALTER TABLE notification_outbox ADD CONSTRAINT notification_outbox_owner_channel_id_key
+            UNIQUE (user_id, channel_id, id);
+    END IF;
+END;
+$omnicio$;
+
+-- A revision belongs to one delivery, independent of the current digest setting.
+-- Historical accepted messages are not backfilled as event receipts: an older
+-- aggregate did not preserve its exact membership. Runtime only adopts queued
+-- messages under the existing owner lock, before preparing or sending new work.
+CREATE TABLE IF NOT EXISTS notification_outbox_events (
+    user_id uuid NOT NULL,
+    channel_id uuid NOT NULL,
+    event_id text NOT NULL,
+    event_revision bigint NOT NULL CHECK (event_revision > 0),
+    outbox_id uuid NOT NULL,
+    PRIMARY KEY (user_id, channel_id, event_id, event_revision),
+    FOREIGN KEY (user_id, channel_id, outbox_id)
+        REFERENCES notification_outbox(user_id, channel_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id, event_id)
+        REFERENCES workspace_events(user_id, id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS notification_outbox_events_message_idx
+    ON notification_outbox_events (user_id, outbox_id);
+ALTER TABLE notification_outbox_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_outbox_events FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS notification_outbox_events_tenant ON notification_outbox_events;
+CREATE POLICY notification_outbox_events_tenant ON notification_outbox_events
+    USING (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid)
+    WITH CHECK (user_id = NULLIF(current_setting('omnicio.user_id', true), '')::uuid);
 ALTER TABLE job_runs ALTER COLUMN next_attempt_at SET DEFAULT clock_timestamp();
 ALTER TABLE job_runs ALTER COLUMN next_attempt_at SET NOT NULL;
 DO $omnicio$
@@ -75,5 +109,9 @@ CREATE TABLE IF NOT EXISTS worker_heartbeats (
     completed_at timestamptz,
     status text NOT NULL CHECK (status IN ('running', 'ok', 'attention', 'stopped'))
 );
+ALTER TABLE worker_heartbeats ADD COLUMN IF NOT EXISTS completed_status text
+    CHECK (completed_status IN ('ok', 'attention'));
+UPDATE worker_heartbeats SET completed_status = status
+    WHERE completed_status IS NULL AND status IN ('ok', 'attention');
 
 COMMIT;

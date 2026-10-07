@@ -824,7 +824,8 @@ def test_native_daily_restart_uses_new_immutable_snapshot_and_owner_bound_retry(
     with store.observer_lock() as locked:
         assert locked
         retry = store.claim_pending_daily_job(USER_ID, LEGAL_VERSIONS)
-        assert retry is not None and retry.id != first.id
+        assert retry is not None
+        assert retry.id != first.id
         assert retry.scheduled_for == first.scheduled_for
         fresh = replace(old, refreshed_at=datetime.now(UTC))
         fresh_snapshot = store.save_snapshot(USER_ID, job_run_id=retry.id, bundle=fresh)
@@ -837,10 +838,15 @@ def test_native_daily_restart_uses_new_immutable_snapshot_and_owner_bound_retry(
     attempts = admin.execute("SELECT id, retry_of, status, attempt FROM job_runs "
                              "WHERE user_id = %s ORDER BY attempt", (USER_ID,)).fetchall()
     assert attempts == [(first.id, None, "failed", 1), (retry.id, first.id, "succeeded", 2)]
-    with pytest.raises(psycopg.errors.ForeignKeyViolation), database.pool.connection() as conn:
+    with database.pool.connection() as conn:
         conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(UUID(int=2)),))
-        conn.execute("INSERT INTO job_runs (user_id, job_type, scheduled_for, retry_of, status) "
-                     "VALUES (%s, 'portfolio_daily', NULL, %s, 'queued')", (UUID(int=2), first.id))
+        retry_values = (UUID(int=2), first.id)
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            conn.execute(
+                "INSERT INTO job_runs (user_id, job_type, scheduled_for, retry_of, status) "
+                "VALUES (%s, 'portfolio_daily', NULL, %s, 'queued')", retry_values,
+            )
+        conn.rollback()
     # Reapplying the new additive schema cannot rewrite an accepted observation.
     path = Path(__file__).parents[1] / "migrations/0024_background_reliability.sql"
     migration = path.read_text(encoding="utf-8")
@@ -866,7 +872,8 @@ def test_native_daily_retry_waits_for_backoff_and_stops_at_the_daily_budget(conn
                           "WHERE id = %s", (current.id,))
             retry = store.claim_pending_daily_job(USER_ID, LEGAL_VERSIONS)
             if attempt < 3:
-                assert retry is not None and retry.id != current.id
+                assert retry is not None
+                assert retry.id != current.id
                 current = retry
             else:
                 assert retry is None

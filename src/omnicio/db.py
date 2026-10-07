@@ -552,12 +552,16 @@ class Database:
             raise ValueError("worker_status_invalid")
         with self.pool.connection() as conn:
             conn.execute(
-                "INSERT INTO worker_heartbeats (worker_name, checked_at, completed_at, status) "
+                "INSERT INTO worker_heartbeats (worker_name, checked_at, completed_at, status, "
+                "completed_status) "
                 "VALUES (%s, clock_timestamp(), CASE WHEN %s IN ('ok', 'attention') "
-                "THEN clock_timestamp() ELSE NULL END, %s) "
+                "THEN clock_timestamp() ELSE NULL END, %s, "
+                "CASE WHEN %s IN ('ok', 'attention') THEN %s ELSE NULL END) "
                 "ON CONFLICT (worker_name) DO UPDATE SET checked_at = EXCLUDED.checked_at, "
                 "status = EXCLUDED.status, completed_at = COALESCE(EXCLUDED.completed_at, "
-                "worker_heartbeats.completed_at)", (worker_name, status, status),
+                "worker_heartbeats.completed_at), completed_status = "
+                "COALESCE(EXCLUDED.completed_status, worker_heartbeats.completed_status)",
+                (worker_name, status, status, status, status),
             )
 
     @staticmethod
@@ -608,6 +612,8 @@ class Database:
         status = row["status"]
         if row["checked_at"] < checked_at - timedelta(seconds=timeout):
             status = "stale"
+        elif status == "running" and row.get("completed_status") == "attention":
+            status = "attention"
         return {"status": status, "checked_at": row["checked_at"],
                 "completed_at": row["completed_at"], "stale_after_seconds": timeout}
 
@@ -615,7 +621,8 @@ class Database:
     def _workers_metrics(
         cur: Any, checked_at: datetime, *, active_users: int, connected_accounts: int,
     ) -> tuple[dict[str, Any], list[str]]:
-        cur.execute("SELECT worker_name, checked_at, completed_at, status FROM worker_heartbeats")
+        cur.execute("SELECT worker_name, checked_at, completed_at, status, completed_status "
+                    "FROM worker_heartbeats")
         stored = {row["worker_name"]: dict(row) for row in cur.fetchall()}
         workers: dict[str, Any] = {}
         issues: list[str] = []

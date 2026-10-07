@@ -31,6 +31,7 @@ MAX_HISTORY_PAGES_PER_RUN = 20
 HISTORY_PAGE_SIZE = 1000
 HISTORY_CORRECTION_OVERLAP = timedelta(days=7)
 PROVIDER_READ_ATTEMPTS = 3
+_AWARE_OBSERVER_TIME_REQUIRED = "observer time must be timezone-aware"
 
 
 class PortfolioRefreshBusy(RuntimeError):
@@ -136,7 +137,7 @@ class PortfolioObserver:
     def run(self, *, now: datetime | None = None) -> ObserverRunResult:
         now = now or datetime.now(UTC)
         if now.tzinfo is None:
-            raise ValueError("observer time must be timezone-aware")
+            raise ValueError(_AWARE_OBSERVER_TIME_REQUIRED)
         observed_at = now.astimezone(UTC)
         user_ids = self.store.observer_user_ids()
         for user_id in user_ids:
@@ -210,7 +211,7 @@ class PortfolioObserver:
         recover_running: bool = False,
     ) -> UserObservationResult | None:
         if now.tzinfo is None:
-            raise ValueError("observer time must be timezone-aware")
+            raise ValueError(_AWARE_OBSERVER_TIME_REQUIRED)
         now = now.astimezone(UTC)
         scheduled_for = _scheduled_day(now)
         job = self.store.claim_daily_job(
@@ -230,7 +231,7 @@ class PortfolioObserver:
     ) -> UserObservationResult:
         """Observe one already claimed daily or manual job; never execute orders."""
         if now.tzinfo is None:
-            raise ValueError("observer time must be timezone-aware")
+            raise ValueError(_AWARE_OBSERVER_TIME_REQUIRED)
         now = now.astimezone(UTC)
         details: dict[str, object] = {
             "job": job.job_type,

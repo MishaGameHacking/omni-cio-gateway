@@ -104,8 +104,9 @@ def test_key_rate_history_preserves_each_effective_day_and_exact_requested_windo
     body = request.call_args.args[0].data
     assert b"<fromDate>2026-10-01T00:00:00</fromDate>" in body
     assert b"<ToDate>2026-10-02T23:59:59</ToDate>" in body
+    service, oldest, newest = CBRClient(), date(2020, 1, 1), date(2026, 10, 2)
     with patch("urllib.request.urlopen") as request, pytest.raises(ValueError):
-        CBRClient().key_rate_history(date(2020, 1, 1), date(2026, 10, 2))
+        service.key_rate_history(oldest, newest)
     request.assert_not_called()
 
 
@@ -113,9 +114,12 @@ def test_key_rate_history_refuses_duplicate_source_dates() -> None:
     payload = b"""<Root>
     <KR><DT>2026-10-01T00:00:00</DT><Rate>18</Rate></KR>
     <KR><DT>2026-10-01T00:00:00</DT><Rate>17</Rate></KR></Root>"""
-    with patch("urllib.request.urlopen", return_value=FakeXmlResponse(payload)):
-        with pytest.raises(CBRUnavailable, match="duplicate"):
-            CBRClient().key_rate_history(date(2026, 10, 1), date(2026, 10, 2))
+    service, oldest, newest = CBRClient(), date(2026, 10, 1), date(2026, 10, 2)
+    with (
+        patch("urllib.request.urlopen", return_value=FakeXmlResponse(payload)),
+        pytest.raises(CBRUnavailable, match="duplicate"),
+    ):
+        service.key_rate_history(oldest, newest)
 
 
 def test_cbr_client_fetches_requested_effective_day_not_next_published_rate() -> None:
@@ -218,7 +222,7 @@ def test_cbr_client_rejects_key_rate_without_current_effective_value() -> None:
                 FakeXmlResponse(future_key_rate),
             ],
         ),
-        pytest.raises(CBRUnavailable, match="no current key rate"),
+        pytest.raises(CBRUnavailable, match="no requested key rate"),
     ):
         client.latest_indicators()
 

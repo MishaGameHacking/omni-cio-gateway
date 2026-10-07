@@ -2562,6 +2562,11 @@ def research_strategy(
             "research_archive_storage_capacity": "research_archive_storage_capacity",
             "research_archive_too_large": "research_archive_too_large",
             "research_request_capacity": "research_request_capacity",
+            "research_window_invalid": "research_window_invalid",
+            "research_held_universe_too_large": "research_held_universe_too_large",
+            "research_cashflow_overlap_requires_complete_history": (
+                "research_cashflow_overlap_requires_complete_history"
+            ),
         }
         raise HTTPException(
             status_code=422, detail=public_errors.get(str(exc), "research_parameters_invalid"),
@@ -2623,6 +2628,7 @@ def save_research_evidence(
     responses={
         401: _API_FAILURES[401],
         403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
         409: _API_FAILURES[409],
     },
 )

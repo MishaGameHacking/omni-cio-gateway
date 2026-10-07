@@ -13,6 +13,18 @@ SELECT
     AND to_regclass('public.workspace_events') IS NOT NULL
     AND to_regclass('public.notification_channels') IS NOT NULL
     AND to_regclass('public.notification_outbox') IS NOT NULL
+    AND to_regclass('public.notification_outbox_events') IS NOT NULL
+    AND to_regclass('public.notification_outbox_events_message_idx') IS NOT NULL
+    AND (
+        SELECT count(*) = 5 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'notification_outbox_events'
+          AND column_name IN ('user_id', 'channel_id', 'event_id', 'event_revision', 'outbox_id')
+    )
+    AND EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.notification_outbox') AND contype = 'u'
+          AND convalidated AND conname = 'notification_outbox_owner_channel_id_key'
+    )
     AND to_regclass('public.strategy_research_evidence') IS NOT NULL
     AND to_regclass('public.strategy_research_runs') IS NOT NULL
     AND to_regclass('public.strategy_research_requests') IS NOT NULL
@@ -47,6 +59,11 @@ SELECT
                                            'strategy_research_runs_inputs_size')
     )
     AND EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.strategy_research_evidence') AND contype = 'c'
+          AND convalidated AND conname = 'strategy_research_evidence_size'
+    )
+    AND EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'notification_channels'
           AND column_name = 'digest_cursor_at'
@@ -57,9 +74,10 @@ SELECT
           AND column_name = 'updated_at' AND is_nullable = 'NO'
     )
     AND (
-        SELECT count(*) = 4 FROM information_schema.columns
+        SELECT count(*) = 5 FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'worker_heartbeats'
-          AND column_name IN ('worker_name', 'checked_at', 'completed_at', 'status')
+          AND column_name IN ('worker_name', 'checked_at', 'completed_at', 'status',
+                               'completed_status')
     )
     AND (
         SELECT count(*) = 2 FROM information_schema.columns
@@ -202,7 +220,7 @@ SELECT
           )
     )
     AND (
-        SELECT count(*) = 30
+        SELECT count(*) = 31
         FROM pg_class AS c
         JOIN pg_namespace AS n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public'
@@ -231,7 +249,7 @@ SELECT
                   'notification_outbox',
                   'strategy_research_evidence',
                   'strategy_research_runs',
-                  'strategy_research_requests',
+                  'strategy_research_requests', 'notification_outbox_events',
                   'goal_plans',
                   'assistant_connections',
                   'assistant_conversations',

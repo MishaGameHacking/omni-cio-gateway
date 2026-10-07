@@ -8,6 +8,7 @@ code, so the browser cannot silently test an independently invented protocol.
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import Mock, patch
@@ -16,6 +17,7 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from omnicio import main
+from omnicio.billing import BillingConfig, BillingService
 from omnicio.broker import BrokerService
 from omnicio.cbr import CBRClient
 from omnicio.db import UserRecord
@@ -23,6 +25,7 @@ from omnicio.goal_planning import goal_forecast
 from omnicio.market import MarketService
 from omnicio.service import AuthService
 from omnicio.tbank import TBankInstrumentMetadata, TBankLastPrice, TBankTradingStatus
+from omnicio.workspace_store import WorkspaceStore
 
 
 def market_contract() -> dict[str, str]:
@@ -98,5 +101,22 @@ def goal_contract() -> dict[str, Any]:
     }
 
 
+def billing_contract() -> dict[str, Any]:
+    """Keep the offer and entitlements aligned with the actual billing service."""
+    cursor = Mock()
+    cursor.fetchall.return_value = []
+    cursor.fetchone.return_value = {"valid_until": None}
+    enabled = BillingConfig(
+        enabled=True, terminal_key="synthetic-terminal", password="synthetic-test-only",
+        amount_kopecks=12345, description="Изолированное тестовое предложение",
+        offer_version="synthetic-test-offer", taxation="usn_income", tax="none",
+    )
+    with patch.object(WorkspaceStore, "_transaction", return_value=nullcontext(cursor)):
+        disabled_status = BillingService(Mock(), BillingConfig()).status(UUID(int=123))
+        enabled_status = BillingService(Mock(), enabled).status(UUID(int=123))
+    return {"billing_disabled": disabled_status, "billing_enabled": enabled_status}
+
+
 if __name__ == "__main__":
-    print(json.dumps({**market_contract(), **goal_contract()}, ensure_ascii=False))
+    print(json.dumps({**market_contract(), **goal_contract(), **billing_contract()},
+                     ensure_ascii=False))

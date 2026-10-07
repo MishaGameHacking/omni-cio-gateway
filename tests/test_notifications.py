@@ -275,3 +275,18 @@ def test_notification_heartbeat_reports_owner_failure_while_others_continue() ->
         service.run_pending()
     assert process.call_count == 2
     database.record_worker_heartbeat.assert_called_with("notifications", status="attention")
+
+
+def test_previous_worker_failure_remains_visible_during_the_next_live_attempt() -> None:
+    now = datetime(2026, 10, 7, 12, tzinfo=UTC)
+    row = {"checked_at": now, "completed_at": now - timedelta(seconds=30),
+           "status": "running", "completed_status": "attention"}
+    cur = Mock()
+    cur.fetchall.return_value = [{"worker_name": "notifications", **row}]
+    workers, issues = Database._workers_metrics(cur, now, active_users=2, connected_accounts=0)
+    assert workers["notifications"]["status"] == "attention"
+    assert issues == ["notifications_worker_attention"]
+    row["checked_at"] = now - timedelta(minutes=6)
+    assert Database._worker_health("notifications", row, now)["status"] == "stale"
+    row.update(checked_at=now, completed_status="ok")
+    assert Database._worker_health("notifications", row, now)["status"] == "running"

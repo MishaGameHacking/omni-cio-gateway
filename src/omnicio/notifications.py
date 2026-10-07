@@ -570,15 +570,263 @@ class NotificationService:
 
     def _enqueue(
         self, cur: Any, user_id: UUID, channel_id: UUID, message_key: str, kind: str,
-        payload: dict[str, Any], due: datetime,
+        payload: dict[str, Any], due: datetime, *, members: list[dict[str, Any]] | None = None,
     ) -> None:
         tag = hashlib.sha256(f"{user_id}:{channel_id}:{message_key}".encode()).hexdigest()
+        content = {**payload, "tag": tag}
+        if members is not None:
+            content["membership_version"] = 1
+        sealed = self._seal(content)
         cur.execute(
             "INSERT INTO notification_outbox (user_id, channel_id, message_key, kind, "
             "payload_ciphertext, next_attempt_at) VALUES (%s, %s, %s, %s, %s, %s) "
-            "ON CONFLICT (user_id, channel_id, message_key) DO NOTHING",
-            (user_id, channel_id, message_key, kind, self._seal({**payload, "tag": tag}), due),
+            "ON CONFLICT (user_id, channel_id, message_key) DO NOTHING RETURNING id",
+            (user_id, channel_id, message_key, kind, sealed, due),
         )
+        stored = cur.fetchone()
+        if members is None:
+            return
+        if stored is None:
+            # A mode change can return to the same event or digest. Only an
+            # unsubmitted message cancelled for that change may be reactivated.
+            cur.execute(
+                "UPDATE notification_outbox SET status = 'queued', payload_ciphertext = %s, "
+                "next_attempt_at = %s, created_at = clock_timestamp(), "
+                "updated_at = clock_timestamp(), last_error = NULL "
+                "WHERE user_id = %s AND channel_id = %s AND message_key = %s "
+                "AND status = 'cancelled' AND last_error = 'delivery_preference_changed' "
+                "AND attempts < 6 RETURNING id", (sealed, due, user_id, channel_id, message_key),
+            )
+            stored = cur.fetchone()
+        if stored is not None:
+            self._bind_members(cur, user_id, channel_id, stored["id"], members)
+
+    @staticmethod
+    def _bind_members(
+        cur: Any, user_id: UUID, channel_id: UUID, outbox_id: UUID,
+        members: list[dict[str, Any]],
+    ) -> None:
+        if members:
+            cur.executemany(
+                "INSERT INTO notification_outbox_events "
+                "(user_id, channel_id, event_id, event_revision, outbox_id) "
+                "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                [(user_id, channel_id, event["id"], event["revision"], outbox_id)
+                 for event in members],
+            )
+
+    @staticmethod
+    def _unassigned_events(
+        cur: Any, user_id: UUID, channel_id: UUID, payload: Mapping[str, Any],
+        preferences: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        enabled = [key for key, value in preferences["notifications"].items() if value]
+        event_id = payload.get("event_id")
+        available = payload.get("period_basis") == "available_at"
+        cur.execute(
+            "SELECT e.id, e.category, e.target, e.source, e.revision, e.occurred_at, e.updated_at "
+            "FROM workspace_events e WHERE e.user_id = %s AND e.category = ANY (%s) "
+            "AND e.read_at IS NULL AND ((%s::text IS NOT NULL AND e.id = %s "
+            "AND e.revision = %s) OR (%s::text IS NULL "
+            "AND CASE WHEN %s THEN e.updated_at ELSE e.occurred_at END >= %s::timestamptz "
+            "AND CASE WHEN %s THEN e.updated_at ELSE e.occurred_at END < %s::timestamptz)) "
+            "AND NOT EXISTS (SELECT 1 FROM notification_outbox_events m "
+            "WHERE m.user_id = e.user_id AND m.channel_id = %s "
+            "AND m.event_id = e.id AND m.event_revision = e.revision) "
+            "AND NOT EXISTS (SELECT 1 FROM notification_outbox o WHERE o.user_id = e.user_id "
+            "AND o.channel_id = %s AND o.kind = 'event' "
+            "AND o.status IN ('accepted', 'sending', 'uncertain') "
+            "AND o.message_key = 'event:' || e.id || ':' || e.revision::text) "
+            "ORDER BY e.revision",
+            (user_id, enabled, event_id, event_id, payload.get("event_revision"), event_id,
+             available, payload.get("from"), available, payload.get("to"),
+             channel_id, channel_id),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    @staticmethod
+    def _message_members(
+        cur: Any, user_id: UUID, outbox_ids: list[UUID], preferences: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        enabled = [key for key, value in preferences["notifications"].items() if value]
+        cur.execute(
+            "SELECT e.id, e.category, e.target, e.source, e.revision, e.occurred_at, "
+            "e.updated_at, m.outbox_id FROM notification_outbox_events m "
+            "JOIN workspace_events e ON e.user_id = m.user_id AND e.id = m.event_id "
+            "AND e.revision = m.event_revision WHERE m.user_id = %s "
+            "AND m.outbox_id = ANY (%s::uuid[]) AND e.read_at IS NULL "
+            "AND e.category = ANY (%s) ORDER BY e.revision", (user_id, outbox_ids, enabled),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    def _legacy_membership_ambiguous(
+        self, cur: Any, user_id: UUID, channel_id: UUID, members: list[dict[str, Any]],
+    ) -> bool:
+        if not members:
+            return False
+        cur.execute(
+            "SELECT payload_ciphertext, status, accepted_at FROM notification_outbox "
+            "WHERE user_id = %s AND channel_id = %s AND kind = 'digest' "
+            "AND status IN ('accepted', 'sending', 'uncertain')", (user_id, channel_id),
+        )
+        for row in cur.fetchall():
+            receipt = self._open(row["payload_ciphertext"])
+            if receipt.get("membership_version") == 1:
+                continue
+            start, end = (datetime.fromisoformat(receipt[key]) for key in ("from", "to"))
+            for event in members:
+                at = event["updated_at" if receipt.get("period_basis") == "available_at"
+                           else "occurred_at"]
+                if start <= at < end and (row["accepted_at"] is None
+                                         or event["updated_at"] <= row["accepted_at"]):
+                    return True
+        return False
+
+    def _adopt_queued_message(
+        self, cur: Any, user_id: UUID, channel_id: UUID, row: dict[str, Any],
+        preferences: Mapping[str, Any],
+    ) -> None:
+        payload = self._open(row["payload_ciphertext"])
+        row["payload"] = payload
+        if payload.get("membership_version") == 1:
+            return
+        members = self._unassigned_events(cur, user_id, channel_id, payload, preferences)
+        # An old accepted aggregate has no exact membership proof. Do not label
+        # history delivered, and do not replay a potentially accepted revision.
+        ambiguous = self._legacy_membership_ambiguous(cur, user_id, channel_id, members)
+        self._bind_members(cur, user_id, channel_id, row["id"], members)
+        payload["membership_version"] = 1
+        row["status"] = "uncertain" if ambiguous else "queued"
+        cur.execute(
+            "UPDATE notification_outbox SET payload_ciphertext = %s, status = %s, "
+            "last_error = CASE WHEN %s THEN 'legacy_digest_membership_unknown' "
+            "ELSE last_error END, updated_at = clock_timestamp() "
+            "WHERE user_id = %s AND id = %s AND status = 'queued'",
+            (self._seal(payload), row["status"], ambiguous, user_id, row["id"]),
+        )
+
+    @staticmethod
+    def _digest_boundary(preferences: Mapping[str, Any], now: datetime) -> datetime:
+        local = now.astimezone(ZoneInfo(preferences["quiet_hours"]["timezone"]))
+        end = local.replace(hour=0, minute=0, second=0, microsecond=0)
+        if preferences["digest_frequency"] == "weekly":
+            end -= timedelta(days=end.weekday())
+        return end
+
+    def _queue_event(
+        self, cur: Any, user_id: UUID, channel_id: UUID, event: dict[str, Any],
+        preferences: Mapping[str, Any], now: datetime,
+    ) -> None:
+        cur.execute(
+            "SELECT 1 FROM notification_outbox_events WHERE user_id = %s AND channel_id = %s "
+            "AND event_id = %s AND event_revision = %s",
+            (user_id, channel_id, event["id"], event["revision"]),
+        )
+        if cur.fetchone() is not None:
+            return
+        self._enqueue(cur, user_id, channel_id, f"event:{event['id']}:{event['revision']}",
+                      "event", {"title": "Новое событие OMNICIO",
+                                "body": "В кабинете появилось подтверждённое событие. "
+                                        "Откройте OMNICIO, чтобы посмотреть подробности.",
+                                "url": "/#events?event=" + event["id"],
+                                "category": event["category"], "event_id": event["id"],
+                                "event_revision": event["revision"],
+                                "destination": _event_record(event)["destination"]},
+                      delivery_time(preferences, now), members=[event])
+
+    def _handoff_messages(
+        self, cur: Any, user_id: UUID, channel_id: UUID, rows: list[dict[str, Any]],
+        preferences: Mapping[str, Any], now: datetime,
+    ) -> None:
+        identifiers = [row["id"] for row in rows]
+        members = self._message_members(cur, user_id, identifiers, preferences)
+        if members:
+            cur.executemany(
+                "DELETE FROM notification_outbox_events WHERE user_id = %s AND outbox_id = %s "
+                "AND event_id = %s AND event_revision = %s",
+                [(user_id, row["outbox_id"], row["id"], row["revision"]) for row in members],
+            )
+        cur.execute(
+            "UPDATE notification_outbox SET status = 'cancelled', "
+            "last_error = 'delivery_preference_changed', updated_at = clock_timestamp() "
+            "WHERE user_id = %s AND id = ANY (%s::uuid[]) AND status = 'queued'",
+            (user_id, identifiers),
+        )
+        if preferences["digest_frequency"] == "off":
+            for event in members:
+                self._queue_event(cur, user_id, channel_id, event, preferences, now)
+        elif members:
+            end = self._digest_boundary(preferences, now)
+            frequency = preferences["digest_frequency"]
+            if any(event["updated_at"] >= end for event in members):
+                end += timedelta(days=7 if frequency == "weekly" else 1)
+            key = hashlib.sha256((frequency + ":" + ":".join(
+                sorted(str(ident) for ident in identifiers),
+            )).encode()).hexdigest()
+            self._enqueue(cur, user_id, channel_id, "transfer:" + key, "digest", {
+                "title": "Дайджест OMNICIO", "url": "/#events", "frequency": frequency,
+                "from": min(event["updated_at"] for event in members).isoformat(),
+                "to": end.isoformat(), "period_basis": "available_at",
+                "channel_id": str(channel_id), "body": self._digest_body(len(members)),
+            }, delivery_time(preferences, max(now, end)), members=members)
+
+    def _prepare_channel_messages(
+        self, cur: Any, user_id: UUID, channel_id: UUID, preferences: Mapping[str, Any],
+        now: datetime,
+    ) -> None:
+        cur.execute(
+            "SELECT id, kind, status, payload_ciphertext, attempts, next_attempt_at "
+            "FROM notification_outbox "
+            "WHERE user_id = %s AND channel_id = %s AND status = 'queued' "
+            "AND kind IN ('event', 'digest') ORDER BY created_at, id FOR UPDATE",
+            (user_id, channel_id),
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+        for row in rows:
+            self._adopt_queued_message(cur, user_id, channel_id, row, preferences)
+        frequency = preferences["digest_frequency"]
+        changed = [row for row in rows if row["status"] == "queued" and (
+            (row["kind"] == "event" and frequency != "off")
+            or (row["kind"] == "digest" and row["payload"].get("frequency") != frequency)
+        )]
+        if changed:
+            self._handoff_messages(cur, user_id, channel_id, changed, preferences, now)
+        changed_ids = {row["id"] for row in changed}
+        for row in rows:
+            if row["id"] in changed_ids or row["status"] != "queued" or row["attempts"]:
+                continue
+            self._reschedule_unsubmitted(cur, user_id, row, preferences, now)
+
+    def _reschedule_unsubmitted(
+        self, cur: Any, user_id: UUID, row: dict[str, Any], preferences: Mapping[str, Any],
+        now: datetime,
+    ) -> None:
+        earliest = now
+        boundary_changed = False
+        if row["kind"] == "digest":
+            end = datetime.fromisoformat(row["payload"]["to"])
+            if end > now:
+                # Membership is fixed, but a not-yet-due calendar boundary must
+                # follow the user's current timezone without starting a new
+                # period on every retry. Already submitted payloads stay fixed.
+                members = self._message_members(cur, user_id, [row["id"]], preferences)
+                previous_end = end
+                end = self._digest_boundary(preferences, now)
+                if any(event["updated_at"] >= end for event in members):
+                    end += timedelta(days=7 if preferences["digest_frequency"] == "weekly" else 1)
+                row["payload"]["to"] = end.isoformat()
+                boundary_changed = end != previous_end
+            earliest = max(now, end)
+        due = delivery_time(preferences, earliest)
+        if due != row["next_attempt_at"] or boundary_changed:
+            # Changing quiet hours can release unsubmitted work immediately.
+            # A provider's retry backoff is preserved once attempts > 0.
+            cur.execute(
+                "UPDATE notification_outbox SET next_attempt_at = %s, payload_ciphertext = %s, "
+                "updated_at = clock_timestamp() WHERE user_id = %s AND id = %s "
+                "AND status = 'queued' AND attempts = 0",
+                (due, self._seal(row["payload"]), user_id, row["id"]),
+            )
 
     def queue_events(self, user_id: UUID, *, now: datetime | None = None) -> None:
         now = now or datetime.now(UTC)
@@ -597,8 +845,9 @@ class NotificationService:
         self, cur: Any, user_id: UUID, channel: Mapping[str, Any],
         preferences: Mapping[str, Any], now: datetime,
     ) -> None:
+        self._prepare_channel_messages(cur, user_id, channel["id"], preferences, now)
         cur.execute(
-            "SELECT id, category, title, detail, target, source, revision, occurred_at "
+            "SELECT id, category, title, detail, target, source, revision, occurred_at, updated_at "
             "FROM workspace_events WHERE user_id = %s AND revision > %s "
             "ORDER BY revision LIMIT 200", (user_id, channel["event_revision"]),
         )
@@ -608,16 +857,7 @@ class NotificationService:
             for row in rows:
                 if not preferences["notifications"][row["category"]]:
                     continue
-                self._enqueue(cur, user_id, channel["id"], f"event:{row['id']}:{row['revision']}",
-                              "event", {"title": "Новое событие OMNICIO",
-                                        "body": "В кабинете появилось подтверждённое событие. "
-                                                "Откройте OMNICIO, чтобы посмотреть подробности.",
-                                        "url": "/#events?event=" + row["id"],
-                                        "category": row["category"],
-                                        "event_id": row["id"],
-                                        "event_revision": row["revision"],
-                                        "destination": _event_record(row)["destination"]},
-                              delivery_time(preferences, now))
+                self._queue_event(cur, user_id, channel["id"], dict(row), preferences, now)
         if rows:
             cur.execute(
                 "UPDATE notification_channels SET event_revision = %s "
@@ -631,11 +871,8 @@ class NotificationService:
         self, cur: Any, user_id: UUID, channel: Mapping[str, Any],
         preferences: Mapping[str, Any], now: datetime,
     ) -> None:
-        local = now.astimezone(ZoneInfo(preferences["quiet_hours"]["timezone"]))
-        end = local.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = self._digest_boundary(preferences, now)
         frequency = preferences["digest_frequency"]
-        if frequency == "weekly":
-            end -= timedelta(days=end.weekday())
         period = f"{frequency}:{end.isoformat()}"
         start = channel["digest_cursor_at"]
         if start is None:
@@ -653,11 +890,11 @@ class NotificationService:
             "from": start.isoformat(), "to": end.isoformat(),
             "period_basis": "available_at", "channel_id": str(channel["id"]),
         }
-        count = self._digest_count(cur, user_id, payload, preferences)
-        if count:
+        members = self._unassigned_events(cur, user_id, channel["id"], payload, preferences)
+        if members:
             self._enqueue(cur, user_id, channel["id"], period, "digest",
-                          {**payload, "body": self._digest_body(count)},
-                          delivery_time(preferences, now))
+                          {**payload, "body": self._digest_body(len(members))},
+                          delivery_time(preferences, now), members=members)
         cur.execute(
             "UPDATE notification_channels SET digest_period = %s, digest_cursor_at = %s "
             "WHERE user_id = %s AND id = %s", (period, end, user_id, channel["id"]),
@@ -669,49 +906,24 @@ class NotificationService:
                 "Включены сведения, поступившие с задержкой. "
                 "Исходные даты и подробности доступны после входа в кабинет.")
 
-    @staticmethod
-    def _digest_count(
-        cur: Any, user_id: UUID, payload: Mapping[str, Any], preferences: Mapping[str, Any],
-    ) -> int:
-        enabled = [key for key, value in preferences["notifications"].items() if value]
-        # Legacy queued digests retain their accepted event-date contract. New
-        # digests follow committed availability/correction time under the same
-        # owner transaction lock as event insertion and cursor advancement.
-        available = payload.get("period_basis") == "available_at"
-        cur.execute(
-            "SELECT count(*) AS total FROM workspace_events e WHERE e.user_id = %s "
-            "AND e.category = ANY (%s) "
-            "AND CASE WHEN %s THEN e.updated_at ELSE e.occurred_at END >= %s "
-            "AND CASE WHEN %s THEN e.updated_at ELSE e.occurred_at END < %s "
-            "AND e.read_at IS NULL AND NOT EXISTS (SELECT 1 FROM notification_outbox o "
-            "WHERE o.user_id = e.user_id AND o.channel_id = %s::uuid "
-            "AND o.kind = 'event' AND o.status IN ('accepted', 'sending', 'uncertain') "
-            "AND o.message_key = 'event:' || e.id || ':' || e.revision::text)",
-            (user_id, enabled, available, payload["from"], available, payload["to"],
-             payload.get("channel_id")),
-        )
-        return int(cur.fetchone()["total"])
-
     def _event_delivery_allowed(
         self, cur: Any, user_id: UUID, payload: dict[str, Any], preferences: Mapping[str, Any],
+        outbox_id: UUID,
     ) -> bool:
         if (preferences["digest_frequency"] != "off"
                 or not preferences["notifications"].get(payload.get("category"), False)):
             return False
-        cur.execute(
-            "SELECT revision, read_at FROM workspace_events WHERE user_id = %s AND id = %s",
-            (user_id, payload.get("event_id")),
-        )
-        event = cur.fetchone()
-        return (event is not None and event["read_at"] is None
-                and event["revision"] == payload.get("event_revision"))
+        return any(event["id"] == payload.get("event_id")
+                   and event["revision"] == payload.get("event_revision")
+                   for event in self._message_members(cur, user_id, [outbox_id], preferences))
 
     def _digest_delivery_allowed(
         self, cur: Any, user_id: UUID, payload: dict[str, Any], preferences: Mapping[str, Any],
+        outbox_id: UUID,
     ) -> bool:
         if preferences["digest_frequency"] != payload.get("frequency"):
             return False
-        count = self._digest_count(cur, user_id, payload, preferences)
+        count = len(self._message_members(cur, user_id, [outbox_id], preferences))
         payload["body"] = self._digest_body(count)
         return count > 0
 
@@ -726,9 +938,9 @@ class NotificationService:
         if row["channel_status"] != "active":
             return False
         if row["kind"] == "event":
-            return self._event_delivery_allowed(cur, user_id, payload, preferences)
+            return self._event_delivery_allowed(cur, user_id, payload, preferences, row["id"])
         if row["kind"] == "digest":
-            return self._digest_delivery_allowed(cur, user_id, payload, preferences)
+            return self._digest_delivery_allowed(cur, user_id, payload, preferences, row["id"])
         return (row["kind"] == "operational" and user_id == self.config.operator_user_id
                 and bool(preferences["notifications"]["system"]))
 
@@ -738,6 +950,13 @@ class NotificationService:
         ):
             return None
         with self.workspace._transaction(user_id) as cur:
+            preferences = self.workspace._preferences(cur, user_id)["document"]
+            cur.execute(
+                "SELECT id FROM notification_channels WHERE user_id = %s AND status = 'active'",
+                (user_id,),
+            )
+            for channel in cur.fetchall():
+                self._prepare_channel_messages(cur, user_id, channel["id"], preferences, now)
             cur.execute(
                 "UPDATE notification_outbox SET status = 'uncertain', "
                 "last_error = 'worker_result_unknown', updated_at = clock_timestamp() "
@@ -761,7 +980,6 @@ class NotificationService:
                 return None
             row = dict(found)
             payload = self._open(row["payload_ciphertext"])
-            preferences = self.workspace._preferences(cur, user_id)["document"]
             expired = row["kind"] != "verification" and row["created_at"] < now - timedelta(days=7)
             allowed = self._delivery_allowed(cur, user_id, row, payload, preferences, now)
             if not allowed or expired:

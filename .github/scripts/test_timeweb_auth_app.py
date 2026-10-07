@@ -622,6 +622,21 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("OBSERVER_TIMER_WAS_ACTIVE", rollback)
         self.assertNotIn("omnicio.observer --execute", script)
 
+    def test_observer_recovery_timer_cannot_exhaust_its_normal_start_budget(self) -> None:
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+        observer = script.split('cat > "$OBSERVER_SERVICE.new"', 1)[1].split("EOF", 2)[1]
+        timer = script.split('cat > "$OBSERVER_TIMER.new"', 1)[1].split("EOF", 2)[1]
+        interval = int(re.search(r"StartLimitIntervalSec=(\d+)", observer)[1])
+        burst = int(re.search(r"StartLimitBurst=(\d+)", observer)[1])
+        recovery_seconds = int(re.search(r"OnUnitInactiveSec=(\d+)min", timer)[1]) * 60
+        restart_seconds = int(re.search(r"RestartSec=(\d+)", observer)[1])
+        # systemd counts successful and timer starts as well as failure restarts.
+        # Retain a burst guard, while every bounded recovery attempt lies beyond
+        # its counting window even when all preceding runs finish immediately.
+        self.assertGreaterEqual(burst, 1)
+        self.assertGreater(interval, 0)
+        self.assertLess(interval, min(recovery_seconds, restart_seconds))
+
     def test_research_timeout_is_narrow_and_other_api_requests_remain_bounded(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         research = script.split("location = /api/profile/strategy/research {", 1)[1]
@@ -646,6 +661,17 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertEqual(script.count("client_max_body_size 17m;"), 1)
         source = (SCRIPT_DIR.parent.parent / "src/omnicio/main.py").read_text(encoding="utf-8")
         self.assertIn(("put", "/api/research/evidence"), declared_http_routes(source))
+
+    def test_plan_timeout_preserves_the_generic_api_security_and_body_contract(self) -> None:
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+        planning = script.split("location = /api/portfolio/proposals/plan {", 1)[1].split("}", 1)[0]
+        generic = script.split("location /api/ {", 1)[1].split("}", 1)[0]
+        self.assertIn("proxy_read_timeout 60s;", planning)
+        self.assertEqual(planning.replace("proxy_read_timeout 60s;", "proxy_read_timeout 30s;"),
+                         generic)
+        self.assertEqual(script.count("proxy_read_timeout 60s;"), 1)
+        source = (SCRIPT_DIR.parent.parent / "src/omnicio/main.py").read_text(encoding="utf-8")
+        self.assertIn(("post", "/api/portfolio/proposals/plan"), declared_http_routes(source))
 
     def test_remote_service_installs_tbank_russian_trusted_ca_safely(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT

@@ -98,30 +98,46 @@ def test_flat_prices_charge_real_cost_model_once_and_do_not_spend_negative_cash(
     assert Decimal(result["metrics"]["transaction_costs_rub"]) == Decimal("196.98")
     assert result["metrics"]["trades"] == 1
     assert all(Decimal(row["cash_rub"]) >= 0 for row in result["equity_curve"])
+    assert result["probability_of_profit"] is None
+    assert result["probability_reason"]
+    assert result["benchmark"]["basis"] == result["basis"]
 
 
 def test_historical_income_screen_uses_only_paid_income_and_never_future_principal():
     asset = prices()
     cutoff = START + timedelta(days=140)
     observed = (
-        HistoricalCashflow(START + timedelta(days=100), START + timedelta(days=110), Decimal(6), SOURCE),
-        HistoricalCashflow(START + timedelta(days=120), START + timedelta(days=130), Decimal(20), SOURCE,
-                           "principal"),
-        HistoricalCashflow(START + timedelta(days=145), START + timedelta(days=150), Decimal(90), SOURCE),
+        HistoricalCashflow(
+            START + timedelta(days=100), START + timedelta(days=110), Decimal(6), SOURCE
+        ),
+        HistoricalCashflow(
+            START + timedelta(days=120),
+            START + timedelta(days=130),
+            Decimal(20),
+            SOURCE,
+            "principal",
+        ),
+        HistoricalCashflow(
+            START + timedelta(days=145), START + timedelta(days=150), Decimal(90), SOURCE
+        ),
     )
     document = research_document("income")
     document["policy"]["securities_tax_rate_percent"] = "13"
-    candidate = history_candidate(asset.candidate, asset.candles, as_of=cutoff,
-                                  cashflows=observed, document=document, costs=ZERO_COSTS)
+    candidate = history_candidate(
+        asset.candidate,
+        asset.candles,
+        as_of=cutoff,
+        cashflows=observed,
+        document=document,
+        costs=ZERO_COSTS,
+    )
     assert candidate.facts["cashflow_yield_percent"].value == 6
     assert candidate.facts["dividend_yield_percent"].value == 6
     assert candidate.facts["net_yield_percent"].value == Decimal("5.22")
     assert candidate.facts["dividend_declared"].available_at == cutoff
-    assert not history_candidate(asset.candidate, asset.candles, as_of=START + timedelta(days=100),
-                                 cashflows=observed).facts.get("cashflow_yield_percent")
-    assert result["probability_of_profit"] is None
-    assert result["probability_reason"]
-    assert result["benchmark"]["basis"] == result["basis"]
+    assert not history_candidate(
+        asset.candidate, asset.candles, as_of=START + timedelta(days=100), cashflows=observed
+    ).facts.get("cashflow_yield_percent")
 
 
 def test_test_prices_cannot_change_training_selection_or_first_execution():

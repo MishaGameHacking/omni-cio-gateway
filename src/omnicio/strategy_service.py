@@ -32,6 +32,7 @@ from .backtest import (
 from .broker import (
     STRATEGY_RATING_READ_LIMIT,
     BrokerConnectionError,
+    BrokerConnectionStatus,
     BrokerNotConnected,
     BrokerService,
 )
@@ -217,24 +218,7 @@ def _research_rows(
     chosen = {row["instrument_uid"]: row for row in catalog if row["instrument_uid"] in held_ids}
     queues = []
     for provider_kind, kind in (("share", "shares"), ("bond", "bonds"), ("etf", "funds")):
-        target = Decimal(document["allocation"][kind])
-        if target <= 0 or kind in document["excluded"]:
-            continue
-        cap_keys = ["max_instrument_percent"]
-        if kind != "funds":
-            cap_keys.extend(("max_issuer_percent", "max_group_percent", "max_sector_percent"))
-        caps = [
-            Decimal(document["policy"][key])
-            for key in cap_keys
-            if document["policy"][key] is not None
-        ]
-        if kind == "funds":
-            caps.append(Decimal(document["rules"]["fund_wrapper_cap_percent"]))
-        cap = min(caps) if caps else Decimal(0)
-        minimum = int((target / cap).to_integral_value(rounding=ROUND_CEILING)) if cap > 0 else 0
-        # Fifty percent bounded screening headroom allows some unsuitable rows
-        # without reducing the user's ceilings to force an allocation.
-        wanted = min(MAX_RESEARCH_ASSETS, (minimum * 3 + 1) // 2)
+        wanted = _research_class_capacity(document, kind)
         available = [
             row
             for row in catalog
@@ -247,6 +231,24 @@ def _research_rows(
                 row = queue[index]
                 chosen[row["instrument_uid"]] = row
     return list(chosen.values())
+
+
+def _research_class_capacity(document: Mapping[str, Any], kind: str) -> int:
+    target = Decimal(document["allocation"][kind])
+    if target <= 0 or kind in document["excluded"]:
+        return 0
+    cap_keys = ["max_instrument_percent"]
+    if kind != "funds":
+        cap_keys.extend(("max_issuer_percent", "max_group_percent", "max_sector_percent"))
+    caps = [
+        Decimal(document["policy"][key]) for key in cap_keys if document["policy"][key] is not None
+    ]
+    if kind == "funds":
+        caps.append(Decimal(document["rules"]["fund_wrapper_cap_percent"]))
+    cap = min(caps) if caps else Decimal(0)
+    minimum = int((target / cap).to_integral_value(rounding=ROUND_CEILING)) if cap > 0 else 0
+    # Fifty percent headroom allows rejected rows without lowering risk ceilings.
+    return min(MAX_RESEARCH_ASSETS, (minimum * 3 + 1) // 2)
 
 
 def _row_candidate(row: Mapping[str, Any], now: datetime) -> StrategyCandidateFacts:
@@ -296,25 +298,31 @@ def _research_price_bars(
         if any(bar.time.date() not in by_day for bar in bars):
             return ()
         return tuple(_dirty_bond_bar(bar, by_day[bar.time.date()]) for bar in bars)
-    if accrued and str(row.get("nominal_currency") or "").upper() == "RUB":
+    if str(row.get("nominal_currency") or "").upper() != "RUB":
+        return ()
+    if accrued:
         by_day = {value.date.date(): value for value in accrued}
+        if len(by_day) != len(accrued):
+            return ()
         if all(bar.time.date() in by_day for bar in bars):
             return tuple(
                 _clean_bond_bar(bar, Decimal(by_day[bar.time.date()].nominal)) for bar in bars
             )
-    if (
-        str(row.get("nominal_currency") or "").upper() != "RUB"
-        or row.get("amortization") is not False
-    ):
-        # A changing/foreign nominal cannot be retrospectively replaced by today's nominal.
+    nominal = _unchanging_bond_nominal(row)
+    if nominal is None:
         return ()
+    return tuple(_clean_bond_bar(bar, nominal) for bar in bars)
+
+
+def _unchanging_bond_nominal(row: Mapping[str, Any]) -> Decimal | None:
+    # A changing nominal cannot be retrospectively replaced by today's nominal.
+    if row.get("amortization") is not False:
+        return None
     try:
         nominal = Decimal(str(row.get("nominal_value")))
     except InvalidOperation:
-        return ()
-    if not nominal.is_finite() or nominal <= 0:
-        return ()
-    return tuple(_clean_bond_bar(bar, nominal) for bar in bars)
+        return None
+    return nominal if nominal.is_finite() and nominal > 0 else None
 
 
 def _dirty_bond_bar(bar: TBankHistoricCandle, value: Mapping[str, Any]) -> TBankHistoricCandle:
@@ -436,17 +444,7 @@ def _user_asset_evidence(
         )
         for row in evidence["cashflows"]
     )
-    # Source events are already collected automatically. A user import can fill
-    # a missing event or explicitly replace the amount/date for the same event.
-    merged_flows = {
-        (row.entitlement_at, row.paid_at, row.kind): row for row in asset.observed_cashflows
-    }
-    merged_flows.update(
-        {(row.entitlement_at, row.paid_at, row.kind): row for row in supplied_cashflows}
-    )
-    cashflows = tuple(
-        sorted(merged_flows.values(), key=lambda row: (row.entitlement_at, row.paid_at))
-    )
+    cashflows = _research_cashflows(asset.observed_cashflows, supplied_cashflows, coverage)
     factors = tuple(
         FactorObservation(
             datetime.fromisoformat(row["time"]),
@@ -490,6 +488,52 @@ def _user_asset_evidence(
         observed_cashflows=cashflows,
         provider_observations=asset.provider_observations,
     )
+
+
+def _research_cashflows(
+    provider: tuple[HistoricalCashflow, ...],
+    supplied: tuple[HistoricalCashflow, ...],
+    coverage: Mapping[str, Any] | None,
+) -> tuple[HistoricalCashflow, ...]:
+    """A complete user interval replaces intersecting provider events, never adds versions.
+
+    Events entirely outside that interval retain provider provenance. With no
+    complete interval, dates cannot identify a correction separately from a new
+    installment; only exact-date amount replacements are unambiguous. A complete
+    correction interval must cover both the original and corrected event dates.
+    """
+    interval = None
+    if coverage and coverage["cashflows_complete"]:
+        interval = (
+            datetime.fromisoformat(coverage["from"]),
+            datetime.fromisoformat(coverage["to"]),
+        )
+
+    def replaced(row: HistoricalCashflow) -> bool:
+        return (
+            interval is not None
+            and row.entitlement_at <= interval[1]
+            and row.paid_at >= interval[0]
+        )
+
+    original = {
+        (row.entitlement_at, row.paid_at, row.kind): row for row in provider if not replaced(row)
+    }
+    provider_kinds = {row.kind for row in original.values()}
+    entitlement_keys = {(row.kind, row.entitlement_at) for row in original.values()}
+    payment_keys = {(row.kind, row.paid_at) for row in original.values()}
+    merged = dict(original)
+    for row in supplied:
+        key = (row.entitlement_at, row.paid_at, row.kind)
+        shares_date = (row.kind, row.entitlement_at) in entitlement_keys or (
+            row.kind,
+            row.paid_at,
+        ) in payment_keys
+        incomplete = row.kind in provider_kinds and not replaced(row)
+        if key not in original and (shares_date or incomplete):
+            raise ValueError("research_cashflow_overlap_requires_complete_history")
+        merged[key] = row
+    return tuple(sorted(merged.values(), key=lambda row: (row.entitlement_at, row.paid_at)))
 
 
 def _evidence_covers(
@@ -706,41 +750,49 @@ def _bond_cashflow_history(
     events: tuple[TBankBondEvent, ...],
     now: datetime,
 ) -> tuple[HistoricalCashflow, ...]:
-    result = []
     coupon_days = {item.coupon_date.date(): item for item in coupons}
+    if len(coupon_days) != len(coupons):
+        raise TBankUnavailable("ambiguous coupon dates")
+    result = []
     for event in events:
-        payment = event.pay_one_bond
-        if event.execution not in {"E", "ED", "ET", "ES"} or payment is None:
-            continue
-        paid = event.real_pay_date or (event.pay_date if event.execution == "E" else None)
-        if paid is None or paid > now or payment.currency.upper() != "RUB":
-            continue
-        amount = Decimal(payment.value)
-        if amount <= 0:
-            continue
-        entitlement: datetime | None = event.fix_date
-        if event.event_type == "EVENT_TYPE_CPN" and event.pay_date is not None:
-            coupon = coupon_days.get(event.pay_date.date())
-            if entitlement is None and coupon is not None:
-                entitlement = coupon.fix_date
-            kind = "income"
-        elif event.event_type == "EVENT_TYPE_MTY" and event.operation_type in {
-            "CA", "OA", "CM", "OM",
-        }:
-            kind = "principal"
-        else:
-            continue
-        if entitlement is not None and entitlement <= paid:
-            result.append(
-                HistoricalCashflow(
-                    entitlement,
-                    paid,
-                    amount,
-                    _BOND_EVENT_SOURCE,
-                    cast(Any, kind),
-                )
-            )
-    return tuple(result)
+        coupon = coupon_days.get(event.pay_date.date()) if event.pay_date else None
+        cashflow = _bond_event_cashflow(event, coupon, now)
+        if cashflow is not None:
+            result.append(cashflow)
+    return _provider_cashflows(result)
+
+
+def _bond_event_cashflow(
+    event: TBankBondEvent,
+    coupon: TBankBondCoupon | None,
+    now: datetime,
+) -> HistoricalCashflow | None:
+    payment = event.pay_one_bond
+    if event.execution not in {"E", "ED", "ET", "ES"} or payment is None:
+        return None
+    paid = event.real_pay_date or (event.pay_date if event.execution == "E" else None)
+    if paid is None or paid > now or payment.currency.upper() != "RUB":
+        return None
+    entitlement = event.fix_date
+    kind = "income"
+    if event.event_type == "EVENT_TYPE_CPN":
+        if entitlement is None and coupon is not None:
+            entitlement = coupon.fix_date
+    elif event.event_type == "EVENT_TYPE_MTY" and event.operation_type in {"CA", "OA", "CM", "OM"}:
+        kind = "principal"
+    else:
+        return None
+    amount = Decimal(payment.value)
+    if entitlement is None or entitlement > paid or amount <= 0:
+        return None
+    return HistoricalCashflow(entitlement, paid, amount, _BOND_EVENT_SOURCE, cast(Any, kind))
+
+
+def _provider_cashflows(events: list[HistoricalCashflow]) -> tuple[HistoricalCashflow, ...]:
+    keys = {(row.entitlement_at, row.paid_at, row.kind) for row in events}
+    if len(keys) != len(events):
+        raise TBankUnavailable("ambiguous provider cashflow events")
+    return tuple(events)
 
 
 @dataclass(frozen=True, slots=True)
@@ -780,16 +832,17 @@ def _provider_history(
                 from_at=start,
                 to_at=request.to_at,
             )
+            flows = _provider_cashflows(list(_dividend_history(dividends, request.now)))
         except TBankUnavailable:
-            dividends = ()
+            dividends, flows = (), ()
             observations["missing"].append("dividend_history_unavailable")
         observations["dividends"] = [asdict(item) for item in dividends]
         observations["missing"].extend(("historical_lot_sizes", "share_splits_and_other_actions"))
         if kind == "etf":
             observations["missing"].append("dated_fund_constituents")
-        return _dividend_history(dividends, request.now), (), observations
+        return flows, (), observations
     if kind != "bond":
-        observations["missing"].extend(("historical_lot_sizes", "fund_distributions_and_actions"))
+        observations["missing"].append("unsupported_research_asset_class")
         return (), (), observations
     histories: dict[str, Any] = {}
     for name, operation in (
@@ -807,7 +860,11 @@ def _provider_history(
             histories[name] = ()
             observations["missing"].append(name + "_unavailable")
         observations[name] = [asdict(item) for item in histories[name]]
-    flows = _bond_cashflow_history(histories["coupons"], histories["bond_events"], request.now)
+    try:
+        flows = _bond_cashflow_history(histories["coupons"], histories["bond_events"], request.now)
+    except TBankUnavailable:
+        flows = ()
+        observations["missing"].append("bond_events_unavailable")
     observations["missing"].extend(("historical_lot_sizes", "bond_nkd_open_close_timing"))
     # Daily API observations supply dated nominal/NKD values. The provider does
     # not specify open/close settlement timestamps; never invent that precision.
@@ -875,6 +932,7 @@ def _research_asset(
             {key: replace(fact, available_at=retrieved) for key, fact in current_facts.items()}
         )
     observations["retrieved_at"] = datetime.now(UTC).isoformat()
+    observations["normalized_cashflow_events"] = len(flows)
     observations["facts"] = {key: asdict(value) for key, value in facts.items()}
     candidate = replace(candidate, facts=facts)
     asset = ResearchAsset(
@@ -904,6 +962,7 @@ def _research_assets(
     supplied = {row["instrument_uid"]: row for row in evidence.get("assets", [])}
     key_rates: tuple[StrategyFact, ...] = ()
     if cbr is not None and document["rules"]["yield_floor"] == "key_rate":
+        rate_end = now if to_at >= now - timedelta(days=4) else to_at
         with suppress(CBRUnavailable):
             key_rates = tuple(
                 StrategyFact(
@@ -913,7 +972,10 @@ def _research_assets(
                     ),
                     "https://www.cbr.ru/hd_base/KeyRate/",
                 )
-                for rate in cbr.key_rate_history(from_at.date(), now.date())
+                for rate in cbr.key_rate_history(
+                    from_at.astimezone(ZoneInfo("Europe/Moscow")).date(),
+                    rate_end.astimezone(ZoneInfo("Europe/Moscow")).date(),
+                )
             )
     request = _ResearchRead(user_id, broker, from_at, to_at, now, document, costs, deadline)
     with ThreadPoolExecutor(max_workers=_RESEARCH_WORKERS) as reads:
@@ -962,14 +1024,16 @@ def _research_attempt(
     try:
         yield None
     except (
-        SettingsVersionConflict,
         BrokerConnectionError,
         TBankUnavailable,
         TBankTokenRejected,
         ValueError,
-    ):
+    ) as exc:
+        code = "research_failed"
+        if str(exc) == "research_cashflow_overlap_requires_complete_history":
+            code = str(exc)
         with suppress(ResearchNotFound):
-            store.fail_request(user_id, request_id, "research_failed")
+            store.fail_request(user_id, request_id, code)
         raise
 
 
@@ -980,6 +1044,25 @@ def _research_fact(name: str, raw: Mapping[str, Any]) -> StrategyFact:
     elif name not in {"issuer_id", "group_id", "sector", "rating"} and type(value) is not bool:
         value = Decimal(str(value))
     return StrategyFact(value, datetime.fromisoformat(str(raw["available_at"])), raw["source_url"])
+
+
+@dataclass(frozen=True, slots=True)
+class _ResearchContext:
+    """Validated inputs and identity to recheck after the bounded provider reads."""
+
+    user_id: UUID
+    expected_version: int
+    request_id: UUID | None
+    document: Mapping[str, Any]
+    connection: BrokerConnectionStatus
+    catalog: Mapping[str, Any]
+    rows: list[dict[str, Any]]
+    evidence: Mapping[str, Any]
+    from_at: datetime
+    to_at: datetime
+    initial_capital_rub: Decimal
+    costs: ResearchCosts
+    observed_at: datetime
 
 
 def strategy_research(
@@ -1012,7 +1095,6 @@ def strategy_research(
     if selection["version"] != expected_version:
         raise SettingsVersionConflict("settings_version_conflict")
     document = normalize_document(selection["document"])
-    fingerprint = document_hash(document)
     connection = broker.status(user_id)
     if not connection.connected:
         raise BrokerNotConnected("T-Invest is not connected")
@@ -1054,49 +1136,37 @@ def strategy_research(
     with _research_attempt(research_store, user_id, request_id, request_hash) as previous:
         if previous is not None:
             return previous
-        return _collect_research_result(
-            user_id=user_id,
-            expected_version=expected_version,
-            store=store,
-            broker=broker,
-            from_at=from_at,
-            to_at=to_at,
-            initial_capital_rub=initial_capital_rub,
-            research_store=research_store,
-            cbr=cbr,
-            request_id=request_id,
-            document=document,
-            fingerprint=fingerprint,
-            connection=connection,
-            context=context,
-            rows=rows,
-            evidence=evidence,
-            costs=costs,
-            now=now,
+        run = _ResearchContext(
+            user_id,
+            expected_version,
+            request_id,
+            document,
+            connection,
+            context,
+            rows,
+            evidence,
+            from_at,
+            to_at,
+            initial_capital_rub,
+            costs,
+            now,
         )
+        return _collect_research_result(run, store, broker, research_store, cbr)
 
 
 def _collect_research_result(
-    *,
-    user_id: UUID,
-    expected_version: int,
+    run: _ResearchContext,
     store: PortfolioStore,
     broker: BrokerService,
-    from_at: datetime,
-    to_at: datetime,
-    initial_capital_rub: Decimal,
     research_store: ResearchStore | None,
     cbr: CBRClient | None,
-    request_id: UUID | None,
-    document: Mapping[str, Any],
-    fingerprint: str,
-    connection: Any,
-    context: Mapping[str, Any],
-    rows: list[dict[str, Any]],
-    evidence: Mapping[str, Any],
-    costs: ResearchCosts,
-    now: datetime,
 ) -> dict[str, Any]:
+    user_id, expected_version = run.user_id, run.expected_version
+    document, connection, evidence = run.document, run.connection, run.evidence
+    from_at, to_at, now = run.from_at, run.to_at, run.observed_at
+    costs, initial_capital_rub, request_id = run.costs, run.initial_capital_rub, run.request_id
+    if not connection.account_id or not connection.environment or not connection.verified_at:
+        raise BrokerConnectionError("strategy_account_changed")
     history_raw = (
         research_store.observed_facts(
             user_id,
@@ -1115,7 +1185,7 @@ def _collect_research_result(
     }
     assets, unavailable = _research_assets(
         user_id,
-        rows,
+        run.rows,
         broker,
         from_at,
         to_at,
@@ -1157,11 +1227,12 @@ def _collect_research_result(
     if (
         latest is None
         or latest["version"] != expected_version
-        or document_hash(normalize_document(latest["document"])) != fingerprint
+        or document_hash(normalize_document(latest["document"])) != document_hash(document)
     ):
         raise SettingsVersionConflict("settings_version_conflict")
     if broker.status(user_id) != connection:
         raise BrokerConnectionError("strategy_account_changed")
+    diagnostics = {row["instrument_uid"]: row for row in payload["asset_diagnostics"]}
     result = {
         **payload,
         "strategy_version": expected_version,
@@ -1175,7 +1246,8 @@ def _collect_research_result(
             "received_at": evidence["received_at"],
             "independently_verified": False if evidence["document"]["assets"] else None,
             "scope": "Дополнительные факты и полноту истории подтверждает пользователь; "
-            "ссылка на источник не означает независимую проверку сервисом.",
+            "ссылка на источник не означает независимую проверку сервисом. Полная "
+            "история выплат пользователя заменяет события провайдера в подтверждённом диапазоне.",
         },
         "robustness": research_robustness(
             document,
@@ -1191,8 +1263,8 @@ def _collect_research_result(
             "assets_read": len(assets),
             "maximum_assets": MAX_RESEARCH_ASSETS,
             "historical_universe_verified": False,
-            "catalog_instruments": len(_research_catalog_rows(context)),
-            "held_instruments": len(context.get("holdings", [])),
+            "catalog_instruments": len(_research_catalog_rows(run.catalog)),
+            "held_instruments": len(run.catalog.get("holdings", [])),
             "parallel_reads": _RESEARCH_WORKERS,
             "provider_deadline_seconds": _RESEARCH_DEADLINE_SECONDS,
             "selection_policy": "held_positions_then_required_class_capacity_with_headroom",
@@ -1200,22 +1272,32 @@ def _collect_research_result(
         "data_coverage": [
             {
                 "instrument_uid": asset.candidate.instrument_uid,
-                "automatic_cashflow_events": len(asset.observed_cashflows),
+                "automatic_cashflow_events": asset.provider_observations.get(
+                    "normalized_cashflow_events", 0
+                ),
                 "daily_accrual_observations": len(
                     asset.provider_observations.get("daily_accruals", [])
                 ),
                 "historical_fact_observations": sum(
                     len(values) for values in asset.candidate.fact_history.values()
                 ),
-                "missing": asset.provider_observations.get("missing", []),
-                "total_return_verified": asset.basis == "verified_total_return",
+                "missing": sorted(
+                    set(
+                        (
+                            asset.provider_observations.get("missing", [])
+                            if asset.basis != "verified_total_return"
+                            else []
+                        )
+                        + diagnostics[asset.candidate.instrument_uid]["reasons"]
+                    )
+                ),
+                "total_return_verified": asset.basis == "verified_total_return"
+                and diagnostics[asset.candidate.instrument_uid]["status"] == "observed",
             }
             for asset in assets
         ],
     }
     if research_store is not None:
-        if not connection.account_id or not connection.environment or not connection.verified_at:
-            raise BrokerConnectionError("strategy_account_changed")
         inputs = research_inputs(
             document,
             assets,

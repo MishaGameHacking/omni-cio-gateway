@@ -202,6 +202,8 @@ def test_research_archive_page_and_request_status_use_current_owner_and_recheck_
 
 @pytest.mark.parametrize("code", ["research_archive_capacity", "research_archive_storage_capacity",
                                   "research_archive_too_large", "research_request_capacity",
+                                  "research_window_invalid", "research_held_universe_too_large",
+                                  "research_cashflow_overlap_requires_complete_history",
                                   "synthetic-private-provider-error"])
 def test_research_capacity_errors_are_actionable_without_releasing_arbitrary_exception_text(
     workspace_http: tuple[TestClient, Mock, Mock, Mock], code: str,
