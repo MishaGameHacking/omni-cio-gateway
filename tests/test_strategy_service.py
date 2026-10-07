@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import Mock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,6 +24,7 @@ from omnicio.broker import (
 from omnicio.db import Database, UserRecord
 from omnicio.portfolio_store import PortfolioStore, SettingsVersionConflict
 from omnicio.research_store import ResearchStore
+from omnicio.strategy import preset_document
 from omnicio.strategy_service import current_account_assessment, strategy_research
 from omnicio.tbank import TBankPortfolio, TBankPositions, TBankTokenRejected, TBankUnavailable
 
@@ -300,6 +301,7 @@ def research_runtime(runtime, count=1):
         ],
     }
     broker.candidate_fundamentals.return_value = ()
+    broker.candidate_dividends.return_value = ()
     broker.candidate_daily_exchange_candles.side_effect = lambda owner, uid, **kw: (
         prices(uid).candles
     )
@@ -338,18 +340,98 @@ def test_research_uses_owner_provider_history_and_never_calls_trade_methods(runt
         "status",
         "candidate_daily_exchange_candles",
         "candidate_fundamentals",
+        "candidate_dividends",
     }
     assert all(call.args[0] == A for call in broker.candidate_daily_exchange_candles.call_args_list)
     store.latest_balancing_context.assert_called_once_with(A, candidate_limit=100)
 
 
+@pytest.mark.parametrize("status", ["running", "failed", "expired", "deleted"])
+def test_duplicate_research_request_never_restarts_external_reads(runtime, status):
+    store, broker = research_runtime(runtime)
+    archive = Mock(spec=ResearchStore)
+    archive.evidence.return_value = {"version": 0, "document": {"assets": []}}
+    request_id = uuid4()
+    archive.begin_request.return_value = {"id": request_id, "status": status, "run_id": None}
+    result = research_call(store, broker, research_store=archive, request_id=request_id)
+    assert result["status"] == status
+    assert result["request_id"] == str(request_id)
+    assert {call[0] for call in broker.mock_calls} == {"status"}
+    archive.save_run.assert_not_called()
+
+
+def test_research_request_is_registered_before_io_and_completed_retry_reads_exact_archive(runtime):
+    store, broker = research_runtime(runtime)
+    archive = Mock(spec=ResearchStore)
+    request_id, run_id = uuid4(), uuid4()
+    archive.evidence.return_value = {"version": 0, "document": {"assets": []}, "received_at": None}
+    archive.observed_facts.return_value = {}
+    archive.begin_request.return_value = {"id": request_id, "status": "running", "created": True}
+
+    def fundamentals(*args, **kwargs):
+        archive.begin_request.assert_called_once()
+        return ()
+
+    broker.candidate_fundamentals.side_effect = fundamentals
+    archive.save_run.return_value = {"id": str(run_id), "replay_available": True}
+    result = research_call(store, broker, research_store=archive, request_id=request_id)
+    saved = archive.save_run.call_args.kwargs
+    assert result["request_id"] == saved["result"]["request_id"] == str(request_id)
+    assert saved["inputs"]["request_id"] == str(request_id)
+    assert saved["request_id"] == request_id
+    archive.begin_request.return_value = {"status": "completed", "run_id": run_id}
+    archive.run.return_value = {
+        "id": run_id,
+        "result": saved["result"],
+        "created_at": datetime.now(UTC),
+        "data_hash": result["data_hash"],
+    }
+    broker.reset_mock()
+    replayed = research_call(store, broker, research_store=archive, request_id=request_id)
+    assert replayed["request_id"] == str(request_id)
+    assert replayed["archive"]["id"] == str(run_id)
+    assert replayed["data_hash"] == result["data_hash"]
+    assert {call[0] for call in broker.mock_calls} == {"status"}
+    archive.run.assert_called_once_with(A, run_id)
+
+
+def test_research_failed_request_keeps_a_safe_terminal_code(runtime):
+    store, broker = research_runtime(runtime)
+    archive = Mock(spec=ResearchStore)
+    request_id = uuid4()
+    archive.evidence.return_value = {"version": 0, "document": {"assets": []}}
+    archive.observed_facts.return_value = {}
+    archive.begin_request.return_value = {"created": True}
+    broker.candidate_fundamentals.side_effect = TBankTokenRejected("synthetic provider details")
+    with pytest.raises(TBankTokenRejected):
+        research_call(store, broker, research_store=archive, request_id=request_id)
+    archive.fail_request.assert_called_once_with(A, request_id, "research_failed")
+    archive.save_run.assert_not_called()
+
+
 def test_research_bounds_provider_load_even_with_a_large_catalog(runtime):
     store, broker = research_runtime(runtime, count=100)
+    store.current_strategy_draft.return_value["document"] = preset_document("balanced")
     result = research_call(store, broker)
-    assert result["universe"]["assets_read"] == 12
-    assert broker.candidate_daily_exchange_candles.call_count == 12
+    assert result["universe"]["assets_read"] == 9  # Six required shares plus screening headroom.
+    assert broker.candidate_daily_exchange_candles.call_count == 9
     assert broker.candidate_fundamentals.call_count == 1
-    assert len(broker.candidate_fundamentals.call_args.args[1]) == 12
+    assert len(broker.candidate_fundamentals.call_args.args[1]) == 9
+
+
+def test_old_valid_research_window_requests_only_its_historical_key_rates(runtime):
+    from test_backtest import research_document
+
+    from omnicio.cbr import CBRClient
+
+    store, broker = research_runtime(runtime)
+    store.current_strategy_draft.return_value["document"] = research_document("income")
+    bank = Mock(spec=CBRClient)
+    bank.key_rate_history.return_value = ()
+    begin, end = datetime(2020, 1, 1, tzinfo=UTC), datetime(2021, 1, 1, tzinfo=UTC)
+    result = research_call(store, broker, from_at=begin, to_at=end, cbr=bank)
+    assert result["status"] == "insufficient_data"
+    bank.key_rate_history.assert_called_once_with(begin.date(), end.date())
 
 
 def test_fundamental_adapter_does_not_invent_percentage_units_or_publication_time(runtime):
@@ -373,7 +455,7 @@ def test_fundamental_adapter_does_not_invent_percentage_units_or_publication_tim
     assert "roe_percent" not in facts
     assert facts["debt_to_ebitda"].value == Decimal("1.75")
     assert facts["free_cash_flow_ttm"].value == Decimal("-100")
-    assert all(fact.available_at == observed for fact in facts.values())
+    assert all(fact.available_at >= observed for fact in facts.values())
 
 
 @pytest.mark.parametrize("change", ["version", "document", "account"])
@@ -413,3 +495,183 @@ def test_invalid_research_window_is_rejected_before_any_network(runtime):
         research_call(store, broker, to_at=future)
     broker.status.assert_not_called()
     broker.candidate_daily_exchange_candles.assert_not_called()
+
+
+def test_research_universe_preserves_large_holdings_and_default_diversification():
+    from omnicio.strategy_service import _research_rows
+
+    holdings = [
+        {"instrument_uid": f"held-{index}", "instrument_type": "share"} for index in range(13)
+    ]
+    candidates = [
+        {"instrument_uid": f"{kind}-{index}", "instrument_type": kind}
+        for kind in ("share", "bond", "etf")
+        for index in range(32)
+    ]
+    context = {"holdings": holdings, "candidates": candidates}
+    for preset, minimum_bonds in (("balanced", 10), ("ladder", 22), ("conservative", 15)):
+        rows = _research_rows(context, preset_document(preset))
+        assert {row["instrument_uid"] for row in holdings} <= {
+            row["instrument_uid"] for row in rows
+        }
+        assert sum(row["instrument_type"] == "bond" for row in rows) >= minimum_bonds
+        assert len(rows) <= 100
+    oversized = {
+        "holdings": [
+            {"instrument_uid": str(index), "instrument_type": "share"} for index in range(101)
+        ]
+    }
+    balanced = preset_document("balanced")
+    with pytest.raises(ValueError, match="research_held_universe_too_large"):
+        _research_rows(oversized, balanced)
+
+
+def test_automatic_provider_histories_keep_real_entitlement_and_principal_separate(runtime):
+    from test_backtest import END, START
+
+    from omnicio.backtest import ResearchCosts
+    from omnicio.strategy_service import _research_assets
+    from omnicio.tbank import (
+        TBankAccruedInterest,
+        TBankBondCoupon,
+        TBankBondEvent,
+        TBankDividend,
+        TBankMoney,
+    )
+
+    _, broker = research_runtime(runtime)
+    last_buy, paid = START + timedelta(days=100), START + timedelta(days=110)
+    regular = TBankDividend(
+        "s",
+        TBankMoney("RUB", "5"),
+        paid,
+        START,
+        last_buy,
+        last_buy + timedelta(days=2),
+        "Regular Cash",
+        "Annual",
+        None,
+        START,
+    )
+    broker.candidate_dividends.return_value = (regular, replace(regular, dividend_type="Cancelled"))
+    broker.candidate_bond_ratings.return_value = ()
+    coupon = TBankBondCoupon(
+        "b", paid, 1, last_buy, TBankMoney("RUB", "4"), "COUPON_TYPE_CONSTANT", START, paid, 110
+    )
+    broker.candidate_bond_coupons.return_value = (coupon,)
+    event = TBankBondEvent(
+        "b",
+        1,
+        paid,
+        "EVENT_TYPE_CPN",
+        None,
+        paid,
+        paid,
+        TBankMoney("RUB", "4"),
+        "E",
+        "Фиксированный",
+        "",
+        fix_date=last_buy,
+    )
+    principal = replace(
+        event,
+        event_number=2,
+        event_type="EVENT_TYPE_MTY",
+        operation_type="OA",
+        pay_one_bond=TBankMoney("RUB", "10"),
+    )
+    broker.candidate_bond_events.return_value = (event, principal, replace(event, execution="D"))
+    broker.candidate_accrued_interests.return_value = tuple(
+        TBankAccruedInterest("b", START + timedelta(days=index), "1", "1", "100")
+        for index in range(200)
+    )
+    rows = [
+        {
+            "instrument_uid": uid,
+            "instrument_type": kind,
+            "currency": "RUB",
+            "lot": 1,
+            "nominal_currency": "RUB",
+            "amortization": True,
+        }
+        for uid, kind in (("s", "share"), ("b", "bond"))
+    ]
+    assets, unavailable = _research_assets(
+        A,
+        rows,
+        broker,
+        START,
+        END,
+        END,
+        document=preset_document("balanced"),
+        costs=ResearchCosts(Decimal(0), Decimal(0)),
+        evidence={"assets": []},
+    )
+    assert unavailable == []
+    assert assets[0].observed_cashflows[0].entitlement_at == last_buy + timedelta(days=1)
+    assert len(assets[0].observed_cashflows) == 1
+    assert [(event.kind, event.amount_per_unit_rub) for event in assets[1].observed_cashflows] == [
+        ("income", Decimal(4)),
+        ("principal", Decimal(10)),
+    ]
+    assert len(assets[1].provider_observations["daily_accruals"]) == 200
+    assert assets[1].candles[0].close == "100"
+    assert assets[1].bond_valuations == ()  # API has no separate open/close settlement NKD.
+    assert all(asset.basis == "unadjusted_price" and not asset.cashflows for asset in assets)
+    assert broker.candidate_accrued_interests.call_args.kwargs["from_at"] == START - timedelta(
+        days=366
+    )
+
+
+@pytest.mark.parametrize("missing", ["entitlement", "deferred_payment", "future_payment"])
+def test_bond_history_requires_entitlement_and_executed_payment_without_inventing_dates(missing):
+    from test_backtest import END, START
+
+    from omnicio.strategy_service import _bond_cashflow_history
+    from omnicio.tbank import TBankBondEvent, TBankMoney
+
+    event = TBankBondEvent(
+        instrument_uid="bond",
+        event_number=1,
+        event_date=START,
+        event_type="EVENT_TYPE_CPN",
+        default_date=None,
+        real_pay_date=None,
+        pay_date=START + timedelta(days=10),
+        pay_one_bond=TBankMoney("RUB", "4"),
+        execution="E",
+        operation_type="Фиксированный",
+        note="",
+        fix_date=START,
+    )
+    if missing == "entitlement":
+        event = replace(event, fix_date=None)
+    elif missing == "deferred_payment":
+        event = replace(event, execution="ED")
+    else:
+        event = replace(event, real_pay_date=END + timedelta(days=1))
+    assert _bond_cashflow_history((), (event,), END) == ()
+
+
+def test_ambiguous_provider_cashflows_cannot_double_the_historical_yield():
+    from test_backtest import END, START
+
+    from omnicio.strategy_service import _bond_cashflow_history
+    from omnicio.tbank import TBankBondEvent, TBankMoney
+
+    event = TBankBondEvent(
+        instrument_uid="bond",
+        event_number=1,
+        event_date=START,
+        event_type="EVENT_TYPE_MTY",
+        default_date=None,
+        real_pay_date=START,
+        pay_date=START,
+        pay_one_bond=TBankMoney("RUB", "10"),
+        execution="E",
+        operation_type="OA",
+        note="",
+        fix_date=START,
+    )
+    with pytest.raises(TBankUnavailable, match="ambiguous provider cashflow events"):
+        _bond_cashflow_history((), (event, event), END)

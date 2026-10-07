@@ -604,14 +604,15 @@ class WorkspaceStore:
             return
         cur.execute(
             "INSERT INTO workspace_events (user_id, id, category, kind, severity, title, detail, "
-            "occurred_at, target, source) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb) "
+            "occurred_at, target, source, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, clock_timestamp()) "
             "ON CONFLICT (user_id, id) DO UPDATE SET title = EXCLUDED.title, "
             "detail = EXCLUDED.detail, severity = EXCLUDED.severity, source = EXCLUDED.source, "
             "revision = CASE WHEN workspace_events.source IS DISTINCT FROM EXCLUDED.source "
             "THEN nextval(pg_get_serial_sequence('workspace_events', 'revision')) "
             "ELSE workspace_events.revision END, "
             "updated_at = CASE WHEN workspace_events.source IS DISTINCT FROM EXCLUDED.source "
-            "THEN now() ELSE workspace_events.updated_at END, "
+            "THEN clock_timestamp() ELSE workspace_events.updated_at END, "
             "read_at = CASE WHEN workspace_events.source IS DISTINCT FROM EXCLUDED.source "
             "THEN NULL ELSE workspace_events.read_at END, "
             "occurred_at = CASE WHEN workspace_events.source IS DISTINCT FROM EXCLUDED.source "
@@ -670,10 +671,12 @@ class WorkspaceStore:
 
     def _job_events(self, cur: Any, user_id: UUID, now: datetime) -> None:
         cur.execute(
-            "SELECT id, status, scheduled_for, requested_at, finished_at "
-            "FROM job_runs WHERE user_id = %s "
-            "AND status IN ('degraded', 'failed') AND finished_at >= %s "
-            "ORDER BY finished_at DESC, id DESC LIMIT 20",
+            "SELECT j.id, j.status, "
+            "COALESCE(j.scheduled_for, root.scheduled_for) AS scheduled_for, "
+            "j.requested_at, j.finished_at FROM job_runs j LEFT JOIN job_runs root "
+            "ON root.user_id = j.user_id AND root.id = j.retry_of WHERE j.user_id = %s "
+            "AND j.status IN ('degraded', 'failed') AND j.finished_at >= %s "
+            "ORDER BY j.finished_at DESC, j.id DESC LIMIT 20",
             (user_id, now - timedelta(days=7)),
         )
         for row in cur.fetchall():
@@ -942,8 +945,8 @@ class WorkspaceStore:
         if digest["frequency"] != "off":
             cur.execute(
                 "SELECT category, count(*) AS total FROM workspace_events WHERE user_id = %s "
-                "AND category = ANY (%s) AND read_at IS NULL AND occurred_at >= %s "
-                "AND occurred_at <= %s GROUP BY category",
+                "AND category = ANY (%s) AND read_at IS NULL AND updated_at >= %s "
+                "AND updated_at <= %s GROUP BY category",
                 (user_id, enabled, digest["from"], now),
             )
             for row in cur.fetchall():

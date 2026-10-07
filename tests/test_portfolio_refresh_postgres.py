@@ -215,6 +215,86 @@ def test_native_refresh_backfill_failure_rolls_back_schema_rows_and_tenant_conte
     assert _migration_history(connection, tenants) == original
 
 
+def test_background_migration_preserves_populated_owner_rows_context_and_older_writers(
+    populated_migration_owner: psycopg.Connection[Any],
+) -> None:
+    connection = populated_migration_owner
+    background = REFRESH_MIGRATION.parent / "0024_background_reliability.sql"
+    for path in sorted(REFRESH_MIGRATION.parent.glob("*.sql")):
+        if REFRESH_MIGRATION <= path < background:
+            connection.execute(path.read_text(encoding="utf-8"))
+    tenants = (uuid4(), uuid4())
+    created = datetime(2026, 10, 1, 3, tzinfo=UTC)
+    accepted = created + timedelta(hours=1)
+    finished = created + timedelta(hours=2)
+    for tenant, status in zip(tenants, ("active", "blocked"), strict=True):
+        with connection.transaction():
+            connection.execute("INSERT INTO users (id, status) VALUES (%s, %s)", (tenant, status))
+            connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(tenant),))
+            channel = connection.execute(
+                "INSERT INTO notification_channels (user_id, kind, destination_hash, "
+                "destination_ciphertext, label, status, verified_at, digest_period) "
+                "VALUES (%s, 'email', %s, %s, 'Synthetic', 'active', %s, %s) RETURNING id",
+                (tenant, "a" * 64, b"synthetic encrypted destination", created,
+                 "daily:2026-10-02T00:00:00+00:00"),
+            ).fetchone()[0]
+            connection.execute(
+                "INSERT INTO notification_outbox (user_id, channel_id, message_key, kind, "
+                "payload_ciphertext, status, created_at, accepted_at) "
+                "VALUES (%s, %s, 'historical', 'digest', %s, 'accepted', %s, %s)",
+                (tenant, channel, b"synthetic encrypted payload", created, accepted),
+            )
+            connection.execute(
+                "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, started_at, "
+                "finished_at) VALUES (%s, 'portfolio_daily', '2026-10-01', 'degraded', %s, %s)",
+                (tenant, created, finished),
+            )
+    previous = str(tenants[0])
+    connection.execute("SELECT set_config('omnicio.user_id', %s, false)", (previous,))
+    migration = background.read_text(encoding="utf-8")
+    connection.execute(migration)
+    connection.execute(migration)
+    assert connection.execute("SELECT current_setting('omnicio.user_id', true)").fetchone() \
+        == (previous,)
+    protection = connection.execute(
+        "SELECT r.rolsuper, r.rolbypassrls, t.relrowsecurity, t.relforcerowsecurity "
+        "FROM pg_roles r JOIN pg_class t ON t.relowner = r.oid "
+        "WHERE r.rolname = current_user AND t.oid = 'notification_outbox_events'::regclass"
+    ).fetchone()
+    assert protection == (False, False, True, True)
+    for tenant in tenants:
+        with connection.transaction():
+            connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(tenant),))
+            row = connection.execute(
+                "SELECT o.updated_at, o.status, c.digest_period, c.digest_cursor_at "
+                "FROM notification_outbox o JOIN notification_channels c "
+                "ON c.user_id = o.user_id AND c.id = o.channel_id WHERE o.user_id = %s",
+                (tenant,),
+            ).fetchone()
+            assert row == (accepted, "accepted", "daily:2026-10-02T00:00:00+00:00", None)
+            assert connection.execute(
+                "SELECT next_attempt_at FROM job_runs WHERE user_id = %s", (tenant,),
+            ).fetchone() == (finished + timedelta(minutes=5),)
+            assert connection.execute("SELECT count(*) FROM notification_outbox_events") \
+                .fetchone() == (0,)
+            # Accepted 1.1.0 writers omit both new timestamp columns. Defaults
+            # must keep those inserts valid during deploy overlap or rollback.
+            outbox = connection.execute(
+                "INSERT INTO notification_outbox (user_id, channel_id, message_key, kind, "
+                "payload_ciphertext) SELECT user_id, id, 'older-writer', 'event', %s "
+                "FROM notification_channels WHERE user_id = %s RETURNING updated_at",
+                (b"synthetic encrypted payload", tenant),
+            ).fetchone()
+            assert outbox[0] is not None
+            job = connection.execute(
+                "INSERT INTO job_runs (user_id, job_type, scheduled_for, status) "
+                "VALUES (%s, 'portfolio_daily', '2026-10-02', 'running') "
+                "ON CONFLICT (user_id, job_type, scheduled_for) DO NOTHING "
+                "RETURNING next_attempt_at", (tenant,),
+            ).fetchone()
+            assert job[0] is not None
+
+
 def owner(database: Database) -> UUID:
     ident = user(database, account=True)
     with database.pool.connection() as connection:
@@ -395,7 +475,8 @@ def test_native_manual_refresh_is_not_daily_success_and_cooldown_is_durable(
     store, ident = PortfolioStore(database), owner(database)
     earlier = datetime.now(UTC) - timedelta(hours=1)
     observation = replace(bundle(), account_id=str(ident), refreshed_at=earlier)
-    daily = store.claim_daily_job(ident, job_type="portfolio_daily", scheduled_for=date.today())
+    daily = store.claim_daily_job(ident, job_type="portfolio_daily", scheduled_for=date.today(),
+                                  legal_versions=LEGAL_VERSIONS)
     assert daily is not None
     old_snapshot = store.save_snapshot(ident, job_run_id=daily.id, bundle=observation)
     assert store.finish_job(ident, daily.id, status="succeeded", details={})
@@ -435,6 +516,7 @@ def test_native_manual_refresh_is_not_daily_success_and_cooldown_is_durable(
     assert store.request_refresh(ident, LEGAL_VERSIONS)["job_id"] != str(manual.id)
     assert store.claim_daily_job(
         ident, job_type="portfolio_daily", scheduled_for=date.today(),
+        legal_versions=LEGAL_VERSIONS,
     ) is None
 
 

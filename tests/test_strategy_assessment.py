@@ -187,6 +187,22 @@ def test_future_fact_cannot_make_a_candidate_eligible():
     assert "missing:roe_percent" in result["missing_requirements"]
 
 
+def test_prior_observed_facts_remain_point_in_time_when_current_value_is_newer():
+    candidate = candidate_facts(roe_percent=Decimal(2))
+    current = dict(candidate.facts)
+    current["roe_percent"] = StrategyFact(Decimal(2), NOW + timedelta(days=1), FACT_SOURCE)
+    historical = StrategyFact(Decimal(20), NOW - timedelta(days=20), FACT_SOURCE)
+    candidate = replace(candidate, facts=current, fact_history={"roe_percent": (historical,)})
+    result = select_strategy_candidates(selection_document("buffett"), [candidate], as_of=NOW)
+    assert result["candidate_selection_ready"] is True
+    published = result["candidates"][0]["facts"]["roe_percent"]
+    assert published["value"] == "20"
+    assert published["available_at"] == historical.available_at.isoformat()
+    later = select_strategy_candidates(selection_document("buffett"), [candidate],
+                                       as_of=NOW + timedelta(days=2))
+    assert later["candidate_selection_ready"] is False
+
+
 def test_concentration_cap_uses_aggregate_issuer_across_two_instruments():
     data = selection_document("balanced")
     data["policy"]["max_issuer_percent"] = "25"
@@ -195,6 +211,55 @@ def test_concentration_cap_uses_aggregate_issuer_across_two_instruments():
     assert sum(Decimal(row["target_weight_percent"]) for row in result["selected"]) == 25
     assert Decimal(result["cash_weight_percent"]) == 75
     assert result["candidate_selection_ready"] is False
+
+
+def test_clipped_instrument_budget_is_redistributed_to_remaining_capacity():
+    data = selection_document("balanced")
+    data["policy"]["max_instrument_percent"] = "60"
+    rows = [
+        candidate_facts("a", volatility_percent=Decimal(0)),
+        candidate_facts("b", volatility_percent=Decimal(8)),
+    ]
+    result = select_strategy_candidates(data, rows, as_of=NOW)
+    weights = {
+        row["instrument_uid"]: Decimal(row["target_weight_percent"]) for row in result["selected"]
+    }
+    assert weights == {"a": Decimal(60), "b": Decimal(40)}
+    assert result["candidate_selection_ready"] is True
+    assert Decimal(result["cash_weight_percent"]) == 0
+    archived = select_strategy_candidates(data, rows, as_of=NOW, engine_version="1.1.0")
+    assert [Decimal(row["target_weight_percent"]) for row in archived["selected"]] == [60, 10]
+
+
+@pytest.mark.parametrize("preset", [row["id"] for row in strategy_catalog()["presets"]])
+def test_shipped_default_allocations_are_feasible_without_weakening_any_risk_limit(preset):
+    data = preset_document(preset)
+    rows = []
+    for kind in ("shares", "bonds", "funds"):
+        for index in range(32):
+            rows.append(
+                candidate_facts(
+                    f"{kind}-{index}",
+                    kind,
+                    growth_beta=Decimal(1 if index % 4 < 2 else -1),
+                    inflation_beta=Decimal(1 if index % 2 == 0 else -1),
+                )
+            )
+    result = select_strategy_candidates(data, rows, as_of=NOW)
+    assert result["candidate_selection_ready"] is True, result["missing_requirements"]
+    assert abs(Decimal(result["cash_weight_percent"]) - data["allocation"]["cash"]) < Decimal(
+        "1e-6"
+    )
+    for kind in ("shares", "bonds", "funds"):
+        allocated = sum(
+            (
+                Decimal(row["target_weight_percent"])
+                for row in result["selected"]
+                if row["asset_class"] == kind
+            ),
+            Decimal(0),
+        )
+        assert abs(allocated - data["allocation"][kind]) < Decimal("1e-6")
 
 
 @pytest.mark.parametrize(

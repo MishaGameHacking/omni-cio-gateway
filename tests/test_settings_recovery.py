@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -131,6 +131,15 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
         for incomplete_schema in (
             "ALTER TABLE portfolio_execution_legs DISABLE TRIGGER strategy_submission_authority",
             "ALTER TABLE billing_payments RENAME cancel_attempted_at TO missing_cancel_receipt",
+            "ALTER TABLE billing_payments RENAME init_started_at TO missing_init_receipt",
+            "ALTER TABLE notification_channels RENAME digest_cursor_at TO missing_digest_cursor",
+            "ALTER TABLE notification_outbox_events NO FORCE ROW LEVEL SECURITY",
+            "ALTER TABLE worker_heartbeats RENAME completed_status TO missing_completed_status",
+            "ALTER TABLE strategy_research_requests NO FORCE ROW LEVEL SECURITY",
+            "ALTER TABLE strategy_research_runs DROP CONSTRAINT strategy_research_runs_inputs_size",
+            "ALTER TABLE strategy_research_evidence "
+            "DROP CONSTRAINT strategy_research_evidence_size",
+            "DROP TABLE worker_heartbeats",
         ):
             with admin.transaction(force_rollback=True):
                 admin.execute(incomplete_schema)
@@ -549,6 +558,7 @@ def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -
     user = UserRecord(A, 123, "active", "user")
     database = Mock(spec=Database)
     database.has_legal_versions.return_value = True
+    database.strategy_assessment_slot.return_value = nullcontext(True)
     auth = Mock()
     auth.refresh_session.return_value = user
     monkeypatch.setattr(main, "service", lambda request: auth)
@@ -574,10 +584,13 @@ def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -
         connected=True, environment="prod", account_id="synthetic-a", verified_at=START,
     )
     broker.candidate_fundamentals.return_value = ()
+    broker.candidate_dividends.return_value = ()
     broker.candidate_daily_exchange_candles.return_value = prices("a").candles
     research = Mock(wraps=main.strategy_research)
     archive = Mock(spec=ResearchStore)
     archive.evidence.return_value = {"version": 0, "document": {"assets": []}, "received_at": None}
+    archive.observed_facts.return_value = {}
+    archive.begin_request.return_value = {"created": True, "status": "running"}
     archive.save_run.return_value = {"id": str(UUID(int=900)), "replay_available": True}
     monkeypatch.setattr(app.state, "research_store", archive, raising=False)
     monkeypatch.setattr(main, "market_service", lambda request: Mock(cbr=None))
@@ -585,6 +598,7 @@ def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -
     monkeypatch.setattr(main, "broker_service", lambda request: broker)
     monkeypatch.setattr(main, "strategy_research", research)
     body = {
+        "request_id": str(UUID(int=901)),
         "expected_public_id": "000000123", "expected_version": 4,
         "from_at": START.isoformat(), "to_at": END.isoformat(),
         "commission_bps": "10", "slippage_bps": "5", "initial_capital_rub": "20000",
@@ -604,7 +618,7 @@ def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -
         user_id=user.id, expected_version=4, store=store, broker=broker,
         from_at=START, to_at=END, commission_bps=Decimal("10"),
         slippage_bps=Decimal("5"), initial_capital_rub=Decimal("20000"),
-        research_store=archive, cbr=None,
+        research_store=archive, cbr=None, request_id=UUID(int=901),
     )
     broker.candidate_daily_exchange_candles.assert_called_once_with(
         user.id, "a", from_at=START, to_at=END,
@@ -663,6 +677,7 @@ def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -
     }
     assert {call[0] for call in broker.mock_calls} == {
         "status", "candidate_fundamentals", "candidate_daily_exchange_candles",
+        "candidate_dividends",
     }
 
 

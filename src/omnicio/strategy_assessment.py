@@ -846,18 +846,33 @@ class StrategyCandidateFacts:
     currency: str
     facts: Mapping[str, StrategyFact] = field(default_factory=dict)
     constituents: tuple[FundConstituent, ...] = ()
+    fact_history: Mapping[str, tuple[StrategyFact, ...]] = field(default_factory=dict)
+
+
+def _known_observation(
+    candidate: StrategyCandidateFacts,
+    key: str,
+    as_of: datetime,
+) -> StrategyFact | None:
+    observations = list(candidate.fact_history.get(key, ()))
+    latest = candidate.facts.get(key)
+    if latest is not None:
+        observations.append(latest)
+    known = [
+        fact
+        for fact in observations
+        if fact.available_at.tzinfo is not None
+        and fact.available_at <= as_of
+        and _source_url(fact.source_url)
+    ]
+    if not known:
+        return None
+    return max(known, key=lambda fact: fact.available_at)
 
 
 def _known_fact(candidate: StrategyCandidateFacts, key: str, as_of: datetime) -> object:
-    fact = candidate.facts.get(key)
-    if (
-        fact is None
-        or fact.available_at.tzinfo is None
-        or fact.available_at > as_of
-        or not _source_url(fact.source_url)
-    ):
-        return None
-    return fact.value
+    fact = _known_observation(candidate, key, as_of)
+    return fact.value if fact is not None else None
 
 
 def _numeric_fact(
@@ -1275,8 +1290,8 @@ def _rank_candidates(
                         "available_at": fact.available_at.isoformat(),
                         "source_url": fact.source_url,
                     }
-                    for key, fact in candidate.facts.items()
-                    if _known_fact(candidate, key, as_of) is not None
+                    for key in sorted(set(candidate.facts) | set(candidate.fact_history))
+                    if (fact := _known_observation(candidate, key, as_of)) is not None
                 },
             }
         )
@@ -1318,14 +1333,18 @@ def _bounded_candidate_weight(
     as_of: datetime,
     used: _ExposureLedger,
     missing: set[str],
+    allocated: Decimal = _ZERO,
 ) -> Decimal:
     cap = _amount(data["policy"]["max_instrument_percent"])
     if cap is None:
         missing.add("policy.max_instrument_percent")
         return _ZERO
+    cap = max(_ZERO, cap - allocated)
     weight = min(weight, cap)
     if candidate.asset_class == "funds":
-        weight = min(weight, Decimal(data["rules"]["fund_wrapper_cap_percent"]))
+        weight = min(
+            weight, max(_ZERO, Decimal(data["rules"]["fund_wrapper_cap_percent"]) - allocated)
+        )
     limits = _candidate_exposure_limits(candidate, data, as_of, missing)
     for name, key, exposure, cap in limits:
         weight = min(weight, max(_ZERO, cap - used[name][key]) / exposure)
@@ -1352,6 +1371,44 @@ def _ranked_weight(
     return budget * (score / score_sum if score_sum else Decimal(1) / len(matching))
 
 
+def _allocate_ranked_group(
+    matching: Sequence[_RankedCandidate],
+    budget: Decimal,
+    mode: str,
+    data: Mapping[str, Any],
+    as_of: datetime,
+    used: _ExposureLedger,
+    missing: set[str],
+    *,
+    redistribute: bool,
+) -> dict[str, Decimal]:
+    """Redistribute clipped weights while preserving every aggregate risk ceiling."""
+    weights = {item[0].instrument_uid: _ZERO for item in matching}
+    active = list(matching)
+    tolerance = Decimal("0.000000000001")
+    # Every additional round removes a saturated candidate. The final round
+    # distributes all remaining capital when the remaining capacities permit it.
+    for _ in range(len(matching) + 1 if redistribute else 1):
+        remaining = budget - sum(weights.values(), _ZERO)
+        if remaining <= tolerance or not active:
+            break
+        next_active = []
+        for ranked in active:
+            candidate = ranked[0]
+            uid = candidate.instrument_uid
+            proposed = _ranked_weight(ranked, active, remaining, mode)
+            increment = _bounded_candidate_weight(
+                candidate, proposed, data, as_of, used, missing, weights[uid]
+            )
+            weights[uid] += increment
+            if increment + tolerance >= proposed:
+                next_active.append(ranked)
+        if len(next_active) == len(active):
+            break
+        active = next_active
+    return weights
+
+
 def _select_asset_class(
     data: Mapping[str, Any],
     eligible: Sequence[_RankedCandidate],
@@ -1359,6 +1416,8 @@ def _select_asset_class(
     as_of: datetime,
     used: _ExposureLedger,
     missing: set[str],
+    *,
+    redistribute: bool,
 ) -> list[dict[str, Any]]:
     target = Decimal(data["allocation"][kind])
     if not target:
@@ -1377,11 +1436,32 @@ def _select_asset_class(
     if target > class_cap:
         missing.add("target_above_class_cap:" + kind)
     mode = strategy_rule_set(data["base_preset_id"])["ranking"]
+    budget = min(target, class_cap)
+    # Ladder rungs and economic regimes have separate deliberate budgets.
+    # A constrained rung must not silently transfer its mandate to another rung.
+    if redistribute and mode in {"maturity_ladder", "regime_risk"}:
+        buckets = sorted({item[2] for item in matching})
+        groups = [[item for item in matching if item[2] == bucket] for bucket in buckets]
+    else:
+        groups = [matching]
+    weights: dict[str, Decimal] = {}
+    for group in groups:
+        weights.update(
+            _allocate_ranked_group(
+                group,
+                budget / len(groups),
+                mode,
+                data,
+                as_of,
+                used,
+                missing,
+                redistribute=redistribute,
+            )
+        )
     selected, allocated = [], _ZERO
     for ranked in matching:
         candidate, _, bucket = ranked
-        proposed = _ranked_weight(ranked, matching, min(target, class_cap), mode)
-        weight = _bounded_candidate_weight(candidate, proposed, data, as_of, used, missing)
+        weight = weights[candidate.instrument_uid]
         if weight <= 0:
             continue
         allocated += weight
@@ -1405,6 +1485,7 @@ def select_strategy_candidates(
     candidates: Sequence[StrategyCandidateFacts],
     *,
     as_of: datetime,
+    engine_version: str = "1.2.0",
 ) -> dict[str, Any]:
     """Screen dated facts, rank by the mandate and allocate bounded research weights.
 
@@ -1412,7 +1493,7 @@ def select_strategy_candidates(
     is useful, but it does not certify a complete personal investment selection.
     """
     data = normalize_document(document)
-    if as_of.tzinfo is None or len(candidates) > 100:
+    if as_of.tzinfo is None or len(candidates) > 100 or engine_version not in {"1.1.0", "1.2.0"}:
         raise ValueError("strategy_candidate_input_invalid")
     ids = [row.instrument_uid for row in candidates]
     if any(not uid for uid in ids) or len(ids) != len(set(ids)):
@@ -1427,7 +1508,11 @@ def select_strategy_candidates(
     }
     selected = []
     for kind in ALLOCATION_KEYS[:3]:
-        selected.extend(_select_asset_class(data, eligible, kind, as_of, used, missing))
+        selected.extend(
+            _select_asset_class(
+                data, eligible, kind, as_of, used, missing, redistribute=engine_version != "1.1.0"
+            )
+        )
     missing.update(
         reason
         for row in rows

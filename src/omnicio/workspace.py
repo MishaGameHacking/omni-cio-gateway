@@ -655,11 +655,12 @@ def event_digest(
     counts = dict.fromkeys(CATEGORIES, 0)
     if frequency != "off":
         for item in events:
-            at = timestamp(item.get("occurred_at"))
+            at = timestamp(item.get("updated_at"))
             if at is not None and start <= at <= now and item.get("read_at") is None:
                 counts[item["category"]] += 1
     return {
         "frequency": frequency,
+        "period_basis": "available_at",
         "from": start.isoformat(),
         "count": sum(counts.values()),
         "by_category": counts,

@@ -89,12 +89,21 @@ def _simulation(
     }
 
 
+def _source_progress(goal: Mapping[str, Any]) -> dict[str, Any]:
+    progress = goal.get("progress")
+    return progress if isinstance(progress, dict) else {}
+
+
 def goal_forecast(
     goal: Mapping[str, Any], document: object, *, today: date,
 ) -> dict[str, Any]:
     plan = normalize_goal_plan(document)
+    progress = _source_progress(goal)
     result: dict[str, Any] = {
         "status": "unavailable", "reason": None, "as_of": today.isoformat(),
+        "source_status": progress.get("status", "unavailable"),
+        "source_as_of": progress.get("as_of"), "source_kind": progress.get("source"),
+        "source_amount_rub": progress.get("amount_rub"),
         "method": "monthly_lognormal_scenario_v1", "assumptions": plan,
         "assumptions_source": "user_supplied", "future_success_guaranteed": False,
         "limits": [
@@ -104,8 +113,11 @@ def goal_forecast(
             "The interval measures simulation error, not uncertainty about the real model.",
         ],
     }
-    progress = goal.get("progress")
-    if not isinstance(progress, dict) or progress.get("amount_rub") is None:
+    if progress.get("amount_rub") is None:
+        return {**result, "reason": "goal_progress_unavailable"}
+    if progress.get("status") == "stale":
+        return {**result, "status": "source_stale", "reason": "goal_progress_stale"}
+    if progress.get("status") != "available":
         return {**result, "reason": "goal_progress_unavailable"}
     if not goal.get("target_date"):
         return {**result, "reason": "goal_target_date_required"}

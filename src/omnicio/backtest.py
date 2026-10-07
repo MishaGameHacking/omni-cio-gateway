@@ -22,7 +22,8 @@ from .tbank import TBankHistoricCandle
 
 ResearchBasis = Literal["unadjusted_price", "verified_total_return"]
 HISTORY_SOURCE = "https://developer.tbank.ru/invest/api/market-data-service-get-candles"
-MAX_RESEARCH_ASSETS = 12
+MAX_RESEARCH_ASSETS = 100
+RESEARCH_ENGINE_VERSION = "1.2.0"
 MAX_RESEARCH_DAYS = 1095
 MIN_TRAIN_OBSERVATIONS = 60
 MIN_TEST_OBSERVATIONS = 20
@@ -80,6 +81,8 @@ class ResearchAsset:
     factors: tuple[FactorObservation, ...] = ()
     splits: tuple[HistoricalSplit, ...] = ()
     bond_valuations: tuple[BondValuation, ...] = ()
+    observed_cashflows: tuple[HistoricalCashflow, ...] = ()
+    provider_observations: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +135,9 @@ def history_candidate(
     *,
     as_of: datetime,
     factors: Sequence[FactorObservation] = (),
+    cashflows: Sequence[HistoricalCashflow] = (),
+    document: Mapping[str, Any] | None = None,
+    costs: ResearchCosts | None = None,
 ) -> StrategyCandidateFacts:
     """Only completed bars whose whole daily interval was known by as_of."""
     past = [bar for bar in candles if bar.is_complete and bar.time + _DAY <= as_of]
@@ -159,6 +165,10 @@ def history_candidate(
         for key in ("growth_beta", "inflation_beta", "factor_observations"):
             facts.pop(key, None)
         facts.update(_factor_facts(past, factors, as_of))
+    if cashflows:
+        facts.update(
+            _cashflow_facts(candidate, cashflows, prices[-1], as_of, document=document, costs=costs)
+        )
     return StrategyCandidateFacts(
         instrument_uid=candidate.instrument_uid,
         ticker=candidate.ticker,
@@ -167,7 +177,45 @@ def history_candidate(
         currency=candidate.currency,
         facts=facts,
         constituents=candidate.constituents,
+        fact_history=candidate.fact_history,
     )
+
+
+def _cashflow_facts(
+    candidate: StrategyCandidateFacts,
+    cashflows: Sequence[HistoricalCashflow],
+    price: Decimal,
+    as_of: datetime,
+    *,
+    document: Mapping[str, Any] | None,
+    costs: ResearchCosts | None,
+) -> dict[str, StrategyFact]:
+    """Trailing observed income, never future payouts or principal disguised as yield."""
+    paid = [
+        event
+        for event in cashflows
+        if event.kind == "income" and as_of - timedelta(days=365) < event.paid_at <= as_of
+    ]
+    if not paid or price <= 0:
+        return {}
+    gross = sum((event.amount_per_unit_rub for event in paid), _ZERO) / price * 100
+    source = max(paid, key=lambda event: event.paid_at).source_url
+    facts = {"cashflow_yield_percent": StrategyFact(gross, as_of, source)}
+    if candidate.asset_class == "shares":
+        facts.update(
+            dividend_yield_percent=StrategyFact(gross, as_of, source),
+            dividend_declared=StrategyFact(True, as_of, source),
+        )
+    if document is not None and costs is not None:
+        tax, horizon = (
+            document["policy"]["securities_tax_rate_percent"],
+            document["profile"]["horizon_months"],
+        )
+        if tax is not None and horizon is not None and Decimal(horizon) > 0:
+            net = gross * (1 - Decimal(tax) / 100)
+            net -= (costs.commission_bps + costs.slippage_bps) * 2 / 100 * 12 / Decimal(horizon)
+            facts["net_yield_percent"] = StrategyFact(net, as_of, source)
+    return facts
 
 
 def _factor_facts(
@@ -774,6 +822,9 @@ def _prepare_research_assets(
     from_at: datetime,
     to_at: datetime,
     split: datetime,
+    document: Mapping[str, Any],
+    costs: ResearchCosts,
+    engine_version: str,
 ) -> tuple[list[ResearchAsset], list[dict[str, Any]]]:
     diagnostics: list[dict[str, Any]] = []
     clean_assets = []
@@ -810,6 +861,9 @@ def _prepare_research_assets(
                     split_adjusted_history(training, asset.splits, split),
                     as_of=split,
                     factors=asset.factors,
+                    cashflows=asset.observed_cashflows if engine_version != "1.1.0" else (),
+                    document=document,
+                    costs=costs,
                 ),
             )
         )
@@ -875,6 +929,7 @@ def run_strategy_backtest(
     initial_capital_rub: Decimal,
     costs: ResearchCosts,
     now: datetime | None = None,
+    engine_version: str = RESEARCH_ENGINE_VERSION,
 ) -> dict[str, Any]:
     """Frozen-training holdout research; never silently replace a failed chosen asset."""
     data = normalize_document(document)
@@ -888,9 +943,14 @@ def run_strategy_backtest(
         costs,
     )
     split = from_at + (to_at - from_at) * 0.7
-    clean_assets, diagnostics = _prepare_research_assets(assets, from_at, to_at, split)
+    clean_assets, diagnostics = _prepare_research_assets(
+        assets, from_at, to_at, split, data, costs, engine_version
+    )
     selection = select_strategy_candidates(
-        data, [asset.candidate for asset in clean_assets], as_of=split
+        data,
+        [asset.candidate for asset in clean_assets],
+        as_of=split,
+        engine_version=engine_version,
     )
     chosen = {
         row["instrument_uid"]: Decimal(row["target_weight_percent"])
@@ -899,8 +959,8 @@ def run_strategy_backtest(
     selected_assets = [asset for asset in clean_assets if asset.candidate.instrument_uid in chosen]
     bases = {asset.basis for asset in selected_assets}
     basis = next(iter(bases)) if len(bases) == 1 else "unadjusted_price"
-    fingerprint = {
-        "engine_version": "1.1.0",
+    fingerprint: dict[str, Any] = {
+        "engine_version": engine_version,
         "method_rules": strategy_rule_set(data["base_preset_id"]),
         "strategy": data,
         "from": from_at.isoformat(),
@@ -974,6 +1034,24 @@ def run_strategy_backtest(
             for asset in clean_assets
         ],
     }
+    if engine_version != "1.1.0":
+        for row, asset in zip(fingerprint["assets"], clean_assets, strict=True):
+            row["fact_history"] = {
+                key: [
+                    [str(f.value), f.available_at.isoformat(), f.source_url] for f in observations
+                ]
+                for key, observations in asset.candidate.fact_history.items()
+            }
+            row["observed_cashflows"] = [
+                [
+                    event.entitlement_at.isoformat(),
+                    event.paid_at.isoformat(),
+                    str(event.amount_per_unit_rub),
+                    event.source_url,
+                    event.kind,
+                ]
+                for event in asset.observed_cashflows
+            ]
     limitations = [
         "Историческая проверка условной корзины, не фактическая доходность счёта.",
         "Состав доступной выборки задаётся источником: исключённые с биржи бумаги "
@@ -1001,7 +1079,7 @@ def run_strategy_backtest(
     if basis == "unadjusted_price":
         limitations.extend(
             [
-                "Дивиденды, купоны, НКД и изменения номинала не входят "
+                "Дивиденды, купоны, НКД и выплаты при возврате номинала не входят "
                 "в этот расчёт движения цены.",
                 "Корпоративные действия и исторические изменения лота не подтверждены полностью.",
             ]
@@ -1011,7 +1089,7 @@ def run_strategy_backtest(
         "strategy_hash": document_hash(data),
         "method": strategy_rule_set(data["base_preset_id"])["ranking"],
         "basis": basis,
-        "engine_version": "1.1.0",
+        "engine_version": engine_version,
         "complete_strategy_coverage": selection["candidate_selection_ready"],
         "research_asset_weight_percent": _text(sum(chosen.values(), _ZERO)),
         "return_label": "Полная доходность после заданных издержек"
@@ -1145,6 +1223,7 @@ def research_robustness(
     initial_capital_rub: Decimal,
     costs: ResearchCosts,
     now: datetime,
+    engine_version: str = RESEARCH_ENGINE_VERSION,
 ) -> dict[str, Any]:
     """Three declared chronological holdouts; no search for the best result."""
     windows = []
@@ -1158,6 +1237,7 @@ def research_robustness(
             initial_capital_rub=initial_capital_rub,
             costs=costs,
             now=now,
+            engine_version=engine_version,
         )
         windows.append(
             {

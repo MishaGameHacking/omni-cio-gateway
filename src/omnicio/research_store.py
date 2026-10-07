@@ -11,7 +11,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
@@ -19,7 +19,12 @@ from .db import Database, live_execution_lock_key
 from .portfolio_store import SettingsVersionConflict
 from .strategy import document_hash
 
-MAX_SAVED_RUNS = 200
+MAX_RESEARCH_RUN_PAGE = 200
+MAX_ARCHIVE_DOCUMENT_BYTES = 32 * 1024 * 1024
+MAX_EVIDENCE_DOCUMENT_BYTES = 16 * 1024 * 1024
+_REQUEST_FIELDS = "id, status, run_id, error_code, created_at, updated_at, expires_at"
+_REQUEST_SELECT = "SELECT " + _REQUEST_FIELDS
+_REQUEST_LIMIT = 20000
 _FACT_KEYS = frozenset(
     {
         "issuer_id",
@@ -322,7 +327,9 @@ def normalize_research_evidence(value: object, *, now: datetime | None = None) -
     if len({row["instrument_uid"] for row in assets}) != len(assets):
         raise ValueError("research_evidence_duplicate_instrument")
     result = {"assets": assets}
-    if len(_json(result).encode()) > 1_000_000:
+    # Standard JSON separators include the same structural spaces as JSONB::text;
+    # a document admitted here must also fit the database representation.
+    if len(json.dumps(result, ensure_ascii=False).encode()) > MAX_EVIDENCE_DOCUMENT_BYTES:
         raise ValueError("research_evidence_too_large")
     return result
 
@@ -398,9 +405,14 @@ class ResearchStore:
         connection_verified_at: datetime,
         strategy_version: int,
         evidence_version: int,
+        request_id: UUID | None = None,
     ) -> dict[str, Any]:
         """Archive exactly the evaluated inputs; recheck mutable context under a short lock."""
-        if any(len(_json(value).encode()) > 4_000_000 for value in (result, inputs)):
+        encoded_result, encoded_inputs = _json(result), _json(inputs)
+        if any(
+            len(value.encode()) > MAX_ARCHIVE_DOCUMENT_BYTES
+            for value in (encoded_result, encoded_inputs)
+        ):
             raise ValueError("research_archive_too_large")
         ident = uuid4()
         with self._transaction(user_id) as cur:
@@ -426,12 +438,22 @@ class ResearchStore:
                 or self._evidence(cur, user_id)["version"] != evidence_version
             ):
                 raise SettingsVersionConflict("research_context_changed")
+            capacity = self._capacity(cur, user_id)
             cur.execute(
-                "SELECT count(*) AS total FROM strategy_research_runs WHERE user_id = %s",
-                (user_id,),
+                "SELECT octet_length(%s::jsonb::text) AS result_bytes, "
+                "octet_length(%s::jsonb::text) AS input_bytes",
+                (encoded_result, encoded_inputs),
             )
-            if cur.fetchone()["total"] >= MAX_SAVED_RUNS:
+            sizes = cur.fetchone()
+            if max(sizes.values()) > MAX_ARCHIVE_DOCUMENT_BYTES:
+                raise ValueError("research_archive_too_large")
+            if capacity["runs_used"] >= capacity["runs_limit"]:
                 raise ValueError("research_archive_capacity")
+            if (
+                capacity["storage_used_bytes"] + sum(sizes.values())
+                > capacity["storage_limit_bytes"]
+            ):
+                raise ValueError("research_archive_storage_capacity")
             cur.execute(
                 "INSERT INTO strategy_research_runs (user_id, id, account_id, environment, "
                 "strategy_version, evidence_version, data_hash, result, inputs) "
@@ -445,11 +467,20 @@ class ResearchStore:
                     strategy_version,
                     evidence_version,
                     result["data_hash"],
-                    _json(result),
-                    _json(inputs),
+                    encoded_result,
+                    encoded_inputs,
                 ),
             )
             saved = cur.fetchone()
+            if request_id is not None:
+                cur.execute(
+                    "UPDATE strategy_research_requests SET status = 'completed', run_id = %s, "
+                    "updated_at = clock_timestamp() WHERE user_id = %s AND id = %s "
+                    "AND status = 'running' AND expires_at > clock_timestamp() RETURNING id",
+                    (ident, user_id, request_id),
+                )
+                if cur.fetchone() is None:
+                    raise SettingsVersionConflict("research_request_expired")
             return {
                 "id": str(saved["id"]),
                 "created_at": saved["created_at"],
@@ -457,19 +488,175 @@ class ResearchStore:
                 "replay_available": True,
             }
 
+    @staticmethod
+    def _capacity(cur: Any, user_id: UUID) -> dict[str, int]:
+        from .billing import entitlement_limits
+
+        limits = entitlement_limits(cur, user_id)
+        cur.execute(
+            "SELECT count(*) AS total, coalesce(sum(octet_length(result::text) "
+            "+ octet_length(inputs::text)), 0) AS bytes "
+            "FROM strategy_research_runs WHERE user_id = %s",
+            (user_id,),
+        )
+        observed = cur.fetchone()
+        return {
+            "runs_used": int(observed["total"]),
+            "runs_limit": limits["research_runs"],
+            "storage_used_bytes": int(observed["bytes"]),
+            "storage_limit_bytes": limits["research_storage_bytes"],
+        }
+
+    def capacity(self, user_id: UUID) -> dict[str, int]:
+        """Expiry restricts new archive writes; reading/exporting/deleting stays available."""
+        with self._transaction(user_id) as cur:
+            return self._capacity(cur, user_id)
+
+    @staticmethod
+    def _expire_requests(cur: Any, user_id: UUID) -> None:
+        cur.execute(
+            "UPDATE strategy_research_requests SET status = 'expired', "
+            "error_code = 'research_request_expired', updated_at = clock_timestamp() "
+            "WHERE user_id = %s AND status = 'running' AND expires_at <= clock_timestamp()",
+            (user_id,),
+        )
+
+    def begin_request(self, user_id: UUID, request_id: UUID, input_hash: str) -> dict[str, Any]:
+        """Deduplicate an attempt; terminal unlinked tombstones are kept for 30 days."""
+        with self._transaction(user_id) as cur:
+            self._expire_requests(cur, user_id)
+            cur.execute(
+                "DELETE FROM strategy_research_requests WHERE user_id = %s "
+                "AND status IN ('failed', 'expired', 'deleted') AND run_id IS NULL "
+                "AND updated_at < clock_timestamp() - interval '30 days'",
+                (user_id,),
+            )
+            cur.execute(
+                _REQUEST_SELECT + ", input_hash "
+                "FROM strategy_research_requests WHERE user_id = %s AND id = %s",
+                (user_id, request_id),
+            )
+            existing = cur.fetchone()
+            if existing is not None:
+                if existing["input_hash"] != input_hash:
+                    raise SettingsVersionConflict("research_request_parameters_changed")
+                return {key: value for key, value in existing.items() if key != "input_hash"}
+            cur.execute(
+                "SELECT count(*) AS count FROM strategy_research_requests WHERE user_id = %s",
+                (user_id,),
+            )
+            if cur.fetchone()["count"] >= _REQUEST_LIMIT:
+                raise ValueError("research_request_capacity")
+            cur.execute(
+                "INSERT INTO strategy_research_requests(user_id, id, input_hash, status) "
+                "VALUES (%s, %s, %s, 'running') RETURNING " + _REQUEST_FIELDS,
+                (user_id, request_id, input_hash),
+            )
+            return {**dict(cur.fetchone()), "created": True}
+
+    def request(self, user_id: UUID, request_id: UUID) -> dict[str, Any]:
+        with self._transaction(user_id) as cur:
+            self._expire_requests(cur, user_id)
+            cur.execute(
+                _REQUEST_SELECT + " FROM strategy_research_requests WHERE user_id = %s AND id = %s",
+                (user_id, request_id),
+            )
+            record = cur.fetchone()
+            if record is None:
+                raise ResearchNotFound("research_request_not_found")
+            return dict(record)
+
+    def fail_request(self, user_id: UUID, request_id: UUID, error_code: str) -> None:
+        with self._transaction(user_id) as cur:
+            cur.execute(
+                "UPDATE strategy_research_requests SET status = 'failed', error_code = %s, "
+                "updated_at = clock_timestamp() WHERE user_id = %s AND id = %s "
+                "AND status = 'running'",
+                (error_code, user_id, request_id),
+            )
+
     def runs(self, user_id: UUID, *, limit: int = 50) -> list[dict[str, Any]]:
-        if not 1 <= limit <= MAX_SAVED_RUNS:
+        return cast(list[dict[str, Any]], self.runs_page(user_id, limit=limit)["items"])
+
+    def runs_page(
+        self,
+        user_id: UUID,
+        *,
+        limit: int = 50,
+        cursor: UUID | None = None,
+    ) -> dict[str, Any]:
+        if not 1 <= limit <= MAX_RESEARCH_RUN_PAGE:
             raise ValueError("research_list_limit_invalid")
         with self._transaction(user_id) as cur:
+            boundary = ""
+            values: list[Any] = [user_id]
+            if cursor is not None:
+                cur.execute(
+                    "SELECT created_at, id FROM strategy_research_runs "
+                    "WHERE user_id = %s AND id = %s",
+                    (user_id, cursor),
+                )
+                record = cur.fetchone()
+                if record is None:
+                    raise ResearchNotFound("research_cursor_not_found")
+                boundary = "AND (created_at, id) < (%s, %s) "
+                values.extend((record["created_at"], record["id"]))
+            values.append(limit + 1)
             cur.execute(
                 "SELECT id, account_id, environment, strategy_version, evidence_version, "
                 "data_hash, created_at, result->>'status' AS status, "
                 "result->'period' AS period, result->'metrics' AS metrics "
                 "FROM strategy_research_runs WHERE user_id = %s "
-                "ORDER BY created_at DESC, id DESC LIMIT %s",
-                (user_id, limit),
+                + boundary
+                + "ORDER BY created_at DESC, id DESC LIMIT %s",
+                values,
             )
-            return [dict(row) for row in cur.fetchall()]
+            records = [dict(row) for row in cur.fetchall()]
+            self._expire_requests(cur, user_id)
+            cur.execute(
+                _REQUEST_SELECT + " FROM strategy_research_requests "
+                "WHERE user_id = %s ORDER BY (status = 'running') DESC, "
+                "created_at DESC, id DESC LIMIT 1",
+                (user_id,),
+            )
+            recent = cur.fetchone()
+            return {
+                "items": records[:limit],
+                "next_cursor": str(records[limit - 1]["id"]) if len(records) > limit else None,
+                "capacity": self._capacity(cur, user_id),
+                "recent_request": dict(recent) if recent else None,
+            }
+
+    def observed_facts(
+        self,
+        user_id: UUID,
+        *,
+        account_id: str,
+        environment: str,
+    ) -> dict[str, dict[str, list[dict[str, Any]]]]:
+        """Reuse only immutable automatically observed facts, at their actual receipt times."""
+        with self._transaction(user_id) as cur:
+            cur.execute(
+                "SELECT asset->'candidate'->>'instrument_uid' AS uid, "
+                "asset->'provider_observations'->'facts' AS facts "
+                "FROM strategy_research_runs, LATERAL jsonb_array_elements(inputs->'assets') asset "
+                "WHERE user_id = %s AND account_id = %s AND environment = %s "
+                "AND jsonb_typeof(asset->'provider_observations'->'facts') = 'object' "
+                "ORDER BY created_at, id",
+                (user_id, account_id, environment),
+            )
+            result: dict[str, dict[str, list[dict[str, Any]]]] = {}
+            for record in cur.fetchall():
+                history = result.setdefault(record["uid"], {})
+                for name, fact in record["facts"].items():
+                    observations = history.setdefault(name, [])
+                    # Keep the first observed availability when a value repeats.
+                    if not observations or (
+                        observations[-1]["value"],
+                        observations[-1]["source_url"],
+                    ) != (fact["value"], fact["source_url"]):
+                        observations.append(fact)
+            return result
 
     def run(self, user_id: UUID, run_id: UUID) -> dict[str, Any]:
         with self._transaction(user_id) as cur:
@@ -486,6 +673,12 @@ class ResearchStore:
 
     def delete_run(self, user_id: UUID, run_id: UUID) -> None:
         with self._transaction(user_id) as cur:
+            cur.execute(
+                "UPDATE strategy_research_requests SET status = 'deleted', run_id = NULL, "
+                "error_code = 'research_archive_deleted', updated_at = clock_timestamp() "
+                "WHERE user_id = %s AND run_id = %s",
+                (user_id, run_id),
+            )
             cur.execute(
                 "DELETE FROM strategy_research_runs WHERE user_id = %s AND id = %s RETURNING id",
                 (user_id, run_id),

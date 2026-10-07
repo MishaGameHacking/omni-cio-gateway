@@ -82,6 +82,24 @@ def test_refresh_does_not_claim_or_read_broker_while_daily_observer_holds_global
     assert broker.mock_calls == []
 
 
+def test_manual_worker_completes_dated_request_after_daily_lock_contention() -> None:
+    store, broker = RefreshStore(), FakeBroker()
+    store.jobs.clear()
+    store.lock_available = False
+    daily = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS)
+    result = daily.run(now=NOW)
+    assert result.deferred
+    assert store.scheduled == [NOW.date()]
+    assert store.saved_snapshots == 0
+    store.lock_available = True
+    worker = PortfolioRefreshCoordinator(store, broker, legal_versions=LEGAL_VERSIONS)
+    assert worker.run_pending()
+    assert store.saved_snapshots == 1
+    assert store.finished[0][1]["job"] == "portfolio_daily"
+    assert not worker.run_pending()
+    assert store.saved_snapshots == 1
+
+
 def test_refresh_history_limit_is_partial_and_retains_the_continuation_cursor() -> None:
     store, broker = RefreshStore(), FakeBroker()
     coordinator = PortfolioRefreshCoordinator(store, broker, legal_versions=LEGAL_VERSIONS)

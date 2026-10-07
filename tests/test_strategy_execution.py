@@ -16,7 +16,7 @@ from test_backtest import prices, research_document
 from test_workspace_postgres import user
 from test_workspace_postgres import workspace_database as workspace_database
 
-from omnicio.backtest import ResearchCosts, history_candidate
+from omnicio.backtest import ResearchCosts, history_candidate, run_strategy_backtest
 from omnicio.broker import BrokerConnectionStatus, BrokerService
 from omnicio.execution import ExecutionStateError, execution_quote, strategy_order_plan
 from omnicio.execution_service import ExecutionServiceError, PortfolioExecutionService
@@ -155,7 +155,7 @@ def test_integer_sizing_respects_cash_fees_caps_and_post_trade_exposure():
     assert payload["initial_lots"] == {}
 
 
-def test_shadow_plan_uses_real_cash_and_works_with_deployment_caps_zero():
+def shadow_planning_runtime():
     now = datetime.now(UTC)
     owner, archive_id = UUID(int=1), UUID(int=2)
     payload = plan_payload(now)
@@ -184,7 +184,15 @@ def test_shadow_plan_uses_real_cash_and_works_with_deployment_caps_zero():
         "strategy_version": 1,
         "evidence_version": 0,
         "inputs": json.loads(json.dumps(inputs, default=str)),
-        "result": {},
+        "result": run_strategy_backtest(
+            payload["document"],
+            [asset],
+            from_at=asset.candles[0].time,
+            to_at=now,
+            initial_capital_rub=Decimal("9999999"),
+            costs=ResearchCosts(Decimal(10), Decimal(0)),
+            now=now,
+        ),
     }
     archive.evidence.return_value = {"version": 0}
     portfolio = Mock(spec=PortfolioStore)
@@ -202,6 +210,7 @@ def test_shadow_plan_uses_real_cash_and_works_with_deployment_caps_zero():
         environment="prod",
         portfolio=broker.portfolio.return_value.portfolio,
         positions=broker.portfolio.return_value.positions,
+        metadata=(instrument(),),
         analysis=Mock(status="observed", nav_rub="10000"),
     )
     store = Mock(spec=ExecutionStore)
@@ -216,6 +225,11 @@ def test_shadow_plan_uses_real_cash_and_works_with_deployment_caps_zero():
         research_store=archive,
         legal_versions=LEGAL,
     )
+    return service, owner, archive_id, store, broker, archive
+
+
+def test_shadow_plan_uses_real_cash_and_works_with_deployment_caps_zero():
+    service, owner, archive_id, store, broker, _ = shadow_planning_runtime()
     result = service.plan(
         owner,
         expected_version=1,
@@ -231,6 +245,108 @@ def test_shadow_plan_uses_real_cash_and_works_with_deployment_caps_zero():
     broker.submit_limit_order.assert_not_called()
     store.authorize_strategy.assert_called_once()
     assert store.save_strategy_proposal.call_args.args[0] == owner
+
+
+@pytest.mark.parametrize("invalid", ["insufficient_data", "missing_metrics", "old_engine"])
+def test_server_refuses_noncomputed_or_obsolete_research_before_account_and_quote_reads(invalid):
+    service, owner, archive_id, store, broker, archive = shadow_planning_runtime()
+    saved = archive.run.return_value
+    if invalid == "old_engine":
+        saved["inputs"]["engine_version"] = "1.1.0"
+    elif invalid == "missing_metrics":
+        saved["result"]["metrics"] = None
+    else:
+        saved["result"]["status"] = invalid
+    commission, slippage = Decimal(10), Decimal(0)
+    with pytest.raises(ExecutionServiceError, match="execution_computed_research_required"):
+        service.plan(
+            owner,
+            expected_version=1,
+            research_run_id=archive_id,
+            session_digest=DIGEST,
+            commission_bps=commission,
+            slippage_bps=slippage,
+        )
+    broker.observation_bundle.assert_not_called()
+    broker.candidate_order_book.assert_not_called()
+    broker.submit_limit_order.assert_not_called()
+    store.save_strategy_proposal.assert_not_called()
+
+
+def test_planning_reads_all_thirteen_held_instruments_without_artificial_twelve_asset_cap():
+    from test_strategy_assessment import candidate_facts
+
+    service, owner, _, _, broker, _ = shadow_planning_runtime()
+    now = datetime.now(UTC)
+    candidates = [candidate_facts(str(index)) for index in range(13)]
+    bundle = Mock(
+        portfolio=Mock(
+            positions=tuple(
+                Mock(instrument_uid=item.instrument_uid, instrument_type="share", quantity="1")
+                for item in candidates
+            )
+        ),
+        metadata=tuple(instrument(uid=item.instrument_uid) for item in candidates),
+    )
+    broker.execution_instrument.side_effect = lambda user_id, uid: instrument(uid=uid)
+    broker.candidate_order_book.side_effect = lambda user_id, uid, **kwargs: replace(
+        book(now),
+        instrument_uid=uid,
+    )
+    quotes = service._planning_quotes(owner, {"selected": []}, bundle, candidates, Decimal(0))
+    assert set(quotes) == {str(index) for index in range(13)}
+    assert broker.candidate_order_book.call_count == 13
+    broker.execution_instrument.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", ["provider_budget", "quotes_expired_after_estimates"])
+def test_slow_planning_never_saves_a_proposal_or_submits_an_order(failure):
+    service, owner, archive_id, store, broker, _ = shadow_planning_runtime()
+    origin = datetime.now(UTC)
+    elapsed = [0]
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return origin + timedelta(seconds=elapsed[0])
+
+    if failure == "provider_budget":
+        snapshot = broker.observation_bundle.return_value
+
+        def slow_snapshot(_owner):
+            elapsed[0] = 36
+            return snapshot
+
+        broker.observation_bundle.side_effect = slow_snapshot
+        code = "execution_planning_read_budget_exhausted"
+    else:
+        estimator = broker.estimate_limit_order.side_effect
+
+        def slow_estimate(*args, **kwargs):
+            elapsed[0] = 31
+            return estimator(*args, **kwargs)
+
+        broker.estimate_limit_order.side_effect = slow_estimate
+        code = "execution_quote_expired_during_plan"
+    def elapsed_seconds():
+        return elapsed[0]
+
+    commission, slippage = Decimal(10), Decimal(0)
+    with (
+        patch("omnicio.execution_service.datetime", Clock),
+        patch("omnicio.execution_service.monotonic", elapsed_seconds),
+        pytest.raises(ExecutionServiceError, match=code),
+    ):
+        service.plan(
+            owner,
+            expected_version=1,
+            research_run_id=archive_id,
+            session_digest=DIGEST,
+            commission_bps=commission,
+            slippage_bps=slippage,
+        )
+    store.save_strategy_proposal.assert_not_called()
+    broker.submit_limit_order.assert_not_called()
 
 
 def test_provider_submission_has_one_durable_key_limit_price_and_no_margin():

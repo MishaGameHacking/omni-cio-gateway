@@ -17,6 +17,7 @@ from .portfolio import PortfolioAnalysis, analyze_portfolio
 from .security import decrypt_secret, encrypt_secret
 from .tbank import (
     TBankAccount,
+    TBankAccruedInterest,
     TBankAssetFundamental,
     TBankAssetReport,
     TBankBondCoupon,
@@ -264,14 +265,13 @@ class BrokerService:
         from_at: datetime,
         to_at: datetime,
     ) -> tuple[TBankHistoricCandle, ...]:
-        _record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.get_daily_exchange_candles(
-            credential,
-            environment,
-            instrument_uid,
-            from_at=from_at,
-            to_at=to_at,
+        record, credential, environment = self._connected_credential(user_id)
+        result = self._paced_evidence_read(
+            self.tbank.get_daily_exchange_candles, credential, environment, instrument_uid,
+            from_at=from_at, to_at=to_at,
         )
+        self._require_current_connection(record)
+        return cast(tuple[TBankHistoricCandle, ...], result)
 
     def market_history_start(self, user_id: UUID, instrument_uid: str) -> datetime | None:
         record, credential, environment = self._connected_credential(user_id)
@@ -318,9 +318,13 @@ class BrokerService:
 
     def execution_instrument(self, user_id: UUID, instrument_uid: str) -> TBankInstrumentMetadata:
         record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.get_execution_instrument(credential, environment, instrument_uid)
+        # The fallback adapter makes up to two InstrumentsService reads for a bond.
+        result = self._paced_evidence_read(
+            self.tbank.get_execution_instrument, credential, environment, instrument_uid,
+            _request_count=2,
+        )
         self._require_current_connection(record)
-        return result
+        return cast(TBankInstrumentMetadata, result)
 
     def estimate_limit_order(
         self, user_id: UUID, *, instrument_uid: str, lots: int, price: Decimal, action: str,
@@ -400,6 +404,17 @@ class BrokerService:
                 to_at=to_at,
             ),
         )
+
+    def candidate_accrued_interests(
+        self, user_id: UUID, instrument_uid: str, *, from_at: datetime, to_at: datetime,
+    ) -> tuple[TBankAccruedInterest, ...]:
+        record, credential, environment = self._connected_credential(user_id)
+        result = self._paced_evidence_read(
+            self.tbank.get_accrued_interests, credential, environment, instrument_uid,
+            from_at=from_at, to_at=to_at,
+        )
+        self._require_current_connection(record)
+        return cast(tuple[TBankAccruedInterest, ...], result)
 
     def candidate_dividends(
         self, user_id: UUID, instrument_uid: str, *, from_at: datetime, to_at: datetime,
@@ -717,6 +732,7 @@ class BrokerService:
         with ThreadPoolExecutor(max_workers=3) as catalog_reads:
             pending = {
                 kind: catalog_reads.submit(
+                    self._paced_evidence_read,
                     self.tbank.get_instrument_metadata,
                     credential,
                     environment,
@@ -743,6 +759,7 @@ class BrokerService:
         operation: Callable[..., Any],
         /,
         *args: Any,
+        _request_count: int = 1,
         **kwargs: Any,
     ) -> Any:
         with self._instrument_evidence_lock:
@@ -752,7 +769,7 @@ class BrokerService:
                 time.sleep(delay)
                 now = time.monotonic()
             self._next_instrument_evidence_at = (
-                now + INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS
+                now + INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS * _request_count
             )
         return operation(*args, **kwargs)
 

@@ -373,7 +373,13 @@ class CBRClient:
 
     def _fetch_key_rate(self) -> CBRKeyRate:
         target = datetime.now(_MOSCOW).date()
-        from_date = target - timedelta(days=14)
+        return self.key_rate_history(target - timedelta(days=14), target)[-1]
+
+    def key_rate_history(self, from_date: date, to_date: date) -> tuple[CBRKeyRate, ...]:
+        """Dated official rates, bounded to a research window; no current-rate backfill."""
+        if (not from_date <= to_date <= datetime.now(_MOSCOW).date()
+                or to_date - from_date > timedelta(days=1461)):
+            raise ValueError("key_rate_history_window_invalid")
         body = f"""<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
@@ -381,7 +387,7 @@ class CBRClient:
   <soap:Body>
     <KeyRateXML xmlns="http://web.cbr.ru/">
       <fromDate>{from_date.isoformat()}T00:00:00</fromDate>
-      <ToDate>{target.isoformat()}T23:59:59</ToDate>
+      <ToDate>{to_date.isoformat()}T23:59:59</ToDate>
     </KeyRateXML>
   </soap:Body>
 </soap:Envelope>
@@ -417,15 +423,14 @@ class CBRClient:
         except UnicodeDecodeError as exc:
             raise CBRUnavailable("Bank of Russia returned invalid key-rate encoding") from exc
         candidates = _parse_key_rate_document(document)
-        eligible = [item for item in candidates if item[0] <= target]
+        eligible = [item for item in candidates if from_date <= item[0] <= to_date]
         if not eligible:
-            raise CBRUnavailable("Bank of Russia response has no current key rate")
-        effective_date, value = max(eligible, key=lambda item: item[0])
-        return CBRKeyRate(
-            value=value,
-            effective_date=effective_date,
-            fetched_at=datetime.now(UTC),
-        )
+            raise CBRUnavailable("Bank of Russia response has no requested key rate")
+        if len({item[0] for item in eligible}) != len(eligible):
+            raise CBRUnavailable("Bank of Russia returned duplicate key-rate dates")
+        fetched = datetime.now(UTC)
+        return tuple(CBRKeyRate(value, effective_date, fetched)
+                     for effective_date, value in sorted(eligible))
 
 
 class _CurrencyIndicatorParser(HTMLParser):

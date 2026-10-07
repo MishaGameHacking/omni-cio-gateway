@@ -166,6 +166,7 @@ class StrategyAccountBody(StrictRequestBody):
 
 
 class StrategyResearchBody(StrictRequestBody):
+    request_id: UUID
     expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
     expected_version: int = Field(ge=1, le=2_147_483_647, strict=True)
     from_at: datetime
@@ -811,6 +812,10 @@ def me(
         "public_id": format_public_id(user.public_id),
         "status": user.status,
         "role": user.role,
+        "can_view_operational_metrics": (
+            settings(request).operator_user_id is not None
+            and user.id == settings(request).operator_user_id
+        ),
     }
 
 
@@ -2527,18 +2532,24 @@ def research_strategy(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     user = _settings_editor_user(request, session_token, body.expected_public_id)
+    database = cast(Database, request.app.state.database)
     try:
-        payload = strategy_research(
-            user_id=user.id, expected_version=body.expected_version,
-            store=portfolio_store(request), broker=broker_service(request),
-            from_at=body.from_at, to_at=body.to_at,
-            commission_bps=body.commission_bps, slippage_bps=body.slippage_bps,
-            initial_capital_rub=body.initial_capital_rub,
-            research_store=cast(ResearchStore, request.app.state.research_store),
-            cbr=market_service(request).cbr,
-        )
+        with database.strategy_assessment_slot(user.id) as admitted:
+            if not admitted:
+                raise BrokerAssessmentBusy("strategy_assessment_busy")
+            payload = strategy_research(
+                user_id=user.id, expected_version=body.expected_version,
+                store=portfolio_store(request), broker=broker_service(request),
+                from_at=body.from_at, to_at=body.to_at,
+                commission_bps=body.commission_bps, slippage_bps=body.slippage_bps,
+                initial_capital_rub=body.initial_capital_rub,
+                research_store=cast(ResearchStore, request.app.state.research_store),
+                cbr=market_service(request).cbr,
+                request_id=body.request_id,
+            )
     except BrokerAssessmentBusy as exc:
-        raise HTTPException(status_code=429, detail="strategy_assessment_busy") from exc
+        raise HTTPException(status_code=429, detail="strategy_assessment_busy",
+                            headers={"Retry-After": "10"}) from exc
     except SettingsVersionConflict:
         raise
     except BrokerNotConnected as exc:
@@ -2546,7 +2557,20 @@ def research_strategy(
     except TBankTokenRejected as exc:
         raise HTTPException(status_code=409, detail=_TBANK_CREDENTIAL_REJECTED_DETAIL) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="research_parameters_invalid") from exc
+        public_errors = {
+            "research_archive_capacity": "research_archive_capacity",
+            "research_archive_storage_capacity": "research_archive_storage_capacity",
+            "research_archive_too_large": "research_archive_too_large",
+            "research_request_capacity": "research_request_capacity",
+            "research_window_invalid": "research_window_invalid",
+            "research_held_universe_too_large": "research_held_universe_too_large",
+            "research_cashflow_overlap_requires_complete_history": (
+                "research_cashflow_overlap_requires_complete_history"
+            ),
+        }
+        raise HTTPException(
+            status_code=422, detail=public_errors.get(str(exc), "research_parameters_invalid"),
+        ) from exc
     except (BrokerConnectionError, TBankUnavailable) as exc:
         raise HTTPException(status_code=503, detail="strategy_research_unavailable") from exc
     current = _settings_editor_user(request, session_token, body.expected_public_id)
@@ -2604,18 +2628,40 @@ def save_research_evidence(
     responses={
         401: _API_FAILURES[401],
         403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
         409: _API_FAILURES[409],
     },
 )
 def research_runs(
     request: Request, limit: int = Query(default=50, ge=1, le=200),
+    cursor: UUID | None = None,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, Any]:
     user = authenticated_user(request, session_token)
     store = cast(ResearchStore, request.app.state.research_store)
-    return _workspace_result(
-        request, session_token, user, {"items": store.runs(user.id, limit=limit)},
-    )
+    try:
+        payload = store.runs_page(user.id, limit=limit, cursor=cursor)
+    except ResearchNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _workspace_result(request, session_token, user, payload)
+
+
+@app.get(
+    "/api/research/requests/{request_id}",
+    responses={401: _API_FAILURES[401], 403: _API_FAILURES[403],
+               404: _API_FAILURES[404], 409: _API_FAILURES[409]},
+)
+def research_request_status(
+    request_id: UUID, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    store = cast(ResearchStore, request.app.state.research_store)
+    try:
+        payload = store.request(user.id, request_id)
+    except ResearchNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _workspace_result(request, session_token, user, payload)
 
 
 @app.get(

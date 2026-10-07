@@ -375,6 +375,11 @@
   }
   function renderFreshnessSourceTag(status) {
     return `<span class="source-tag">${escape({
+      live: T("Текущая котировка"),
+      offline: T("Недоступно"),
+      invalid: T("Недоступно"),
+      disconnected: T("Не подключено"),
+      reconnect: T("Требуется повторное подключение"),
       stale: T("Данные устарели"),
       partial: T("Частичные данные"),
       pending: T("Ожидаем данные"),

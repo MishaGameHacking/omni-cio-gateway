@@ -39,6 +39,19 @@ const catalogResult = spawnSync(process.env.OMNICIO_PYTHON || "python", ["-c", "
 });
 assert.equal(catalogResult.status, 0, "The browser uses the canonical server catalog: " + catalogResult.stderr);
 const catalog = JSON.parse(catalogResult.stdout);
+const serverContractResult = spawnSync(process.env.OMNICIO_PYTHON || "python", ["tests/frontend_server_contract.py"], {
+  cwd: root,
+  env: {...process.env, PYTHONPATH: join(root, "src")},
+  encoding: "utf8",
+  maxBuffer: 2 * 1024 * 1024
+});
+assert.equal(serverContractResult.status, 0, "Browser API contracts come from the actual server: " + serverContractResult.stderr);
+const serverContracts = JSON.parse(serverContractResult.stdout);
+assert.equal(serverContracts.goal_available.title, "Тестовая цель источника", "The Python JSON contract preserves Unicode across Windows stdout");
+const marketEvent = JSON.parse(serverContracts.instrument_market_event.split("\ndata: ")[1].trim());
+assert.equal(marketEvent.instrument_uid, "synthetic-a");
+assert.equal(marketEvent.quote_status, "live");
+const restMarketObservedAt = new Date(Date.parse(marketEvent.observed_at) - 1000).toISOString();
 const artifacts = join(root, "artifacts", "frontend");
 mkdirSync(artifacts, {
   recursive: true
@@ -90,6 +103,7 @@ const makeFixture = mode => {
     tidEnabled: true,
     vkidEnabled: true,
     user: "000000123",
+    canViewOperationalMetrics: false,
     prefs: defaultPreferences(),
     selection: {
       version: 1,
@@ -120,12 +134,15 @@ const makeFixture = mode => {
     failPreferences: false,
     failWorkspace: false,
     failStrategyLoad: false,
+    failNotifications: false,
     conflict: false,
     lostAck: false,
     activeWrites: 0,
     maxActiveWrites: 0,
     holdPreferences: false,
     heldPreferences: [],
+    holdPublicNews: false,
+    heldPublicNews: [],
     holdWorkspace: false,
     heldWorkspace: [],
     holdGoals: false,
@@ -157,6 +174,13 @@ const makeFixture = mode => {
     executions: [],
     executionProposals: [],
     researchRuns: [],
+    researchRequests: new Map(),
+    researchPrerequisite: null,
+    researchDropBeforeAccept: false,
+    researchLoseAcknowledgment: false,
+    researchHoldAcknowledgment: false,
+    researchHeldAcknowledgments: [],
+    failResearchPage: false,
     heldResearchReads: [],
     holdResearchReads: false,
     heldExecutionReads: [],
@@ -376,6 +400,9 @@ const testApiHandlers = [{
     path
   }) => path === "/api/me",
   run: serveTestMe
+}, {
+  matches: ({path}) => path === "/api/system/metrics",
+  run: serveTestOperationalMetrics
 }, {
   matches: ({
     path
@@ -607,6 +634,8 @@ const displayContracts = () => {
   for (const value of [null, undefined, "", "  ", false, [], {}, "NaN", Infinity]) assert.equal(ui.number(value), null, "Unknown and non-finite values remain unknown");
   assert.equal(ui.money(null), "—");
   assert.equal(ui.percent(null), "—");
+  assert.ok(ui.freshness("T-Invest", stamp, "live").includes("Текущая котировка"), "The actual server live status has an authored user-facing label");
+  assert.ok(!ui.freshness("T-Invest", stamp, "live").includes("Статус требует проверки"));
   assert.equal(ui.external("javascript:alert(1)"), null);
   assert.equal(ui.external("https://user:password@example.test/"), null);
   assert.equal(ui.external("https://example.test/source"), "https://example.test/source");
@@ -1380,6 +1409,7 @@ const runBrowser = async base => {
       }
       await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseEnglishLocale({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
+      await exerciseReadConsistency({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
     }
     const failureKey = "signed-load-failure";
     const failure = makeFixture("signed");
@@ -1463,8 +1493,10 @@ async function serveTestPublicMarketReference({
   return sendJSON(response, reference);
 }
 async function serveTestPublicNews({
+  fixture,
   response
 }) {
+  if (fixture.holdPublicNews) await new Promise(release => fixture.heldPublicNews.push(release));
   return sendJSON(response, {
     items: [{
       id: "news-fixture",
@@ -1513,7 +1545,20 @@ async function serveTestMe({
   return sendJSON(response, {
     public_id: fixture.user,
     status: "active",
-    role: "user"
+    role: "user",
+    can_view_operational_metrics: fixture.canViewOperationalMetrics
+  });
+}
+function serveTestOperationalMetrics({fixture,response}) {
+  if (!fixture.canViewOperationalMetrics) return sendJSON(response,{detail:"operator_required"},403);
+  const worker = (status, age) => ({status,checked_at:day(age),completed_at:day(age),stale_after_seconds:300});
+  return sendJSON(response, {
+    status:"attention",checked_at:stamp,active_users:2,
+    observer:{connected_accounts:2,queued:1,running:1,stale:1,failed_24h:2,degraded_24h:3,stale_success_accounts:1},
+    oldest_pending_at:day(1),latest_success_at:stamp,stale_after_seconds:1800,observation_stale_after_seconds:129600,
+    notifications:{queued:2,sending:1,stale:1,failed_24h:1,uncertain:2,oldest_due_at:day(1),last_accepted_at:stamp,stale_after_seconds:900},
+    workers:{notifications:worker("attention",0),portfolio_refresh:worker("stale",1),portfolio_daily:worker("not_reported",2)},
+    issues:["observer_stale","notifications_uncertain","portfolio_daily_worker_not_reported"]
   });
 }
 async function serveTestAuthIdentities({
@@ -1534,6 +1579,7 @@ async function serveTestWorkspace({
 }) {
   const result = workspace(fixture);
   const period = url.searchParams.get("history_period") || "all";
+  if (fixture.periodResults?.[period]) result.performance.investment_result_rub = fixture.periodResults[period];
   const stored = result.overview.history;
   const days = {
     "1d": 1,
@@ -1757,14 +1803,51 @@ async function serveTestProfileStrategyAccountAssessment({
     probability_reason: "Не является прогнозом"
   });
 }
-async function serveTestProfileStrategyResearch({
-  response
-}) {
-  return sendJSON(response, {
-    status: "insufficient_data",
-    reason: "Нет достаточной истории в изолированном тесте",
-    probability_of_profit: null
-  });
+function researchRequestDTO(request) {
+  const {id,status,run_id,error_code,created_at,updated_at,expires_at} = request;
+  return {id,status,run_id,error_code,created_at,updated_at,expires_at};
+}
+function completeTestResearch(fixture, request) {
+  const result = {
+    status: "insufficient_data", reason: "Нет достаточной истории в изолированном тесте",
+    probability_of_profit: null, request_id: request.id, strategy_version: request.body.expected_version,
+    data_coverage: [{instrument_uid: "synthetic-a", automatic_cashflow_events: 2,
+      daily_accrual_observations: 20, historical_fact_observations: 3,
+      missing: ["historical_lot_sizes", "bond_nkd_open_close_timing"], total_return_verified: false}]
+  };
+  const run = {id: require("node:crypto").randomUUID(), strategy_version: result.strategy_version,
+    created_at: new Date().toISOString(), status: result.status, result, inputs: clone(request.body), metrics: {}};
+  fixture.researchRuns.unshift(run);
+  Object.assign(request, {status: "completed", run_id: run.id, updated_at: run.created_at});
+  return {...clone(result), archive: {id: run.id, created_at: run.created_at}};
+}
+async function serveTestProfileStrategyResearch({response, fixture, body}) {
+  assert.match(body.request_id, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/);
+  if (body.expected_version !== fixture.selection.version) return sendJSON(response, {detail: "settings_version_conflict"}, 409);
+  if (fixture.researchPrerequisite) return sendJSON(response, {status: fixture.researchPrerequisite, execution_enabled: false});
+  if (fixture.researchDropBeforeAccept) {
+    fixture.researchDropBeforeAccept = false;
+    return sendJSON(response, {detail: "synthetic_lost_ack"}, 503);
+  }
+  const existing = fixture.researchRequests.get(body.request_id);
+  if (existing) {
+    if (JSON.stringify(existing.body) !== JSON.stringify(body)) return sendJSON(response, {detail: "settings_version_conflict"}, 409);
+    if (existing.status === "completed") {
+      const run = fixture.researchRuns.find(item => item.id === existing.run_id);
+      return sendJSON(response, {...run.result, archive: {id: run.id, created_at: run.created_at}});
+    }
+    return sendJSON(response, {...researchRequestDTO(existing), request_id: existing.id});
+  }
+  const request = {id: body.request_id, body: clone(body), status: "running", run_id: null, error_code: null,
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString(), expires_at: new Date(Date.now() + 600000).toISOString()};
+  fixture.researchRequests.set(request.id, request);
+  if (fixture.researchLoseAcknowledgment) {
+    fixture.researchLoseAcknowledgment = false;
+    return sendJSON(response, {detail: "synthetic_lost_ack"}, 503);
+  }
+  const result = completeTestResearch(fixture, request);
+  if (fixture.researchHoldAcknowledgment) await new Promise(release => fixture.researchHeldAcknowledgments.push(release));
+  return sendJSON(response, result);
 }
 async function serveTestPortfolioVisualization({
   response,
@@ -1818,22 +1901,27 @@ async function serveTestMarketInstruments({
   });
 }
 async function serveTestMarketInstruments2({
+  fixture,
   response,
   url
 }) {
   if (url.pathname.endsWith("/stream")) {
     response.setHeader("Content-Type", "text/event-stream");
-    response.write("event: quote\ndata: " + JSON.stringify({instrument_uid:"synthetic-a",observed_at:stamp,last_price:"250.25",quote_status:"fresh",quote_time:stamp,price_unit:"currency",price_currency:"RUB",cash_price:"250.25",cash_price_currency:"RUB"})+"\n\n");
+    response.flushHeaders();
+    fixture.marketStreams ||= new Set();
+    fixture.marketStreams.add(response);
+    response.once("close", () => fixture.marketStreams.delete(response));
+    if (!fixture.holdMarketStream) response.write(serverContracts.instrument_market_event);
     return;
   }
   return sendJSON(response, {
     instrument_uid: "synthetic-a",
     period: url.searchParams.get("period"),
     source: "Synthetic exchange",
-    observed_at: stamp,
+    observed_at: restMarketObservedAt,
     last_price: "250.25",
-    quote_time: stamp,
-    quote_status: "fresh",
+    quote_time: restMarketObservedAt,
+    quote_status: "live",
     price_unit: "currency",
     price_currency: "RUB",
     cash_price: "250.25",
@@ -2009,6 +2097,7 @@ async function serveTestNews({fixture, url, response}) {
   return sendJSON(response, {items: clone(items.slice(offset, offset + limit)), next_cursor: offset + limit < items.length ? String(offset + limit) : null, scanned_items: Math.min(limit, items.length - offset), instrument_uid: uid, source: "Изолированный источник", observed_at: stamp, status: items.length ? "received" : "empty"});
 }
 async function serveTestNotifications({fixture, path, body, method, response}) {
+  if (path === "/api/notifications" && fixture.failNotifications) return sendJSON(response, {detail: "synthetic_notification_read_failure"}, 503);
   if (path === "/api/notifications/email/request") {
     const channel = {id: "00000000-0000-4000-8000-000000000801", kind: "email", label: "t***@example.test", status: "pending", verification_expires_at: new Date(Date.now() + 900000).toISOString(), verification_attempts_remaining: 5};
     fixture.notificationChannels = [channel];
@@ -2074,6 +2163,290 @@ async function exerciseNotificationChannels({fixture, click, fieldValue, wait, e
   await wait('document.querySelector("#notification-settings").textContent.includes("Устройства и адреса пока не подключены")', "Revoked channel removed from UI");
   assert.ok(!await evaluate('document.querySelector("#notification-settings").textContent.includes("test@example.test")'), "Full address is never retained in channel display");
 }
+async function exerciseNotificationRetry({fixture, click, fieldValue, wait, evaluate}) {
+  const retry = '#notification-settings [data-action="resource-retry"][data-resource="notifications"]';
+  await wait(`document.querySelector(${JSON.stringify(retry)})`, "An initial notification failure has a resource-specific retry");
+  assert.equal(await evaluate('document.querySelector("#view-settings .view-actions [data-action=refresh]").disabled'), true, "Broker collection is in its own cooldown");
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(retry)}).disabled`), false, "Reading notifications is independent of broker collection limits");
+  const previousTime = await evaluate('document.querySelector("#preferences-form").elements.quiet_start.value');
+  await fieldValue("#preferences-form", "quiet_start", "21:15");
+  fixture.failNotifications = false;
+  const before = fixture.requests.length;
+  await click(retry);
+  await wait('document.querySelector("#notification-email-form") && !document.querySelector("#notification-settings .notice.error")', "The retry restores the failed notification resource");
+  const retried = fixture.requests.slice(before);
+  assert.equal(retried.filter(item => item.path === "/api/notifications" && item.method === "GET").length, 1);
+  assert.equal(retried.filter(item => item.path === "/api/workspace/refresh" && item.method === "POST").length, 0, "A notification read must not start portfolio collection");
+  assert.equal(await evaluate('document.querySelector("#preferences-form").elements.quiet_start.value'), "21:15", "An unrelated unsaved settings draft survives resource recovery");
+  await fieldValue("#preferences-form", "quiet_start", previousTime);
+  fixture.failNotifications = true;
+  await click('#notification-settings [data-action="notifications-reload"]');
+  await wait(`document.querySelector(${JSON.stringify(retry)}) && document.querySelector("#notification-email-form")`, "A failed later read reports its error alongside the last known channels");
+  fixture.failNotifications = false;
+  await click(retry);
+  await wait('!document.querySelector("#notification-settings .notice.error")', "A second successful read removes the actual error");
+}
+async function exerciseAnalyticsReadConsistency({fixture, click, wait, evaluate, checkLayout, screenshot, round}) {
+  fixture.periodResults = {"1y": "123456", "1w": "7654"};
+  await click('#sidebar-nav [data-route="analytics"]');
+  const metricValues = '[...document.querySelectorAll("#view-analytics .metric-grid .main-value")].map(item=>item.textContent)';
+  await wait('document.querySelector("#view-analytics [data-history-period=\\"1y\\"]") && document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("123456")', "The initial year has its own financial result");
+  fixture.holdWorkspace = true;
+  fixture.failWorkspace = true;
+  await click('#view-analytics [data-period="1w"]');
+  await until(() => fixture.heldWorkspace.length > 0, "The selected week is loading");
+  assert.deepEqual(await evaluate(metricValues), ["—", "—", "—", "—"], "The old year's totals cannot be displayed under the selected week");
+  assert.equal(await evaluate('document.querySelectorAll("#view-analytics .chart-svg").length'), 0, "Charts from another period stay out of the selected-period view");
+  fixture.holdWorkspace = false;
+  fixture.heldWorkspace.splice(0).forEach(release => release());
+  await wait('document.querySelector("#view-analytics [data-resource=workspace]")', "The failed week read exposes a targeted retry");
+  assert.deepEqual(await evaluate(metricValues), ["—", "—", "—", "—"], "Failure does not relabel cached year totals as week data");
+  assert.equal(await evaluate('document.querySelector("#view-analytics [data-period=\\"1w\\"]").getAttribute("aria-pressed")'), "true");
+  await screenshot(`analytics-period-error-${round}-390.png`);
+  fixture.failWorkspace = false;
+  const before = fixture.requests.length;
+  await click('#view-analytics [data-resource="workspace"]');
+  await wait('document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("7654") && document.querySelector("#view-analytics [data-history-period=\\"1w\\"]")', "The successful retry displays only the selected week's snapshot");
+  assert.ok(fixture.requests.slice(before).some(item => item.path === "/api/workspace" && new URLSearchParams(item.query).get("history_period") === "1w"));
+  assert.equal(fixture.requests.slice(before).some(item => item.path === "/api/workspace/refresh" && item.method === "POST"), false);
+  await checkLayout(`analytics-period-recovered-${round}-390`);
+}
+async function exerciseSearchReadConsistency({fixture, click, fieldValue, wait, evaluate}) {
+  fixture.holdPublicNews = true;
+  await fieldValue("#global-search-form", "q", "older-query");
+  await evaluate('document.querySelector("#global-search-form").requestSubmit()');
+  await until(() => fixture.heldPublicNews.length === 1, "The earlier search is waiting for a shared resource");
+  await fieldValue("#global-search-form", "q", "newer-query");
+  await evaluate('document.querySelector("#global-search-form").requestSubmit()');
+  await wait('document.querySelector("#view-search .view-header").textContent.includes("newer-query")', "The current route query is visible during loading");
+  fixture.holdPublicNews = false;
+  fixture.heldPublicNews.splice(0).forEach(release => release());
+  await wait('document.querySelector("#view-search .search-result") && !document.querySelector("#view-search .loading-panel")', "The newer query finishes after the shared response");
+  const searches = fixture.requests.filter(item => item.path === "/api/broker/tbank/instruments/search");
+  assert.deepEqual(searches.map(item => new URLSearchParams(item.query).get("q")), ["newer-query"], "An older route cannot start a new search after its dependency resolves");
+  assert.equal(await evaluate('document.querySelector("#global-search").value'), "newer-query");
+  assert.ok(await evaluate('document.querySelector("#view-search .view-header").textContent.includes("newer-query")'));
+  await click('#sidebar-nav [data-route="goals"]');
+}
+async function exerciseGoalSourceContract({fixture, click, wait, evaluate, screenshot, round}) {
+  const goal = clone(serverContracts.goal_available);
+  fixture.goals = [goal];
+  fixture.goalPlans = {[goal.id]: {version: 1, document: clone(serverContracts.goal_plan_document), forecast: clone(serverContracts.goal_forecast_available)}};
+  await click('#view-goals [data-action="refresh"]');
+  await wait('document.querySelector("#view-goals [data-goal-plan]")', "Goal fixture uses the actual calculator's source schema");
+  await click('#view-goals [data-goal-plan]');
+  await wait('document.querySelector("#goal-plan-result .goal-forecast-source")', "The goal scenario names its starting amount and source");
+  assert.ok(await evaluate('document.querySelector("#goal-plan-result").textContent.includes("Сумма в заданном сценарии")'));
+  const sourceDate = await evaluate(`window.OmniUI.date(${JSON.stringify(serverContracts.goal_forecast_available.source_as_of)}, true)`);
+  assert.ok((await evaluate('document.querySelector("#goal-plan-result .goal-forecast-source").textContent')).includes(sourceDate));
+  await click('#workspace-dialog [data-close-dialog]');
+  fixture.goals[0] = clone(serverContracts.goal_stale);
+  fixture.goalPlans[goal.id].forecast = clone(serverContracts.goal_forecast_stale);
+  await click('#view-goals [data-goal-plan]');
+  await wait('document.querySelector("#goal-plan-result .goal-forecast-source")', "The reopened goal loads its actual source after the dialog placeholder");
+  const staleText = await evaluate('document.querySelector("#goal-plan-result").textContent');
+  assert.ok(staleText.includes("Начальная сумма устарела"), "The real stale-source refusal is displayed without a scenario result");
+  const staleDate = await evaluate(`window.OmniUI.date(${JSON.stringify(serverContracts.goal_forecast_stale.source_as_of)}, true)`);
+  assert.ok(staleText.includes(staleDate), "The source's original date is retained, not replaced by today's calculation date");
+  assert.ok(!staleText.includes("Сумма в заданном сценарии") && !staleText.includes("Условная модель вероятности"));
+  await evaluate('document.querySelector("#goal-plan-result").scrollIntoView({behavior:"instant",block:"center"})');
+  await screenshot(`goal-source-stale-${round}-390.png`);
+  await click('#goal-plan-result [data-route="portfolio"]');
+  await wait('!document.querySelector("#workspace-dialog").open && !document.querySelector("#view-portfolio").hidden', "The source-recovery action reaches the existing account controls");
+}
+async function exerciseResearchSubmission({fixture,click,fieldValue,wait,evaluate}) {
+  await click('#sidebar-nav [data-route="strategies"]');
+  await wait('document.querySelector("#research-form [type=submit]")?.disabled===false',"Research first reads durable status and capacity");
+  for (const [name,value] of Object.entries({from_at:"2026-01-01",to_at:"2026-08-01",initial_capital_rub:"100000",commission_bps:"5",slippage_bps:"10"})) await fieldValue("#research-form",name,value);
+  for (const prerequisite of ["draft_required", "snapshot_required"]) {
+    fixture.researchPrerequisite = prerequisite;
+    await click('#research-form [type="submit"]');
+    await wait('document.querySelector("[data-research-state=failed]") && document.querySelector("#research-form [type=submit]").disabled===false', "An unmet prerequisite does not become an uncertain accepted request");
+    assert.ok(await evaluate('document.querySelector("[data-research-state=failed]").textContent.includes("Исследование ещё не началось")'));
+    const declined = fixture.requests.findLast(item => item.path === "/api/profile/strategy/research");
+    assert.ok(!fixture.requests.some(item => item.path === `/api/research/requests/${declined.body.request_id}`), "An unstarted prerequisite result does not start status polling");
+    assert.equal(fixture.researchRequests.size, 0);
+  }
+  fixture.researchPrerequisite = null;
+  const postsBeforeLoss = fixture.requests.filter(item => item.path === "/api/profile/strategy/research").length;
+  fixture.researchDropBeforeAccept=true;
+  await click('#research-form [type="submit"]');
+  await wait('document.querySelector("[data-research-state=not_found]")',"A lost request uses its exact UUID to check server acceptance");
+  const original=fixture.requests.findLast(item=>item.path==="/api/profile/strategy/research");
+  assert.ok(fixture.requests.some(item=>item.path===`/api/research/requests/${original.body.request_id}`));
+  assert.equal(fixture.requests.filter(item=>item.path==="/api/profile/strategy/research").length,postsBeforeLoss+1,"A missing acknowledgment cannot automatically repeat POST");
+  await click('[data-action="research-retry"]');
+  await wait('document.querySelector("[data-research-state=completed]") && document.querySelector("#research-form [type=submit]").disabled===false',"Explicit retry recovers the same request");
+  const replay=fixture.requests.findLast(item=>item.path==="/api/profile/strategy/research");
+  assert.deepEqual(replay.body,original.body,"Explicit replay keeps both UUID and every original parameter");
+  assert.equal(fixture.researchRuns.length,1);
+  await click('[data-research-coverage] summary');
+  const coverage=await evaluate('document.querySelector("[data-research-coverage]").textContent');
+  assert.ok(coverage.includes("Выплаты из API источника") && coverage.includes("история размеров лота") && coverage.includes("НКД на открытие"));
+  assert.ok(!coverage.includes("bond_nkd_open_close_timing"),"Missing evidence is explained in user language");
+}
+async function exerciseResearchEvidence({fixture,click,wait,evaluate}) {
+  await click('[data-research-action="evidence"]');
+  await wait('document.querySelector("#research-evidence-form")',"Evidence import opens its owned document");
+  const before=fixture.requests.filter(item=>item.path==="/api/research/evidence" && item.method==="PUT").length;
+  await evaluate(`(() => {
+    const input=document.querySelector('#research-evidence-form input[type="file"]');
+    const transfer=new DataTransfer();
+    transfer.items.add(new File([' '.repeat(1100000),JSON.stringify({assets:[]})],'synthetic-evidence.json',{type:'application/json'}));
+    input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+  })()`);
+  await wait('document.querySelector("#research-evidence-form").elements.document.value.length>1100000',"A valid JSON file above the former 1MiB client limit is accepted");
+  assert.equal(fixture.requests.filter(item=>item.path==="/api/research/evidence" && item.method==="PUT").length,before,"Choosing a file does not silently save it");
+  await click('#research-evidence-form [type="submit"]');
+  await wait('document.querySelector("#research-evidence-form").dataset.version==="1"',"Explicit import receives the saved document version");
+  assert.deepEqual(fixture.researchEvidence.document,{assets:[]},"Whitespace affects file size but cannot manufacture source evidence");
+  assert.equal(await evaluate('document.querySelector("#research-evidence-form").elements.document.value'),'{"assets":[]}',"The editor retains one compact saved document");
+  await click('#workspace-dialog [data-close-dialog]');
+}
+async function exerciseResearchReload({fixture,send,click,wait,evaluate}) {
+  fixture.researchLoseAcknowledgment=true;
+  await click('#research-form [type="submit"]');
+  await wait('document.querySelector("[data-research-state=running]")',"An accepted request survives its lost POST acknowledgment");
+  const request=[...fixture.researchRequests.values()].find(item=>item.status==="running");
+  const posts=fixture.requests.filter(item=>item.path==="/api/profile/strategy/research").length;
+  assert.equal(fixture.requests.filter(item=>item.path==="/api/profile/strategy/research" && item.body.request_id===request.id).length,1,"An accepted request with a lost acknowledgment is submitted only once");
+  assert.equal(await evaluate('document.querySelector("#research-form [type=submit]").disabled'),true);
+  assert.equal(await evaluate(`Object.values(localStorage).some(value=>value.includes(${JSON.stringify(request.id)})) || Object.values(sessionStorage).some(value=>value.includes(${JSON.stringify(request.id)}))`),false,"Private request IDs stay out of browser storage");
+  const readsBeforeReload=fixture.requests.filter(item=>item.path===`/api/research/requests/${request.id}`).length;
+  const previousDocumentTimeOrigin=await evaluate("performance.timeOrigin");
+  await send("Page.reload",{ignoreCache:true});
+  await wait(`performance.timeOrigin!==${previousDocumentTimeOrigin} && document.querySelector("[data-research-state=running]") && document.querySelector('[data-action="research-check"]')?.disabled===false`,"The new document restores the server recent_request with an exact status GET");
+  const readsAfterReload=fixture.requests.filter(item=>item.path===`/api/research/requests/${request.id}`).length;
+  assert.ok(readsAfterReload>readsBeforeReload,"The new document verifies the exact request ID before restoring its running state");
+  assert.equal(fixture.requests.filter(item=>item.path==="/api/profile/strategy/research").length,posts,"Reload never resubmits research");
+  const result=completeTestResearch(fixture,request);
+  await wait('document.querySelector("[data-research-state=completed]") && document.querySelector("#strategy-research").textContent.includes("Нет достаточной истории")',"Only the identified archive result is restored");
+  assert.ok(fixture.requests.filter(item=>item.path===`/api/research/requests/${request.id}`).length>readsAfterReload,"Restored research uses read-only polling to discover completion");
+  assert.ok(fixture.requests.some(item=>item.path===`/api/research/runs/${result.archive.id}`));
+  assert.equal(fixture.requests.filter(item=>item.path==="/api/profile/strategy/research").length,posts,"Completion polling never resubmits research");
+  // Another tab deleted this archive; cleanup removes its terminal request
+  // after the list response, but before the restored exact-ID status read.
+  fixture.researchRuns=fixture.researchRuns.filter(item=>item.id!==result.archive.id);
+  Object.assign(request,{status:"deleted",run_id:null});
+  fixture.removeResearchRequestBeforeRead=request.id;
+  const completedDocumentTimeOrigin=await evaluate("performance.timeOrigin");
+  await send("Page.reload",{ignoreCache:true});
+  await wait(`performance.timeOrigin!==${completedDocumentTimeOrigin} && document.querySelector("[data-research-state=missing]") && document.querySelector("#research-form [type=submit]").disabled===false`,"A restored missing tombstone cannot permanently block a new explicit run");
+  assert.equal(await evaluate('Boolean(document.querySelector("[data-action=research-retry]"))'),false,"No original body means there is no exact-request replay action");
+  assert.equal(fixture.requests.filter(item=>item.path==="/api/profile/strategy/research").length,posts,"Missing restored metadata never automatically creates a new request");
+}
+async function exerciseResearchLateResult({fixture,click,fieldValue,wait,evaluate}) {
+  for (const [name,value] of Object.entries({from_at:"2026-01-01",to_at:"2026-08-01",initial_capital_rub:"100000",commission_bps:"5",slippage_bps:"10"})) await fieldValue("#research-form",name,value);
+  fixture.researchHoldAcknowledgment=true;
+  await click('#research-form [type="submit"]');
+  await until(()=>fixture.researchHeldAcknowledgments.length===1,"The server saved the old version but its response is delayed");
+  const version=fixture.selection.version;
+  await fieldValue("#strategy-form","strategy.profile.reserve_rub","5000");
+  await until(()=>fixture.selection.version>version,"A newer strategy is saved before the old research response arrives");
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"',"New strategy save acknowledged");
+  fixture.researchHoldAcknowledgment=false;
+  fixture.researchHeldAcknowledgments.splice(0).forEach(release=>release());
+  await wait('document.querySelector("[data-research-state=completed]")?.textContent.includes("ранее выбранным условиям")',"A late old-version result stays in the archive");
+  assert.equal(await evaluate('document.querySelector("#strategy-research").textContent.includes("Нет достаточной истории")'),false,"The old calculation cannot replace the current editor's result");
+}
+async function exerciseResearchPagination({fixture,click,wait,evaluate,screenshot,checkLayout,round}) {
+  fixture.billing=clone(serverContracts.billing_disabled);
+  const count=serverContracts.billing_disabled.plans.personal.research_runs+1;
+  fixture.researchRuns=Array.from({length:count},(_,index)=>({
+    id:require("node:crypto").randomUUID(),created_at:new Date(Date.now()-index*1000).toISOString(),
+    strategy_version:index===count-1?fixture.selection.version-1:fixture.selection.version,
+    status:"insufficient_data",metrics:{},inputs:{},
+    result:{status:"insufficient_data",reason:index===count-1?"Архивная контрольная запись":"Изолированные архивные данные"}
+  }));
+  await click('[data-research-action="archive"]');
+  await wait('document.querySelectorAll("#research-archive [data-research-operation=open]").length===50',"The archive opens a bounded first page");
+  assert.ok((await evaluate('document.querySelector("#research-archive").textContent')).includes(`${count} / ${serverContracts.billing_disabled.plans.personal.research_runs}`),"Expired paid capacity keeps older records accessible");
+  fixture.failResearchPage=true;
+  await click('[data-action="research-archive-more"]');
+  await wait('document.querySelector("#research-archive .notice.error")',"A failed next page is visible");
+  assert.equal(await evaluate('document.querySelectorAll("#research-archive [data-research-operation=open]").length'),50,"Failed pagination preserves already loaded records");
+  fixture.failResearchPage=false;
+  while(await evaluate('Boolean(document.querySelector("[data-action=research-archive-more]"))')) {
+    const before=await evaluate('document.querySelectorAll("#research-archive [data-research-operation=open]").length');
+    await click('[data-action="research-archive-more"]');
+    await wait(`document.querySelectorAll("#research-archive [data-research-operation=open]").length>${before}`,"Next archive page appends without duplication");
+  }
+  assert.equal(await evaluate('document.querySelectorAll("#research-archive [data-research-operation=open]").length'),count);
+  assert.equal(await evaluate('document.querySelector("#research-form [type=submit]").disabled'),true,"Only new runs are blocked by capacity");
+  await screenshot(`research-archive-${round}-390.png`);
+  await checkLayout(`research-archive-${round}-390`);
+  const oldest=fixture.researchRuns.at(-1);
+  await click(`[data-research-run="${oldest.id}"][data-research-operation="open"]`);
+  await wait('!document.querySelector("#workspace-dialog").open && document.querySelector("#strategy-research").textContent.includes("Архивная контрольная запись")',"The oldest retained record opens across the former 200-record boundary");
+  assert.ok(await evaluate('document.querySelector("#strategy-research").textContent.includes("Архивная версия")'));
+}
+async function exerciseOperatorCapability({fixture,send,base,round,wait,click,evaluate,screenshot,checkLayout}) {
+  assert.equal(fixture.requests.some(item=>item.path==="/api/system/metrics"),false,"Ordinary signed-in users never request operator aggregates");
+  fixture.canViewOperationalMetrics=true;
+  await send("Page.navigate",{url:`${base}?case=signed-read-contracts-${round}&operator=1#settings`});
+  await wait('document.querySelector("#operations-settings")?.textContent.includes("Требует внимания оператора")',"The explicit server capability enables the operator panel");
+  const text=await evaluate('document.querySelector("#operations-settings").textContent');
+  assert.ok(text.includes("Счета без своевременного обновления") && text.includes("Неопределённый результат отправки") && text.includes("Подтверждение запуска не получено"));
+  assert.ok(!text.includes("worker_not_reported") && !text.includes("stale_success_accounts"),"Operator codes are translated into meaningful statuses");
+  await evaluate(`(() => {
+    const panel=document.querySelector("#operations-settings");
+    panel.querySelectorAll("details").forEach(item=>item.open=false);
+    panel.scrollIntoView({behavior:"instant",block:"start"});
+    window.scrollBy({top:-16,behavior:"instant"});
+  })()`);
+  await screenshot(`operator-status-${round}-390.png`);
+  await checkLayout(`operator-status-${round}-390`);
+  for (const [name,sectionIndex,workerIndex] of [
+    ["collection",0,-1],["delivery",1,-1],
+    ["workers-notifications",2,0],["workers-refresh",2,1],["workers-daily",2,2]
+  ]) {
+    const visible=await evaluate(`(() => {
+      const sections=[...document.querySelectorAll("#operations-settings > details")];
+      sections.forEach((item,index)=>item.open=index===${sectionIndex});
+      const section=sections[${sectionIndex}];
+      const target=${workerIndex} < 0 ? section : section.querySelectorAll(":scope > div")[${workerIndex}];
+      target.scrollIntoView({behavior:"instant",block:"center"});
+      const rect=target.getBoundingClientRect();
+      return rect.top>=0 && rect.bottom<=document.querySelector("#mobile-nav").getBoundingClientRect().top;
+    })()`);
+    assert.ok(visible,"The focused operator evidence fits above mobile navigation: "+name);
+    await screenshot(`operator-${name}-${round}-390.png`);
+  }
+  const before=fixture.requests.filter(item=>item.path==="/api/system/metrics").length;
+  fixture.canViewOperationalMetrics=false;
+  await evaluate('document.querySelector("#main-content").focus(); window.dispatchEvent(new Event("focus"))');
+  await wait('!document.querySelector("#operations-settings")',"Capability revocation removes cached operator data");
+  await click('#sidebar-nav [data-route="profile"]');
+  await click('#sidebar-nav [data-route="settings"]');
+  await wait('document.querySelector("#preferences-form")',"Ordinary settings remain available after operator revocation");
+  assert.equal(fixture.requests.filter(item=>item.path==="/api/system/metrics").length,before,"A revoked capability prevents future aggregate reads");
+}
+async function exerciseReadConsistency(options) {
+  const {send, configureViewport, round, base, wait, evaluate} = options;
+  await configureViewport(390);
+  const key = `signed-read-contracts-${round}`;
+  const fixture = makeFixture("signed");
+  fixture.failNotifications = true;
+  fixture.refreshStatus.can_refresh = false;
+  fixture.refreshStatus.retry_after_seconds = 1800;
+  fixture.refreshStatus.cooldown_until = new Date(Date.now() + 1800000).toISOString();
+  fixtures.set(key, fixture);
+  const previousDocumentTimeOrigin = await evaluate("performance.timeOrigin");
+  await send("Page.navigate", {url: `${base}?case=${key}#settings`});
+  await wait(`performance.timeOrigin!==${previousDocumentTimeOrigin} && document.querySelector("#preferences-form")`, "A fresh signed-in settings document");
+  const context = {...options, fixture};
+  await exerciseNotificationRetry(context);
+  await exerciseAnalyticsReadConsistency(context);
+  await exerciseSearchReadConsistency(context);
+  await exerciseGoalSourceContract(context);
+  await exerciseResearchSubmission(context);
+  await exerciseResearchEvidence(context);
+  await exerciseResearchReload(context);
+  await exerciseResearchLateResult(context);
+  await exerciseResearchPagination(context);
+  await exerciseOperatorCapability(context);
+  console.log(`PASS read contracts round ${round}: resource retry, period isolation, search ordering, and source age from the real calculator`);
+}
 async function serveTestSessions({fixture, path, method, body, response}) {
   fixture.sessions ||= [{id:"00000000-0000-0000-0000-000000000991", current:true, auth_provider:"vkid", created_at:stamp, last_seen_at:stamp, expires_at:new Date(Date.now()+86400000).toISOString()}, {id:"00000000-0000-0000-0000-000000000992", current:false, auth_provider:"tid", created_at:stamp, last_seen_at:stamp, expires_at:new Date(Date.now()+86400000).toISOString()}];
   if (method === "GET") return sendJSON(response, {sessions:clone(fixture.sessions), total:fixture.sessions.length, truncated:false});
@@ -2090,12 +2463,12 @@ async function serveTestGoalPlan({fixture,path,method,body,response}) {
   if(method==="PUT") {
     if(body.expected_version!==plan.version || body.expected_goal_version!==goal.version) return sendJSON(response,{detail:"settings_version_conflict"},409);
     if(fixture.holdGoalPlanSave) await new Promise(resolve => {fixture.releaseGoalPlanSave=resolve;});
-    plan={version:plan.version+1,document:clone(body.document),forecast:{status:"available",method:"geometric_monthly_scenario_v1",projected_amount_rub:"1300.00",inflation_adjusted_target_rub:"1000.00",required_monthly_rub:"75.00",deterministic_months_to_target:9,months:12,assumptions_source:"user_supplied",simulation:null,limitations:["Synthetic UI response; financial math is exercised by Python tests."]}};
+    plan={version:plan.version+1,document:clone(body.document),forecast:clone(serverContracts.goal_forecast_available)};
     fixture.goalPlans[id]=plan;
   }
   return sendJSON(response,{...clone(plan),goal_id:id,goal_version:goal.version});
 }
-async function serveTestResearchArchive({fixture,path,method,body,response}) {
+async function serveTestResearchArchive({fixture,path,method,body,url,response}) {
   fixture.researchEvidence ||= {version:0,document:{assets:[]}};
   if(path.endsWith("/evidence")) {
     if(method==="PUT") {
@@ -2104,13 +2477,46 @@ async function serveTestResearchArchive({fixture,path,method,body,response}) {
     }
     return sendJSON(response,fixture.researchEvidence);
   }
-  if (path === "/api/research/runs") {
-    const items = clone(fixture.researchRuns);
-    if (fixture.holdResearchReads) await new Promise(release => fixture.heldResearchReads.push(release));
-    return sendJSON(response,{items});
+  if (path.startsWith("/api/research/requests/")) {
+    const id = path.split("/").at(-1);
+    if (fixture.removeResearchRequestBeforeRead === id) {
+      fixture.researchRequests.delete(id);
+      delete fixture.removeResearchRequestBeforeRead;
+    }
+    const request = fixture.researchRequests.get(id);
+    return sendJSON(response, request ? researchRequestDTO(request) : {detail: "research_request_not_found"}, request ? 200 : 404);
   }
-  const item = fixture.researchRuns.find(row => row.id === path.split("/").at(-1));
-  return sendJSON(response, item || {detail:"workspace_item_not_found"}, item ? 200 : 404);
+  if (path === "/api/research/runs") return serveTestResearchPage({fixture,url,response});
+  return serveTestResearchRecord({fixture,path,method,response});
+}
+async function serveTestResearchPage({fixture,url,response}) {
+    const cursor = url.searchParams.get("cursor");
+    if (cursor && fixture.failResearchPage) return sendJSON(response, {detail: "research_temporarily_unavailable"}, 503);
+    const offset = cursor ? fixture.researchRuns.findIndex(item => item.id === cursor) + 1 : 0;
+    if (cursor && !offset) return sendJSON(response, {detail: "research_cursor_not_found"}, 404);
+    const limit = Number(url.searchParams.get("limit") || 50);
+    const items = clone(fixture.researchRuns.slice(offset, offset + limit));
+    const latest = [...fixture.researchRequests.values()].reverse();
+    const recent = latest.find(item => item.status === "running") || latest[0];
+    const limits = (fixture.billing || serverContracts.billing_disabled).entitlements;
+    const payload = {items, next_cursor: offset + limit < fixture.researchRuns.length ? items.at(-1).id : null,
+      capacity: {runs_used: fixture.researchRuns.length, runs_limit: limits.research_runs,
+        storage_used_bytes: fixture.researchRuns.length * 1024, storage_limit_bytes: limits.research_storage_bytes},
+      recent_request: recent ? researchRequestDTO(recent) : null};
+    if (fixture.holdResearchReads) await new Promise(release => fixture.heldResearchReads.push(release));
+    return sendJSON(response, payload);
+}
+function serveTestResearchRecord({fixture,path,method,response}) {
+  const id = path.endsWith("/replay") ? path.split("/").at(-2) : path.split("/").at(-1);
+  const item = fixture.researchRuns.find(row => row.id === id);
+  if (!item) return sendJSON(response, {detail: "research_run_not_found"}, 404);
+  if (method === "DELETE") {
+    fixture.researchRuns = fixture.researchRuns.filter(row => row.id !== id);
+    for (const request of fixture.researchRequests.values()) if (request.run_id === id) Object.assign(request, {status: "deleted", run_id: null});
+    return sendJSON(response, {deleted: true});
+  }
+  if (path.endsWith("/replay")) return sendJSON(response, {verified: true});
+  return sendJSON(response, item);
 }
 function serveTestExecutionPlans({fixture,path,body,response}) {
   if (path.endsWith("execution-capabilities")) return sendJSON(response, {shadow_enabled:true,sandbox_enabled:false,live_enabled:false,max_order_notional_rub:"25000",max_daily_notional_rub:"100000"});
@@ -2139,7 +2545,7 @@ function serveTestExecutionPlans({fixture,path,body,response}) {
   return sendJSON(response,{run:clone(run)});
 }
 async function serveTestBilling({fixture,path,method,body,response}) {
-  fixture.billing ||= {configured:false,provider:"tbank_hosted_checkout",plan:"personal",automatic_renewal:false,valid_until:null,offer:null,payments:[]};
+  fixture.billing ||= clone(serverContracts.billing_disabled);
   if(path==="/api/billing") return sendJSON(response,fixture.billing);
   if(path.endsWith("/checkout")) {
     assert.equal(typeof body.expected_offer,"string");assert.equal(Object.hasOwn(body,"amount_kopecks"),false);
@@ -2152,7 +2558,7 @@ async function serveTestBilling({fixture,path,method,body,response}) {
   const ident=path.split("/").at(-2), payment=fixture.billing.payments.find(item=>item.id===ident);
   if(!payment)return sendJSON(response,{detail:"workspace_item_not_found"},404);
   if(path.endsWith("/cancel"))payment.status="cancelled";
-  else { payment.status="paid";payment.entitlement_from=stamp;payment.entitlement_until=new Date(Date.now()+30*86400000).toISOString();fixture.billing.plan="premium";fixture.billing.valid_until=payment.entitlement_until; }
+  else { payment.status="paid";payment.entitlement_from=stamp;payment.entitlement_until=new Date(Date.now()+30*86400000).toISOString();fixture.billing.plan="premium";fixture.billing.valid_until=payment.entitlement_until;fixture.billing.entitlements={...clone(fixture.billing.plans.premium),valid_until:payment.entitlement_until}; }
   return sendJSON(response,payment);
 }
 async function serveTestAssistantStatus({fixture,path,method,body,url,response}) {
@@ -2241,9 +2647,12 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   const other=fixture.sessions.find(item=>!item.current);
   await click(`#view-profile [data-session-revoke="${other.id}"]`);
   await until(()=>fixture.sessions.length===1,"Revoke another session");
-  fixture.billing.configured=true;fixture.billing.offer={version:"a".repeat(64),description:"Synthetic optional plan",amount_kopecks:12345,currency:"RUB",period_days:30};
+  fixture.billing.configured=true;fixture.billing.offer=clone(serverContracts.billing_enabled.offer);
   await click('#view-profile [data-action="premium"]');
   await wait('document.querySelector("#billing-checkout-form")',"Configured hosted checkout");
+  const comparison=await evaluate('[...document.querySelectorAll(".plan-comparison tbody tr")].map(row=>[...row.querySelectorAll("td")].map(cell=>cell.textContent))');
+  assert.deepEqual(comparison[0],[String(serverContracts.billing_enabled.plans.personal.research_runs),String(serverContracts.billing_enabled.plans.premium.research_runs)],"The two archive limits come from the actual billing contract");
+  assert.ok(comparison[1][0].includes(String(serverContracts.billing_enabled.plans.personal.research_storage_bytes/1048576)) && comparison[1][1].includes(String(serverContracts.billing_enabled.plans.premium.research_storage_bytes/1048576)),"Storage is shown in MiB from the server's entitlement values");
   await fieldValue("#billing-checkout-form","receipt_email","receipt@example.test");
   await click('#billing-checkout-form [name="accept_offer"]');
   await click('#billing-checkout-form [type="submit"]');
@@ -2255,6 +2664,7 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   await checkLayout("payments-and-assistant");
   await click('#workspace-dialog [data-close-dialog]');
   await exercisePendingBillingCancellation({fixture, click, wait, evaluate});
+  await exerciseBillingInitializationRecovery({fixture,click,wait,evaluate,checkLayout});
 }
 async function exercisePendingBillingCancellation({fixture, click, wait, evaluate}) {
   const pending = ["pending", "uncertain"].map(status => ({...clone(fixture.billing.payments[0]), id: require("node:crypto").randomUUID(), status, cancel_attempted_at: stamp, entitlement_from: null, entitlement_until: null}));
@@ -2268,6 +2678,27 @@ async function exercisePendingBillingCancellation({fixture, click, wait, evaluat
     assert.ok(!row.text.includes("теневого плана") && !row.text.includes("модельные исполнения"), "Payment cancellation cannot display investment execution instructions");
     assert.deepEqual({checkout:row.checkout, cancel:row.cancel, reconcile:row.reconcile}, {checkout:false, cancel:false, reconcile:true}, "Unconfirmed cancellation offers readback without another payment or cancellation");
   }
+  await click('#workspace-dialog [data-close-dialog]');
+}
+async function exerciseBillingInitializationRecovery({fixture,click,wait,evaluate,checkLayout}) {
+  const original=fixture.billing.payments[0];
+  const absent={...clone(original),id:require("node:crypto").randomUUID(),status:"uncertain",cancel_attempted_at:null,
+    init_started_at:stamp,checkout_expires_at:day(1),recovery_not_before:new Date(Date.now()+60000).toISOString(),resolution:null};
+  const unsent={...clone(original),id:require("node:crypto").randomUUID(),status:"cancelled",checkout_url:null,init_started_at:null,
+    resolution:"initialization_not_started",recovery_not_before:null};
+  const resolved={...clone(unsent),id:require("node:crypto").randomUUID(),resolution:"provider_order_absent"};
+  fixture.billing.payments.push(absent,unsent,resolved);
+  const before=fixture.requests.length;
+  await click('#view-profile [data-action="premium"]');
+  await wait('document.querySelector("#dialog-content").textContent.includes("отправка запроса на оплату в банк не начиналась")',"An unsent initialization has its actual local resolution");
+  const text=await evaluate('document.querySelector("#dialog-content").textContent');
+  assert.ok(text.includes("Результат начала оплаты не подтверждён") && text.includes("подтверждающих проверок банка"),"Ambiguous and resolved initialization have distinct explanations");
+  const deadline=await evaluate(`window.OmniUI.date(${JSON.stringify(absent.recovery_not_before)},true)`);
+  assert.ok(text.includes(deadline),"The earliest safe reconciliation time is explicit");
+  const row=await evaluate(`document.querySelector('[data-billing-id="${absent.id}"]').closest('li').querySelector('a')===null`);
+  assert.equal(row,true,"Expired checkout URLs are never offered again");
+  assert.equal(fixture.requests.slice(before).some(item=>item.method!=="GET"),false,"Opening a recovery state makes no payment, cancellation or reconciliation mutation");
+  await checkLayout("billing-initialization-recovery");
   await click('#workspace-dialog [data-close-dialog]');
 }
 async function exerciseExecutionPlanner({fixture,click,fieldValue,wait,evaluate,screenshot,checkLayout,round}) {
@@ -2561,6 +2992,7 @@ async function exerciseViewport({
   fixtures.set(key, makeFixture("signed"));
   const fixture = fixtures.get(key);
   fixture.extendedWorkflows = width === 390;
+  fixture.holdMarketStream = width === 390;
   await send("Page.navigate", {
     url: `${base}?case=${key}`
   });
@@ -2601,6 +3033,16 @@ async function exerciseViewport({
   await wait('document.querySelector("#view-search .search-result")', "Real search response");
   await click('#view-search [data-asset]');
   await wait('document.querySelector("#view-asset .chart-svg")', "Asset chart");
+  if (fixture.holdMarketStream) {
+    await until(() => fixture.marketStreams?.size === 1, "The browser has opened the actual market event contract");
+    await evaluate('document.querySelector("#view-asset .chart-svg").focus()');
+    const focusedChart = await evaluate('document.activeElement.id');
+    fixture.holdMarketStream = false;
+    for (const response of fixture.marketStreams) response.write(serverContracts.instrument_market_event);
+    await wait('document.querySelector("#view-asset [data-market-quote] .main-value").textContent.includes("251,75")', "A real server tick updates the displayed price while the chart is focused");
+    assert.equal(await evaluate('document.activeElement.id'), focusedChart, "A quote tick preserves the chart being inspected");
+  }
+  await wait('document.querySelector("#view-asset [data-market-quote] .main-value").textContent.includes("251,75") && document.querySelector("#view-asset [data-market-source]").textContent.includes("Текущая котировка")', "FastAPI's market event changes the REST price from 250.25 to 251.75 and labels it live");
   await click('#view-asset [data-asset-tab="metrics"]');
   assert.ok(await evaluate('document.querySelector("#view-asset .asset-tab-content").textContent.includes("Максимум периода")'));
   await click('#view-asset [data-asset-tab="chart"]');
@@ -2623,6 +3065,12 @@ async function exerciseViewport({
   });
   await checkLayout(`asset ${round}/${width}`);
   await screenshot(`asset-${round}-${width}.png`);
+  if (width === 390) {
+    await until(() => fixture.marketStreams?.size === 1, "Only the current instrument stream remains open");
+    for (const response of fixture.marketStreams) response.write(serverContracts.instrument_status_event);
+    await until(() => fixture.marketStreams.size === 0, "The server's terminal status closes the browser stream");
+    await wait('document.querySelector("#view-asset [data-market-source]").textContent.includes("Недоступно")', "The terminal source state remains visible while the chart has focus");
+  }
   await click('#view-asset [data-watch]');
   await until(() => fixture.prefs.document.watchlist.length === 1, "Persistent watchlist");
   await wait('document.querySelector("#view-asset [data-watch]").getAttribute("aria-pressed")==="true"', "Saved favorite");

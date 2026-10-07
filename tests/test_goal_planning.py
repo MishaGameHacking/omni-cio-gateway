@@ -28,7 +28,8 @@ def plan(**changes: Any) -> dict[str, Any]:
 
 
 def goal(**changes: Any) -> dict[str, Any]:
-    return {"kind": "capital", "progress": {"amount_rub": "100000"},
+    return {"kind": "capital", "progress": {"amount_rub": "100000", "status": "available",
+            "source": "manual", "as_of": "2026-01-01T00:00:00+00:00"},
             "target_amount_rub": "220000", "target_date": "2027-01-01", **changes}
 
 
@@ -39,6 +40,40 @@ def test_zero_return_has_exact_linear_growth_and_required_contribution() -> None
     assert result["required_monthly_rub"] == "10000.00"
     assert result["deterministic_months_to_target"] == 12
     assert result["simulation"] is None
+    assert result["source_status"] == "available"
+    assert result["source_as_of"] == "2026-01-01T00:00:00+00:00"
+
+
+def test_stale_portfolio_progress_cannot_be_presented_as_a_current_forecast() -> None:
+    from omnicio.workspace import goal_progress
+
+    now = datetime(2026, 10, 7, tzinfo=UTC)
+    document = {**goal(), "progress_source": "portfolio", "account_id": "synthetic",
+                "environment": "production", "allocation_percent": "100"}
+    progress = goal_progress(
+        document, connection={"account_id": "synthetic", "environment": "production"},
+        snapshot={"account_id": "synthetic", "environment": "production",
+                  "nav_rub": Decimal("100000"), "analysis_status": "observed",
+                  "captured_at": now - timedelta(days=60)},
+        operations=[], watermark=None, history_complete=True, now=now,
+    )
+    assert progress["status"] == "stale"
+    forecast = goal_forecast({**document, "progress": progress}, plan(), today=now.date())
+    assert forecast["status"] == "source_stale"
+    assert forecast["reason"] == "goal_progress_stale"
+    assert forecast["source_as_of"] == progress["as_of"]
+    assert forecast["as_of"] == "2026-10-07"
+    assert "scenario_path" not in forecast
+    assert "simulation" not in forecast
+
+
+@pytest.mark.parametrize("status", [None, "unavailable", "unknown"])
+def test_amount_without_available_source_never_silently_becomes_current(status: str | None) -> None:
+    result = goal_forecast(goal(progress={"status": status, "amount_rub": "100000"}),
+                           plan(), today=date(2026, 1, 1))
+    assert result["status"] == "unavailable"
+    assert result["reason"] == "goal_progress_unavailable"
+    assert "scenario_path" not in result
 
 
 def test_net_geometric_growth_and_inflation_are_separate() -> None:

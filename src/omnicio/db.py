@@ -6,7 +6,7 @@ import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from threading import BoundedSemaphore
 from typing import Any, cast
 from uuid import UUID
@@ -544,6 +544,123 @@ class Database:
         # lock: simultaneous owner requests could otherwise exhaust the pool.
         return self.collect_operational_metrics()
 
+    def record_worker_heartbeat(self, worker_name: str, *, status: str = "ok") -> None:
+        """Persist service progress only; no user identity or provider text is stored."""
+        if worker_name not in {"notifications", "portfolio_refresh", "portfolio_daily"}:
+            raise ValueError("worker_name_invalid")
+        if status not in {"running", "ok", "attention", "stopped"}:
+            raise ValueError("worker_status_invalid")
+        with self.pool.connection() as conn:
+            conn.execute(
+                "INSERT INTO worker_heartbeats (worker_name, checked_at, completed_at, status, "
+                "completed_status) "
+                "VALUES (%s, clock_timestamp(), CASE WHEN %s IN ('ok', 'attention') "
+                "THEN clock_timestamp() ELSE NULL END, %s, "
+                "CASE WHEN %s IN ('ok', 'attention') THEN %s ELSE NULL END) "
+                "ON CONFLICT (worker_name) DO UPDATE SET checked_at = EXCLUDED.checked_at, "
+                "status = EXCLUDED.status, completed_at = COALESCE(EXCLUDED.completed_at, "
+                "worker_heartbeats.completed_at), completed_status = "
+                "COALESCE(EXCLUDED.completed_status, worker_heartbeats.completed_status)",
+                (worker_name, status, status, status, status),
+            )
+
+    @staticmethod
+    def _observer_metrics(cur: Any, user_id: UUID) -> dict[str, Any]:
+        cur.execute(
+            "SELECT count(*) FILTER (WHERE status = 'queued') AS queued, "
+            "count(*) FILTER (WHERE status = 'running') AS running, "
+            "count(*) FILTER (WHERE status IN ('queued', 'running') "
+            "AND next_attempt_at < now() - interval '30 minutes') AS stale, "
+            "count(*) FILTER (WHERE status = 'failed' "
+            "AND finished_at > now() - interval '24 hours') AS failed_24h, "
+            "count(*) FILTER (WHERE status = 'degraded' "
+            "AND finished_at > now() - interval '24 hours') AS degraded_24h, "
+            "min(requested_at) FILTER (WHERE status IN ('queued', 'running')) "
+            "AS oldest_pending, max(finished_at) FILTER (WHERE status = 'succeeded') "
+            "AS latest_success FROM job_runs WHERE user_id = %s", (user_id,),
+        )
+        return cast(dict[str, Any], cur.fetchone())
+
+    @staticmethod
+    def _notification_metrics(cur: Any, user_id: UUID) -> dict[str, Any]:
+        cur.execute(
+            "SELECT count(*) FILTER (WHERE o.status = 'queued') AS queued, "
+            "count(*) FILTER (WHERE o.status = 'sending') AS sending, "
+            "count(*) FILTER (WHERE (o.status = 'queued' "
+            "AND o.next_attempt_at < now() - interval '15 minutes') "
+            "OR (o.status = 'sending' AND o.lease_until < now())) AS stale, "
+            "count(*) FILTER (WHERE o.status = 'failed' "
+            "AND o.updated_at > now() - interval '24 hours') AS failed_24h, "
+            "count(*) FILTER (WHERE o.status = 'uncertain') AS uncertain, "
+            "min(o.next_attempt_at) FILTER (WHERE o.status = 'queued') AS oldest_due_at, "
+            "max(o.accepted_at) AS last_accepted_at FROM notification_outbox o "
+            "JOIN notification_channels c ON c.id = o.channel_id AND c.user_id = o.user_id "
+            "WHERE o.user_id = %s AND c.status <> 'revoked'", (user_id,),
+        )
+        return cast(dict[str, Any], cur.fetchone())
+
+    @staticmethod
+    def _worker_health(
+        name: str, row: dict[str, Any] | None, checked_at: datetime,
+    ) -> dict[str, Any]:
+        timeout = 2100 if name == "portfolio_daily" else 300
+        if row is None:
+            return {"status": "not_reported", "checked_at": None, "completed_at": None,
+                    "stale_after_seconds": timeout}
+        if name == "portfolio_refresh" and row["status"] == "running":
+            timeout = 1800
+        status = row["status"]
+        if row["checked_at"] < checked_at - timedelta(seconds=timeout):
+            status = "stale"
+        elif status == "running" and row.get("completed_status") == "attention":
+            status = "attention"
+        return {"status": status, "checked_at": row["checked_at"],
+                "completed_at": row["completed_at"], "stale_after_seconds": timeout}
+
+    @staticmethod
+    def _workers_metrics(
+        cur: Any, checked_at: datetime, *, active_users: int, connected_accounts: int,
+    ) -> tuple[dict[str, Any], list[str]]:
+        cur.execute("SELECT worker_name, checked_at, completed_at, status, completed_status "
+                    "FROM worker_heartbeats")
+        stored = {row["worker_name"]: dict(row) for row in cur.fetchall()}
+        workers: dict[str, Any] = {}
+        issues: list[str] = []
+        for name in ("notifications", "portfolio_refresh", "portfolio_daily"):
+            health = Database._worker_health(name, stored.get(name), checked_at)
+            workers[name] = health
+            required = active_users if name == "notifications" else connected_accounts
+            if required and health["status"] in {"not_reported", "stale", "attention", "stopped"}:
+                issues.append(name + "_worker_" + health["status"])
+        return workers, issues
+
+    @staticmethod
+    def _combine_metric_time(
+        current: datetime | None, candidate: datetime | None, *, latest: bool = False,
+    ) -> datetime | None:
+        if candidate is None:
+            return current
+        if current is None:
+            return candidate
+        return max(current, candidate) if latest else min(current, candidate)
+
+    def _operational_user(
+        self, cur: Any, user_id: UUID, checked_at: datetime,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        # Runtime keeps FORCE RLS. Aggregate one server-resolved tenant at a
+        # time; do not expose identities, bodies, destinations or credentials.
+        cur.execute(_SET_USER_CONTEXT_SQL, (str(user_id),))
+        cur.execute("SELECT verified_at FROM tbank_connection WHERE user_id = %s", (user_id,))
+        connection = cast(dict[str, Any] | None, cur.fetchone())
+        row = self._observer_metrics(cur, user_id)
+        row.update(connected_accounts=int(connection is not None), stale_success_accounts=0)
+        if connection is not None:
+            threshold = checked_at - (timedelta(hours=36) if row["latest_success"]
+                                      else timedelta(minutes=30))
+            observation = row["latest_success"] or connection["verified_at"]
+            row["stale_success_accounts"] = int(observation < threshold)
+        return row, self._notification_metrics(cur, user_id)
+
     def collect_operational_metrics(self) -> dict[str, Any]:
         """Internal monitor consumer; HTTP callers must use operational_metrics."""
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
@@ -552,45 +669,43 @@ class Database:
             cur.execute("SELECT id FROM users WHERE status = 'active' ORDER BY id")
             users = cast(list[dict[str, Any]], cur.fetchall())
             totals = dict.fromkeys(("connected_accounts", "queued", "running", "stale",
-                                   "failed_24h", "degraded_24h"), 0)
+                                   "failed_24h", "degraded_24h", "stale_success_accounts"), 0)
+            notifications: dict[str, Any] = dict.fromkeys(
+                ("queued", "sending", "stale", "failed_24h", "uncertain"), 0,
+            )
+            notifications.update(oldest_due_at=None, last_accepted_at=None,
+                                 stale_after_seconds=900)
             oldest_pending = None
             latest_success = None
             for user in users:
-                # Runtime keeps FORCE RLS. The operator aggregates one explicit
-                # server-resolved tenant at a time, without a bypass role.
-                cur.execute(_SET_USER_CONTEXT_SQL, (str(user["id"]),))
-                cur.execute(
-                    "SELECT EXISTS (SELECT 1 FROM tbank_connection WHERE user_id = %s) AS yes",
-                    (user["id"],),
-                )
-                totals["connected_accounts"] += int(cast(dict[str, Any], cur.fetchone())["yes"])
-                cur.execute(
-                    "SELECT count(*) FILTER (WHERE status = 'queued') AS queued, "
-                    "count(*) FILTER (WHERE status = 'running') AS running, "
-                    "count(*) FILTER (WHERE status IN ('queued', 'running') "
-                    "AND requested_at < now() - interval '30 minutes') AS stale, "
-                    "count(*) FILTER (WHERE status = 'failed' "
-                    "AND finished_at > now() - interval '24 hours') AS failed_24h, "
-                    "count(*) FILTER (WHERE status = 'degraded' "
-                    "AND finished_at > now() - interval '24 hours') AS degraded_24h, "
-                    "min(requested_at) FILTER (WHERE status IN ('queued', 'running')) "
-                    "AS oldest_pending, max(finished_at) FILTER (WHERE status = 'succeeded') "
-                    "AS latest_success FROM job_runs WHERE user_id = %s", (user["id"],),
-                )
-                row = cast(dict[str, Any], cur.fetchone())
-                for key in ("queued", "running", "stale", "failed_24h", "degraded_24h"):
+                row, delivery = self._operational_user(cur, user["id"], checked_at)
+                for key in totals:
                     totals[key] += int(row[key])
-                if row["oldest_pending"] is not None:
-                    oldest_pending = (row["oldest_pending"] if oldest_pending is None else
-                                      min(oldest_pending, row["oldest_pending"]))
-                if row["latest_success"] is not None:
-                    latest_success = (row["latest_success"] if latest_success is None else
-                                      max(latest_success, row["latest_success"]))
+                oldest_pending = self._combine_metric_time(oldest_pending, row["oldest_pending"])
+                latest_success = self._combine_metric_time(latest_success, row["latest_success"],
+                                                            latest=True)
+                for key in ("queued", "sending", "stale", "failed_24h", "uncertain"):
+                    notifications[key] += int(delivery[key])
+                for key in ("oldest_due_at", "last_accepted_at"):
+                    notifications[key] = self._combine_metric_time(
+                        notifications[key], delivery[key], latest=key == "last_accepted_at",
+                    )
+            workers, issues = self._workers_metrics(
+                cur, checked_at, active_users=len(users),
+                connected_accounts=totals["connected_accounts"],
+            )
+            issues.extend("observer_" + key for key in (
+                "stale", "failed_24h", "degraded_24h", "stale_success_accounts",
+            ) if totals[key])
+            issues.extend("notifications_" + key for key in (
+                "stale", "failed_24h", "uncertain",
+            ) if notifications[key])
             return {
                 "checked_at": checked_at, "active_users": len(users), "observer": totals,
                 "oldest_pending_at": oldest_pending, "latest_success_at": latest_success,
-                "stale_after_seconds": 1800,
-                "status": "attention" if totals["stale"] or totals["failed_24h"] else "ok",
+                "stale_after_seconds": 1800, "observation_stale_after_seconds": 129600,
+                "notifications": notifications, "workers": workers, "issues": issues,
+                "status": "attention" if issues else "ok",
             }
 
     def delete_user_account(self, user_id: UUID) -> bool:

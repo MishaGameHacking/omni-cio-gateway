@@ -9,6 +9,7 @@ on:
       - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - "uv.lock"
       - "requirements-runtime.txt"
+      - "requirements-dev.txt"
       - ".github/workflows/auth-app-deploy.yml"
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
@@ -21,6 +22,7 @@ on:
       - "src/omnicio/**"
       - "web/**"
       - "tests/frontend-smoke.cjs"
+      - "tests/frontend_server_contract.py"
       - "tests/i18n-contract.cjs"
       - "assets/brand/**"
       - "pyproject.toml"
@@ -32,6 +34,7 @@ on:
       - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - "uv.lock"
       - "requirements-runtime.txt"
+      - "requirements-dev.txt"
       - ".github/workflows/auth-app-deploy.yml"
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
@@ -44,6 +47,7 @@ on:
       - "src/omnicio/**"
       - "web/**"
       - "tests/frontend-smoke.cjs"
+      - "tests/frontend_server_contract.py"
       - "tests/i18n-contract.cjs"
       - "assets/brand/**"
       - "pyproject.toml"
@@ -89,10 +93,10 @@ jobs:
         shell: cmd
         run: call .github\scripts\bootstrap_self_hosted_python.cmd
 
-      - name: Install reviewed runtime for canonical browser fixtures
+      - name: Install reviewed runtime and test dependencies for browser fixtures
         shell: cmd
         run: |
-          "%OMNICIO_PYTHON%" -m pip install --only-binary=:all: --require-hashes -r requirements-runtime.txt
+          "%OMNICIO_PYTHON%" -m pip install --only-binary=:all: --require-hashes -r requirements-dev.txt
           if errorlevel 1 exit /b 1
           "%OMNICIO_PYTHON%" -m pip install --no-deps --no-build-isolation --no-index --only-binary=:all: -e .
           if errorlevel 1 exit /b 1

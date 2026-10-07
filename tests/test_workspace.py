@@ -407,10 +407,13 @@ def test_event_identity_is_stable_and_digest_is_not_a_probability() -> None:
     preferences["digest_frequency"] = "weekly"
     now = datetime(2026, 10, 7, 12, tzinfo=UTC)
     rows = [
+        {"category": "system", "occurred_at": now - timedelta(days=10),
+         "updated_at": now, "read_at": None},
+        {"category": "goals", "occurred_at": now, "updated_at": now, "read_at": now},
         {"category": "system", "occurred_at": now, "read_at": None},
-        {"category": "goals", "occurred_at": now, "read_at": now},
     ]
     digest = event_digest(rows, preferences, now)
     assert digest["count"] == 1
     assert digest["by_category"]["system"] == 1
+    assert digest["period_basis"] == "available_at"
     assert datetime.fromisoformat(digest["from"]).weekday() == 0

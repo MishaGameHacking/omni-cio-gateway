@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 import psycopg
 import pytest
@@ -338,7 +339,7 @@ def test_queued_delivery_rechecks_read_state_preferences_and_retry_budget(
     with patch.object(database, "has_legal_versions", return_value=True):
         assert not service.deliver_one(owner)
     transport.send_push.assert_not_called()
-    insert_notification_event(service.workspace, owner, 2)
+    second = insert_notification_event(service.workspace, owner, 2)
     service.queue_events(owner)
     prefs = default_preferences()
     prefs["digest_frequency"] = "daily"
@@ -348,6 +349,10 @@ def test_queued_delivery_rechecks_read_state_preferences_and_retry_budget(
     transport.send_push.assert_not_called()
     prefs["digest_frequency"] = "off"
     service.workspace.save_preferences(owner, prefs, expected_version=1)
+    service.queue_events(owner)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner)
+    assert transport.send_push.call_args.args[1]["event_id"] == second
     insert_notification_event(service.workspace, owner, 3)
     service.queue_events(owner)
     transport.send_push.return_value = DeliveryResult("queued", "push_rate_limited", 120)
@@ -356,7 +361,7 @@ def test_queued_delivery_rechecks_read_state_preferences_and_retry_budget(
         for attempt in range(6):
             assert service.deliver_one(owner, now=now + timedelta(hours=attempt))
         assert not service.deliver_one(owner, now=now + timedelta(hours=7))
-    assert transport.send_push.call_count == 6
+    assert transport.send_push.call_count == 7
     assert next(row for row in service.status(owner)["deliveries"]
                 if row["attempts"] == 6)["status"] == "failed"
 
@@ -461,6 +466,492 @@ def test_quiet_hours_and_digest_schedule_have_durable_deduplication(
     service.queue_events(owner, now=now + timedelta(days=1))
     digests = [row for row in service.status(owner)["deliveries"] if row["kind"] == "digest"]
     assert len(digests) == 1
+
+
+def test_digest_includes_late_imports_corrections_and_days_missed_during_worker_downtime(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    channel = UUID(service.subscribe_push(owner, subscription)["id"])
+    prefs = default_preferences()
+    prefs["digest_frequency"] = "daily"
+    prefs["quiet_hours"]["timezone"] = "UTC"
+    service.workspace.save_preferences(owner, prefs, expected_version=0)
+    start = datetime(2026, 10, 2, tzinfo=UTC)
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE notification_channels SET verified_at = %s, digest_cursor_at = %s "
+                    "WHERE user_id = %s AND id = %s", (start, start, owner, channel))
+    service.queue_events(owner, now=start + timedelta(days=1, minutes=1))
+    assert service.status(owner)["deliveries"] == []
+    # The actual financial event belongs to the already-closed source day, but
+    # only becomes known to the server at the following 06:15 import.
+    late = insert_notification_event(service.workspace, owner, 7,
+                                     at=start + timedelta(hours=18))
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE workspace_events SET updated_at = %s WHERE user_id = %s AND id = %s",
+                    (start + timedelta(days=1, hours=6, minutes=15), owner, late))
+    service.queue_events(owner, now=start + timedelta(days=1, hours=6, minutes=16))
+    assert service.status(owner)["deliveries"] == []
+    next_digest = start + timedelta(days=2, minutes=1)
+    with ThreadPoolExecutor(max_workers=3) as workers:
+        list(workers.map(lambda _: service.queue_events(owner, now=next_digest), range(3)))
+    assert len(service.status(owner)["deliveries"]) == 1
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=next_digest)
+    first_payload = transport.send_push.call_args.args[1]
+    assert first_payload["period_basis"] == "available_at"
+    assert datetime.fromisoformat(first_payload["from"]) == start + timedelta(days=1)
+    assert "событий: 1" in first_payload["body"]
+    event = next(row for row in service.workspace.events(owner)["items"] if row["id"] == late)
+    assert event["occurred_at"] == start + timedelta(hours=18)
+    # A later correction receives its own availability time. It and both new
+    # days must survive three days without a running notification worker.
+    insert_notification_event(service.workspace, owner, 7, at=start + timedelta(hours=18),
+                              source={"type": "test", "revision": "corrected"})
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE workspace_events SET updated_at = %s WHERE user_id = %s AND id = %s",
+                    (start + timedelta(days=2, hours=6), owner, late))
+    for day in (3, 4):
+        ident = insert_notification_event(service.workspace, owner, day,
+                                          at=start - timedelta(days=10))
+        with service.workspace._transaction(owner) as cur:
+            cur.execute("UPDATE workspace_events SET updated_at = %s "
+                        "WHERE user_id = %s AND id = %s",
+                        (start + timedelta(days=day, hours=6), owner, ident))
+    resumed = start + timedelta(days=5, minutes=1)
+    service.queue_events(owner, now=resumed)
+    service.queue_events(owner, now=resumed)
+    assert len(service.status(owner)["deliveries"]) == 2
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=resumed)
+        assert not service.deliver_one(owner, now=resumed)
+    assert transport.send_push.call_count == 2
+    payload = transport.send_push.call_args.args[1]
+    assert datetime.fromisoformat(payload["from"]) == start + timedelta(days=2)
+    assert datetime.fromisoformat(payload["to"]) == start + timedelta(days=5)
+    assert "событий: 3" in payload["body"]
+
+
+def test_digest_cursor_and_outbox_commit_together_after_interrupted_enqueue(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, _, subscription = notification_service(database)
+    channel = UUID(service.subscribe_push(owner, subscription)["id"])
+    prefs = default_preferences()
+    prefs["digest_frequency"] = "daily"
+    prefs["quiet_hours"]["timezone"] = "UTC"
+    service.workspace.save_preferences(owner, prefs, expected_version=0)
+    start = datetime(2026, 10, 2, tzinfo=UTC)
+    ident = insert_notification_event(service.workspace, owner, 1, at=start)
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE notification_channels SET verified_at = %s, digest_cursor_at = %s "
+                    "WHERE user_id = %s AND id = %s", (start, start, owner, channel))
+        cur.execute("UPDATE workspace_events SET updated_at = %s WHERE user_id = %s AND id = %s",
+                    (start + timedelta(hours=1), owner, ident))
+    enqueue = service._enqueue
+
+    def interrupted(*args: Any, **kwargs: Any) -> None:
+        enqueue(*args, **kwargs)
+        raise RuntimeError("synthetic interruption before cursor commit")
+
+    due = start + timedelta(days=1, minutes=1)
+    with patch.object(service, "_enqueue", side_effect=interrupted), \
+            pytest.raises(RuntimeError, match="synthetic interruption"):
+        service.queue_events(owner, now=due)
+    assert service.status(owner)["deliveries"] == []
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("SELECT digest_cursor_at FROM notification_channels "
+                    "WHERE user_id = %s AND id = %s", (owner, channel))
+        assert cur.fetchone()["digest_cursor_at"] == start
+    service.queue_events(owner, now=start + timedelta(days=1, minutes=1))
+    assert len(service.status(owner)["deliveries"]) == 1
+
+
+def pending_digest(
+    database: Database,
+) -> tuple[UUID, NotificationService, Mock, dict[str, Any], datetime, str]:
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    channel = UUID(service.subscribe_push(owner, subscription)["id"])
+    start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    start -= timedelta(days=2)
+    prefs = default_preferences()
+    prefs["digest_frequency"] = "daily"
+    prefs["quiet_hours"].update(enabled=True, timezone="UTC")
+    service.workspace.save_preferences(owner, prefs, expected_version=0)
+    event = insert_notification_event(service.workspace, owner, 101, at=start - timedelta(days=4))
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE notification_channels SET verified_at = %s, digest_cursor_at = %s "
+                    "WHERE user_id = %s AND id = %s", (start, start, owner, channel))
+        cur.execute("UPDATE workspace_events SET updated_at = %s WHERE user_id = %s AND id = %s",
+                    (start + timedelta(hours=6), owner, event))
+    now = start + timedelta(days=1, minutes=1)
+    service.queue_events(owner, now=now)
+    assert len(service.status(owner)["deliveries"]) == 1
+    return owner, service, transport, prefs, now, event
+
+
+@pytest.mark.parametrize("frequency", ["off", "weekly"])
+def test_pending_digest_changes_frequency_without_losing_or_replaying_its_revision(
+    workspace_database: tuple[Database, str, str], frequency: str,
+) -> None:
+    database = workspace_database[0]
+    owner, service, transport, prefs, now, event = pending_digest(database)
+    prefs["digest_frequency"] = frequency
+    service.workspace.save_preferences(owner, prefs, expected_version=1)
+    # A preference can change after queue_events and before the actual claim.
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not service.deliver_one(owner, now=now)
+        transport.send_push.assert_not_called()
+        pending = [row for row in service.status(owner)["deliveries"]
+                   if row["status"] == "queued"]
+        assert len(pending) == 1
+        assert pending[0]["kind"] == ("event" if frequency == "off" else "digest")
+        due = pending[0]["next_attempt_at"]
+        assert due > now
+        assert service.deliver_one(owner, now=due)
+        assert not service.deliver_one(owner, now=due + timedelta(minutes=1))
+    payload = transport.send_push.call_args.args[1]
+    if frequency == "off":
+        assert payload["event_id"] == event
+    else:
+        assert payload["frequency"] == "weekly"
+        assert "событий: 1" in payload["body"]
+    # A later mode change cannot reassign accepted membership to a new message.
+    prefs["digest_frequency"] = "daily"
+    service.workspace.save_preferences(owner, prefs, expected_version=2)
+    service.queue_events(owner, now=due + timedelta(days=1))
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not service.deliver_one(owner, now=due + timedelta(days=1))
+    assert transport.send_push.call_count == 1
+
+
+def test_digest_handoff_rolls_back_atomically_and_survives_repeated_settings_and_restart(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, service, transport, prefs, now, _ = pending_digest(database)
+    original = service.status(owner)["deliveries"][0]["id"]
+    prefs["digest_frequency"] = "off"
+    service.workspace.save_preferences(owner, prefs, expected_version=1)
+    with patch.object(service, "_bind_members", side_effect=RuntimeError("synthetic handoff")), \
+            pytest.raises(RuntimeError, match="synthetic handoff"):
+        service.queue_events(owner, now=now)
+    state = service.status(owner)["deliveries"]
+    assert [row["id"] for row in state] == [original]
+    assert state[0]["status"] == "queued"
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("SELECT outbox_id FROM notification_outbox_events WHERE user_id = %s",
+                    (owner,))
+        assert [row["outbox_id"] for row in cur.fetchall()] == [original]
+    service = NotificationService(database, service.config, legal_versions=service.legal_versions,
+                                  transport=transport)
+    for frequency in ("off", "daily", "weekly", "off"):
+        prefs["digest_frequency"] = frequency
+        saved = service.workspace.preferences(owner)
+        service.workspace.save_preferences(owner, prefs, expected_version=saved["version"])
+        service.queue_events(owner, now=now)
+        with service.workspace._transaction(owner) as cur:
+            cur.execute("SELECT o.kind, o.status FROM notification_outbox_events m "
+                        "JOIN notification_outbox o ON o.user_id = m.user_id "
+                        "AND o.channel_id = m.channel_id AND o.id = m.outbox_id "
+                        "WHERE m.user_id = %s", (owner,))
+            bindings = cur.fetchall()
+        assert len(bindings) == 1
+        assert bindings[0]["status"] == "queued"
+        assert bindings[0]["kind"] == ("event" if frequency == "off" else "digest")
+    pending = next(row for row in service.status(owner)["deliveries"] if row["status"] == "queued")
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=pending["next_attempt_at"])
+        assert not service.deliver_one(owner, now=pending["next_attempt_at"])
+    assert transport.send_push.call_count == 1
+
+
+def test_disabling_quiet_hours_releases_unsubmitted_digest_without_bypassing_provider_backoff(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, service, transport, prefs, now, _ = pending_digest(database)
+    prefs["quiet_hours"]["enabled"] = False
+    service.workspace.save_preferences(owner, prefs, expected_version=1)
+    transport.send_push.side_effect = [DeliveryResult("queued", "push_rate_limited", 120),
+                                       DeliveryResult("accepted", "push_provider_accepted")]
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=now)
+        assert not service.deliver_one(owner, now=now + timedelta(seconds=60))
+        assert service.deliver_one(owner, now=now + timedelta(seconds=121))
+        assert not service.deliver_one(owner, now=now + timedelta(seconds=122))
+    assert transport.send_push.call_count == 2
+    assert transport.send_push.call_args_list[0].args == transport.send_push.call_args_list[1].args
+
+
+def test_unsubmitted_weekly_digest_recomputes_its_calendar_boundary_after_timezone_change(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    service.subscribe_push(owner, subscription)
+    insert_notification_event(service.workspace, owner, 201)
+    service.queue_events(owner)
+    prefs = default_preferences()
+    prefs["digest_frequency"] = "weekly"
+    prefs["quiet_hours"]["timezone"] = "UTC"
+    service.workspace.save_preferences(owner, prefs, expected_version=0)
+    now = datetime.now(UTC)
+    service.queue_events(owner, now=now)
+    queued = next(row for row in service.status(owner)["deliveries"] if row["status"] == "queued")
+    assert queued["next_attempt_at"] > now
+    prefs["quiet_hours"]["timezone"] = "Europe/Moscow"
+    service.workspace.save_preferences(owner, prefs, expected_version=1)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not service.deliver_one(owner, now=now)
+    updated = next(row for row in service.status(owner)["deliveries"]
+                   if row["status"] == "queued")
+    local = now.astimezone(ZoneInfo("Europe/Moscow"))
+    monday = local.date() + timedelta(days=7 - local.weekday())
+    expected = datetime(monday.year, monday.month, monday.day, tzinfo=ZoneInfo("Europe/Moscow"))
+    assert updated["next_attempt_at"] == expected
+    assert updated["next_attempt_at"] != queued["next_attempt_at"]
+    assert updated["id"] == queued["id"]
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("SELECT count(*) AS total FROM notification_outbox_events WHERE user_id = %s",
+                    (owner,))
+        assert cur.fetchone()["total"] == 1
+    transport.send_push.assert_not_called()
+
+
+@pytest.mark.parametrize("timezone", ["UTC", "Europe/Berlin"])
+@pytest.mark.parametrize("final_outcome", ["accepted", "expired"])
+def test_weekly_handoff_ttl_starts_after_period_close_and_never_slides_on_retry(
+    workspace_database: tuple[Database, str, str], timezone: str, final_outcome: str,
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    service.subscribe_push(owner, subscription)
+    # Berlin crosses the autumn DST boundary during this exact weekly period.
+    zone = ZoneInfo(timezone)
+    now = datetime(2026, 10, 19, 0, 1, tzinfo=zone).astimezone(UTC)
+    boundary = datetime(2026, 10, 26, tzinfo=zone).astimezone(UTC)
+    due = datetime(2026, 10, 26, 8, tzinfo=zone).astimezone(UTC)
+    event = insert_notification_event(service.workspace, owner, 301,
+                                      at=now - timedelta(seconds=30))
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE workspace_events SET updated_at = %s WHERE user_id = %s AND id = %s",
+                    (now - timedelta(seconds=30), owner, event))
+    prefs = default_preferences()
+    prefs["quiet_hours"].update(enabled=True, timezone=timezone, start="22:00", end="08:00")
+    service.workspace.save_preferences(owner, prefs, expected_version=0)
+    service.queue_events(owner, now=now)
+    prefs["digest_frequency"] = "weekly"
+    service.workspace.save_preferences(owner, prefs, expected_version=1)
+    service.queue_events(owner, now=now)
+    with service.workspace._transaction(owner) as cur:
+        # Simulate creation at this fixed clock, independently of the CI date.
+        cur.execute("UPDATE notification_outbox SET created_at = %s WHERE user_id = %s",
+                    (now, owner))
+    queued = next(row for row in service.status(owner)["deliveries"] if row["status"] == "queued")
+    assert queued["kind"] == "digest"
+    assert queued["next_attempt_at"] == due
+    assert due > now + timedelta(days=7)
+    transport.send_push.side_effect = [DeliveryResult("queued", "push_rate_limited", 120),
+                                       DeliveryResult("accepted", "push_provider_accepted")]
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=due)
+        assert not service.deliver_one(owner, now=due + timedelta(seconds=60))
+        restarted = NotificationService(database, service.config,
+                                        legal_versions=service.legal_versions, transport=transport)
+        if final_outcome == "accepted":
+            assert restarted.deliver_one(owner, now=due + timedelta(seconds=121))
+            assert not restarted.deliver_one(owner, now=due + timedelta(seconds=122))
+        else:
+            assert not restarted.deliver_one(owner, now=boundary + timedelta(days=7, seconds=1))
+    record = next(row for row in service.status(owner)["deliveries"] if row["id"] == queued["id"])
+    if final_outcome == "accepted":
+        assert record["status"] == "accepted"
+        assert record["attempts"] == 2
+        assert transport.send_push.call_count == 2
+        assert (transport.send_push.call_args_list[0].args
+                == transport.send_push.call_args_list[1].args)
+    else:
+        assert record["status"] == "cancelled"
+        assert record["last_error"] == "delivery_expired"
+        assert record["attempts"] == 1
+        assert transport.send_push.call_count == 1
+
+
+@pytest.mark.parametrize("receipt", ["accepted", "sending", "uncertain"])
+def test_digest_membership_preserves_receipts_but_a_real_source_correction_can_notify(
+    workspace_database: tuple[Database, str, str], receipt: str,
+) -> None:
+    database = workspace_database[0]
+    owner, service, transport, prefs, now, event = pending_digest(database)
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE notification_outbox SET status = %s, accepted_at = %s, "
+                    "lease_until = %s WHERE user_id = %s",
+                    (receipt, now if receipt == "accepted" else None,
+                     now + timedelta(days=1), owner))
+    prefs["digest_frequency"] = "off"
+    prefs["quiet_hours"]["enabled"] = False
+    service.workspace.save_preferences(owner, prefs, expected_version=1)
+    service.queue_events(owner, now=now)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not service.deliver_one(owner, now=now)
+    transport.send_push.assert_not_called()
+    assert insert_notification_event(service.workspace, owner, 101, at=now,
+                                     source={"type": "test", "correction": 2}) == event
+    service.queue_events(owner, now=now)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=now)
+        assert not service.deliver_one(owner, now=now)
+    assert transport.send_push.call_count == 1
+    assert transport.send_push.call_args.args[1]["event_id"] == event
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("SELECT count(*) AS total FROM notification_outbox_events "
+                    "WHERE user_id = %s AND event_id = %s", (owner, event))
+        assert cur.fetchone()["total"] == 2
+
+
+def test_legacy_queued_digest_is_adopted_without_inventing_an_accepted_receipt(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, service, transport, prefs, now, event = pending_digest(database)
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("SELECT id, payload_ciphertext FROM notification_outbox WHERE user_id = %s",
+                    (owner,))
+        row = cur.fetchone()
+        legacy = service._open(row["payload_ciphertext"])
+        legacy.pop("membership_version")
+        cur.execute("DELETE FROM notification_outbox_events WHERE user_id = %s", (owner,))
+        cur.execute("UPDATE notification_outbox SET payload_ciphertext = %s WHERE user_id = %s",
+                    (service._seal(legacy), owner))
+    prefs["digest_frequency"] = "off"
+    prefs["quiet_hours"]["enabled"] = False
+    service.workspace.save_preferences(owner, prefs, expected_version=1)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=now)
+        assert not service.deliver_one(owner, now=now)
+    assert transport.send_push.call_args.args[1]["event_id"] == event
+    assert transport.send_push.call_count == 1
+
+
+def test_legacy_aggregate_overlap_is_explicitly_uncertain_instead_of_replayed(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, service, transport, prefs, now, _ = pending_digest(database)
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("SELECT payload_ciphertext, channel_id FROM notification_outbox "
+                    "WHERE user_id = %s", (owner,))
+        row = cur.fetchone()
+        legacy = service._open(row["payload_ciphertext"])
+        legacy.pop("membership_version")
+        cur.execute("DELETE FROM notification_outbox_events WHERE user_id = %s", (owner,))
+        cur.execute("UPDATE notification_outbox SET payload_ciphertext = %s WHERE user_id = %s",
+                    (service._seal(legacy), owner))
+        service._enqueue(cur, owner, row["channel_id"], "legacy-accepted", "digest", legacy, now)
+        cur.execute("UPDATE notification_outbox SET status = 'accepted', accepted_at = %s "
+                    "WHERE user_id = %s AND message_key = 'legacy-accepted'", (now, owner))
+    prefs["digest_frequency"] = "off"
+    prefs["quiet_hours"]["enabled"] = False
+    service.workspace.save_preferences(owner, prefs, expected_version=1)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not service.deliver_one(owner, now=now)
+    states = service.status(owner)["deliveries"]
+    assert {row["status"] for row in states} == {"accepted", "uncertain"}
+    assert any(row["last_error"] == "legacy_digest_membership_unknown" for row in states)
+    transport.send_push.assert_not_called()
+
+
+def test_delivery_membership_cannot_reference_another_owner_or_channel(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, service, _, _, _, event = pending_digest(database)
+    other = user(database)
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("SELECT channel_id, outbox_id, event_revision "
+                    "FROM notification_outbox_events WHERE user_id = %s", (owner,))
+        member = cur.fetchone()
+    with service.workspace._transaction(other) as cur:
+        cur.execute("SELECT * FROM notification_outbox_events WHERE user_id = %s", (owner,))
+        assert cur.fetchall() == []
+    values = (other, member["channel_id"], event, member["event_revision"], member["outbox_id"])
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(other),))
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            conn.execute("INSERT INTO notification_outbox_events "
+                         "(user_id, channel_id, event_id, event_revision, outbox_id) "
+                         "VALUES (%s, %s, %s, %s, %s)", values)
+        conn.rollback()
+    owner_values = (owner, uuid4(), event, member["event_revision"], member["outbox_id"])
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            conn.execute("INSERT INTO notification_outbox_events "
+                         "(user_id, channel_id, event_id, event_revision, outbox_id) "
+                         "VALUES (%s, %s, %s, %s, %s)", owner_values)
+        conn.rollback()
+
+
+def test_completed_heartbeat_failure_survives_a_live_attempt_until_its_success(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    database.record_worker_heartbeat("notifications", status="attention")
+    before = database.collect_operational_metrics()["workers"]["notifications"]
+    database.record_worker_heartbeat("notifications", status="running")
+    during = database.collect_operational_metrics()["workers"]["notifications"]
+    assert during["status"] == "attention"
+    assert during["completed_at"] == before["completed_at"]
+    assert during["checked_at"] >= before["checked_at"]
+    database.record_worker_heartbeat("notifications")
+    after = database.collect_operational_metrics()["workers"]["notifications"]
+    assert after["status"] == "ok"
+    assert after["completed_at"] >= during["completed_at"]
+
+
+def test_operational_monitor_detects_degraded_observations_outbox_delay_and_dead_worker(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    service, _, subscription = notification_service(database)
+    service.subscribe_push(owner, subscription)
+    insert_notification_event(service.workspace, owner, 1)
+    service.queue_events(owner)
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("INSERT INTO job_runs (user_id, job_type, scheduled_for, status, finished_at, "
+                    "details) VALUES (%s, 'portfolio_daily', current_date, 'degraded', now(), "
+                    "'{\"snapshot_saved\": false, \"stage_error\": \"TBankUnavailable\"}'::jsonb)",
+                    (owner,))
+        cur.execute("UPDATE notification_outbox SET "
+                    "next_attempt_at = now() - interval '16 minutes' "
+                    "WHERE user_id = %s", (owner,))
+        cur.execute("UPDATE tbank_connection SET verified_at = now() - interval '37 hours' "
+                    "WHERE user_id = %s", (owner,))
+    for worker in ("notifications", "portfolio_refresh", "portfolio_daily"):
+        database.record_worker_heartbeat(worker)
+    with database.pool.connection() as conn:
+        conn.execute("UPDATE worker_heartbeats SET checked_at = now() - interval '6 minutes' "
+                     "WHERE worker_name = 'notifications'")
+    metrics = database.collect_operational_metrics()
+    assert metrics["status"] == "attention"
+    assert metrics["observer"]["degraded_24h"] >= 1
+    assert metrics["observer"]["stale_success_accounts"] >= 1
+    assert metrics["notifications"]["stale"] >= 1
+    assert metrics["workers"]["notifications"]["status"] == "stale"
+    assert {"observer_degraded_24h", "observer_stale_success_accounts", "notifications_stale",
+            "notifications_worker_stale"}.issubset(metrics["issues"])
+    assert str(owner) not in str(metrics)
+    assert subscription["endpoint"] not in str(metrics)
+    database.record_worker_heartbeat("notifications")
 
 
 def test_preference_versions_and_goal_crud_are_tenant_isolated(
