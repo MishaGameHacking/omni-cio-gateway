@@ -4313,7 +4313,10 @@ async function exerciseInterruptedRecoveryRead({fixture, click, wait, evaluate})
     fixture.holdExecutionReads = false;
     fixture.heldExecutionReads.splice(0).forEach(release => release());
   }
+  const historyReadsBeforeResume = fixture.requests.filter(item => item.method === "GET" && item.path === "/api/portfolio/executions").length;
   await evaluate('window.dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}))');
+  await until(() => fixture.requests.filter(item => item.method === "GET" && item.path === "/api/portfolio/executions").length > historyReadsBeforeResume, "Restored page starts a new execution readback");
+  await wait('document.querySelector("#recovery-settings [data-action=recovery-reload]")?.disabled===false && !document.querySelector("#recovery-settings .loading-panel")', "Automatic page restoration finishes before a manual history retry");
   await click('[data-action="recovery-reload"]');
   await wait('document.querySelector(\'#recovery-settings [data-recovery-id="synthetic-run"] strong\')?.textContent==="Отменено" && document.querySelector("[data-action=disconnect-start]").disabled===false', "Only a new successful terminal readback restores disconnect after cancellation");
 }
