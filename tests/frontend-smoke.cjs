@@ -2012,8 +2012,9 @@ async function exerciseThemePersistence({send, configureViewport, round, base, w
   }
   const savedVersion = fixture.prefs.version;
   await click('#sidebar-nav [data-route="assistant"]');
+  const previousDocumentTimeOrigin = await evaluate("performance.timeOrigin");
   await send("Page.reload");
-  await wait('!document.querySelector("#app-shell").hidden && document.querySelector("#profile-name").textContent.includes("Тестовый") && document.documentElement.dataset.theme==="light"', "Auto theme survives direct-route reload");
+  await wait(`performance.timeOrigin!==${previousDocumentTimeOrigin} && document.querySelector("#app-shell")?.hidden===false && document.querySelector("#profile-name")?.textContent.includes("Тестовый") && document.documentElement.dataset.theme==="light"`, "Auto theme survives a new direct-route document with loaded preferences");
   assert.equal(await evaluate('document.querySelector(".app-topbar [data-theme-choice=system]").getAttribute("aria-pressed")'), "true");
   assert.equal(fixture.prefs.version, savedVersion, "Reload does not rewrite unchanged preferences");
   await checkLayout(`theme-auto ${round}/1440`);
