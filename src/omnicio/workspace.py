@@ -459,6 +459,21 @@ def portfolio_performance(
         "fees_rub": None,
         "taxes_rub": None,
         "return_percent": None,
+        "return_status": "unavailable",
+        "return_reason": "insufficient_covered_snapshots",
+        "return_method": "modified_dietz",
+        "return_denominator_rub": None,
+        "return_is_estimate": True,
+        "return_is_annualized": False,
+        "return_limitations": [
+            "Cash flows are weighted by their recorded execution time within the observed period.",
+            "Large flows and volatility can make this estimate differ from time-weighted return.",
+            "This is a historical account result, not a forecast or a probability of success.",
+        ],
+        "return_source_url": (
+            "https://www.gipsstandards.org/standards/gips-standards-for-firms/"
+            "gips-standards-handbook-for-firms/"
+        ),
         "method": "nav_less_external_flows",
         "source_url": _SOURCE,
     }
@@ -470,7 +485,7 @@ def portfolio_performance(
         and at <= watermark
         and row.get("analysis_status") == "observed"
     ]
-    covered.sort(key=lambda row: str(row["captured_at"]))
+    covered.sort(key=lambda row: timestamp(row["captured_at"]) or datetime.min.replace(tzinfo=UTC))
     if len(covered) < 2:
         return result
     first, last = covered[0], covered[-1]
@@ -497,10 +512,46 @@ def portfolio_performance(
     )
     if flow["status"] == "available":
         # Expenses and payouts already change NAV: do not subtract/add them twice.
-        result["investment_result_rub"] = decimal_text(
-            delta - amount(flow["net_contributions_rub"])
-        )
+        investment_result = delta - amount(flow["net_contributions_rub"])
+        result["investment_result_rub"] = decimal_text(investment_result)
+        denominator = _dietz_denominator(start_nav, operations, begin, end)
+        result["return_denominator_rub"] = decimal_text(denominator)
+        if start_nav >= 0 and end_nav >= 0 and denominator >= Decimal("0.01"):
+            result["return_percent"] = decimal_text(investment_result / denominator * _HUNDRED)
+            result["return_status"] = "available"
+            result["return_reason"] = None
+        else:
+            result["return_reason"] = "non_positive_or_negligible_invested_capital"
+    else:
+        result["return_reason"] = flow["reason"]
     return result
+
+
+def _dietz_denominator(
+    start_nav: Decimal, operations: Sequence[Mapping[str, Any]], begin: datetime, end: datetime,
+) -> Decimal:
+    """Modified Dietz; use execution timestamps, never ingestion time or binary money floats.
+
+    A flow at the ending valuation has weight zero; a flow at the beginning
+    is already in opening NAV and is excluded by the same accounting boundary.
+    Called only after cash-flow classification and coverage succeed.
+    """
+    span = end - begin
+    duration = Decimal(span.days * 86_400 + span.seconds) + Decimal(span.microseconds) / 1_000_000
+    denominator = start_nav
+    for operation in operations:
+        classified = _executed_cashflow(operation, begin, end, set(), set())
+        if classified is None or classified[0] not in _INPUT | _OUTPUT:
+            continue
+        remaining = end - classified[1]
+        seconds = (
+            Decimal(remaining.days * 86_400 + remaining.seconds)
+            + Decimal(remaining.microseconds) / 1_000_000
+        )
+        payment = _operation_amount(operation)
+        assert payment is not None  # cashflow_summary already verified this exact operation set
+        denominator += payment * seconds / duration
+    return denominator
 
 
 def _portfolio_goal_amount(

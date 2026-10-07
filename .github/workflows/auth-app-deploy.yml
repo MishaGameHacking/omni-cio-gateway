@@ -21,6 +21,7 @@ on:
       - "src/omnicio/**"
       - "web/**"
       - "tests/frontend-smoke.cjs"
+      - "tests/i18n-contract.cjs"
       - "assets/brand/**"
       - "pyproject.toml"
   push:
@@ -43,6 +44,7 @@ on:
       - "src/omnicio/**"
       - "web/**"
       - "tests/frontend-smoke.cjs"
+      - "tests/i18n-contract.cjs"
       - "assets/brand/**"
       - "pyproject.toml"
   workflow_run:
@@ -111,6 +113,10 @@ jobs:
           node.exe --check web\app.js
           if errorlevel 1 exit /b 1
           node.exe --check web\workspace.js
+          if errorlevel 1 exit /b 1
+          node.exe --check web\i18n.js
+          if errorlevel 1 exit /b 1
+          node.exe tests\i18n-contract.cjs
           if errorlevel 1 exit /b 1
           node.exe --check web\sw.js
 
@@ -181,6 +187,7 @@ jobs:
       TARGET_LOCATION: ru-3
       TARGET_ZONE: msk-1
       VKID_APP_ID: ${{ vars.VKID_APP_ID }}
+      OPERATOR_USER_ID: ${{ vars.OPERATOR_USER_ID }}
       TID_CLIENT_ID: ${{ vars.TID_CLIENT_ID }}
       TID_CLIENT_SECRET: ${{ secrets.TID_CLIENT_SECRET }}
       TID_LOGIN_ENABLED: ${{ vars.TID_LOGIN_ENABLED }}
@@ -188,7 +195,30 @@ jobs:
       ASSISTANT_BASE_URL: ${{ vars.ASSISTANT_BASE_URL }}
       ASSISTANT_MODEL: ${{ vars.ASSISTANT_MODEL }}
       ASSISTANT_API_KEY: ${{ secrets.ASSISTANT_API_KEY }}
-      ASSISTANT_ENABLED: ${{ vars.ASSISTANT_ENABLED }}
+      # External AI is activated in a later accepted release, per the owner command.
+      ASSISTANT_ENABLED: "false"
+      ASSISTANT_ALLOWED_ENDPOINTS: ${{ vars.ASSISTANT_ALLOWED_ENDPOINTS }}
+      ASSISTANT_DAILY_REQUEST_LIMIT: ${{ vars.ASSISTANT_DAILY_REQUEST_LIMIT }}
+      NOTIFICATIONS_ENABLED: ${{ vars.NOTIFICATIONS_ENABLED }}
+      NOTIFICATION_CRYPTO_KEY: ${{ secrets.NOTIFICATION_CRYPTO_KEY }}
+      NOTIFICATION_VAPID_PRIVATE_KEY: ${{ secrets.NOTIFICATION_VAPID_PRIVATE_KEY }}
+      NOTIFICATION_VAPID_SUBJECT: ${{ vars.NOTIFICATION_VAPID_SUBJECT }}
+      NOTIFICATION_SMTP_HOST: ${{ vars.NOTIFICATION_SMTP_HOST }}
+      NOTIFICATION_SMTP_PORT: ${{ vars.NOTIFICATION_SMTP_PORT }}
+      NOTIFICATION_SMTP_USERNAME: ${{ secrets.NOTIFICATION_SMTP_USERNAME }}
+      NOTIFICATION_SMTP_PASSWORD: ${{ secrets.NOTIFICATION_SMTP_PASSWORD }}
+      NOTIFICATION_SMTP_SENDER: ${{ vars.NOTIFICATION_SMTP_SENDER }}
+      NOTIFICATION_SMTP_MODE: ${{ vars.NOTIFICATION_SMTP_MODE }}
+      OMNICIO_RESTORE_RECEIPT_KEY: ${{ secrets.OMNICIO_RESTORE_RECEIPT_KEY }}
+      BILLING_ENABLED: ${{ vars.BILLING_ENABLED }}
+      BILLING_TERMINAL_KEY: ${{ secrets.BILLING_TERMINAL_KEY }}
+      BILLING_PASSWORD: ${{ secrets.BILLING_PASSWORD }}
+      BILLING_AMOUNT_KOPECKS: ${{ vars.BILLING_AMOUNT_KOPECKS }}
+      BILLING_PERIOD_DAYS: ${{ vars.BILLING_PERIOD_DAYS }}
+      BILLING_OFFER_VERSION: ${{ vars.BILLING_OFFER_VERSION }}
+      BILLING_DESCRIPTION: ${{ vars.BILLING_DESCRIPTION }}
+      BILLING_TAXATION: ${{ vars.BILLING_TAXATION }}
+      BILLING_TAX: ${{ vars.BILLING_TAX }}
       REGISTRATION_ENABLED: "true"
       REGISTRATION_MAX_USERS: "2"
       MULTIUSER_LEGAL_APPROVED: "true"

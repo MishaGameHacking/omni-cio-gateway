@@ -33,6 +33,8 @@ from omnicio.tbank import (
     TBankLastPrice,
     TBankMarketYield,
     TBankMoney,
+    TBankNewsItem,
+    TBankNewsPage,
     TBankOrderBook,
     TBankOrderLevel,
     TBankPortfolio,
@@ -59,6 +61,63 @@ class FakeResponse:
 
     def read(self) -> bytes:
         return json.dumps(self.payload).encode()
+
+
+def test_fund_profile_reads_explicit_expense_percent_and_preserves_provider_identity():
+    payload = {
+        "asset": {
+            "uid": "fund-asset",
+            "security": {
+                "type": "etf",
+                "etf": {"totalExpense": {"units": "0", "nano": 750000000}, "primaryIndex": "IMOEX"},
+            },
+        }
+    }
+    client = TBankInvestClient()
+    with patch.object(TBankInvestClient, "_post", return_value=payload) as post:
+        value = client.get_fund_profile("test-fixture", "prod", "fund-asset")
+    assert value.total_expense_percent == "0.75"
+    assert value.primary_index == "IMOEX"
+    assert post.call_args.kwargs["body"] == {"id": "fund-asset"}
+    payload["asset"]["uid"] = "another-asset"
+    with (
+        patch.object(TBankInvestClient, "_post", return_value=payload),
+        pytest.raises(TBankUnavailable),
+    ):
+        client.get_fund_profile("test-fixture", "prod", "fund-asset")
+
+
+def test_provider_news_keeps_exact_instrument_links_cursor_and_untrusted_text():
+    payload = {
+        "nextCursor": "15",
+        "items": [
+            {
+                "id": "18",
+                "title": "<b>Title</b>",
+                "source": "https://example.invalid/news/18",
+                "ts": "2026-10-06T10:00:00Z",
+                "instrumentId": [{"instrument": {"instrumentUid": "exact-uid"}}],
+                "priority": True,
+            }
+        ],
+    }
+    client = TBankInvestClient()
+    with patch.object(TBankInvestClient, "_post", return_value=payload) as post:
+        page = client.get_news("test-fixture", "prod", cursor="20", limit=3)
+    assert page.next_cursor == "15"
+    assert page.items[0].instrument_uids == ("exact-uid",)
+    assert page.items[0].title == "<b>Title</b>"
+    assert page.items[0].source_url == "https://example.invalid/news/18"
+    assert post.call_args.kwargs["body"] == {"cursor": "20", "limit": 3}
+    payload["items"][0]["source"] = "javascript:alert(1)"
+    with patch.object(TBankInvestClient, "_post", return_value=payload):
+        assert client.get_news("test-fixture", "prod").items[0].source_url is None
+    payload["nextCursor"] = "20"
+    with (
+        patch.object(TBankInvestClient, "_post", return_value=payload),
+        pytest.raises(TBankUnavailable),
+    ):
+        client.get_news("test-fixture", "prod", cursor="20")
 
 
 def test_tbank_get_accounts_uses_bearer_without_exposing_token() -> None:
@@ -244,12 +303,8 @@ def test_tbank_order_book_preserves_lot_depth_and_consistency() -> None:
             "instrumentUid": "bond-uid",
             "isConsistent": True,
             "time": "2026-10-03T05:00:00Z",
-            "bids": [
-                {"price": {"units": "99", "nano": 900000000}, "quantity": "12"}
-            ],
-            "asks": [
-                {"price": {"units": "100", "nano": 100000000}, "quantity": "8"}
-            ],
+            "bids": [{"price": {"units": "99", "nano": 900000000}, "quantity": "12"}],
+            "asks": [{"price": {"units": "100", "nano": 100000000}, "quantity": "8"}],
         }
     )
     with patch("urllib.request.urlopen", return_value=response) as urlopen:
@@ -339,9 +394,7 @@ def test_cancel_sandbox_order_uses_request_id_not_exchange_guess() -> None:
             request_id=request_id,
         )
 
-    assert result == TBankSandboxCancelResult(
-        cancelled_at=datetime(2026, 10, 3, 9, 30, tzinfo=UTC)
-    )
+    assert result == TBankSandboxCancelResult(cancelled_at=datetime(2026, 10, 3, 9, 30, tzinfo=UTC))
     request = urlopen.call_args.args[0]
     assert json.loads(request.data.decode()) == {
         "accountId": "account-1",
@@ -1181,9 +1234,7 @@ def test_non_finite_broker_money_fails_at_provider_boundary(units: str) -> None:
 
 def test_tbank_tls_verification_failure_is_reported_as_unavailable() -> None:
     client = TBankInvestClient()
-    error = urllib.error.URLError(
-        ssl.SSLCertVerificationError(1, "certificate verify failed")
-    )
+    error = urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate verify failed"))
 
     with (
         patch("urllib.request.urlopen", side_effect=error),
@@ -1226,7 +1277,6 @@ class FakeTBank:
         assert credential == "t.fake-owner-credential-1234567890"
         assert environment == "prod"
         return self.accounts
-
 
     def get_usd_rub_quote(self, credential: str, environment: str):
         assert credential == "t.fake-owner-credential-1234567890"
@@ -1429,11 +1479,16 @@ def test_broker_read_discards_result_after_connection_changes(operation: str) ->
     user_id = UUID(int=1)
     broker = FakeTBank()
     service = BrokerService(
-        database, credential_key=Fernet.generate_key().decode("ascii"), tbank=broker,
+        database,
+        credential_key=Fernet.generate_key().decode("ascii"),
+        tbank=broker,
     )
     service.connect(
-        user_id=user_id, credential="t.fake-owner-credential-1234567890",
-        environment="prod", account_id="account-1", terms_version="2026-10-01-v2",
+        user_id=user_id,
+        credential="t.fake-owner-credential-1234567890",
+        environment="prod",
+        account_id="account-1",
+        terms_version="2026-10-01-v2",
     )
     original = broker.get_positions
 
@@ -1448,6 +1503,35 @@ def test_broker_read_discards_result_after_connection_changes(operation: str) ->
         pytest.raises(BrokerConnectionError, match="connection changed"),
     ):
         read(user_id)
+
+
+@pytest.mark.parametrize("operation", ["market_instrument_metadata", "instrument_news"])
+def test_new_source_reads_recheck_original_connection_after_provider_io(operation):
+    database, provider, user_id = FakeDatabase(), FakeTBank(), UUID(int=1)
+    service = BrokerService(database, credential_key=Fernet.generate_key().decode(), tbank=provider)
+    service.connect(
+        user_id=user_id,
+        credential="t.fake-owner-credential-1234567890",
+        environment="prod",
+        account_id="account-1",
+        terms_version="2026-10-01-v2",
+    )
+    item = TBankNewsItem(
+        "1", "Fixture", "", "", "Publisher", None, datetime.now(UTC), ("uid",), False
+    )
+    page = TBankNewsPage((item,), None)
+    method = "get_news" if operation == "instrument_news" else "get_instrument_overview"
+
+    def revoke(*args, **kwargs):
+        database.delete_tbank_connection(user_id)
+        return page if operation == "instrument_news" else Mock(uid="uid")
+
+    read_source = getattr(service, operation)
+    with (
+        patch.object(provider, method, side_effect=revoke, create=True),
+        pytest.raises(BrokerConnectionError, match="connection changed"),
+    ):
+        read_source(user_id, "uid")
 
 
 def test_broker_service_keeps_two_users_strictly_isolated() -> None:
@@ -1796,16 +1880,23 @@ def _strategy_broker():
     user_id = UUID(int=1)
     broker = FakeTBank()
     service = BrokerService(
-        database, credential_key=Fernet.generate_key().decode("ascii"), tbank=broker,
+        database,
+        credential_key=Fernet.generate_key().decode("ascii"),
+        tbank=broker,
     )
     service.connect(
-        user_id=user_id, credential="t.fake-owner-credential-1234567890",
-        environment="prod", account_id="account-1", terms_version="2026-10-01-v2",
+        user_id=user_id,
+        credential="t.fake-owner-credential-1234567890",
+        environment="prod",
+        account_id="account-1",
+        terms_version="2026-10-01-v2",
     )
+
     @contextmanager
     def slot(owner):
         assert owner == user_id
         yield True
+
     database.strategy_assessment_slot = slot
     return service, database, broker, user_id
 
@@ -1816,17 +1907,22 @@ def test_strategy_rating_reads_are_bounded_and_connection_checked(monkeypatch):
     from omnicio.broker import BrokerObservationBundle
 
     service, _, tbank, owner = _strategy_broker()
-    analysis = snapshot(*(position(uid=f"bond-{i:02d}", value="1000") for i in range(20)),
-                        nav="110000", cash="90000")
+    analysis = snapshot(
+        *(position(uid=f"bond-{i:02d}", value="1000") for i in range(20)),
+        nav="110000",
+        cash="90000",
+    )
     bundle = Mock(spec=BrokerObservationBundle)
     bundle.analysis = analysis
     monkeypatch.setattr(service, "observation_bundle", lambda user: bundle)
     calls = []
+
     def read(credential, environment, uid):
         calls.append(uid)
         assert credential == "t.fake-owner-credential-1234567890"
         assert environment == "prod"
         return ()
+
     monkeypatch.setattr(tbank, "get_bond_ratings", read, raising=False)
     monkeypatch.setattr(service, "_paced_evidence_read", lambda fn, *args: fn(*args))
     observed, ratings = service.strategy_observation(owner)
@@ -1846,6 +1942,7 @@ def test_strategy_rating_read_discards_changed_connection(monkeypatch, mutation)
     bundle = Mock(spec=BrokerObservationBundle)
     bundle.analysis = snapshot(position())
     monkeypatch.setattr(service, "observation_bundle", lambda user: bundle)
+
     def read(*args):
         if mutation == "delete":
             database.delete_tbank_connection(owner)
@@ -1854,6 +1951,7 @@ def test_strategy_rating_read_discards_changed_connection(monkeypatch, mutation)
         else:
             database.record = replace(database.record, encrypted_credential=b"new-encrypted")
         return ()
+
     monkeypatch.setattr(tbank, "get_bond_ratings", read, raising=False)
     monkeypatch.setattr(service, "_paced_evidence_read", lambda fn, *args: fn(*args))
     with pytest.raises(BrokerConnectionError):
@@ -1865,6 +1963,7 @@ def test_strategy_read_uses_shared_admission_and_releases_on_error(monkeypatch):
 
     service, database, _, owner = _strategy_broker()
     state = {"admitted": False, "released": False}
+
     @contextmanager
     def slot(user):
         assert user == owner
@@ -1872,6 +1971,7 @@ def test_strategy_read_uses_shared_admission_and_releases_on_error(monkeypatch):
             yield state["admitted"]
         finally:
             state["released"] = True
+
     database.strategy_assessment_slot = slot
     read = Mock(side_effect=TBankUnavailable("synthetic failure"))
     monkeypatch.setattr(service, "_strategy_observation", read)

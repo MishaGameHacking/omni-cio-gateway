@@ -2163,7 +2163,15 @@ class PortfolioStore:
                     COALESCE(i.id::text, '') AS issuer_id,
                     COALESCE(i.group_id::text, '') AS group_id,
                     COALESCE(i.country_code, '') AS issuer_country_code,
-                    COALESCE(i.source_url, '') AS issuer_source_url
+                    COALESCE(i.source_url, '') AS issuer_source_url,
+                    i.verified_at AS issuer_verified_at,
+                    i.effective_at AS issuer_effective_at,
+                    COALESCE(m.source_url, '') AS mapping_source_url,
+                    m.verified_at AS mapping_verified_at,
+                    m.effective_at AS mapping_effective_at,
+                    COALESCE(g.source_url, '') AS group_source_url,
+                    g.verified_at AS group_verified_at,
+                    g.effective_at AS group_effective_at
                 FROM instrument_catalog AS c
                 JOIN account_instrument_access AS a
                   ON a.user_id = %s
@@ -2175,10 +2183,13 @@ class PortfolioStore:
                  AND m.instrument_uid = c.instrument_uid
                 LEFT JOIN issuers AS i
                   ON i.id = m.issuer_id
+                LEFT JOIN issuer_groups AS g ON g.id = i.group_id
                 WHERE c.provider = 'tbank'
                   AND c.instrument_type = ANY (ARRAY['share', 'bond', 'etf'])
                   AND c.currency = 'RUB'
                 ORDER BY
+                    row_number() OVER (PARTITION BY c.instrument_type
+                        ORDER BY c.ticker, c.instrument_uid),
                     CASE c.instrument_type
                         WHEN 'bond' THEN 0
                         WHEN 'share' THEN 1

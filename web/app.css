@@ -2484,6 +2484,32 @@ button .icon {
   color:var(--muted);
   line-height:1.8
 }
+.assistant-history {
+  display:grid;
+  gap:8px;
+  max-height:min(45dvh,420px);
+  overflow:auto;
+  overscroll-behavior:contain
+}
+.assistant-history button {
+  min-width:0;
+  text-align:left;
+  overflow-wrap:anywhere
+}
+.setting-row {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding:14px 0;
+  border-bottom:1px solid var(--line)
+}
+.setting-row>div {
+  flex:1 1 240px;
+  min-width:0;
+  overflow-wrap:anywhere
+}
 .asset-detail-header {
   display:flex;
   align-items:center;
@@ -3442,7 +3468,14 @@ dialog::backdrop {
     font-size:47px
   }
   .hero-art {
-    background-position:45% center
+    background-position:45% center;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    align-content:flex-end;
+    justify-content:center;
+    gap:8px 12px;
+    padding:0 18px 9px
   }
   .hero-facts {
     max-width:480px
@@ -3466,7 +3499,7 @@ dialog::backdrop {
   }
   .hero-signature {
     right:4%;
-    bottom:30px
+    bottom:42px
   }
   .hero-signature .brand {
     font-size:18px
@@ -3477,34 +3510,10 @@ dialog::backdrop {
   .hero-benefits {
     max-width:440px
   }
-  .node-property {
-    left:51%;
-    top:76%
-  }
-  .node-shares {
-    left:66%
-  }
-  .node-bonds {
-    left:67%;
-    top:42%
-  }
-  .node-funds {
-    left:55%;
-    top:26%
-  }
-  .node-currency {
-    left:62%;
-    top:69%
-  }
-  .node-metals {
-    left:55%;
-    top:56%
-  }
-  .node-commodity {
-    left:58%;
-    top:80%
-  }
   .hero .orbit-node {
+    position:static;
+    flex:0 0 auto;
+    white-space:nowrap;
     font-size:var(--font-caption)
   }
   .public-section {
@@ -4370,11 +4379,13 @@ dialog::backdrop {
 .assistant-context {
   padding:10px 16px 0;
   display:flex;
+  flex-wrap:wrap;
   gap:15px;
   align-items:end
 }
 .assistant-context>.field {
-  min-width:155px
+  flex:1 1 190px;
+  min-width:0
 }
 .assistant-context>.fine-print {
   margin:0;

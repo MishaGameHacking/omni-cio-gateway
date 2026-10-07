@@ -621,16 +621,17 @@ def _dependent_checks(data: Mapping[str, Any], nav: Decimal) -> list[dict[str, A
         )
     )
     for key, title in (
-        ("no_trade_band_percent", "Порог выгоды замены, % позиции"),
-        ("min_replace_benefit_rub", "Минимальная выгода замены, ₽"),
+        ("no_trade_band_percent", "Порог отклонения доли, п.п."),
+        ("min_replace_benefit_rub", "Минимальное сокращение отклонения, ₽"),
     ):
         checks.append(
             _check(
                 key,
                 title,
                 "inapplicable",
-                "Проверка текущего состава не предлагает замену. При замене выгода после расходов "
-                "должна быть строго выше большего из процентного и рублёвого порогов.",
+                "В исторической модели ребалансировка требует превышения порога отклонения "
+                "доли и сокращения денежного отклонения после издержек не ниже рублёвого порога. "
+                "Это соответствие целевым долям, не прогноз денежной прибыли.",
                 limit=data["policy"][key],
                 sources=("saved_strategy",),
             )
@@ -1458,3 +1459,64 @@ def select_strategy_candidates(
         "scope": "Условный подбор по доступным на указанную дату фактам. Незаполненные доли "
         "остаются деньгами. Это исследовательская корзина, не торговое поручение.",
     }
+
+
+def candidate_weight_constraints(
+    document: object,
+    candidates: Sequence[StrategyCandidateFacts],
+    weights: Mapping[str, Decimal],
+    *,
+    as_of: datetime,
+) -> list[str]:
+    """Recheck rounded, cost-adjusted holdings with the same look-through caps as selection."""
+    data = normalize_document(document)
+    missing: set[str] = set()
+    used: dict[tuple[str, str], Decimal] = defaultdict(Decimal)
+    classes: dict[str, Decimal] = defaultdict(Decimal)
+    by_uid = {row.instrument_uid: row for row in candidates}
+    for uid, weight in weights.items():
+        if weight <= 0:
+            continue
+        candidate = by_uid.get(uid)
+        if candidate is None:
+            missing.add("held_instrument_evidence_missing:" + uid)
+            continue
+        classes[candidate.asset_class] += weight
+        _holding_weight_limits(candidate, weight, data, missing)
+        for name, key, exposure, limit in _candidate_exposure_limits(
+            candidate, data, as_of, missing
+        ):
+            used[name, key] += weight * exposure
+            if used[name, key] > limit:
+                missing.add("exposure_cap:" + name + ":" + key)
+    _class_weight_limits(classes, data, missing)
+    return sorted(missing)
+
+
+def _holding_weight_limits(
+    candidate: StrategyCandidateFacts, weight: Decimal, data: Mapping[str, Any], missing: set[str]
+) -> None:
+    uid = candidate.instrument_uid
+    cap = _amount(data["policy"]["max_instrument_percent"])
+    if cap is None or weight > cap:
+        missing.add("instrument_cap:" + uid)
+    if candidate.asset_class in data["excluded"]:
+        missing.add("excluded_class:" + candidate.asset_class)
+    if candidate.asset_class == "funds" and weight > Decimal(
+        data["rules"]["fund_wrapper_cap_percent"]
+    ):
+        missing.add("fund_wrapper_cap:" + uid)
+
+
+def _class_weight_limits(
+    classes: Mapping[str, Decimal], data: Mapping[str, Any], missing: set[str]
+) -> None:
+    for kind, total in classes.items():
+        key = {
+            "shares": "max_share_percent",
+            "bonds": "max_bond_percent",
+            "funds": "max_etf_percent",
+        }[kind]
+        class_limit = _amount(data["policy"][key])
+        if class_limit is None or total > class_limit:
+            missing.add("class_cap:" + kind)

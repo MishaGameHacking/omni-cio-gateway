@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import re
+import runpy
 import shlex
 import ssl
 import subprocess
@@ -66,7 +67,20 @@ PNG_CONTENT_TYPE = "image/png"
 OPTIONAL_INTEGRATION_KEYS = (
     "TID_CLIENT_ID", "TID_CLIENT_SECRET", "TID_LOGIN_ENABLED", "TID_PKCE_ENABLED",
     "ASSISTANT_BASE_URL", "ASSISTANT_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_ENABLED",
+    "ASSISTANT_ALLOWED_ENDPOINTS", "ASSISTANT_DAILY_REQUEST_LIMIT",
+    "NOTIFICATIONS_ENABLED", "NOTIFICATION_CRYPTO_KEY", "NOTIFICATION_VAPID_PRIVATE_KEY",
+    "NOTIFICATION_VAPID_SUBJECT", "NOTIFICATION_SMTP_HOST", "NOTIFICATION_SMTP_PORT",
+    "NOTIFICATION_SMTP_USERNAME", "NOTIFICATION_SMTP_PASSWORD", "NOTIFICATION_SMTP_SENDER",
+    "NOTIFICATION_SMTP_MODE", "OMNICIO_RESTORE_RECEIPT_KEY",
+    "BILLING_ENABLED", "BILLING_TERMINAL_KEY", "BILLING_PASSWORD", "BILLING_AMOUNT_KOPECKS",
+    "BILLING_PERIOD_DAYS", "BILLING_OFFER_VERSION", "BILLING_DESCRIPTION", "BILLING_TAXATION",
+    "BILLING_TAX",
 )
+OPTIONAL_SECRET_KEYS = frozenset({
+    "TID_CLIENT_SECRET", "ASSISTANT_API_KEY", "NOTIFICATION_CRYPTO_KEY",
+    "NOTIFICATION_VAPID_PRIVATE_KEY", "NOTIFICATION_SMTP_PASSWORD",
+    "OMNICIO_RESTORE_RECEIPT_KEY", "BILLING_PASSWORD",
+})
 
 
 def add_summary(line: str) -> None:
@@ -108,143 +122,11 @@ def build_release_archive(root: pathlib.Path) -> str:
 
 
 def runtime_is_ready(ssh: EphemeralSsh) -> bool:
-    schema_query = (
-        "SELECT CASE WHEN "
-        "to_regclass('public.users') IS NOT NULL "
-        "AND to_regclass('public.sessions') IS NOT NULL "
-        "AND to_regclass('public.legal_acceptances') IS NOT NULL "
-        "AND to_regclass('public.vkid_identities') IS NOT NULL "
-        "AND to_regclass('public.tid_identities') IS NOT NULL "
-        "AND to_regclass('public.oauth_flow_claims') IS NOT NULL "
-        "AND to_regclass('public.workspace_preferences') IS NOT NULL "
-        "AND to_regclass('public.investment_goals') IS NOT NULL "
-        "AND to_regclass('public.workspace_events') IS NOT NULL "
-        "AND to_regclass('public.tbank_connection') IS NOT NULL "
-        "AND to_regclass('public.instrument_catalog') IS NOT NULL "
-        "AND to_regclass('public.account_instrument_access') IS NOT NULL "
-        "AND to_regclass('public.issuer_groups') IS NOT NULL "
-        "AND to_regclass('public.issuers') IS NOT NULL "
-        "AND to_regclass('public.instrument_issuer_map') IS NOT NULL "
-        "AND to_regclass('public.investment_profile_versions') IS NOT NULL "
-        "AND to_regclass('public.job_runs') IS NOT NULL "
-        "AND EXISTS ( SELECT 1 FROM pg_constraint "
-        "WHERE conrelid = to_regclass('public.job_runs') "
-        "AND conname = 'job_runs_user_id_job_type_scheduled_for_key' AND contype = 'u' ) "
-        "AND to_regclass('public.job_runs_refresh_active_idx') IS NOT NULL "
-        "AND to_regclass('public.job_runs_refresh_requested_idx') IS NOT NULL "
-        "AND EXISTS ( SELECT 1 FROM information_schema.columns "
-        "WHERE table_schema = 'public' AND table_name = 'job_runs' "
-        "AND column_name = 'requested_at' AND is_nullable = 'NO' ) "
-        "AND EXISTS ( SELECT 1 FROM information_schema.columns "
-        "WHERE table_schema = 'public' AND table_name = 'job_runs' "
-        "AND column_name = 'scheduled_for' AND is_nullable = 'YES' ) "
-        "AND EXISTS ( SELECT 1 FROM pg_constraint "
-        "WHERE conrelid = to_regclass('public.job_runs') "
-        "AND conname = 'job_runs_schedule_kind_consistent' "
-        "AND contype = 'c' AND convalidated ) "
-        "AND to_regclass('public.portfolio_snapshots') IS NOT NULL "
-        "AND to_regclass('public.portfolio_snapshot_positions') IS NOT NULL "
-        "AND to_regclass('public.operation_observations') IS NOT NULL "
-        "AND to_regclass('public.broker_sync_state') IS NOT NULL "
-        "AND to_regclass('public.source_documents') IS NOT NULL "
-        "AND to_regclass('public.source_retrievals') IS NOT NULL "
-        "AND to_regclass('public.source_facts') IS NOT NULL "
-        "AND to_regclass('public.payout_events') IS NOT NULL "
-        "AND to_regclass('public.portfolio_risk_assessments') IS NOT NULL "
-        "AND to_regclass('public.balancing_policy_versions') IS NOT NULL "
-        "AND to_regclass('public.strategy_drafts') IS NOT NULL "
-        "AND EXISTS ( "
-        "SELECT 1 FROM information_schema.columns "
-        "WHERE table_schema = 'public' AND table_name = 'strategy_drafts' "
-        "AND column_name = 'next_assessment_at' "
-        ") "
-        "AND to_regclass('public.portfolio_proposals') IS NOT NULL "
-        "AND to_regclass('public.portfolio_proposal_actions') IS NOT NULL "
-        "AND to_regclass('public.portfolio_execution_runs') IS NOT NULL "
-        "AND to_regclass('public.portfolio_execution_legs') IS NOT NULL "
-        "AND to_regclass('public.portfolio_execution_events') IS NOT NULL "
-        "AND to_regclass('public.portfolio_live_execution_mandates') IS NOT NULL "
-        "AND EXISTS ( "
-        "SELECT 1 "
-        "FROM information_schema.columns "
-        "WHERE table_schema = 'public' "
-        "AND table_name = 'users' "
-        "AND column_name = 'role' "
-        ") "
-        "AND ( "
-        "SELECT count(*) = 8 "
-        "FROM information_schema.columns "
-        "WHERE table_schema = 'public' "
-        "AND table_name = 'instrument_catalog' "
-        "AND column_name = ANY ( "
-        "ARRAY[ "
-        "'nominal_value', "
-        "'nominal_currency', "
-        "'maturity_date', "
-        "'floating_coupon', "
-        "'perpetual', "
-        "'amortization', "
-        "'subordinated', "
-        "'liquidity' "
-        "] "
-        ") "
-        ") "
-        "AND ( "
-        "SELECT count(*) = 3 "
-        "FROM information_schema.columns "
-        "WHERE table_schema = 'public' "
-        "AND table_name = 'portfolio_proposals' "
-        "AND column_name = ANY ( "
-        "ARRAY[ "
-        "'account_id', "
-        "'created_session_digest', "
-        "'proposal_hash' "
-        "] "
-        ") "
-        ") "
-        "AND ( "
-        "SELECT count(*) = 3 "
-        "FROM information_schema.columns "
-        "WHERE table_schema = 'public' "
-        "AND table_name = 'portfolio_proposal_actions' "
-        "AND column_name = ANY ( "
-        "ARRAY[ "
-        "'session_digest', "
-        "'user_reason', "
-        "'deferred_until' "
-        "] "
-        ") "
-        ") "
-        "AND ( "
-        "SELECT count(*) = 19 "
-        "FROM pg_class AS c "
-        "JOIN pg_namespace AS n ON n.oid = c.relnamespace "
-        "WHERE n.nspname = 'public' "
-        "AND c.relname = ANY ( "
-        "ARRAY[ "
-        "'account_instrument_access', "
-        "'investment_profile_versions', "
-        "'job_runs', "
-        "'portfolio_snapshots', "
-        "'portfolio_snapshot_positions', "
-        "'operation_observations', "
-        "'broker_sync_state', "
-        "'portfolio_risk_assessments', "
-        "'balancing_policy_versions', "
-        "'portfolio_proposals', "
-        "'portfolio_proposal_actions', "
-        "'portfolio_execution_runs', "
-        "'portfolio_execution_legs', "
-        "'portfolio_execution_events', "
-        "'portfolio_live_execution_mandates', "
-        "'strategy_drafts', 'workspace_preferences', 'investment_goals', 'workspace_events' "
-        "] "
-        ") "
-        "AND c.relrowsecurity "
-        "AND c.relforcerowsecurity "
-        ") "
-        "THEN 'ready' ELSE 'missing' END"
-    )
+    # Load the dependency-free contract from this exact reviewed checkout.
+    contract = pathlib.Path(__file__).resolve().parents[2] / "src/omnicio/schema.py"
+    query = runpy.run_path(str(contract))["READINESS_QUERY"]
+    predicate = query.strip().removeprefix("SELECT").removesuffix("AS ready")
+    schema_query = f"SELECT CASE WHEN {predicate} THEN 'ready' ELSE 'missing' END"
     command = (
         f"test -s {RUNTIME_ENV} && "
         f"grep -q '^DATABASE_URL=' {RUNTIME_ENV} && "
@@ -461,6 +343,8 @@ def validate_legal_documents(repository_root: pathlib.Path) -> None:
 def build_product_environment() -> str:
     values = {
         "OMNICIO_RECOVERY_STATUS_PATH": REMOTE_STATUS_PATH,
+        # Authority must be explicitly revoked when the workflow variable is cleared.
+        "OPERATOR_USER_ID": os.environ.get("OPERATOR_USER_ID", "").strip(),
         "VKID_APP_ID": os.environ.get("VKID_APP_ID", "").strip(),
         "VKID_LOGIN_ENABLED": "true" if vkid_configuration_ready() else "false",
         "REGISTRATION_ENABLED": "true" if registration_enabled() else "false",
@@ -480,7 +364,8 @@ def build_product_environment() -> str:
     }
     # Missing workflow secrets must not erase an integration configured on the server.
     values.update({
-        name: os.environ[name].strip() for name in OPTIONAL_INTEGRATION_KEYS
+        name: os.environ[name] if name in OPTIONAL_SECRET_KEYS else os.environ[name].strip()
+        for name in OPTIONAL_INTEGRATION_KEYS
         if os.environ.get(name, "").strip()
     })
     return "".join(
@@ -640,6 +525,7 @@ install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEA
 install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
 install -m 0644 "$RELEASE/web/app.js" "$WEB_RELEASE/assets/app.js"
 install -m 0644 "$RELEASE/web/workspace.js" "$WEB_RELEASE/assets/workspace.js"
+install -m 0644 "$RELEASE/web/i18n.js" "$WEB_RELEASE/assets/i18n.js"
 install -m 0644 "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
 install -m 0644 "$RELEASE/assets/brand/web/omnicio-mark.svg" "$WEB_RELEASE/assets/brand/omnicio-mark.svg"
@@ -1053,6 +939,11 @@ server {
         add_header Cache-Control "no-cache";
     }
 
+    location = /assets/i18n.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache";
+    }
+
     location = /sw.js {
         try_files $uri =404;
         add_header Cache-Control "no-cache";
@@ -1345,6 +1236,7 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
     runtime_assets = (
         ("/assets/app.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/workspace.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
+        ("/assets/i18n.js", b"OMNICIO_I18N", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/app.css", b"--sidebar", ("text/css",)),
         ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", (PNG_CONTENT_TYPE,)),
         ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", (PNG_CONTENT_TYPE,)),

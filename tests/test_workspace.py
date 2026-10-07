@@ -18,6 +18,7 @@ from omnicio.workspace import (
     portfolio_performance,
     quiet_now,
 )
+from omnicio.workspace_store import WorkspaceStore, _Basis
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 END = START + timedelta(days=30)
@@ -54,6 +55,30 @@ def operation(
         "payment_currency": currency,
         **changes,
     }
+
+
+def test_income_uses_selected_period_and_keeps_principal_separate() -> None:
+    basis = _Basis(
+        connection=None,
+        latest={"evidence": {"account": {"opened_at": START.isoformat()}}},
+        operations=[
+            operation("DIVIDEND", "100", day=5),
+            operation("COUPON", "50", day=20),
+            operation("BOND_REPAYMENT", "1000", day=25),
+        ],
+        watermark=END, complete=True,
+    )
+    all_time = WorkspaceStore._income(basis, END)
+    selected = WorkspaceStore._income(basis, END, from_at=START + timedelta(days=10))
+    assert all_time["total_rub"] == "150"
+    assert selected["total_rub"] == "50"
+    assert selected["dividends_rub"] == "0"
+    assert selected["redemptions_rub"] == "1000"
+    assert selected["from"] == (START + timedelta(days=10)).isoformat()
+    assert selected["by_month"][0]["total_rub"] == "50"
+    after_watermark = WorkspaceStore._income(basis, END, from_at=END + timedelta(days=1))
+    assert after_watermark["status"] == "unavailable"
+    assert after_watermark["total_rub"] is None
 
 
 def test_preferences_defaults_have_no_invented_user_facts_and_do_not_alias() -> None:
@@ -185,7 +210,50 @@ def test_accounting_does_not_count_deposits_principal_or_fees_twice() -> None:
     assert result["nav_change_rub"] == "17860"
     assert result["investment_result_rub"] == "2860"
     assert result["income_received_rub"] == "3000"
+    assert Decimal(result["return_percent"]) == Decimal("2.6")
+    assert result["return_method"] == "modified_dietz"
+    assert result["return_status"] == "available"
+    assert Decimal(result["return_denominator_rub"]) == Decimal("110000")
+    assert result["return_is_estimate"] is True
+    assert result["return_is_annualized"] is False
+
+
+@pytest.mark.parametrize(
+    "rows, closing, expected", [
+        ([], "110000", "10"),
+        ([operation("INPUT", "100000", day=15)], "215000", "10"),
+        ([operation("INPUT", "100000", day=30)], "210000", "10"),
+        ([operation("OUTPUT", "-50000", day=15)], "57500", "10"),
+        ([operation("INPUT", "100000", day=0)], "110000", "10"),
+        ([operation("INPUT", "100000", day=31)], "110000", "10"),
+        ([], "90000", "-10"),
+    ],
+)
+def test_dietz_return_weights_external_flows_and_respects_valuation_boundaries(
+    rows: list[dict[str, Any]], closing: str, expected: str,
+) -> None:
+    snapshots = [
+        {"captured_at": START, "nav_rub": "100000", "analysis_status": "observed"},
+        {"captured_at": END, "nav_rub": closing, "analysis_status": "observed"},
+    ]
+    result = portfolio_performance(snapshots, rows, watermark=END, history_complete=True)
+    assert Decimal(result["return_percent"]) == Decimal(expected)
+    incomplete = portfolio_performance(snapshots, rows, watermark=END, history_complete=False)
+    assert incomplete["return_percent"] is None
+    assert incomplete["return_status"] == "unavailable"
+
+
+def test_dietz_does_not_report_percentage_when_weighted_capital_is_nonpositive() -> None:
+    snapshots = [
+        {"captured_at": START, "nav_rub": "100", "analysis_status": "observed"},
+        {"captured_at": END, "nav_rub": "100", "analysis_status": "observed"},
+    ]
+    result = portfolio_performance(
+        snapshots, [operation("OUTPUT", "-300", day=10)], watermark=END, history_complete=True,
+    )
+    assert result["investment_result_rub"] == "300"
     assert result["return_percent"] is None
+    assert result["return_reason"] == "non_positive_or_negligible_invested_capital"
 
 
 @pytest.mark.parametrize(

@@ -28,6 +28,7 @@ MIN_TRAIN_OBSERVATIONS = 60
 MIN_TEST_OBSERVATIONS = 20
 _ZERO, _ONE, _HUNDRED = Decimal(0), Decimal(1), Decimal(100)
 _DAY = timedelta(days=1)
+_HTTPS_PREFIX = "https://"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +38,32 @@ class HistoricalCashflow:
     entitlement_at: datetime
     paid_at: datetime
     amount_per_unit_rub: Decimal
+    source_url: str
+    kind: Literal["income", "principal"] = "income"
+
+
+@dataclass(frozen=True, slots=True)
+class FactorObservation:
+    time: datetime
+    available_at: datetime
+    growth_change: Decimal
+    inflation_change: Decimal
+    source_url: str
+
+
+@dataclass(frozen=True, slots=True)
+class HistoricalSplit:
+    time: datetime
+    ratio: Decimal
+    source_url: str
+
+
+@dataclass(frozen=True, slots=True)
+class BondValuation:
+    time: datetime
+    nominal_rub: Decimal
+    accrued_interest_open_rub: Decimal
+    accrued_interest_close_rub: Decimal
     source_url: str
 
 
@@ -50,6 +77,9 @@ class ResearchAsset:
     lot_history_verified: bool = False
     cashflow_history_verified: bool = False
     verification_source: str = ""
+    factors: tuple[FactorObservation, ...] = ()
+    splits: tuple[HistoricalSplit, ...] = ()
+    bond_valuations: tuple[BondValuation, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +131,7 @@ def history_candidate(
     candles: Sequence[TBankHistoricCandle],
     *,
     as_of: datetime,
+    factors: Sequence[FactorObservation] = (),
 ) -> StrategyCandidateFacts:
     """Only completed bars whose whole daily interval was known by as_of."""
     past = [bar for bar in candles if bar.is_complete and bar.time + _DAY <= as_of]
@@ -124,6 +155,10 @@ def history_candidate(
             for key, value in values.items()
         }
     )
+    if factors:
+        for key in ("growth_beta", "inflation_beta", "factor_observations"):
+            facts.pop(key, None)
+        facts.update(_factor_facts(past, factors, as_of))
     return StrategyCandidateFacts(
         instrument_uid=candidate.instrument_uid,
         ticker=candidate.ticker,
@@ -135,17 +170,54 @@ def history_candidate(
     )
 
 
+def _factor_facts(
+    bars: Sequence[TBankHistoricCandle],
+    factors: Sequence[FactorObservation],
+    as_of: datetime,
+) -> dict[str, StrategyFact]:
+    """OLS with intercept and both factors; only observations published by the cutoff."""
+    published = {row.time.date(): row for row in factors if row.available_at <= as_of}
+    rows = []
+    for before, after in zip(bars, bars[1:], strict=False):
+        factor = published.get(after.time.date())
+        if factor is not None:
+            rows.append((factor, _decimal(after.close) / _decimal(before.close) - 1))
+    if len(rows) < 60:
+        return {}
+    n = Decimal(len(rows))
+    means = [
+        sum((row[0].growth_change for row in rows), _ZERO) / n,
+        sum((row[0].inflation_change for row in rows), _ZERO) / n,
+        sum((row[1] for row in rows), _ZERO) / n,
+    ]
+    centered = [
+        (row.growth_change - means[0], row.inflation_change - means[1], value - means[2])
+        for row, value in rows
+    ]
+    xx = sum((x * x for x, _, _ in centered), _ZERO)
+    zz = sum((z * z for _, z, _ in centered), _ZERO)
+    xz = sum((x * z for x, z, _ in centered), _ZERO)
+    xy = sum((x * y for x, _, y in centered), _ZERO)
+    zy = sum((z * y for _, z, y in centered), _ZERO)
+    determinant = xx * zz - xz * xz
+    if determinant <= 0:
+        return {}
+    available = max(max(row.available_at, row.time + _DAY) for row, _ in rows)
+    source = rows[-1][0].source_url
+    values: dict[str, Decimal | int] = {
+        "growth_beta": (xy * zz - zy * xz) / determinant,
+        "inflation_beta": (zy * xx - xy * xz) / determinant,
+        "factor_observations": len(rows),
+    }
+    return {key: StrategyFact(value, available, source) for key, value in values.items()}
+
+
 def _validate_bar_values(bar: TBankHistoricCandle) -> None:
     if type(bar.volume_lots) is not int or bar.volume_lots < 0:
         raise ValueError("research_invalid_volume")
     prices = tuple(_decimal(value) for value in (bar.open, bar.high, bar.low, bar.close))
     opening, high, low, close = prices
-    if (
-        min(prices) <= 0
-        or low > min(opening, close)
-        or high < max(opening, close)
-        or low > high
-    ):
+    if min(prices) <= 0 or low > min(opening, close) or high < max(opening, close) or low > high:
         raise ValueError("research_invalid_ohlc")
 
 
@@ -199,12 +271,80 @@ def _cashflow_reasons(events: Sequence[HistoricalCashflow]) -> list[str]:
             or event.paid_at < event.entitlement_at
             or not event.amount_per_unit_rub.is_finite()
             or event.amount_per_unit_rub < 0
-            or not event.source_url.startswith("https://")
+            or not event.source_url.startswith(_HTTPS_PREFIX)
+            or event.kind not in {"income", "principal"}
         ):
             reasons.append("invalid_distribution_event")
-    keys = [(event.entitlement_at, event.paid_at, event.source_url) for event in events]
+    keys = [(event.entitlement_at, event.paid_at, event.kind) for event in events]
     if len(keys) != len(set(keys)):
         reasons.append("duplicate_distribution_event")
+    return reasons
+
+
+def _corporate_action_reasons(
+    asset: ResearchAsset, from_at: datetime, to_at: datetime
+) -> list[str]:
+    reasons = []
+    for when in asset.corporate_action_dates:
+        if when.tzinfo is None:
+            reasons.append("corporate_action_time_missing")
+        elif from_at <= when <= to_at and not any(split.time == when for split in asset.splits):
+            reasons.append("corporate_action_requires_adjustment")
+    if any(
+        split.time.tzinfo is None
+        or not split.ratio.is_finite()
+        or split.ratio <= 0
+        or not split.source_url.startswith(_HTTPS_PREFIX)
+        for split in asset.splits
+    ):
+        reasons.append("split_evidence_invalid")
+    if len({split.time for split in asset.splits}) != len(asset.splits):
+        reasons.append("duplicate_split_event")
+    return reasons
+
+
+def _bond_history_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> list[str]:
+    reasons = []
+    if asset.bond_valuations:
+        values = {row.time.date(): row for row in asset.bond_valuations}
+        if len(values) != len(asset.bond_valuations) or any(
+            bar.time.date() not in values
+            for bar in asset.candles
+            if from_at <= bar.time and bar.time + _DAY <= to_at
+        ):
+            reasons.append("bond_valuation_history_incomplete")
+        if any(
+            row.time.tzinfo is None
+            or not row.source_url.startswith(_HTTPS_PREFIX)
+            or any(
+                not number.is_finite() or number < 0
+                for number in (
+                    row.nominal_rub,
+                    row.accrued_interest_open_rub,
+                    row.accrued_interest_close_rub,
+                )
+            )
+            or row.nominal_rub <= 0
+            for row in asset.bond_valuations
+        ):
+            reasons.append("bond_valuation_history_invalid")
+    return reasons
+
+
+def _factor_history_reasons(asset: ResearchAsset) -> list[str]:
+    reasons = []
+    if any(
+        row.time.tzinfo is None
+        or row.available_at.tzinfo is None
+        or row.available_at < row.time
+        or not row.source_url.startswith(_HTTPS_PREFIX)
+        or not row.growth_change.is_finite()
+        or not row.inflation_change.is_finite()
+        for row in asset.factors
+    ):
+        reasons.append("factor_history_invalid")
+    if len({row.time.date() for row in asset.factors}) != len(asset.factors):
+        reasons.append("factor_history_duplicate")
     return reasons
 
 
@@ -212,21 +352,23 @@ def _asset_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> 
     reasons = []
     if asset.basis not in {"unadjusted_price", "verified_total_return"}:
         reasons.append("unsupported_return_basis")
-    for when in asset.corporate_action_dates:
-        if when.tzinfo is None:
-            reasons.append("corporate_action_time_missing")
-        elif from_at <= when <= to_at:
-            reasons.append("corporate_action_requires_adjustment")
     if asset.basis == "verified_total_return" and not (
         asset.lot_history_verified
         and asset.cashflow_history_verified
-        and asset.verification_source.startswith("https://")
+        and asset.verification_source.startswith(_HTTPS_PREFIX)
     ):
         reasons.append("total_return_basis_not_verified")
     if asset.basis == "unadjusted_price" and asset.cashflows:
         reasons.append("cashflows_require_verified_basis")
-    if asset.basis == "verified_total_return" and asset.candidate.asset_class == "bonds":
+    if (
+        asset.basis == "verified_total_return"
+        and asset.candidate.asset_class == "bonds"
+        and not asset.bond_valuations
+    ):
         reasons.append("bond_principal_and_accrual_history_required")
+    reasons.extend(_corporate_action_reasons(asset, from_at, to_at))
+    reasons.extend(_bond_history_reasons(asset, from_at, to_at))
+    reasons.extend(_factor_history_reasons(asset))
     reasons.extend(_cashflow_reasons(asset.cashflows))
     return sorted(set(reasons))
 
@@ -240,9 +382,13 @@ class _Simulation:
     slippage: Decimal = _ZERO
     trades: int = 0
     risk_stopped: bool = False
-    receivables: list[tuple[datetime, Decimal]] = field(default_factory=list)
+    receivables: list[tuple[datetime, Decimal, bool]] = field(default_factory=list)
     accrued_events: set[tuple[str, int]] = field(default_factory=set)
     curve: list[dict[str, str]] = field(default_factory=list)
+    cost_basis: dict[str, Decimal] = field(default_factory=dict)
+    taxes: Decimal = _ZERO
+    tax_rate: Decimal = _ZERO
+    applied_splits: set[tuple[str, int]] = field(default_factory=set)
 
 
 def _order(
@@ -273,6 +419,14 @@ def _order(
         return _ZERO
     fee = amount * fee_per_lot
     slip = amount * lot * abs(execution - opening)
+    if direction == 1:
+        state.cost_basis[uid] = state.cost_basis.get(uid, _ZERO) + amount * per_lot + fee
+    else:
+        sold_basis = state.cost_basis.get(uid, _ZERO) * amount / state.lots[uid]
+        state.cost_basis[uid] = state.cost_basis.get(uid, _ZERO) - sold_basis
+        tax = max(_ZERO, amount * per_lot - fee - sold_basis) * state.tax_rate
+        state.taxes += tax
+        state.cash -= tax
     state.cash -= direction * amount * per_lot + fee
     state.lots[uid] += direction * amount
     state.fees += fee
@@ -297,7 +451,11 @@ def _accrue_distributions(
             state.accrued_events.add(key)
             entitlement = state.lots[asset.candidate.instrument_uid] * asset.candidate.lot_size
             if entitlement:
-                state.receivables.append((event.paid_at, entitlement * event.amount_per_unit_rub))
+                amount = entitlement * event.amount_per_unit_rub
+                state.receivables.append((event.paid_at, amount, event.kind == "income"))
+                if event.kind == "principal":
+                    uid = asset.candidate.instrument_uid
+                    state.cost_basis[uid] = max(_ZERO, state.cost_basis.get(uid, _ZERO) - amount)
 
 
 def _distributions(
@@ -311,12 +469,14 @@ def _distributions(
     for asset in assets:
         _accrue_distributions(state, asset, start=start, through=through, inclusive=inclusive)
     unpaid = []
-    for when, amount in state.receivables:
+    for when, amount, taxable in state.receivables:
         reached = when <= through if inclusive else when < through
         if reached:
-            state.cash += amount
+            tax = amount * state.tax_rate if taxable else _ZERO
+            state.taxes += tax
+            state.cash += amount - tax
         else:
-            unpaid.append((when, amount))
+            unpaid.append((when, amount, taxable))
     state.receivables = unpaid
 
 
@@ -334,7 +494,7 @@ def _nav(
             ),
             _ZERO,
         )
-        + sum((amount for _, amount in state.receivables), _ZERO)
+        + sum((amount for _, amount, _ in state.receivables), _ZERO)
     )
 
 
@@ -343,6 +503,40 @@ class _RebalanceSession:
     previous: datetime
     opening: datetime
     previous_nav: Decimal
+
+
+def _rebalance_change(
+    state: _Simulation,
+    asset: ResearchAsset,
+    previous: TBankHistoricCandle,
+    weight: Decimal,
+    document: Mapping[str, Any],
+    costs: ResearchCosts,
+    session: _RebalanceSession,
+    participation: Decimal,
+) -> int:
+    uid = asset.candidate.instrument_uid
+    target = _ZERO if state.risk_stopped else session.previous_nav * weight / 100
+    split_factor = _split_factor(asset.splits, session.previous, session.opening)
+    price = _decimal(previous.close) / split_factor * asset.candidate.lot_size
+    change = int(target / price) - state.lots[uid]
+    if not state.risk_stopped:
+        current = state.lots[uid] * price
+        band = _decimal(document["policy"]["no_trade_band_percent"] or "0")
+        minimum = _decimal(document["policy"]["min_replace_benefit_rub"] or "0")
+        # A geometric improvement in allocation, explicitly not forecast profit.
+        reduction = abs(target - current) - abs(target - current - change * price)
+        estimated_cost = abs(change * price) * (costs.commission_bps + costs.slippage_bps) / 10000
+        if (
+            abs(target - current) / session.previous_nav * 100 <= band
+            or reduction - estimated_cost < minimum
+        ):
+            change = 0
+    days = document["profile"]["liquidity_horizon_days"]
+    if days is not None:
+        exit_capacity = int(previous.volume_lots * split_factor * participation * Decimal(days))
+        change = min(change, exit_capacity - state.lots[uid])
+    return change
 
 
 def _apply_rebalance(
@@ -367,18 +561,19 @@ def _apply_rebalance(
         _ZERO,
     )
     turnover = session.previous_nav * turnover_fraction
-    targets = {}
-    for asset in assets:
-        uid = asset.candidate.instrument_uid
-        target = _ZERO if state.risk_stopped else session.previous_nav * weights[uid] / 100
-        price = _decimal(panel[uid][session.previous].close) * asset.candidate.lot_size
-        targets[uid] = int(target / price) - state.lots[uid]
-        days = document["profile"]["liquidity_horizon_days"]
-        if days is not None:
-            exit_capacity = int(
-                panel[uid][session.previous].volume_lots * participation * Decimal(days)
-            )
-            targets[uid] = min(targets[uid], exit_capacity - state.lots[uid])
+    targets = {
+        asset.candidate.instrument_uid: _rebalance_change(
+            state,
+            asset,
+            panel[asset.candidate.instrument_uid][session.previous],
+            weights[asset.candidate.instrument_uid],
+            document,
+            costs,
+            session,
+            participation,
+        )
+        for asset in assets
+    }
     minimum_cash = max(reserve, session.previous_nav * cash_target)
     for side in (-1, 1):
         for asset in assets:
@@ -394,7 +589,11 @@ def _apply_rebalance(
                 lot=asset.candidate.lot_size,
                 remaining_turnover=turnover,
                 minimum_cash=minimum_cash,
-                volume_limit=int(panel[uid][session.previous].volume_lots * participation),
+                volume_limit=int(
+                    panel[uid][session.previous].volume_lots
+                    * _split_factor(asset.splits, session.previous, session.opening)
+                    * participation
+                ),
                 costs=costs,
             )
 
@@ -412,6 +611,8 @@ def _simulate(
 ) -> _Simulation:
     ids = [asset.candidate.instrument_uid for asset in assets]
     state = _Simulation(capital, dict.fromkeys(ids, 0))
+    tax = document["policy"]["securities_tax_rate_percent"]
+    state.tax_rate = _ZERO if tax is None else _decimal(tax) / 100
     state.curve.append(
         {
             "time": (times[0] + _DAY).isoformat(),
@@ -424,6 +625,7 @@ def _simulate(
     limit = document["profile"]["max_drawdown_percent"]
     for index, when in enumerate(times[1:]):
         previous = times[index]
+        _apply_splits(state, assets, previous, when)
         # Entitlement before today's trades; paid cash cannot be spent before its date.
         _distributions(state, assets, start=times[1], through=when, inclusive=True)
         if rebalance_sessions is not None and limit is not None:
@@ -452,10 +654,63 @@ def _simulate(
                 "time": closing_time.isoformat(),
                 "nav_rub": _text(previous_nav),
                 "cash_rub": _text(state.cash),
-                "receivables_rub": _text(sum((a for _, a in state.receivables), _ZERO)),
+                "receivables_rub": _text(sum((a for _, a, _ in state.receivables), _ZERO)),
             }
         )
     return state
+
+
+def _split_factor(
+    splits: Sequence[HistoricalSplit], before: datetime, through: datetime
+) -> Decimal:
+    factor = _ONE
+    for split in splits:
+        if before < split.time <= through:
+            factor *= split.ratio
+    return factor
+
+
+def _apply_splits(
+    state: _Simulation,
+    assets: Sequence[ResearchAsset],
+    before: datetime,
+    through: datetime,
+) -> None:
+    for asset in assets:
+        uid = asset.candidate.instrument_uid
+        for index, split in enumerate(asset.splits):
+            key = (uid, index)
+            if before < split.time <= through and key not in state.applied_splits:
+                lots = Decimal(state.lots[uid]) * split.ratio
+                if lots != int(lots):
+                    raise ValueError("fractional_split_cash_settlement_required")
+                state.lots[uid] = int(lots)
+                state.applied_splits.add(key)
+
+
+def split_adjusted_history(
+    bars: Sequence[TBankHistoricCandle],
+    splits: Sequence[HistoricalSplit],
+    as_of: datetime,
+) -> tuple[TBankHistoricCandle, ...]:
+    """Normalize only splits already effective at the evaluation cutoff for price signals."""
+    result = []
+    for bar in bars:
+        factor = _split_factor(splits, bar.time, as_of)
+        if factor == 1:
+            result.append(bar)
+        else:
+            result.append(
+                replace(
+                    bar,
+                    open=_text(_decimal(bar.open) / factor) if bar.open is not None else None,
+                    high=_text(_decimal(bar.high) / factor) if bar.high is not None else None,
+                    low=_text(_decimal(bar.low) / factor) if bar.low is not None else None,
+                    close=_text(_decimal(bar.close) / factor),
+                    volume_lots=int(bar.volume_lots * factor),
+                )
+            )
+    return tuple(result)
 
 
 def _metrics(state: _Simulation, capital: Decimal) -> dict[str, Any]:
@@ -475,6 +730,7 @@ def _metrics(state: _Simulation, capital: Decimal) -> dict[str, Any]:
         "var_95_percent": _text(max(_ZERO, losses[max(0, quantile)])),
         "expected_shortfall_95_percent": _text(max(_ZERO, expected_shortfall(losses, masses))),
         "transaction_costs_rub": _text(state.costs),
+        "taxes_rub": _text(state.taxes),
         "commissions_rub": _text(state.fees),
         "slippage_rub": _text(state.slippage),
         "trades": state.trades,
@@ -514,7 +770,10 @@ def _validated_research_capital(
 
 
 def _prepare_research_assets(
-    assets: Sequence[ResearchAsset], from_at: datetime, to_at: datetime, split: datetime,
+    assets: Sequence[ResearchAsset],
+    from_at: datetime,
+    to_at: datetime,
+    split: datetime,
 ) -> tuple[list[ResearchAsset], list[dict[str, Any]]]:
     diagnostics: list[dict[str, Any]] = []
     clean_assets = []
@@ -546,7 +805,12 @@ def _prepare_research_assets(
             replace(
                 asset,
                 candles=bars,
-                candidate=history_candidate(asset.candidate, training, as_of=split),
+                candidate=history_candidate(
+                    asset.candidate,
+                    split_adjusted_history(training, asset.splits, split),
+                    as_of=split,
+                    factors=asset.factors,
+                ),
             )
         )
     return clean_assets, diagnostics
@@ -568,7 +832,13 @@ def _selected_evidence_requirements(
     for asset in assets:
         diagnostic = by_uid[asset.candidate.instrument_uid]
         missing.update(diagnostic["reasons"])
-        breaks = _discontinuities(asset.candles)
+        breaks = _discontinuities(
+            split_adjusted_history(
+                asset.candles,
+                asset.splits,
+                asset.candles[-1].time if asset.candles else datetime.min.replace(tzinfo=UTC),
+            )
+        )
         missing.update(breaks)
         if breaks:
             diagnostic["status"] = "incomplete"
@@ -580,7 +850,8 @@ def _selected_evidence_requirements(
 
 
 def _common_research_times(
-    panel: Mapping[str, Mapping[datetime, TBankHistoricCandle]], split: datetime,
+    panel: Mapping[str, Mapping[datetime, TBankHistoricCandle]],
+    split: datetime,
 ) -> tuple[int, list[datetime], list[datetime], set[str]]:
     common = set.intersection(*(set(series) for series in panel.values())) if panel else set()
     missing = set()
@@ -609,7 +880,12 @@ def run_strategy_backtest(
     data = normalize_document(document)
     observed = now or datetime.now(UTC)
     capital = _validated_research_capital(
-        from_at, to_at, observed, len(assets), initial_capital_rub, costs,
+        from_at,
+        to_at,
+        observed,
+        len(assets),
+        initial_capital_rub,
+        costs,
     )
     split = from_at + (to_at - from_at) * 0.7
     clean_assets, diagnostics = _prepare_research_assets(assets, from_at, to_at, split)
@@ -624,7 +900,7 @@ def run_strategy_backtest(
     bases = {asset.basis for asset in selected_assets}
     basis = next(iter(bases)) if len(bases) == 1 else "unadjusted_price"
     fingerprint = {
-        "engine_version": "1.0.0",
+        "engine_version": "1.1.0",
         "method_rules": strategy_rule_set(data["base_preset_id"]),
         "strategy": data,
         "from": from_at.isoformat(),
@@ -667,8 +943,32 @@ def run_strategy_backtest(
                         e.paid_at.isoformat(),
                         str(e.amount_per_unit_rub),
                         e.source_url,
+                        e.kind,
                     ]
                     for e in asset.cashflows
+                ],
+                "factors": [
+                    [
+                        row.time.isoformat(),
+                        row.available_at.isoformat(),
+                        str(row.growth_change),
+                        str(row.inflation_change),
+                        row.source_url,
+                    ]
+                    for row in asset.factors
+                ],
+                "splits": [
+                    [row.time.isoformat(), str(row.ratio), row.source_url] for row in asset.splits
+                ],
+                "bond_valuations": [
+                    [
+                        row.time.isoformat(),
+                        str(row.nominal_rub),
+                        str(row.accrued_interest_open_rub),
+                        str(row.accrued_interest_close_rub),
+                        row.source_url,
+                    ]
+                    for row in asset.bond_valuations
                 ],
             }
             for asset in clean_assets
@@ -679,8 +979,14 @@ def run_strategy_backtest(
         "Состав доступной выборки задаётся источником: исключённые с биржи бумаги "
         "могут отсутствовать.",
         "Гипотеза выбрана без поиска оптимума на тестовом периоде; проверена одна конфигурация.",
-        "Налоги, инфляция, плата за заём и процент на денежный остаток не моделируются.",
+        "Инфляция, плата за заём и процент на денежный остаток не моделируются.",
+        "Если задана налоговая ставка, используется условное удержание с каждой "
+        "прибыльной продажи и выплаты без зачёта убытков и льгот; это не налоговый расчёт.",
         "Позиции в конце периода оценены по цене закрытия, без обязательной продажи.",
+        "Возврат номинала отделён от дохода и уменьшает модельную стоимость приобретения; "
+        "фактические налоговые правила амортизации могут отличаться.",
+        "Дробления меняют количество бумаг; дробные остатки требуют отдельных данных расчёта. "
+        "Исторический размер лота считается неизменным в подтверждённом интервале.",
     ]
     if selection["status"] == "partial":
         limitations.append(
@@ -705,7 +1011,7 @@ def run_strategy_backtest(
         "strategy_hash": document_hash(data),
         "method": strategy_rule_set(data["base_preset_id"])["ranking"],
         "basis": basis,
-        "engine_version": "1.0.0",
+        "engine_version": "1.1.0",
         "complete_strategy_coverage": selection["candidate_selection_ready"],
         "research_asset_weight_percent": _text(sum(chosen.values(), _ZERO)),
         "return_label": "Полная доходность после заданных издержек"
@@ -744,6 +1050,12 @@ def run_strategy_backtest(
             "liquidity_horizon_days": data["profile"]["liquidity_horizon_days"],
             "reserve_rub": data["profile"]["reserve_rub"],
             "planned_withdrawal_rub": data["profile"]["planned_withdrawal_rub"],
+            "tax_rate_percent": data["policy"]["securities_tax_rate_percent"],
+            "tax_method": "positive_realized_gain_and_distributions_no_offsets"
+            if data["policy"]["securities_tax_rate_percent"] is not None
+            else "not_configured",
+            "rebalance_band": "absolute_allocation_deviation_percentage_points",
+            "minimum_rebalance_effect": "reduction_of_allocation_error_less_costs_rub",
         },
         "sources": [{"id": "tbank_daily_candles", "url": HISTORY_SOURCE}],
         "data_hash": hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest(),
@@ -767,12 +1079,18 @@ def run_strategy_backtest(
         return result
     times = [training_times[-1], *test_times]
     period = strategy_rule_set(data["base_preset_id"])["rebalance_sessions"]
-    state = _simulate(
-        selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=period
-    )
-    baseline = _simulate(
-        selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=None
-    )
+    try:
+        state = _simulate(
+            selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=period
+        )
+        baseline = _simulate(
+            selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=None
+        )
+    except ValueError as exc:
+        if str(exc) != "fractional_split_cash_settlement_required":
+            raise
+        result["missing_requirements"].append(str(exc))
+        return result
     result.update(
         status="computed",
         metrics=_metrics(state, capital),
@@ -783,4 +1101,81 @@ def run_strategy_backtest(
             "metrics": _metrics(baseline, capital),
         },
     )
+    result["stress_scenario"] = _stress_scenario(state, selected_assets, panel, times[-1], data)
     return result
+
+
+def _stress_scenario(
+    state: _Simulation,
+    assets: Sequence[ResearchAsset],
+    panel: Mapping[str, Mapping[datetime, TBankHistoricCandle]],
+    when: datetime,
+    document: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Apply the user's explicit shocks to ending holdings, never a probability."""
+    uncertainty = _decimal(document["policy"]["uncertainty_haircut_percent"] or "0") / 100
+    credit = _decimal(document["policy"]["credit_loss_haircut_percent"] or "0") / 100
+    nav = Decimal(state.curve[-1]["nav_rub"])
+    loss = _ZERO
+    for asset in assets:
+        uid = asset.candidate.instrument_uid
+        value = state.lots[uid] * asset.candidate.lot_size * _decimal(panel[uid][when].close)
+        factor = (1 - uncertainty) * (1 - credit if asset.candidate.asset_class == "bonds" else 1)
+        loss += value * (1 - factor)
+    return {
+        "method": "user_defined_instantaneous_haircuts",
+        "probability": None,
+        "uncertainty_haircut_percent": _text(uncertainty * 100),
+        "bond_credit_haircut_percent": _text(credit * 100),
+        "base_nav_rub": _text(nav),
+        "stressed_nav_rub": _text(nav - loss),
+        "loss_rub": _text(loss),
+        "loss_percent": _text(loss / nav * 100) if nav else None,
+        "scope": "Заданные пользователем одновременные шоки к остаточным позициям. "
+        "Не оценка вероятности события, дефолта или будущего убытка.",
+    }
+
+
+def research_robustness(
+    document: object,
+    assets: Sequence[ResearchAsset],
+    *,
+    from_at: datetime,
+    to_at: datetime,
+    initial_capital_rub: Decimal,
+    costs: ResearchCosts,
+    now: datetime,
+) -> dict[str, Any]:
+    """Three declared chronological holdouts; no search for the best result."""
+    windows = []
+    for fraction in (Decimal("0.6"), Decimal("0.8"), Decimal("1")):
+        end = from_at + (to_at - from_at) * float(fraction)
+        result = run_strategy_backtest(
+            document,
+            assets,
+            from_at=from_at,
+            to_at=end,
+            initial_capital_rub=initial_capital_rub,
+            costs=costs,
+            now=now,
+        )
+        windows.append(
+            {
+                "period": result["period"],
+                "status": result["status"],
+                "metrics": result["metrics"],
+                "data_hash": result["data_hash"],
+                "missing_requirements": result["missing_requirements"],
+            }
+        )
+    computed = [row for row in windows if row["status"] == "computed"]
+    returns = [Decimal(row["metrics"]["net_return_percent"]) for row in computed]
+    return {
+        "method": "expanding_prefix_holdouts_60_80_100_percent",
+        "windows": windows,
+        "computed_windows": len(computed),
+        "minimum_return_percent": _text(min(returns)) if returns else None,
+        "maximum_return_percent": _text(max(returns)) if returns else None,
+        "scope": "Три заранее заданных пересекающихся исторических окна. "
+        "Не независимые эксперименты, не подбор лучшего окна и не вероятность прибыли.",
+    }

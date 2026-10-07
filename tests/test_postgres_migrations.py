@@ -15,7 +15,7 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from omnicio.db import ActiveLiveExecutionError, Database
-from omnicio.execution_store import ExecutionLedgerError, ExecutionStore
+from omnicio.execution_store import ExecutionLedgerError, ExecutionLegObservation, ExecutionStore
 from omnicio.portfolio_store import PortfolioStore
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
@@ -23,18 +23,14 @@ DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = tuple(sorted((ROOT / "migrations").glob("*.sql")))
 ACCEPTED_MIGRATION_SHA256 = {
-    "0001_phone_auth.sql": (
-        "b92bc06b42cf837cf15d6688edd0ed6b32afabb6ef645b271ca5db6e4a766796"
-    ),
+    "0001_phone_auth.sql": ("b92bc06b42cf837cf15d6688edd0ed6b32afabb6ef645b271ca5db6e4a766796"),
     "0002_tbank_connection.sql": (
         "bd48f5bd0ce75abf43606005e40d72869b2881d4c7519af1f2fe9f17fcfe89d8"
     ),
     "0003_vkid_owner_identity.sql": (
         "df8d27cd03820a0ef62dcf2008a12aa0443791161061532a1d0412961e46d710"
     ),
-    "0004_user_role.sql": (
-        "fa57fd62d166c31dc9076451a1a4207d2f4fe1be0fc8d4ac8134b0f9a92f6b12"
-    ),
+    "0004_user_role.sql": ("fa57fd62d166c31dc9076451a1a4207d2f4fe1be0fc8d4ac8134b0f9a92f6b12"),
     "0005_drop_phone_auth.sql": (
         "0476926a6588b9b3e0e3d80214e059c936568d1d7f2e565a47ec5a388c943a80"
     ),
@@ -60,6 +56,11 @@ ACCEPTED_MIGRATION_SHA256 = {
     "0013_strategy_assessment_admission.sql": (
         "66e6fa53c70377be00981278dea31361dbb780c632e3fbb40b92b20056ab6089"
     ),
+    "0014_workspace.sql": "f2fd5b344f02b445d7f7abdc119b45c706fc49d83d66f7f01eee88a8992f1305",
+    "0015_tid_identity.sql": "6721ea1377018a610f4441dc18956844847e69197983d334c2a002cc8498aff9",
+    "0016_portfolio_refresh.sql": (
+        "f18abf898992751060f3befff5bc946daa8192ba1c2827ea2671318342eca295"
+    ),
 }
 USER_ONE = UUID("00000000-0000-0000-0000-000000000101")
 USER_TWO = UUID("00000000-0000-0000-0000-000000000102")
@@ -82,13 +83,26 @@ def test_native_psql_reports_only_sqlstate_and_stdin_line() -> None:
     executable = binary / ("psql.exe" if os.name == "nt" else "psql")
     result = subprocess.run(
         [
-            str(executable), "-X", "-d", DATABASE_URL, "-q", "-f", "-",
-            "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=sqlstate",
-            "-v", "SHOW_CONTEXT=never",
+            str(executable),
+            "-X",
+            "-d",
+            DATABASE_URL,
+            "-q",
+            "-f",
+            "-",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-v",
+            "VERBOSITY=sqlstate",
+            "-v",
+            "SHOW_CONTEXT=never",
         ],
         input="-- Input values must not appear in diagnostics.\n"
-              "SELECT 'omnicio-private-error-canary'::integer;\n",
-        capture_output=True, text=True, check=False, timeout=15,
+        "SELECT 'omnicio-private-error-canary'::integer;\n",
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
     )
     assert result.returncode == 3
     assert re.fullmatch(r"psql:<stdin>:2: ERROR:\s+22P02", result.stderr.strip())
@@ -129,7 +143,7 @@ def _seed_legacy_proposal(runtime, snapshot_id: UUID, version: int) -> tuple[UUI
         "profile_version, policy_version, scenario_kind, target_instrument_uid, proposal_hash, "
         "created_session_digest, payload, expires_at) "
         "VALUES (%s, %s, %s, 'account-1', 1, 1, 'deploy_cash', 'provider-bond-uid', %s, %s, "
-        "'{\"schema\":\"omnicio.portfolio.proposal.v1\",\"execution_enabled\":false}'::jsonb, "
+        '\'{"schema":"omnicio.portfolio.proposal.v1","execution_enabled":false}\'::jsonb, '
         "now() + interval '30 minutes') RETURNING id",
         (USER_ONE, version, snapshot_id, b"p" * 32, b"s" * 32),
     ).fetchone()[0]
@@ -141,8 +155,9 @@ def _seed_legacy_proposal(runtime, snapshot_id: UUID, version: int) -> tuple[UUI
     return proposal_id, action_id
 
 
-def _seed_legacy_run(runtime, proposal_id: UUID, action_id: int, mode: str,
-                     mandate_id: UUID | None = None) -> UUID:
+def _seed_legacy_run(
+    runtime, proposal_id: UUID, action_id: int, mode: str, mandate_id: UUID | None = None
+) -> UUID:
     environment = {"shadow": None, "sandbox": "sandbox", "live": "prod"}[mode]
     return runtime.execute(
         "INSERT INTO portfolio_execution_runs (user_id, proposal_id, confirmed_action_id, "
@@ -166,7 +181,8 @@ def _seed_legacy_leg(runtime, run_id: UUID, state: str) -> UUID:
 
 def _assert_legacy_source_guards(runtime, runs: dict[str, UUID], legs: dict[str, UUID]) -> None:
     with pytest.raises(
-        psycopg.errors.RaiseException, match="execution source fields are immutable",
+        psycopg.errors.RaiseException,
+        match="execution source fields are immutable",
     ):
         runtime.execute(
             "UPDATE portfolio_execution_runs SET account_id = 'other' WHERE id = %s",
@@ -196,8 +212,9 @@ def _exercise_legacy_recovery(database: Database, runtime, snapshot_id: UUID) ->
         (USER_ONE, b"m" * 32),
     ).fetchone()[0]
     runs = {
-        mode: _seed_legacy_run(runtime, proposal_id, action_id, mode,
-                               mandate_id if mode == "live" else None)
+        mode: _seed_legacy_run(
+            runtime, proposal_id, action_id, mode, mandate_id if mode == "live" else None
+        )
         for mode in ("shadow", "sandbox", "live")
     }
     legs = {
@@ -216,8 +233,12 @@ def _exercise_legacy_recovery(database: Database, runtime, snapshot_id: UUID) ->
     assert not ledger.has_active_live_execution(USER_TWO)
     with pytest.raises(ActiveLiveExecutionError):
         database.upsert_tbank_connection(
-            user_id=USER_ONE, environment="prod", account_id="account-1",
-            account_name="Synthetic", encrypted_credential=b"replacement", terms_version="test",
+            user_id=USER_ONE,
+            environment="prod",
+            account_id="account-1",
+            account_name="Synthetic",
+            encrypted_credential=b"replacement",
+            terms_version="test",
         )
     with pytest.raises(ActiveLiveExecutionError):
         database.delete_tbank_connection(USER_ONE)
@@ -228,8 +249,9 @@ def _exercise_legacy_recovery(database: Database, runtime, snapshot_id: UUID) ->
     return proposal_id, action_id
 
 
-def _settle_legacy_records(ledger: ExecutionStore, runs: dict[str, UUID],
-                           legs: dict[str, UUID], mandate_id: UUID) -> None:
+def _settle_legacy_records(
+    ledger: ExecutionStore, runs: dict[str, UUID], legs: dict[str, UUID], mandate_id: UUID
+) -> None:
     revoked = ledger.revoke_live_mandate(USER_ONE)
     assert revoked is not None
     assert revoked.id == mandate_id
@@ -237,26 +259,47 @@ def _settle_legacy_records(ledger: ExecutionStore, runs: dict[str, UUID],
     assert ledger.has_active_live_execution(USER_ONE)
     with pytest.raises(ExecutionLedgerError, match="live_mandate_inactive"):
         ledger.transition_leg(
-            USER_ONE, run_id=runs["live"], leg_id=legs["live"], expected_statuses=("pending",),
-            new_status="submitting", event_type="forbidden_new_submission", details={},
+            USER_ONE,
+            run_id=runs["live"],
+            leg_id=legs["live"],
+            expected_statuses=("pending",),
+            new_status="submitting",
+            event_type="forbidden_new_submission",
+            details={},
         )
     run, leg = ledger.transition_leg(
-        USER_ONE, run_id=runs["live"], leg_id=legs["live"], expected_statuses=("pending",),
-        new_status="cancelled", event_type="cancelled_before_submission", details={},
+        USER_ONE,
+        run_id=runs["live"],
+        leg_id=legs["live"],
+        expected_statuses=("pending",),
+        new_status="cancelled",
+        event_type="cancelled_before_submission",
+        details={},
     )
     assert run.status == "cancelled"
     assert leg.status == "cancelled"
     assert not ledger.has_active_live_execution(USER_ONE)
     pending, _ = ledger.mark_run_reconciling(
-        USER_ONE, run_id=runs["sandbox"], leg_id=legs["sandbox"],
-        error_code="provider_read_unavailable", details={"retry_post_order": False},
+        USER_ONE,
+        run_id=runs["sandbox"],
+        leg_id=legs["sandbox"],
+        error_code="provider_read_unavailable",
+        details={"retry_post_order": False},
     )
     assert pending.status == "reconciling"
     run, leg = ledger.transition_leg(
-        USER_ONE, run_id=runs["sandbox"], leg_id=legs["sandbox"],
-        expected_statuses=("reconciling",), new_status="filled",
-        event_type="provider_state_reconciled", details={}, lots_executed=2,
-        executed_amount_rub=Decimal("2000"), executed_commission_rub=Decimal("3"),
+        USER_ONE,
+        run_id=runs["sandbox"],
+        leg_id=legs["sandbox"],
+        expected_statuses=("reconciling",),
+        new_status="filled",
+        event_type="provider_state_reconciled",
+        details={},
+        observation=ExecutionLegObservation(
+            lots_executed=2,
+            executed_amount_rub=Decimal("2000"),
+            executed_commission_rub=Decimal("3"),
+        ),
     )
     assert run.status == "succeeded"
     assert leg.status == "filled"
@@ -265,7 +308,8 @@ def _settle_legacy_records(ledger: ExecutionStore, runs: dict[str, UUID],
     saved = ledger.execution(USER_ONE, runs["sandbox"])
     assert saved is not None
     assert [event.event_type for event in saved[2]] == [
-        "provider_read_unavailable", "provider_state_reconciled",
+        "provider_read_unavailable",
+        "provider_state_reconciled",
     ]
 
 
@@ -294,9 +338,9 @@ def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:
 
 
 def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode() -> None:
-    migration = (
-        ROOT / "migrations" / "0011_portfolio_live_execution.sql"
-    ).read_text(encoding="utf-8")
+    migration = (ROOT / "migrations" / "0011_portfolio_live_execution.sql").read_text(
+        encoding="utf-8"
+    )
 
     assert "portfolio_live_execution_mandates" in migration
     assert "ENABLE ROW LEVEL SECURITY" in migration
@@ -314,16 +358,14 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     assert "portfolio_execution_legs_live_submission_guard" in migration
     assert "FOR SHARE OF m" in migration
     assert "live execution mandate is inactive before submission" in migration
-    execution_store_source = (
-        ROOT / "src" / "omnicio" / "execution_store.py"
-    ).read_text(encoding="utf-8")
+    execution_store_source = (ROOT / "src" / "omnicio" / "execution_store.py").read_text(
+        encoding="utf-8"
+    )
     assert "def _require_live_transition_mandate(" in execution_store_source
     assert 'run.mode != "live" or new_status != "submitting"' in execution_store_source
     assert 'raise ExecutionLedgerError("live_mandate_inactive")' in execution_store_source
     assert "FOR SHARE" in execution_store_source
-    database_source = (
-        ROOT / "src" / "omnicio" / "db.py"
-    ).read_text(encoding="utf-8")
+    database_source = (ROOT / "src" / "omnicio" / "db.py").read_text(encoding="utf-8")
     assert "class ActiveLiveExecutionError" in database_source
     assert database_source.count("live_execution_lock_key(user_id)") >= 2
 
@@ -333,16 +375,14 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     reason="ephemeral PostgreSQL is required for migration integration coverage",
 )
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0016_portfolio_refresh.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0023_strategy_execution_guards.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
         # The additive latest migration is safe to retry before release. Once
         # accepted on main it becomes immutable migration history.
         admin.execute(
-            (
-                ROOT / "migrations" / "0011_portfolio_live_execution.sql"
-            ).read_text(encoding="utf-8")
+            (ROOT / "migrations" / "0011_portfolio_live_execution.sql").read_text(encoding="utf-8")
         )
 
         admin.execute(
@@ -547,8 +587,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "TO omnicio_runtime_test"
         )
         admin.execute(
-            "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public "
-            "TO omnicio_runtime_test"
+            "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO omnicio_runtime_test"
         )
 
     with psycopg.connect(_runtime_url(), autocommit=True) as runtime:
@@ -590,12 +629,10 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "SELECT set_config('omnicio.user_id', %s, false)",
             (str(USER_TWO),),
         )
-        assert runtime.execute(
-            "SELECT count(*) FROM investment_profile_versions"
-        ).fetchone()[0] == 0
-        assert runtime.execute(
-            "SELECT count(*) FROM account_instrument_access"
-        ).fetchone()[0] == 0
+        assert (
+            runtime.execute("SELECT count(*) FROM investment_profile_versions").fetchone()[0] == 0
+        )
+        assert runtime.execute("SELECT count(*) FROM account_instrument_access").fetchone()[0] == 0
 
         runtime.execute(
             "SELECT set_config('omnicio.user_id', %s, false)",
@@ -847,8 +884,7 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             assert len(instrument_visualization["history"]) == 1
             assert instrument_visualization["latest"]["ticker"] == "TESTBOND"
             assert any(
-                item["instrument_uid"] == "provider-bond-uid"
-                and item["event_type"] == "coupon"
+                item["instrument_uid"] == "provider-bond-uid" and item["event_type"] == "coupon"
                 for item in instrument_visualization["payouts"]
             )
             assert any(
@@ -856,11 +892,14 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 and item["document_type"] == "bond_coupon"
                 for item in instrument_visualization["sources"]
             )
-            assert store.instrument_visualization(
-                USER_TWO,
-                "FIGI-ONLY",
-                history_limit=30,
-            ) is None
+            assert (
+                store.instrument_visualization(
+                    USER_TWO,
+                    "FIGI-ONLY",
+                    history_limit=30,
+                )
+                is None
+            )
 
             proposal_id, action_id = _exercise_legacy_recovery(database, runtime, snapshot_id)
             current_policy = store.current_balancing_policy(USER_ONE)
@@ -910,27 +949,13 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "SELECT set_config('omnicio.user_id', %s, false)",
             (str(USER_TWO),),
         )
-        assert runtime.execute(
-            "SELECT count(*) FROM portfolio_risk_assessments"
-        ).fetchone()[0] == 0
-        assert runtime.execute(
-            "SELECT count(*) FROM balancing_policy_versions"
-        ).fetchone()[0] == 0
-        assert runtime.execute(
-            "SELECT count(*) FROM portfolio_proposals"
-        ).fetchone()[0] == 0
-        assert runtime.execute(
-            "SELECT count(*) FROM portfolio_proposal_actions"
-        ).fetchone()[0] == 0
-        assert runtime.execute(
-            "SELECT count(*) FROM portfolio_execution_runs"
-        ).fetchone()[0] == 0
-        assert runtime.execute(
-            "SELECT count(*) FROM portfolio_execution_legs"
-        ).fetchone()[0] == 0
-        assert runtime.execute(
-            "SELECT count(*) FROM portfolio_execution_events"
-        ).fetchone()[0] == 0
+        assert runtime.execute("SELECT count(*) FROM portfolio_risk_assessments").fetchone()[0] == 0
+        assert runtime.execute("SELECT count(*) FROM balancing_policy_versions").fetchone()[0] == 0
+        assert runtime.execute("SELECT count(*) FROM portfolio_proposals").fetchone()[0] == 0
+        assert runtime.execute("SELECT count(*) FROM portfolio_proposal_actions").fetchone()[0] == 0
+        assert runtime.execute("SELECT count(*) FROM portfolio_execution_runs").fetchone()[0] == 0
+        assert runtime.execute("SELECT count(*) FROM portfolio_execution_legs").fetchone()[0] == 0
+        assert runtime.execute("SELECT count(*) FROM portfolio_execution_events").fetchone()[0] == 0
 
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             runtime.execute(
@@ -982,7 +1007,6 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 (USER_ONE,),
             )
 
-
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
         admin.execute(
             """
@@ -1000,10 +1024,13 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
         database.close()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
-        assert admin.execute(
-            "SELECT count(*) FROM users WHERE id = %s",
-            (USER_ONE,),
-        ).fetchone()[0] == 0
+        assert (
+            admin.execute(
+                "SELECT count(*) FROM users WHERE id = %s",
+                (USER_ONE,),
+            ).fetchone()[0]
+            == 0
+        )
         for table in (
             "portfolio_proposals",
             "portfolio_proposal_actions",
@@ -1011,9 +1038,12 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
             "portfolio_execution_legs",
             "portfolio_execution_events",
         ):
-            assert admin.execute(
-                sql.SQL("SELECT count(*) FROM {} WHERE user_id = %s").format(
-                    sql.Identifier(table)
-                ),
-                (USER_ONE,),
-            ).fetchone()[0] == 0
+            assert (
+                admin.execute(
+                    sql.SQL("SELECT count(*) FROM {} WHERE user_id = %s").format(
+                        sql.Identifier(table)
+                    ),
+                    (USER_ONE,),
+                ).fetchone()[0]
+                == 0
+            )

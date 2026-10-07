@@ -21,6 +21,7 @@ on:
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_postgres.py"
       - ".github/scripts/timeweb_recovery.py"
+      - ".github/scripts/run_recovery_drill.py"
       - ".github/scripts/test_timeweb_recovery.py"
       - ".github/scripts/timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_ssh_trust.py"
@@ -46,12 +47,19 @@ on:
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_postgres.py"
       - ".github/scripts/timeweb_recovery.py"
+      - ".github/scripts/run_recovery_drill.py"
       - ".github/scripts/test_timeweb_recovery.py"
       - ".github/scripts/timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_auth_postgres.py"
       - "migrations/**"
   workflow_dispatch:
+    inputs:
+      restore_drill:
+        description: "Read-only production logical export, isolated restore, signed proof installation"
+        type: boolean
+        required: false
+        default: false
   schedule:
     - cron: "17 */6 * * *"
 
@@ -106,7 +114,9 @@ jobs:
       group: omnicio-production-ssh
       cancel-in-progress: false
       queue: max
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name != 'pull_request' && github.ref == 'refs/heads/main' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.restore_drill)
     needs: tests
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 30
@@ -195,9 +205,81 @@ jobs:
             --migration migrations/0013_strategy_assessment_admission.sql ^
             --migration migrations/0014_workspace.sql ^
             --migration migrations/0015_tid_identity.sql ^
-            --migration migrations/0016_portfolio_refresh.sql
+            --migration migrations/0016_portfolio_refresh.sql ^
+            --migration migrations/0017_notifications.sql ^
+            --migration migrations/0018_strategy_research.sql ^
+            --migration migrations/0019_session_security.sql ^
+            --migration migrations/0020_goal_plans.sql ^
+            --migration migrations/0021_assistant_workspace.sql ^
+            --migration migrations/0022_billing.sql ^
+            --migration migrations/0023_strategy_execution_guards.sql
 
       - name: Confirm database readiness
         if: steps.postgres.outputs.status == 'database_ready'
         shell: cmd
         run: echo Private PostgreSQL cluster ${{ steps.postgres.outputs.cluster_id }} is ready and schema migration completed.
+
+  isolated-restore:
+    name: Verify isolated logical restore
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.restore_drill
+    needs: tests
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 40
+    concurrency:
+      group: omnicio-production-ssh
+      cancel-in-progress: false
+      queue: max
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+      TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}
+      OMNICIO_RESTORE_DRILL_ALLOWED: "true"
+      OMNICIO_RESTORE_SOURCE_DSN: ${{ secrets.OMNICIO_RESTORE_SOURCE_DSN }}
+      OMNICIO_RESTORE_ARCHIVE_KEY: ${{ secrets.OMNICIO_RESTORE_ARCHIVE_KEY }}
+      OMNICIO_RESTORE_RECEIPT_KEY: ${{ secrets.OMNICIO_RESTORE_RECEIPT_KEY }}
+      DB_INSTANCE_NAME: omnicio
+
+    steps:
+      - name: Checkout accepted main state
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+          clean: true
+
+      - name: Bootstrap pinned Python
+        shell: cmd
+        run: call .github\scripts\bootstrap_self_hosted_python.cmd
+
+      - name: Install hash-pinned runtime and accepted project
+        shell: cmd
+        run: |
+          "%OMNICIO_PYTHON%" -m pip install --only-binary=:all: --require-hashes -r requirements-runtime.txt
+          if errorlevel 1 exit /b 1
+          "%OMNICIO_PYTHON%" -m pip install --no-deps --no-build-isolation --no-index --only-binary=:all: -e .
+          if errorlevel 1 exit /b 1
+
+      - name: Export encrypted archive and verify on a new isolated cluster
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\run_recovery_drill.py'
+
+      - name: Keep only encrypted archive and signed provenance for one day
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: isolated-restore-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/restore/database.dump.encrypted
+            artifacts/restore/manifest.json
+            artifacts/restore/restore-verification.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Remove this job's local encrypted artifacts
+        if: always()
+        shell: cmd
+        run: '"%OMNICIO_PYTHON%" .github\scripts\run_recovery_drill.py --cleanup-artifact'

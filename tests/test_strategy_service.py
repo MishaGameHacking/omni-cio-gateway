@@ -23,6 +23,7 @@ from omnicio.broker import (
 )
 from omnicio.db import Database, UserRecord
 from omnicio.portfolio_store import PortfolioStore, SettingsVersionConflict
+from omnicio.research_store import ResearchStore
 from omnicio.strategy_service import current_account_assessment, strategy_research
 from omnicio.tbank import TBankPortfolio, TBankPositions, TBankTokenRejected, TBankUnavailable
 
@@ -72,6 +73,11 @@ def runtime(monkeypatch):
     monkeypatch.setattr(main, "portfolio_store", lambda request: store)
     monkeypatch.setattr(main, "broker_service", lambda request: broker)
     monkeypatch.setattr(main.app.state, "database", database, raising=False)
+    research = Mock(spec=ResearchStore)
+    research.evidence.return_value = {"version": 0, "document": {"assets": []}, "received_at": None}
+    research.save_run.return_value = {"id": str(UUID(int=900)), "replay_available": True}
+    monkeypatch.setattr(main.app.state, "research_store", research, raising=False)
+    monkeypatch.setattr(main, "market_service", lambda request: Mock(cbr=None))
     return users, store, broker, bundle, connection
 
 

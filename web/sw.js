@@ -3,7 +3,7 @@
 // Only public, versioned interface assets. Never cache API, HTML sessions or messages.
 const build = "__OMNICIO_BUILD__";
 const cacheName = `omnicio-public-${build}`;
-const publicPaths = ["/assets/app.css", "/assets/app.js", "/assets/workspace.js"];
+const publicPaths = ["/assets/i18n.js", "/assets/app.css", "/assets/app.js", "/assets/workspace.js"];
 const offlineUrl = `/offline.html?build=${encodeURIComponent(build)}`;
 
 self.addEventListener("install", (event) => {
@@ -35,4 +35,44 @@ self.addEventListener("fetch", (event) => {
   }
   if (!publicPaths.includes(url.pathname) || url.searchParams.get("build") !== build) return;
   event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
+});
+
+const notificationUrl = value => {
+  try {
+    const url = new URL(value, self.location.origin);
+    if (url.origin !== self.location.origin || url.pathname !== "/" || url.search) return "/#events";
+    if (!/^#(?:events(?:\?event=[a-f0-9]{64})?|settings)$/.test(url.hash)) return "/#events";
+    return url.pathname + url.hash;
+  } catch {
+    return "/#events";
+  }
+};
+
+self.addEventListener("push", event => {
+  let payload = {};
+  try { payload = event.data?.json() || {}; } catch { /* Generic message contains no private data. */ }
+  const tag = typeof payload.tag === "string" && /^[a-f0-9]{64}$/.test(payload.tag) ? payload.tag : "omnicio-event";
+  // Server notifications never contain balances or names of personal goals.
+  // Opening the destination still requires the current authenticated session.
+  event.waitUntil(self.registration.showNotification("OMNICIO", {
+    body: "В кабинете появились новые сведения. Откройте приложение, чтобы посмотреть подробности.",
+    icon: "/assets/brand/pwa-icon-192.png",
+    badge: "/assets/brand/pwa-icon-192.png",
+    tag,
+    renotify: false,
+    data: {url: notificationUrl(payload.url)}
+  }));
+});
+
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+  const path = notificationUrl(event.notification.data?.url);
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({type: "window", includeUncontrolled: true});
+    const existing = windows.find(client => new URL(client.url).origin === self.location.origin);
+    if (existing) {
+      await existing.navigate(path);
+      await existing.focus();
+    } else await self.clients.openWindow(path);
+  })());
 });

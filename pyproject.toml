@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omnicio-gateway"
-version = "1.0.1"
+version = "1.1.0"
 description = "OmniCIO Personal owner gateway and broker connectivity service"
 requires-python = ">=3.12,<3.14"
 dependencies = [
@@ -57,4 +57,3 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.12"
 strict = true
 packages = ["omnicio"]
-

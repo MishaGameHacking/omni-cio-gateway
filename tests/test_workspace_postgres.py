@@ -2,22 +2,35 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 import os
 import secrets
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from cryptography.fernet import Fernet
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from omnicio.db import Database
+from omnicio.notifications import (
+    DeliveryResult,
+    NotificationConfig,
+    NotificationService,
+    NotificationTransport,
+    push_public_key,
+)
 from omnicio.portfolio_store import SettingsVersionConflict
 from omnicio.workspace import default_preferences
 from omnicio.workspace_store import WorkspaceNotFound, WorkspaceStore
@@ -106,6 +119,348 @@ def goal_document(**changes: Any) -> dict[str, Any]:
         "status": "active",
         **changes,
     }
+
+
+def insert_notification_event(
+    store: WorkspaceStore, owner: UUID, number: int, *, at: datetime | None = None,
+    source: dict[str, Any] | None = None,
+) -> str:
+    with store._transaction(owner) as cur:
+        store._insert_event(
+            cur, owner, identity=number, category="system", kind="test_event",
+            title=f"Confirmed event {number}", occurred_at=at or datetime.now(UTC),
+            target="settings", source=source or {"type": "test", "number": number},
+        )
+    return hashlib.sha256(json.dumps(
+        ["test_event", number], sort_keys=True, ensure_ascii=False,
+    ).encode()).hexdigest()
+
+
+def notification_service(database: Database) -> tuple[NotificationService, Mock, dict[str, Any]]:
+    private = base64.urlsafe_b64encode(bytes([1]) * 32).decode().rstrip("=")
+    config = NotificationConfig(
+        crypto_key=Fernet.generate_key().decode(), enabled=True,
+        vapid_private_key=private, vapid_subject="mailto:operator@example.org",
+        smtp_host="smtp.example.org", smtp_sender="operator@example.org",
+    )
+    transport = Mock(spec=NotificationTransport)
+    transport.send_push.return_value = DeliveryResult("accepted", "push_provider_accepted")
+    transport.send_email.return_value = DeliveryResult("accepted", "email_provider_accepted")
+    service = NotificationService(database, config, legal_versions={"terms": "test"},
+                                  transport=transport)
+    subscription = {
+        "endpoint": "https://fcm.googleapis.com/fcm/send/" + secrets.token_urlsafe(20),
+        "keys": {"p256dh": push_public_key(private),
+                 "auth": base64.urlsafe_b64encode(bytes([2]) * 16).decode().rstrip("=")},
+    }
+    return service, transport, subscription
+
+
+def test_event_pagination_search_and_read_all_cover_more_than_fifty(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    store = WorkspaceStore(database)
+    owner, other = user(database), user(database)
+    at = datetime.now(UTC) - timedelta(hours=1)
+    expected = {insert_notification_event(store, owner, number, at=at) for number in range(115)}
+    first = store.events(owner)
+    assert len(first["items"]) == 50
+    assert first["unread_count"] == 115
+    seen = {item["id"] for item in first["items"]}
+    cursor = first["next_cursor"]
+    while cursor:
+        page = store.events(owner, cursor=cursor)
+        assert not seen.intersection(item["id"] for item in page["items"])
+        seen.update(item["id"] for item in page["items"])
+        cursor = page["next_cursor"]
+    assert seen == expected
+    assert store.events(owner, query="event 114")["items"][0]["title"] == "Confirmed event 114"
+    assert store.events(other)["items"] == []
+    foreign_event_id = next(iter(expected))
+    with pytest.raises(WorkspaceNotFound):
+        store.get_event(other, foreign_event_id)
+    # New data with an older occurrence date is still beyond the revision cutoff.
+    added = insert_notification_event(store, owner, 116, at=at - timedelta(days=1))
+    refreshed = store.mark_all_events_read(owner, through_revision=first["read_all_before"])
+    assert refreshed["unread_count"] == 1
+    assert store.get_event(owner, added)["read_at"] is None
+    assert store.events(owner, unread_only=True)["items"][0]["id"] == added
+    with pytest.raises(ValueError):
+        store.mark_all_events_read(owner, through_revision=2**62)
+
+
+def test_concurrent_event_correction_survives_old_read_all_cutoff_and_preserves_details(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    store = WorkspaceStore(database)
+    source = {"type": "payout", "instrument_uid": "instrument-real-contract",
+              "amount_per_security": "12.34", "currency": "RUB",
+              "expected_at": "2026-12-01T00:00:00+00:00", "url": "https://example.org/source"}
+    ident = insert_notification_event(store, owner, 1, source=source)
+    before = store.events(owner)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        write = workers.submit(insert_notification_event, store, owner, 1,
+                               source={**source, "amount_per_security": "13.45"})
+        read = workers.submit(store.mark_all_events_read, owner,
+                              through_revision=before["read_all_before"])
+        write.result()
+        read.result()
+    event = store.get_event(owner, ident)
+    assert event["read_at"] is None
+    assert event["revision"] > before["read_all_before"]
+    assert event["source"]["amount_per_security"] == "13.45"
+    assert event["source"]["expected_at"] == source["expected_at"]
+    assert event["destination"] == {"view": "asset", "uid": "instrument-real-contract"}
+
+
+def test_notification_queue_deduplicates_and_retries_only_definite_failure(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    channel = service.subscribe_push(owner, subscription)
+    insert_notification_event(service.workspace, owner, 1)
+    service.queue_events(owner)
+    service.queue_events(owner)
+    assert len(service.status(owner)["deliveries"]) == 1
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    transport.send_push.side_effect = [DeliveryResult("queued", "push_rate_limited", 120),
+                                       DeliveryResult("accepted", "push_provider_accepted")]
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=now)
+        assert not service.deliver_one(owner, now=now + timedelta(seconds=60))
+        assert service.deliver_one(owner, now=now + timedelta(seconds=121))
+        assert not service.deliver_one(owner, now=now + timedelta(seconds=122))
+    assert transport.send_push.call_count == 2
+    assert transport.send_push.call_args_list[0].args == transport.send_push.call_args_list[1].args
+    state = service.status(owner)["deliveries"][0]
+    assert state["status"] == "accepted"
+    assert state["attempts"] == 2
+    assert "destination_ciphertext" not in service.status(owner)["channels"][0]
+    assert "payload_ciphertext" not in state
+    assert state["channel_id"] == UUID(channel["id"])
+
+
+@pytest.mark.parametrize("replacement_operator", [False, True])
+def test_pending_operational_alert_is_cancelled_when_operator_authority_changes(
+    workspace_database: tuple[Database, str, str], replacement_operator: bool,
+) -> None:
+    database = workspace_database[0]
+    operator, ordinary = user(database), user(database)
+    service, transport, subscription = notification_service(database)
+    service.config = replace(service.config, operator_user_id=operator)
+    service.subscribe_push(operator, subscription)
+    service.queue_operator_alert(ordinary, "health-test", "Operational test")
+    assert service.status(ordinary)["deliveries"] == []
+    service.queue_operator_alert(operator, "health-test", "Operational test")
+    assert service.status(operator)["deliveries"][0]["status"] == "queued"
+    # Recreate the worker as after a restart with operator identity disabled or changed.
+    restarted = NotificationService(
+        database,
+        replace(service.config, operator_user_id=ordinary if replacement_operator else None),
+        legal_versions=service.legal_versions, transport=transport,
+    )
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not restarted.deliver_one(operator, now=datetime.now(UTC) + timedelta(days=1))
+    assert restarted.status(operator)["deliveries"][0]["status"] == "cancelled"
+    transport.send_push.assert_not_called()
+    transport.send_email.assert_not_called()
+
+
+def test_notification_ambiguous_result_is_not_retried_and_revocation_is_tenant_scoped(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, other = user(database), user(database)
+    service, transport, subscription = notification_service(database)
+    channel = UUID(service.subscribe_push(owner, subscription)["id"])
+    insert_notification_event(service.workspace, owner, 1)
+    service.queue_events(owner)
+    transport.send_push.return_value = DeliveryResult("uncertain", "push_result_unknown")
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner)
+        assert not service.deliver_one(owner, now=datetime.now(UTC) + timedelta(days=1))
+    assert service.status(owner)["deliveries"][0]["status"] == "uncertain"
+    assert transport.send_push.call_count == 1
+    with pytest.raises(WorkspaceNotFound):
+        service.revoke_channel(other, channel)
+    insert_notification_event(service.workspace, owner, 2)
+    service.queue_events(owner)
+    service.revoke_channel(owner, channel)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not service.deliver_one(owner)
+    assert {row["status"] for row in service.status(owner)["deliveries"]} == {
+        "cancelled", "uncertain",
+    }
+
+
+def test_notification_claim_concurrency_and_crash_never_duplicate_delivery(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    service.subscribe_push(owner, subscription)
+    insert_notification_event(service.workspace, owner, 1)
+    service.queue_events(owner)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(service.deliver_one, [owner, owner]))
+        assert sorted(results) == [False, True]
+        assert transport.send_push.call_count == 1
+        insert_notification_event(service.workspace, owner, 2)
+        service.queue_events(owner)
+        now = datetime.now(UTC)
+        assert service._claim(owner, now) is not None
+        # A process can disappear after the request was sent but before its
+        # acknowledgment was persisted. A lease timeout cannot justify resend.
+        assert not service.deliver_one(owner, now=now + timedelta(minutes=3))
+    assert transport.send_push.call_count == 1
+    assert {row["status"] for row in service.status(owner)["deliveries"]} == {
+        "accepted", "uncertain",
+    }
+
+
+def test_queued_delivery_rechecks_read_state_preferences_and_retry_budget(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    service.subscribe_push(owner, subscription)
+    first = insert_notification_event(service.workspace, owner, 1)
+    service.queue_events(owner)
+    service.workspace.mark_events_read(owner, [first])
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not service.deliver_one(owner)
+    transport.send_push.assert_not_called()
+    insert_notification_event(service.workspace, owner, 2)
+    service.queue_events(owner)
+    prefs = default_preferences()
+    prefs["digest_frequency"] = "daily"
+    service.workspace.save_preferences(owner, prefs, expected_version=0)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not service.deliver_one(owner)
+    transport.send_push.assert_not_called()
+    prefs["digest_frequency"] = "off"
+    service.workspace.save_preferences(owner, prefs, expected_version=1)
+    insert_notification_event(service.workspace, owner, 3)
+    service.queue_events(owner)
+    transport.send_push.return_value = DeliveryResult("queued", "push_rate_limited", 120)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        now = datetime.now(UTC)
+        for attempt in range(6):
+            assert service.deliver_one(owner, now=now + timedelta(hours=attempt))
+        assert not service.deliver_one(owner, now=now + timedelta(hours=7))
+    assert transport.send_push.call_count == 6
+    assert next(row for row in service.status(owner)["deliveries"]
+                if row["attempts"] == 6)["status"] == "failed"
+
+
+def test_email_verification_is_encrypted_expiring_rate_limited_and_attempt_bounded(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, _ = notification_service(database)
+    with patch("omnicio.notifications.secrets.randbelow", return_value=123456):
+        result = service.request_email_verification(owner, "person@example.org")
+    assert "code" not in result
+    channel = UUID(result["id"])
+    with pytest.raises(ValueError, match="rate_limited"):
+        service.request_email_verification(owner, "person@example.org")
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("SELECT destination_ciphertext, verification_digest "
+                    "FROM notification_channels WHERE user_id = %s", (owner,))
+        stored = cur.fetchone()
+        assert b"person@example.org" not in bytes(stored["destination_ciphertext"])
+        assert b"123456" not in bytes(stored["verification_digest"])
+    for _ in range(5):
+        with pytest.raises(ValueError, match="verification_invalid"):
+            service.verify_email(owner, channel, "000000")
+    with pytest.raises(ValueError, match="verification_invalid"):
+        service.verify_email(owner, channel, "123456")
+    transport.send_email.assert_not_called()
+
+
+def test_email_code_is_bound_to_channel_expires_and_can_be_reissued(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, _ = notification_service(database)
+    with patch("omnicio.notifications.secrets.randbelow", return_value=123456):
+        first = UUID(service.request_email_verification(owner, "first@example.org")["id"])
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE notification_outbox SET created_at = now() - interval '3 minutes' "
+                    "WHERE user_id = %s", (owner,))
+        cur.execute("SELECT verification_digest FROM notification_channels "
+                    "WHERE user_id = %s AND id = %s", (owner, first))
+        first_digest = cur.fetchone()["verification_digest"]
+    with patch("omnicio.notifications.secrets.randbelow", return_value=654321):
+        second = UUID(service.request_email_verification(owner, "second@example.org")["id"])
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE notification_channels SET verification_digest = %s "
+                    "WHERE user_id = %s AND id = %s", (first_digest, owner, second))
+    with pytest.raises(ValueError, match="verification_invalid"):
+        service.verify_email(owner, second, "123456")
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE notification_channels SET verification_expires_at = "
+                    "now() - interval '1 second' WHERE user_id = %s AND id = %s", (owner, first))
+    with pytest.raises(ValueError, match="verification_invalid"):
+        service.verify_email(owner, first, "123456")
+    assert next(row for row in service.status(owner)["channels"]
+                if row["id"] == first)["status"] == "expired"
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE notification_outbox SET created_at = now() - interval '3 minutes' "
+                    "WHERE user_id = %s", (owner,))
+    with patch("omnicio.notifications.secrets.randbelow", return_value=345678):
+        reissued = service.request_email_verification(owner, "first@example.org")
+    assert reissued["id"] == str(first)
+    with pytest.raises(ValueError, match="verification_invalid"):
+        service.verify_email(owner, first, "123456")
+    assert service.verify_email(owner, first, "345678")["status"] == "active"
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("SELECT verification_digest FROM notification_channels "
+                    "WHERE user_id = %s AND id = %s", (owner, first))
+        assert cur.fetchone()["verification_digest"] is None
+    transport.send_email.assert_not_called()
+
+
+def test_quiet_hours_and_digest_schedule_have_durable_deduplication(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    channel = UUID(service.subscribe_push(owner, subscription)["id"])
+    prefs = default_preferences()
+    prefs["quiet_hours"]["enabled"] = True
+    service.workspace.save_preferences(owner, prefs, expected_version=0)
+    now = datetime(2026, 10, 8, 20, tzinfo=UTC)
+    insert_notification_event(service.workspace, owner, 1, at=now)
+    service.queue_events(owner, now=now)
+    queued = service.status(owner)["deliveries"][0]
+    assert queued["next_attempt_at"] == datetime(2026, 10, 9, 5, tzinfo=UTC)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not service.deliver_one(owner, now=now)
+    transport.send_push.assert_not_called()
+    # A daily digest covers a completed day once, including events collected while
+    # the browser was closed. Older disabled subscriptions are not backfilled.
+    prefs["digest_frequency"] = "daily"
+    prefs["quiet_hours"]["enabled"] = False
+    service.workspace.save_preferences(owner, prefs, expected_version=1)
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE notification_channels SET verified_at = %s "
+                    "WHERE user_id = %s AND id = %s", (now - timedelta(days=3), owner, channel))
+    service.queue_events(owner, now=now + timedelta(days=1))
+    service.queue_events(owner, now=now + timedelta(days=1))
+    digests = [row for row in service.status(owner)["deliveries"] if row["kind"] == "digest"]
+    assert len(digests) == 1
 
 
 def test_preference_versions_and_goal_crud_are_tenant_isolated(
@@ -306,7 +661,8 @@ def test_dashboard_uses_latest_operation_correction_and_complete_ledger(
     assert dashboard["performance"]["status"] == "available"
     assert dashboard["performance"]["net_contributions_rub"] == "0"
     assert Decimal(dashboard["performance"]["investment_result_rub"]) == 500
-    assert dashboard["performance"]["return_percent"] is None
+    assert Decimal(dashboard["performance"]["return_percent"]) == 5
+    assert dashboard["performance"]["return_method"] == "modified_dietz"
     assert dashboard["income"]["total_rub"] == "0"
 
     def insert_coupon(state: str, byte: int) -> None:
@@ -492,7 +848,8 @@ def test_full_range_nav_sampling_keeps_exact_covered_performance_endpoints(
     )
     assert daily["performance"]["reason"] == "insufficient_covered_snapshots"
     assert daily["performance"]["investment_result_rub"] is None
-    assert Decimal(daily["income"]["total_rub"]) == 250
+    assert daily["income"]["total_rub"] is None
+    assert daily["income"]["reason"] == "history_incomplete"
 
     with database.pool.connection() as conn:
         conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))

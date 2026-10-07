@@ -45,6 +45,8 @@ def require_user(user: UserRecord | None) -> UserRecord:
 
 
 def run_command(database: Database, args: argparse.Namespace) -> str:
+    if args.command == "prune-sessions":
+        return json.dumps({"expired_sessions_removed": database.prune_sessions()})
     public_id = parse_public_id(args.public_id)
 
     if args.command == "get":
@@ -98,6 +100,10 @@ def parser() -> argparse.ArgumentParser:
         description="Authorized offline OmniCIO account support operations"
     )
     sub = root.add_subparsers(dest="command", required=True)
+
+    sub.add_parser(
+        "prune-sessions", help="Remove at most 500 expired auth sessions older than 30 days",
+    )
 
     get = sub.add_parser("get")
     get.add_argument("public_id")

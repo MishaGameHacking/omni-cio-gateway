@@ -100,19 +100,16 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("column_name = 'role'", ready.commands[0])
 
     def test_runtime_gate_matches_application_database_readiness(self) -> None:
-        database_path = SCRIPT_DIR.parent.parent / "src" / "omnicio" / "db.py"
-        tree = ast.parse(database_path.read_text(encoding="utf-8"))
-        healthcheck = next(
-            node for node in ast.walk(tree)
-            if isinstance(node, ast.FunctionDef) and node.name == "healthcheck"
-        )
-        queries = [
-            node.value for node in ast.walk(healthcheck)
-            if isinstance(node, ast.Constant) and isinstance(node.value, str)
-            and node.value.lstrip().startswith("SELECT")
-        ]
-        self.assertEqual(len(queries), 1)
-        predicate = queries[0].strip().removeprefix("SELECT").removesuffix("AS ready")
+        source = SCRIPT_DIR.parent.parent / "src/omnicio"
+        tree = ast.parse((source / "schema.py").read_text(encoding="utf-8"))
+        query = next(ast.literal_eval(node.value) for node in tree.body
+                     if isinstance(node, ast.Assign)
+                     and any(isinstance(target, ast.Name) and target.id == "READINESS_QUERY"
+                             for target in node.targets))
+        database_source = (source / "db.py").read_text(encoding="utf-8")
+        self.assertIn("from .schema import READINESS_QUERY", database_source)
+        self.assertIn("cur.execute(READINESS_QUERY)", database_source)
+        predicate = query.strip().removeprefix("SELECT").removesuffix("AS ready")
         expected = f"SELECT CASE WHEN {predicate} THEN 'ready' ELSE 'missing' END"
         ssh = FakeSsh(True)
         self.assertTrue(MODULE.runtime_is_ready(ssh))
@@ -468,6 +465,7 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_optional_integration_configuration_survives_unrelated_deployment(self) -> None:
         with patch.dict(os.environ, {"VKID_APP_ID": "123456"}, clear=True):
+            self.assertIn('OPERATOR_USER_ID=""\n', MODULE.build_product_environment())
             ssh = FakeSsh(True)
             MODULE.write_product_environment(ssh, release_sha="b" * 40)
         tokens = shlex.split(ssh.commands[0])
@@ -476,6 +474,7 @@ class AuthAppDeployTests(unittest.TestCase):
             old = pathlib.Path(directory) / "previous.env"
             new = pathlib.Path(directory) / "candidate.env"
             old.write_text(
+                'OPERATOR_USER_ID="00000000-0000-0000-0000-0000000001f5"\n'
                 'TID_CLIENT_ID="existing-app"\n'
                 'TID_CLIENT_SECRET="test-only-value"\n'
                 'TID_LOGIN_ENABLED="true"\n'
@@ -485,6 +484,7 @@ class AuthAppDeployTests(unittest.TestCase):
                 encoding="utf-8",
             )
             new.write_text(
+                'OPERATOR_USER_ID=""\n'
                 'TID_CLIENT_ID="replacement-app"\n'
                 'ASSISTANT_ENABLED="false"\n'
                 'REGISTRATION_ENABLED="false"\n',
@@ -496,12 +496,29 @@ class AuthAppDeployTests(unittest.TestCase):
             )
             result = new.read_text(encoding="utf-8").splitlines()
         self.assertEqual(result, [
+            'OPERATOR_USER_ID=""',
             'TID_CLIENT_ID="replacement-app"',
             'ASSISTANT_ENABLED="false"',
             'REGISTRATION_ENABLED="false"',
             'TID_CLIENT_SECRET="test-only-value"',
             'TID_LOGIN_ENABLED="true"',
         ])
+
+    def test_optional_passwords_preserve_exact_bytes_and_config_values_are_trimmed(self) -> None:
+        secret = "  test-only-secret-with-outer-spaces  "
+        with patch.dict(os.environ, {
+            "VKID_APP_ID": "123456",
+            "NOTIFICATION_SMTP_PASSWORD": secret,
+            "BILLING_PASSWORD": secret,
+            "OMNICIO_RESTORE_RECEIPT_KEY": secret,
+            "NOTIFICATION_SMTP_HOST": " smtp.example.test ",
+        }, clear=True):
+            result = MODULE.build_product_environment()
+        for key in (
+            "NOTIFICATION_SMTP_PASSWORD", "BILLING_PASSWORD", "OMNICIO_RESTORE_RECEIPT_KEY",
+        ):
+            self.assertIn(f'{key}="{secret}"\n', result)
+        self.assertIn('NOTIFICATION_SMTP_HOST="smtp.example.test"\n', result)
 
     def test_runtime_values_escape_systemd_double_quote_metacharacters(self) -> None:
         # EnvironmentFile uses the POSIX double-quote escape set, including $/`.
@@ -697,7 +714,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "1.0.1"', project)
+        self.assertIn('version = "1.1.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
@@ -710,6 +727,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("location = /assets/app.css", script)
         self.assertIn("location = /assets/app.js", script)
         self.assertIn("location = /assets/workspace.js", script)
+        self.assertIn("location = /assets/i18n.js", script)
         self.assertIn("location = /sw.js", script)
         self.assertIn("location = /offline.html", script)
         self.assertIn("location = /version.js", script)
@@ -796,6 +814,7 @@ class PublicReleaseVerificationTests(unittest.TestCase):
         for path, body, content_type in (
             ("/assets/app.js", b"window.OmniUI", "text/javascript"),
             ("/assets/workspace.js", b"window.OmniUI", "application/javascript"),
+            ("/assets/i18n.js", b"OMNICIO_I18N", "text/javascript"),
             ("/assets/app.css", b"--sidebar:240px", "text/css"),
             ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", "image/png"),
             ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", "image/png"),

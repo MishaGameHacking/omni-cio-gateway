@@ -20,6 +20,7 @@ from omnicio.market import MarketService
 from omnicio.tbank import (
     TBankFxQuote,
     TBankHistoricCandle,
+    TBankInstrumentMetadata,
     TBankLastPrice,
     TBankTradingStatus,
     TBankUnavailable,
@@ -200,6 +201,17 @@ class FakeBroker:
 
     def status(self, user_id: UUID) -> BrokerConnectionStatus:
         return BrokerConnectionStatus(True, "prod", "fixture-account", verified_at=None)
+
+    def market_instrument_metadata(
+        self, user_id: UUID, instrument_uid: str,
+    ) -> TBankInstrumentMetadata:
+        assert user_id == UUID("00000000-0000-0000-0000-000000000001")
+        assert instrument_uid == "uid-1"
+        return TBankInstrumentMetadata(
+            uid=instrument_uid, name="Fixture share", ticker="FIX", isin="",
+            instrument_type="share", sector="", country_of_risk="RU",
+            for_qual_investor=False, currency="RUB",
+        )
 
     def usd_rub_quote(self, user_id: UUID) -> TBankFxQuote:
         assert user_id == UUID("00000000-0000-0000-0000-000000000001")

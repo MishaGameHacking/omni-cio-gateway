@@ -10,7 +10,13 @@ from uuid import UUID
 
 from .broker import BrokerConnectionError, BrokerService
 from .cbr import CBRClient, CBRRate, CBRUnavailable
-from .tbank import TBankHistoricCandle, TBankLastPrice, TBankTradingStatus, TBankUnavailable
+from .tbank import (
+    TBankHistoricCandle,
+    TBankInstrumentMetadata,
+    TBankLastPrice,
+    TBankTradingStatus,
+    TBankUnavailable,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +95,10 @@ class InstrumentMarketSnapshot:
     candles: tuple[InstrumentMarketCandle, ...]
     history_from: str | None = None
     history_note: str | None = None
+    price_unit: str = "unknown"
+    price_currency: str | None = None
+    cash_price: str | None = None
+    cash_price_currency: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +113,10 @@ class InstrumentLiveState:
     api_trade_available: bool
     limit_order_available: bool
     market_order_available: bool
+    price_unit: str = "unknown"
+    price_currency: str | None = None
+    cash_price: str | None = None
+    cash_price_currency: str | None = None
 
 
 _MARKET_PERIODS: dict[str, tuple[timedelta, str]] = {
@@ -260,6 +274,7 @@ class MarketService:
             )
         price = self.broker.market_last_price(user_id, instrument_uid)
         trading = self.broker.market_trading_status(user_id, instrument_uid)
+        metadata = self.broker.market_instrument_metadata(user_id, instrument_uid)
         if self.broker.status(user_id) != connection:
             raise BrokerConnectionError("market_account_changed")
         observed = datetime.now(UTC)
@@ -270,6 +285,7 @@ class MarketService:
             last_price=price,
             trading=trading,
             live_after_seconds=self.live_after_seconds,
+            metadata=metadata,
         )
         market_candles = tuple(
             InstrumentMarketCandle(
@@ -277,7 +293,7 @@ class MarketService:
                 open=_required_market_price(item.open),
                 high=_required_market_price(item.high),
                 low=_required_market_price(item.low),
-                close=item.close,
+                close=_required_market_price(item.close),
                 volume_lots=item.volume_lots,
                 is_complete=item.is_complete,
             )
@@ -300,6 +316,10 @@ class MarketService:
             candles=market_candles,
             history_from=history_from,
             history_note=history_note,
+            price_unit=live.price_unit,
+            price_currency=live.price_currency,
+            cash_price=live.cash_price,
+            cash_price_currency=live.cash_price_currency,
         )
 
     def _available_history(
@@ -337,6 +357,7 @@ class MarketService:
         connection = self.broker.status(user_id)
         price = self.broker.market_last_price(user_id, instrument_uid)
         trading = self.broker.market_trading_status(user_id, instrument_uid)
+        metadata = self.broker.market_instrument_metadata(user_id, instrument_uid)
         if self.broker.status(user_id) != connection:
             raise BrokerConnectionError("market_account_changed")
         observed = datetime.now(UTC)
@@ -346,6 +367,7 @@ class MarketService:
             last_price=price,
             trading=trading,
             live_after_seconds=self.live_after_seconds,
+            metadata=metadata,
         )
 
 
@@ -383,6 +405,7 @@ def _instrument_live_state(
     last_price: TBankLastPrice | None,
     trading: TBankTradingStatus,
     live_after_seconds: int,
+    metadata: TBankInstrumentMetadata,
 ) -> InstrumentLiveState:
     price = last_price
     status = trading
@@ -399,7 +422,11 @@ def _instrument_live_state(
         else:
             age_seconds = max(0, int(provider_age.total_seconds()))
             quote_status = "live" if age_seconds <= live_after_seconds else "stale"
-            price_value = price.price
+            price_value = _required_market_price(price.price)
+
+    if metadata.uid != instrument_uid:
+        raise TBankUnavailable("instrument_market_metadata_identity_mismatch")
+    price_unit, currency, cash_price, cash_currency = _market_price_units(metadata, price_value)
 
     return InstrumentLiveState(
         instrument_uid=instrument_uid,
@@ -412,7 +439,51 @@ def _instrument_live_state(
         api_trade_available=status.api_trade_available,
         limit_order_available=status.limit_order_available,
         market_order_available=status.market_order_available,
+        price_unit=price_unit,
+        price_currency=currency,
+        cash_price=cash_price,
+        cash_price_currency=cash_currency,
     )
+
+
+def _market_price_units(
+    metadata: TBankInstrumentMetadata, price: str | None,
+) -> tuple[str, str | None, str | None, str | None]:
+    """Keep history in exchange units; never apply today's nominal/FX to old candles.
+
+    https://developer.tbank.ru/invest/intro/developer/table_order_currency
+    Bond money equivalents are clean prices (without accrued coupon). Futures
+    remain points: their monetary price-step value can change over time.
+    """
+    currency = metadata.currency.upper() or None
+    kind = metadata.instrument_type.lower()
+    if kind in {"share", "etf"}:
+        return "currency" if currency else "unknown", currency, price, currency
+    if kind == "bond":
+        cash_price = _bond_cash_price(metadata, price)
+        return "percent_nominal", None, cash_price, currency if cash_price is not None else None
+    if kind in {"futures", "option"}:
+        return "points", None, None, None
+    if kind == "currency":
+        # Exchange quotation can be per nominal; a bare currency symbol would
+        # incorrectly imply that it is already a per-unit cash valuation.
+        return "per_nominal", currency, None, None
+    return "unknown", None, None, None
+
+
+def _bond_cash_price(metadata: TBankInstrumentMetadata, price: str | None) -> str | None:
+    nominal = metadata.nominal
+    currency = metadata.currency.upper() or None
+    if (nominal is None or price is None
+            or nominal.currency.upper() != currency):
+        return None
+    try:
+        value = Decimal(nominal.value)
+    except InvalidOperation as exc:
+        raise TBankUnavailable("instrument_nominal_invalid") from exc
+    if not value.is_finite() or value <= 0:
+        raise TBankUnavailable("instrument_nominal_invalid")
+    return format(Decimal(price) * value / 100, "f")
 
 
 def _reference_rate(rate: CBRRate) -> MarketReferenceRate:

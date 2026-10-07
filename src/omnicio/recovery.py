@@ -2,17 +2,128 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
+import re
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
+
+from psycopg import Connection, sql
 
 from .freshness import FreshnessDTO, describe_freshness
 
 INVENTORY_MAX_AGE = timedelta(hours=8)
 BACKUP_MAX_AGE = timedelta(hours=24)
 BACKUP_TIMEZONE = timezone(timedelta(hours=3))
+RESTORE_MAX_AGE = timedelta(days=30)
+RESTORE_CHECKS = frozenset({"content", "schema", "foreign_keys", "tenant_isolation"})
+
+
+def sign_recovery_evidence(payload: dict[str, Any], key: str) -> dict[str, Any]:
+    """Only the accepted-main operator tool holds this key; never accept browser receipts."""
+    if len(key) < 32:
+        raise ValueError("recovery_signing_key_required")
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    if len(body) > 16384:
+        raise ValueError("recovery_receipt_too_large")
+    signature = hmac.new(key.encode(), b"omnicio-recovery-v1\x00" + body, "sha256").hexdigest()
+    return {"payload": payload, "signature": signature}
+
+
+def verified_recovery_evidence(envelope: object, key: str) -> dict[str, Any] | None:
+    if (not isinstance(envelope, dict) or set(envelope) != {"payload", "signature"}
+            or not isinstance(envelope["payload"], dict)
+            or not isinstance(envelope["signature"], str)
+            or re.fullmatch(r"[0-9a-f]{64}", envelope["signature"]) is None):
+        return None
+    try:
+        expected = sign_recovery_evidence(envelope["payload"], key)["signature"]
+    except (ValueError, TypeError):
+        return None
+    if not hmac.compare_digest(expected, envelope["signature"]):
+        return None
+    return envelope["payload"]
+
+
+def table_fingerprints(conn: Connection[Any]) -> dict[str, tuple[int, str]]:
+    """Stream deterministic row hashes from a repeatable snapshot, without logging data."""
+    result: dict[str, tuple[int, str]] = {}
+    with conn.transaction():
+        conn.execute("SET LOCAL TIME ZONE 'UTC'")
+        tables = conn.execute(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",
+        ).fetchall()
+        for (name,) in tables:
+            count = 0
+            digest = hashlib.sha256()
+            with conn.cursor(name="omnicio_fingerprint") as rows:
+                rows.execute(sql.SQL(
+                    "SELECT row_to_json(t)::text FROM {} AS t ORDER BY row_to_json(t)::text",
+                ).format(sql.Identifier("public", name)))
+                for (row,) in rows:
+                    if count:
+                        digest.update(b"\n")
+                    digest.update(row.encode())
+                    count += 1
+            result[name] = (count, digest.hexdigest())
+    return result
+
+
+def database_guards(conn: Connection[Any]) -> list[Any]:
+    return conn.execute("""
+        SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
+               p.policyname, p.qual, p.with_check
+        FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+        LEFT JOIN pg_policies p ON p.schemaname = n.nspname AND p.tablename = c.relname
+        WHERE n.nspname = 'public' AND c.relkind = 'r'
+        ORDER BY c.relname, p.policyname
+    """).fetchall()
+
+
+def evidence_digest(value: object) -> str:
+    return hashlib.sha256(json.dumps(
+        value, sort_keys=True, separators=(",", ":"), default=str, allow_nan=False,
+    ).encode()).hexdigest()
+
+
+def _restore_verification(payload: dict[str, object], now: datetime) -> dict[str, object]:
+    proof = verified_recovery_evidence(
+        payload.get("restore_verification"), os.environ.get("OMNICIO_RESTORE_RECEIPT_KEY", ""),
+    )
+    absent: dict[str, object] = {"status": "not_verified", "physical_snapshot_verified": False}
+    if proof is None:
+        return absent
+    verified_at = _timestamp(proof.get("verified_at"))
+    source_at = _timestamp(proof.get("source_at"))
+    checks = proof.get("checks")
+    if (proof.get("kind") != "logical_restore_v1"
+            or proof.get("source_kind") != "runtime_pg_dump"
+            or type(proof.get("cluster_id")) is not int
+            or proof["cluster_id"] != payload.get("cluster_id")
+            or verified_at is None or source_at is None or not source_at <= verified_at <= now
+            or not isinstance(checks, dict) or set(checks) != RESTORE_CHECKS
+            or any(value is not True for value in checks.values())
+            or not isinstance(proof.get("release_sha"), str)
+            or re.fullmatch(r"[0-9a-f]{40}", proof["release_sha"]) is None
+            or not isinstance(proof.get("archive_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", proof["archive_sha256"]) is None
+            or not isinstance(proof.get("source_system_id"), str)
+            or not isinstance(proof.get("target_system_id"), str)
+            or not proof["source_system_id"].isdigit() or not proof["target_system_id"].isdigit()
+            or proof["source_system_id"] == proof["target_system_id"]
+            or type(proof.get("duration_seconds")) not in {int, float}
+            or not 0 <= proof["duration_seconds"] <= 3600):
+        return absent
+    return {
+        "status": "verified" if now - verified_at < RESTORE_MAX_AGE else "expired",
+        "method": "isolated_logical_restore", "physical_snapshot_verified": False,
+        "verified_at": verified_at, "source_at": source_at,
+        "release_sha": proof["release_sha"], "duration_seconds": proof["duration_seconds"],
+    }
 
 
 def _timestamp(value: object) -> datetime | None:
@@ -107,6 +218,7 @@ def recovery_status(*, now: datetime | None = None) -> dict[str, object]:
     if type(copies) is not int or not 1 <= copies <= 99:
         copies = None
     daily = payload.get("schedule_enabled") is True and payload.get("schedule_interval") == "day"
+    restoration = _restore_verification(payload, checked_at)
     return {
         "status": _status_label(inventory, backup, weekly, daily, copies),
         "checked_at": checked_at,
@@ -121,5 +233,6 @@ def recovery_status(*, now: datetime | None = None) -> dict[str, object]:
                 4 if weekly_copies is not None and inventory.status == "fresh" else None
             ),
         },
-        "production_restore_verified": False,
+        "production_restore_verified": restoration["status"] == "verified",
+        "restore": restoration,
     }

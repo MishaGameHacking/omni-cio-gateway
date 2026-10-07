@@ -7,8 +7,10 @@ customer dump or provider credential is consumed by this drill.
 from __future__ import annotations
 
 import copy
-import hashlib
+import importlib.util
+import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -30,8 +32,11 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from omnicio.db import Database, UserRecord
 from omnicio.main import app
 from omnicio.portfolio_store import PortfolioStore, SettingsVersionConflict
+from omnicio.recovery import database_guards, table_fingerprints
+from omnicio.schema import READINESS_QUERY
 from omnicio.security import decrypt_secret, encrypt_secret
 from omnicio.strategy import preset_document
+from omnicio.workspace import default_preferences
 
 ROOT = Path(__file__).resolve().parents[1]
 A, B = UUID(int=901), UUID(int=902)
@@ -74,35 +79,6 @@ def database_store(dsn: str):
         yield db, PortfolioStore(db)
     finally:
         db.close()
-
-
-def table_fingerprints(conn):
-    tables = conn.execute(
-        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
-    ).fetchall()
-    result = {}
-    for (name,) in tables:
-        rows = conn.execute(
-            sql.SQL(
-                "SELECT row_to_json(t)::text FROM {} AS t ORDER BY row_to_json(t)::text"
-            ).format(sql.Identifier("public", name))
-        ).fetchall()
-        result[name] = (
-            len(rows),
-            hashlib.sha256("\n".join(r[0] for r in rows).encode()).hexdigest(),
-        )
-    return result
-
-
-def database_guards(conn):
-    return conn.execute("""
-        SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
-               p.policyname, p.qual, p.with_check
-        FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
-        LEFT JOIN pg_policies p ON p.schemaname = n.nspname AND p.tablename = c.relname
-        WHERE n.nspname = 'public' AND c.relkind = 'r'
-        ORDER BY c.relname, p.policyname
-    """).fetchall()
 
 
 def _insert_historical_setting(
@@ -151,6 +127,15 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
         assert database_guards(admin) == guards
         encrypted = admin.execute("SELECT token_ciphertext FROM tbank_connection").fetchone()[0]
         assert decrypt_secret(bytes(encrypted), key) == "synthetic-broker-token"
+        assert admin.execute(READINESS_QUERY).fetchone()[0]
+        for incomplete_schema in (
+            "ALTER TABLE portfolio_execution_legs DISABLE TRIGGER strategy_submission_authority",
+            "ALTER TABLE billing_payments RENAME cancel_attempted_at TO missing_cancel_receipt",
+        ):
+            with admin.transaction(force_rollback=True):
+                admin.execute(incomplete_schema)
+                assert admin.execute(READINESS_QUERY).fetchone()[0] is False
+        assert admin.execute(READINESS_QUERY).fetchone()[0]
         admin.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
         assert admin.execute("SELECT * FROM investment_profile_versions").fetchall() == []
         assert admin.execute("SELECT * FROM strategy_drafts").fetchall() == []
@@ -343,6 +328,103 @@ def test_dump_restore_preserves_settings_and_tenant_isolation(
             control.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
 
 
+@pytest.mark.skipif(
+    not os.environ.get("OMNICIO_TEST_POSTGRES_BIN"),
+    reason="the disposable PostgreSQL CI launcher supplies isolated cluster binaries",
+)
+def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise the actual operator commands on two synthetic disposable clusters."""
+    from omnicio.recovery import verified_recovery_evidence
+
+    script = ROOT / ".github/scripts/timeweb_recovery.py"
+    monkeypatch.syspath_prepend(str(script.parent))
+    runner = importlib.import_module("run_recovery_drill")
+    spec = importlib.util.spec_from_file_location("synthetic_operator_restore", script)
+    assert spec is not None
+    assert spec.loader is not None
+    recovery = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, recovery)
+    spec.loader.exec_module(recovery)
+    monkeypatch.setattr(recovery, "RESTORE_ROOT", tmp_path)
+    binary = Path(os.environ["OMNICIO_TEST_POSTGRES_BIN"])
+    suffix = ".exe" if os.name == "nt" else ""
+    base = os.environ["OMNICIO_TEST_DATABASE_URL"]
+    options = conninfo_to_dict(base)
+    assert options["host"] == "127.0.0.1"
+    assert options["dbname"] == "omnicio_test"
+    source_name = "omnicio_export_" + uuid4().hex
+    target_data = tmp_path / "target"
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    signing_key = "synthetic-operator-receipt-" + uuid4().hex
+    archive_key = Fernet.generate_key().decode()
+    release_sha = "a" * 40
+    try:
+        runner.native(
+            [str(binary / f"initdb{suffix}"), "-D", str(target_data),
+             "-U", "postgres", "-A", "trust"], timeout=90,
+        )
+        runner.native(
+            [str(binary / f"pg_ctl{suffix}"), "-D", str(target_data),
+             "-l", str(tmp_path / "pg.log"), "-o", f"-h 127.0.0.1 -p {port} -F",
+             "-w", "-t", "30", "start"], timeout=45,
+        )
+        with psycopg.connect(base, autocommit=True) as control:
+            control.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(source_name)))
+            try:
+                source_dsn = make_conninfo(base, dbname=source_name)
+                with psycopg.connect(source_dsn, autocommit=True) as source:
+                    for migration in sorted((ROOT / "migrations").glob("*.sql")):
+                        source.execute(migration.read_text(encoding="utf-8"))
+                    source.execute("INSERT INTO users (id) VALUES (%s), (%s)", (A, B))
+                    for owner in (A, B):
+                        source.execute(
+                            "INSERT INTO workspace_preferences (user_id, version, document) "
+                            "VALUES (%s, 1, %s::jsonb)",
+                            (owner, json.dumps(default_preferences())),
+                        )
+                manifest = recovery.export_logical_archive(
+                    source_dsn, binary, cluster_id=recovery.load_policy().cluster_id,
+                    release_sha=release_sha, signing_key=signing_key, archive_key=archive_key,
+                )
+                archive = recovery.restore_artifact_path("database.dump.encrypted")
+                assert not archive.read_bytes().startswith(b"PGDMP")
+                with pytest.raises(recovery.RecoveryBlocked, match="same PostgreSQL cluster"):
+                    recovery.verify_logical_archive(
+                        base, binary, manifest, release_sha=release_sha,
+                        signing_key=signing_key, archive_key=archive_key,
+                    )
+                isolated = f"postgresql://postgres@127.0.0.1:{port}/postgres"
+                receipt = recovery.verify_logical_archive(
+                    isolated, binary, manifest, release_sha=release_sha,
+                    signing_key=signing_key, archive_key=archive_key,
+                )
+                proof = verified_recovery_evidence(receipt, signing_key)
+                assert proof is not None
+                assert all(proof["checks"].values())
+                assert proof["source_system_id"] != proof["target_system_id"]
+                with psycopg.connect(isolated) as target:
+                    assert target.execute(
+                        "SELECT count(*) FROM pg_database WHERE datname LIKE 'omnicio_restore_%%'",
+                    ).fetchone()[0] == 0
+                    assert target.execute(
+                        "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'omnicio_restore_%%'",
+                    ).fetchone()[0] == 0
+            finally:
+                control.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(
+                    sql.Identifier(source_name),
+                ))
+    finally:
+        if (target_data / "postmaster.pid").exists():
+            runner.native(
+                [str(binary / f"pg_ctl{suffix}"), "-D", str(target_data),
+                 "-m", "fast", "-w", "-t", "30", "stop"], timeout=45,
+            )
+
+
 def test_strategy_draft_api_requires_owner_origin_version_and_keeps_authority_separate() -> None:
     database = Mock(spec=Database)
     database.has_legal_versions.return_value = True
@@ -462,6 +544,7 @@ def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -
 
     from omnicio import main
     from omnicio.broker import BrokerConnectionStatus, BrokerService
+    from omnicio.research_store import ResearchStore
 
     user = UserRecord(A, 123, "active", "user")
     database = Mock(spec=Database)
@@ -488,11 +571,16 @@ def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -
     }
     broker = Mock(spec=BrokerService)
     broker.status.return_value = BrokerConnectionStatus(
-        connected=True, environment="prod", account_id="synthetic-a",
+        connected=True, environment="prod", account_id="synthetic-a", verified_at=START,
     )
     broker.candidate_fundamentals.return_value = ()
     broker.candidate_daily_exchange_candles.return_value = prices("a").candles
     research = Mock(wraps=main.strategy_research)
+    archive = Mock(spec=ResearchStore)
+    archive.evidence.return_value = {"version": 0, "document": {"assets": []}, "received_at": None}
+    archive.save_run.return_value = {"id": str(UUID(int=900)), "replay_available": True}
+    monkeypatch.setattr(app.state, "research_store", archive, raising=False)
+    monkeypatch.setattr(main, "market_service", lambda request: Mock(cbr=None))
     monkeypatch.setattr(main, "portfolio_store", lambda request: store)
     monkeypatch.setattr(main, "broker_service", lambda request: broker)
     monkeypatch.setattr(main, "strategy_research", research)
@@ -516,6 +604,7 @@ def test_strategy_research_is_versioned_read_only_and_owner_bound(monkeypatch) -
         user_id=user.id, expected_version=4, store=store, broker=broker,
         from_at=START, to_at=END, commission_bps=Decimal("10"),
         slippage_bps=Decimal("5"), initial_capital_rub=Decimal("20000"),
+        research_store=archive, cbr=None,
     )
     broker.candidate_daily_exchange_candles.assert_called_once_with(
         user.id, "a", from_at=START, to_at=END,
