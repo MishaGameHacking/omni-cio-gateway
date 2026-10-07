@@ -4528,11 +4528,17 @@
     const item = state.data.assistantMemory?.items?.find(row => row.id === id);
     if (!requireUser() || !item) return;
     const generation = state.generation;
-    await api(`/api/assistant/memory/${safeSegment(id)}`, {method: "DELETE", body: {expected_version: item.version}});
+    const dialogSequence = state.eventRequest;
+    const result = await api(`/api/assistant/memory/${safeSegment(id)}`, {method: "DELETE", body: {expected_version: item.version}});
     if (generation !== state.generation) return;
+    if (result?.deleted !== true) throw Object.assign(new Error("invalid_server_response"), {status: 502});
     state.assistantMemorySelected?.delete(id);
+    discardScreenDraft(`assistant-memory-form:${id}`);
     await loadResource("assistantMemory", "/api/assistant/memory", {force: true});
-    if (generation === state.generation) { $("#workspace-dialog").close(); renderAssistant(); }
+    if (generation === state.generation) {
+      if (dialogSequence === state.eventRequest) $("#workspace-dialog").close();
+      if (state.view === "assistant") renderAssistant();
+    }
   }
   function assistantSourcesHTML() {
     if (state.tour) return empty(T("assistant.sources"), T("assistant.sources_scope"), "login", T("Войти"));
@@ -4703,6 +4709,17 @@
     const key = draftKey(form);
     delete state.screenDrafts[key];
     state.screenBaselines[key] = JSON.stringify(draftValues(form));
+  }
+  function discardScreenDraft(key) {
+    const editor = $("#" + key.split(":")[0]);
+    let dialog = null;
+    if (editor && draftKey(editor) === key) {
+      dialog = editor.closest("dialog");
+      editor.remove();
+    }
+    delete state.screenDrafts[key];
+    delete state.screenBaselines[key];
+    if (dialog?.open) dialog.close();
   }
   function screenLink(view, [key, title, detail]) {
     const selected = state.route.screen === key;
@@ -7145,6 +7162,7 @@
         status: 502
       });
       state.deletedGoalIds.add(id);
+      for (const form of ["goal-form", "goal-plan-form"]) discardScreenDraft(`${form}:${id}`);
       replaceGoalList((state.data.goals?.items || []).filter(goal => goal.id !== id));
       renderGoalConsumers();
       if (control.isConnected) $("#workspace-dialog").close();

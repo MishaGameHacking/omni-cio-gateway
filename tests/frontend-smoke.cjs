@@ -747,6 +747,114 @@ function eventReadReceiptContracts() {
   assert.equal(state.data.events.read_all_before, 10);
   console.log("PASS event receipts: source revisions, archived confirmations, global counters and independent pagination");
 }
+function deletionDraftFixture(app, kind, outcome) {
+  const id = "deleted-record";
+  const owned = kind === "goal" ? [`goal-form:${id}`, `goal-plan-form:${id}`] : [`assistant-memory-form:${id}`];
+  const formId = kind === "goal" ? "goal-form" : "assistant-memory-form";
+  const newId = kind === "goal" ? "" : "new-note";
+  const unrelated = [`${formId}:another-record`, `${formId}:${newId}`];
+  const state = {generation: 1, eventRequest: 1, view: kind === "goal" ? "goals" : "assistant", deletedGoalIds: new Set(), data: {goals: {items: [{id, version: 3}]}, assistantMemory: {items: [{id, version: 2}]}}, screenDrafts: {}, screenBaselines: {}, assistantDraft: {message: ""}, assistantMemorySelected: new Set([id])};
+  for (const key of [...owned, ...unrelated]) { state.screenDrafts[key] = {title: "Unsubmitted " + key}; state.screenBaselines[key] = "{}"; }
+  const editorId = outcome === "other-editor" ? "another-record" : outcome === "new-editor" ? newId : id;
+  const dialog = {open: true, close() { this.open = false; }};
+  let editor = {id: kind === "goal" && outcome === "plan-editor" ? "goal-plan-form" : formId, dataset: kind === "goal" ? {goalId: editorId} : {id: editorId}, closest: () => kind === "goal" ? dialog : null, remove() { editor = null; }};
+  const hooks = new Map();
+  const capture = () => {
+    if (!editor) return;
+    const key = `${editor.id}:${editor.dataset.goalId || editor.dataset.id || ""}`;
+    state.screenBaselines[key] ||= "{}";
+    state.screenDrafts[key] = {content: "Editing this note"};
+  };
+  const context = vm.createContext({
+    state, acceptingUpdate: false, requireUser: () => true, safeSegment: value => value, T: value => value,
+    api: async () => {
+      if (outcome === "unknown") throw Object.assign(new Error("lost_ack"), {status: 503});
+      if (outcome === "changed-profile") state.generation += 1;
+      if (["other-editor", "new-editor"].includes(outcome)) state.eventRequest += 1;
+      if (outcome === "invalid") return {deleted: false};
+      return outcome === "no-content" ? null : {deleted: true};
+    },
+    $: selector => selector === "#workspace-dialog" ? dialog : selector === "#" + editor?.id ? editor : null,
+    window: {addEventListener: (type, handler) => hooks.set(type, handler)},
+    captureScreenDrafts: capture, saveNavigationPosition() {}, hasPending: () => false,
+    clearScreenDraft() { throw new Error("An older goal acknowledgment cannot accept its form as the current saved version"); },
+    replaceGoalList: items => { state.data.goals = {items}; },
+    renderGoalConsumers: capture, refreshGoalList: async () => {}, toast() {}, reportGoalDeleteError() {},
+    loadResource: async () => { capture(); state.data.assistantMemory.items = []; }, renderAssistant: capture
+  });
+  const parts = [
+    ["  function draftKey(", "  function draftForms("],
+    ["  function discardScreenDraft(", "  function screenLink("],
+    ["  const acceptSavedGoal =", "  const renderGoalConsumers ="],
+    ["  async function handleClickGoalDeleteConfirm(", "  async function handleClickStrategy("],
+    ["  async function deleteAssistantMemory(", "  function assistantSourcesHTML("],
+    ['  window.addEventListener("beforeunload",', '  window.addEventListener("pagehide",']
+  ].map(([start, end]) => {
+    const from = app.indexOf(start), to = app.indexOf(end, from);
+    assert.ok(from >= 0 && to > from, "Deletion contracts use the current application lifecycle: " + start);
+    return app.slice(from, to);
+  });
+  vm.runInContext(parts.join("\n") + "\nglobalThis.acceptGoal=acceptSavedGoal;globalThis.deleteGoal=handleClickGoalDeleteConfirm;globalThis.deleteMemory=deleteAssistantMemory;", context);
+  return {id, owned, unrelated, state, hooks, context, dialog, editorPresent: () => Boolean(editor), resolveUnrelatedInput: () => { if (editorId !== id) editor = null; }};
+}
+async function deletedDraftContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  for (const kind of ["goal", "memory"]) for (const outcome of ["success", "no-content", "unknown", "invalid", "changed-profile", "other-editor", "new-editor", "plan-editor"]) {
+    const fixture = deletionDraftFixture(app, kind, outcome);
+    const {id, owned, unrelated, state, hooks, context} = fixture;
+    if (kind === "goal") assert.equal(context.acceptGoal({id, version: 2}, {dataset: {goalId: id, goalVersion: "1"}}), false);
+    const confirmed = ["success", "other-editor", "new-editor", "plan-editor"].includes(outcome) || kind === "goal" && outcome === "no-content";
+    const remove = kind === "goal" ? () => context.deleteGoal({event: {preventDefault() {}}, control: {dataset: {goalDeleteConfirm: id, version: "3"}, isConnected: false}}) : () => context.deleteMemory(id);
+    if (kind === "memory" && !confirmed && outcome !== "changed-profile") await assert.rejects(remove());
+    else await remove();
+    for (const key of owned) {
+      assert.equal(Object.hasOwn(state.screenDrafts, key), !confirmed, `${kind}/${outcome}: only confirmed deletion discards that record's draft`);
+      assert.equal(Object.hasOwn(state.screenBaselines, key), !confirmed, `${kind}/${outcome}: a deleted editor cannot recapture its baseline`);
+    }
+    for (const key of unrelated) assert.ok(state.screenDrafts[key] && state.screenBaselines[key], "Unrelated and new-record drafts remain protected");
+    if (["other-editor", "new-editor"].includes(outcome)) {
+      assert.equal(fixture.editorPresent(), true, "A different or new editor opened during deletion stays present");
+      assert.equal(fixture.dialog.open, true, "A late deletion cannot close the newer dialog");
+    } else if (confirmed) assert.equal(fixture.editorPresent(), false, "A reopened editor for the deleted record cannot recreate its draft");
+    let prevented = false;
+    hooks.get("beforeunload")({preventDefault() { prevented = true; }});
+    assert.equal(prevented, true, "Leaving still protects unrelated unsaved input");
+    for (const key of unrelated) { delete state.screenDrafts[key]; delete state.screenBaselines[key]; }
+    fixture.resolveUnrelatedInput();
+    prevented = false;
+    hooks.get("beforeunload")({preventDefault() { prevented = true; }});
+    assert.equal(prevented, !confirmed, "A confirmed deletion leaves no orphan warning; an unconfirmed outcome remains protected");
+  }
+  console.log("PASS deleted drafts: delayed goal ACK, goal/plan and memory ownership, confirmed responses, generation changes and preserved unrelated input");
+}
+async function nativeDialogProtocolContracts() {
+  const source = readFileSync(join(root, "tests", "frontend-smoke.cjs"), "utf8");
+  const from = source.indexOf("\nconst protocolClient = async url => {") + 1;
+  const to = source.indexOf("\nconst runBrowser =", from);
+  let socket;
+  class SyntheticSocket {
+    constructor() { socket = this; this.listeners = new Map(); this.sent = []; queueMicrotask(() => this.emit("open", {})); }
+    addEventListener(type, handler) { if (!this.listeners.has(type)) this.listeners.set(type, []); this.listeners.get(type).push(handler); }
+    emit(type, value) { for (const handler of this.listeners.get(type) || []) handler(value); }
+    send(value) { this.sent.push(JSON.parse(value)); }
+    close() {}
+  }
+  const context = vm.createContext({WebSocket: SyntheticSocket, setTimeout, clearTimeout});
+  vm.runInContext(source.slice(from, to) + "\nglobalThis.connect=protocolClient;", context);
+  const client = await context.connect("ws://synthetic.invalid");
+  const navigate = client.send("Page.navigate", {url: "http://127.0.0.1/?case=next"}, "target");
+  const stopped = assert.rejects(navigate, error => error.code === "unexpected_native_dialog" && error.dialog.type === "beforeunload" && error.message.includes("Page.navigate"));
+  socket.emit("message", {data: JSON.stringify({method: "Page.javascriptDialogOpening", sessionId: "target", params: {type: "beforeunload", url: "http://127.0.0.1/?case=current", message: "Unsaved input", hasBrowserHandler: true}})});
+  await stopped;
+  await assert.rejects(client.send("Runtime.evaluate", {expression: "document.body.innerText"}, "target"), error => error.code === "unexpected_native_dialog");
+  assert.equal(client.nativeDialog.type, "beforeunload", "Failure evidence retains the blocking browser event");
+  const close = client.send("Browser.close");
+  socket.emit("message", {data: JSON.stringify({id: socket.sent.at(-1).id, result: {}})});
+  await close;
+  assert.deepEqual(socket.sent.map(item => item.method), ["Page.navigate", "Browser.close"], "Diagnostics neither evaluate a blocked renderer nor accept or dismiss native dialogs");
+  client.close();
+  console.log("PASS native dialog diagnostics: exact event metadata, immediate target failure and safe browser cleanup without acceptance");
+}
 function goalVersionContracts(ui) {
   const known = [{
     id: "goal-a",
@@ -1289,6 +1397,8 @@ const protocolClient = async url => {
   const socket = new WebSocket(url);
   const pending = new Map();
   let sequence = 0;
+  let nativeDialog = null;
+  const dialogError = method => Object.assign(new Error(`Unexpected native ${nativeDialog.type} dialog during ${method} at ${nativeDialog.url}`), {code: "unexpected_native_dialog", dialog: {...nativeDialog}});
   await new Promise((done, reject) => {
     socket.addEventListener("open", done, {
       once: true
@@ -1301,6 +1411,17 @@ const protocolClient = async url => {
     data
   }) => {
     const message = JSON.parse(data);
+    if (message.method === "Page.javascriptDialogOpening") {
+      nativeDialog = {...message.params, sessionId: message.sessionId};
+      for (const [id, waiter] of pending) {
+        if (waiter.sessionId !== message.sessionId) continue;
+        clearTimeout(waiter.timer);
+        pending.delete(id);
+        waiter.reject(dialogError(waiter.method));
+      }
+      return;
+    }
+    if (message.method === "Page.javascriptDialogClosed" && nativeDialog?.sessionId === message.sessionId) nativeDialog = null;
     const waiter = pending.get(message.id);
     if (!waiter) return;
     pending.delete(message.id);
@@ -1308,7 +1429,9 @@ const protocolClient = async url => {
     if (message.error) waiter.reject(new Error(JSON.stringify(message.error)));else waiter.done(message.result);
   });
   return {
+    get nativeDialog() { return nativeDialog; },
     send(method, params = {}, sessionId) {
+      if (nativeDialog && nativeDialog.sessionId === sessionId && method !== "Browser.close") return Promise.reject(dialogError(method));
       return new Promise((done, reject) => {
         const id = ++sequence;
         const timer = setTimeout(() => {
@@ -1316,6 +1439,8 @@ const protocolClient = async url => {
           reject(new Error("CDP timeout: " + method));
         }, 15000);
         pending.set(id, {
+          method,
+          sessionId,
           done,
           reject,
           timer
@@ -1473,13 +1598,16 @@ const runBrowser = async base => {
       logScreenshotEvidence(name, png);
     };
     captureFailure = async error => {
-      const documentState = await evaluate('({url:location.href,ready:document.readyState,errors:window.__browserErrors,csp:window.__cspViolations,bodyText:document.body?.innerText,bodyHTML:document.body?.innerHTML})');
       const requests = Object.fromEntries([...fixtures].map(([key, fixture]) => [key, fixture.requests.slice(-30)]));
       const debug = {
         failure: error.stack || String(error),
-        document: documentState,
+        nativeDialog: client.nativeDialog || error.dialog || null,
         requests
       };
+      writeFileSync(join(artifacts, "failure-state.json"), JSON.stringify(debug, null, 2));
+      if (client.nativeDialog) { console.error(JSON.stringify(debug, null, 2)); return; }
+      const documentState = await evaluate('({url:location.href,ready:document.readyState,errors:window.__browserErrors,csp:window.__cspViolations,bodyText:document.body?.innerText,bodyHTML:document.body?.innerHTML})');
+      debug.document = documentState;
       writeFileSync(join(artifacts, "failure-state.json"), JSON.stringify(debug, null, 2));
       await screenshot("failure-state.png", {
         validate: false
@@ -1564,6 +1692,8 @@ const runBrowser = async base => {
 (async () => {
   try {
     displayContracts();
+    await deletedDraftContracts();
+    await nativeDialogProtocolContracts();
     styleContracts();
     await workerContract();
     await new Promise(done => server.listen(0, "127.0.0.1", done));
