@@ -24,6 +24,7 @@ from timeweb_addresses import network_addresses
 from timeweb_recovery import (
     RecoveryBlocked,
     ensure_recovery_point,
+    inspect_provider_recovery,
     inspect_restore_capacity,
     load_policy,
 )
@@ -947,6 +948,9 @@ def reconcile(
         raise InfraError(
             "Expected production database is missing or replaced; automatic creation is disabled"
         )
+
+    add_summary("- Provider recovery inspection (read-only; not release readiness):")
+    add_summary(json.dumps(inspect_provider_recovery(client), sort_keys=True, ensure_ascii=True))
 
     with EphemeralSsh(
         client=client,
