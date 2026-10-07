@@ -47,13 +47,14 @@ _PUSH_HOSTS = {"fcm.googleapis.com", "updates.push.services.mozilla.com", "web.p
 _PUSH_SUFFIXES = (".push.apple.com", ".notify.windows.com")
 _MAILTO_SCHEME = "mailto:"
 _SETTINGS_TARGET = "/#settings"
+_EVENTS_TARGET = "/#events"
 
 
 def _notification_target(payload: Mapping[str, Any]) -> str:
     """Only server-owned cabinet routes can become a notification's navigation."""
     value = payload.get("url", _SETTINGS_TARGET)
     if isinstance(value, str) and (
-        value in {_SETTINGS_TARGET, "/#events"}
+        value in {_SETTINGS_TARGET, _EVENTS_TARGET}
         or re.fullmatch(r"/#events\?event=[0-9a-f]{64}", value) is not None
     ):
         return value
@@ -764,7 +765,7 @@ class NotificationService:
                 sorted(str(ident) for ident in identifiers),
             )).encode()).hexdigest()
             self._enqueue(cur, user_id, channel_id, "transfer:" + key, "digest", {
-                "title": "Дайджест OMNICIO", "url": "/#events", "frequency": frequency,
+                "title": "Дайджест OMNICIO", "url": _EVENTS_TARGET, "frequency": frequency,
                 "from": min(event["updated_at"] for event in members).isoformat(),
                 "to": end.isoformat(), "period_basis": "available_at",
                 "channel_id": str(channel_id), "body": self._digest_body(len(members)),
@@ -886,7 +887,7 @@ class NotificationService:
         if start >= end:
             return
         payload = {
-            "title": "Дайджест OMNICIO", "url": "/#events", "frequency": frequency,
+            "title": "Дайджест OMNICIO", "url": _EVENTS_TARGET, "frequency": frequency,
             "from": start.isoformat(), "to": end.isoformat(),
             "period_basis": "available_at", "channel_id": str(channel["id"]),
         }
@@ -944,6 +945,21 @@ class NotificationService:
         return (row["kind"] == "operational" and user_id == self.config.operator_user_id
                 and bool(preferences["notifications"]["system"]))
 
+    @staticmethod
+    def _delivery_expired(
+        row: Mapping[str, Any], payload: Mapping[str, Any], now: datetime,
+    ) -> bool:
+        if row["kind"] == "verification":
+            return False
+        eligible_at = cast(datetime, row["created_at"])
+        if row["kind"] == "digest":
+            # A frequency handoff can queue a full weekly period in advance.
+            # Give that period its delivery window after it closes, including
+            # quiet hours and DST. Retry backoff never moves this fixed boundary;
+            # only an unsubmitted calendar may follow a timezone preference change.
+            eligible_at = max(eligible_at, datetime.fromisoformat(payload["to"]))
+        return eligible_at + timedelta(days=7) < now
+
     def _claim(self, user_id: UUID, now: datetime) -> dict[str, Any] | None:
         if not self.config.enabled or not self.database.has_legal_versions(
             user_id, self.legal_versions,
@@ -980,7 +996,7 @@ class NotificationService:
                 return None
             row = dict(found)
             payload = self._open(row["payload_ciphertext"])
-            expired = row["kind"] != "verification" and row["created_at"] < now - timedelta(days=7)
+            expired = self._delivery_expired(row, payload, now)
             allowed = self._delivery_allowed(cur, user_id, row, payload, preferences, now)
             if not allowed or expired:
                 cur.execute(

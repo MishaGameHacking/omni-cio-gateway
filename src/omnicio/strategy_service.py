@@ -61,6 +61,7 @@ from .tbank import (
     TBankUnavailable,
 )
 
+_MOSCOW = ZoneInfo("Europe/Moscow")
 _RESEARCH_WORKERS = 4
 _RESEARCH_DEADLINE_SECONDS = 180
 _DIVIDEND_SOURCE = "https://developer.tbank.ru/invest/api/instruments-service-get-dividends"
@@ -968,13 +969,13 @@ def _research_assets(
                 StrategyFact(
                     Decimal(rate.value),
                     datetime.combine(
-                        rate.effective_date, datetime.min.time(), tzinfo=ZoneInfo("Europe/Moscow")
+                        rate.effective_date, datetime.min.time(), tzinfo=_MOSCOW
                     ),
                     "https://www.cbr.ru/hd_base/KeyRate/",
                 )
                 for rate in cbr.key_rate_history(
-                    from_at.astimezone(ZoneInfo("Europe/Moscow")).date(),
-                    rate_end.astimezone(ZoneInfo("Europe/Moscow")).date(),
+                    from_at.astimezone(_MOSCOW).date(),
+                    rate_end.astimezone(_MOSCOW).date(),
                 )
             )
     request = _ResearchRead(user_id, broker, from_at, to_at, now, document, costs, deadline)

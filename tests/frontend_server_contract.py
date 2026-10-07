@@ -119,4 +119,4 @@ def billing_contract() -> dict[str, Any]:
 
 if __name__ == "__main__":
     print(json.dumps({**market_contract(), **goal_contract(), **billing_contract()},
-                     ensure_ascii=False))
+                     ensure_ascii=True))

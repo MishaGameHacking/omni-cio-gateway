@@ -354,7 +354,8 @@ def test_duplicate_research_request_never_restarts_external_reads(runtime, statu
     request_id = uuid4()
     archive.begin_request.return_value = {"id": request_id, "status": status, "run_id": None}
     result = research_call(store, broker, research_store=archive, request_id=request_id)
-    assert result["status"] == status and result["request_id"] == str(request_id)
+    assert result["status"] == status
+    assert result["request_id"] == str(request_id)
     assert {call[0] for call in broker.mock_calls} == {"status"}
     archive.save_run.assert_not_called()
 

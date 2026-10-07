@@ -303,7 +303,8 @@ def test_research_requests_are_atomic_owner_bound_and_keep_deleted_tombstones(wo
     other, other_store, other_archive = research_archive_case(database)
     request_id, input_hash = uuid4(), archive["result"]["data_hash"]
     first = store.begin_request(owner, request_id, input_hash)
-    assert first["created"] is True and first["status"] == "running"
+    assert first["created"] is True
+    assert first["status"] == "running"
     assert first["expires_at"] > first["created_at"]
     assert "created" not in store.begin_request(owner, request_id, input_hash)
     with pytest.raises(ResearchNotFound, match="research_request_not_found"):
@@ -395,7 +396,8 @@ def test_archive_capacity_and_all_pages_follow_paid_entitlement_and_survive_expi
             (owner, ident, "123456789-" + ident.hex),
         )
     paid = store.capacity(owner)
-    assert paid["runs_limit"] == 400 and paid["storage_limit_bytes"] == 512 * 1024 * 1024
+    assert paid["runs_limit"] == 400
+    assert paid["storage_limit_bytes"] == 512 * 1024 * 1024
     added = store.save_run(owner, **archive)
     added_id = UUID(added["id"])
     page = store.runs_page(owner, limit=50)
@@ -415,7 +417,8 @@ def test_archive_capacity_and_all_pages_follow_paid_entitlement_and_survive_expi
             (owner, ident),
         )
     expired = store.capacity(owner)
-    assert expired["runs_limit"] == 200 and expired["storage_limit_bytes"] == 256 * 1024 * 1024
+    assert expired["runs_limit"] == 200
+    assert expired["storage_limit_bytes"] == 256 * 1024 * 1024
     assert (
         store.run(owner, UUID(added["id"]))["result"]["data_hash"] == archive["result"]["data_hash"]
     )

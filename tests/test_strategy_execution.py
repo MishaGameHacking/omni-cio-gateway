@@ -328,10 +328,13 @@ def test_slow_planning_never_saves_a_proposal_or_submits_an_order(failure):
 
         broker.estimate_limit_order.side_effect = slow_estimate
         code = "execution_quote_expired_during_plan"
+    def elapsed_seconds():
+        return elapsed[0]
+
     commission, slippage = Decimal(10), Decimal(0)
     with (
         patch("omnicio.execution_service.datetime", Clock),
-        patch("omnicio.execution_service.monotonic", lambda: elapsed[0]),
+        patch("omnicio.execution_service.monotonic", elapsed_seconds),
         pytest.raises(ExecutionServiceError, match=code),
     ):
         service.plan(

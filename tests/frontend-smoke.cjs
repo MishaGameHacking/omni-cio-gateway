@@ -47,6 +47,7 @@ const serverContractResult = spawnSync(process.env.OMNICIO_PYTHON || "python", [
 });
 assert.equal(serverContractResult.status, 0, "Browser API contracts come from the actual server: " + serverContractResult.stderr);
 const serverContracts = JSON.parse(serverContractResult.stdout);
+assert.equal(serverContracts.goal_available.title, "Тестовая цель источника", "The Python JSON contract preserves Unicode across Windows stdout");
 const marketEvent = JSON.parse(serverContracts.instrument_market_event.split("\ndata: ")[1].trim());
 assert.equal(marketEvent.instrument_uid, "synthetic-a");
 assert.equal(marketEvent.quote_status, "live");
@@ -2236,8 +2237,9 @@ async function exerciseGoalSourceContract({fixture, click, wait, evaluate, scree
   fixture.goals[0] = clone(serverContracts.goal_stale);
   fixture.goalPlans[goal.id].forecast = clone(serverContracts.goal_forecast_stale);
   await click('#view-goals [data-goal-plan]');
-  await wait('document.querySelector("#goal-plan-result").textContent.includes("Начальная сумма устарела")', "The real stale-source refusal is displayed without a scenario result");
+  await wait('document.querySelector("#goal-plan-result .goal-forecast-source")', "The reopened goal loads its actual source after the dialog placeholder");
   const staleText = await evaluate('document.querySelector("#goal-plan-result").textContent');
+  assert.ok(staleText.includes("Начальная сумма устарела"), "The real stale-source refusal is displayed without a scenario result");
   const staleDate = await evaluate(`window.OmniUI.date(${JSON.stringify(serverContracts.goal_forecast_stale.source_as_of)}, true)`);
   assert.ok(staleText.includes(staleDate), "The source's original date is retained, not replaced by today's calculation date");
   assert.ok(!staleText.includes("Сумма в заданном сценарии") && !staleText.includes("Условная модель вероятности"));

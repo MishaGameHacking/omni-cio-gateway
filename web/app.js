@@ -2502,14 +2502,15 @@
     const items = new Map(first.items.map(item => [item.id, item]));
     const cursors = new Set();
     const maximumPages = Math.ceil(first.capacity.runs_used / 200) + 1;
-    let cursor = first.next_cursor;
-    while (cursor) {
+    const readNext = async cursor => {
+      if (!cursor) return;
       if (cursors.has(cursor) || cursors.size >= maximumPages) throw new Error("invalid_server_response");
       cursors.add(cursor);
       const page = await api(`/api/research/runs?limit=200&cursor=${safeSegment(cursor)}`);
       for (const item of page.items) items.set(item.id, item);
-      cursor = page.next_cursor;
-    }
+      return readNext(page.next_cursor);
+    };
+    await readNext(first.next_cursor);
     return {...first, items: [...items.values()], next_cursor: null};
   };
   const currentResearchArchive = page => page === state.researchArchiveDialog && page.generation === state.generation && page.sequence === state.eventRequest && $("#workspace-dialog").open;

@@ -725,6 +725,66 @@ def test_unsubmitted_weekly_digest_recomputes_its_calendar_boundary_after_timezo
     transport.send_push.assert_not_called()
 
 
+@pytest.mark.parametrize("timezone", ["UTC", "Europe/Berlin"])
+@pytest.mark.parametrize("final_outcome", ["accepted", "expired"])
+def test_weekly_handoff_ttl_starts_after_period_close_and_never_slides_on_retry(
+    workspace_database: tuple[Database, str, str], timezone: str, final_outcome: str,
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    service.subscribe_push(owner, subscription)
+    # Berlin crosses the autumn DST boundary during this exact weekly period.
+    zone = ZoneInfo(timezone)
+    now = datetime(2026, 10, 19, 0, 1, tzinfo=zone).astimezone(UTC)
+    boundary = datetime(2026, 10, 26, tzinfo=zone).astimezone(UTC)
+    due = datetime(2026, 10, 26, 8, tzinfo=zone).astimezone(UTC)
+    event = insert_notification_event(service.workspace, owner, 301,
+                                      at=now - timedelta(seconds=30))
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE workspace_events SET updated_at = %s WHERE user_id = %s AND id = %s",
+                    (now - timedelta(seconds=30), owner, event))
+    prefs = default_preferences()
+    prefs["quiet_hours"].update(enabled=True, timezone=timezone, start="22:00", end="08:00")
+    service.workspace.save_preferences(owner, prefs, expected_version=0)
+    service.queue_events(owner, now=now)
+    prefs["digest_frequency"] = "weekly"
+    service.workspace.save_preferences(owner, prefs, expected_version=1)
+    service.queue_events(owner, now=now)
+    with service.workspace._transaction(owner) as cur:
+        # Simulate creation at this fixed clock, independently of the CI date.
+        cur.execute("UPDATE notification_outbox SET created_at = %s WHERE user_id = %s",
+                    (now, owner))
+    queued = next(row for row in service.status(owner)["deliveries"] if row["status"] == "queued")
+    assert queued["kind"] == "digest"
+    assert queued["next_attempt_at"] == due
+    assert due > now + timedelta(days=7)
+    transport.send_push.side_effect = [DeliveryResult("queued", "push_rate_limited", 120),
+                                       DeliveryResult("accepted", "push_provider_accepted")]
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=due)
+        assert not service.deliver_one(owner, now=due + timedelta(seconds=60))
+        restarted = NotificationService(database, service.config,
+                                        legal_versions=service.legal_versions, transport=transport)
+        if final_outcome == "accepted":
+            assert restarted.deliver_one(owner, now=due + timedelta(seconds=121))
+            assert not restarted.deliver_one(owner, now=due + timedelta(seconds=122))
+        else:
+            assert not restarted.deliver_one(owner, now=boundary + timedelta(days=7, seconds=1))
+    record = next(row for row in service.status(owner)["deliveries"] if row["id"] == queued["id"])
+    if final_outcome == "accepted":
+        assert record["status"] == "accepted"
+        assert record["attempts"] == 2
+        assert transport.send_push.call_count == 2
+        assert (transport.send_push.call_args_list[0].args
+                == transport.send_push.call_args_list[1].args)
+    else:
+        assert record["status"] == "cancelled"
+        assert record["last_error"] == "delivery_expired"
+        assert record["attempts"] == 1
+        assert transport.send_push.call_count == 1
+
+
 @pytest.mark.parametrize("receipt", ["accepted", "sending", "uncertain"])
 def test_digest_membership_preserves_receipts_but_a_real_source_correction_can_notify(
     workspace_database: tuple[Database, str, str], receipt: str,
