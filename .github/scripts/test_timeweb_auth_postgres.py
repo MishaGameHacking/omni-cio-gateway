@@ -8,6 +8,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from dataclasses import asdict
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -221,6 +222,71 @@ class PostgresTests(unittest.TestCase):
             args.migration,
             ["migrations/0001.sql", "migrations/0002.sql"],
         )
+
+    def controller_arguments(self, *, backup_only: bool = False) -> SimpleNamespace:
+        return SimpleNamespace(
+            **asdict(self.desired),
+            server_name="server", server_comment="managed", vpc_name="private",
+            migration=["migrations/0001_phone_auth.sql"], backup_only=backup_only,
+        )
+
+    def test_full_release_checks_context_and_checkout_before_provider_access(self) -> None:
+        sha = "a" * 40
+        for backup_only in (False, True):
+            with (
+                self.subTest(backup_only=backup_only),
+                patch.object(MODULE, "parse_args", return_value=self.controller_arguments(
+                    backup_only=backup_only,
+                )),
+                patch.object(MODULE, "load_migrations", return_value=["SELECT 1;"]),
+                patch.object(MODULE, "release_context", return_value=(sha, "test-token")) as context,
+                patch.object(MODULE, "require_checkout") as checkout,
+                patch.object(MODULE, "TimewebClient") as provider,
+                patch.object(MODULE, "reconcile", return_value=0) as reconcile,
+            ):
+                calls = []
+                context.side_effect = lambda: (calls.append("context") or (sha, "test-token"))
+                checkout.side_effect = lambda _: calls.append("checkout")
+                provider.side_effect = lambda _: calls.append("provider")
+                self.assertEqual(MODULE.main(), 0)
+                self.assertEqual(calls, ["provider"] if backup_only else [
+                    "context", "checkout", "provider",
+                ])
+                self.assertEqual(reconcile.call_args.kwargs["release_sha"],
+                                 None if backup_only else sha)
+                if backup_only:
+                    context.assert_not_called()
+                    checkout.assert_not_called()
+                else:
+                    checkout.assert_called_once_with(sha)
+
+    def test_invalid_release_context_or_checkout_stops_before_timeweb(self) -> None:
+        for boundary in ("release_context", "require_checkout"):
+            with (
+                self.subTest(boundary=boundary),
+                patch.object(MODULE, "parse_args", return_value=self.controller_arguments()),
+                patch.object(MODULE, "load_migrations", return_value=["SELECT 1;"]),
+                patch.object(MODULE, "release_context", return_value=("a" * 40, "test-token")),
+                patch.object(MODULE, "require_checkout"),
+                patch.object(MODULE, boundary, side_effect=MODULE.ReleaseBlocked("source rejected")),
+                patch.object(MODULE, "TimewebClient") as provider,
+                patch.object(MODULE, "reconcile") as reconcile,
+                patch("sys.stderr"),
+            ):
+                self.assertEqual(MODULE.main(), 1)
+                provider.assert_not_called()
+                reconcile.assert_not_called()
+
+    def test_scheduled_reconcile_cannot_receive_creation_authority(self) -> None:
+        with patch.object(MODULE, "TimewebClient") as provider:
+            client = provider.return_value
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.reconcile(
+                    client, desired=self.desired, server_name="server", server_comment="managed",
+                    vpc_name="private", migration_sqls=["SELECT 1;"], backup_only=True,
+                    release_sha="a" * 40,
+                )
+            self.assertEqual(client.mock_calls, [])
 
     def test_migrations_are_loaded_from_checkout_in_requested_order(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -15,6 +15,7 @@ import timeweb_auth_postgres as postgres
 import timeweb_recovery as recovery
 
 CLUSTER_ID = 4215095
+RELEASE_SHA = "a" * 40
 
 
 def backup(backup_id: int = 1, *, kind: str = "manual", age: int = 1) -> dict[str, Any]:
@@ -36,6 +37,10 @@ class Provider:
         self.lose_response: set[str] = set()
         self.drop_request: set[str] = set()
         self.wrong_detail = False
+        self.post_changes: dict[str, Any] = {}
+        self.post_response: Any = {}
+        self.detail_changes: dict[int, dict[str, Any]] = {}
+        self.created_at: datetime | None = None
 
     def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         self.calls.append((method, path))
@@ -47,8 +52,8 @@ class Provider:
             next_id = max((item["id"] for item in self.backups), default=0) + 1
             self.backups.append(backup(next_id) | {
                 "comment": kwargs["payload"]["comment"],
-                "created_at": datetime.now(UTC).isoformat(),
-            })
+                "created_at": (self.created_at or datetime.now(UTC)).isoformat(),
+            } | self.post_changes)
         elif method == "DELETE":
             target = int(path.rsplit("/", 1)[1])
             self.backups = [item for item in self.backups if item["id"] != target]
@@ -59,6 +64,7 @@ class Provider:
         elif method == "GET" and "/backups/" in path:
             item = next(item for item in self.backups if str(item["id"]) == path.rsplit("/", 1)[1])
             detail = copy.deepcopy(item)
+            detail.update(self.detail_changes.get(int(detail["id"]), {}))
             if self.wrong_detail:
                 detail["id"] += 100
             return {"backup": detail}
@@ -66,7 +72,7 @@ class Provider:
             raise AssertionError(f"Unexpected provider endpoint: {method} {path}")
         if method in self.lose_response:
             raise TimeoutError("operation applied, response lost")
-        return {}
+        return copy.deepcopy(self.post_response) if method == "POST" else {}
 
 
 class RecoveryTests(unittest.TestCase):
@@ -93,8 +99,10 @@ class RecoveryTests(unittest.TestCase):
     def save(self, _remote: Any, value: dict[str, Any]) -> None:
         self.state = copy.deepcopy(value)
 
-    def run_controller(self) -> None:
-        recovery.ensure_recovery_point(self.provider, self.remote, self.cluster)
+    def run_controller(self, *, release_sha: str | None = None) -> None:
+        recovery.ensure_recovery_point(
+            self.provider, self.remote, self.cluster, release_sha=release_sha,
+        )
 
     def mutations(self, method: str) -> list[str]:
         return [path for verb, path in self.provider.calls if verb == method]
@@ -370,6 +378,248 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.mutations("POST"), [])
         self.assertEqual(self.mutations("DELETE"), [])
 
+    def seed_release_history(self) -> None:
+        now = datetime(2026, 10, 7, 1, tzinfo=UTC)
+        self.clock = self.stack.enter_context(patch.object(recovery, "datetime", wraps=datetime))
+        self.clock.now.return_value = now
+        self.provider = Provider()
+        self.provider.created_at = now
+        self.provider.schedule = {
+            "is_enabled": True, "interval": "day", "copy_count": 7,
+            "creation_start_at": "2026-10-05",
+        }
+        self.provider.backups = [
+            backup(10, kind="auto") | {"created_at": "2026-10-05T21:52:33Z"},
+            backup(20) | {"created_at": "2026-10-05T05:08:09Z",
+                          "comment": recovery.WEEKLY_PREFIX + "2026-10-05"},
+        ]
+        self.state = {
+            "schema_version": 1, "cluster_id": CLUSTER_ID,
+            "bootstrap_attempted": True, "retire_attempted": 1,
+            recovery.WEEKLY_OWNED: [{"id": 20, "period": "2026-10-05"}],
+            recovery.WEEKLY_CREATE: {"period": "2026-10-05", "confirmed_id": 20,
+                                     "attempted_at": "2026-10-05T05:08:00Z"},
+        }
+
+    def test_prerelease_copy_is_confirmed_once_then_reused_without_delete(self) -> None:
+        self.seed_release_history()
+        self.provider.post_response = {"backup": {"id": 21}}
+        self.run_controller(release_sha=RELEASE_SHA)
+        self.run_controller(release_sha="b" * 40)
+        self.run_controller()
+        receipt = self.state[recovery.RELEASE_COPY]
+        self.assertEqual(receipt["release_sha"], RELEASE_SHA)
+        self.assertEqual(receipt["baseline_ids"], [10, 20])
+        self.assertEqual(receipt["response_id"], 21)
+        self.assertEqual(receipt["confirmed_id"], 21)
+        self.assertEqual(len(self.mutations("POST")), 1)
+        self.assertEqual(self.mutations("DELETE"), [])
+        self.assertEqual(self.state["provider_status"], "ok")
+        self.assertEqual(self.state["latest_backup_id"], 21)
+        self.assertEqual(self.state["weekly_available_copies"], 1)
+
+    def test_fresh_copy_needs_no_fallback_and_scheduled_stale_check_cannot_create_it(self) -> None:
+        self.seed_release_history()
+        with self.assertRaises(recovery.RecoveryBlocked):
+            self.run_controller()
+        self.assertEqual(self.mutations("POST"), [])
+        self.provider.backups[0]["created_at"] = "2026-10-07T00:00:00Z"
+        self.run_controller(release_sha=RELEASE_SHA)
+        self.assertNotIn(recovery.RELEASE_COPY, self.state)
+        self.assertEqual(self.mutations("POST"), [])
+
+    def test_prerelease_creation_requires_settled_owned_inventory(self) -> None:
+        for changes in (
+            {"status": "create"}, {"status": "fail"}, {"size": 0},
+            {"created_at": "2026-10-08T00:00:00Z"}, {"type": "other"},
+            {"type": "manual", "comment": "operator"},
+            {"comment": recovery.RELEASE_PREFIX + RELEASE_SHA},
+        ):
+            with self.subTest(changes=changes):
+                self.seed_release_history()
+                self.provider.backups[0].update(changes)
+                with self.assertRaises(recovery.RecoveryBlocked):
+                    self.run_controller(release_sha=RELEASE_SHA)
+                self.assertEqual(self.mutations("POST"), [])
+
+    def test_prerelease_creation_preserves_retention_and_rotation_spare(self) -> None:
+        for extra_count in (7, 10):
+            with self.subTest(extra_count=extra_count):
+                self.seed_release_history()
+                self.provider.backups.extend(
+                    backup(index, kind="auto") | {"created_at": "2026-10-05T20:00:00Z"}
+                    for index in range(30, 30 + extra_count)
+                )
+                with self.assertRaises(recovery.RecoveryBlocked):
+                    self.run_controller(release_sha=RELEASE_SHA)
+                self.assertEqual(self.mutations("POST"), [])
+                self.assertEqual(self.mutations("DELETE"), [])
+
+    def test_unresolved_bootstrap_and_weekly_receipts_block_prerelease_creation(self) -> None:
+        for state_changes in (
+            {"retire_attempted": None}, {recovery.WEEKLY_RETIRE: 20},
+            {recovery.WEEKLY_CREATE: {"period": "2026-10-05"}},
+        ):
+            with self.subTest(state_changes=state_changes):
+                self.seed_release_history()
+                self.state.update(state_changes)
+                with self.assertRaises(recovery.RecoveryBlocked):
+                    self.run_controller(release_sha=RELEASE_SHA)
+                self.assertEqual(self.mutations("POST"), [])
+        self.seed_release_history()
+        self.provider.backups.append(backup(1) | {"created_at": "2026-10-05T01:00:00Z"})
+        with self.assertRaises(recovery.RecoveryBlocked):
+            self.run_controller(release_sha=RELEASE_SHA)
+        self.assertEqual(self.mutations("POST"), [])
+        self.assertEqual(self.mutations("DELETE"), [])
+
+    def test_prerelease_receipt_write_failure_precedes_provider_post(self) -> None:
+        self.seed_release_history()
+        self.write.side_effect = OSError("receipt unavailable")
+        with self.assertRaises(OSError):
+            self.run_controller(release_sha=RELEASE_SHA)
+        self.assertEqual(self.mutations("POST"), [])
+
+    def test_crash_between_receipt_and_post_cannot_create_after_restart_or_new_sha(self) -> None:
+        self.seed_release_history()
+        with (
+            patch.object(recovery, "mutate_once", side_effect=SystemExit("stopped")),
+            self.assertRaises(SystemExit),
+        ):
+            self.run_controller(release_sha=RELEASE_SHA)
+        self.assertIn(recovery.RELEASE_COPY, self.state)
+        self.provider.backups[0]["created_at"] = "2026-10-07T00:00:00Z"
+        with self.assertRaises(recovery.RecoveryBlocked):
+            self.run_controller(release_sha="b" * 40)
+        self.assertEqual(self.mutations("POST"), [])
+
+    def test_lost_create_response_is_reconciled_but_dropped_request_is_never_retried(self) -> None:
+        self.seed_release_history()
+        self.provider.lose_response = {"POST"}
+        self.run_controller(release_sha=RELEASE_SHA)
+        self.assertEqual(self.state[recovery.RELEASE_COPY]["confirmed_id"], 21)
+        self.assertEqual(len(self.mutations("POST")), 1)
+        self.seed_release_history()
+        self.provider.drop_request = {"POST"}
+        for sha in (RELEASE_SHA, "b" * 40, None):
+            with self.subTest(sha=sha), self.assertRaises(recovery.RecoveryBlocked):
+                self.run_controller(release_sha=sha)
+        self.assertEqual(len(self.mutations("POST")), 1)
+        self.assertNotIn("confirmed_id", self.state[recovery.RELEASE_COPY])
+
+    def test_malformed_prerelease_receipts_block_without_provider_writes(self) -> None:
+        self.seed_release_history()
+        self.provider.drop_request = {"POST"}
+        with self.assertRaises(recovery.RecoveryBlocked):
+            self.run_controller(release_sha=RELEASE_SHA)
+        receipt = copy.deepcopy(self.state[recovery.RELEASE_COPY])
+        for changes in (
+            {"cluster_id": CLUSTER_ID + 1}, {"release_sha": "bad"}, {"comment": "foreign"},
+            {"attempted_at": "2026-10-08T00:00:00Z"}, {"baseline_ids": [10, 10]},
+            {"confirmed_id": 10}, {"confirmed_id": True},
+        ):
+            with self.subTest(changes=changes):
+                self.state[recovery.RELEASE_COPY] = receipt | changes
+                self.provider.calls.clear()
+                with self.assertRaises(recovery.RecoveryBlocked):
+                    self.run_controller(release_sha="b" * 40)
+                self.assertEqual(self.mutations("POST"), [])
+
+    def test_returned_create_identity_is_bound_to_readback_and_null_is_supported(self) -> None:
+        for response, expected_id in (
+            ({"backup": None}, 21), ({"backup": {"id": 99}}, None),
+            ({"backup": {"id": True}}, None), ({"backup": {"id": 10}}, None),
+        ):
+            with self.subTest(response=response):
+                self.seed_release_history()
+                self.provider.post_response = response
+                if expected_id is not None:
+                    self.run_controller(release_sha=RELEASE_SHA)
+                    self.assertEqual(self.state[recovery.RELEASE_COPY]["confirmed_id"], expected_id)
+                else:
+                    with self.assertRaises(recovery.RecoveryBlocked):
+                        self.run_controller(release_sha=RELEASE_SHA)
+                    with self.assertRaises(recovery.RecoveryBlocked):
+                        self.run_controller(release_sha="b" * 40)
+                    self.assertNotIn("confirmed_id", self.state[recovery.RELEASE_COPY])
+                self.assertEqual(len(self.mutations("POST")), 1)
+
+    def test_malformed_post_response_shape_is_durably_blocked_without_retry(self) -> None:
+        for response in ([], "private-provider-body", True):
+            with self.subTest(response_type=type(response).__name__):
+                self.seed_release_history()
+                self.provider.post_response = response
+                with self.assertRaises(recovery.RecoveryBlocked):
+                    self.run_controller(release_sha=RELEASE_SHA)
+                receipt = self.state[recovery.RELEASE_COPY]
+                self.assertTrue(receipt["response_invalid"])
+                self.assertNotIn("confirmed_id", receipt)
+                self.assertEqual(self.state["provider_status"], "unavailable")
+                with self.assertRaises(recovery.RecoveryBlocked):
+                    self.run_controller(release_sha="b" * 40)
+                self.assertEqual(len(self.mutations("POST")), 1)
+
+    def test_candidate_and_independent_detail_must_both_match_recorded_operation(self) -> None:
+        invalid = (
+            {"id": 10}, {"type": "auto"}, {"comment": "foreign"}, {"size": 0},
+            {"created_at": "2026-10-07T00:59:59Z"}, {"status": "fail"},
+        )
+        for boundary in ("inventory", "detail"):
+            for changes in invalid:
+                with self.subTest(boundary=boundary, changes=changes):
+                    self.seed_release_history()
+                    if boundary == "inventory":
+                        self.provider.post_changes = changes
+                    else:
+                        self.provider.detail_changes[21] = changes
+                    with self.assertRaises(recovery.RecoveryBlocked):
+                        self.run_controller(release_sha=RELEASE_SHA)
+                    self.assertNotIn("confirmed_id", self.state[recovery.RELEASE_COPY])
+                    self.assertEqual(len(self.mutations("POST")), 1)
+
+    def test_singleton_cannot_repeat_but_later_fresh_auto_is_independent(self) -> None:
+        for remove_owned in (False, True):
+            with self.subTest(remove_owned=remove_owned):
+                self.seed_release_history()
+                self.run_controller(release_sha=RELEASE_SHA)
+                self.clock.now.return_value = datetime(2026, 10, 9, 1, tzinfo=UTC)
+                if remove_owned:
+                    self.provider.backups = [
+                        row for row in self.provider.backups if row["id"] != 21
+                    ]
+                with self.assertRaises(recovery.RecoveryBlocked):
+                    self.run_controller(release_sha="b" * 40)
+                self.provider.backups.append(backup(22, kind="auto") | {
+                    "created_at": "2026-10-09T00:00:00Z",
+                })
+                self.run_controller(release_sha="b" * 40)
+                self.assertEqual(self.state["latest_backup_id"], 22)
+                self.assertEqual(len(self.mutations("POST")), 1)
+                self.assertEqual(self.mutations("DELETE"), [])
+
+    def test_confirmed_prerelease_copy_does_not_skip_remaining_recovery_checks(self) -> None:
+        self.seed_release_history()
+        with (
+            patch.object(
+                recovery, "reconcile_weekly", side_effect=recovery.RecoveryBlocked("weekly"),
+            ),
+            self.assertRaises(recovery.RecoveryBlocked),
+        ):
+            self.run_controller(release_sha=RELEASE_SHA)
+        self.assertEqual(self.state[recovery.RELEASE_COPY]["confirmed_id"], 21)
+        self.assertEqual(self.state["provider_status"], "unavailable")
+        self.assertNotIn("latest_backup_id", self.state)
+
+    def test_fresh_auto_does_not_hide_a_retagged_newer_confirmed_copy(self) -> None:
+        self.seed_release_history()
+        self.run_controller(release_sha=RELEASE_SHA)
+        self.provider.backups[0]["created_at"] = "2026-10-07T00:00:00Z"
+        self.provider.backups[-1]["comment"] = "foreign"
+        with self.assertRaises(recovery.RecoveryBlocked):
+            self.run_controller(release_sha="b" * 40)
+        self.assertEqual(self.state["provider_status"], "unavailable")
+        self.assertEqual(len(self.mutations("POST")), 1)
+
 
 class MigrationGateTests(unittest.TestCase):
     def test_backup_gate_protects_migrations_and_scheduled_checks_keep_runtime(self) -> None:
@@ -421,6 +671,7 @@ class MigrationGateTests(unittest.TestCase):
                     vpc_name="private",
                     migration_sqls=["SELECT 1"],
                     backup_only=backup_only,
+                    release_sha=None if backup_only else RELEASE_SHA,
                 )
                 if rejected:
                     with self.assertRaises(recovery.RecoveryBlocked):
@@ -438,6 +689,10 @@ class MigrationGateTests(unittest.TestCase):
                     [entry[0] for entry in order.mock_calls], ["inspect", "ssh", "guard"],
                 )
                 mocks["inspect_provider_recovery"].assert_called_once_with(client)
+                self.assertEqual(
+                    mocks["ensure_recovery_point"].call_args.kwargs,
+                    {"release_sha": None if backup_only else RELEASE_SHA},
+                )
                 if rejected:
                     mocks["set_output"].assert_not_called()
                 client.create_database_cluster.assert_not_called()
