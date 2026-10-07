@@ -1,4 +1,4 @@
-# OMNICIO 1.1.0 — Development Law
+# OMNICIO 1.2.0 — Development Law
 
 Статус: CANONICAL / REQUIRED  
 Область действия: весь текущий и будущий код репозитория  
