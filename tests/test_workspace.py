@@ -185,7 +185,50 @@ def test_accounting_does_not_count_deposits_principal_or_fees_twice() -> None:
     assert result["nav_change_rub"] == "17860"
     assert result["investment_result_rub"] == "2860"
     assert result["income_received_rub"] == "3000"
+    assert Decimal(result["return_percent"]) == Decimal("2.6")
+    assert result["return_method"] == "modified_dietz"
+    assert result["return_status"] == "available"
+    assert Decimal(result["return_denominator_rub"]) == Decimal("110000")
+    assert result["return_is_estimate"] is True
+    assert result["return_is_annualized"] is False
+
+
+@pytest.mark.parametrize(
+    "rows, closing, expected", [
+        ([], "110000", "10"),
+        ([operation("INPUT", "100000", day=15)], "215000", "10"),
+        ([operation("INPUT", "100000", day=30)], "210000", "10"),
+        ([operation("OUTPUT", "-50000", day=15)], "57500", "10"),
+        ([operation("INPUT", "100000", day=0)], "110000", "10"),
+        ([operation("INPUT", "100000", day=31)], "110000", "10"),
+        ([], "90000", "-10"),
+    ],
+)
+def test_dietz_return_weights_external_flows_and_respects_valuation_boundaries(
+    rows: list[dict[str, Any]], closing: str, expected: str,
+) -> None:
+    snapshots = [
+        {"captured_at": START, "nav_rub": "100000", "analysis_status": "observed"},
+        {"captured_at": END, "nav_rub": closing, "analysis_status": "observed"},
+    ]
+    result = portfolio_performance(snapshots, rows, watermark=END, history_complete=True)
+    assert Decimal(result["return_percent"]) == Decimal(expected)
+    incomplete = portfolio_performance(snapshots, rows, watermark=END, history_complete=False)
+    assert incomplete["return_percent"] is None
+    assert incomplete["return_status"] == "unavailable"
+
+
+def test_dietz_does_not_report_percentage_when_weighted_capital_is_nonpositive() -> None:
+    snapshots = [
+        {"captured_at": START, "nav_rub": "100", "analysis_status": "observed"},
+        {"captured_at": END, "nav_rub": "100", "analysis_status": "observed"},
+    ]
+    result = portfolio_performance(
+        snapshots, [operation("OUTPUT", "-300", day=10)], watermark=END, history_complete=True,
+    )
+    assert result["investment_result_rub"] == "300"
     assert result["return_percent"] is None
+    assert result["return_reason"] == "non_positive_or_negligible_invested_capital"
 
 
 @pytest.mark.parametrize(
