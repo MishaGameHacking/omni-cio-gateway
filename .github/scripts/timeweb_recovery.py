@@ -20,6 +20,7 @@ WEEKLY_RETIRE = "weekly_retire_attempted"
 WEEKLY_CREATE = "weekly_create"
 WEEKLY_OWNED = "weekly_owned"
 BACKUP_TIMEZONE = timezone(timedelta(hours=3))
+INSPECTION_DETAIL_LIMIT = 20
 
 
 class RecoveryBlocked(RuntimeError):
@@ -164,6 +165,137 @@ def schedule_matches(schedule: dict[str, Any], policy: BackupPolicy, now: dateti
         and type(schedule.get("copy_count")) is int and schedule["copy_count"] == policy.copies
         and starts_today_or_before
     )
+
+
+def _inspection_error(exc: Exception) -> dict[str, Any]:
+    result: dict[str, Any] = {"status": "unavailable", "reason": type(exc).__name__}
+    status = getattr(exc, "status_code", None)
+    if type(status) is int and 100 <= status <= 599:
+        result["http_status"] = status
+    return result
+
+
+def _inspection_schedule(client: Provider, policy: BackupPolicy) -> dict[str, Any]:
+    try:
+        schedule = get_schedule(client, policy.cluster_id)
+    except (RuntimeError, OSError, ValueError, TypeError, AttributeError) as exc:
+        return _inspection_error(exc)
+    start = schedule.get("creation_start_at")
+    try:
+        start = datetime.fromisoformat(start).isoformat() if isinstance(start, str) else None
+    except ValueError:
+        start = None
+    interval = schedule.get("interval")
+    count = schedule.get("copy_count")
+    return {
+        "status": "ok", "matches_policy": schedule_matches(schedule, policy, datetime.now(UTC)),
+        "is_enabled": schedule["is_enabled"],
+        "interval": interval if interval in ("day", "week", "month") else "unknown",
+        "copy_count": count if type(count) is int else None, "creation_start_at": start,
+    }
+
+
+def _inspection_comment(value: Any) -> str:
+    if value == BOOTSTRAP_COMMENT:
+        return "bootstrap_tag"
+    if isinstance(value, str) and value.startswith(WEEKLY_PREFIX):
+        return "weekly_tag"
+    return "other" if value else "absent"
+
+
+def _inspection_backup(item: dict[str, Any]) -> dict[str, Any]:
+    now = datetime.now(UTC)
+    status = item.get("status")
+    size = item.get("size")
+    try:
+        size_valid = (
+            isinstance(size, (int, float)) and not isinstance(size, bool)
+            and math.isfinite(size) and size > 0
+        )
+    except OverflowError:
+        size_valid = False
+    try:
+        created = timestamp(item.get("created_at"))
+    except (RecoveryBlocked, OverflowError):
+        created = None
+    reason = _inspection_freshness_reason(item, now, size_valid, created)
+    known_statuses = ("precreate", "delete", "shutdown", "recover", "create", "fail", "done")
+    kind = item.get("type")
+    return {
+        "id": item["id"], "status": status if status in known_statuses else "unknown",
+        "type": kind if kind in ("manual", "auto") else "unknown",
+        "size": size if size_valid else None,
+        "created_at": created.isoformat() if created is not None else None,
+        "age_hours": round((now - created).total_seconds() / 3600, 4)
+        if created is not None else None,
+        "eligible": reason == "fresh", "reason": reason,
+        "comment_classification": _inspection_comment(item.get("comment")),
+    }
+
+
+def _inspection_freshness_reason(
+    item: dict[str, Any], now: datetime, size_valid: bool, created: datetime | None,
+) -> str:
+    if item.get("status") != "done":
+        return "not_completed"
+    if not size_valid:
+        return "invalid_size"
+    if created is None:
+        return "invalid_timestamp"
+    if created > now:
+        return "future_timestamp"
+    # Use the same freshness rule as the mutation gate, without authorizing a mutation.
+    return "fresh" if completed_backup(item, now) else "stale"
+
+
+def _inspection_details(
+    client: Provider, cluster_id: int, rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    complete = len(rows) <= INSPECTION_DETAIL_LIMIT
+    for row in rows[:INSPECTION_DETAIL_LIMIT]:
+        backup_id = row["id"]
+        try:
+            detail = client.request(
+                "GET", f"/dbs/{cluster_id}/backups/{backup_id}", timeout=10,
+            ).get("backup")
+            if not isinstance(detail, dict) or type(detail.get("id")) is not int:
+                raise RecoveryBlocked("Backup detail identity is invalid")
+            if detail["id"] != backup_id:
+                raise RecoveryBlocked("Backup detail identity differs from inventory")
+            items.append({"status": "ok", "backup": _inspection_backup(detail)})
+        except (RuntimeError, OSError, ValueError, TypeError, AttributeError) as exc:
+            complete = False
+            items.append({"id": backup_id, **_inspection_error(exc)})
+    return {"complete": complete, "limit": INSPECTION_DETAIL_LIMIT, "items": items}
+
+
+def inspect_provider_recovery(client: Provider) -> dict[str, Any]:
+    """GET-only operational metadata; never certify recovery, restore, or copy ownership."""
+    policy = load_policy()
+    report: dict[str, Any] = {
+        "cluster_id": policy.cluster_id, "recovery_verified": False, "restore_verified": False,
+        "schedule": _inspection_schedule(client, policy),
+    }
+    try:
+        rows = get_backups(client, policy.cluster_id)
+    except (RuntimeError, OSError, ValueError, TypeError, AttributeError) as exc:
+        report["inventory"] = {"complete": False, **_inspection_error(exc)}
+        report["details"] = {"complete": False, "limit": INSPECTION_DETAIL_LIMIT, "items": []}
+    else:
+        selected = rows[:INSPECTION_DETAIL_LIMIT]
+        report["inventory"] = {
+            "status": "ok", "complete": True, "count": len(rows),
+            "returned_count": len(selected), "truncated": len(selected) < len(rows),
+            "items": [_inspection_backup(row) for row in selected],
+        }
+        report["details"] = _inspection_details(client, policy.cluster_id, rows)
+    report["complete"] = (
+        report["schedule"]["status"] == "ok" and report["inventory"]["complete"]
+        and report["details"]["complete"]
+    )
+    report["observed_at"] = datetime.now(UTC).isoformat()
+    return report
 
 
 def mutate_once(client: Provider, method: str, path: str, **kwargs: Any) -> None:

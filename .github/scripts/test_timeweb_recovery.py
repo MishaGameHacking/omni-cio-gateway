@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import unittest
 from contextlib import ExitStack
 from datetime import UTC, datetime, timedelta
@@ -398,13 +399,18 @@ class MigrationGateTests(unittest.TestCase):
                     "add_summary": None,
                     "set_output": None,
                     "ensure_recovery_point": None,
+                    "inspect_provider_recovery": {"complete": False, "recovery_verified": False},
                     "inspect_restore_capacity": None,
                 }
                 for name, value in values.items():
                     mocks[name] = stack.enter_context(
                         patch.object(postgres, name, return_value=value)
                     )
-                stack.enter_context(patch.object(postgres, "EphemeralSsh"))
+                ssh = stack.enter_context(patch.object(postgres, "EphemeralSsh"))
+                order = Mock()
+                order.attach_mock(mocks["inspect_provider_recovery"], "inspect")
+                order.attach_mock(ssh.return_value.__enter__, "ssh")
+                order.attach_mock(mocks["ensure_recovery_point"], "guard")
                 client.get_vpc_services.return_value = [{}]
                 if rejected:
                     mocks["ensure_recovery_point"].side_effect = recovery.RecoveryBlocked("no copy")
@@ -428,7 +434,180 @@ class MigrationGateTests(unittest.TestCase):
                     "ensure_server_private_network",
                 ):
                     self.assertEqual(mocks[name].call_count, int(not backup_only and not rejected))
+                self.assertEqual(
+                    [entry[0] for entry in order.mock_calls], ["inspect", "ssh", "guard"],
+                )
+                mocks["inspect_provider_recovery"].assert_called_once_with(client)
+                if rejected:
+                    mocks["set_output"].assert_not_called()
                 client.create_database_cluster.assert_not_called()
+
+
+class ProviderInspectionTests(unittest.TestCase):
+    def test_metadata_is_get_only_and_never_certifies_recovery(self) -> None:
+        provider = Provider()
+        provider.schedule = {
+            "is_enabled": True, "copy_count": 7, "interval": "day",
+            "creation_start_at": "2026-01-01", "url": "credential-canary",
+        }
+        provider.backups = [backup(1), backup(2, age=25), backup(3, age=-1)]
+        with (
+            patch.object(recovery, "read_state") as read_state,
+            patch.object(recovery, "write_state") as write_state,
+        ):
+            report = recovery.inspect_provider_recovery(provider)
+        self.assertTrue(report["complete"])
+        self.assertEqual(report["cluster_id"], CLUSTER_ID)
+        self.assertFalse(report["recovery_verified"])
+        self.assertFalse(report["restore_verified"])
+        self.assertTrue(report["schedule"]["matches_policy"])
+        self.assertEqual(
+            [item["reason"] for item in report["inventory"]["items"]],
+            ["fresh", "stale", "future_timestamp"],
+        )
+        self.assertEqual(
+            [item["backup"]["eligible"] for item in report["details"]["items"]],
+            [True, False, False],
+        )
+        self.assertTrue(all(method == "GET" for method, _ in provider.calls))
+        self.assertTrue(all(path.startswith(f"/dbs/{CLUSTER_ID}/") for _, path in provider.calls))
+        self.assertNotIn("credential-canary", json.dumps(report))
+        read_state.assert_not_called()
+        write_state.assert_not_called()
+
+    def test_untrusted_fields_and_malformed_metadata_are_not_printed(self) -> None:
+        provider = Provider()
+        provider.schedule = {
+            "is_enabled": True, "copy_count": "copy-canary", "interval": "interval-canary",
+            "creation_start_at": "https://date-canary", "secret_key": "secret-canary",
+        }
+        provider.backups = [backup() | {
+            "status": "status-canary", "type": "type-canary", "size": "size-canary",
+            "created_at": "https://created-canary", "comment": "comment-canary",
+            "url": "https://download-canary", "access_key": "access-canary",
+        }]
+        report = recovery.inspect_provider_recovery(provider)
+        self.assertNotIn("canary", json.dumps(report))
+        self.assertFalse(report["schedule"]["matches_policy"])
+        item = report["inventory"]["items"][0]
+        self.assertEqual(item["status"], "unknown")
+        self.assertEqual(item["comment_classification"], "other")
+        self.assertFalse(item["eligible"])
+        self.assertIsNone(item["created_at"])
+
+    def test_pending_invalid_size_and_invalid_timestamp_have_explicit_reasons(self) -> None:
+        provider = Provider()
+        provider.backups = [
+            backup(1) | {"status": "create"}, backup(2) | {"size": 0},
+            backup(3) | {"created_at": "2026-10-05T01:00:00"},
+            backup(4) | {"size": float("nan")}, backup(5) | {"size": 10 ** 1000},
+        ]
+        report = recovery.inspect_provider_recovery(provider)
+        self.assertEqual(
+            [item["reason"] for item in report["inventory"]["items"]],
+            ["not_completed", "invalid_size", "invalid_timestamp", "invalid_size", "invalid_size"],
+        )
+        json.dumps(report, allow_nan=False)
+
+    def test_empty_inventory_is_observed_without_creation(self) -> None:
+        provider = Provider()
+        report = recovery.inspect_provider_recovery(provider)
+        self.assertTrue(report["complete"])
+        self.assertEqual(report["inventory"]["count"], 0)
+        self.assertEqual(report["details"]["items"], [])
+        self.assertEqual(len(provider.calls), 2)
+        self.assertTrue(all(method == "GET" for method, _ in provider.calls))
+
+    def test_inventory_and_detail_output_are_bounded(self) -> None:
+        provider = Provider()
+        provider.backups = [backup(index) for index in range(1, 22)]
+        report = recovery.inspect_provider_recovery(provider)
+        self.assertTrue(report["inventory"]["complete"])
+        self.assertEqual(report["inventory"]["count"], 21)
+        self.assertEqual(report["inventory"]["returned_count"], 20)
+        self.assertTrue(report["inventory"]["truncated"])
+        self.assertEqual(len(report["inventory"]["items"]), 20)
+        self.assertEqual(len(report["details"]["items"]), 20)
+        self.assertFalse(report["details"]["complete"])
+        self.assertFalse(report["complete"])
+        self.assertEqual(len(provider.calls), 22)
+
+    def test_partial_pages_are_not_claimed_complete_or_used_for_detail_reads(self) -> None:
+        for response in (
+            {"backups": [backup()], "meta": {"total": 2}},
+            {"backups": [backup(), backup()]}, {"backups": [backup()], "meta": ["invalid"]},
+        ):
+            with self.subTest(response=response):
+                provider = Mock()
+                provider.request.side_effect = [{"auto_backups_settings": {"is_enabled": False}},
+                                                response]
+                report = recovery.inspect_provider_recovery(provider)
+                self.assertFalse(report["inventory"]["complete"])
+                self.assertFalse(report["complete"])
+                self.assertEqual(report["details"]["items"], [])
+                self.assertEqual(provider.request.call_count, 2)
+
+    def test_provider_errors_are_safe_and_do_not_hide_other_observations(self) -> None:
+        provider = Mock()
+        provider.request.side_effect = [
+            postgres.TimewebApiError(503, "private-canary", "credential-canary"),
+            {"backups": [backup()]}, OSError("private-provider-response"),
+        ]
+        report = recovery.inspect_provider_recovery(provider)
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["schedule"]["http_status"], 503)
+        self.assertTrue(report["inventory"]["complete"])
+        self.assertFalse(report["details"]["complete"])
+        self.assertNotIn("canary", json.dumps(report))
+        self.assertNotIn("private-provider-response", json.dumps(report))
+        detail_call = provider.request.call_args
+        self.assertEqual(detail_call.args, ("GET", f"/dbs/{CLUSTER_ID}/backups/1"))
+        self.assertEqual(detail_call.kwargs, {"timeout": 10})
+
+    def test_inventory_pagination_limit_stops_without_reading_details(self) -> None:
+        provider = Mock()
+        provider.request.side_effect = [
+            {"auto_backups_settings": {"is_enabled": False}},
+            *[{"backups": [backup(index) for index in range(offset + 1, offset + 101)]}
+              for offset in range(0, 500, 100)],
+        ]
+        report = recovery.inspect_provider_recovery(provider)
+        self.assertFalse(report["inventory"]["complete"])
+        self.assertFalse(report["complete"])
+        self.assertEqual(report["details"]["items"], [])
+        self.assertEqual(provider.request.call_count, 6)
+        self.assertEqual(
+            provider.request.call_args.args,
+            ("GET", f"/dbs/{CLUSTER_ID}/backups?limit=100&offset=400"),
+        )
+
+    def test_detail_identity_must_match_and_detail_freshness_is_independent(self) -> None:
+        for detail, detail_ok in ((backup(2), False), (backup(1, age=25), True)):
+            with self.subTest(detail_ok=detail_ok):
+                provider = Mock()
+                provider.request.side_effect = [
+                    {"auto_backups_settings": {"is_enabled": False}},
+                    {"backups": [backup()]}, {"backup": detail},
+                ]
+                report = recovery.inspect_provider_recovery(provider)
+                self.assertTrue(report["inventory"]["items"][0]["eligible"])
+                self.assertEqual(report["details"]["complete"], detail_ok)
+                if detail_ok:
+                    self.assertFalse(report["details"]["items"][0]["backup"]["eligible"])
+
+    def test_comment_tags_are_classified_without_claiming_ownership(self) -> None:
+        provider = Provider()
+        provider.backups = [
+            backup(1), backup(2) | {"comment": recovery.WEEKLY_PREFIX + "2026-10-05"},
+            backup(3) | {"comment": ""},
+        ]
+        report = recovery.inspect_provider_recovery(provider)
+        self.assertEqual(
+            [item["comment_classification"] for item in report["inventory"]["items"]],
+            ["bootstrap_tag", "weekly_tag", "absent"],
+        )
+        self.assertNotIn(recovery.BOOTSTRAP_COMMENT, json.dumps(report))
+        self.assertNotIn(recovery.WEEKLY_PREFIX, json.dumps(report))
 
 
 class RestoreCapacityTests(unittest.TestCase):
