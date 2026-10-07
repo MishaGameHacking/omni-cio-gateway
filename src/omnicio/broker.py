@@ -17,6 +17,7 @@ from .portfolio import PortfolioAnalysis, analyze_portfolio
 from .security import decrypt_secret, encrypt_secret
 from .tbank import (
     TBankAccount,
+    TBankAccruedInterest,
     TBankAssetFundamental,
     TBankAssetReport,
     TBankBondCoupon,
@@ -264,14 +265,13 @@ class BrokerService:
         from_at: datetime,
         to_at: datetime,
     ) -> tuple[TBankHistoricCandle, ...]:
-        _record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.get_daily_exchange_candles(
-            credential,
-            environment,
-            instrument_uid,
-            from_at=from_at,
-            to_at=to_at,
+        record, credential, environment = self._connected_credential(user_id)
+        result = self._paced_evidence_read(
+            self.tbank.get_daily_exchange_candles, credential, environment, instrument_uid,
+            from_at=from_at, to_at=to_at,
         )
+        self._require_current_connection(record)
+        return cast(tuple[TBankHistoricCandle, ...], result)
 
     def market_history_start(self, user_id: UUID, instrument_uid: str) -> datetime | None:
         record, credential, environment = self._connected_credential(user_id)
@@ -400,6 +400,17 @@ class BrokerService:
                 to_at=to_at,
             ),
         )
+
+    def candidate_accrued_interests(
+        self, user_id: UUID, instrument_uid: str, *, from_at: datetime, to_at: datetime,
+    ) -> tuple[TBankAccruedInterest, ...]:
+        record, credential, environment = self._connected_credential(user_id)
+        result = self._paced_evidence_read(
+            self.tbank.get_accrued_interests, credential, environment, instrument_uid,
+            from_at=from_at, to_at=to_at,
+        )
+        self._require_current_connection(record)
+        return cast(tuple[TBankAccruedInterest, ...], result)
 
     def candidate_dividends(
         self, user_id: UUID, instrument_uid: str, *, from_at: datetime, to_at: datetime,

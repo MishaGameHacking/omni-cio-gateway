@@ -5,10 +5,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from threading import Event
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
 
 import psycopg
@@ -18,7 +18,12 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from omnicio.broker import AnalysisSource, BrokerEvidenceSnapshot, BrokerObservationBundle
 from omnicio.db import BrokerConnectionConflict, Database
-from omnicio.observer import PortfolioObserver, provider_read
+from omnicio.observer import (
+    PortfolioObserver,
+    PortfolioRefreshCoordinator,
+    _scheduled_day,
+    provider_read,
+)
 from omnicio.portfolio import PortfolioAnalysis
 from omnicio.portfolio_store import (
     BrokerSyncState,
@@ -107,13 +112,29 @@ class FakeStore:
         self.claimed = False
         self.lock_available = True
         self.recover_running_values: list[bool] = []
+        self.database = Mock(spec=Database)
+        self.scheduled: list[date] = []
 
     def observer_lock(self):
         return nullcontext(self.lock_available)
 
-    def observer_user_ids(self, legal_versions: dict[str, str]) -> tuple[UUID, ...]:
-        assert legal_versions == LEGAL_VERSIONS
+    def observer_user_ids(self) -> tuple[UUID, ...]:
         return (USER_ID,)
+
+    def schedule_daily_job(self, user_id, *, scheduled_for, legal_versions):
+        assert user_id == USER_ID
+        assert legal_versions == LEGAL_VERSIONS
+        if scheduled_for not in self.scheduled:
+            self.scheduled.append(scheduled_for)
+            return True
+        return False
+
+    def claim_pending_daily_job(self, user_id, legal_versions):
+        if not self.scheduled:
+            return None
+        return self.claim_daily_job(user_id, job_type="portfolio_daily",
+                                    scheduled_for=self.scheduled[-1],
+                                    legal_versions=legal_versions, recover_running=True)
 
     def claim_daily_job(
         self,
@@ -121,10 +142,12 @@ class FakeStore:
         *,
         job_type: str,
         scheduled_for: date,
+        legal_versions: dict[str, str],
         recover_running: bool = False,
     ):
         assert user_id == USER_ID
         assert job_type == "portfolio_daily"
+        assert legal_versions == LEGAL_VERSIONS
         self.recover_running_values.append(recover_running)
         if self.claimed:
             return None
@@ -362,15 +385,17 @@ def test_full_observer_run_uses_process_lock_and_recovers_running_jobs() -> None
     assert store.recover_running_values == [True]
 
 
-def test_full_observer_run_skips_when_another_process_holds_lock() -> None:
+def test_full_observer_run_defers_durably_when_another_process_holds_lock() -> None:
     store = FakeStore()
     store.lock_available = False
     observer = PortfolioObserver(store, FakeBroker(), legal_versions=LEGAL_VERSIONS)
 
     result = observer.run(now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC))
 
-    assert result == type(result)(0, 0, 0, 0, 0)
+    assert result == type(result)(1, 0, 0, 0, 0, deferred=True)
+    assert store.scheduled == [date(2026, 10, 2)]
     assert store.recover_running_values == []
+    assert not store.claimed
 
 
 def test_daily_observer_pages_history_and_finishes_once() -> None:
@@ -533,7 +558,9 @@ def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
     assert "job_runs_finish_state_consistent" in migration
     assert "broker_sync_state_cursor_window_consistent" in migration
     assert "pg_try_advisory_lock" in store
-    assert "pg_try_advisory_xact_lock" in store
+    assert "pg_advisory_xact_lock" in store
+    assert "retry_of" in store
+    assert "DAILY_MAX_ATTEMPTS = 3" in store
     assert "recover_running" in store
     assert "ON CONFLICT (job_run_id) DO NOTHING" in store
     assert "pending_cursor" in store
@@ -599,6 +626,13 @@ def connected_database():
                     "VALUES (%s,'synthetic-a',now()),(%s,'synthetic-b',now())",
                     (USER_ID, UUID(int=2)),
                 )
+                for tenant in (USER_ID, UUID(int=2)):
+                    for document, version in LEGAL_VERSIONS.items():
+                        admin.execute(
+                            "INSERT INTO legal_acceptances (user_id, document_type, "
+                            "document_version, client_ip_hash) VALUES (%s, %s, %s, %s)",
+                            (tenant, document, version, b"test-only"),
+                        )
                 admin.execute(sql.SQL(
                     "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {}"
                 ).format(sql.Identifier(role)))
@@ -628,7 +662,8 @@ def connect_user(database, user_id=USER_ID, *, account_id="account-1", environme
 
 
 def claim_job(store, user_id=USER_ID):
-    job = store.claim_daily_job(user_id, job_type="portfolio_daily", scheduled_for=date.today())
+    job = store.claim_daily_job(user_id, job_type="portfolio_daily", scheduled_for=date.today(),
+                                legal_versions=LEGAL_VERSIONS)
     assert job is not None
     return job
 
@@ -643,6 +678,7 @@ def test_native_connection_lifecycle_keeps_tenants_and_discards_old_jobs(connect
     empty_page = TBankOperationsPage(items=(), has_next=False, next_cursor="")
     assert store.claim_daily_job(
         USER_ID, job_type="portfolio_daily", scheduled_for=date.today(),
+        legal_versions=LEGAL_VERSIONS,
     ) is None
     current = connect_user(database)
     connect_user(database, other)
@@ -750,6 +786,111 @@ def test_native_disconnect_waits_for_write_then_removes_every_derived_row(connec
             sql.Identifier(table)
         ), (USER_ID,)).fetchone()[0] == 0
     assert database.tbank_connection(USER_ID) is None
+
+
+def test_daily_scheduler_keeps_the_last_due_day_before_the_moscow_0615_boundary() -> None:
+    assert _scheduled_day(datetime(2026, 10, 7, 3, 14, tzinfo=UTC)) == date(2026, 10, 6)
+    assert _scheduled_day(datetime(2026, 10, 7, 3, 15, tzinfo=UTC)) == date(2026, 10, 7)
+
+
+def test_native_daily_queue_survives_manual_lock_and_is_consumed_after_release(connected_database):
+    database, store, admin = connected_database
+    connect_user(database)
+    observer = PortfolioObserver(store, FakeBroker(), legal_versions=LEGAL_VERSIONS)
+    with store.observer_lock() as locked:
+        assert locked
+        result = observer.run(now=datetime.now(UTC))
+        assert result.deferred
+        row = admin.execute("SELECT id, status FROM job_runs WHERE user_id = %s",
+                            (USER_ID,)).fetchone()
+        assert row[1] == "queued"
+        assert admin.execute("SELECT count(*) FROM portfolio_snapshots").fetchone()[0] == 0
+    coordinator = PortfolioRefreshCoordinator(store, FakeBroker(), legal_versions=LEGAL_VERSIONS)
+    assert coordinator.run_pending()
+    assert not coordinator.run_pending()
+    assert admin.execute("SELECT count(*) FROM portfolio_snapshots").fetchone()[0] == 1
+    assert admin.execute("SELECT status FROM job_runs WHERE id = %s", (row[0],)).fetchone()[0] \
+        == "succeeded"
+
+
+def test_native_daily_restart_uses_new_immutable_snapshot_and_owner_bound_retry(connected_database):
+    database, store, admin = connected_database
+    connect_user(database)
+    connect_user(database, UUID(int=2), account_id="account-2")
+    first = claim_job(store)
+    old = replace(bundle(), refreshed_at=datetime.now(UTC) - timedelta(minutes=10))
+    old_snapshot = store.save_snapshot(USER_ID, job_run_id=first.id, bundle=old)
+    # Once the old process releases its session lock, a new process can resume.
+    with store.observer_lock() as locked:
+        assert locked
+        retry = store.claim_pending_daily_job(USER_ID, LEGAL_VERSIONS)
+        assert retry is not None and retry.id != first.id
+        assert retry.scheduled_for == first.scheduled_for
+        fresh = replace(old, refreshed_at=datetime.now(UTC))
+        fresh_snapshot = store.save_snapshot(USER_ID, job_run_id=retry.id, bundle=fresh)
+        assert fresh_snapshot != old_snapshot
+        assert store.finish_job(USER_ID, retry.id, status="succeeded", details={})
+        assert store.claim_pending_daily_job(USER_ID, LEGAL_VERSIONS) is None
+    rows = admin.execute("SELECT job_run_id, captured_at FROM portfolio_snapshots "
+                         "WHERE user_id = %s ORDER BY captured_at", (USER_ID,)).fetchall()
+    assert rows == [(first.id, old.refreshed_at), (retry.id, fresh.refreshed_at)]
+    attempts = admin.execute("SELECT id, retry_of, status, attempt FROM job_runs "
+                             "WHERE user_id = %s ORDER BY attempt", (USER_ID,)).fetchall()
+    assert attempts == [(first.id, None, "failed", 1), (retry.id, first.id, "succeeded", 2)]
+    with pytest.raises(psycopg.errors.ForeignKeyViolation), database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(UUID(int=2)),))
+        conn.execute("INSERT INTO job_runs (user_id, job_type, scheduled_for, retry_of, status) "
+                     "VALUES (%s, 'portfolio_daily', NULL, %s, 'queued')", (UUID(int=2), first.id))
+    # Reapplying the new additive schema cannot rewrite an accepted observation.
+    path = Path(__file__).parents[1] / "migrations/0024_background_reliability.sql"
+    migration = path.read_text(encoding="utf-8")
+    admin.execute(migration)
+    admin.execute(migration)
+    assert admin.execute("SELECT count(*) FROM portfolio_snapshots").fetchone()[0] == 2
+
+
+def test_native_daily_retry_waits_for_backoff_and_stops_at_the_daily_budget(connected_database):
+    database, store, admin = connected_database
+    connect_user(database)
+    first = claim_job(store)
+    with store.observer_lock() as locked:
+        assert locked
+        current = first
+        for attempt in range(1, 4):
+            assert current.attempt == attempt
+            assert store.finish_job(USER_ID, current.id, status="degraded", details={
+                "stage_error": "TBankUnavailable", "retryable": True, "snapshot_saved": False,
+            })
+            assert store.claim_pending_daily_job(USER_ID, LEGAL_VERSIONS) is None
+            admin.execute("UPDATE job_runs SET next_attempt_at = now() - interval '1 second' "
+                          "WHERE id = %s", (current.id,))
+            retry = store.claim_pending_daily_job(USER_ID, LEGAL_VERSIONS)
+            if attempt < 3:
+                assert retry is not None and retry.id != current.id
+                current = retry
+            else:
+                assert retry is None
+    count = admin.execute("SELECT count(*) FROM job_runs WHERE user_id = %s",
+                          (USER_ID,)).fetchone()[0]
+    assert count == 3
+    assert database.collect_operational_metrics()["status"] == "attention"
+
+
+def test_native_daily_queue_rechecks_consent_and_finishes_cancelled_attempt(connected_database):
+    database, store, admin = connected_database
+    connect_user(database)
+    first = claim_job(store)
+    admin.execute("DELETE FROM legal_acceptances WHERE user_id = %s AND document_type = 'terms'",
+                  (USER_ID,))
+    assert not store.finish_job(USER_ID, first.id, status="succeeded", details={})
+    row = admin.execute("SELECT status, details FROM job_runs WHERE id = %s",
+                        (first.id,)).fetchone()
+    assert row[0] == "failed"
+    assert row[1]["stage_error"] == "observation_context_changed"
+    with store.observer_lock() as locked:
+        assert locked
+        assert store.claim_pending_daily_job(USER_ID, LEGAL_VERSIONS) is None
+    assert admin.execute("SELECT count(*) FROM portfolio_snapshots").fetchone()[0] == 0
 
 
 def test_observer_treats_disconnected_job_as_degraded_without_recreating_it():

@@ -212,7 +212,10 @@ jobs:
             --migration migrations/0020_goal_plans.sql ^
             --migration migrations/0021_assistant_workspace.sql ^
             --migration migrations/0022_billing.sql ^
-            --migration migrations/0023_strategy_execution_guards.sql
+            --migration migrations/0023_strategy_execution_guards.sql ^
+            --migration migrations/0024_background_reliability.sql ^
+            --migration migrations/0025_billing_recovery.sql ^
+            --migration migrations/0026_strategy_research_capacity.sql
 
       - name: Confirm database readiness
         if: steps.postgres.outputs.status == 'database_ready'

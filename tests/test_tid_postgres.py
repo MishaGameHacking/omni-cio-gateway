@@ -353,8 +353,9 @@ def test_operational_metrics_require_configured_operator_and_aggregate_without_t
     with database.pool.connection() as conn:
         conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(other.id),))
         conn.execute(
-            "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, requested_at) "
-            "VALUES (%s, 'portfolio_refresh', NULL, 'queued', now() - interval '31 minutes')",
+            "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, requested_at, "
+            "next_attempt_at) VALUES (%s, 'portfolio_refresh', NULL, 'queued', "
+            "now() - interval '31 minutes', now() - interval '31 minutes')",
             (other.id,),
         )
     result = database.operational_metrics(owner.id, current, configured_operator_id=owner.id)

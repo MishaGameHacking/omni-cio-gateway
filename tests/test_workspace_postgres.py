@@ -463,6 +463,145 @@ def test_quiet_hours_and_digest_schedule_have_durable_deduplication(
     assert len(digests) == 1
 
 
+def test_digest_includes_late_imports_corrections_and_days_missed_during_worker_downtime(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    channel = UUID(service.subscribe_push(owner, subscription)["id"])
+    prefs = default_preferences()
+    prefs["digest_frequency"] = "daily"
+    prefs["quiet_hours"]["timezone"] = "UTC"
+    service.workspace.save_preferences(owner, prefs, expected_version=0)
+    start = datetime(2026, 10, 2, tzinfo=UTC)
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE notification_channels SET verified_at = %s, digest_cursor_at = %s "
+                    "WHERE user_id = %s AND id = %s", (start, start, owner, channel))
+    service.queue_events(owner, now=start + timedelta(days=1, minutes=1))
+    assert service.status(owner)["deliveries"] == []
+    # The actual financial event belongs to the already-closed source day, but
+    # only becomes known to the server at the following 06:15 import.
+    late = insert_notification_event(service.workspace, owner, 7,
+                                     at=start + timedelta(hours=18))
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE workspace_events SET updated_at = %s WHERE user_id = %s AND id = %s",
+                    (start + timedelta(days=1, hours=6, minutes=15), owner, late))
+    service.queue_events(owner, now=start + timedelta(days=1, hours=6, minutes=16))
+    assert service.status(owner)["deliveries"] == []
+    next_digest = start + timedelta(days=2, minutes=1)
+    with ThreadPoolExecutor(max_workers=3) as workers:
+        list(workers.map(lambda _: service.queue_events(owner, now=next_digest), range(3)))
+    assert len(service.status(owner)["deliveries"]) == 1
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=next_digest)
+    first_payload = transport.send_push.call_args.args[1]
+    assert first_payload["period_basis"] == "available_at"
+    assert first_payload["from"] == (start + timedelta(days=1)).isoformat()
+    assert "событий: 1" in first_payload["body"]
+    event = next(row for row in service.workspace.events(owner)["items"] if row["id"] == late)
+    assert event["occurred_at"] == start + timedelta(hours=18)
+    # A later correction receives its own availability time. It and both new
+    # days must survive three days without a running notification worker.
+    insert_notification_event(service.workspace, owner, 7, at=start + timedelta(hours=18),
+                              source={"type": "test", "revision": "corrected"})
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE workspace_events SET updated_at = %s WHERE user_id = %s AND id = %s",
+                    (start + timedelta(days=2, hours=6), owner, late))
+    for day in (3, 4):
+        ident = insert_notification_event(service.workspace, owner, day,
+                                          at=start - timedelta(days=10))
+        with service.workspace._transaction(owner) as cur:
+            cur.execute("UPDATE workspace_events SET updated_at = %s "
+                        "WHERE user_id = %s AND id = %s",
+                        (start + timedelta(days=day, hours=6), owner, ident))
+    resumed = start + timedelta(days=5, minutes=1)
+    service.queue_events(owner, now=resumed)
+    service.queue_events(owner, now=resumed)
+    assert len(service.status(owner)["deliveries"]) == 2
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=resumed)
+        assert not service.deliver_one(owner, now=resumed)
+    assert transport.send_push.call_count == 2
+    payload = transport.send_push.call_args.args[1]
+    assert payload["from"] == (start + timedelta(days=2)).isoformat()
+    assert payload["to"] == (start + timedelta(days=5)).isoformat()
+    assert "событий: 3" in payload["body"]
+
+
+def test_digest_cursor_and_outbox_commit_together_after_interrupted_enqueue(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, _, subscription = notification_service(database)
+    channel = UUID(service.subscribe_push(owner, subscription)["id"])
+    prefs = default_preferences()
+    prefs["digest_frequency"] = "daily"
+    prefs["quiet_hours"]["timezone"] = "UTC"
+    service.workspace.save_preferences(owner, prefs, expected_version=0)
+    start = datetime(2026, 10, 2, tzinfo=UTC)
+    ident = insert_notification_event(service.workspace, owner, 1, at=start)
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("UPDATE notification_channels SET verified_at = %s, digest_cursor_at = %s "
+                    "WHERE user_id = %s AND id = %s", (start, start, owner, channel))
+        cur.execute("UPDATE workspace_events SET updated_at = %s WHERE user_id = %s AND id = %s",
+                    (start + timedelta(hours=1), owner, ident))
+    enqueue = service._enqueue
+
+    def interrupted(*args: Any, **kwargs: Any) -> None:
+        enqueue(*args, **kwargs)
+        raise RuntimeError("synthetic interruption before cursor commit")
+
+    with patch.object(service, "_enqueue", side_effect=interrupted), \
+            pytest.raises(RuntimeError, match="synthetic interruption"):
+        service.queue_events(owner, now=start + timedelta(days=1, minutes=1))
+    assert service.status(owner)["deliveries"] == []
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("SELECT digest_cursor_at FROM notification_channels "
+                    "WHERE user_id = %s AND id = %s", (owner, channel))
+        assert cur.fetchone()["digest_cursor_at"] == start
+    service.queue_events(owner, now=start + timedelta(days=1, minutes=1))
+    assert len(service.status(owner)["deliveries"]) == 1
+
+
+def test_operational_monitor_detects_degraded_observations_outbox_delay_and_dead_worker(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    service, _, subscription = notification_service(database)
+    service.subscribe_push(owner, subscription)
+    insert_notification_event(service.workspace, owner, 1)
+    service.queue_events(owner)
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("INSERT INTO job_runs (user_id, job_type, scheduled_for, status, finished_at, "
+                    "details) VALUES (%s, 'portfolio_daily', current_date, 'degraded', now(), "
+                    "'{\"snapshot_saved\": false, \"stage_error\": \"TBankUnavailable\"}'::jsonb)",
+                    (owner,))
+        cur.execute("UPDATE notification_outbox SET "
+                    "next_attempt_at = now() - interval '16 minutes' "
+                    "WHERE user_id = %s", (owner,))
+        cur.execute("UPDATE tbank_connection SET verified_at = now() - interval '37 hours' "
+                    "WHERE user_id = %s", (owner,))
+    for worker in ("notifications", "portfolio_refresh", "portfolio_daily"):
+        database.record_worker_heartbeat(worker)
+    with database.pool.connection() as conn:
+        conn.execute("UPDATE worker_heartbeats SET checked_at = now() - interval '6 minutes' "
+                     "WHERE worker_name = 'notifications'")
+    metrics = database.collect_operational_metrics()
+    assert metrics["status"] == "attention"
+    assert metrics["observer"]["degraded_24h"] >= 1
+    assert metrics["observer"]["stale_success_accounts"] >= 1
+    assert metrics["notifications"]["stale"] >= 1
+    assert metrics["workers"]["notifications"]["status"] == "stale"
+    assert {"observer_degraded_24h", "observer_stale_success_accounts", "notifications_stale",
+            "notifications_worker_stale"}.issubset(metrics["issues"])
+    assert str(owner) not in str(metrics)
+    assert subscription["endpoint"] not in str(metrics)
+    database.record_worker_heartbeat("notifications")
+
+
 def test_preference_versions_and_goal_crud_are_tenant_isolated(
     workspace_database: tuple[Database, str, str],
 ) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import smtplib
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
@@ -13,6 +13,7 @@ import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 
+from omnicio.db import Database
 from omnicio.notifications import (
     NotificationConfig,
     NotificationService,
@@ -213,3 +214,64 @@ def test_email_uses_tls_and_retains_ambiguous_outcome(
     assert result.status == expected
     assert connect.call_args.kwargs["context"].check_hostname is True
     assert smtp.send_message.call_args.args[0]["Message-ID"] == "<stable-dedup-key@omnicio.ru>"
+
+
+@pytest.mark.parametrize(("target", "expected"), [
+    ("/#events", "/#events"),
+    ("/#events?event=" + "a" * 64, "/#events?event=" + "a" * 64),
+    ("/#settings", "/#settings"),
+    ("https://untrusted.example/path", "/#settings"),
+    ("//untrusted.example/#events", "/#settings"),
+    ("/#events?event=bad\r\nhttps://untrusted.example", "/#settings"),
+])
+def test_email_opens_its_confirmed_cabinet_target_and_rejects_external_routes(
+    target: str, expected: str,
+) -> None:
+    smtp = Mock()
+    smtp.__enter__ = Mock(return_value=smtp)
+    smtp.__exit__ = Mock(return_value=False)
+    config = NotificationConfig(crypto_key="unused", smtp_host="smtp.example.org",
+                                smtp_sender="operator@example.org")
+    with patch("omnicio.notifications.smtplib.SMTP_SSL", return_value=smtp):
+        outcome = NotificationTransport(config).send_email({"email": "test@example.org"}, {
+            "title": "Test", "body": "Synthetic event", "tag": "fixed", "url": target,
+        })
+    assert outcome.status == "accepted"
+    body = smtp.send_message.call_args.args[0].get_content()
+    assert body.strip().endswith("https://omnicio.ru" + expected)
+    assert "untrusted.example" not in body
+
+
+def test_worker_health_reports_missing_stale_and_failed_progress_without_tenant_data() -> None:
+    now = datetime(2026, 10, 7, 12, tzinfo=UTC)
+    cur = Mock()
+    cur.fetchall.return_value = [
+        {"worker_name": "notifications", "checked_at": now - timedelta(minutes=6),
+         "completed_at": now - timedelta(minutes=6), "status": "ok"},
+        {"worker_name": "portfolio_refresh", "checked_at": now,
+         "completed_at": now, "status": "attention"},
+    ]
+    workers, issues = Database._workers_metrics(cur, now, active_users=2, connected_accounts=1)
+    assert workers["notifications"]["status"] == "stale"
+    assert workers["portfolio_refresh"]["status"] == "attention"
+    assert workers["portfolio_daily"]["status"] == "not_reported"
+    assert set(issues) == {"notifications_worker_stale", "portfolio_refresh_worker_attention",
+                           "portfolio_daily_worker_not_reported"}
+    cur.fetchall.return_value = []
+    assert Database._workers_metrics(cur, now, active_users=0, connected_accounts=0)[1] == []
+
+
+def test_notification_heartbeat_reports_owner_failure_while_others_continue() -> None:
+    database = Mock()
+    database.collect_operational_metrics.return_value = {"status": "ok"}
+    database.has_legal_versions.return_value = True
+    database.pool.connection.return_value.__enter__ = Mock(return_value=database)
+    database.pool.connection.return_value.__exit__ = Mock(return_value=False)
+    database.execute.return_value.fetchall.return_value = [{"id": uuid4()}, {"id": uuid4()}]
+    service = NotificationService(database, NotificationConfig(crypto_key="test-unused"),
+                                  legal_versions={}, transport=Mock())
+    with patch.object(service, "_process_pending_user",
+                      side_effect=[ValueError("synthetic"), None]) as process:
+        service.run_pending()
+    assert process.call_count == 2
+    database.record_worker_heartbeat.assert_called_with("notifications", status="attention")

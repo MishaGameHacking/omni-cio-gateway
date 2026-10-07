@@ -90,6 +90,34 @@ def _cbr_key_rate_soap(*, effective_date: str, rate: str) -> bytes:
 """.encode()
 
 
+def test_key_rate_history_preserves_each_effective_day_and_exact_requested_window() -> None:
+    payload = b"""<Root>
+    <KR><DT>2026-09-30T00:00:00</DT><Rate>18</Rate></KR>
+    <KR><DT>2026-10-01T00:00:00</DT><Rate>17,5</Rate></KR>
+    <KR><DT>2026-10-02T00:00:00</DT><Rate>17</Rate></KR>
+    </Root>"""
+    with patch("urllib.request.urlopen", return_value=FakeXmlResponse(payload)) as request:
+        rates = CBRClient().key_rate_history(date(2026, 10, 1), date(2026, 10, 2))
+    assert [(row.effective_date, row.value) for row in rates] == [
+        (date(2026, 10, 1), "17.5"), (date(2026, 10, 2), "17"),
+    ]
+    body = request.call_args.args[0].data
+    assert b"<fromDate>2026-10-01T00:00:00</fromDate>" in body
+    assert b"<ToDate>2026-10-02T23:59:59</ToDate>" in body
+    with patch("urllib.request.urlopen") as request, pytest.raises(ValueError):
+        CBRClient().key_rate_history(date(2020, 1, 1), date(2026, 10, 2))
+    request.assert_not_called()
+
+
+def test_key_rate_history_refuses_duplicate_source_dates() -> None:
+    payload = b"""<Root>
+    <KR><DT>2026-10-01T00:00:00</DT><Rate>18</Rate></KR>
+    <KR><DT>2026-10-01T00:00:00</DT><Rate>17</Rate></KR></Root>"""
+    with patch("urllib.request.urlopen", return_value=FakeXmlResponse(payload)):
+        with pytest.raises(CBRUnavailable, match="duplicate"):
+            CBRClient().key_rate_history(date(2026, 10, 1), date(2026, 10, 2))
+
+
 def test_cbr_client_fetches_requested_effective_day_not_next_published_rate() -> None:
     today_xml = _cbr_xml(effective_date="01.10.2026", value="83,5588")
     next_xml = _cbr_xml(effective_date="02.10.2026", value="83,2454")

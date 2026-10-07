@@ -61,6 +61,27 @@ ACCEPTED_MIGRATION_SHA256 = {
     "0016_portfolio_refresh.sql": (
         "f18abf898992751060f3befff5bc946daa8192ba1c2827ea2671318342eca295"
     ),
+    "0017_notifications.sql": (
+        "fb6a54daa5ab934a643466bb9ef987c69b4d637ef90a79ceda680c1b79d8b971"
+    ),
+    "0018_strategy_research.sql": (
+        "c0ba3797fc59024584b024f56eb39a4020699e959a3038ee5ac688ac92b6e780"
+    ),
+    "0019_session_security.sql": (
+        "e4c0e3c6d01c810c86a26d5d1a01e7daa965a3e1e193861407de67b8df329dab"
+    ),
+    "0020_goal_plans.sql": (
+        "664e0eaa545cc5c74696605de1772f72c3a3c88d774d9358daafa1a0131bb5d2"
+    ),
+    "0021_assistant_workspace.sql": (
+        "e50b592b4f422c47a9c97b5c450cf407f45895f135b772aa01a1005f55910c06"
+    ),
+    "0022_billing.sql": (
+        "8432fa5fa2776900b29165a23b868213b2388dad16bf1a782d154d76e9b8ba0e"
+    ),
+    "0023_strategy_execution_guards.sql": (
+        "0c4a3f29bc370d424aef7959cbee569f10adc0ad836572d7dc6428071a4e0efb"
+    ),
 }
 USER_ONE = UUID("00000000-0000-0000-0000-000000000101")
 USER_TWO = UUID("00000000-0000-0000-0000-000000000102")
@@ -375,7 +396,7 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     reason="ephemeral PostgreSQL is required for migration integration coverage",
 )
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0023_strategy_execution_guards.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0026_strategy_research_capacity.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:

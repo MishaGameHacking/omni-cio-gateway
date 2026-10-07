@@ -46,6 +46,7 @@
     loading: new Set(),
     requests: new Set(),
     resourceVersions: new Map(),
+    resourceRequests: new Map(),
     deletedGoalIds: new Set(),
     homePeriod: "1m",
     portfolioPeriod: "1y",
@@ -67,6 +68,9 @@
     deliveryBusy: false,
     deliveryDrafts: {},
     searchSequence: 0,
+    researchRequest: null,
+    researchDraft: {},
+    researchArchiveDialog: null,
     cbrCurrency: "USD",
     cbrPeriod: "1m",
     prefs: {
@@ -382,21 +386,34 @@
     const stream = new EventSource(`/api/market/instruments/${safeSegment(uid)}/stream?profile_context=${encodeURIComponent(state.user.public_id)}`);
     quoteStream = stream;
     const current = () => quoteStream === stream && generation === state.generation && state.view === "asset" && state.asset?.uid === uid && !state.locked;
-    stream.addEventListener("quote", event => {
+    const repaint = () => {
+      const container = $("#view-asset");
+      if (!container.contains(document.activeElement)) {
+        renderAsset();
+        U.bindCharts(container);
+        return;
+      }
+      // A tick must not replace a chart or focused control being inspected.
+      const quote = $("[data-market-quote]", container);
+      if (quote) quote.innerHTML = assetQuoteHTML(assetPricing(state.asset));
+      const source = $("[data-market-source]", container);
+      const market = state.asset.market;
+      if (source) source.innerHTML = freshness(market.source || "T-Invest", market.quote_time || market.observed_at, market.quote_status);
+    };
+    stream.addEventListener("market", event => {
       if (!current()) return;
       try {
         const payload = JSON.parse(event.data);
-        if (payload.instrument_uid !== uid || typeof payload.observed_at !== "string" || !["currency", "percent_nominal", "points", "per_nominal", "unknown"].includes(payload.price_unit)) throw new Error("invalid_market_stream");
-        if (new Date(payload.observed_at) < new Date(state.asset.market.observed_at)) return;
+        const observedAt = Date.parse(payload.observed_at);
+        if (payload.instrument_uid !== uid || typeof payload.observed_at !== "string" || !Number.isFinite(observedAt) || !["currency", "percent_nominal", "points", "per_nominal", "unknown"].includes(payload.price_unit)) throw new Error("invalid_market_stream");
+        if (observedAt < Date.parse(state.asset.market.observed_at)) return;
         state.asset.market = {...state.asset.market, ...payload};
         quoteFailures = 0;
-        if (!$("#view-asset").contains(document.activeElement)) {
-          renderAsset();
-          U.bindCharts($("#view-asset"));
-        }
+        repaint();
       } catch {
         state.asset.market.quote_status = "unavailable";
         stopQuoteStream();
+        repaint();
       }
     });
     stream.addEventListener("status", event => {
@@ -410,13 +427,14 @@
       }
       state.asset.market.quote_status = status;
       if (["offline", "invalid", "disconnected", "reconnect"].includes(status)) stopQuoteStream();
-      if (!$("#view-asset").contains(document.activeElement)) renderAsset();
+      repaint();
     });
     stream.onerror = () => {
       if (!current()) return;
       state.asset.market.quote_status = "stale";
       quoteFailures += 1;
       if (quoteFailures >= 6) stopQuoteStream();
+      repaint();
     };
   };
   const clearPrivateState = () => {
@@ -426,10 +444,16 @@
     for (const controller of state.requests) controller.abort();
     state.requests.clear();
     state.resourceVersions.clear();
+    state.resourceRequests.clear();
     state.deletedGoalIds.clear();
     state.loading.clear();
     clearTimeout(state.prefs.timer);
     clearTimeout(state.strategy.timer);
+    clearTimeout(state.researchRequest?.timer);
+    state.researchRequest = null;
+    state.researchDraft = {};
+    state.researchArchiveDialog = null;
+    state.researchDisplaySequence = 0;
     clearTimeout(state.refresh.timer);
     state.refresh = {
       sequence: state.refresh.sequence + 1,
@@ -630,8 +654,9 @@
     force = false,
     ...options
   } = {}) => {
+    const currentRequest = state.resourceRequests.get(name);
+    if (!force && currentRequest?.path === path) return currentRequest.promise;
     if (!force && state.data[name] !== undefined) return state.data[name];
-    if (state.loading.has(name) && !force) return null;
     if (name === "executions") delete state.data.executions;
     const sequence = (state.resourceVersions.get(name) || 0) + 1;
     state.resourceVersions.set(name, sequence);
@@ -639,18 +664,22 @@
     const goalsSequence = state.resourceVersions.get("goals") || 0;
     state.loading.add(name);
     delete state.errors[name];
-    try {
-      const payload = await api(path, options);
+    const promise = api(path, options).then(payload => {
       if (generation !== state.generation || state.resourceVersions.get(name) !== sequence) return null;
       state.data[name] = resourceSnapshot(name, payload);
       adoptLoadedResource(name, payload, goalsSequence);
       return payload;
-    } catch (error) {
+    }).catch(error => {
       if (generation === state.generation && state.resourceVersions.get(name) === sequence && !isCancelled(error)) state.errors[name] = error;
       return null;
-    } finally {
-      if (generation === state.generation && state.resourceVersions.get(name) === sequence) state.loading.delete(name);
-    }
+    }).finally(() => {
+      if (generation === state.generation && state.resourceVersions.get(name) === sequence) {
+        state.loading.delete(name);
+        state.resourceRequests.delete(name);
+      }
+    });
+    state.resourceRequests.set(name, {path, promise});
+    return promise;
   };
   const resourceSnapshot = (name, payload) => {
     if (name === "goals") return mergeGoalList(payload);
@@ -744,6 +773,10 @@
     views: ["assistant"],
     path: "/api/assistant/conversations"
   }, {
+    name: "researchArchive",
+    views: ["strategies"],
+    path: "/api/research/runs?limit=50"
+  }, {
     name: "assistantResearch",
     views: ["assistant"],
     path: "/api/research/runs?limit=200"
@@ -763,6 +796,11 @@
     name: "notifications",
     views: ["settings"],
     path: "/api/notifications"
+  }, {
+    name: "operationalMetrics",
+    views: ["settings"],
+    path: "/api/system/metrics",
+    operator: true
   }, {
     name: "goals",
     views: ["goals"],
@@ -785,7 +823,7 @@
   };
   const loadForView = async (view, detail = {}, force = false) => {
     const generation = state.generation;
-    const resources = viewResources.filter(resource => resource.views.includes(view) && (!state.tour || resource.public));
+    const resources = viewResources.filter(resource => resource.views.includes(view) && (!state.tour || resource.public) && (!resource.operator || state.user?.can_view_operational_metrics === true));
     await Promise.allSettled(resources.map(resource => {
       const historyChanged = resource.name === "workspace" && state.data.workspace?.overview?.history_coverage?.period !== workspacePeriod(view);
       return loadResource(resource.name, typeof resource.path === "function" ? resource.path() : resource.path, {
@@ -794,13 +832,14 @@
       });
     }));
     if (generation !== state.generation || state.view !== view) return;
+    if (view === "strategies") restoreResearchRequest();
     if (view === "assistant") await loadSelectedAssistantConversation();
     if (view === "asset" && detail.uid && !state.tour) {
       if (detail.uid === state.route.uid) await loadAssetView(detail.uid, force);
       return;
     }
     if (view === "search") {
-      await runSearch(detail.q || "");
+      if ((detail.q || "") === (state.route.q || "")) await runSearch(detail.q || "");
       return;
     }
     renderCurrent();
@@ -822,9 +861,31 @@
     target?.setAttribute("tabindex", "-1");
     target?.focus({preventScroll: true});
   };
-  const dataError = (name, label = T("Не удалось загрузить данные")) => state.errors[name] ? `<div class="notice error"><strong>${esc(label)}</strong><p>${esc(humanError(state.errors[name]))}</p>${button(T("Повторить загрузку"), "refresh", {
-    small: true
+  const dataError = (name, label = T("Не удалось загрузить данные")) => state.errors[name] ? `<div class="notice error"><strong>${esc(label)}</strong><p>${esc(humanError(state.errors[name]))}</p>${button(T("Повторить загрузку"), "resource-retry", {
+    small: true,
+    extra: `data-resource="${esc(name)}"${state.loading.has(name) ? " disabled aria-busy=\"true\"" : ""}`
   })}</div>` : "";
+  const retryResource = async control => {
+    const resource = viewResources.find(item => item.name === control.dataset.resource);
+    if (!resource || state.loading.has(resource.name) || !resource.public && !requireUser() || resource.operator && state.user?.can_view_operational_metrics !== true) return;
+    if (resource.name === "billing" && control.closest("#dialog-content")) {
+      await openBilling();
+      return;
+    }
+    const generation = state.generation;
+    const view = state.view;
+    control.disabled = true;
+    control.setAttribute("aria-busy", "true");
+    await loadResource(resource.name, typeof resource.path === "function" ? resource.path() : resource.path, {
+      force: true,
+      timeout: resource.timeout || 30000
+    });
+    if (generation === state.generation && state.view === view) {
+      if (resource.name === "researchArchive") restoreResearchRequest();
+      if (resource.name === "notifications") renderNotificationPanel();
+      else renderCurrent();
+    }
+  };
   const updateIdentity = () => {
     const name = state.prefs.draft?.display_name?.trim() || (state.tour ? T("Знакомство") : T("Мой профиль"));
     $("#profile-name").textContent = name;
@@ -1089,6 +1150,7 @@
     if (overview.history_coverage?.period !== period) return [];
     return overview.history || [];
   };
+  const workspaceForPeriod = period => state.data.workspace?.overview?.history_coverage?.period === period ? state.data.workspace : undefined;
   const navCoverageHTML = (overview, period) => {
     const coverage = overview.history_coverage;
     if (!coverage || coverage.period !== period) return ("<p class=\"data-footnote\">" + H("Покрытие выбранного периода ещё не получено.") + "</p>");
@@ -1098,8 +1160,8 @@
     return `<p class="data-footnote" data-history-period="${esc(period)}">${esc(range)}<br>${esc(observations)}. ${coverage.status === "sampled" ? T("На графике показаны последние точки временных интервалов; расчёты используют полную сохранённую историю.") : T("Глубина истории зависит от сохранённых данных.")}</p>`;
   };
   const renderHome = () => {
-    const ws = state.data.workspace;
-    const overview = ws?.overview || {};
+    const ws = workspaceForPeriod(state.homePeriod);
+    const overview = state.data.workspace?.overview || {};
     const performance = ws?.performance || {};
     const income = ws?.income || {};
     const monthly = Array.isArray(income.by_month) ? income.by_month : [];
@@ -1125,7 +1187,7 @@
   const eventFilters = () => `<div class="filters" aria-label="${H("Фильтр событий")}">${[["important", T("Важное")], ["assets", T("Мои активы")], ["market", T("Рынок")], ["all", T("Все")]].map(([key, title]) => renderEventFiltersFilterButton(key, title)).join("")}</div>`;
   const renderPortfolio = () => {
     const overview = state.data.workspace?.overview || {};
-    const performance = state.data.workspace?.performance || {};
+    const performance = workspaceForPeriod(state.portfolioPeriod)?.performance || {};
     $("#view-portfolio").innerHTML = `${heading(T("Портфель"), state.data.connection?.account_name || T("Стоимость, структура и активы вашего счёта"), button(T("Обновить"), "refresh", {
       small: true
     }) + button(T("Подключение"), "connect", {
@@ -1182,7 +1244,7 @@
       ["news", `/api/news?limit=50&query=${encodeURIComponent(trimmed)}`]
     ];
     const results = await Promise.allSettled(requests.map(([, path]) => api(path)));
-    if (sequence !== state.searchSequence || generation !== state.generation) return;
+    if (sequence !== state.searchSequence || generation !== state.generation || trimmed !== routeSearchQuery()) return;
     results.forEach((result, index) => {
       const name = requests[index][0];
       if (result.status === "fulfilled") {
@@ -1225,8 +1287,10 @@
     }
   };
   const archiveNewsItem = item => `<article class="event-item"><span class="event-icon">${icon("events", true)}</span><div class="event-item-body"><h3><button class="event-title-button" data-news-open="${esc(item.id)}">${esc(item.title)}</button></h3><p class="fine-print">${esc(item.summary || "")}</p><span class="event-meta">${esc(item.source || T("Источник брокера"))} · ${esc(date(item.occurred_at, true))}</span></div></article>`;
+  const routeSearchQuery = () => String(state.route.q || "").trim().slice(0, 64);
   const renderSearch = () => {
-    const query = state.searchQuery.toLocaleLowerCase("ru-RU");
+    const selectedQuery = routeSearchQuery();
+    const query = selectedQuery.toLocaleLowerCase("ru-RU");
     const localNews = query ? (state.data.news?.items || []).filter(item => `${item.title} ${item.source}`.toLocaleLowerCase("ru-RU").includes(query)) : [];
     const events = state.searchPages.events?.items || [];
     const news = state.searchPages.news?.items || [];
@@ -1235,10 +1299,10 @@
     const matches = `${state.searchResults.map(item => renderSearchSearchResult3(item)).join("")}${events.map(item => renderSearchSearchResult(item)).join("")}${news.map(archiveNewsItem).join("")}${localNews.map(item => renderSearchSearchResult2(item)).join("")}`;
     let content;
     if (state.tour) content = `${empty(T("Полный поиск доступен после входа"), T("История событий ищется на сервере. Инструменты и архив новостей требуют подключённого источника."), "login", T("Войти"), "search", true)}${localNews.map(item => renderSearchSearchResult2(item)).join("")}`;
-    else if (state.loading.has("search")) content = U.loading(T("Ищем в инструментах, событиях и архиве новостей…"));
-    else if (!state.searchQuery) content = empty(T("Что найдём?"), T("Введите название компании, тикер или слово из события в строке поиска."), "", "", "search", true);
+    else if (state.loading.has("search") || selectedQuery !== state.searchQuery) content = U.loading(T("Ищем в инструментах, событиях и архиве новостей…"));
+    else if (!selectedQuery) content = empty(T("Что найдём?"), T("Введите название компании, тикер или слово из события в строке поиска."), "", "", "search", true);
     else content = `${errors}<div class="search-results">${matches || empty(more ? T("В проверенной части совпадений нет") : T("Совпадений не найдено"), more ? T("Продолжите поиск в следующей части архива.") : T("Уточните название или попробуйте биржевой тикер."), "", "", "search")}</div><div class="form-actions">${more}</div><p class="data-footnote">${H("События: серверная история аккаунта. Новости: последовательный просмотр архива источника; сводка ЦБ содержит последние публичные заголовки.")}</p>`;
-    $("#view-search").innerHTML = `${heading(T("Поиск"), state.searchQuery ? renderSearchFragment() : T("Инструменты, компании и события"))}<section class="card">${content}</section>`;
+    $("#view-search").innerHTML = `${heading(T("Поиск"), selectedQuery ? renderSearchFragment(selectedQuery) : T("Инструменты, компании и события"))}<section class="card">${content}</section>`;
   };
   const loadAsset = async (uid, force = false) => {
     const segment = safeSegment(uid);
@@ -1332,17 +1396,19 @@
       low: lows.length ? Math.min(...lows) : null
     };
   };
-  const assetChartHTML = ({
+  const assetQuoteHTML = ({market, current, change, changePercent, priceUnit, currency}) => {
+    const changeLabel = change === null ? T("Изменение за период не рассчитано") : `${esc(marketPrice(change, priceUnit, currency))} · ${esc(percent(changePercent, true))}`;
+    const cashPrice = market?.cash_price && priceUnit !== "currency" ? `<p class="fine-print">${H("Текущая чистая цена:")} ${esc(money(market.cash_price, 2, market.cash_price_currency, false))}</p>` : "";
+    return `<div class="main-value">${esc(marketPrice(current, priceUnit, currency))}</div>${cashPrice}<p class="value-change ${change === null ? "" : renderAssetValue(change)}">${changeLabel}</p>`;
+  };
+  const assetChartHTML = (context) => {
+    const {
     asset,
     market,
     candles,
-    current,
-    change,
-    changePercent,
     priceUnit,
     currency
-  }) => {
-    const changeLabel = change === null ? T("Изменение за период не рассчитано") : `${esc(marketPrice(change, priceUnit, currency))} · ${esc(percent(changePercent, true))}`;
+    } = context;
     const chartMarkup = asset.loading ? U.loading(T("Загружаем биржевой график…")) : chart(candles, {
       timeKey: "time",
       valueKey: "close",
@@ -1352,8 +1418,7 @@
       currency
     });
     const notes = [priceUnit === "unknown" ? T("Источник не подтвердил единицы цены.") : "", priceUnit === "percent_nominal" ? T("Цена и история — в процентах номинала, без НКД. Текущий номинал не применяется к старым свечам.") : "", priceUnit === "points" ? T("Котировки в пунктах. Денежная стоимость шага может меняться.") : "", market?.trading_status ? renderAssetFragment3(market) : "", state.assetPeriod === "all" ? T("Доступная история источника.") : "", esc(market?.history_note || ""), T("График показывает цены закрытия свечей.")].filter(Boolean).join(" ");
-    const cashPrice = market?.cash_price && priceUnit !== "currency" ? `<p class="fine-print">${H("Текущая чистая цена:")} ${esc(money(market.cash_price, 2, market.cash_price_currency, false))}</p>` : "";
-    return `<div class="main-value">${esc(marketPrice(current, priceUnit, currency))}</div>${cashPrice}<p class="value-change ${change === null ? "" : renderAssetValue(change)}">${changeLabel}</p>${periods("asset", state.assetPeriod, true)}${chartMarkup}${freshness(market?.source || "T-Invest", market?.quote_time || market?.observed_at, market?.quote_status)}<p class="data-footnote">${notes}</p>`;
+    return `<div data-market-quote>${assetQuoteHTML(context)}</div>${periods("asset", state.assetPeriod, true)}${chartMarkup}<div data-market-source>${freshness(market?.source || "T-Invest", market?.quote_time || market?.observed_at, market?.quote_status)}</div><p class="data-footnote">${notes}</p>`;
   };
   const assetHoldingNote = ({
     asset,
@@ -1537,7 +1602,8 @@
     const assess = $('[data-action="assess-strategy"]');
     if (assess) assess.disabled = unavailable || state.loading.has("assessment");
     const research = $('#research-form [type="submit"]');
-    if (research) research.disabled = unavailable || state.loading.has("research");
+    if (research) research.disabled = unavailable || researchUnavailable();
+    for (const input of $$("#research-form input")) input.disabled = researchPending();
     const planner = $('#view-strategies [data-action="execution-plan"]');
     if (planner) planner.disabled = unavailable || state.executionBusy;
     const title = $(".strategy-heading h2");
@@ -2218,16 +2284,19 @@
     name: "from_at",
     label: T("Начало периода"),
     type: "date",
+    value: state.researchDraft.from_at,
     required: true
   })}${field({
     name: "to_at",
     label: T("Конец периода"),
     type: "date",
+    value: state.researchDraft.to_at,
     required: true
   })}${field({
     name: "initial_capital_rub",
     label: T("Расчётный капитал, ₽"),
     type: "number",
+    value: state.researchDraft.initial_capital_rub,
     min: ".01",
     max: 1000000000000,
     step: ".01",
@@ -2237,6 +2306,7 @@
     name: "commission_bps",
     label: T("Комиссия, базисных пунктов"),
     type: "number",
+    value: state.researchDraft.commission_bps,
     min: "0",
     max: "1000",
     step: ".01",
@@ -2246,12 +2316,37 @@
     name: "slippage_bps",
     label: T("Проскальзывание, базисных пунктов"),
     type: "number",
+    value: state.researchDraft.slippage_bps,
     min: "0",
     max: "1000",
     step: ".01",
     required: true,
     helpText: T("Дополнительная разница между наблюдаемой и расчётной ценой. Реальное проскальзывание заранее неизвестно.")
-  })}</div><div class="form-actions"><button class="button primary" type="submit"${state.strategy.dirty || state.strategy.busy || state.loading.has("research") ? " disabled" : ""}>${H("Проверить на истории")}</button><button class="button secondary" type="button" data-research-action="archive">${H("История исследований")}</button><button class="button secondary" type="button" data-research-action="evidence">${H("Источники данных")}</button></div><output id="research-message" class="form-message"></output></form>`;
+  })}</div><div class="form-actions"><button class="button primary" type="submit"${strategySaveUnavailable(state.strategy) || researchUnavailable() ? " disabled" : ""}>${H("Проверить на истории")}</button><button class="button secondary" type="button" data-research-action="archive">${H("История исследований")}</button><button class="button secondary" type="button" data-research-action="evidence">${H("Источники данных")}</button></div><output id="research-message" class="form-message"></output></form>`;
+  const researchPending = () => Boolean(state.researchRequest && ["submitting", "checking", "running", "uncertain", "not_found"].includes(state.researchRequest.status));
+  const researchAtCapacity = () => {
+    const capacity = state.data.researchArchive?.capacity;
+    return Boolean(capacity && (capacity.runs_used >= capacity.runs_limit || capacity.storage_used_bytes >= capacity.storage_limit_bytes));
+  };
+  const researchUnavailable = () => researchPending() || !state.data.researchArchive || Boolean(state.errors.researchArchive) || researchAtCapacity();
+  const researchCapacityHTML = capacity => capacity ? `<div class="section-gap">${infoRows([[T("research.saved_runs"), `${format(capacity.runs_used, 0)} / ${format(capacity.runs_limit, 0)}`], [T("research.stored_inputs"), `${format(capacity.storage_used_bytes / 1048576, 1)} / ${format(capacity.storage_limit_bytes / 1048576, 0)} ${T("billing.mib")}`]])}<p class="fine-print">${H("research.capacity_help")}</p></div>` : "";
+  const researchRequestHTML = () => {
+    const request = state.researchRequest;
+    if (!request) return "";
+    const pending = researchPending();
+    const text = {
+      submitting: T("research.submitting"), checking: T("research.checking"),
+      running: T("research.running"), uncertain: T("research.uncertain"),
+      not_found: T("research.not_found"), completed: T("research.completed"),
+      failed: T("research.failed"), expired: T("research.expired"),
+      deleted: T("research.deleted"), conflict: T("research.conflict")
+    }[request.status] || T("research.uncertain");
+    const check = pending && !request.busy || request.resultPending;
+    const retry = request.status === "not_found" && request.body && !request.busy;
+    const warning = ["uncertain", "not_found", "failed", "expired", "conflict"].includes(request.status) || request.error;
+    return `<div class="notice${warning ? " warning" : ""}" data-research-state="${esc(request.status)}" role="status"><strong>${esc(text)}</strong>${request.error ? `<p>${esc(humanError(request.error))}</p>` : ""}${request.created_at ? `<p class="fine-print">${H("research.started_at")} ${esc(date(request.created_at, true))} ${H("МСК")}</p>` : ""}${request.archivedOnly ? `<p>${H("research.other_version")}</p>` : ""}<div class="form-actions">${check ? button(T("research.check"), "research-check", {small: true, extra: request.busy ? "disabled" : ""}) : ""}${retry ? button(T("research.retry_original"), "research-retry", {small: true}) : ""}${request.run_id ? `<button class="button secondary small" data-research-run="${esc(request.run_id)}" data-research-operation="open">${H("Открыть")}</button>` : ""}</div></div>`;
+  };
+  const researchStateHTML = () => `${dataError("researchArchive")}${!state.data.researchArchive && !state.errors.researchArchive ? U.loading(T("research.checking_archive")) : ""}${researchAtCapacity() ? `<p class="notice warning">${H("research.full")}</p>` : ""}${researchRequestHTML()}`;
   const researchMetricLabels = () => ({
     net_return_percent: T("Результат за период"),
     max_drawdown_percent: T("Максимальная просадка"),
@@ -2265,11 +2360,12 @@
   });
   const incompleteResearchHTML = result => `<div class="notice warning"><strong>${H("Недостаточно данных для исследования")}</strong><p>${esc(result.reason || (result.limitations || []).join(" ") || T("Не получена достаточная история цен и доступности инструментов."))}</p></div>${result.missing_requirements?.length ? renderResearchRiskList(result) : ""}${selectionHTML(result.selection, T("Проверка исторической выборки"))}${selectionHTML(result.current_selection, T("Отдельный подбор по сегодняшним данным"))}${result.limitations?.length ? renderResearchDetailsSummary2(result) : ""}${researchRobustnessHTML(result)}`;
   const renderResearch = () => {
-    if (state.loading.has("research")) return U.loading(T("Исследуем доступную историю…"));
+    const status = researchStateHTML();
     const result = state.strategy.research;
-    if (!result) return "";
-    if (result.status !== "computed") return incompleteResearchHTML(result);
-    return `<div class="section-gap"><h3 class="panel-title">${esc(result.return_label || T("Результат исторического исследования"))}</h3>${result.complete_strategy_coverage === false ? renderResearchNotice(result) : ""}<p class="research-period">${esc(date(result.period?.from))} — ${esc(date(result.period?.to))} · ${esc(format(result.period?.observations, 0))} ${H("наблюдений")}</p><div class="assessment-metrics">${Object.entries(researchMetricLabels()).map(([key, label]) => renderResearchAssessmentMetric(label, key, result)).join("")}</div>${chart(result.equity_curve, {
+    if (!result) return status;
+    const source = result.archive?.strategy_version ? `<p class="data-footnote">${H("Версия стратегии:")} ${esc(result.archive.strategy_version)}${result.archive.strategy_version !== state.strategy.server?.version ? ` · ${H("research.archive_version")}` : ""}</p>` : "";
+    if (result.status !== "computed") return status + source + incompleteResearchHTML(result);
+    return `${status}${source}<div class="section-gap"><h3 class="panel-title">${esc(result.return_label || T("Результат исторического исследования"))}</h3>${result.complete_strategy_coverage === false ? renderResearchNotice(result) : ""}<p class="research-period">${esc(date(result.period?.from))} — ${esc(date(result.period?.to))} · ${esc(format(result.period?.observations, 0))} ${H("наблюдений")}</p><div class="assessment-metrics">${Object.entries(researchMetricLabels()).map(([key, label]) => renderResearchAssessmentMetric(label, key, result)).join("")}</div>${chart(result.equity_curve, {
       timeKey: "time",
       valueKey: "nav_rub",
       label: T("Расчётная стоимость на исторических данных"),
@@ -2291,12 +2387,42 @@
   const researchArchiveItemHTML = item => `<section class="card section-gap"><h3>${esc(date(item.created_at, true))} ${H("МСК")}</h3><p class="fine-print">${H("Версия стратегии:")} ${esc(item.strategy_version)} · ${esc(item.status === "computed" ? T("Рассчитано") : T("Данные неполные"))}</p>${infoRows([[T("Результат за период"), percent(item.metrics?.net_return_percent)]])}<div class="form-actions"><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="open">${H("Открыть")}</button><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="replay">${H("Проверить повторяемость")}</button><button class="button secondary small" data-research-run="${esc(item.id)}" data-research-operation="export">${H("Скачать входные данные")}</button><button class="button danger small" data-research-run="${esc(item.id)}" data-research-operation="delete">${H("Удалить")}</button></div></section>`;
   const openResearchArchive = async () => {
     if (!requireUser()) return;
-    const generation = state.generation;
+    openDialog(T("История исследований"), `<div id="research-archive">${U.loading(T("research.checking_archive"))}</div>`);
+    state.researchArchiveDialog = {items: [], next_cursor: null, capacity: null, busy: false, error: null,
+      generation: state.generation, sequence: state.eventRequest};
+    await loadResearchArchivePage(false);
+  };
+  const currentResearchArchive = page => page === state.researchArchiveDialog && page.generation === state.generation && page.sequence === state.eventRequest && $("#workspace-dialog").open;
+  const renderResearchArchive = page => {
+    if (!currentResearchArchive(page)) return;
+    const restart = page.error?.code === "research_cursor_not_found";
+    $("#research-archive").innerHTML = `<p class="fine-print">${H("Каждый запуск сохраняет версию стратегии, заданные издержки, точные входные данные и результат. Повторная проверка не обращается к внешним источникам.")}</p>${researchCapacityHTML(page.capacity)}${page.items.map(researchArchiveItemHTML).join("")}${!page.items.length && !page.busy && !page.error ? `<p class="notice">${H("Сохранённых исследований пока нет.")}</p>` : ""}${page.error ? `<p class="notice error">${esc(humanError(page.error))}</p>` : ""}${page.busy ? U.loading(T("Загрузка…")) : ""}<div class="form-actions">${page.next_cursor && !restart ? button(T("Показать ещё"), "research-archive-more", {extra: page.busy ? "disabled" : ""}) : ""}${restart || page.error && !page.next_cursor ? button(T("research.reload_archive"), "research-archive-reload", {extra: page.busy ? "disabled" : ""}) : ""}</div>`;
+  };
+  const loadResearchArchivePage = async more => {
+    const page = state.researchArchiveDialog;
+    if (!page || !currentResearchArchive(page) || page.busy || more && !page.next_cursor) return;
+    const cursor = more ? page.next_cursor : null;
+    page.busy = true;
+    page.error = null;
+    renderResearchArchive(page);
     try {
-      const payload = await api("/api/research/runs?limit=200");
-      if (generation !== state.generation) return;
-      openDialog(T("История исследований"), payload.items?.length ? `<p class="fine-print">${H("Каждый запуск сохраняет версию стратегии, заданные издержки, точные входные данные и результат. Повторная проверка не обращается к внешним источникам.")}</p>${payload.items.map(researchArchiveItemHTML).join("")}` : ("<p class=\"notice\">" + H("Сохранённых исследований пока нет.") + "</p>"));
-    } catch (error) { if (!isCancelled(error)) toast(humanError(error), true); }
+      const payload = await api(`/api/research/runs?limit=50${cursor ? `&cursor=${safeSegment(cursor)}` : ""}`);
+      if (!currentResearchArchive(page)) return;
+      const previous = more ? page.items : [];
+      page.items = [...new Map([...previous, ...payload.items].map(item => [item.id, item])).values()];
+      page.next_cursor = payload.next_cursor;
+      page.capacity = payload.capacity;
+      if (!more) state.data.researchArchive = payload;
+      else if (state.data.researchArchive) state.data.researchArchive.capacity = payload.capacity;
+      delete state.errors.researchArchive;
+      restoreResearchRequest();
+      repaintResearch();
+    } catch (error) {
+      if (currentResearchArchive(page) && !isCancelled(error)) page.error = error;
+    } finally {
+      page.busy = false;
+      renderResearchArchive(page);
+    }
   };
   const openResearchEvidence = async () => {
     if (!requireUser()) return;
@@ -2526,10 +2652,16 @@
   };
   const goalForecastHTML = forecast => {
     if (!forecast) return ("<p class=\"notice\">" + H("Задайте собственные предположения и сохраните план для расчёта.") + "</p>");
-    if (forecast.status !== "available") return `<p class="notice warning">${esc({goal_target_date_required: T("Укажите дату достижения в настройках цели."), goal_progress_unavailable: T("Для расчёта нужен подтверждённый текущий прогресс."), goal_plan_horizon_out_of_range: T("Выберите будущий срок не более 30 лет.")}[forecast.reason] || T("Данных для расчёта пока недостаточно."))}</p>`;
+    const source = {portfolio: T("Выделенная доля портфеля"), income: T("Полученные выплаты до налоговых списаний"), manual: T("Сумма указана вами")}[forecast.source_kind] || T("Источник прогресса");
+    const sourceHTML = `<div class="goal-forecast-source">${infoRows([[T("goals.source_amount"), money(forecast.source_amount_rub)], [T("goals.calculated_at"), date(forecast.as_of)]])}${freshness(source, forecast.source_as_of, forecast.source_status)}</div>`;
+    if (forecast.status !== "available") {
+      const message = {goal_target_date_required: T("Укажите дату достижения в настройках цели."), goal_progress_unavailable: T("Для расчёта нужен подтверждённый текущий прогресс."), goal_progress_stale: T("goals.source_stale"), goal_plan_horizon_out_of_range: T("Выберите будущий срок не более 30 лет.")}[forecast.reason] || T("Данных для расчёта пока недостаточно.");
+      const refresh = forecast.status === "source_stale" ? `<div class="form-actions">${button(T("goals.refresh_source"), "portfolio", {route: true, small: true})}</div>` : "";
+      return `${sourceHTML}<p class="notice warning">${esc(message)}</p>${refresh}`;
+    }
     const simulation = forecast.simulation;
     const probabilityModel = simulation ? `<h3 class="panel-title section-gap">${H("Условная модель вероятности")}</h3>${infoRows([[T("Достигнуто в модельных траекториях"), percent(simulation.conditional_probability_percent)], [T("Точность моделирования, интервал 95%"), simulation.sampling_interval_95_percent.map(value => percent(value)).join(" — ")], [T("10-й процентиль суммы"), money(simulation.terminal_percentiles_rub["10"])], [T("Медиана суммы"), money(simulation.terminal_percentiles_rub["50"])], [T("90-й процентиль суммы"), money(simulation.terminal_percentiles_rub["90"])]])}<p class="notice warning">${H("Это доля успешных траекторий при ваших предположениях, а не установленная вероятность будущей прибыли. Модель использует независимые логнормальные доходности; кризисы, дефолты и изменение связей между активами в неё не входят. Интервал отражает только погрешность симуляции.")}</p>` : "";
-    return `${infoRows([[T("Расчётный срок, месяцев"), format(forecast.months, 0)], [T("Целевая сумма с инфляцией"), money(forecast.inflation_adjusted_target_rub)], [T("Сумма в заданном сценарии"), money(forecast.projected_amount_rub)], [forecast.required_monthly_kind === "income" ? T("Необходимые поступления в месяц") : T("Необходимый взнос в месяц"), money(forecast.required_monthly_rub)], [T("Месяцев до цели в сценарии"), forecast.deterministic_months_to_target ?? T("За выбранный срок не достигается")]])}${probabilityModel}<p class="fine-print">${H("Поступления — в конце месяца, оставшаяся часть текущего месяца считается отдельным периодом. Доходность задана после издержек. Для цели по выплатам рост стоимости капитала не считается доходом.")}</p>`;
+    return `${sourceHTML}${infoRows([[T("Расчётный срок, месяцев"), format(forecast.months, 0)], [T("Целевая сумма с инфляцией"), money(forecast.inflation_adjusted_target_rub)], [T("Сумма в заданном сценарии"), money(forecast.projected_amount_rub)], [forecast.required_monthly_kind === "income" ? T("Необходимые поступления в месяц") : T("Необходимый взнос в месяц"), money(forecast.required_monthly_rub)], [T("Месяцев до цели в сценарии"), forecast.deterministic_months_to_target ?? T("За выбранный срок не достигается")]])}${probabilityModel}<p class="fine-print">${H("Поступления — в конце месяца, оставшаяся часть текущего месяца считается отдельным периодом. Доходность задана после издержек. Для цели по выплатам рост стоимости капитала не считается доходом.")}</p>`;
   };
   const openGoalPlan = async id => {
     if (!requireUser()) return;
@@ -2562,7 +2694,7 @@
       form.dataset.version = saved.version;
       form.dataset.goalVersion = saved.goal_version;
       $("#goal-plan-result", form).innerHTML = goalForecastHTML(saved.forecast);
-      showMessage($("#goal-plan-message", form), T("План сохранён; расчёт использует показанные предположения."));
+      showMessage($("#goal-plan-message", form), saved.forecast?.status === "available" ? T("План сохранён; расчёт использует показанные предположения.") : T("goals.saved_without_forecast"));
     } catch (error) {
       if (!isCancelled(error) && current()) showMessage($("#goal-plan-message", form), `${humanError(error)} ${T("При конфликте или неопределённом результате закройте окно и откройте сохранённый план снова.")}`, true);
     } finally {
@@ -2933,7 +3065,7 @@
     openDialog(item.title, `<p class="fine-print">${esc(item.source || T("Источник брокера"))} · ${esc(date(item.occurred_at, true))} ${H("МСК")}</p><p class="help-copy">${esc(item.content || item.summary || T("Источник не предоставил полный текст."))}</p>${item.source_url ? U.sourceLink(item.source_url, T("Первоисточник")) : ("<p class=\"fine-print\">" + H("Публикация предоставлена API источника; внешняя ссылка отсутствует.") + "</p>")}`);
   };
   const renderAnalytics = () => {
-    const ws = state.data.workspace;
+    const ws = workspaceForPeriod(state.analyticsPeriod);
     const performance = ws?.performance || {};
     const income = ws?.income || {};
     const analysis = state.data.analysis?.analysis;
@@ -2941,7 +3073,7 @@
     const incomePeriod = income.from ? `${esc(date(income.from))} — ${esc(date(income.to))}<br>` : "";
     $("#view-analytics").innerHTML = `${heading(T("Аналитика"), T("Результат, денежные потоки и полнота исходных данных"), button(T("Обновить"), "refresh", {
       small: true
-    }))}${periods("analytics", state.analyticsPeriod)}<div class="metric-grid">${[[T("Финансовый результат"), money(result)], [T("Чистые пополнения"), money(performance.net_contributions_rub)], [T("Полученные выплаты"), money(income.total_rub)], [T("Налоги"), money(performance.taxes_rub)]].map(([label, value]) => renderAnalyticsCard(label, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader(T("Стоимость по наблюдениям"))}${chart(ws?.overview?.history)}${freshness("T-Invest", ws?.overview?.observed_at, ws?.overview?.status)}<p class="data-footnote">${H("Изменение стоимости включает движение денег. Доходность не выводится из разницы крайних точек.")}</p></section><section class="card">${cardHeader(T("Из чего складывается результат"))}${infoRows([[T("Стоимость в начале"), money(performance.start_nav_rub)], [T("Стоимость в конце"), money(performance.end_nav_rub)], [T("Изменение стоимости"), money(performance.nav_change_rub)], [T("Чистые пополнения / выводы"), money(performance.net_contributions_rub)], [T("Результат после внешних потоков"), money(performance.investment_result_rub)], [T("Комиссии за период"), money(performance.fees_rub)], [T("Налоговые списания"), money(performance.taxes_rub)]])}<p class="data-footnote">${performance.from ? renderAnalyticsFragment(performance) : ""}${H("Метод: изменение стоимости минус внешние денежные потоки. Комиссии и налоги уже отражаются в результате; повторно они не вычитаются.")}</p></section></div><div class="two-column section-gap"><section class="card">${cardHeader(T("Выплаты до налоговых списаний"))}${income.by_month?.length ? chart(income.by_month.map(item => ({
+    }))}${periods("analytics", state.analyticsPeriod)}${!ws ? ("<p class=\"notice\">" + H("Показатели выбранного периода ещё не получены. Расчёты другого периода здесь не отображаются.") + "</p>") : ""}${dataError("workspace")}<div class="metric-grid">${[[T("Финансовый результат"), money(result)], [T("Чистые пополнения"), money(performance.net_contributions_rub)], [T("Полученные выплаты"), money(income.total_rub)], [T("Налоги"), money(performance.taxes_rub)]].map(([label, value]) => renderAnalyticsCard(label, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader(T("Стоимость по наблюдениям"))}${chart(ws?.overview?.history)}${navCoverageHTML(ws?.overview || {}, state.analyticsPeriod)}${freshness("T-Invest", ws?.overview?.observed_at, ws?.overview?.status)}<p class="data-footnote">${H("Изменение стоимости включает движение денег. Доходность не выводится из разницы крайних точек.")}</p></section><section class="card">${cardHeader(T("Из чего складывается результат"))}${infoRows([[T("Стоимость в начале"), money(performance.start_nav_rub)], [T("Стоимость в конце"), money(performance.end_nav_rub)], [T("Изменение стоимости"), money(performance.nav_change_rub)], [T("Чистые пополнения / выводы"), money(performance.net_contributions_rub)], [T("Результат после внешних потоков"), money(performance.investment_result_rub)], [T("Комиссии за период"), money(performance.fees_rub)], [T("Налоговые списания"), money(performance.taxes_rub)]])}<p class="data-footnote">${performance.from ? renderAnalyticsFragment(performance) : ""}${H("Метод: изменение стоимости минус внешние денежные потоки. Комиссии и налоги уже отражаются в результате; повторно они не вычитаются.")}</p></section></div><div class="two-column section-gap"><section class="card">${cardHeader(T("Выплаты до налоговых списаний"))}${income.by_month?.length ? chart(income.by_month.map(item => ({
       ...item,
       time: renderAnalyticsFragment2(item)
     })), {
@@ -2956,13 +3088,26 @@
     cancelled: T("Отменён"), refunded: T("Возвращён"), partial_refund: T("Частичный возврат"),
     uncertain: T("Результат требует сверки")
   })[status] || T("Статус не подтверждён");
+  const billingResolutionHTML = item => {
+    const resolved = {initialization_not_started: T("billing.init_not_started"), provider_order_absent: T("billing.order_absent")}[item.resolution];
+    if (resolved) return `<p class="fine-print">${esc(resolved)}</p>`;
+    if (!item.recovery_not_before) return "";
+    return `<p class="notice warning">${H("billing.init_uncertain")} ${H("billing.absence_after", {at: date(item.recovery_not_before, true)})}</p>`;
+  };
+  const billingLimitsHTML = value => {
+    const personal = value.plans?.personal;
+    const premium = value.offer?.entitlements || value.plans?.premium;
+    if (!personal || !premium) return "";
+    const capacity = limits => `${format(number(limits.research_storage_bytes) === null ? null : limits.research_storage_bytes / 1048576, 0)} ${T("billing.mib")}`;
+    return `<table class="plan-comparison"><caption>${H("billing.archive_limits")}</caption><thead><tr><th scope="col">${H("billing.limit")}</th><th scope="col">${H("Личный кабинет")}</th><th scope="col">Premium</th></tr></thead><tbody><tr><th scope="row">${H("billing.saved_runs")}</th><td>${esc(format(personal.research_runs, 0))}</td><td>${esc(format(premium.research_runs, 0))}</td></tr><tr><th scope="row">${H("billing.archive_size")}</th><td>${esc(capacity(personal))}</td><td>${esc(capacity(premium))}</td></tr></tbody></table><p class="fine-print">${H("billing.archive_scope")}</p>`;
+  };
   const billingHistoryItemHTML = item => {
     const disabled = state.billingBusy ? " disabled" : "";
-    const canOpen = item.status === "pending" && !item.cancel_attempted_at && U.external(item.checkout_url) && ["securepay.tinkoff.ru", "securepayments.tinkoff.ru"].includes(new URL(item.checkout_url).hostname);
+    const canOpen = item.status === "pending" && !item.cancel_attempted_at && (!item.checkout_expires_at || Date.parse(item.checkout_expires_at) > Date.now()) && U.external(item.checkout_url) && ["securepay.tinkoff.ru", "securepayments.tinkoff.ru"].includes(new URL(item.checkout_url).hostname);
     const cancelNotice = item.cancel_attempted_at && ["pending", "uncertain"].includes(item.status) ? `<p class="notice">${H("billing.cancel_pending")}</p>` : "";
     const checkoutLink = canOpen ? `<a class="button primary small" href="${esc(item.checkout_url)}" target="_blank" rel="noopener noreferrer">${H("Открыть оплату в банке")}</a>` : "";
     const cancelControl = ["creating", "pending", "uncertain"].includes(item.status) && !item.cancel_attempted_at ? `<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="cancel"${disabled}>${H("Отменить оплату")}</button>` : "";
-    return `<li class="section-gap"><strong>${esc(billingLabel(item.status))} · ${esc(money(item.amount_kopecks / 100, 2, "RUB", false))}</strong><p class="fine-print">${esc(date(item.created_at, true))} ${H("МСК ·")} ${esc(format(item.period_days, 0))} ${H("дней")}</p>${cancelNotice}<div class="form-actions">${checkoutLink}<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="reconcile"${disabled}>${H("Сверить с банком")}</button>${cancelControl}</div></li>`;
+    return `<li class="section-gap"><strong>${esc(billingLabel(item.status))} · ${esc(money(item.amount_kopecks / 100, 2, "RUB", false))}</strong><p class="fine-print">${esc(date(item.created_at, true))} ${H("МСК ·")} ${esc(format(item.period_days, 0))} ${H("дней")}</p>${billingResolutionHTML(item)}${cancelNotice}<div class="form-actions">${checkoutLink}<button class="button secondary small" data-billing-id="${esc(item.id)}" data-billing-operation="reconcile"${disabled}>${H("Сверить с банком")}</button>${cancelControl}</div></li>`;
   };
   const billingHTML = () => {
     const value = state.data.billing;
@@ -2975,7 +3120,7 @@
     let checkout = "";
     if (offer && !active && !pending) checkout = `<form id="billing-checkout-form" data-offer="${esc(offer.version)}" data-request-id="${crypto.randomUUID()}"><h3 class="panel-title">${esc(offer.description)}</h3><p class="help-copy">${esc(money(offer.amount_kopecks / 100, 2, "RUB", false))} ${H("за")} ${esc(format(offer.period_days, 0))} ${H("дней")}</p>${field({name: "receipt_email", label: T("Email для банковского чека"), type: "email", required: true})}<label class="check-field"><input name="accept_offer" type="checkbox" required><span>${H("Подтверждаю выбранный срок и сумму.")} <a href="/legal/terms.html" target="_blank" rel="noopener">${H("Условия использования")}</a></span></label><button class="button primary" type="submit"${state.billingBusy ? " disabled" : ""}>${H("Создать платёж")}</button></form>`;
     else if (!value.configured) checkout = ("<p class=\"notice\">" + H("Приём оплаты ещё не включён. Тариф появится после настройки реального терминала, стоимости и условий оператором.") + "</p>");
-    return `<p class="help-copy">${H("Текущий план:")} <strong>${active ? "Premium" : T("Личный кабинет")}</strong></p>${activeUntil}<p class="fine-print">${H("Портфель, цели, стратегии, аналитика и настройки доступны в личном кабинете. Автоматические списания не используются.")}</p>${checkout}<output id="billing-message" class="form-message"></output>${pending ? ("<p class=\"notice\">" + H("Есть незавершённая оплата. Сверьте её состояние перед созданием новой.") + "</p>") : ""}<details class="section-gap" ${pending ? "open" : ""}><summary class="details-summary">${H("История оплат ·")} ${(value.payments || []).length}</summary><ul class="source-list">${history || ("<li>" + H("Оплат ещё не было.") + "</li>")}</ul></details><p class="fine-print section-gap">${H("Доступ обновляется после подтверждения банка. Возврат на сайт после оплаты не подтверждает списание.")}</p>`;
+    return `${dataError("billing")}<p class="help-copy">${H("Текущий план:")} <strong>${active ? "Premium" : T("Личный кабинет")}</strong></p>${activeUntil}${billingLimitsHTML(value)}<p class="fine-print">${H("Портфель, цели, стратегии, аналитика и настройки доступны в личном кабинете. Автоматические списания не используются.")}</p>${checkout}<output id="billing-message" class="form-message"></output>${pending ? ("<p class=\"notice\">" + H("Есть незавершённая оплата. Сверьте её состояние перед созданием новой.") + "</p>") : ""}<details class="section-gap" ${pending ? "open" : ""}><summary class="details-summary">${H("История оплат ·")} ${(value.payments || []).length}</summary><ul class="source-list">${history || ("<li>" + H("Оплат ещё не было.") + "</li>")}</ul></details><p class="fine-print section-gap">${H("Доступ обновляется после подтверждения банка. Возврат на сайт после оплаты не подтверждает списание.")}</p>`;
   };
   const openBilling = async () => {
     if (!requireUser()) return;
@@ -3317,7 +3462,7 @@
     const pushSupported = "Notification" in window && "PushManager" in window && "serviceWorker" in navigator && window.isSecureContext;
     const deliveries = (data.deliveries || []).map(notificationDeliveryHTML).join("");
     const deliveryList = deliveries ? `<ul class="source-list">${deliveries}</ul>` : ("<p class=\"fine-print\">" + H("Отправок ещё не было.") + "</p>");
-    return `<div class="card-header"><h2>${H("Доставка уведомлений")}</h2>${button(T("Проверить состояние"), "notifications-reload", {small: true})}</div><p class="fine-print">${H("Содержание портфеля и личные суммы не включаются в сообщение. Подробности открываются после входа в OMNICIO. Дневной или недельный дайджест заменяет отдельные сообщения; тихие часы откладывают доставку.")}</p><div class="form-actions">${button(T("Включить push на этом устройстве"), "notification-push", {small: true, extra: !data.push_configured || !pushSupported || state.deliveryBusy ? " disabled" : ""})}</div><p class="fine-print">${esc(pushAvailabilityDescription(data, pushSupported))}</p><form id="notification-email-form" class="section-gap"><label class="field"><span>${H("Email для уведомлений")}</span><input name="email" type="email" maxlength="254" autocomplete="email" required value="${esc(state.deliveryDrafts["notification-email-form"]?.email || "")}"${!data.email_configured ? " disabled" : ""}></label><button class="button primary small-button" type="submit"${!data.email_configured || state.deliveryBusy ? " disabled" : ""}>${H("Отправить код подтверждения")}</button><p class="fine-print">${data.email_configured ? T("Подписка включится только после подтверждения адреса. Код действует 15 минут; разрешено пять попыток.") : T("Email-доставка ещё не включена администратором.")}</p></form><output id="notification-message" class="form-message"></output><div class="event-list section-gap">${(data.channels || []).map(notificationChannelHTML).join("") || ("<p class=\"notice\">" + H("Устройства и адреса пока не подключены.") + "</p>")}</div><details class="section-gap"><summary class="details-summary">${H("История отправки")}</summary><p class="fine-print">${H("Статус «Принято провайдером» подтверждает приём сообщения сервисом, но не прочтение человеком.")}</p>${deliveryList}</details>`;
+    return `<div class="card-header"><h2>${H("Доставка уведомлений")}</h2>${button(T("Проверить состояние"), "notifications-reload", {small: true})}</div>${dataError("notifications")}<p class="fine-print">${H("Содержание портфеля и личные суммы не включаются в сообщение. Подробности открываются после входа в OMNICIO. Дневной или недельный дайджест заменяет отдельные сообщения; тихие часы откладывают доставку.")}</p><div class="form-actions">${button(T("Включить push на этом устройстве"), "notification-push", {small: true, extra: !data.push_configured || !pushSupported || state.deliveryBusy ? " disabled" : ""})}</div><p class="fine-print">${esc(pushAvailabilityDescription(data, pushSupported))}</p><form id="notification-email-form" class="section-gap"><label class="field"><span>${H("Email для уведомлений")}</span><input name="email" type="email" maxlength="254" autocomplete="email" required value="${esc(state.deliveryDrafts["notification-email-form"]?.email || "")}"${!data.email_configured ? " disabled" : ""}></label><button class="button primary small-button" type="submit"${!data.email_configured || state.deliveryBusy ? " disabled" : ""}>${H("Отправить код подтверждения")}</button><p class="fine-print">${data.email_configured ? T("Подписка включится только после подтверждения адреса. Код действует 15 минут; разрешено пять попыток.") : T("Email-доставка ещё не включена администратором.")}</p></form><output id="notification-message" class="form-message"></output><div class="event-list section-gap">${(data.channels || []).map(notificationChannelHTML).join("") || ("<p class=\"notice\">" + H("Устройства и адреса пока не подключены.") + "</p>")}</div><details class="section-gap"><summary class="details-summary">${H("История отправки")}</summary><p class="fine-print">${H("Статус «Принято провайдером» подтверждает приём сообщения сервисом, но не прочтение человеком.")}</p>${deliveryList}</details>`;
   };
   const renderNotificationPanel = () => {
     const target = $("#notification-settings");
@@ -3395,6 +3540,21 @@
       }
     });
   };
+  const operationalStatus = status => ({
+    ok: T("ops.ok"), running: T("ops.running"), attention: T("ops.attention"),
+    stopped: T("ops.stopped"), stale: T("ops.stale"), not_reported: T("ops.not_reported")
+  })[status] || T("Состояние неизвестно");
+  const operationalMetricsHTML = () => {
+    if (state.user?.can_view_operational_metrics !== true) return "";
+    const data = state.data.operationalMetrics;
+    const error = dataError("operationalMetrics");
+    const heading = `<div class="card-header"><h2>${H("ops.title")}</h2>${button(T("Проверить состояние"), "resource-retry", {small: true, extra: 'data-resource="operationalMetrics"'})}</div>`;
+    if (!data || state.errors.operationalMetrics?.status === 403) return `<section class="card section-gap" id="operations-settings">${heading}${error || U.loading(T("ops.loading"))}</section>`;
+    const observer = data.observer || {};
+    const deliveries = data.notifications || {};
+    const workers = Object.entries(data.workers || {}).map(([name, worker]) => `<div class="section-gap"><h3 class="panel-title">${esc({notifications: T("ops.notifications_worker"), portfolio_refresh: T("ops.refresh_worker"), portfolio_daily: T("ops.daily_worker")}[name] || T("ops.worker"))}</h3>${infoRows([[T("ops.state"), operationalStatus(worker.status)], [T("ops.checked_at"), date(worker.checked_at, true)], [T("ops.completed_at"), date(worker.completed_at, true)], [T("ops.heartbeat_limit"), `${format(worker.stale_after_seconds / 60, 0)} ${T("мин.")}`]])}</div>`).join("");
+    return `<section class="card section-gap" id="operations-settings">${heading}${error}<p class="notice${data.status === "attention" ? " warning" : ""}">${esc(operationalStatus(data.status))}</p>${freshness(T("ops.server"), data.checked_at)}<p class="fine-print">${H("ops.aggregate_scope")}</p>${infoRows([[T("ops.accounts"), format(observer.connected_accounts, 0)], [T("ops.stale_accounts"), format(observer.stale_success_accounts, 0)], [T("ops.collection_failures"), format(observer.failed_24h, 0)], [T("ops.degraded"), format(observer.degraded_24h, 0)]])}<details class="section-gap"><summary class="details-summary">${H("ops.collection_queue")}</summary>${infoRows([[T("ops.queued"), format(observer.queued, 0)], [T("ops.running"), format(observer.running, 0)], [T("ops.late"), format(observer.stale, 0)], [T("ops.oldest_collection"), date(data.oldest_pending_at, true)], [T("ops.last_collection"), date(data.latest_success_at, true)]])}</details><details class="section-gap"><summary class="details-summary">${H("ops.delivery_queue")}</summary>${infoRows([[T("ops.queued"), format(deliveries.queued, 0)], [T("ops.sending"), format(deliveries.sending, 0)], [T("ops.late"), format(deliveries.stale, 0)], [T("ops.failures_day"), format(deliveries.failed_24h, 0)], [T("ops.uncertain"), format(deliveries.uncertain, 0)], [T("ops.oldest_delivery"), date(deliveries.oldest_due_at, true)], [T("ops.last_accepted"), date(deliveries.last_accepted_at, true)]])}</details><details class="section-gap"><summary class="details-summary">${H("ops.workers")}</summary>${workers}</details><p class="fine-print section-gap">${H("ops.times_msk")}</p></section>`;
+  };
   const renderSettings = () => {
     if (state.tour) {
       $("#view-settings").innerHTML = `${heading(T("Настройки"))}<section class="card">${empty(T("Настройки сохраняются в аккаунте"), T("Для источников данных, уведомлений и личных предпочтений войдите в OMNICIO."), "login", T("Войти"), "settings", true)}</section>`;
@@ -3429,6 +3589,7 @@
     })}</div></section></div></div>`;
     restoreEditableForm("preferences-form");
     $("#view-settings .settings-layout > div")?.insertAdjacentHTML("beforeend", `<section class="card section-gap" id="notification-settings">${notificationContentsHTML()}</section>`);
+    $("#view-settings .settings-layout > div:last-child")?.insertAdjacentHTML("beforeend", operationalMetricsHTML());
     updateSaveStatus("prefs");
   };
   const brokerSettingsHTML = () => {
@@ -3745,7 +3906,13 @@
     if (!state.user || state.locked || state.verifying || document.visibilityState !== "visible") return;
     state.verifying = true;
     try {
-      await api("/api/me");
+      const user = await api("/api/me");
+      state.user.can_view_operational_metrics = user.can_view_operational_metrics === true;
+      if (!state.user.can_view_operational_metrics) {
+        delete state.data.operationalMetrics;
+        delete state.errors.operationalMetrics;
+        $("#operations-settings")?.remove();
+      }
     } catch (error) {
       if (!isCancelled(error) && error?.status !== 401) {
         const banner = $("#connection-banner");
@@ -3931,7 +4098,7 @@
     state.tour = false;
     showApp();
   };
-  const hasPending = () => state.assistantBusy || state.billingBusy || state.executionBusy || state.recovery.busy || state.prefs.dirty || state.prefs.busy || state.strategy.dirty || state.strategy.busy || hasFormDrafts();
+  const hasPending = () => researchPending() || state.assistantBusy || state.billingBusy || state.executionBusy || state.recovery.busy || state.prefs.dirty || state.prefs.busy || state.strategy.dirty || state.strategy.busy || hasFormDrafts();
   const logout = async () => {
     if (!state.user) {
       state.tour = false;
@@ -4032,60 +4199,144 @@
       bubbles: true
     }));
   };
-  const finishResearch = (generation, submit) => {
-    if (generation === state.generation) {
-      state.loading.delete("research");
-      if (submit.isConnected) submit.disabled = false;
-      const target = $("#strategy-research");
-      if (target) {
-        target.innerHTML = renderResearch();
-        U.bindCharts(target);
+  const currentResearchRequest = request => request === state.researchRequest && request.generation === state.generation;
+  const repaintResearch = () => {
+    updateStrategySaveControls(state.strategy);
+    const target = $("#strategy-research");
+    if (target) { target.innerHTML = renderResearch(); U.bindCharts(target); }
+  };
+  const newResearchRequest = (id, body = null) => ({
+    id, body, generation: state.generation, revision: state.strategy.revision,
+    version: state.strategy.server?.version, status: "checking", busy: false,
+    displaySequence: state.researchDisplaySequence || 0,
+    pollUntil: Date.now() + 120000, timer: null, error: null, resultPending: false
+  });
+  const restoreResearchRequest = () => {
+    const recent = state.data.researchArchive?.recent_request;
+    if (!state.researchRequest && recent && state.strategy.server) {
+      state.researchRequest = newResearchRequest(recent.id);
+      void checkResearchRequest();
+    } else if (state.researchRequest) scheduleResearchCheck(state.researchRequest);
+  };
+  const scheduleResearchCheck = request => {
+    clearTimeout(request.timer);
+    if (!currentResearchRequest(request) || request.busy || !["running", "uncertain"].includes(request.status)) return;
+    if (Date.now() >= request.pollUntil || state.view !== "strategies" || document.visibilityState !== "visible") return;
+    request.timer = setTimeout(() => { if (currentResearchRequest(request)) void checkResearchRequest(); }, 2500);
+  };
+  const acceptResearchResult = (request, result, archive) => {
+    request.status = "completed";
+    request.run_id = archive.id;
+    request.resultPending = false;
+    const slot = state.strategy;
+    request.archivedOnly = slot.revision !== request.revision || slot.server?.version !== request.version ||
+      result.strategy_version !== request.version || slot.dirty || request.displaySequence !== (state.researchDisplaySequence || 0);
+    if (!request.archivedOnly) slot.research = {...result, archive: {...archive, strategy_version: result.strategy_version}};
+  };
+  const readCompletedResearch = async request => {
+    request.resultPending = true;
+    const saved = await api(`/api/research/runs/${safeSegment(request.run_id)}`);
+    if (!currentResearchRequest(request)) return;
+    if (saved.id !== request.run_id || saved.result?.request_id !== request.id) throw new Error("invalid_server_response");
+    acceptResearchResult(request, {...saved.result, strategy_version: saved.strategy_version},
+      {id: saved.id, created_at: saved.created_at});
+  };
+  const adoptResearchStatus = async (request, result) => {
+    if (result.id !== request.id || !["running", "completed", "failed", "expired", "deleted"].includes(result.status)) throw new Error("invalid_server_response");
+    Object.assign(request, {status: result.status, run_id: result.run_id, created_at: result.created_at, expires_at: result.expires_at});
+    if (result.status === "completed") await readCompletedResearch(request);
+    else if (result.error_code) request.error = new Error(result.error_code);
+  };
+  const researchReadError = (request, error) => {
+    request.error = error;
+    if (request.resultPending) {
+      if (error.status === 404) { request.status = "deleted"; request.resultPending = false; request.run_id = null; }
+      return;
+    }
+    request.status = error.code === "research_request_not_found" ? "not_found" : "uncertain";
+  };
+  const checkResearchRequest = async () => {
+    const request = state.researchRequest;
+    if (!request || request.busy || !requireUser()) return;
+    request.busy = true;
+    request.error = null;
+    clearTimeout(request.timer);
+    repaintResearch();
+    try {
+      const result = await api(`/api/research/requests/${safeSegment(request.id)}`);
+      if (!currentResearchRequest(request)) return;
+      await adoptResearchStatus(request, result);
+    } catch (error) {
+      if (currentResearchRequest(request) && !isCancelled(error)) researchReadError(request, error);
+    } finally {
+      if (currentResearchRequest(request)) {
+        request.busy = false;
+        repaintResearch();
+        scheduleResearchCheck(request);
       }
     }
   };
+  const submitResearchRequest = async request => {
+    if (!currentResearchRequest(request) || request.busy || !request.body) return;
+    request.status = "submitting";
+    request.busy = true;
+    request.error = null;
+    clearTimeout(request.timer);
+    repaintResearch();
+    try {
+      const result = await api("/api/profile/strategy/research", {method: "POST", timeout: 305000, body: request.body});
+      if (!currentResearchRequest(request)) return;
+      if (result.archive) {
+        if (result.request_id !== request.id) throw new Error("invalid_server_response");
+        acceptResearchResult(request, result, result.archive);
+      } else await adoptResearchStatus(request, result);
+      await loadResource("researchArchive", "/api/research/runs?limit=50", {force: true});
+    } catch (error) {
+      if (!currentResearchRequest(request) || isCancelled(error)) return;
+      request.error = error;
+      request.status = error.status === 409 ? "conflict" : "uncertain";
+      if (error.definite || error.status >= 400 && error.status < 500 && error.status !== 409) request.status = "failed";
+    } finally {
+      if (currentResearchRequest(request)) {
+        request.busy = false;
+        repaintResearch();
+        if (request.status === "uncertain") await checkResearchRequest();
+        else scheduleResearchCheck(request);
+      }
+    }
+  };
+  const retryResearchRequest = async () => {
+    const request = state.researchRequest;
+    if (!request || request.status !== "not_found" || !request.body || !requireUser()) return;
+    // User-selected replay keeps the exact UUID and immutable parameters. The server
+    // checks the complete current strategy/account/evidence fingerprint again.
+    await submitResearchRequest(request);
+  };
   const runResearch = async form => {
-    if (!requireUser() || state.loading.has("research") || !form.reportValidity()) return;
+    if (!requireUser() || researchUnavailable() || !form.reportValidity()) return;
     const slot = state.strategy;
-    if (!slot.server || slot.dirty || slot.busy || slot.error) {
+    if (strategySaveUnavailable(slot)) {
       showMessage($("#research-message"), T("Дождитесь сохранения выбранной стратегии."), true);
       return;
     }
-    const from = form.elements.from_at.value;
-    const to = form.elements.to_at.value;
-    if (from >= to) {
+    const values = formValues(form);
+    if (values.from_at >= values.to_at) {
       showMessage($("#research-message"), T("Конец периода должен быть позже начала."), true);
       return;
     }
-    const generation = state.generation;
-    const revision = slot.revision;
-    const version = slot.server.version;
-    state.loading.add("research");
+    state.researchDraft = values;
+    const id = crypto.randomUUID();
+    const body = Object.freeze({
+      request_id: id, expected_public_id: state.user.public_id, expected_version: slot.server.version,
+      from_at: `${values.from_at}T00:00:00Z`, to_at: `${values.to_at}T23:59:59Z`,
+      initial_capital_rub: values.initial_capital_rub,
+      commission_bps: values.commission_bps, slippage_bps: values.slippage_bps
+    });
+    clearTimeout(state.researchRequest?.timer);
+    state.researchRequest = newResearchRequest(id, body);
     slot.research = null;
-    const submit = form.querySelector("[type=submit]");
-    submit.disabled = true;
-    $("#strategy-research").innerHTML = renderResearch();
     showMessage($("#research-message"), "");
-    try {
-      const result = await api("/api/profile/strategy/research", {
-        method: "POST",
-        timeout: 120000,
-        body: {
-          expected_public_id: state.user.public_id,
-          expected_version: version,
-          from_at: `${from}T00:00:00Z`,
-          to_at: `${to}T23:59:59Z`,
-          initial_capital_rub: form.elements.initial_capital_rub.value,
-          commission_bps: form.elements.commission_bps.value,
-          slippage_bps: form.elements.slippage_bps.value
-        }
-      });
-      if (generation !== state.generation || revision !== slot.revision || slot.server?.version !== version) return;
-      slot.research = result;
-    } catch (error) {
-      if (generation === state.generation && !isCancelled(error)) showMessage($("#research-message"), humanError(error), true);
-    } finally {
-      finishResearch(generation, submit);
-    }
+    await submitResearchRequest(state.researchRequest);
   };
   const actions = {
     login: () => openAuth(),
@@ -4116,6 +4367,7 @@
       if (["home", "portfolio", "analytics", "settings"].includes(state.view) && (state.data.connection?.connected || state.data.workspace?.connection?.connected)) await requestWorkspaceRefresh();else await loadForView(state.view, state.route, true);
     },
     "workspace-refresh": requestWorkspaceRefresh,
+    "resource-retry": retryResource,
     "execution-plan": openExecutionPlanner,
     "execution-confirm": confirmExecutionPlan,
     "execution-history": openExecutionHistory,
@@ -4225,6 +4477,10 @@
     "assistant-health": () => assistantConnectionOperation("check"),
     "assistant-disconnect": () => assistantConnectionOperation("disconnect"),
     "assistant-new": newAssistantConversation,
+    "research-check": checkResearchRequest,
+    "research-retry": retryResearchRequest,
+    "research-archive-more": () => loadResearchArchivePage(true),
+    "research-archive-reload": () => loadResearchArchivePage(false),
     "assistant-history-reload": () => state.assistantConversation && loadAssistantConversation(state.assistantConversation.id),
     "assistant-history-more": () => state.assistantConversation && loadAssistantConversation(state.assistantConversation.id, true),
     "link-identity": () => openAuth("login", true)
@@ -4388,6 +4644,7 @@
   document.addEventListener("input", event => {
     const input = event.target;
     if (input.closest("#assistant-form")) state.assistantDraft = assistantDraftFromForm(input.form);
+    if (input.closest("#research-form")) state.researchDraft = formValues(input.form);
     if (captureFormDraft(input)) return;
     if (input.dataset.allocation) {
       updateAllocation(input.dataset.allocation, Number(input.value));
@@ -4876,8 +5133,8 @@
       currency: T("Валюта")
     }[item.instrument_type] || item.instrument_type || T("Инструмент"))}</small></span>${icon("chevron", true)}</button>`;
   }
-  function renderSearchFragment() {
-    return `${T("Результаты для «")}${state.searchQuery}»`;
+  function renderSearchFragment(query) {
+    return `${T("Результаты для «")}${query}»`;
   }
   function renderFundamentalMetricsHTMLValue(compact, metrics) {
     if (compact) {

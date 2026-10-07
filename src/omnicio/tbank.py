@@ -357,6 +357,9 @@ class TBankBondEvent:
     execution: str
     operation_type: str
     note: str
+    fix_date: datetime | None = None
+    rate_date: datetime | None = None
+    value: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1361,6 +1364,7 @@ class TBankInvestClient:
             body=_instrument_window_body(instrument_uid, from_at, to_at),
         )
         result: list[TBankAccruedInterest] = []
+        seen: set[datetime] = set()
         for raw in _required_list(payload, "accruedInterests"):
             item = _required_object(raw, "accrued interest")
             date = _optional_provider_timestamp(item.get("date"))
@@ -1372,8 +1376,13 @@ class TBankInvestClient:
                 or value is None
                 or value_percent is None
                 or nominal is None
+                or Decimal(nominal) <= 0
+                or Decimal(value) < 0
+                or Decimal(value_percent) < 0
+                or date in seen
             ):
                 raise TBankUnavailable("T-Invest accrued interest is missing required fields")
+            seen.add(date)
             result.append(
                 TBankAccruedInterest(
                     instrument_uid=instrument_uid,
@@ -1994,6 +2003,9 @@ class TBankInvestClient:
                     execution=_text(item.get("execution")).strip(),
                     operation_type=_text(item.get("operationType")).strip(),
                     note=_text(item.get("note")).strip(),
+                    fix_date=_optional_provider_timestamp(item.get("fixDate")),
+                    rate_date=_optional_provider_timestamp(item.get("rateDate")),
+                    value=_quotation(item.get("value")),
                 )
             )
         return tuple(result)

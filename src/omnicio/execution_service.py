@@ -10,7 +10,13 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
-from .backtest import history_candidate, split_adjusted_history
+from .backtest import (
+    MAX_RESEARCH_ASSETS,
+    RESEARCH_ENGINE_VERSION,
+    ResearchCosts,
+    history_candidate,
+    split_adjusted_history,
+)
 from .broker import (
     BrokerConnectionError,
     BrokerObservationBundle,
@@ -132,6 +138,9 @@ class PortfolioExecutionService:
                 split_adjusted_history(asset.candles, asset.splits, now),
                 as_of=now,
                 factors=asset.factors,
+                cashflows=asset.observed_cashflows,
+                document=payload["document"],
+                costs=ResearchCosts(commission_bps, slippage_bps),
             )
             for asset in assets
         ]
@@ -244,6 +253,12 @@ class PortfolioExecutionService:
         inputs = archive["inputs"]
         now = datetime.now(UTC)
         if (
+            archive.get("result", {}).get("status") != "computed"
+            or not isinstance(archive.get("result", {}).get("metrics"), dict)
+            or inputs.get("engine_version") != RESEARCH_ENGINE_VERSION
+        ):
+            raise ExecutionServiceError("execution_computed_research_required")
+        if (
             archive["account_id"] != payload["account_id"]
             or archive["environment"] != payload["environment"]
             or archive["strategy_version"] != payload["strategy_version"]
@@ -304,7 +319,9 @@ class PortfolioExecutionService:
             for position in bundle.portfolio.positions
             if position.instrument_type != "currency" and Decimal(position.quantity) != 0
         )
-        if len(uids) > 12 or not uids <= {row.instrument_uid for row in candidates}:
+        if len(uids) > MAX_RESEARCH_ASSETS or not uids <= {
+            row.instrument_uid for row in candidates
+        }:
             raise ExecutionServiceError("execution_held_evidence_missing")
         qualification = self.broker.user_info(user_id)
         quotes = {}

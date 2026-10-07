@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import nullcontext
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
@@ -14,6 +15,7 @@ from fastapi.testclient import TestClient
 from omnicio.db import Database, UserRecord
 from omnicio.main import CANONICAL_ORIGIN, app
 from omnicio.portfolio_store import SettingsVersionConflict
+from omnicio.research_store import ResearchNotFound, ResearchStore
 from omnicio.security import session_digest
 from omnicio.service import AuthService
 from omnicio.workspace_store import WorkspaceNotFound, WorkspaceStore
@@ -107,6 +109,120 @@ def test_workspace_history_period_reaches_only_the_current_owner(
     response = client.get("/api/workspace")
     assert response.status_code == 200
     store.dashboard.assert_called_once_with(OWNER.id, history_period="all")
+
+
+@pytest.mark.parametrize("configured_id,expected", [(None, False), (OTHER.id, False),
+                                                    (OWNER.id, True)])
+def test_operational_capability_comes_from_server_identity_only(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock], configured_id: UUID | None,
+    expected: bool,
+) -> None:
+    client = workspace_http[0]
+    with patch.object(app.state, "settings", SimpleNamespace(
+        operator_user_id=configured_id, session_ttl_seconds=3600,
+    ), create=True):
+        result = client.get("/api/me", params={
+            "can_view_operational_metrics": "true", "operator_user_id": str(OWNER.id),
+            "role": "owner",
+        })
+    assert result.status_code == 200
+    assert result.json()["can_view_operational_metrics"] is expected
+    assert "operator_user_id" not in result.json()
+
+
+def test_research_http_uses_real_admission_before_any_provider_or_archive_work(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    client, auth, _, database = workspace_http
+    document = {"request_id": str(UUID(int=1701)),
+                "expected_public_id": "000000501", "expected_version": 3,
+                "from_at": "2025-01-01T00:00:00Z", "to_at": "2026-01-01T00:00:00Z",
+                "commission_bps": "10", "slippage_bps": "10", "initial_capital_rub": "100000"}
+    database.strategy_assessment_slot.return_value = nullcontext(False)
+    with patch("omnicio.main.strategy_research") as calculate:
+        busy = client.post("/api/profile/strategy/research", json=document, headers=HEADERS)
+    assert busy.status_code == 429
+    assert busy.headers["retry-after"] == "10"
+    calculate.assert_not_called()
+    database.strategy_assessment_slot.assert_called_once_with(OWNER.id)
+
+    def changed_profile(**kwargs: Any) -> dict[str, str]:
+        assert kwargs["user_id"] == OWNER.id
+        assert kwargs["request_id"] == UUID(int=1701)
+        auth.refresh_session.side_effect = None
+        auth.refresh_session.return_value = OTHER
+        return {"private_research": "discard-late-result"}
+
+    database.strategy_assessment_slot.return_value = nullcontext(True)
+    with (
+        patch("omnicio.main.strategy_research", side_effect=changed_profile),
+        patch.object(app.state, "portfolio_store", Mock(), create=True),
+        patch.object(app.state, "broker_service", Mock(), create=True),
+        patch.object(app.state, "research_store", Mock(), create=True),
+        patch.object(app.state, "market_service", Mock(), create=True),
+    ):
+        late = client.post("/api/profile/strategy/research", json=document, headers=HEADERS)
+    assert late.status_code == 409
+    assert "private_research" not in late.text
+
+
+def test_research_archive_page_and_request_status_use_current_owner_and_recheck_session(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    client, auth, _, _ = workspace_http
+    research = Mock(spec=ResearchStore)
+    ident = UUID(int=1702)
+    research.runs_page.return_value = {"items": [], "next_cursor": None, "capacity": {
+        "runs_used": 0, "runs_limit": 200, "storage_used_bytes": 0,
+        "storage_limit_bytes": 256 * 1024 * 1024,
+    }, "recent_request": None}
+    research.request.return_value = {"id": str(ident), "status": "running", "run_id": None}
+    with patch.object(app.state, "research_store", research, create=True):
+        page = client.get("/api/research/runs", params={"cursor": str(ident), "limit": 25,
+                                                       "user_id": str(OTHER.id)})
+        assert page.status_code == 200
+        assert page.json()["capacity"]["runs_limit"] == 200
+        research.runs_page.assert_called_once_with(OWNER.id, limit=25, cursor=ident)
+        request = client.get(f"/api/research/requests/{ident}?user_id={OTHER.id}")
+        assert request.status_code == 200
+        research.request.assert_called_once_with(OWNER.id, ident)
+        research.request.side_effect = ResearchNotFound("research_request_not_found")
+        assert client.get(f"/api/research/requests/{ident}").status_code == 404
+
+        def changed_owner(*args: Any, **kwargs: Any) -> dict[str, str]:
+            auth.refresh_session.side_effect = None
+            auth.refresh_session.return_value = OTHER
+            return {"private_request": "must-not-cross-profile"}
+
+        research.request.side_effect = changed_owner
+        result = client.get(f"/api/research/requests/{ident}")
+        assert result.status_code == 409
+        assert "private_request" not in result.text
+
+
+@pytest.mark.parametrize("code", ["research_archive_capacity", "research_archive_storage_capacity",
+                                  "research_archive_too_large", "research_request_capacity",
+                                  "synthetic-private-provider-error"])
+def test_research_capacity_errors_are_actionable_without_releasing_arbitrary_exception_text(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock], code: str,
+) -> None:
+    client, _, _, database = workspace_http
+    database.strategy_assessment_slot.return_value = nullcontext(True)
+    body = {"request_id": str(UUID(int=1703)), "expected_public_id": "000000501",
+            "expected_version": 3, "from_at": "2025-01-01T00:00:00Z",
+            "to_at": "2026-01-01T00:00:00Z", "commission_bps": "10", "slippage_bps": "10",
+            "initial_capital_rub": "100000"}
+    with (
+        patch("omnicio.main.strategy_research", side_effect=ValueError(code)),
+        patch.object(app.state, "portfolio_store", Mock(), create=True),
+        patch.object(app.state, "broker_service", Mock(), create=True),
+        patch.object(app.state, "research_store", Mock(), create=True),
+        patch.object(app.state, "market_service", Mock(), create=True),
+    ):
+        response = client.post("/api/profile/strategy/research", json=body, headers=HEADERS)
+    assert response.status_code == 422
+    expected = code if code.startswith("research_") else "research_parameters_invalid"
+    assert response.json()["detail"] == expected
 
 
 def test_workspace_invalid_history_period_does_not_read_storage(

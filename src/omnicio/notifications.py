@@ -49,6 +49,17 @@ _MAILTO_SCHEME = "mailto:"
 _SETTINGS_TARGET = "/#settings"
 
 
+def _notification_target(payload: Mapping[str, Any]) -> str:
+    """Only server-owned cabinet routes can become a notification's navigation."""
+    value = payload.get("url", _SETTINGS_TARGET)
+    if isinstance(value, str) and (
+        value in {_SETTINGS_TARGET, "/#events"}
+        or re.fullmatch(r"/#events\?event=[0-9a-f]{64}", value) is not None
+    ):
+        return value
+    return _SETTINGS_TARGET
+
+
 def _log_worker_failure(code: str, error: Exception) -> None:
     # Preserve a useful failure class without provider messages, destinations,
     # credentials, chained exceptions or the original traceback in logs.
@@ -264,7 +275,8 @@ class NotificationTransport:
         message["To"] = normalize_email(destination["email"])
         message["Subject"] = payload["title"]
         message["Message-ID"] = f"<{payload['tag']}@{urlsplit(self.config.public_origin).hostname}>"
-        message.set_content(payload["body"] + "\n\n" + self.config.public_origin + _SETTINGS_TARGET)
+        message.set_content(payload["body"] + "\n\n" + self.config.public_origin
+                            + _notification_target(payload))
         context = ssl.create_default_context()
         try:
             client = (smtplib.SMTP_SSL(self.config.smtp_host, self.config.smtp_port,
@@ -413,8 +425,9 @@ class NotificationService:
         cur.execute(
             "INSERT INTO notification_channels (id, user_id, kind, destination_hash, "
             "destination_ciphertext, label, status, verification_digest, "
-            "verification_expires_at, last_verification_at, event_revision, verified_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "verification_expires_at, last_verification_at, event_revision, verified_at, "
+            "digest_cursor_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT (user_id, kind, destination_hash) DO UPDATE SET "
             "destination_ciphertext = EXCLUDED.destination_ciphertext, label = EXCLUDED.label, "
             "status = EXCLUDED.status, verification_digest = EXCLUDED.verification_digest, "
@@ -426,11 +439,17 @@ class NotificationService:
             "verified_at = CASE WHEN notification_channels.status = 'active' "
             "AND EXCLUDED.status = 'active' THEN notification_channels.verified_at "
             "ELSE EXCLUDED.verified_at END, "
+            "digest_cursor_at = CASE WHEN notification_channels.status = 'active' "
+            "AND EXCLUDED.status = 'active' THEN notification_channels.digest_cursor_at "
+            "ELSE EXCLUDED.digest_cursor_at END, "
+            "digest_period = CASE WHEN notification_channels.status = 'active' "
+            "AND EXCLUDED.status = 'active' THEN notification_channels.digest_period "
+            "ELSE NULL END, "
             "updated_at = now() RETURNING id",
             (ident, user_id, kind, identity_hash, self._seal(destination), label, status,
              None,
              now + timedelta(minutes=15) if code else None, now if code else None,
-             revision, now if status == "active" else None),
+             revision, now if status == "active" else None, now if status == "active" else None),
         )
         channel_id = UUID(str(cur.fetchone()["id"]))
         if code:
@@ -483,7 +502,8 @@ class NotificationService:
             )
             cur.execute(
                 "UPDATE notification_outbox SET status = 'cancelled', "
-                "last_error = 'verification_replaced' WHERE user_id = %s AND channel_id = %s "
+                "last_error = 'verification_replaced', updated_at = clock_timestamp() "
+                "WHERE user_id = %s AND channel_id = %s "
                 "AND status = 'queued'", (user_id, ident),
             )
             self._enqueue(cur, user_id, ident, "verification:" + str(uuid4()), "verification", {
@@ -519,10 +539,11 @@ class NotificationService:
                 cur.execute(
                     "UPDATE notification_channels SET verification_attempts = "
                     "verification_attempts + 1, status = %s, verified_at = %s, "
+                    "digest_cursor_at = CASE WHEN %s THEN %s ELSE digest_cursor_at END, "
                     "verification_digest = CASE WHEN %s THEN NULL ELSE verification_digest END, "
                     "updated_at = %s WHERE user_id = %s AND id = %s",
                     ("active" if accepted else "pending", now if accepted else None,
-                     accepted, now, user_id, channel_id),
+                     accepted, now, accepted, now, user_id, channel_id),
                 )
         # Wrong attempts must commit instead of being rolled back by the exception.
         if not accepted:
@@ -541,7 +562,7 @@ class NotificationService:
                 raise WorkspaceNotFound("notification_channel_not_found")
             cur.execute(
                 "UPDATE notification_outbox SET status = 'cancelled', "
-                "last_error = 'channel_revoked' "
+                "last_error = 'channel_revoked', updated_at = clock_timestamp() "
                 "WHERE user_id = %s AND channel_id = %s AND status = 'queued'",
                 (user_id, channel_id),
             )
@@ -615,29 +636,61 @@ class NotificationService:
         frequency = preferences["digest_frequency"]
         if frequency == "weekly":
             end -= timedelta(days=end.weekday())
-        start = end - timedelta(days=7 if frequency == "weekly" else 1)
         period = f"{frequency}:{end.isoformat()}"
-        if channel["digest_period"] == period or channel["verified_at"] >= end:
+        start = channel["digest_cursor_at"]
+        if start is None:
+            # Accepted channels have a persisted legacy calendar boundary. New
+            # channels start exactly at their own verification, never at a
+            # hard-coded previous day that loses several days after downtime.
+            previous = channel["digest_period"]
+            start = (datetime.fromisoformat(previous.split(":", 1)[1])
+                     if previous else channel["verified_at"])
+        start = max(start, channel["verified_at"])
+        if start >= end:
             return
-        enabled = [key for key, value in preferences["notifications"].items() if value]
-        cur.execute(
-            "SELECT count(*) AS total FROM workspace_events WHERE user_id = %s "
-            "AND category = ANY (%s) AND occurred_at >= %s AND occurred_at < %s "
-            "AND read_at IS NULL", (user_id, enabled, max(start, channel["verified_at"]), end),
-        )
-        count = int(cur.fetchone()["total"])
+        payload = {
+            "title": "Дайджест OMNICIO", "url": "/#events", "frequency": frequency,
+            "from": start.isoformat(), "to": end.isoformat(),
+            "period_basis": "available_at", "channel_id": str(channel["id"]),
+        }
+        count = self._digest_count(cur, user_id, payload, preferences)
         if count:
-            self._enqueue(cur, user_id, channel["id"], period, "digest", {
-                "title": "Дайджест OMNICIO",
-                "body": f"За завершённый период: {count} непрочитанных событий. "
-                        "Подробности доступны после входа в кабинет.",
-                "url": "/#events", "frequency": frequency,
-                "from": max(start, channel["verified_at"]).isoformat(), "to": end.isoformat(),
-            }, delivery_time(preferences, now))
+            self._enqueue(cur, user_id, channel["id"], period, "digest",
+                          {**payload, "body": self._digest_body(count)},
+                          delivery_time(preferences, now))
         cur.execute(
-            "UPDATE notification_channels SET digest_period = %s WHERE user_id = %s AND id = %s",
-            (period, user_id, channel["id"]),
+            "UPDATE notification_channels SET digest_period = %s, digest_cursor_at = %s "
+            "WHERE user_id = %s AND id = %s", (period, end, user_id, channel["id"]),
         )
+
+    @staticmethod
+    def _digest_body(count: int) -> str:
+        return (f"Новых или уточнённых непрочитанных событий: {count}. "
+                "Включены сведения, поступившие с задержкой. "
+                "Исходные даты и подробности доступны после входа в кабинет.")
+
+    @staticmethod
+    def _digest_count(
+        cur: Any, user_id: UUID, payload: Mapping[str, Any], preferences: Mapping[str, Any],
+    ) -> int:
+        enabled = [key for key, value in preferences["notifications"].items() if value]
+        # Legacy queued digests retain their accepted event-date contract. New
+        # digests follow committed availability/correction time under the same
+        # owner transaction lock as event insertion and cursor advancement.
+        available = payload.get("period_basis") == "available_at"
+        cur.execute(
+            "SELECT count(*) AS total FROM workspace_events e WHERE e.user_id = %s "
+            "AND e.category = ANY (%s) "
+            "AND CASE WHEN %s THEN e.updated_at ELSE e.occurred_at END >= %s "
+            "AND CASE WHEN %s THEN e.updated_at ELSE e.occurred_at END < %s "
+            "AND e.read_at IS NULL AND NOT EXISTS (SELECT 1 FROM notification_outbox o "
+            "WHERE o.user_id = e.user_id AND o.channel_id = %s::uuid "
+            "AND o.kind = 'event' AND o.status IN ('accepted', 'sending', 'uncertain') "
+            "AND o.message_key = 'event:' || e.id || ':' || e.revision::text)",
+            (user_id, enabled, available, payload["from"], available, payload["to"],
+             payload.get("channel_id")),
+        )
+        return int(cur.fetchone()["total"])
 
     def _event_delivery_allowed(
         self, cur: Any, user_id: UUID, payload: dict[str, Any], preferences: Mapping[str, Any],
@@ -658,15 +711,8 @@ class NotificationService:
     ) -> bool:
         if preferences["digest_frequency"] != payload.get("frequency"):
             return False
-        enabled = [key for key, value in preferences["notifications"].items() if value]
-        cur.execute(
-            "SELECT count(*) AS total FROM workspace_events WHERE user_id = %s "
-            "AND category = ANY (%s) AND occurred_at >= %s AND occurred_at < %s "
-            "AND read_at IS NULL", (user_id, enabled, payload["from"], payload["to"]),
-        )
-        count = int(cur.fetchone()["total"])
-        payload["body"] = (f"За завершённый период: {count} непрочитанных событий. "
-                           "Подробности доступны после входа в кабинет.")
+        count = self._digest_count(cur, user_id, payload, preferences)
+        payload["body"] = self._digest_body(count)
         return count > 0
 
     def _delivery_allowed(
@@ -694,7 +740,8 @@ class NotificationService:
         with self.workspace._transaction(user_id) as cur:
             cur.execute(
                 "UPDATE notification_outbox SET status = 'uncertain', "
-                "last_error = 'worker_result_unknown' WHERE user_id = %s "
+                "last_error = 'worker_result_unknown', updated_at = clock_timestamp() "
+                "WHERE user_id = %s "
                 "AND status = 'sending' AND lease_until < %s", (user_id, now),
             )
             cur.execute(
@@ -719,7 +766,8 @@ class NotificationService:
             allowed = self._delivery_allowed(cur, user_id, row, payload, preferences, now)
             if not allowed or expired:
                 cur.execute(
-                    "UPDATE notification_outbox SET status = 'cancelled', last_error = %s "
+                    "UPDATE notification_outbox SET status = 'cancelled', last_error = %s, "
+                    "updated_at = clock_timestamp() "
                     "WHERE user_id = %s AND id = %s",
                     ("delivery_expired" if expired else "delivery_preference_changed",
                      user_id, row["id"]),
@@ -728,14 +776,16 @@ class NotificationService:
             due = now if row["kind"] == "verification" else delivery_time(preferences, now)
             if due > now:
                 cur.execute(
-                    "UPDATE notification_outbox SET next_attempt_at = %s "
+                    "UPDATE notification_outbox SET next_attempt_at = %s, "
+                    "updated_at = clock_timestamp() "
                     "WHERE user_id = %s AND id = %s", (due, user_id, row["id"]),
                 )
                 return None
             lease = uuid4()
             cur.execute(
                 "UPDATE notification_outbox SET status = 'sending', attempts = attempts + 1, "
-                "lease_token = %s, lease_until = %s WHERE user_id = %s AND id = %s",
+                "lease_token = %s, lease_until = %s, updated_at = clock_timestamp() "
+                "WHERE user_id = %s AND id = %s",
                 (lease, now + timedelta(minutes=2), user_id, row["id"]),
             )
             row.update(payload=payload, destination=self._open(row["destination_ciphertext"]),
@@ -758,7 +808,8 @@ class NotificationService:
         with self.workspace._transaction(user_id) as cur:
             cur.execute(
                 "UPDATE notification_outbox SET status = %s, last_error = %s, "
-                "next_attempt_at = %s, accepted_at = %s, lease_until = NULL "
+                "next_attempt_at = %s, accepted_at = %s, lease_until = NULL, "
+                "updated_at = clock_timestamp() "
                 "WHERE user_id = %s AND id = %s AND status = 'sending' AND lease_token = %s",
                 (state, result.code, now + timedelta(seconds=delay),
                  now if state == "accepted" else None, user_id, row["id"], row["lease_token"]),
@@ -795,11 +846,12 @@ class NotificationService:
     def _process_pending_user(self, user_id: UUID, now: datetime, needs_attention: bool) -> None:
         if not self.database.has_legal_versions(user_id, self.legal_versions):
             return
-        self.queue_events(user_id)
+        self.queue_events(user_id, now=now)
         if user_id == self.config.operator_user_id and needs_attention:
             self.queue_operator_alert(
                 user_id, "health-" + now.strftime("%Y%m%d%H"),
-                "Мониторинг обнаружил задержку или ошибку обновления данных. "
+                "Мониторинг обнаружил задержку или ошибку фоновой обработки данных "
+                "или уведомлений. "
                 "Откройте состояние сервиса в настройках для проверки.",
             )
         for _ in range(5):
@@ -808,6 +860,7 @@ class NotificationService:
 
     def run_pending(self) -> None:
         now = datetime.now(UTC)
+        self.database.record_worker_heartbeat("notifications", status="running")
         metrics = self.database.collect_operational_metrics()
         if now >= self._maintenance_at:
             self.database.prune_sessions()
@@ -820,6 +873,7 @@ class NotificationService:
             ).fetchall()
         self._user_cursor = (UUID(str(cast(dict[str, Any], rows[-1])["id"]))
                              if len(rows) == 1000 else None)
+        failed = False
         for row in rows:
             if self._stop.is_set():
                 return
@@ -830,6 +884,11 @@ class NotificationService:
                 # A single unavailable tenant must not starve every other owner's
                 # queue. No destination, code, body, or identity is logged.
                 _log_worker_failure("notification_owner_failed", exc)
+                failed = True
+            self.database.record_worker_heartbeat("notifications", status="running")
+        self.database.record_worker_heartbeat(
+            "notifications", status="attention" if failed else "ok",
+        )
 
     def start(self) -> None:
         if self._thread is not None:
@@ -849,5 +908,9 @@ class NotificationService:
                 self.run_pending()
             except Exception as exc:
                 _log_worker_failure("notification_worker_failed", exc)
+                try:
+                    self.database.record_worker_heartbeat("notifications", status="attention")
+                except Exception as heartbeat_error:
+                    _log_worker_failure("notification_heartbeat_failed", heartbeat_error)
             self._wake.wait(timeout=30)
             self._wake.clear()

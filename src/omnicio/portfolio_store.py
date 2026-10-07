@@ -38,6 +38,7 @@ _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
 REFRESH_JOB_TYPE = "portfolio_refresh"
 REFRESH_COOLDOWN_SECONDS = 120
 REFRESH_MAX_ATTEMPTS = 3
+DAILY_MAX_ATTEMPTS = 3
 
 
 def _has_refresh_legal(cur: Any, user_id: UUID, versions: object) -> bool:
@@ -65,10 +66,12 @@ def _refresh_context_matches(context: object, connection: Mapping[str, Any]) -> 
     }
 
 
-def _require_refresh_context(cur: Any, user_id: UUID, connection: Mapping[str, Any]) -> None:
-    if connection["job_type"] != REFRESH_JOB_TYPE:
-        return
+def _require_observation_context(cur: Any, user_id: UUID, connection: Mapping[str, Any]) -> None:
     details = connection["details"]
+    if connection["job_type"] != REFRESH_JOB_TYPE and "connection" not in details:
+        # Accepted legacy daily records remain readable on rollback. Every new
+        # scheduled run records the same connection/consent context as refresh.
+        return
     if not _refresh_context_matches(details.get("connection"), connection):
         raise ObservationCancelled("observation_connection_changed")
     if not _has_refresh_legal(cur, user_id, details.get("legal_versions")):
@@ -112,7 +115,7 @@ def _require_observation_job(
         account_id is not None and connection["account_id"] != account_id
     ) or (environment is not None and connection["environment"] != environment):
         raise ObservationCancelled("observation_connection_changed")
-    _require_refresh_context(cur, user_id, connection)
+    _require_observation_context(cur, user_id, connection)
     if snapshot_id is not None:
         cur.execute(
             """
@@ -651,7 +654,7 @@ class PortfolioStore:
                         conn.close()
                         raise
 
-    def observer_user_ids(self, legal_versions: dict[str, str]) -> tuple[UUID, ...]:
+    def observer_user_ids(self) -> tuple[UUID, ...]:
         with self.database.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -666,11 +669,10 @@ class PortfolioStore:
                 cast(UUID, cast(dict[str, Any], row)["user_id"])
                 for row in cur.fetchall()
             )
-        return tuple(
-            user_id
-            for user_id in candidates
-            if self.database.has_legal_versions(user_id, legal_versions)
-        )
+        # Claiming each queued run rechecks current legal versions in its owner
+        # transaction. Keeping unconsented connections here lets that boundary
+        # settle revoked work instead of leaving an abandoned running/queued row.
+        return candidates
 
     def current_strategy_draft(self, user_id: UUID) -> dict[str, Any] | None:
         with (
@@ -1039,103 +1041,148 @@ class PortfolioStore:
             claimed = cur.fetchone()
             return _job_run(cast(dict[str, Any], claimed)) if claimed is not None else None
 
-    def claim_daily_job(
-        self,
-        user_id: UUID,
-        *,
-        job_type: str,
-        scheduled_for: date,
-        recover_running: bool = False,
-    ) -> JobRunRecord | None:
-        if not job_type or len(job_type) > 128:
-            raise ValueError("job_type must contain 1 to 128 characters")
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
+    def schedule_daily_job(
+        self, user_id: UUID, *, scheduled_for: date, legal_versions: dict[str, str],
+    ) -> bool:
+        """Persist the dated request before competing for the provider session lock."""
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             self._tenant(cur, user_id)
             cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+            connection = self._refresh_connection(cur, user_id)
+            if connection is None or not _has_refresh_legal(cur, user_id, legal_versions):
+                return False
+            context = {key: connection[key] for key in ("account_id", "environment", "verified_at")}
             cur.execute(
-                """
-                SELECT c.user_id FROM tbank_connection AS c
-                JOIN users AS u ON u.id = c.user_id
-                WHERE c.user_id = %s AND u.status = 'active'
-                """,
-                (user_id,),
+                "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, details) "
+                "VALUES (%s, 'portfolio_daily', %s, 'queued', %s::jsonb) "
+                "ON CONFLICT (user_id, job_type, scheduled_for) DO NOTHING RETURNING id",
+                (user_id, scheduled_for,
+                 _json({"connection": context, "legal_versions": legal_versions,
+                        "scheduled_for": scheduled_for.isoformat()})),
             )
-            if cur.fetchone() is None:
+            return cur.fetchone() is not None
+
+    @staticmethod
+    def _fail_daily_active(cur: Any, user_id: UUID, reason: str) -> None:
+        cur.execute(
+            "UPDATE job_runs SET status = 'failed', finished_at = clock_timestamp(), "
+            "details = details || %s::jsonb WHERE user_id = %s "
+            "AND job_type = 'portfolio_daily' AND status IN ('queued', 'running')",
+            (_json({"stage_error": reason, "retryable": False}), user_id),
+        )
+
+    @staticmethod
+    def _settle_daily_retry(
+        cur: Any, user_id: UUID, row: dict[str, Any], now: datetime, *,
+        context_matches: bool, recover_running: bool,
+    ) -> bool:
+        if row["status"] == "running":
+            if not recover_running and row["started_at"] >= now - timedelta(minutes=30):
+                return False
+        elif context_matches and (
+            not row["details"].get("retryable", row["status"] == "failed")
+            or row["next_attempt_at"] > now
+        ):
+            return False
+        if row["status"] in {"queued", "running"}:
+            # Only the holder of the global observer lock may declare another
+            # process interrupted. Its immutable facts remain tied to that run.
+            reason = ("worker_interrupted" if row["status"] == "running"
+                      else "observation_context_changed")
+            cur.execute(
+                "UPDATE job_runs SET status = 'failed', finished_at = clock_timestamp(), "
+                "details = details || %s::jsonb WHERE id = %s AND user_id = %s",
+                (_json({"stage_error": reason, "retryable": row["status"] == "running"}),
+                 row["id"], user_id),
+            )
+        return bool(row["attempt"] < DAILY_MAX_ATTEMPTS)
+
+    @staticmethod
+    def _claim_daily_row(
+        cur: Any, user_id: UUID, root: dict[str, Any], row: dict[str, Any],
+        connection: dict[str, Any], legal_versions: dict[str, str], *, recover_running: bool,
+    ) -> JobRunRecord | None:
+        now = connection["server_now"]
+        context_matches = (_refresh_context_matches(row["details"].get("connection"), connection)
+                           and row["details"].get("legal_versions") == legal_versions)
+        if row["status"] == "succeeded" and context_matches:
+            return None
+        if row["status"] == "queued" and context_matches:
+            if row["next_attempt_at"] > now:
                 return None
             cur.execute(
-                "SELECT pg_try_advisory_xact_lock(hashtextextended(%s, 0)) AS locked",
-                (f"daily-job:{user_id}:{job_type}:{scheduled_for.isoformat()}",),
+                "UPDATE job_runs SET status = 'running', started_at = clock_timestamp(), "
+                "next_attempt_at = clock_timestamp() WHERE id = %s AND user_id = %s "
+                "AND status = 'queued' RETURNING *", (row["id"], user_id),
             )
-            lock_row = cur.fetchone()
-            if lock_row is None or not bool(cast(dict[str, Any], lock_row)["locked"]):
+            found = cur.fetchone()
+            return _job_run(found) if found is not None else None
+        if not PortfolioStore._settle_daily_retry(
+            cur, user_id, row, now, context_matches=context_matches,
+            recover_running=recover_running,
+        ):
+            return None
+        context = {key: connection[key] for key in ("account_id", "environment", "verified_at")}
+        details = {"connection": context, "legal_versions": legal_versions,
+                   "scheduled_for": root["scheduled_for"].isoformat(),
+                   "resumed_from": str(row["id"])}
+        cur.execute(
+            "INSERT INTO job_runs (user_id, job_type, scheduled_for, retry_of, status, "
+            "attempt, requested_at, details) VALUES (%s, 'portfolio_daily', NULL, %s, "
+            "'running', %s, %s, %s::jsonb) RETURNING *",
+            (user_id, root["id"], row["attempt"] + 1, root["requested_at"], _json(details)),
+        )
+        return _job_run(cur.fetchone())
+
+    def claim_pending_daily_job(
+        self, user_id: UUID, legal_versions: dict[str, str], *,
+        scheduled_for: date | None = None, recover_running: bool = True,
+    ) -> JobRunRecord | None:
+        """Consume a durable daily request while holding the global observer lock."""
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+            connection = self._refresh_connection(cur, user_id)
+            if connection is None or not _has_refresh_legal(cur, user_id, legal_versions):
+                self._fail_daily_active(cur, user_id, "observation_context_changed")
                 return None
             cur.execute(
-                """
-                INSERT INTO job_runs (
-                    user_id,
-                    job_type,
-                    scheduled_for,
-                    status
-                )
-                VALUES (%s, %s, %s, 'running')
-                ON CONFLICT (user_id, job_type, scheduled_for) DO NOTHING
-                RETURNING
-                    id,
-                    user_id,
-                    job_type,
-                    scheduled_for,
-                    status,
-                    attempt,
-                    started_at,
-                    finished_at
-                """,
-                (user_id, job_type, scheduled_for),
+                "SELECT * FROM job_runs WHERE user_id = %s AND job_type = 'portfolio_daily' "
+                "AND scheduled_for IS NOT NULL AND (%s::date IS NULL OR scheduled_for = %s) "
+                "ORDER BY scheduled_for DESC LIMIT 1 FOR UPDATE",
+                (user_id, scheduled_for, scheduled_for),
             )
-            fetched = cur.fetchone()
-            if fetched is None:
-                cur.execute(
-                    """
-                    UPDATE job_runs
-                    SET
-                        status = 'running',
-                        attempt = attempt + 1,
-                        started_at = now(),
-                        finished_at = NULL,
-                        details = '{}'::jsonb
-                    WHERE user_id = %s
-                      AND job_type = %s
-                      AND scheduled_for = %s
-                      AND attempt < 3
-                      AND (
-                          (
-                              status = 'running'
-                              AND (
-                                  %s
-                                  OR started_at < now() - interval '30 minutes'
-                              )
-                          )
-                          OR (status = 'failed' AND finished_at < now() - interval '2 minutes')
-                      )
-                    RETURNING
-                        id,
-                        user_id,
-                        job_type,
-                        scheduled_for,
-                        status,
-                        attempt,
-                        started_at,
-                        finished_at
-                    """,
-                    (user_id, job_type, scheduled_for, recover_running),
-                )
-                fetched = cur.fetchone()
-            if fetched is None:
+            root = cast(dict[str, Any] | None, cur.fetchone())
+            if root is None:
                 return None
-            return _job_run(cast(dict[str, Any], fetched))
+            # A later daily snapshot cannot recreate missed historical NAV. Keep
+            # old attempts as explicit failures and collect the latest due one.
+            cur.execute(
+                "UPDATE job_runs j SET status = 'failed', finished_at = clock_timestamp(), "
+                "details = j.details || %s::jsonb WHERE j.user_id = %s "
+                "AND j.job_type = 'portfolio_daily' AND j.status IN ('queued', 'running') "
+                "AND EXISTS (SELECT 1 FROM job_runs older WHERE older.user_id = j.user_id "
+                "AND older.scheduled_for < %s AND (older.id = j.id OR older.id = j.retry_of))",
+                (_json({"stage_error": "schedule_superseded", "retryable": False}),
+                 user_id, root["scheduled_for"]),
+            )
+            cur.execute(
+                "SELECT * FROM job_runs WHERE user_id = %s AND (id = %s OR retry_of = %s) "
+                "ORDER BY attempt DESC LIMIT 1 FOR UPDATE", (user_id, root["id"], root["id"]),
+            )
+            row = cast(dict[str, Any], cur.fetchone())
+            return self._claim_daily_row(cur, user_id, root, row, connection, legal_versions,
+                                         recover_running=recover_running)
+
+    def claim_daily_job(
+        self, user_id: UUID, *, job_type: str, scheduled_for: date,
+        legal_versions: dict[str, str], recover_running: bool = False,
+    ) -> JobRunRecord | None:
+        if job_type != "portfolio_daily":
+            raise ValueError("daily_job_type_invalid")
+        self.schedule_daily_job(user_id, scheduled_for=scheduled_for, legal_versions=legal_versions)
+        return self.claim_pending_daily_job(user_id, legal_versions, scheduled_for=scheduled_for,
+                                            recover_running=recover_running)
 
     def finish_job(
         self,
@@ -1154,6 +1201,13 @@ class PortfolioStore:
             try:
                 _require_observation_job(cur, user_id, job_run_id)
             except ObservationCancelled:
+                cur.execute(
+                    "UPDATE job_runs SET status = 'failed', finished_at = clock_timestamp(), "
+                    "details = details || %s::jsonb WHERE id = %s AND user_id = %s "
+                    "AND status = 'running'",
+                    (_json({"stage_error": "observation_context_changed", "retryable": False}),
+                     job_run_id, user_id),
+                )
                 return False
             cur.execute(
                 """
@@ -1161,6 +1215,10 @@ class PortfolioStore:
                 SET
                     status = %s,
                     finished_at = now(),
+                    next_attempt_at = CASE WHEN job_type = 'portfolio_daily'
+                        THEN now() + make_interval(
+                            secs => 300 * power(2, LEAST(attempt, 3) - 1)::integer)
+                        ELSE next_attempt_at END,
                     details = details || %s::jsonb
                 WHERE id = %s
                   AND user_id = %s
@@ -2371,11 +2429,14 @@ def _proposal_record(row: dict[str, Any]) -> PortfolioProposalRecord:
 
 
 def _job_run(row: dict[str, Any]) -> JobRunRecord:
+    scheduled_for = row["scheduled_for"]
+    if scheduled_for is None and row["job_type"] == "portfolio_daily":
+        scheduled_for = date.fromisoformat(row["details"]["scheduled_for"])
     return JobRunRecord(
         id=cast(UUID, row["id"]),
         user_id=cast(UUID, row["user_id"]),
         job_type=str(row["job_type"]),
-        scheduled_for=cast(date | None, row["scheduled_for"]),
+        scheduled_for=cast(date | None, scheduled_for),
         status=cast(JobStatus, str(row["status"])),
         attempt=int(row["attempt"]),
         started_at=cast(datetime, row["started_at"]),

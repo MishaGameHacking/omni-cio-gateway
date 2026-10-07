@@ -8,7 +8,7 @@ import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from threading import BoundedSemaphore, Event, Thread
 from typing import Literal, cast
@@ -111,6 +111,14 @@ class ObserverRunResult:
     succeeded: int
     degraded: int
     failed: int
+    deferred: bool = False
+
+
+def _scheduled_day(now: datetime) -> date:
+    # The recurring recovery timer may also run before today's scheduled time.
+    # In that case it resumes the latest already-due day instead of collecting
+    # tomorrow's daily slot at midnight.
+    return (now.astimezone(MOSCOW) - timedelta(hours=6, minutes=15)).date()
 
 
 class PortfolioObserver:
@@ -126,15 +134,28 @@ class PortfolioObserver:
         self.legal_versions = dict(legal_versions)
 
     def run(self, *, now: datetime | None = None) -> ObserverRunResult:
-        observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+        now = now or datetime.now(UTC)
+        if now.tzinfo is None:
+            raise ValueError("observer time must be timezone-aware")
+        observed_at = now.astimezone(UTC)
+        user_ids = self.store.observer_user_ids()
+        for user_id in user_ids:
+            self.store.schedule_daily_job(user_id, scheduled_for=_scheduled_day(observed_at),
+                                          legal_versions=self.legal_versions)
+        self.store.database.record_worker_heartbeat("portfolio_daily", status="running")
         with self.store.observer_lock() as locked:
             if not locked:
-                logger.info("portfolio observer skipped because another run holds the lock")
-                return ObserverRunResult(0, 0, 0, 0, 0)
-            return self._run_locked(observed_at)
+                logger.info("portfolio observer deferred; dated requests remain queued")
+                self.store.database.record_worker_heartbeat("portfolio_daily")
+                return ObserverRunResult(len(user_ids), 0, 0, 0, 0, deferred=True)
+            result = self._run_locked(observed_at)
+        self.store.database.record_worker_heartbeat(
+            "portfolio_daily", status="attention" if result.failed or result.degraded else "ok",
+        )
+        return result
 
     def _run_locked(self, observed_at: datetime) -> ObserverRunResult:
-        user_ids = self.store.observer_user_ids(self.legal_versions)
+        user_ids = self.store.observer_user_ids()
         if not user_ids:
             return ObserverRunResult(0, 0, 0, 0, 0)
 
@@ -191,11 +212,12 @@ class PortfolioObserver:
         if now.tzinfo is None:
             raise ValueError("observer time must be timezone-aware")
         now = now.astimezone(UTC)
-        scheduled_for = now.astimezone(MOSCOW).date()
+        scheduled_for = _scheduled_day(now)
         job = self.store.claim_daily_job(
             user_id,
             job_type=JOB_TYPE,
             scheduled_for=scheduled_for,
+            legal_versions=self.legal_versions,
             recover_running=recover_running,
         )
         if job is None:
@@ -236,6 +258,9 @@ class PortfolioObserver:
         except Exception as exc:
             self._record_failure(job, details, exc)
             raise
+        details["retryable"] = status == "degraded" and details.get("stage_error") not in {
+            "ObservationCancelled", "BrokerConnectionError", "TBankTokenRejected", "ValueError",
+        } and details.get("history_status") not in {"opened_date_missing", "opened_date_invalid"}
         finished = self.store.finish_job(job.user_id, job.id, status=status, details=details)
         return _confirmed_job_result(UserObservationResult(
             user_id=job.user_id, status=status, snapshot_saved=bool(details["snapshot_saved"]),
@@ -247,6 +272,7 @@ class PortfolioObserver:
         self, job: JobRunRecord, details: dict[str, object], exc: Exception,
     ) -> None:
         details["stage_error"] = type(exc).__name__
+        details["retryable"] = True
         try:
             self.store.finish_job(job.user_id, job.id, status="failed", details=details)
         except Exception as finish_exc:
@@ -447,6 +473,12 @@ class PortfolioRefreshCoordinator:
             except Exception as exc:
                 logger.exception("portfolio refresh worker error_type=%s",
                                  type(exc).__name__, exc_info=None)
+                try:
+                    self.store.database.record_worker_heartbeat("portfolio_refresh",
+                                                                 status="attention")
+                except Exception as heartbeat_error:
+                    logger.exception("portfolio refresh heartbeat error_type=%s",
+                                     type(heartbeat_error).__name__, exc_info=None)
             self._wake.wait(timeout=2)
             self._wake.clear()
 
@@ -454,17 +486,23 @@ class PortfolioRefreshCoordinator:
         """Process at most one run; the daily observer shares the same lock."""
         if self._stopping.is_set():
             return False
+        self.store.database.record_worker_heartbeat("portfolio_refresh", status="running")
         with self.store.observer_lock() as locked:
             if not locked:
+                self.store.database.record_worker_heartbeat("portfolio_refresh")
                 return False
-            users = self.store.observer_user_ids(self.legal_versions)
+            users = self.store.observer_user_ids()
             ordered = self._fair_order(users)
             for user_id in ordered:
                 job = self.store.claim_refresh_job(user_id, self.legal_versions)
+                if job is None:
+                    job = self.store.claim_pending_daily_job(user_id, self.legal_versions)
                 if job is not None:
                     self._last_user = user_id
                     self._run_claimed(job)
+                    self.store.database.record_worker_heartbeat("portfolio_refresh")
                     return True
+        self.store.database.record_worker_heartbeat("portfolio_refresh")
         return False
 
     def _fair_order(self, users: tuple[UUID, ...]) -> tuple[UUID, ...]:
@@ -479,7 +517,7 @@ class PortfolioRefreshCoordinator:
         except ObservationInterrupted:
             return
         finally:
-            if not self._stopping.is_set():
+            if not self._stopping.is_set() and job.job_type == "portfolio_refresh":
                 # Connection/consent changes can prevent finish_job from writing.
                 # Settle only the remaining active job, never reopen a terminal one.
                 self.store.fail_refresh_job(job.user_id, job.id, "observation_interrupted")
@@ -510,14 +548,16 @@ def main() -> int:
             },
         ).run()
         logger.info(
-            "portfolio observer complete users=%s claimed=%s succeeded=%s degraded=%s failed=%s",
+            "portfolio observer complete users=%s claimed=%s succeeded=%s degraded=%s failed=%s "
+            "deferred=%s",
             result.total_users,
             result.claimed_jobs,
             result.succeeded,
             result.degraded,
             result.failed,
+            result.deferred,
         )
-        return 1 if result.failed else 0
+        return 75 if result.deferred else int(bool(result.failed))
     finally:
         database.close()
 

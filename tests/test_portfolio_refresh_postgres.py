@@ -395,7 +395,8 @@ def test_native_manual_refresh_is_not_daily_success_and_cooldown_is_durable(
     store, ident = PortfolioStore(database), owner(database)
     earlier = datetime.now(UTC) - timedelta(hours=1)
     observation = replace(bundle(), account_id=str(ident), refreshed_at=earlier)
-    daily = store.claim_daily_job(ident, job_type="portfolio_daily", scheduled_for=date.today())
+    daily = store.claim_daily_job(ident, job_type="portfolio_daily", scheduled_for=date.today(),
+                                  legal_versions=LEGAL_VERSIONS)
     assert daily is not None
     old_snapshot = store.save_snapshot(ident, job_run_id=daily.id, bundle=observation)
     assert store.finish_job(ident, daily.id, status="succeeded", details={})
@@ -435,6 +436,7 @@ def test_native_manual_refresh_is_not_daily_success_and_cooldown_is_durable(
     assert store.request_refresh(ident, LEGAL_VERSIONS)["job_id"] != str(manual.id)
     assert store.claim_daily_job(
         ident, job_type="portfolio_daily", scheduled_for=date.today(),
+        legal_versions=LEGAL_VERSIONS,
     ) is None
 
 

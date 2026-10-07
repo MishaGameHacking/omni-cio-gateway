@@ -8,7 +8,8 @@ code, so the browser cannot silently test an independently invented protocol.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import Mock, patch
 from uuid import UUID
 
@@ -18,6 +19,7 @@ from omnicio import main
 from omnicio.broker import BrokerService
 from omnicio.cbr import CBRClient
 from omnicio.db import UserRecord
+from omnicio.goal_planning import goal_forecast
 from omnicio.market import MarketService
 from omnicio.service import AuthService
 from omnicio.tbank import TBankInstrumentMetadata, TBankLastPrice, TBankTradingStatus
@@ -69,5 +71,32 @@ def market_contract() -> dict[str, str]:
             "instrument_status_event": status_event + "\n\n"}
 
 
+def goal_contract() -> dict[str, Any]:
+    """Use the goal calculator's real output, including its stale-source refusal."""
+    now = datetime.now(UTC)
+    progress = {"status": "available", "amount_rub": "100", "percent": "10",
+                "remaining_rub": "900", "source": "manual", "as_of": now.isoformat()}
+    goal = {
+        "id": "00000000-0000-4000-8000-000000000901", "version": 1,
+        "title": "Тестовая цель источника", "kind": "capital", "status": "active",
+        "target_amount_rub": "1000", "target_date": (now + timedelta(days=365)).date().isoformat(),
+        "start_date": now.date().isoformat(), "progress_source": "manual",
+        "manual_amount_rub": "100", "allocation_percent": "100", "progress": progress,
+    }
+    stale_goal = {**goal, "progress_source": "portfolio", "manual_amount_rub": None,
+                  "progress": {**progress, "status": "stale", "source": "portfolio",
+                               "as_of": (now - timedelta(days=60)).isoformat()}}
+    plan = {"monthly_contribution_rub": "100", "monthly_income_rub": "0",
+            "annual_return_percent": "0", "annual_volatility_percent": "0",
+            "annual_inflation_percent": "0", "target_in_today_money": True, "seed": 42}
+    return {
+        "goal_plan_document": plan,
+        "goal_available": goal,
+        "goal_stale": stale_goal,
+        "goal_forecast_available": goal_forecast(goal, plan, today=now.date()),
+        "goal_forecast_stale": goal_forecast(stale_goal, plan, today=now.date()),
+    }
+
+
 if __name__ == "__main__":
-    print(json.dumps(market_contract(), ensure_ascii=False))
+    print(json.dumps({**market_contract(), **goal_contract()}, ensure_ascii=False))

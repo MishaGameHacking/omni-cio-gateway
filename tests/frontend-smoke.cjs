@@ -39,6 +39,18 @@ const catalogResult = spawnSync(process.env.OMNICIO_PYTHON || "python", ["-c", "
 });
 assert.equal(catalogResult.status, 0, "The browser uses the canonical server catalog: " + catalogResult.stderr);
 const catalog = JSON.parse(catalogResult.stdout);
+const serverContractResult = spawnSync(process.env.OMNICIO_PYTHON || "python", ["tests/frontend_server_contract.py"], {
+  cwd: root,
+  env: {...process.env, PYTHONPATH: join(root, "src")},
+  encoding: "utf8",
+  maxBuffer: 2 * 1024 * 1024
+});
+assert.equal(serverContractResult.status, 0, "Browser API contracts come from the actual server: " + serverContractResult.stderr);
+const serverContracts = JSON.parse(serverContractResult.stdout);
+const marketEvent = JSON.parse(serverContracts.instrument_market_event.split("\ndata: ")[1].trim());
+assert.equal(marketEvent.instrument_uid, "synthetic-a");
+assert.equal(marketEvent.quote_status, "live");
+const restMarketObservedAt = new Date(Date.parse(marketEvent.observed_at) - 1000).toISOString();
 const artifacts = join(root, "artifacts", "frontend");
 mkdirSync(artifacts, {
   recursive: true
@@ -120,12 +132,15 @@ const makeFixture = mode => {
     failPreferences: false,
     failWorkspace: false,
     failStrategyLoad: false,
+    failNotifications: false,
     conflict: false,
     lostAck: false,
     activeWrites: 0,
     maxActiveWrites: 0,
     holdPreferences: false,
     heldPreferences: [],
+    holdPublicNews: false,
+    heldPublicNews: [],
     holdWorkspace: false,
     heldWorkspace: [],
     holdGoals: false,
@@ -607,6 +622,8 @@ const displayContracts = () => {
   for (const value of [null, undefined, "", "  ", false, [], {}, "NaN", Infinity]) assert.equal(ui.number(value), null, "Unknown and non-finite values remain unknown");
   assert.equal(ui.money(null), "—");
   assert.equal(ui.percent(null), "—");
+  assert.ok(ui.freshness("T-Invest", stamp, "live").includes("Текущая котировка"), "The actual server live status has an authored user-facing label");
+  assert.ok(!ui.freshness("T-Invest", stamp, "live").includes("Статус требует проверки"));
   assert.equal(ui.external("javascript:alert(1)"), null);
   assert.equal(ui.external("https://user:password@example.test/"), null);
   assert.equal(ui.external("https://example.test/source"), "https://example.test/source");
@@ -1380,6 +1397,7 @@ const runBrowser = async base => {
       }
       await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseEnglishLocale({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
+      await exerciseReadConsistency({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
     }
     const failureKey = "signed-load-failure";
     const failure = makeFixture("signed");
@@ -1463,8 +1481,10 @@ async function serveTestPublicMarketReference({
   return sendJSON(response, reference);
 }
 async function serveTestPublicNews({
+  fixture,
   response
 }) {
+  if (fixture.holdPublicNews) await new Promise(release => fixture.heldPublicNews.push(release));
   return sendJSON(response, {
     items: [{
       id: "news-fixture",
@@ -1534,6 +1554,7 @@ async function serveTestWorkspace({
 }) {
   const result = workspace(fixture);
   const period = url.searchParams.get("history_period") || "all";
+  if (fixture.periodResults?.[period]) result.performance.investment_result_rub = fixture.periodResults[period];
   const stored = result.overview.history;
   const days = {
     "1d": 1,
@@ -1818,22 +1839,27 @@ async function serveTestMarketInstruments({
   });
 }
 async function serveTestMarketInstruments2({
+  fixture,
   response,
   url
 }) {
   if (url.pathname.endsWith("/stream")) {
     response.setHeader("Content-Type", "text/event-stream");
-    response.write("event: quote\ndata: " + JSON.stringify({instrument_uid:"synthetic-a",observed_at:stamp,last_price:"250.25",quote_status:"fresh",quote_time:stamp,price_unit:"currency",price_currency:"RUB",cash_price:"250.25",cash_price_currency:"RUB"})+"\n\n");
+    response.flushHeaders();
+    fixture.marketStreams ||= new Set();
+    fixture.marketStreams.add(response);
+    response.once("close", () => fixture.marketStreams.delete(response));
+    if (!fixture.holdMarketStream) response.write(serverContracts.instrument_market_event);
     return;
   }
   return sendJSON(response, {
     instrument_uid: "synthetic-a",
     period: url.searchParams.get("period"),
     source: "Synthetic exchange",
-    observed_at: stamp,
+    observed_at: restMarketObservedAt,
     last_price: "250.25",
-    quote_time: stamp,
-    quote_status: "fresh",
+    quote_time: restMarketObservedAt,
+    quote_status: "live",
     price_unit: "currency",
     price_currency: "RUB",
     cash_price: "250.25",
@@ -2009,6 +2035,7 @@ async function serveTestNews({fixture, url, response}) {
   return sendJSON(response, {items: clone(items.slice(offset, offset + limit)), next_cursor: offset + limit < items.length ? String(offset + limit) : null, scanned_items: Math.min(limit, items.length - offset), instrument_uid: uid, source: "Изолированный источник", observed_at: stamp, status: items.length ? "received" : "empty"});
 }
 async function serveTestNotifications({fixture, path, body, method, response}) {
+  if (path === "/api/notifications" && fixture.failNotifications) return sendJSON(response, {detail: "synthetic_notification_read_failure"}, 503);
   if (path === "/api/notifications/email/request") {
     const channel = {id: "00000000-0000-4000-8000-000000000801", kind: "email", label: "t***@example.test", status: "pending", verification_expires_at: new Date(Date.now() + 900000).toISOString(), verification_attempts_remaining: 5};
     fixture.notificationChannels = [channel];
@@ -2074,6 +2101,114 @@ async function exerciseNotificationChannels({fixture, click, fieldValue, wait, e
   await wait('document.querySelector("#notification-settings").textContent.includes("Устройства и адреса пока не подключены")', "Revoked channel removed from UI");
   assert.ok(!await evaluate('document.querySelector("#notification-settings").textContent.includes("test@example.test")'), "Full address is never retained in channel display");
 }
+async function exerciseNotificationRetry({fixture, click, fieldValue, wait, evaluate}) {
+  const retry = '#notification-settings [data-action="resource-retry"][data-resource="notifications"]';
+  await wait(`document.querySelector(${JSON.stringify(retry)})`, "An initial notification failure has a resource-specific retry");
+  assert.equal(await evaluate('document.querySelector("#view-settings .view-actions [data-action=refresh]").disabled'), true, "Broker collection is in its own cooldown");
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(retry)}).disabled`), false, "Reading notifications is independent of broker collection limits");
+  const previousTime = await evaluate('document.querySelector("#preferences-form").elements.quiet_start.value');
+  await fieldValue("#preferences-form", "quiet_start", "21:15");
+  fixture.failNotifications = false;
+  const before = fixture.requests.length;
+  await click(retry);
+  await wait('document.querySelector("#notification-email-form") && !document.querySelector("#notification-settings .notice.error")', "The retry restores the failed notification resource");
+  const retried = fixture.requests.slice(before);
+  assert.equal(retried.filter(item => item.path === "/api/notifications" && item.method === "GET").length, 1);
+  assert.equal(retried.filter(item => item.path === "/api/workspace/refresh" && item.method === "POST").length, 0, "A notification read must not start portfolio collection");
+  assert.equal(await evaluate('document.querySelector("#preferences-form").elements.quiet_start.value'), "21:15", "An unrelated unsaved settings draft survives resource recovery");
+  await fieldValue("#preferences-form", "quiet_start", previousTime);
+  fixture.failNotifications = true;
+  await click('#notification-settings [data-action="notifications-reload"]');
+  await wait(`document.querySelector(${JSON.stringify(retry)}) && document.querySelector("#notification-email-form")`, "A failed later read reports its error alongside the last known channels");
+  fixture.failNotifications = false;
+  await click(retry);
+  await wait('!document.querySelector("#notification-settings .notice.error")', "A second successful read removes the actual error");
+}
+async function exerciseAnalyticsReadConsistency({fixture, click, wait, evaluate, checkLayout, screenshot, round}) {
+  fixture.periodResults = {"1y": "123456", "1w": "7654"};
+  await click('#sidebar-nav [data-route="analytics"]');
+  const metricValues = '[...document.querySelectorAll("#view-analytics .metric-grid .main-value")].map(item=>item.textContent)';
+  await wait('document.querySelector("#view-analytics [data-history-period=\\"1y\\"]") && document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("123456")', "The initial year has its own financial result");
+  fixture.holdWorkspace = true;
+  fixture.failWorkspace = true;
+  await click('#view-analytics [data-period="1w"]');
+  await until(() => fixture.heldWorkspace.length > 0, "The selected week is loading");
+  assert.deepEqual(await evaluate(metricValues), ["—", "—", "—", "—"], "The old year's totals cannot be displayed under the selected week");
+  assert.equal(await evaluate('document.querySelectorAll("#view-analytics .chart-svg").length'), 0, "Charts from another period stay out of the selected-period view");
+  fixture.holdWorkspace = false;
+  fixture.heldWorkspace.splice(0).forEach(release => release());
+  await wait('document.querySelector("#view-analytics [data-resource=workspace]")', "The failed week read exposes a targeted retry");
+  assert.deepEqual(await evaluate(metricValues), ["—", "—", "—", "—"], "Failure does not relabel cached year totals as week data");
+  assert.equal(await evaluate('document.querySelector("#view-analytics [data-period=\\"1w\\"]").getAttribute("aria-pressed")'), "true");
+  await screenshot(`analytics-period-error-${round}-390.png`);
+  fixture.failWorkspace = false;
+  const before = fixture.requests.length;
+  await click('#view-analytics [data-resource="workspace"]');
+  await wait('document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("7654") && document.querySelector("#view-analytics [data-history-period=\\"1w\\"]")', "The successful retry displays only the selected week's snapshot");
+  assert.ok(fixture.requests.slice(before).some(item => item.path === "/api/workspace" && new URLSearchParams(item.query).get("history_period") === "1w"));
+  assert.equal(fixture.requests.slice(before).some(item => item.path === "/api/workspace/refresh" && item.method === "POST"), false);
+  await checkLayout(`analytics-period-recovered-${round}-390`);
+}
+async function exerciseSearchReadConsistency({fixture, click, fieldValue, wait, evaluate}) {
+  fixture.holdPublicNews = true;
+  await fieldValue("#global-search-form", "q", "older-query");
+  await evaluate('document.querySelector("#global-search-form").requestSubmit()');
+  await until(() => fixture.heldPublicNews.length === 1, "The earlier search is waiting for a shared resource");
+  await fieldValue("#global-search-form", "q", "newer-query");
+  await evaluate('document.querySelector("#global-search-form").requestSubmit()');
+  await wait('document.querySelector("#view-search .view-header").textContent.includes("newer-query")', "The current route query is visible during loading");
+  fixture.holdPublicNews = false;
+  fixture.heldPublicNews.splice(0).forEach(release => release());
+  await wait('document.querySelector("#view-search .search-result") && !document.querySelector("#view-search .loading-panel")', "The newer query finishes after the shared response");
+  const searches = fixture.requests.filter(item => item.path === "/api/broker/tbank/instruments/search");
+  assert.deepEqual(searches.map(item => new URLSearchParams(item.query).get("q")), ["newer-query"], "An older route cannot start a new search after its dependency resolves");
+  assert.equal(await evaluate('document.querySelector("#global-search").value'), "newer-query");
+  assert.ok(await evaluate('document.querySelector("#view-search .view-header").textContent.includes("newer-query")'));
+  await click('#sidebar-nav [data-route="goals"]');
+}
+async function exerciseGoalSourceContract({fixture, click, wait, evaluate, screenshot, round}) {
+  const goal = clone(serverContracts.goal_available);
+  fixture.goals = [goal];
+  fixture.goalPlans = {[goal.id]: {version: 1, document: clone(serverContracts.goal_plan_document), forecast: clone(serverContracts.goal_forecast_available)}};
+  await click('#view-goals [data-action="refresh"]');
+  await wait('document.querySelector("#view-goals [data-goal-plan]")', "Goal fixture uses the actual calculator's source schema");
+  await click('#view-goals [data-goal-plan]');
+  await wait('document.querySelector("#goal-plan-result .goal-forecast-source")', "The goal scenario names its starting amount and source");
+  assert.ok(await evaluate('document.querySelector("#goal-plan-result").textContent.includes("Сумма в заданном сценарии")'));
+  const sourceDate = await evaluate(`window.OmniUI.date(${JSON.stringify(serverContracts.goal_forecast_available.source_as_of)}, true)`);
+  assert.ok((await evaluate('document.querySelector("#goal-plan-result .goal-forecast-source").textContent')).includes(sourceDate));
+  await click('#workspace-dialog [data-close-dialog]');
+  fixture.goals[0] = clone(serverContracts.goal_stale);
+  fixture.goalPlans[goal.id].forecast = clone(serverContracts.goal_forecast_stale);
+  await click('#view-goals [data-goal-plan]');
+  await wait('document.querySelector("#goal-plan-result").textContent.includes("Начальная сумма устарела")', "The real stale-source refusal is displayed without a scenario result");
+  const staleText = await evaluate('document.querySelector("#goal-plan-result").textContent');
+  const staleDate = await evaluate(`window.OmniUI.date(${JSON.stringify(serverContracts.goal_forecast_stale.source_as_of)}, true)`);
+  assert.ok(staleText.includes(staleDate), "The source's original date is retained, not replaced by today's calculation date");
+  assert.ok(!staleText.includes("Сумма в заданном сценарии") && !staleText.includes("Условная модель вероятности"));
+  await screenshot(`goal-source-stale-${round}-390.png`);
+  await click('#goal-plan-result [data-route="portfolio"]');
+  await wait('!document.querySelector("#workspace-dialog").open && !document.querySelector("#view-portfolio").hidden', "The source-recovery action reaches the existing account controls");
+}
+async function exerciseReadConsistency(options) {
+  const {send, configureViewport, round, base, wait} = options;
+  await configureViewport(390);
+  const key = `signed-read-contracts-${round}`;
+  const fixture = makeFixture("signed");
+  fixture.failNotifications = true;
+  fixture.refreshStatus.can_refresh = false;
+  fixture.refreshStatus.retry_after_seconds = 1800;
+  fixture.refreshStatus.cooldown_until = new Date(Date.now() + 1800000).toISOString();
+  fixtures.set(key, fixture);
+  await send("Page.navigate", {url: `${base}?case=${key}#settings`});
+  await wait('document.querySelector("#preferences-form")', "A fresh signed-in settings view");
+  const context = {...options, fixture};
+  await exerciseNotificationRetry(context);
+  await exerciseAnalyticsReadConsistency(context);
+  await exerciseSearchReadConsistency(context);
+  await exerciseGoalSourceContract(context);
+  console.log(`PASS read contracts round ${round}: resource retry, period isolation, search ordering, and source age from the real calculator`);
+}
 async function serveTestSessions({fixture, path, method, body, response}) {
   fixture.sessions ||= [{id:"00000000-0000-0000-0000-000000000991", current:true, auth_provider:"vkid", created_at:stamp, last_seen_at:stamp, expires_at:new Date(Date.now()+86400000).toISOString()}, {id:"00000000-0000-0000-0000-000000000992", current:false, auth_provider:"tid", created_at:stamp, last_seen_at:stamp, expires_at:new Date(Date.now()+86400000).toISOString()}];
   if (method === "GET") return sendJSON(response, {sessions:clone(fixture.sessions), total:fixture.sessions.length, truncated:false});
@@ -2090,7 +2225,7 @@ async function serveTestGoalPlan({fixture,path,method,body,response}) {
   if(method==="PUT") {
     if(body.expected_version!==plan.version || body.expected_goal_version!==goal.version) return sendJSON(response,{detail:"settings_version_conflict"},409);
     if(fixture.holdGoalPlanSave) await new Promise(resolve => {fixture.releaseGoalPlanSave=resolve;});
-    plan={version:plan.version+1,document:clone(body.document),forecast:{status:"available",method:"geometric_monthly_scenario_v1",projected_amount_rub:"1300.00",inflation_adjusted_target_rub:"1000.00",required_monthly_rub:"75.00",deterministic_months_to_target:9,months:12,assumptions_source:"user_supplied",simulation:null,limitations:["Synthetic UI response; financial math is exercised by Python tests."]}};
+    plan={version:plan.version+1,document:clone(body.document),forecast:clone(serverContracts.goal_forecast_available)};
     fixture.goalPlans[id]=plan;
   }
   return sendJSON(response,{...clone(plan),goal_id:id,goal_version:goal.version});
@@ -2561,6 +2696,7 @@ async function exerciseViewport({
   fixtures.set(key, makeFixture("signed"));
   const fixture = fixtures.get(key);
   fixture.extendedWorkflows = width === 390;
+  fixture.holdMarketStream = width === 390;
   await send("Page.navigate", {
     url: `${base}?case=${key}`
   });
@@ -2601,6 +2737,16 @@ async function exerciseViewport({
   await wait('document.querySelector("#view-search .search-result")', "Real search response");
   await click('#view-search [data-asset]');
   await wait('document.querySelector("#view-asset .chart-svg")', "Asset chart");
+  if (fixture.holdMarketStream) {
+    await until(() => fixture.marketStreams?.size === 1, "The browser has opened the actual market event contract");
+    await evaluate('document.querySelector("#view-asset .chart-svg").focus()');
+    const focusedChart = await evaluate('document.activeElement.id');
+    fixture.holdMarketStream = false;
+    for (const response of fixture.marketStreams) response.write(serverContracts.instrument_market_event);
+    await wait('document.querySelector("#view-asset [data-market-quote] .main-value").textContent.includes("251,75")', "A real server tick updates the displayed price while the chart is focused");
+    assert.equal(await evaluate('document.activeElement.id'), focusedChart, "A quote tick preserves the chart being inspected");
+  }
+  await wait('document.querySelector("#view-asset [data-market-quote] .main-value").textContent.includes("251,75") && document.querySelector("#view-asset [data-market-source]").textContent.includes("Текущая котировка")', "FastAPI's market event changes the REST price from 250.25 to 251.75 and labels it live");
   await click('#view-asset [data-asset-tab="metrics"]');
   assert.ok(await evaluate('document.querySelector("#view-asset .asset-tab-content").textContent.includes("Максимум периода")'));
   await click('#view-asset [data-asset-tab="chart"]');
@@ -2623,6 +2769,12 @@ async function exerciseViewport({
   });
   await checkLayout(`asset ${round}/${width}`);
   await screenshot(`asset-${round}-${width}.png`);
+  if (width === 390) {
+    await until(() => fixture.marketStreams?.size === 1, "Only the current instrument stream remains open");
+    for (const response of fixture.marketStreams) response.write(serverContracts.instrument_status_event);
+    await until(() => fixture.marketStreams.size === 0, "The server's terminal status closes the browser stream");
+    await wait('document.querySelector("#view-asset [data-market-source]").textContent.includes("Недоступно")', "The terminal source state remains visible while the chart has focus");
+  }
   await click('#view-asset [data-watch]');
   await until(() => fixture.prefs.document.watchlist.length === 1, "Persistent watchlist");
   await wait('document.querySelector("#view-asset [data-watch]").getAttribute("aria-pressed")==="true"', "Saved favorite");
