@@ -34,23 +34,26 @@ def goal_plan_fields(kind: str) -> tuple[str, ...]:
     raise ValueError("goal_plan_kind_invalid")
 
 
-def normalize_goal_plan(document: object, *, kind: str | None = None) -> dict[str, Any]:
-    if not isinstance(document, dict) or set(document) - _FIELDS:
-        raise ValueError("goal_plan_fields_invalid")
+def _active_plan_fields(document: Mapping[str, Any], kind: str | None) -> set[str]:
     if kind is None:
         if set(document) != _FIELDS:
             raise ValueError("goal_plan_fields_invalid")
-        active = _FIELDS
+        return _FIELDS
+    active = set(goal_plan_fields(kind))
+    required = active - {"annual_volatility_percent", "annual_inflation_percent"}
+    if document.get("target_in_today_money") is True:
+        required.add("annual_inflation_percent")
     else:
-        active = set(goal_plan_fields(kind))
-        required = active - {"annual_volatility_percent", "annual_inflation_percent"}
-        if not required <= set(document):
-            raise ValueError("goal_plan_fields_invalid")
-        if document.get("target_in_today_money") is True:
-            if "annual_inflation_percent" not in document:
-                raise ValueError("goal_plan_fields_invalid")
-        else:
-            active.discard("annual_inflation_percent")
+        active.discard("annual_inflation_percent")
+    if not required <= set(document):
+        raise ValueError("goal_plan_fields_invalid")
+    return active
+
+
+def normalize_goal_plan(document: object, *, kind: str | None = None) -> dict[str, Any]:
+    if not isinstance(document, dict) or set(document) - _FIELDS:
+        raise ValueError("goal_plan_fields_invalid")
+    active = _active_plan_fields(document, kind)
     result: dict[str, Any] = {}
     bounds = {
         "monthly_contribution_rub": (Decimal(0), Decimal("1000000000000")),

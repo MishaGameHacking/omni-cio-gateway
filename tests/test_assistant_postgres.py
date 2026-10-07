@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
@@ -81,6 +82,13 @@ def test_durable_reply_replay_is_once_and_deleting_history_cannot_reset_quota(wo
     assert [m["role"] for m in history["messages"]] == ["user", "assistant"]
     assert all(m["request_status"] == "completed" for m in history["messages"])
     assert service.delete_conversation(owner, conversation)
+    with service.store._transaction(owner) as cur:
+        cur.execute("SELECT reply_prefix, source_refs, conversation_id FROM assistant_requests "
+                    "WHERE user_id = %s AND id = %s", (owner, request))
+        retained = cur.fetchone()
+        assert retained["reply_prefix"] == ""
+        assert retained["source_refs"] == []
+        assert retained["conversation_id"] is None
     assert service.status(owner)["quota"]["remaining"] == 0
     next_conversation = UUID(service.create_conversation(owner)["id"])
     with pytest.raises(AssistantQuotaExceeded):
@@ -302,7 +310,8 @@ def test_memory_is_explicit_versioned_owner_scoped_and_delete_cancels_pending_co
                             expected_version=0, confirmed=False)
     created = service.save_memory(owner, memory, "Ответы кратко", "preference",
                                   expected_version=0, confirmed=True)
-    assert created["version"] == 1 and created["origin"] == "explicit"
+    assert created["version"] == 1
+    assert created["origin"] == "explicit"
     assert service.save_memory(owner, memory, "Ответы кратко", "preference",
                                expected_version=0, confirmed=True) == created
     assert service.list_memory(other)["items"] == []
@@ -375,10 +384,36 @@ def test_durable_stream_prefix_cancel_and_completed_readback_do_not_restart_prov
                                      request_id=request, expected_version=0))
         assert events[-1]["event"] == "complete"
         read = service.stream_request(owner, request)
-        assert read["status"] == "completed" and read["reply_prefix"] == "Первая часть"
+        assert read["status"] == "completed"
+        assert read["reply_prefix"] == "Первая часть"
         assert read["stream_sequence"] >= 3
         assert service.cancel_request(owner, request)["status"] == "completed"
         replay = list(service.stream(owner, conversation, message="Вопрос", context=None,
                                      request_id=request, expected_version=0))
         assert replay[-1]["data"]["result"] == read["result"]
     assert model.call_count == 1
+
+
+def test_completed_evidence_above_legacy_eight_kib_is_readable_and_tenant_scoped(
+    workspace_database,
+):
+    service, owner, conversation = setup(workspace_database[0])
+    other, request = user(workspace_database[0]), uuid4()
+    context = {"news": [
+        {"title": f"Публикация {number}", "summary": "Подтверждённый текст. " * 30,
+         "url": f"https://www.cbr.ru/press/{number}", "published_at": "2026-10-07T10:00:00Z"}
+        for number in range(10)
+    ]}
+    with patch.object(service.default_client, "chat", return_value={"reply": "Источник приложен"}):
+        result = service.chat(owner, conversation, message="Покажи источники", context=context,
+                              request_id=request, expected_version=0)
+    assert 8192 < len(json.dumps(result["sources"], ensure_ascii=False).encode()) <= 65536
+    source_id = result["sources"][0]["id"]
+    record = service.read_request_source(owner, request, source_id)
+    assert record["content"] == context["news"][0]
+    assert record["immutable"] is True
+    with pytest.raises(WorkspaceNotFound):
+        service.read_request_source(other, request, source_id)
+    assert service.delete_conversation(owner, conversation)
+    with pytest.raises(WorkspaceNotFound):
+        service.read_request_source(owner, request, source_id)

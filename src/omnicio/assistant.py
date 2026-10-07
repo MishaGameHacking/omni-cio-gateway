@@ -13,6 +13,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import closing, suppress
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
@@ -23,8 +24,16 @@ from .assistant_store import AssistantQuotaExceeded as AssistantQuotaExceeded
 from .assistant_store import AssistantRequestConflict, AssistantStore
 from .db import Database
 from .security import decrypt_secret, encrypt_secret
+from .workspace_store import WorkspaceNotFound
 
 _MAX_REPLY_BYTES = 131_072
+_STREAM_ERRORS = {
+    "assistant_activation_disabled", "assistant_not_configured",
+    "assistant_context_changed", "assistant_memory_changed", "assistant_busy",
+    "assistant_response_incomplete", "assistant_response_invalid",
+    "assistant_response_too_large", "assistant_stream_invalid",
+    "assistant_stream_timeout", "assistant_source_unverified", "assistant_evidence_unverified",
+}
 _SYSTEM_PROMPT = (
     "Ты инвестиционный помощник OMNICIO. Отвечай на языке пользователя ясно и компактно. "
     "Объясняй расчёты и риски. Не выдумывай котировки, источники, доходность или вероятности. "
@@ -76,6 +85,58 @@ class _Cancellation:
     def check(self) -> None:
         if self.event.is_set():
             raise AssistantCancelled("assistant_request_cancelled")
+
+
+def _stream_lines(
+    response: http.client.HTTPResponse, stop: _Cancellation, *, started: float,
+) -> Iterator[bytes]:
+    consumed = 0
+    while True:
+        stop.check()
+        if time.monotonic() - started > 120:
+            raise AssistantUnavailable("assistant_stream_timeout")
+        line = response.readline(_MAX_REPLY_BYTES + 1)
+        if not line:
+            return
+        consumed += len(line)
+        if consumed > _MAX_REPLY_BYTES:
+            raise AssistantUnavailable("assistant_response_too_large")
+        if line.strip():
+            yield line
+
+
+def _sse_data(line: bytes) -> bytes | None:
+    if line.startswith((b":", b"event:", b"id:", b"retry:")):
+        return None
+    if not line.startswith(b"data:"):
+        raise AssistantUnavailable("assistant_stream_invalid")
+    return line[5:].strip()
+
+
+def _stream_payloads(
+    lines: Iterator[bytes], provider: str,
+) -> Iterator[dict[str, Any]]:
+    for line in lines:
+        if provider == "openai_compatible":
+            data = _sse_data(line)
+            if data is None:
+                continue
+            if data == b"[DONE]":
+                return
+            line = data
+        payload = json.loads(line)
+        if not isinstance(payload, dict) or payload.get("error"):
+            raise AssistantUnavailable("assistant_stream_invalid")
+        yield payload
+
+
+def _append_stream_text(text: str, delta: str, *, finished: bool) -> str:
+    if finished and delta:
+        raise AssistantUnavailable("assistant_stream_invalid")
+    text += delta
+    if len(text) > 16000:
+        raise AssistantUnavailable("assistant_response_too_large")
+    return text
 
 
 def _source_hash(value: object) -> str:
@@ -151,6 +212,13 @@ def source_references(context: Mapping[str, Any] | None) -> list[dict[str, Any]]
             for row in _source_catalog(context)]
 
 
+def _stored_sources(context: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    encoded = json.dumps(_source_catalog(context), ensure_ascii=False, default=str)
+    if len(encoded.encode()) > 65536:
+        raise ValueError("assistant_sources_too_large")
+    return cast(list[dict[str, Any]], json.loads(encoded))
+
+
 def source_search(
     context: Mapping[str, Any] | None, query: str, *, limit: int = 10,
 ) -> dict[str, Any]:
@@ -173,8 +241,6 @@ def source_search(
 
 
 def source_read(context: Mapping[str, Any] | None, source_id: str) -> dict[str, Any]:
-    from .workspace_store import WorkspaceNotFound
-
     for row in _source_catalog(context):
         if row["id"] == source_id:
             return {**row, "web_search": False}
@@ -388,8 +454,8 @@ def _payment_context(value: Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(coverage, Mapping):
         result["metric_coverage"] = {
             key: {name: item[name] for name in ("status", "value_rub", "observed_rub", "reason")
-                  if name in item and (item[name] is None
-                                       or isinstance(item[name], (str, int, float)))}
+                  if name in item
+                  and (item[name] is None or isinstance(item[name], (str, int, float)))}
             for key, item in coverage.items() if key in fields and isinstance(item, Mapping)
         }
     native = value.get("native_payment_sums")
@@ -614,59 +680,27 @@ class AssistantClient:
         self, messages: list[dict[str, str]], context: Mapping[str, Any] | None,
         stop: _Cancellation,
     ) -> Iterator[dict[str, Any]]:
-        scheme, host, port, path = _validated_endpoint(self._base_url, self.provider)
-        headers = {"Content-Type": "application/json", "Accept": (
+        accept = (
             "application/x-ndjson" if self.provider == "ollama" else "text/event-stream"
-        )}
-        if self._api_key:
-            headers["Authorization"] = "Bearer " + self._api_key
-        connection_type = (
-            http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
         )
-        text, finished, consumed = "", False, 0
+        text, finished = "", False
         usage: dict[str, Any] = {}
         started = time.monotonic()
         try:
-            with closing(connection_type(host, port=port, timeout=self.timeout_seconds)) as conn:
+            connection, path = self._connection()
+            with closing(connection) as conn:
                 stop.attach(conn)
                 stop.check()
                 conn.request("POST", path, body=json.dumps(
                     self._body(messages, context, stream=True), ensure_ascii=False,
-                ).encode(), headers=headers)
+                ).encode(), headers=self._headers(accept))
                 response = conn.getresponse()
                 if response.status != 200:
                     raise AssistantUnavailable("assistant_unavailable")
-                while True:
-                    stop.check()
-                    if time.monotonic() - started > 120:
-                        raise AssistantUnavailable("assistant_stream_timeout")
-                    line = response.readline(_MAX_REPLY_BYTES + 1)
-                    if not line:
-                        break
-                    consumed += len(line)
-                    if consumed > _MAX_REPLY_BYTES:
-                        raise AssistantUnavailable("assistant_response_too_large")
-                    if not line.strip():
-                        continue
-                    if self.provider == "openai_compatible":
-                        if line.startswith(b":"):
-                            continue
-                        if not line.startswith(b"data:"):
-                            if line.startswith((b"event:", b"id:", b"retry:")):
-                                continue
-                            raise AssistantUnavailable("assistant_stream_invalid")
-                        line = line[5:].strip()
-                        if line == b"[DONE]":
-                            break
-                    payload = json.loads(line)
-                    if not isinstance(payload, dict) or payload.get("error"):
-                        raise AssistantUnavailable("assistant_stream_invalid")
+                lines = _stream_lines(response, stop, started=started)
+                for payload in _stream_payloads(lines, self.provider):
                     delta, measured, done = self._stream_values(payload)
-                    if finished and delta:
-                        raise AssistantUnavailable("assistant_stream_invalid")
-                    text += delta
-                    if len(text) > 16000:
-                        raise AssistantUnavailable("assistant_response_too_large")
+                    text = _append_stream_text(text, delta, finished=finished)
                     usage.update(measured)
                     finished = finished or done
                     if delta:
@@ -718,22 +752,29 @@ class AssistantClient:
             raise AssistantUnavailable("assistant_stream_invalid")
         return delta, usage, done
 
-    def _request(
-        self, method: str, path: str, body: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        scheme, host, port, _path = _validated_endpoint(self._base_url, self.provider)
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    def _headers(self, accept: str = "application/json") -> dict[str, str]:
+        headers = {"Content-Type": "application/json", "Accept": accept}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
+        return headers
+
+    def _connection(self) -> tuple[http.client.HTTPConnection, str]:
+        scheme, host, port, path = _validated_endpoint(self._base_url, self.provider)
         connection_type = (
             http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
         )
+        return connection_type(host, port=port, timeout=self.timeout_seconds), path
+
+    def _request(
+        self, method: str, path: str, body: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         try:
-            with closing(connection_type(host, port=port, timeout=self.timeout_seconds)) as conn:
+            connection, _ = self._connection()
+            with closing(connection) as conn:
                 encoded = (
                     json.dumps(body, ensure_ascii=False).encode() if body is not None else None
                 )
-                conn.request(method, path, body=encoded, headers=headers)
+                conn.request(method, path, body=encoded, headers=self._headers())
                 response = conn.getresponse()
                 if response.status != 200:
                     raise AssistantUnavailable("assistant_unavailable")
@@ -857,6 +898,124 @@ def investment_context(
     return result
 
 
+@dataclass
+class _AssistantStream:
+    """One admitted request: durable progress outlives its browser reader."""
+
+    store: AssistantStore
+    client: AssistantClient
+    user_id: UUID
+    request_id: UUID
+    message: str
+    history: Sequence[Mapping[str, str]]
+    context: Mapping[str, Any] | None
+    validate_context: Callable[[], None] | None
+    cancellation: _Cancellation = field(default_factory=_Cancellation)
+    _events: queue.Queue[dict[str, Any]] = field(default_factory=lambda: queue.Queue(maxsize=64))
+    _finished: threading.Event = field(default_factory=threading.Event)
+    _sources: list[dict[str, Any]] = field(default_factory=list)
+    _prefix: str = ""
+    _last_flush: float = 0.0
+    _flushed_characters: int = 0
+
+    def _record(self, event: str, **data: Any) -> dict[str, Any]:
+        return {"event": event, "data": {"request_id": str(self.request_id), **data}}
+
+    def _emit(self, event: str, **data: Any) -> None:
+        record = self._record(event, **data)
+        try:
+            self._events.put_nowait(record)
+        except queue.Full:
+            # A delta replaces the full persisted prefix. Slow readers can
+            # skip an intermediate update without losing any accepted text.
+            with suppress(queue.Empty):
+                self._events.get_nowait()
+            with suppress(queue.Full):
+                self._events.put_nowait(record)
+
+    def _check_context(self) -> None:
+        if self.validate_context is not None:
+            self.validate_context()
+
+    def _publish_prefix(self, delta: str) -> None:
+        self._prefix += delta
+        now = time.monotonic()
+        if now - self._last_flush < 0.2 and len(self._prefix) - self._flushed_characters < 512:
+            return
+        self._check_context()
+        visible = self._prefix if self.context is None else ""
+        sequence = self.store.update_stream(self.user_id, self.request_id, visible, self._sources)
+        self._last_flush, self._flushed_characters = now, len(self._prefix)
+        if self.context is None:
+            self._emit("delta", reply_prefix=visible, sequence=sequence, provisional=True)
+        else:
+            self._emit("status", phase="generating", received_characters=len(self._prefix),
+                       sequence=sequence, context_checked=True)
+
+    def _complete(self, result: object) -> None:
+        if not isinstance(result, dict):
+            raise AssistantUnavailable("assistant_response_incomplete")
+        self.cancellation.check()
+        self._check_context()
+        self._emit("status", phase="checking_sources")
+        validate_source_response(result["reply"], self.context)
+        result["sources"] = self._sources
+        saved = self.store.finish(self.user_id, self.request_id, result)
+        self._emit("complete", result=saved)
+
+    def _consume(self) -> None:
+        self._check_context()
+        self._sources = _stored_sources(self.context)
+        self.store.update_stream(self.user_id, self.request_id, "", self._sources)
+        self._emit("status", phase="generating", context_checked=self.context is not None)
+        result = None
+        for part in self.client.stream(message=self.message, history=self.history,
+                                       context=self.context, cancellation=self.cancellation):
+            self.cancellation.check()
+            if "delta" in part:
+                self._publish_prefix(part["delta"])
+            else:
+                result = part.get("result")
+        self._complete(result)
+
+    def _persist_failure(self, error: Exception) -> bool:
+        cancelled = self.cancellation.event.is_set() or isinstance(error, AssistantCancelled)
+        try:
+            state = self.store.read_request(self.user_id, self.request_id)
+            if cancelled and state["status"] == "running":
+                state = self.store.cancel_request(self.user_id, self.request_id)
+            if state["status"] == "cancelled":
+                return True
+            self.store.uncertain(self.user_id, self.request_id)
+        except Exception:
+            # Report cancellation only after the database confirms it. No
+            # private exception payload crosses SSE if persistence is down.
+            return False
+        return False
+
+    def run(self, release: Callable[[], None]) -> None:
+        try:
+            self._consume()
+        except Exception as error:
+            if self._persist_failure(error):
+                self._emit("cancelled", code="assistant_request_cancelled")
+            else:
+                code = str(error) if str(error) in _STREAM_ERRORS else "assistant_unavailable"
+                self._emit("error", code=code, incomplete=True)
+        finally:
+            release()
+            self._finished.set()
+
+    def read(self, conversation_id: UUID, version: int) -> Iterator[dict[str, Any]]:
+        yield self._record("accepted", conversation_id=str(conversation_id), version=version)
+        while not self._finished.is_set() or not self._events.empty():
+            try:
+                yield self._events.get(timeout=1)
+            except queue.Empty:
+                if not self._finished.is_set():
+                    yield self._record("status", phase="waiting_for_provider")
+
+
 class AssistantService:
     """User-owned connection and durable chat orchestration; activation is operator-controlled."""
 
@@ -968,7 +1127,8 @@ class AssistantService:
     ) -> dict[str, Any]:
         result = self.store.save_memory(user_id, memory_id, content, category,
                                         expected_version=expected_version, confirmed=confirmed)
-        self._cancel_active(user_id)
+        if result.pop("_changed", False):
+            self._cancel_active(user_id)
         return result
 
     def delete_memory(self, user_id: UUID, memory_id: UUID, *, expected_version: int) -> bool:
@@ -978,10 +1138,22 @@ class AssistantService:
 
     def _cancel_active(self, user_id: UUID, request_id: UUID | None = None) -> None:
         with self._active_lock:
-            matches = [control for (owner, identifier), control in self._active.items()
+            matches = [(identifier, control)
+                       for (owner, identifier), control in self._active.items()
                        if owner == user_id and (request_id is None or identifier == request_id)]
-        for control in matches:
-            control.cancel()
+        for identifier, control in matches:
+            if request_id is not None:
+                control.cancel()
+                continue
+            # A fresh request can be admitted after the settings transaction
+            # cancelled the old one. Do not close that new, valid connection.
+            try:
+                state = self.store.read_request(user_id, identifier)
+            except (WorkspaceNotFound, PermissionError):
+                control.cancel()
+                continue
+            if state["status"] == "cancelled":
+                control.cancel()
 
     def close(self) -> None:
         """Cancel only requests owned by this service process, preserving durable readback."""
@@ -1004,6 +1176,16 @@ class AssistantService:
     def stream_request(self, user_id: UUID, request_id: UUID) -> dict[str, Any]:
         self.store.expire_requests(user_id)
         return self.store.read_request(user_id, request_id)
+
+    def read_request_source(
+        self, user_id: UUID, request_id: UUID, source_id: str,
+    ) -> dict[str, Any]:
+        request = self.stream_request(user_id, request_id)
+        for source in request["sources"]:
+            if source.get("id") == source_id and "content" in source:
+                return {**source, "request_id": str(request_id), "immutable": True,
+                        "web_search": False}
+        raise WorkspaceNotFound("assistant_source_not_found")
 
     def cancel_request(self, user_id: UUID, request_id: UUID) -> dict[str, Any]:
         result = self.store.cancel_request(user_id, request_id)
@@ -1134,9 +1316,9 @@ class AssistantService:
         return self.store.conversation(user_id, conversation_id, before=before, limit=limit)
 
     def delete_conversation(self, user_id: UUID, conversation_id: UUID) -> bool:
-        # The durable cancellation is scoped to this conversation. A provider
-        # checks it on the next real chunk even when another process owns it.
-        return self.store.delete_conversation(user_id, conversation_id)
+        result = self.store.delete_conversation(user_id, conversation_id)
+        self._cancel_active(user_id)
+        return result
 
     def _prepare_context(
         self, user_id: UUID, context: Mapping[str, Any] | None, memory_ids: Sequence[UUID],
@@ -1152,6 +1334,10 @@ class AssistantService:
             prepared["_source_refs"] = source_references(prepared)
             if len(json.dumps(prepared, default=str)) > 65536:
                 raise ValueError("assistant_context_too_large")
+            # Freeze exactly the facts admitted to the model. Request readback
+            # must never substitute a newer quote or an edited goal/memory note.
+            prepared = json.loads(json.dumps(prepared, ensure_ascii=False, default=str))
+            _stored_sources(prepared)  # Check the database evidence bound before quota admission.
         return prepared, versions
 
     def _admit(
@@ -1225,7 +1411,7 @@ class AssistantService:
                 if validate_context is not None:
                     validate_context()
                 validate_source_response(result["reply"], prepared)
-                result["sources"] = source_references(prepared)
+                result["sources"] = _stored_sources(prepared)
                 return self.store.finish(user_id, request_id, result)
             except Exception:
                 with suppress(PermissionError):
@@ -1248,117 +1434,31 @@ class AssistantService:
             return iter([{"event": "complete", "data": {
                 "request_id": str(request_id), "result": admission["completed"], "replayed": True,
             }}])
-        stop, finished = _Cancellation(), threading.Event()
-        events: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=64)
+        work = _AssistantStream(
+            self.store, client, user_id, request_id, message, admission["history"],
+            prepared, validate_context,
+        )
         with self._active_lock:
             closing_now = self._closing.is_set()
             if not closing_now:
-                self._active[(user_id, request_id)] = stop
+                self._active[(user_id, request_id)] = work.cancellation
         if closing_now:
             self._slots.release()
             self.store.cancel_request(user_id, request_id)
             raise AssistantNotConfigured("assistant_shutting_down")
-
-        def emit(event: str, **data: Any) -> None:
-            record = {"event": event, "data": {"request_id": str(request_id), **data}}
-            try:
-                events.put_nowait(record)
-            except queue.Full:
-                # Every delta carries the entire persisted prefix, so a slow
-                # reader can skip an intermediate update without losing text.
-                with suppress(queue.Empty):
-                    events.get_nowait()
-                with suppress(queue.Full):
-                    events.put_nowait(record)
-
-        def run() -> None:
-            try:
-                if validate_context is not None:
-                    validate_context()
-                sources = source_references(prepared)
-                self.store.update_stream(user_id, request_id, "", sources)
-                emit("status", phase="generating", context_checked=prepared is not None)
-                prefix = ""
-                result = None
-                last_flush, flushed_characters = 0.0, 0
-                for part in client.stream(message=message, history=admission["history"],
-                                          context=prepared, cancellation=stop):
-                    stop.check()
-                    if "delta" in part:
-                        prefix += part["delta"]
-                        now = time.monotonic()
-                        if now - last_flush < 0.2 and len(prefix) - flushed_characters < 512:
-                            continue
-                        if validate_context is not None:
-                            validate_context()
-                        visible = prefix if prepared is None else ""
-                        sequence = self.store.update_stream(user_id, request_id, visible, sources)
-                        last_flush, flushed_characters = now, len(prefix)
-                        if prepared is None:
-                            emit("delta", reply_prefix=visible, sequence=sequence, provisional=True)
-                        else:
-                            emit("status", phase="generating", received_characters=len(prefix),
-                                 sequence=sequence, context_checked=True)
-                    else:
-                        result = part.get("result")
-                if not isinstance(result, dict):
-                    raise AssistantUnavailable("assistant_response_incomplete")
-                stop.check()
-                if validate_context is not None:
-                    validate_context()
-                emit("status", phase="checking_sources")
-                validate_source_response(result["reply"], prepared)
-                result["sources"] = sources
-                saved = self.store.finish(user_id, request_id, result)
-                emit("complete", result=saved)
-            except Exception as error:
-                cancelled = stop.event.is_set() or isinstance(error, AssistantCancelled)
-                try:
-                    state = self.store.read_request(user_id, request_id)
-                    cancelled = cancelled or state["status"] == "cancelled"
-                    if not cancelled:
-                        self.store.uncertain(user_id, request_id)
-                except Exception:
-                    # No private error payload crosses the SSE boundary; the
-                    # durable lease will expire if the database is unavailable.
-                    pass
-                if cancelled:
-                    emit("cancelled", code="assistant_request_cancelled")
-                else:
-                    safe_codes = {
-                        "assistant_activation_disabled", "assistant_not_configured",
-                        "assistant_context_changed", "assistant_memory_changed", "assistant_busy",
-                        "assistant_response_incomplete", "assistant_response_invalid",
-                        "assistant_response_too_large", "assistant_stream_invalid",
-                        "assistant_stream_timeout", "assistant_source_unverified",
-                        "assistant_evidence_unverified",
-                    }
-                    code = str(error) if str(error) in safe_codes else "assistant_unavailable"
-                    emit("error", code=code, incomplete=True)
-            finally:
-                with self._active_lock:
-                    self._active.pop((user_id, request_id), None)
-                self._slots.release()
-                finished.set()
-
-        worker = threading.Thread(target=run, name="assistant-stream", daemon=True)
+        worker = threading.Thread(
+            target=work.run, args=(lambda: self._release_stream(user_id, request_id),),
+            name="assistant-stream", daemon=True,
+        )
         try:
             worker.start()
         except Exception:
-            with self._active_lock:
-                self._active.pop((user_id, request_id), None)
-            self._slots.release()
+            self._release_stream(user_id, request_id)
             self.store.uncertain(user_id, request_id)
             raise
+        return work.read(conversation_id, admission["version"])
 
-        def read() -> Iterator[dict[str, Any]]:
-            yield {"event": "accepted", "data": {"request_id": str(request_id),
-                   "conversation_id": str(conversation_id), "version": admission["version"]}}
-            while not finished.is_set() or not events.empty():
-                try:
-                    yield events.get(timeout=1)
-                except queue.Empty:
-                    if not finished.is_set():
-                        yield {"event": "status", "data": {"request_id": str(request_id),
-                               "phase": "waiting_for_provider"}}
-        return read()
+    def _release_stream(self, user_id: UUID, request_id: UUID) -> None:
+        with self._active_lock:
+            self._active.pop((user_id, request_id), None)
+        self._slots.release()

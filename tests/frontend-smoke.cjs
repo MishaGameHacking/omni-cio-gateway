@@ -380,6 +380,9 @@ const testApiHandlers = [{
   }) => path === "/api/public/news",
   run: serveTestPublicNews
 }, {
+  matches: ({path}) => path.startsWith("/api/public/news/"),
+  run: ({path,response}) => sendJSON(response,{id:path.split("/").at(-1),title:"Тестовая новость официального источника",content:"Подтверждённый текст изолированного официального источника.",url:"https://www.cbr.ru/press/",published_at:stamp,source:"Банк России",scope:"official_page_text",truncated:false})
+}, {
   matches: ({
     path
   }) => /^\/api\/auth\/(tid|vkid)\/start$/.test(path),
@@ -566,12 +569,14 @@ const testApiHandlers = [{
 const routeAPI = async (request, response, url, fixture, body) => {
   const path = url.pathname;
   const method = request.method;
+  response.setHeader("X-Omnicio-Build", fixture.serverBuild || build);
   fixture.requests.push({
     path,
     query: url.searchParams.toString(),
     method,
     body,
     profile: request.headers["x-omnicio-profile"],
+    clientBuild: request.headers["x-omnicio-client-build"],
     origin: request.headers.origin
   });
   const context = {
@@ -1320,15 +1325,18 @@ const runBrowser = async base => {
       return result.result.value;
     };
     const revealControl = async selector => {
-      const section = await evaluate(`(() => { const element=document.querySelector(${JSON.stringify(selector)}); if (!element || element.getClientRects().length) return null; return element.closest("[data-screen-content]")?.dataset.screenContent || null; })()`);
+      const section = await evaluate(`(() => { const matches=[...document.querySelectorAll(${JSON.stringify(selector)})]; const element=matches.find(item=>item.getClientRects().length) || matches[0]; if (!element || element.getClientRects().length) return null; return element.closest("[data-screen-content]")?.dataset.screenContent || null; })()`);
       if (!section) return;
       await evaluate(`(() => { const view=document.querySelector(".view:not([hidden])"); const menu=view?.querySelector('[data-route][data-screen="'+${JSON.stringify(section)}+'"]'); if(!menu) throw new Error("No visible section menu for requested control"); menu.click(); })()`);
       await wait(`document.querySelector(${JSON.stringify(selector)})?.getClientRects().length > 0`, "Control is visible in its own section: " + selector);
     };
     const click = async selector => { await revealControl(selector); return evaluate(`(() => {
-      const element=document.querySelector(${JSON.stringify(selector)});
+      const matches=[...document.querySelectorAll(${JSON.stringify(selector)})];
+      const element=matches.find(item=>item.getClientRects().length) || matches[0];
       if(!element || element.disabled)throw new Error('Control unavailable: '+${JSON.stringify(selector)});
       if(element.closest('#app-sidebar')?.inert)document.querySelector('#app-menu-toggle').click();
+      if(element.closest('.public-nav') && !element.getClientRects().length)document.querySelector('#public-menu-toggle').click();
+      if(!element.getClientRects().length)throw new Error("Control has no visible user path: "+${JSON.stringify(selector)});
       element.click();
     })()`); };
     const wait = (expression, label) => until(async () => {
@@ -1430,6 +1438,7 @@ const runBrowser = async base => {
         });
       }
       await exerciseCanonicalNavigation({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
+      await exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseEnglishLocale({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseReadConsistency({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
@@ -1890,10 +1899,12 @@ async function serveTestPortfolioVisualization({
   });
 }
 async function serveTestPortfolioInstruments({
-  response
+  response,
+  fixture
 }) {
   return sendJSON(response, {
     status: "observed",
+    current_holding: {status: fixture.closedPosition ? "not_held" : "held", quantity: fixture.closedPosition ? "0" : positions[0].quantity, observed_at: stamp},
     latest: {
       ...positions[0],
       captured_at: stamp
@@ -2604,15 +2615,57 @@ async function serveTestAssistantStatus({fixture,path,method,body,url,response})
     if(method==="POST"){const item={id:require("node:crypto").randomUUID(),title:body.title,version:0,messages:[],created_at:stamp,updated_at:stamp};fixture.conversations.push(item);return sendJSON(response,item,201);}
     return sendJSON(response,{items:fixture.conversations.map(({messages,...item})=>item),total:fixture.conversations.length,truncated:false});
   }
-  if(path==="/api/assistant/memory") return sendJSON(response,{items:[],total:0});
+  fixture.assistantMemory ||= [];
+  if (path === "/api/assistant/memory" || path.startsWith("/api/assistant/memory/")) {
+    const id = path === "/api/assistant/memory" ? body?.id : path.split("/").at(-1);
+    const item = fixture.assistantMemory.find(row => row.id === id);
+    if (method === "GET") return sendJSON(response,{items:clone(fixture.assistantMemory),total:fixture.assistantMemory.length});
+    if (method === "DELETE") { if (!item || item.version !== body.expected_version) return sendJSON(response,{detail:"settings_version_conflict"},409); fixture.assistantMemory = fixture.assistantMemory.filter(row=>row.id!==id); return sendJSON(response,{deleted:true}); }
+    if (body.confirmed !== true || body.expected_version !== (item?.version || 0)) return sendJSON(response,{detail:"settings_version_conflict"},409);
+    const saved = {id,content:body.content,category:body.category,version:(item?.version || 0)+1,created_at:item?.created_at || stamp,updated_at:stamp};
+    fixture.assistantMemory = [...fixture.assistantMemory.filter(row=>row.id!==id),saved];
+    return sendJSON(response,saved);
+  }
+  if (path === "/api/assistant/sources/search") return sendJSON(response,{items:body.context === "investment" ? [{id:"fixture-source",kind:"portfolio",label:"Fixture portfolio source",sha256:"a".repeat(64),scope:"selected_sources",observed_at:stamp,excerpt:"Recorded source amount 150000.5"}] : [],total:body.context === "investment" ? 1 : 0,scope:"selected_sources",web_search:false,truncated:false});
+  if (path === "/api/assistant/sources/read") {
+    if (body.request_id) {
+      const message = fixture.conversations.flatMap(item=>item.messages).find(item=>item.request_id===body.request_id && item.role==="assistant");
+      const source = message?.sources.find(item=>item.id===body.source_id);
+      return sendJSON(response, source ? {...clone(source),immutable:true,web_search:false} : {detail:"assistant_source_not_found"}, source ? 200 : 404);
+    }
+    return sendJSON(response,{id:body.source_id,kind:"portfolio",label:"Fixture portfolio source",sha256:"a".repeat(64),scope:"selected_sources",content:{nav_rub:fixture.currentSourceValue || "150000.5",observed_at:stamp},web_search:false});
+  }
+  if (path.startsWith("/api/assistant/requests/")) {
+    const id = path.split("/")[4], record = fixture.assistantRequests?.get(id);
+    if (!record) return sendJSON(response,{detail:"assistant_request_not_found"},404);
+    if (path.endsWith("/cancel")) {
+      record.saved.status = "cancelled";
+      const conversation = fixture.conversations.find(item=>item.id===record.saved.conversation_id);
+      if (conversation) { conversation.latest_request = clone(record.saved); for (const message of conversation.messages) if (message.request_id === id) message.request_status = "cancelled"; }
+      record.response.end(`event: cancelled\ndata: ${JSON.stringify({request_id:id,code:"assistant_request_cancelled"})}\n\n`);
+    }
+    return sendJSON(response,record.saved);
+  }
   if(path==="/api/assistant/messages" || path==="/api/assistant/messages/stream"){
     assert.equal(Object.hasOwn(body,"history"),false,"Conversation history is loaded server-side");
     const conversation=fixture.conversations.find(item=>item.id===body.conversation_id);
     if(!conversation || conversation.version!==body.expected_version)return sendJSON(response,{detail:"settings_version_conflict"},409);
     assert.match(body.request_id,/^[a-f0-9-]{36}$/);
-    conversation.messages.push({position:++conversation.version,role:"user",content:body.message,created_at:stamp,sources:[],request_status:"completed"},{position:++conversation.version,role:"assistant",content:"Synthetic isolated model response",created_at:stamp,sources:[{label:"Synthetic source receipt"}],request_status:"completed"});
+    if (path.endsWith("/stream") && fixture.holdAssistantStream) {
+      const saved = {request_id:body.request_id,conversation_id:conversation.id,status:"running",reply_prefix:"Synthetic partial prefix",stream_sequence:1,sources:[],incomplete:true};
+      conversation.messages.push({position:++conversation.version,role:"user",content:body.message,created_at:stamp,sources:[],request_status:"running",request_id:body.request_id});
+      conversation.latest_request = clone(saved);
+      fixture.assistantRequests ||= new Map(); fixture.assistantRequests.set(body.request_id,{saved,response});
+      fixture.ai.quota.used++;
+      response.setHeader("Content-Type","text/event-stream");
+      response.write(`event: accepted\ndata: ${JSON.stringify({request_id:body.request_id,conversation_id:conversation.id})}\n\n`);
+      response.write(`event: delta\ndata: ${JSON.stringify({request_id:body.request_id,reply_prefix:saved.reply_prefix,sequence:1,provisional:true})}\n\n`);
+      return;
+    }
+    const sources = [{id:"fixture-answer-source",kind:"portfolio",label:"Synthetic saved source receipt",sha256:"b".repeat(64),content:{nav_rub:fixture.currentSourceValue || "150000.5",observed_at:stamp},scope:"selected_sources"},{label:"Legacy source receipt"}];
+    conversation.messages.push({position:++conversation.version,role:"user",content:body.message,created_at:stamp,sources:[],request_status:"completed",request_id:body.request_id},{position:++conversation.version,role:"assistant",content:"Synthetic isolated model response",created_at:stamp,sources,request_status:"completed",request_id:body.request_id});
     fixture.ai.quota.used++;
-    const result={reply:"Synthetic isolated model response",conversation_id:conversation.id,version:conversation.version,created_at:stamp,sources:[]};
+    const result={reply:"Synthetic isolated model response",conversation_id:conversation.id,version:conversation.version,created_at:stamp,sources};
     if (path.endsWith("/stream")) {
       response.setHeader("Content-Type","text/event-stream");
       response.write(`event: accepted\ndata: ${JSON.stringify({request_id:body.request_id,conversation_id:conversation.id})}\n\n`);
@@ -2634,6 +2687,37 @@ async function serveTestAssistantStatus({fixture,path,method,body,url,response})
 }
 
 async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evaluate,checkLayout}) {
+  await click('#view-assistant [data-screen="memory"]');
+  await wait('document.querySelector("#assistant-memory-form")', "Explicit memory editor is available with AI disabled");
+  await fieldValue("#assistant-memory-form", "content", "Prefer explanations with source timestamps");
+  const writesBeforeMemory = fixture.requests.filter(item => item.method === "POST" && item.path === "/api/assistant/memory").length;
+  await click('#assistant-memory-form [type="submit"]');
+  assert.equal(fixture.requests.filter(item => item.method === "POST" && item.path === "/api/assistant/memory").length, writesBeforeMemory, "Memory requires explicit checkbox confirmation");
+  await click('#assistant-memory-form [name="confirmed"]');
+  await click('#assistant-memory-form [type="submit"]');
+  await until(()=>fixture.assistantMemory?.length === 1, "Confirmed memory is saved independently of model activation");
+  await wait('document.querySelector("[data-memory-edit]")', "Saved memory has an edit consumer");
+  await click('[data-memory-edit]');
+  await fieldValue("#assistant-memory-form", "content", "Keep source timestamps in explanations");
+  await click('#assistant-memory-form [name="confirmed"]');
+  await click('#assistant-memory-form [type="submit"]');
+  await until(()=>fixture.assistantMemory[0]?.version === 2, "Memory edits use version preconditions");
+  await click('#view-assistant [data-screen="sources"]');
+  await wait('document.querySelector("#assistant-sources-form")', "Selected-source search has its own screen");
+  await fieldValue("#assistant-sources-form", "context", "investment");
+  await fieldValue("#assistant-sources-form", "query", "source");
+  await click('#assistant-sources-form [type="submit"]');
+  await wait('document.querySelector("[data-assistant-source]")', "Source search returns actual selected-source metadata");
+  assert.equal(fixture.requests.filter(item=>item.path === "/api/assistant/messages/stream").length, 0, "Memory and source review never activate or call the external model");
+  await click('[data-assistant-source]');
+  await wait('document.querySelector(".source-document")?.textContent.includes("150000.5")', "Reading a selected source displays server-returned data");
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "Back closes source detail");
+  await click('#view-assistant [data-screen="memory"]');
+  await click('[data-memory-delete]');
+  await click('[data-memory-delete-confirm]');
+  await until(()=>fixture.assistantMemory.length === 0, "Confirmed deletion removes owned memory");
+  await wait('!document.querySelector("#workspace-dialog").open', "Memory confirmation closes after the server result");
   await click('#view-assistant [data-action="assistant-connect"]');
   await wait('document.querySelector("#assistant-connection-form")',"Personal AI connection editor");
   await fieldValue("#assistant-connection-form","model","synthetic-model");
@@ -2656,13 +2740,34 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   assert.equal(fixture.ai.quota.used,1);
   const last=fixture.requests.findLast(item=>item.path==="/api/assistant/messages/stream");
   assert.equal(last.body.context,"general");assert.equal(last.body.include_news,false);
+  fixture.currentSourceValue = "999999999";
+  await click('#chat-messages [data-assistant-source-request]');
+  await wait('document.querySelector("#dialog-content .source-document")?.textContent.includes("150000.5")', "Saved answers open their original source facts");
+  assert.equal(await evaluate('document.querySelector("#dialog-content .source-document").textContent.includes("999999999")'), false, "A newer portfolio value cannot replace the source of an older answer");
+  const sourceRead = fixture.requests.findLast(item=>item.path === "/api/assistant/sources/read");
+  assert.deepEqual(sourceRead.body, {source_id:"fixture-answer-source",request_id:last.body.request_id}, "Immutable source read carries its owning response ID");
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "Back restores the original conversation after source reading");
+  fixture.holdAssistantStream = true;
+  await fieldValue("#assistant-form", "message", "Exercise cancellation without a second send");
+  await click('#assistant-form [type="submit"]');
+  await wait('document.querySelector(".assistant-prefix")?.textContent === "Synthetic partial prefix"', "Incremental prefix is rendered from the SSE payload");
+  assert.ok(await evaluate('document.querySelector(".assistant-stream").textContent.includes("Предварительный текст")'), "Unfinished text cannot appear as a confirmed answer");
+  const cancelRequest = fixture.requests.findLast(item=>item.path === "/api/assistant/messages/stream").body.request_id;
+  await click('[data-action="assistant-cancel"]');
+  await until(()=>fixture.assistantRequests.get(cancelRequest)?.saved.status === "cancelled", "Stop calls the explicit server cancellation endpoint");
+  await wait('document.querySelector(".assistant-stream")?.textContent.includes("Запрос остановлен") && !document.querySelector("#assistant-form textarea").disabled', "Cancellation state is read back and the editor is released");
+  await click('[data-action="assistant-request-read"]');
+  assert.equal(fixture.requests.filter(item=>item.path === "/api/assistant/messages/stream").length, 2, "Readback and cancellation cannot silently resend the question");
+  await fieldValue("#assistant-form", "message", "");
+  fixture.holdAssistantStream = false;
   await click('#sidebar-nav [data-route="home"]');
   await click('#sidebar-nav [data-route="assistant"]');
   await wait('document.querySelector("#chat-messages").textContent.includes("Synthetic isolated model response")',"History returns after navigation");
   await click('#view-assistant [data-action="chat-clear"]');
   await click('#workspace-dialog [data-action="assistant-delete-confirm"]');
   await until(()=>fixture.conversations.length===0,"Delete owned conversation");
-  assert.equal(fixture.ai.quota.used,1,"Deleting conversation does not reset request quota");
+  assert.equal(fixture.ai.quota.used,2,"Deleting conversation does not reset accepted request quota");
   await wait('!document.querySelector("#workspace-dialog").open && document.querySelector("[data-action=assistant-new]")?.disabled===false',"Deletion finishes in the original dialog");
   await click('#view-assistant [data-action="assistant-new"]');
   await until(()=>fixture.conversations.length===1,"Create conversation for deletion race");
@@ -2896,7 +3001,7 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   await wait('location.hash === "#public/welcome"', "Public page Back restores the welcome screen");
   const lateKey = `signed-late-session-${round}`;
   const late = makeFixture("signed"); late.holdMe = true; fixtures.set(lateKey, late);
-  await send("Page.navigate", {url: `${base}?case=${lateKey}#public/features`});
+  await send("Page.navigate", {url: `${base}?case=${lateKey}#public/welcome`});
   await until(()=>typeof late.releaseMe === "function", "Session verification is deliberately pending");
   await click('[data-action="tour"]');
   await click('#sidebar-nav [data-route="market"]');
@@ -2930,6 +3035,71 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   await wait('!document.querySelector("#workspace-dialog").open', "Draft was returned to its initial state");
   assert.equal(failure.requests.filter(item=>item.method === "POST" && item.path === "/api/goals").length, 0, "Navigating and restoring a draft cannot create a goal");
   console.log(`PASS canonical navigation round ${round}: repeated demo reload, public screens, Back, control restoration, late bootstrap, retry and draft history`);
+}
+async function exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
+  await configureViewport(390);
+  const key = `signed-update-${round}`;
+  const fixture = makeFixture("signed");
+  fixture.serverBuild = `${build}-new-server`;
+  fixtures.set(key, fixture);
+  await send("Page.navigate", {url: `${base}?case=${key}#account/goals/create`});
+  await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#goal-form") && !document.querySelector("#dialog-update-banner").hidden', "A changed server build is visible inside a routed form");
+  await fieldValue("#goal-form", "title", "Typed update draft");
+  await fieldValue("#goal-form", "target_amount_rub", "123456.789");
+  await fieldValue("#goal-form", "allocation_percent", "10");
+  await click('#goal-form [type="submit"]');
+  await wait('document.querySelector("#goal-message").classList.contains("error")', "A stale client explains the blocked mutation");
+  assert.equal(fixture.requests.filter(item=>item.path === "/api/goals" && item.method === "POST").length, 0, "A stale build cannot send a new goal write");
+  assert.ok(fixture.requests.every(item=>item.clientBuild === build), "Every API request identifies the actual browser build");
+  await checkLayout(`update-review-${round}`);
+  fixture.holdMe = true;
+  const firstOrigin = await evaluate("performance.timeOrigin");
+  await click('#dialog-update-banner [data-action="pwa-update"]');
+  await until(()=>typeof fixture.releaseMe === "function", "The updated document verifies its profile before draft restoration");
+  await wait(`performance.timeOrigin !== ${firstOrigin} && !document.querySelector("#startup-state").hidden`, "Explicit application update reloads the same route");
+  const saved = await evaluate('JSON.parse(sessionStorage.getItem("omnicio-update-drafts"))');
+  assert.equal(saved.public_id, fixture.user);
+  assert.ok(saved.expires_at > Date.now() && saved.expires_at <= Date.now() + 1800000);
+  assert.deepEqual(saved.drafts, {"goal-form:":{title:"Typed update draft",target_amount_rub:"123456.789",allocation_percent:"10"}}, "Only changed whitelisted inputs are stored; no saved snapshot or untouched API-backed field is included");
+  assert.equal(await evaluate('Boolean(document.querySelector("#goal-form"))'), false, "Private forms are not restored before /api/me confirms the same profile");
+  fixture.holdMe = false; fixture.releaseMe(); delete fixture.releaseMe;
+  await wait('document.querySelector("#goal-form")?.elements.title.value === "Typed update draft"', "The verified profile receives its typed draft after update");
+  assert.equal(await evaluate('document.querySelector("#goal-form").elements.target_amount_rub.value'), "123456.789");
+  assert.equal(await evaluate('location.hash'), "#account/goals/create");
+  assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null, "The temporary stored copy is consumed once");
+  assert.equal(fixture.goals.length, 0, "Restoring fields never saves a goal automatically");
+  const previousUser = fixture.user;
+  fixture.user = "000000124";
+  fixture.holdMe = true;
+  const secondOrigin = await evaluate("performance.timeOrigin");
+  await click('#dialog-update-banner [data-action="pwa-update"]');
+  await until(()=>typeof fixture.releaseMe === "function", "A changed session is deliberately awaiting verification");
+  await wait(`performance.timeOrigin !== ${secondOrigin}`, "The second explicit update creates a new document");
+  assert.equal(await evaluate('JSON.parse(sessionStorage.getItem("omnicio-update-drafts")).public_id'), previousUser);
+  fixture.holdMe = false; fixture.releaseMe(); delete fixture.releaseMe;
+  await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#goal-form")?.elements.title.value === ""', "A different verified profile cannot receive the previous draft");
+  assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null);
+  const expired = {version:1,public_id:fixture.user,expires_at:Date.now()-1,drafts:{"goal-form:":{title:"Expired draft"}}};
+  await evaluate(`sessionStorage.setItem("omnicio-update-drafts", ${JSON.stringify(JSON.stringify(expired))})`);
+  const thirdOrigin = await evaluate("performance.timeOrigin");
+  await send("Page.reload");
+  await wait(`performance.timeOrigin !== ${thirdOrigin} && document.querySelector("#goal-form")?.elements.title.value === ""`, "Expired drafts are discarded");
+  const filtered = {version:1,public_id:fixture.user,expires_at:Date.now()+60000,drafts:{"goal-form:":{title:"Allowed field",credential:"NEVER_RESTORE",nav_rub:"999999999"},"research-evidence-form:":{document:"NEVER_RESTORE"}}};
+  await evaluate(`sessionStorage.setItem("omnicio-update-drafts", ${JSON.stringify(JSON.stringify(filtered))})`);
+  const fourthOrigin = await evaluate("performance.timeOrigin");
+  await send("Page.reload");
+  await wait(`performance.timeOrigin !== ${fourthOrigin} && document.querySelector("#goal-form")?.elements.title.value === "Allowed field"`, "Restoration validates the field allowlist again");
+  assert.equal(await evaluate('document.body.textContent.includes("NEVER_RESTORE")'), false);
+  assert.equal(fixture.requests.filter(item=>!["GET","HEAD"].includes(item.method)).length, 0, "Build checks and draft restoration never replay a mutation");
+  await fieldValue("#goal-form", "title", "");
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "The restored form can return through the normal Back control");
+  await evaluate(`sessionStorage.setItem("omnicio-update-drafts", ${JSON.stringify(JSON.stringify(filtered))})`);
+  await click('#profile-button');
+  await click('#profile-menu [data-action="logout"]');
+  await wait('!document.querySelector("#public-site").hidden && !document.querySelector("#workspace-dialog").open', "Logout finishes after the update tests");
+  assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null, "Logout removes every stored update draft");
+  console.log(`PASS safe update round ${round}: build guard, same-profile restoration, different-profile isolation, TTL, field allowlist and logout cleanup`);
 }
 async function exerciseGuestViewport({
   send,

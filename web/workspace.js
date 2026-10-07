@@ -21,7 +21,7 @@
     settings: ["appearance", "notifications", "broker", "recovery", "about", "operations", "support"],
     asset: [], search: []
   });
-  const routeFields = Object.freeze({uid: "uid", q: "q", event: "event", goal_id: "goal", run: "run", news: "news", preset: "preset", period: "period", tab: "tab", filter: "filter", asset_filter: "assets", event_filter: "events", currency: "currency", reference_period: "reference_period", strategy_pane: "strategy_pane", sort: "sort", direction: "direction", conversation: "conversation", overlay: "overlay"});
+  const routeFields = Object.freeze({uid: "uid", q: "q", event: "event", goal_id: "goal", run: "run", news: "news", news_source: "news_source", preset: "preset", period: "period", tab: "tab", filter: "filter", asset_filter: "assets", event_filter: "events", currency: "currency", reference_period: "reference_period", strategy_pane: "strategy_pane", sort: "sort", direction: "direction", conversation: "conversation", overlay: "overlay"});
   const parseRoute = (hash = "", fallbackMode = "auto") => {
     const [path, query = ""] = String(hash).replace(/^#/, "").split("?");
     const parts = path.split("/").filter(Boolean);

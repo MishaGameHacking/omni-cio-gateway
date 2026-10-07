@@ -15,6 +15,7 @@ from cryptography.fernet import Fernet, InvalidToken
 
 PUBLIC_ID_MIN = 1
 PUBLIC_ID_MAX = 999_999_999
+DEFAULT_AUTH_RETURN = "/#account/home"
 
 
 class SecurityValueError(ValueError):
@@ -95,7 +96,7 @@ class OAuthFlow:
     legal_versions: dict[str, str]
     link_user_id: str | None = None
     link_session_digest: str | None = None
-    return_to: str = "/#account/home"
+    return_to: str = DEFAULT_AUTH_RETURN
 
 
 def validate_auth_return_to(value: str) -> str:
@@ -135,7 +136,7 @@ def seal_oauth_flow(
     provider: str = "vkid",
     link_user_id: str | None = None,
     link_session_digest: str | None = None,
-    return_to: str = "/#account/home",
+    return_to: str = DEFAULT_AUTH_RETURN,
 ) -> str:
     if provider not in {"vkid", "tid"}:
         raise SecurityValueError("invalid OAuth provider")
@@ -202,5 +203,5 @@ def open_oauth_flow(
         raise SecurityValueError("OAuth link context is invalid")
     return OAuthFlow(
         state, verifier, versions, link_user, link_session,
-        validate_auth_return_to(payload.get("return_to", "/#account/home")),
+        validate_auth_return_to(payload.get("return_to", DEFAULT_AUTH_RETURN)),
     )

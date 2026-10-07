@@ -395,6 +395,24 @@ def _held_risk_state(
     return ("data_missing" if reasons else "normal"), reasons
 
 
+def _issuer_rating_risk(
+    state: RiskState, reasons: list[str], ratings: tuple[TBankRating, ...],
+    assessed_at: datetime, *, evidence_stale: bool,
+) -> tuple[RiskState, list[str]]:
+    if state == "confirmed_default" or not ratings or evidence_stale:
+        return state, reasons
+    notches = {rating_notch(rating, assessed_at) for rating in ratings}
+    if "D" in notches:
+        return "critical", [*reasons, "issuer_default_rating_requires_issue_verification"]
+    if notches & {"CCC+", "CCC", "CCC-", "CC", "C"}:
+        return "elevated", [*reasons, "issuer_very_low_credit_rating"]
+    if any(rating.is_under_watch for rating in ratings):
+        if state in {"normal", "data_missing"}:
+            state = "watch"
+        reasons.append("issuer_rating_under_watch")
+    return state, reasons
+
+
 def _held_position_assessment(
     position: TBankPortfolioPosition,
     *,
@@ -428,11 +446,11 @@ def _held_position_assessment(
         )
     )
     current_ratings = tuple(rating for rating in ratings if rating_notch(rating, assessed_at))
-    rating_status: DataStatus = (
-        "not_applicable"
-        if position.instrument_type == "etf"
-        else "received" if current_ratings and not evidence_stale else "data_missing"
-    )
+    rating_status: DataStatus = "data_missing"
+    if position.instrument_type == "etf":
+        rating_status = "not_applicable"
+    elif current_ratings and not evidence_stale:
+        rating_status = "received"
     state, reasons = _held_risk_state(
         position=position,
         default_date=default_date,
@@ -443,18 +461,9 @@ def _held_position_assessment(
         source_status=source_status,
         evidence_stale=evidence_stale,
     )
-    if state != "confirmed_default" and current_ratings and not evidence_stale:
-        notches = {rating_notch(rating, assessed_at) for rating in current_ratings}
-        if "D" in notches:
-            state = "critical"
-            reasons.append("issuer_default_rating_requires_issue_verification")
-        elif notches & {"CCC+", "CCC", "CCC-", "CC", "C"}:
-            state = "elevated"
-            reasons.append("issuer_very_low_credit_rating")
-        elif any(rating.is_under_watch for rating in current_ratings):
-            if state in {"normal", "data_missing"}:
-                state = "watch"
-            reasons.append("issuer_rating_under_watch")
+    state, reasons = _issuer_rating_risk(
+        state, reasons, current_ratings, assessed_at, evidence_stale=evidence_stale,
+    )
     return InstrumentRiskAssessment(
         instrument_uid=uid,
         state=state,

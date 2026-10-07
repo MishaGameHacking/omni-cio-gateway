@@ -19,7 +19,7 @@ from uuid import UUID, uuid4
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
-from starlette.background import BackgroundTask
+from starlette.types import Receive, Scope, Send
 
 from . import __version__
 from .assistant import (
@@ -295,6 +295,7 @@ class AssistantSourceSearchBody(AssistantContextBody):
 
 class AssistantSourceReadBody(AssistantContextBody):
     source_id: str = Field(min_length=1, max_length=100)
+    request_id: UUID | None = None
 
 
 class AssistantMemoryBody(WorkspaceVersionBody):
@@ -704,6 +705,7 @@ def _start_oauth(
         401: _API_FAILURES[401],
         403: _API_FAILURES[403],
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: _API_FAILURES[422],
         503: {"description": "VK ID login is not configured"},
     },
 )
@@ -721,6 +723,7 @@ def start_vkid(
         401: _API_FAILURES[401],
         403: _API_FAILURES[403],
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: _API_FAILURES[422],
         503: {"description": "T-ID login is not configured"},
     },
 )
@@ -919,6 +922,8 @@ def _assistant_action[ActionResult](
         payload = action()
     except SettingsVersionConflict:
         raise
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="authentication required") from exc
     except AssistantNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (AssistantBusy, AssistantQuotaExceeded) as exc:
@@ -1282,7 +1287,7 @@ def _assistant_sse_events(
         yield f"event: {event}\ndata: {encoded}\n\n"
 
 
-@app.post("/api/assistant/messages/stream")
+@app.post("/api/assistant/messages/stream", responses=_API_FAILURES)
 def assistant_message_stream(
     body: AssistantMessageBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1307,7 +1312,7 @@ def assistant_message_stream(
     )
 
 
-@app.get("/api/assistant/requests/{request_id}")
+@app.get("/api/assistant/requests/{request_id}", responses=_API_FAILURES)
 def assistant_request_state(
     request_id: UUID, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1318,7 +1323,7 @@ def assistant_request_state(
                              lambda: assistant.stream_request(user.id, request_id), write=False)
 
 
-@app.post("/api/assistant/requests/{request_id}/cancel")
+@app.post("/api/assistant/requests/{request_id}/cancel", responses=_API_FAILURES)
 def assistant_request_cancel(
     request_id: UUID, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1330,7 +1335,7 @@ def assistant_request_cancel(
                              lambda: assistant.cancel_request(user.id, request_id), write=False)
 
 
-@app.get("/api/assistant/memory")
+@app.get("/api/assistant/memory", responses=_API_FAILURES)
 def assistant_memory(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1352,7 +1357,7 @@ def _save_assistant_memory(
     ))
 
 
-@app.post("/api/assistant/memory")
+@app.post("/api/assistant/memory", responses=_API_FAILURES)
 def assistant_memory_create(
     body: AssistantMemoryCreateBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1362,7 +1367,7 @@ def assistant_memory_create(
     return _save_assistant_memory(body.id, body, request, session_token)
 
 
-@app.put("/api/assistant/memory/{memory_id}")
+@app.put("/api/assistant/memory/{memory_id}", responses=_API_FAILURES)
 def assistant_memory_update(
     memory_id: UUID, body: AssistantMemoryBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1372,7 +1377,7 @@ def assistant_memory_update(
     return _save_assistant_memory(memory_id, body, request, session_token)
 
 
-@app.delete("/api/assistant/memory/{memory_id}")
+@app.delete("/api/assistant/memory/{memory_id}", responses=_API_FAILURES)
 def assistant_memory_delete(
     memory_id: UUID, body: WorkspaceVersionBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1400,7 +1405,7 @@ def _assistant_source_action(
     return _assistant_action(request, session_token, user, read, write=False)
 
 
-@app.post("/api/assistant/sources/search")
+@app.post("/api/assistant/sources/search", responses=_API_FAILURES)
 def assistant_sources_search(
     body: AssistantSourceSearchBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1410,11 +1415,21 @@ def assistant_sources_search(
                                                                    limit=body.limit))
 
 
-@app.post("/api/assistant/sources/read")
+@app.post("/api/assistant/sources/read", responses=_API_FAILURES)
 def assistant_sources_read(
     body: AssistantSourceReadBody, request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, Any]:
+    request_id = body.request_id
+    if request_id is not None:
+        require_same_origin(request)
+        user = authenticated_user(request, session_token)
+        assistant = cast(AssistantService, request.app.state.assistant_service)
+        return _assistant_action(
+            request, session_token, user,
+            lambda: assistant.read_request_source(user.id, request_id, body.source_id),
+            write=False,
+        )
     return _assistant_source_action(body, request, session_token,
                                     lambda context: source_read(context, body.source_id))
 
@@ -1457,7 +1472,7 @@ def get_workspace_refresh(
     return {**payload, "public_id": format_public_id(user.public_id)}
 
 
-@app.get("/api/workspace/operations")
+@app.get("/api/workspace/operations", responses=_API_FAILURES)
 def get_workspace_operations(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
@@ -2193,6 +2208,7 @@ def system_recovery(
 
 
 @app.get("/api/public/news", responses={
+    422: _API_FAILURES[422],
     503: {"description": "Public news sources are temporarily unavailable"},
 })
 def public_news(
@@ -2210,7 +2226,7 @@ def public_news(
         ) from exc
 
 
-@app.get("/api/public/news/{source_id}")
+@app.get("/api/public/news/{source_id}", responses=_API_FAILURES)
 def public_news_article(source_id: str, request: Request) -> dict[str, Any]:
     client: NewsClient = request.app.state.news_client
     try:
@@ -2389,14 +2405,24 @@ async def _usd_rub_market_events(
         await asyncio.sleep(delay)
 
 
-async def _leased_market_events(
-    events: AsyncIterator[str], market: MarketService, user_id: UUID, lease: str,
-) -> AsyncIterator[str]:
-    try:
-        async for event in events:
-            yield event
-    finally:
-        market.release_stream(user_id, lease)
+class _MarketStreamingResponse(StreamingResponse):
+    def __init__(
+        self, events: AsyncIterator[str], market: MarketService, user_id: UUID, lease: str,
+    ) -> None:
+        super().__init__(events, media_type="text/event-stream", headers={
+            "Cache-Control": _PRIVATE_NO_STORE, "X-Accel-Buffering": "no",
+        })
+        self.market = market
+        self.user_id = user_id
+        self.lease = lease
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # A disconnect may happen while sending response.start, before the
+        # body iterator or a Starlette background task can perform cleanup.
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self.market.release_stream(self.user_id, self.lease)
 
 
 def _market_stream_response(
@@ -2407,16 +2433,13 @@ def _market_stream_response(
     except MarketStreamLimit as exc:
         raise HTTPException(status_code=429, detail="market_stream_limit",
                             headers={"Retry-After": "5"}) from exc
-    return StreamingResponse(
-        _leased_market_events(events, market, user_id, lease), media_type="text/event-stream",
-        headers={"Cache-Control": _PRIVATE_NO_STORE, "X-Accel-Buffering": "no"},
-        background=BackgroundTask(market.release_stream, user_id, lease),
-    )
+    return _MarketStreamingResponse(events, market, user_id, lease)
 
 
 @app.get(
     "/api/market/usd-rub/stream",
     responses={
+        429: _API_FAILURES[429],
         401: _API_FAILURES[401],
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
     },
@@ -2453,7 +2476,7 @@ def _market_read(
     return _workspace_result(request, session_token, user, payload)
 
 
-@app.get("/api/market/quotes")
+@app.get("/api/market/quotes", responses=_API_FAILURES)
 def market_quotes(
     request: Request,
     instrument_uids: str = Query(min_length=1, max_length=6400),
@@ -2623,6 +2646,7 @@ async def _instrument_market_events(
 @app.get(
     "/api/market/instruments/{instrument_uid}/stream",
     responses={
+        429: _API_FAILURES[429],
         401: {"description": "Authenticated session required"},
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
     },

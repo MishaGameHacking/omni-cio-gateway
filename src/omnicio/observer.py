@@ -76,8 +76,10 @@ def _history_window(
     return window_from, now, ""
 
 
-def provider_read[T](operation: Callable[[], T]) -> T:
+def provider_read[T](operation: Callable[[], T], *, retry: bool = True) -> T:
     """Retry idempotent provider reads with bounded exponential jitter."""
+    if not retry:
+        return operation()
     for attempt in range(PROVIDER_READ_ATTEMPTS):
         try:
             return operation()
@@ -336,6 +338,8 @@ class PortfolioObserver:
                 )
         bundle = (self.broker.observation_bundle(user_id, quick=True) if quick else
                   provider_read(lambda: self.broker.observation_bundle(user_id, full_catalog=True)))
+        if quick:
+            bundle = self.store.reuse_snapshot_metadata(user_id, job_run_id=job.id, bundle=bundle)
         snapshot_id = self.store.save_snapshot(
             user_id, job_run_id=job.id, bundle=bundle, account=account, user_info=user_info,
         )
@@ -430,7 +434,7 @@ class PortfolioObserver:
                     cursor=cursor,
                     limit=HISTORY_PAGE_SIZE,
             )
-            page = provider_read(read) if retry else read()
+            page = provider_read(read, retry=retry)
             if page.has_next and page.next_cursor in seen_cursors:
                 raise RuntimeError("T-Invest operation pagination cursor repeated")
 
@@ -444,18 +448,18 @@ class PortfolioObserver:
                 page=page,
                 observed_at=now,
             )
-            if not page.has_next:
-                if window_to >= now:
-                    return page_number, inserted, "complete"
-                # Finishing a resumed cursor only covers its original window.
-                # Catch up to this snapshot without exceeding the shared page
-                # budget; each completed watermark remains durable on failure.
-                window_from = max(window_from, window_to - HISTORY_CORRECTION_OVERLAP)
-                window_to, cursor = now, ""
-                seen_cursors.clear()
-            else:
+            if page.has_next:
                 seen_cursors.add(page.next_cursor)
                 cursor = page.next_cursor
+                continue
+            if window_to >= now:
+                return page_number, inserted, "complete"
+            # Finishing a resumed cursor only covers its original window.
+            # Catch up to this snapshot without exceeding the shared page
+            # budget; each completed watermark remains durable on failure.
+            window_from = max(window_from, window_to - HISTORY_CORRECTION_OVERLAP)
+            window_to, cursor = now, ""
+            seen_cursors.clear()
 
         return page_limit, inserted, "continuation_pending"
 

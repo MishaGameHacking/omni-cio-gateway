@@ -2326,6 +2326,49 @@
     "This entry will no longer be selectable for new questions. Saved conversations will remain in history."
   ]
 });
+  messages["quotes.snapshot_scope"] = ["Цены обновляются отдельно. Доли и стоимость позиций относятся к сохранённому наблюдению счёта:", "Quotes update separately. Position weights and values belong to the saved account observation:"];
+  Object.assign(messages, {
+  "assistant.saved_source": [
+    "Источник сохранён вместе с этим ответом. Показаны данные, которые использовались именно в нём.",
+    "This source was saved with the answer. These are the data that were used for that answer."
+  ],
+  "asset.not_held": [
+    "Инструмента нет в последнем полном снимке портфеля. Биржевая цена и история доступны независимо от владения.",
+    "The instrument is absent from the latest complete portfolio snapshot. Market prices and history are available independently of ownership."
+  ],
+  "asset.holding_unknown": [
+    "Текущее владение не подтверждено. Сохранённая историческая позиция не считается текущим количеством.",
+    "Current ownership is unconfirmed. A historical position is not presented as the current quantity."
+  ],
+  "pwa.drafts_restored": [
+    "Черновики восстановлены для вашего профиля. Проверьте поля и сохраните их вручную.",
+    "Drafts were restored for your profile. Review the fields and save them manually."
+  ],
+  "pwa.other_form": [
+    "Незавершённая форма",
+    "Unfinished form"
+  ],
+  "pwa.storage_unavailable": [
+    "Черновики не удалось сохранить в этой вкладке",
+    "Drafts could not be stored in this tab"
+  ],
+  "pwa.review_drafts": [
+    "Проверьте несохранённые данные",
+    "Review unsaved data"
+  ],
+  "pwa.goal_readback": [
+    "Сначала нажмите «Проверить список» в форме цели: сервер мог уже сохранить её. Обновление не повторяет отправку.",
+    "Use “Check list” in the goal form first: the server may have already saved it. Updating never resends the request."
+  ],
+  "pwa.unsupported_drafts": [
+    "Эти данные не сохраняются при обновлении. Остальные допустимые поля будут восстановлены после проверки того же аккаунта.",
+    "These entries cannot be preserved during an update. Other allowed fields will be restored after verification of the same account."
+  ],
+  "pwa.discard_and_update": [
+    "Отбросить перечисленное и обновить",
+    "Discard listed entries and update"
+  ]
+});
   const literalKeys = new Map();
   for (const [key, pair] of Object.entries(messages)) {
     validatePair(key, pair);

@@ -70,7 +70,8 @@ def test_search_scope_is_current_official_feed_and_read_is_bound_to_confirmed_id
     with patch.object(client, "headlines", return_value=payload), \
             patch("omnicio.news.http.client.HTTPSConnection", return_value=connection) as network:
         found = client.search("ставка")
-        assert found["scope"] == "current_cbr_feed" and found["web_search"] is False
+        assert found["scope"] == "current_cbr_feed"
+        assert found["web_search"] is False
         assert found["total"] == 1
         read = client.read_source(found["items"][0]["id"])
         assert read["scope"] == "official_page_text"
@@ -102,7 +103,8 @@ def test_source_page_plaintext_is_bounded_and_invalid_encoding_fails() -> None:
     text, truncated = source_page_text(
         ("<html><body>" + "Публикация " * 3000 + "</body></html>").encode(),
     )
-    assert len(text) == 16000 and truncated is True
+    assert len(text) == 16000
+    assert truncated is True
     with pytest.raises(NewsUnavailable):
         source_page_text(b"\xff\xff")
     with pytest.raises(NewsUnavailable):

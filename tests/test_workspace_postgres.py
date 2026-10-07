@@ -1405,11 +1405,13 @@ def test_nav_history_empty_single_zero_and_replaced_account_are_explicit(
 
 def _ledger_fact(
     database: Database, owner: UUID, ident: str, at: datetime, *, observed: datetime | None = None,
+    kind: str = "INPUT", value: str = "100",
 ) -> None:
-    payload = {"provider_operation_id": ident, "operation_type": "OPERATION_TYPE_INPUT",
+    operation_type = "OPERATION_TYPE_" + kind
+    payload = {"provider_operation_id": ident, "operation_type": operation_type,
                "state": "OPERATION_STATE_EXECUTED", "name": ident,
-               "payment": {"value": "100", "currency": "RUB"}}
-    digest = hashlib.sha256(f"{ident}:{at}".encode()).digest()
+               "payment": {"value": value, "currency": "RUB"}}
+    digest = hashlib.sha256(f"{ident}:{at}:{kind}:{value}".encode()).digest()
     with database.pool.connection() as conn:
         conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
         conn.execute(
@@ -1417,10 +1419,10 @@ def _ledger_fact(
             "semantic_hash, provider_operation_id, operation_date, operation_type, "
             "operation_state, "
             "payment_value, payment_currency, normalized, observed_at) VALUES "
-            "(%s, %s, %s, %s, %s, %s, 'OPERATION_TYPE_INPUT', 'OPERATION_STATE_EXECUTED', "
-            "100, 'RUB', %s::jsonb, %s)",
-            (owner, str(owner), digest, digest, ident, at, json.dumps(payload),
-             observed or datetime.now(UTC)),
+            "(%s, %s, %s, %s, %s, %s, %s, 'OPERATION_STATE_EXECUTED', "
+            "%s, 'RUB', %s::jsonb, %s)",
+            (owner, str(owner), digest, digest, ident, at, operation_type, value,
+             json.dumps(payload), observed or datetime.now(UTC)),
         )
 
 
@@ -1482,6 +1484,44 @@ def test_selected_history_limit_is_applied_after_corrections_and_before_old_life
     assert not all_time.complete
     assert selected.complete
     assert [row["provider_operation_id"] for row in selected.operations] == ["current"]
+
+
+def test_income_goals_keep_separate_corrected_periods_before_history_limit(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, another = user(database, account=True), user(database, account=True)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    for index in range(5):
+        _ledger_fact(database, owner, str(index), now - timedelta(days=10 + index), kind="COUPON")
+    _ledger_fact(database, owner, "moved", now - timedelta(minutes=20), kind="COUPON")
+    _ledger_fact(database, owner, "moved", now - timedelta(days=20), kind="COUPON")
+    _ledger_fact(database, owner, "current", now - timedelta(minutes=10), kind="COUPON")
+    _ledger_fact(database, another, "other", now - timedelta(minutes=10), kind="COUPON")
+    with store._transaction(owner) as cur:
+        cur.execute(
+            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
+            "VALUES(%s, %s, %s)", (owner, str(owner), now),
+        )
+    with patch("omnicio.workspace_store._MAX_OPERATIONS", 2):
+        earlier = store.create_goal(owner, goal_document(
+            title="Earlier income", kind="income", progress_source="income",
+            allocation_percent="50", manual_amount_rub=None,
+            start_date=(now - timedelta(days=40)).date().isoformat(),
+        ))
+        recent = store.create_goal(owner, goal_document(
+            title="Recent income", kind="income", progress_source="income",
+            allocation_percent="50", manual_amount_rub=None,
+            start_date=(now - timedelta(days=1)).date().isoformat(),
+        ))
+        assert earlier["progress"]["status"] == "unavailable"
+        assert recent["progress"]["status"] == "available"
+        assert Decimal(recent["progress"]["amount_rub"]) == 50
+        for result in (store.goals(owner), store.dashboard(owner)["goals"]):
+            progress = {row["id"]: row["progress"] for row in result["items"]}
+            assert progress[earlier["id"]]["status"] == "unavailable"
+            assert Decimal(progress[recent["id"]]["amount_rub"]) == 50
 
 
 def test_fund_nav_coverage_enables_intraday_return_and_goal_without_sector_guess(

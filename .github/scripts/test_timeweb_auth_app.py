@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import hashlib
 import importlib.util
 import io
 import json
@@ -736,6 +737,10 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_reference_assets_are_shipped_without_legacy_brand(self) -> None:
         root = SCRIPT_DIR.parent.parent
+        self.assertEqual(
+            hashlib.sha256((root / MODULE.BRAND_SOURCE).read_bytes()).hexdigest(),
+            "d9c44905a77858882d99e948a647705afa853fd11cfd01efd37528645b8ca12f",
+        )
         encoded = MODULE.build_release_archive(root)
         with tarfile.open(fileobj=io.BytesIO(base64.b64decode(encoded)), mode="r:gz") as archive:
             shipped = set(archive.getnames())
@@ -755,6 +760,17 @@ class AuthAppDeployTests(unittest.TestCase):
             name = icon["src"].rsplit("/", 1)[-1]
             self.assertEqual(name, "omnicio-logo.png")
             self.assertTrue((root / MODULE.BRAND_SOURCE).is_file())
+
+    def test_release_archive_rejects_an_oversized_runtime_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            asset = root / "large.png"
+            asset.write_bytes(os.urandom(MODULE.MAX_RELEASE_ARCHIVE_BYTES + 1))
+            with (
+                patch.object(MODULE, "iter_release_files", return_value=iter([asset])),
+                self.assertRaisesRegex(MODULE.InfraError, "archive unexpectedly exceeds"),
+            ):
+                MODULE.build_release_archive(root)
 
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent

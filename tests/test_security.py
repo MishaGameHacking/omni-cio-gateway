@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
 from dataclasses import dataclass
@@ -11,11 +12,18 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from starlette.requests import Request
+from starlette.requests import ClientDisconnect, Request
 
 from omnicio.config import ConfigurationError, load_settings, optional_uuid
 from omnicio.db import Database, UserRecord
-from omnicio.main import CANONICAL_ORIGIN, app, client_ip, require_same_origin
+from omnicio.main import (
+    CANONICAL_ORIGIN,
+    _market_stream_response,
+    app,
+    client_ip,
+    require_same_origin,
+)
+from omnicio.market import MarketService, MarketStreamLimit
 from omnicio.security import (
     OAuthFlow,
     SecurityValueError,
@@ -426,3 +434,46 @@ def test_market_stream_suppresses_data_after_session_revocation(path, revoked_du
     assert "event: market" not in response.text
     assert "event: quote" not in response.text
     assert reads == int(revoked_during_read)
+
+
+@pytest.mark.parametrize("disconnect_at", [1, 2])
+def test_market_stream_releases_its_slot_even_if_disconnect_precedes_first_chunk(
+    disconnect_at: int,
+) -> None:
+    market = MarketService(broker=Mock(), cbr=Mock())
+    owner, other = UUID(int=102), UUID(int=103)
+    other_lease = market.acquire_stream(other)
+
+    async def exercise() -> None:
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def events():
+            yield "event: quote\ndata: {}\n\n"
+
+        for _ in range(3):
+            sent = 0
+
+            async def send(message):
+                nonlocal sent
+                sent += 1
+                if sent == disconnect_at:
+                    raise OSError("synthetic disconnected socket")
+
+            response = _market_stream_response(market, owner, events())
+            with pytest.raises(ClientDisconnect):
+                await response({"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send)
+
+    try:
+        asyncio.run(exercise())
+        # Repeated disconnects leave both of this owner's admission slots free.
+        owner_leases = [market.acquire_stream(owner), market.acquire_stream(owner)]
+        for lease in owner_leases:
+            market.release_stream(owner, lease)
+        second_other_lease = market.acquire_stream(other)
+        with pytest.raises(MarketStreamLimit):
+            market.acquire_stream(other)
+        market.release_stream(other, second_other_lease)
+        market.release_stream(other, other_lease)
+    finally:
+        market.close()

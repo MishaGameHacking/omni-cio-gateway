@@ -11,7 +11,7 @@ import json
 import re
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
@@ -31,6 +31,7 @@ from .workspace import (
     event_digest,
     event_id,
     goal_progress,
+    income_goal_start,
     normalize_goal,
     normalize_preferences,
     operation_category,
@@ -110,16 +111,16 @@ def _event_cursor(
         if not isinstance(decoded, list) or len(decoded) not in {3, 4}:
             raise ValueError("workspace_event_cursor_invalid")
         at, ident, ceiling = decoded[:3]
-        if len(decoded) == 4 and decoded[3] != filter_key:
-            raise ValueError("workspace_event_cursor_filter_changed")
         parsed = timestamp(at)
         if (parsed is None or not isinstance(ident, str)
                 or re.fullmatch(_EVENT_ID_PATTERN, ident) is None
                 or type(ceiling) is not int or not 0 <= ceiling < 2**63):
             raise ValueError("workspace_event_cursor_invalid")
-        return parsed, ident, ceiling
     except (ValueError, TypeError) as exc:
         raise ValueError("workspace_event_cursor_invalid") from exc
+    if len(decoded) == 4 and decoded[3] != filter_key:
+        raise ValueError("workspace_event_cursor_filter_changed")
+    return parsed, ident, ceiling
 
 
 def _operation_cursor(
@@ -162,6 +163,15 @@ def _event_record(row: Mapping[str, Any]) -> dict[str, Any]:
             pass
     result["destination"] = destination
     return result
+
+
+def _event_categories(preferences: Mapping[str, Any], category: str) -> list[str]:
+    selected = {category}
+    if category == "all":
+        selected = set(CATEGORIES)
+    elif category == "assets":
+        selected = {"portfolio", "payments"}
+    return [key for key in CATEGORIES if key in selected and preferences["notifications"][key]]
 
 
 class WorkspaceStore:
@@ -254,9 +264,21 @@ class WorkspaceStore:
         )
         state = cur.fetchone()
         watermark = timestamp(state["last_complete_watermark"]) if state is not None else None
+        basis = _Basis(connection, dict(snapshot) if snapshot is not None else None,
+                       [], watermark, watermark is not None)
         if not include_operations:
-            return _Basis(connection, dict(snapshot) if snapshot is not None else None,
-                          [], watermark, watermark is not None)
+            return basis
+        return self._with_operations(
+            cur, user_id, basis, from_at=operations_from, to_at=operations_to,
+        )
+
+    @staticmethod
+    def _with_operations(
+        cur: Any, user_id: UUID, basis: _Basis, *,
+        from_at: datetime | None = None, to_at: datetime | None = None,
+    ) -> _Basis:
+        if basis.connection is None:
+            return basis
         cur.execute(
             "SELECT * FROM (SELECT DISTINCT ON (CASE WHEN provider_operation_id <> '' "
             "THEN provider_operation_id ELSE encode(semantic_hash, 'hex') END) "
@@ -270,17 +292,15 @@ class WorkspaceStore:
             "ORDER BY operation_date DESC, id DESC LIMIT %s",
             # Apply the time window after resolving corrections. Otherwise a
             # corrected operation moved outside the window reappears as its old version.
-            (user_id, account_id, operations_from, operations_from,
-             operations_to, operations_to, _MAX_OPERATIONS + 1),
+            (user_id, basis.connection["account_id"], from_at, from_at,
+             to_at, to_at, _MAX_OPERATIONS + 1),
         )
         operations = [dict(row) for row in cur.fetchall()]
         complete = bool(
-            state is not None
-            and watermark is not None
+            basis.watermark is not None
             and len(operations) <= _MAX_OPERATIONS
         )
-        return _Basis(connection, dict(snapshot) if snapshot is not None else None,
-                      operations[:_MAX_OPERATIONS], watermark, complete)
+        return replace(basis, operations=operations[:_MAX_OPERATIONS], complete=complete)
 
     @staticmethod
     def _history(
@@ -396,8 +416,33 @@ class WorkspaceStore:
     def goals(self, user_id: UUID) -> dict[str, Any]:
         now = datetime.now(UTC)
         with self._transaction(user_id) as cur:
-            basis = self._basis(cur, user_id)
-            return {"items": [self._goal(row, basis, now) for row in self._goal_rows(cur, user_id)]}
+            basis = self._basis(cur, user_id, include_operations=False)
+            return {"items": self._goals_with_progress(
+                cur, user_id, self._goal_rows(cur, user_id), basis, now,
+            )}
+
+    def _goals_with_progress(
+        self, cur: Any, user_id: UUID, rows: Sequence[Mapping[str, Any]],
+        basis: _Basis, now: datetime,
+    ) -> list[dict[str, Any]]:
+        # Each goal owns its own period and coverage. An older goal with more
+        # than the bounded ledger limit cannot disable a newer goal's progress.
+        periods: dict[datetime, _Basis] = {}
+        goals = []
+        for row in rows:
+            goal_basis = basis
+            if (row["progress_source"] == "income" and basis.connection is not None
+                    and row["account_id"] == basis.connection["account_id"]
+                    and row["environment"] == basis.connection["environment"]):
+                begin = income_goal_start(row)
+                if begin not in periods:
+                    periods[begin] = self._with_operations(
+                        cur, user_id, basis, from_at=begin,
+                        to_at=min(basis.watermark, now) if basis.watermark is not None else now,
+                    )
+                goal_basis = periods[begin]
+            goals.append(self._goal(row, goal_basis, now))
+        return goals
 
     def operations(
         self, user_id: UUID, *, limit: int = 50, cursor: str | None = None,
@@ -491,7 +536,8 @@ class WorkspaceStore:
             row = cur.fetchone()
             if row is None:
                 raise WorkspaceNotFound("workspace_goal_not_found")
-            goal = self._goal(row, self._basis(cur, user_id), now)
+            basis = self._basis(cur, user_id, include_operations=False)
+            goal = self._goals_with_progress(cur, user_id, [row], basis, now)[0]
             cur.execute("SELECT version, document, updated_at FROM goal_plans "
                         "WHERE user_id = %s AND goal_id = %s", (user_id, goal_id))
             plan = cur.fetchone()
@@ -577,7 +623,8 @@ class WorkspaceStore:
                 (user_id, *(goal[key] for key in GOAL_FIELDS), account_id, environment),
             )
             row = dict(cur.fetchone())
-            return self._goal(row, self._basis(cur, user_id), now)
+            basis = self._basis(cur, user_id, include_operations=False)
+            return self._goals_with_progress(cur, user_id, [row], basis, now)[0]
 
     def update_goal(
         self,
@@ -613,7 +660,8 @@ class WorkspaceStore:
                 (*(goal[key] for key in GOAL_FIELDS), account_id, environment, user_id, goal_id),
             )
             row = dict(cur.fetchone())
-            return self._goal(row, self._basis(cur, user_id), now)
+            basis = self._basis(cur, user_id, include_operations=False)
+            return self._goals_with_progress(cur, user_id, [row], basis, now)[0]
 
     def delete_goal(self, user_id: UUID, goal_id: UUID, *, expected_version: int) -> bool:
         with self._transaction(user_id) as cur:
@@ -1038,9 +1086,7 @@ class WorkspaceStore:
         if (not isinstance(query, str) or len(query) > 200
                 or any(ord(char) < 32 for char in query)):
             raise ValueError("workspace_event_query_invalid")
-        enabled = [key for key in CATEGORIES if preferences["notifications"][key]
-                   and (category in {"all", key}
-                        or category == "assets" and key in {"portfolio", "payments"})]
+        enabled = _event_categories(preferences, category)
         filter_key = event_id("event_filter", [enabled, unread_only, important_only, query.strip()])
         before, before_id, ceiling = _event_cursor(cursor, filter_key=filter_key)
         cur.execute(
@@ -1121,7 +1167,9 @@ class WorkspaceStore:
         now = datetime.now(UTC)
         with self._transaction(user_id) as cur:
             basis = self._basis(cur, user_id)
-            goals = [self._goal(row, basis, now) for row in self._goal_rows(cur, user_id)]
+            goals = self._goals_with_progress(
+                cur, user_id, self._goal_rows(cur, user_id), basis, now,
+            )
             self._sync_events(cur, user_id, basis, goals, now)
             return self._events_payload(
                 cur,
@@ -1141,7 +1189,7 @@ class WorkspaceStore:
         now = datetime.now(UTC)
         with self._transaction(user_id) as cur:
             preferences = self._preferences(cur, user_id)["document"]
-            enabled = [key for key in CATEGORIES if preferences["notifications"][key]]
+            enabled = _event_categories(preferences, "all")
             cur.execute(
                 "SELECT category, count(*) FILTER (WHERE read_at IS NULL) AS unread, "
                 "COALESCE(max(revision), 0) AS revision FROM workspace_events "
@@ -1162,7 +1210,9 @@ class WorkspaceStore:
         now = datetime.now(UTC)
         with self._transaction(user_id) as cur:
             basis = self._basis(cur, user_id)
-            goals = [self._goal(row, basis, now) for row in self._goal_rows(cur, user_id)]
+            goals = self._goals_with_progress(
+                cur, user_id, self._goal_rows(cur, user_id), basis, now,
+            )
             self._sync_events(cur, user_id, basis, goals, now)
 
     def get_event(self, user_id: UUID, ident: str) -> dict[str, Any]:
@@ -1194,10 +1244,7 @@ class WorkspaceStore:
             )
             if through_revision > int(cur.fetchone()["revision"]):
                 raise ValueError("workspace_event_cutoff_invalid")
-            enabled = [key for key in CATEGORIES
-                       if preferences["notifications"][key]
-                       and (category in {"all", key}
-                            or category == "assets" and key in {"portfolio", "payments"})]
+            enabled = _event_categories(preferences, category)
             cur.execute(
                 "UPDATE workspace_events SET read_at = %s WHERE user_id = %s "
                 "AND category = ANY (%s) AND read_at IS NULL AND revision <= %s",
@@ -1254,10 +1301,7 @@ class WorkspaceStore:
             )
             preferences = self._preferences(cur, user_id)
             goal_rows = self._goal_rows(cur, user_id)
-            goal_basis = basis
-            if from_at is not None and any(row["progress_source"] == "income" for row in goal_rows):
-                goal_basis = self._basis(cur, user_id)
-            goals = [self._goal(row, goal_basis, now) for row in goal_rows]
+            goals = self._goals_with_progress(cur, user_id, goal_rows, basis, now)
             self._sync_events(cur, user_id, basis, goals, now)
             return {
                 "generated_at": now.isoformat(),

@@ -652,6 +652,9 @@ def test_stream_admission_is_per_owner_bounded_and_idempotently_released() -> No
         service.release_stream(user_id, lease)
     assert service._streams == {}
     service.close()
+    with pytest.raises(MarketStreamLimit, match="market_stream_closed"):
+        service.acquire_stream(owner)
+    service.release_stream(owner, replacement)
 
 
 def _history_xml(*, rows: str, code: str = "R01235") -> bytes:

@@ -177,7 +177,7 @@
     if (url.origin !== location.origin || !url.pathname.startsWith("/api/") || url.hash || url.username || url.password) throw new TypeError("Invalid API origin");
     return url;
   };
-  const privateRequest = path => !["/api/auth/config", "/api/auth/vkid/start", "/api/auth/tid/start", "/api/strategy/catalog", "/api/public/market-reference", "/api/public/news", "/api/public/support"].includes(path.split("?")[0]);
+  const privateRequest = path => !path.split("?")[0].startsWith("/api/public/news/") && !["/api/auth/config", "/api/auth/vkid/start", "/api/auth/tid/start", "/api/strategy/catalog", "/api/public/market-reference", "/api/public/news", "/api/public/support"].includes(path.split("?")[0]);
   const ensureResponseContext = ({
     generation,
     profile,
@@ -240,7 +240,7 @@
   } = {}) => {
     const url = apiPath(path);
     if (state.locked && !bootstrap) throw contextError();
-    const completionRequest = /\/api\/auth\/|\/(cancel|revoke|reconcile)$/.test(path) || method === "DELETE";
+    const completionRequest = path.startsWith("/api/auth/") || /\/(cancel|revoke|reconcile)$/.test(path) || method === "DELETE";
     if (state.outdated && !["GET", "HEAD"].includes(method) && !completionRequest) throw Object.assign(new Error("frontend_update_required"), {status: 409, definite: true});
     if (state.tour && privateRequest(path) && path !== "/api/me") throw Object.assign(new Error("tour_requires_login"), {
       status: 401
@@ -431,6 +431,7 @@
     close.innerHTML = icon(routed ? "back" : "close", true);
     close.setAttribute("aria-label", T("navigation.back"));
     restoreScreenDrafts(dialog);
+    if (state.outdated) flagApplicationUpdate();
     if (!dialog.open) dialog.showModal();
     U.bindCharts(dialog);
     return dialog;
@@ -468,6 +469,12 @@
       const source = $("[data-market-source]", container);
       const market = state.asset.market;
       if (source) source.innerHTML = freshness(market.source || "T-Invest", market.quote_time || market.observed_at, market.quote_status);
+      for (const row of $$(".asset-tab-content .info-row", container)) {
+        const label = $("dt", row)?.textContent;
+        const value = $("dd", row);
+        if (value && label === T("Последняя цена")) value.textContent = marketPrice(market.last_price, market.price_unit, market.price_currency);
+        if (value && label === T("Время цены")) value.textContent = date(market.quote_time, true);
+      }
     };
     const reconnect = () => {
       if (!current()) return;
@@ -520,6 +527,7 @@
     state.screenBaselines = {};
     state.authReturn = null;
     transientDialogs.clear();
+    try { sessionStorage.removeItem("omnicio-update-drafts"); } catch { /* No stored draft can survive an identity reset. */ }
     clearTimeout(freshnessTimer);
     state.generation += 1;
     for (const controller of state.requests) controller.abort();
@@ -562,6 +570,7 @@
     state.assistantDraft = {message: "", context: "general", include_news: false, research_run_id: ""};
     state.assistantRequest = null;
     state.assistantMemorySelected = new Set();
+    state.assistantMemoryDraftId = null;
     state.assistantSources = null;
     state.assistantSourceSelection = null;
     state.asset = null;
@@ -670,16 +679,16 @@
   const updateRouteHistory = (view, detail, {replace, fromHistory}) => {
     const route = {...detail, mode: state.mode, view};
     const hash = U.routeHash(route);
-    if (!fromHistory) {
-      const previous = history.state?.omnicio ? history.state : null;
-      const changed = location.hash !== hash;
-      if (changed && !replace) saveNavigationPosition();
-      const entry = {omnicio: true, view, route, scroll: replace ? previous?.scroll || 0 : 0,
-        index: (previous?.index || 0) + (previous && changed && !replace ? 1 : 0),
-        previous: changed && !replace ? location.hash : previous?.previous || null};
-      history[changed && !replace ? "pushState" : "replaceState"](entry, "", hash);
-    }
     rememberRoute(route);
+    if (fromHistory) return;
+    const previous = history.state?.omnicio ? history.state : null;
+    const append = location.hash !== hash && !replace;
+    if (append) saveNavigationPosition();
+    const scroll = replace && previous ? previous.scroll || 0 : 0;
+    const index = (previous?.index || 0) + Number(Boolean(previous && append));
+    const previousRoute = append ? location.hash : previous?.previous || null;
+    const entry = {omnicio: true, view, route, scroll, index, previous: previousRoute};
+    history[append ? "pushState" : "replaceState"](entry, "", hash);
   };
   const restoreRouteControls = route => {
     state.assetTab = "chart";
@@ -709,7 +718,11 @@
   const routeBack = () => {
     if (history.state?.omnicio && history.state.index > 0 && history.state.previous) history.back();
     else if (state.route.screen || state.route.overlay) navigate(state.view, {mode: state.mode}, {replace: true});
-    else navigate(state.mode === "public" ? "public/welcome" : ["asset", "search"].includes(state.view) ? "market" : "home", {mode: state.mode}, {replace: true});
+    else {
+      let parent = ["asset", "search"].includes(state.view) ? "market" : "home";
+      if (state.mode === "public") parent = "public/welcome";
+      navigate(parent, {mode: state.mode}, {replace: true});
+    }
   };
   const closeRouteDialogs = () => {
     for (const dialog of $$("dialog[open]")) if (dialog.id !== "session-dialog") {
@@ -717,13 +730,19 @@
       dialog.close();
     }
   };
+  const sessionSurfaceContent = () => {
+    if (state.session.status === "checking") return {title: T("session.checking"), content: U.loading(T("session.checking_details"))};
+    const failed = state.session.status === "error";
+    const title = failed ? T("session.retry_title") : T("session.signin_title");
+    const message = failed ? humanError(state.session.error) : T("session.signin_details");
+    const actionLabel = failed ? T("session.retry") : T("Войти");
+    const action = failed ? "session-retry" : "login";
+    return {title, content: `<p>${esc(message)}</p><div class="form-actions">${button(actionLabel, action, {primary: true})}${button(T("navigation.public_home"), "public-home")}</div>`};
+  };
   const sessionSurface = () => {
     $("#public-site").hidden = true;
     $("#app-shell").hidden = true;
-    const checking = state.session.status === "checking";
-    const failed = state.session.status === "error";
-    const title = checking ? T("session.checking") : failed ? T("session.retry_title") : T("session.signin_title");
-    const content = checking ? U.loading(T("session.checking_details")) : `<p>${esc(failed ? humanError(state.session.error) : T("session.signin_details"))}</p><div class="form-actions">${button(failed ? T("session.retry") : T("Войти"), failed ? "session-retry" : "login", {primary: true})}${button(T("navigation.public_home"), "public-home")}</div>`;
+    const {title, content} = sessionSurfaceContent();
     $("#startup-state").hidden = false;
     $("#startup-state").innerHTML = `<section class="card startup-card"><img class="brand-image" src="/assets/brand/omnicio-logo.png" alt="OMNICIO"><h1>${esc(title)}</h1>${content}</section>`;
   };
@@ -739,16 +758,22 @@
     breadcrumb.hidden = page === "welcome";
     breadcrumb.innerHTML = `<button class="button secondary small-button" data-action="route-back">${icon("back", true)} ${H("navigation.back")}</button>`;
     document.title = `${page === "welcome" ? T("OMNICIO — ваш инвестиционный помощник") : T("public.page." + page)} · OMNICIO`;
-    if (page === "support") void loadSupport($("#support"));
+
+  };
+  const resolveNavigationRoute = (view, detail) => {
+    let mode = detail.mode || state.mode;
+    if (!detail.mode && ["public", "auto"].includes(mode)) mode = state.user ? "account" : "demo";
+    const path = /^(public|demo|account)\//.test(view) ? view : `${mode}/${view}`;
+    const parsed = U.parseRoute("#" + path);
+    const route = {...parsed, ...detail, view: parsed.view, screen: detail.screen ?? parsed.screen};
+    if (route.mode === "auto") route.mode = !state.user && state.session.status === "guest" ? "demo" : "account";
+    return route;
   };
   const navigate = (view, detail = {}, {
     replace = false,
     fromHistory = false
   } = {}) => {
-    const explicit = /^(public|demo|account)\//.test(view);
-    const parsed = U.parseRoute(`#${explicit ? view : (detail.mode || (state.mode === "public" || state.mode === "auto" ? (state.user ? "account" : "demo") : state.mode)) + "/" + view}`);
-    const route = {...parsed, ...detail, view: parsed.view, screen: detail.screen ?? parsed.screen};
-    if (route.mode === "auto") route.mode = state.user ? "account" : state.session.status === "guest" ? "demo" : "account";
+    const route = resolveNavigationRoute(view, detail);
     if (route.invalid) { showRouteError(); return; }
     captureScreenDrafts();
     state.viewState[state.view] = {...state.route};
@@ -1035,7 +1060,7 @@
       if ((detail.q || "") === (state.route.q || "")) await runSearch(detail.q || "");
       return;
     }
-    renderCurrent();
+    if (!document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent();
     if (view === "goals" && detail.goal_id) focusGoal(detail.goal_id);
   };
   const loadSelectedAssistantConversation = async () => {
@@ -1076,6 +1101,7 @@
     if (generation === state.generation && state.view === view) {
       if (resource.name === "researchArchive") restoreResearchRequest();
       if (resource.name === "notifications") renderNotificationPanel();
+      else if (resource.name === "support") await loadSupport($(state.mode === "public" ? "#support" : "#workspace-support"));
       else renderCurrent();
     }
   };
@@ -1294,7 +1320,7 @@
     const rows = filteredRows();
     if (!rows.length) return empty(portfolioRows().length ? T("Нет активов этого типа") : T("Активы пока не получены"), portfolioRows().length ? T("Выберите другой фильтр.") : T("Состав счёта появится после подключения и первого наблюдения."), portfolioRows().length ? "" : "connect", T("Подключить счёт"));
     const headers = [["name", T("Название")], ["price", T("Цена")], ["change", T("Изменение")], ["share", T("Доля")]];
-    return `<div class="table-scroll"><table class="asset-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${compact ? "" : ("<th class=\"hide-on-mobile\" scope=\"col\">" + H("Стоимость") + "</th><th scope=\"col\"><span class=\"sr-only\">" + H("Избранное") + "</span></th>")}</tr></thead><tbody>${(compact ? rows.slice(0, 5) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div>`;
+    return `<div class="table-scroll"><table class="asset-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${compact ? "" : ("<th class=\"hide-on-mobile\" scope=\"col\">" + H("Стоимость") + "</th><th scope=\"col\"><span class=\"sr-only\">" + H("Избранное") + "</span></th>")}</tr></thead><tbody>${(compact ? rows.slice(0, 5) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div><p class="data-footnote">${H("quotes.snapshot_scope")} ${state.data.visualization?.latest?.captured_at ? esc(date(state.data.visualization.latest.captured_at, true)) + " " + H("МСК") : ""}</p>`;
   };
   const selectedPreset = (document = state.strategy.draft) => {
     const id = document?.base_preset_id;
@@ -1307,7 +1333,11 @@
       ...legacy
     }) : undefined;
   };
-  const strategyTitle = () => state.tour ? T("Выберите стратегию") : state.strategy.draft?.customized ? T("Моя настройка") : selectedPreset()?.title || T("Выберите стратегию");
+  const strategyTitle = () => {
+    if (state.tour) return T("Выберите стратегию");
+    if (state.strategy.draft?.customized) return T("Моя настройка");
+    return selectedPreset()?.title || T("Выберите стратегию");
+  };
   const strategyEditorTitle = () => {
     const title = selectedPreset()?.title || T("Сохранённые условия");
     if (state.strategy.draft?.customized) return T("Моя настройка · основа: ") + title;
@@ -1587,6 +1617,10 @@
     const market = asset.market;
     const details = asset.details;
     const latest = details?.latest || {};
+    const holding = details?.current_holding;
+    let position = {};
+    if (holding?.status === "held") position = latest;
+    else if (holding?.status === "not_held") position = {quantity: "0", value_rub: "0", nav_percent: "0", blocked_lots: "0"};
     const candles = Array.isArray(market?.candles) ? market.candles : [];
     const current = number(market?.last_price);
     const initial = number(candles[0]?.open);
@@ -1601,6 +1635,8 @@
       market,
       details,
       latest,
+      holding,
+      position,
       candles,
       current,
       change,
@@ -1616,9 +1652,11 @@
     const cashPrice = market?.cash_price && priceUnit !== "currency" ? `<p class="fine-print">${H("Текущая чистая цена:")} ${esc(money(market.cash_price, 2, market.cash_price_currency, false))}</p>` : "";
     return `<div class="main-value">${esc(marketPrice(current, priceUnit, currency))}</div>${cashPrice}<p class="value-change ${change === null ? "" : renderAssetValue(change)}">${changeLabel}</p>`;
   };
-  const assetChartHTML = (context) => {
+  const assetChartMarkup = (context) => {
     const {asset, market, candles, priceUnit, currency} = context;
-    const chartMarkup = asset.loading ? U.loading(T("Загружаем биржевой график…")) : market?.history_status === "unavailable" ? `<div class="notice error">${H("market.history_unavailable")}${button(T("Повторить"), "asset-refresh", {small: true})}</div>` : chart(candles, {
+    if (asset.loading) return U.loading(T("Загружаем биржевой график…"));
+    if (market?.history_status === "unavailable") return `<div class="notice error">${H("market.history_unavailable")}${button(T("Повторить"), "asset-refresh", {small: true})}</div>`;
+    return chart(candles, {
       timeKey: "time",
       valueKey: "close",
       label: renderAssetFragment2(asset),
@@ -1626,6 +1664,10 @@
       priceUnit,
       currency
     });
+  };
+  const assetChartHTML = (context) => {
+    const {market, priceUnit} = context;
+    const chartMarkup = assetChartMarkup(context);
     const notes = [priceUnit === "unknown" ? T("Источник не подтвердил единицы цены.") : "", priceUnit === "percent_nominal" ? T("Цена и история — в процентах номинала, без НКД. Текущий номинал не применяется к старым свечам.") : "", priceUnit === "points" ? T("Котировки в пунктах. Денежная стоимость шага может меняться.") : "", market?.trading_status ? renderAssetFragment3(market) : "", state.assetPeriod === "all" ? T("Доступная история источника.") : "", esc(market?.history_note || ""), T("График показывает цены закрытия свечей.")].filter(Boolean).join(" ");
     return `<div data-market-quote>${assetQuoteHTML(context)}</div>${periods("asset", state.assetPeriod, true)}${chartMarkup}<div data-market-source>${freshness(market?.source || "T-Invest", market?.quote_time || market?.observed_at, market?.quote_status)}</div><p class="data-footnote">${notes}</p>`;
   };
@@ -1634,7 +1676,9 @@
     details,
     latest
   }) => {
-    if (details) return renderAssetDataFootnote(latest);
+    if (details?.current_holding?.status === "not_held") return `<p class="notice">${H("asset.not_held")}</p>${freshness("T-Invest", details.current_holding.observed_at)}`;
+    if (details?.current_holding?.status === "held") return renderAssetDataFootnote({...latest, captured_at: details.current_holding.observed_at || latest.captured_at});
+    if (details) return `<p class="notice">${H("asset.holding_unknown")}</p>${renderAssetDataFootnote(latest)}`;
     if (asset.detailsError && asset.detailsError.status !== 404) return `<p class="notice error">${H("Данные позиции не загрузились:")} ${esc(humanError(asset.detailsError))}</p>`;
     if (asset.loading) return U.loading(T("Проверяем состав вашего счёта…"));
     return ("<p class=\"notice\">" + H("Инструмент не найден в истории вашего счёта. Биржевой график доступен независимо от наличия позиции.") + "</p>");
@@ -1642,7 +1686,8 @@
   const assetOverviewHTML = context => {
     const {
       asset,
-      latest
+      latest,
+      position
     } = context;
     const type = {
       share: T("Акция"),
@@ -1650,7 +1695,7 @@
       etf: T("Фонд"),
       currency: T("Валюта")
     }[asset.facts?.instrument_type || latest.instrument_type] || T("Не получен");
-    return `${infoRows([[T("Название"), asset.name], [T("Тикер"), asset.ticker || "—"], [T("Тип"), type], [T("Биржа"), asset.facts?.exchange || "—"], [T("Размер лота"), format(asset.facts?.lot, 0)], [T("В портфеле"), money(latest.value_rub)], [T("Доля"), percent(latest.nav_percent)], [T("Количество"), format(latest.quantity, 8)]])}${assetHoldingNote(context)}`;
+    return `${infoRows([[T("Название"), asset.name], [T("Тикер"), asset.ticker || "—"], [T("Тип"), type], [T("Биржа"), asset.facts?.exchange || "—"], [T("Размер лота"), format(asset.facts?.lot, 0)], [T("В портфеле"), money(position.value_rub)], [T("Доля"), percent(position.nav_percent)], [T("Количество"), format(position.quantity, 8)]])}${assetHoldingNote(context)}`;
   };
   const assetMetricsHTML = ({
     asset,
@@ -1698,14 +1743,15 @@
   const assetSideHTML = ({
     asset,
     latest,
+    position,
     candles,
     priceUnit,
     currency,
     high,
     details
   }) => {
-    const rows = [[T("Открытие"), marketPrice(candles[0]?.open, priceUnit, currency)], [T("Максимум"), marketPrice(high, priceUnit, currency)], [T("Стоимость в портфеле"), money(latest.value_rub)], [T("Доля портфеля"), percent(latest.nav_percent)], [T("Заблокировано лотов"), latest.blocked_lots === undefined ? "—" : format(latest.blocked_lots)]];
-    const risk = latest.risk_state ? riskLabel(latest.risk_state) : T("Для оценки риска нужны данные об эмитенте и инструменте.");
+    const rows = [[T("Открытие"), marketPrice(candles[0]?.open, priceUnit, currency)], [T("Максимум"), marketPrice(high, priceUnit, currency)], [T("Стоимость в портфеле"), money(position.value_rub)], [T("Доля портфеля"), percent(position.nav_percent)], [T("Заблокировано лотов"), position.blocked_lots === undefined ? "—" : format(position.blocked_lots)]];
+    const risk = position.risk_state ? riskLabel(position.risk_state) : T("Для оценки риска нужны данные об эмитенте и инструменте.");
     return `${cardHeader(T("Основные показатели"))}${infoRows(rows)}<p class="notice">${esc(risk)}</p><div class="section-gap">${fundamentalMetricsHTML(asset, true)}</div>${details?.payouts?.length ? renderAssetDetailsSummary2(details) : ""}`;
   };
   const assetFrameHTML = (context, content) => {
@@ -3400,18 +3446,19 @@
       if (generation === state.generation && request === state.eventRequest && $("#workspace-dialog").open && !isCancelled(error)) openDialog(T("Событие недоступно"), `<p class="notice error">${esc(humanError(error))}</p>`);
     }
   };
-  const openNews = async id => {
-    if (enterRouteScreen("events", "news", {news: id})) return;
+  const openNews = async (id, source = state.route.news_source || "broker") => {
+    if (enterRouteScreen("events", "news", {news: id, news_source: source})) return;
     const sequence = state.navigationSequence;
-    const collections = [state.data.marketArchive, state.searchPages.news, state.asset?.news];
+    const publicSource = state.route.news_source === "public";
+    const collections = publicSource ? [] : [state.data.marketArchive, state.searchPages.news, state.asset?.news];
     let item = collections.flatMap(collection => collection?.items || []).find(row => row.id === id);
     if (!item) {
       openDialog(T("Новости"), U.loading(T("state.loading")));
-      try { item = await api(`/api/news/${safeSegment(id)}`); }
+      try { item = await api(`/api/${publicSource ? "public/news" : "news"}/${safeSegment(id)}`); }
       catch (error) { if (!isCancelled(error) && sequence === state.navigationSequence) openDialog(T("Новости"), `<p class="notice error">${esc(humanError(error))}</p>${button(T("Повторить"), "route-retry")}`); return; }
     }
     if (sequence !== state.navigationSequence) return;
-    openDialog(item.title, `<p class="fine-print">${esc(item.source || T("Источник брокера"))} · ${esc(date(item.occurred_at, true))} ${H("МСК")}</p><p class="help-copy">${esc(item.content || item.summary || T("Источник не предоставил полный текст."))}</p>${item.source_url ? U.sourceLink(item.source_url, T("Первоисточник")) : ("<p class=\"fine-print\">" + H("Публикация предоставлена API источника; внешняя ссылка отсутствует.") + "</p>")}`);
+    openDialog(item.title, `<p class="fine-print">${esc(item.source || T("Источник брокера"))} · ${esc(date(item.occurred_at || item.published_at, true))} ${H("МСК")}</p><p class="help-copy">${esc(item.content || item.text || item.summary || T("Источник не предоставил полный текст."))}</p>${item.source_url || item.url ? U.sourceLink(item.source_url || item.url, T("Первоисточник")) : ("<p class=\"fine-print\">" + H("Публикация предоставлена API источника; внешняя ссылка отсутствует.") + "</p>")}`);
   };
   const renderAnalytics = () => {
     captureScreenDrafts();
@@ -4234,12 +4281,18 @@
         state.assistantBusy = false;
         if (state.assistantConversation) await loadAssistantConversation(state.assistantConversation.id);
       }
+      return saved;
     } catch (error) { if (generation === state.generation && !isCancelled(error)) showMessage($("#assistant-message"), humanError(error), true); }
+  }
+  function assistantMemoryChoice(item) {
+    const checked = state.assistantMemorySelected?.has(item.id) ? " checked" : "";
+    const disabled = state.assistantBusy ? " disabled" : "";
+    return `<label class="check-field"><input type="checkbox" data-memory-select="${esc(item.id)}"${checked}${disabled}><span>${esc(item.content)}</span></label>`;
   }
   function assistantMemoryChoices() {
     const items = state.tour ? [] : state.data.assistantMemory?.items || [];
     if (!items.length) return "";
-    return `<details class="section-gap"><summary class="details-summary">${H("assistant.memory_selection")}</summary>${items.map(item => `<label class="check-field"><input type="checkbox" data-memory-select="${esc(item.id)}"${state.assistantMemorySelected?.has(item.id) ? " checked" : ""}${state.assistantBusy ? " disabled" : ""}><span>${esc(item.content)}</span></label>`).join("")}<p class="fine-print">${H("assistant.memory_selection_help")}</p></details>`;
+    return `<details class="section-gap"><summary class="details-summary">${H("assistant.memory_selection")}</summary>${items.map(assistantMemoryChoice).join("")}<p class="fine-print">${H("assistant.memory_selection_help")}</p></details>`;
   }
   function assistantMemoryHTML() {
     if (state.tour) return empty(T("assistant.memory"), T("assistant.memory_help"), "login", T("Войти"));
@@ -4249,6 +4302,16 @@
   }
   function assistantMemoryForm(item = null) {
     return `<form id="assistant-memory-form" class="section-gap" data-id="${esc(item?.id || (state.assistantMemoryDraftId ||= crypto.randomUUID()))}" data-version="${item?.version || 0}">${select("category", T("assistant.memory_kind"), [["preference", T("assistant.preference")], ["context", T("assistant.context")]], item?.category || "preference")}<label class="field"><span>${H("assistant.memory_content")}</span><textarea name="content" maxlength="1000" rows="4" required>${esc(item?.content || "")}</textarea></label><label class="check-field"><input type="checkbox" name="confirmed" required><span>${H("assistant.memory_confirm")}</span></label><div class="form-actions"><button class="button primary" type="submit">${H("Сохранить")}</button></div><output id="assistant-memory-message" class="form-message"></output></form>`;
+  }
+  async function reconcileAssistantMemory(form, body, error, generation) {
+    await loadResource("assistantMemory", "/api/assistant/memory", {force: true});
+    if (generation !== state.generation) return;
+    const actual = state.data.assistantMemory?.items?.find(item => item.id === form.dataset.id);
+    const confirmed = actual && actual.content === body.content && actual.category === body.category && actual.version > Number(form.dataset.version);
+    if (confirmed) {
+      clearScreenDraft(form);
+      if (state.view === "assistant") renderAssistant();
+    } else showMessage($("#assistant-memory-message"), humanError(error), true);
   }
   async function saveAssistantMemory(form) {
     if (!requireUser() || form.dataset.busy === "true" || !form.reportValidity()) return;
@@ -4267,10 +4330,7 @@
       if (generation === state.generation && state.view === "assistant") renderAssistant();
     } catch (error) {
       if (generation !== state.generation || isCancelled(error)) return;
-      await loadResource("assistantMemory", "/api/assistant/memory", {force: true});
-      const actual = state.data.assistantMemory?.items?.find(item => item.id === id);
-      if (actual && actual.content === body.content && actual.category === body.category && actual.version > version) { clearScreenDraft(form); renderAssistant(); }
-      else showMessage($("#assistant-memory-message"), humanError(error), true);
+      await reconcileAssistantMemory(form, body, error, generation);
     } finally { if (form.isConnected) { form.dataset.busy = "false"; form.querySelector("button[type=submit]").disabled = false; } }
   }
   async function deleteAssistantMemory(id) {
@@ -4312,16 +4372,17 @@
     } catch (error) { if (generation === state.generation && !isCancelled(error)) { target.replaceChildren(); showMessage($("#assistant-sources-message"), humanError(error), true); } }
     finally { if (form.isConnected) form.dataset.busy = "false"; }
   }
-  async function readAssistantSource(id) {
-    if (!requireUser() || !state.assistantSourceSelection) return;
-    const {query, limit, ...selection} = state.assistantSourceSelection;
+  async function readAssistantSource(id, requestId = "") {
+    if (!requireUser() || (!requestId && !state.assistantSourceSelection)) return;
+    const {query, limit, ...selection} = state.assistantSourceSelection || {};
+    const body = requestId ? {source_id: id, request_id: requestId} : {...selection, source_id: id};
     const generation = state.generation;
     openDialog(T("assistant.sources"), U.loading(T("state.loading")));
     const sequence = state.eventRequest;
     try {
-      const source = await api("/api/assistant/sources/read", {method: "POST", body: {...selection, source_id: id}});
+      const source = await api("/api/assistant/sources/read", {method: "POST", body});
       if (generation !== state.generation || sequence !== state.eventRequest) return;
-      openDialog(source.label || T("assistant.sources"), `<p class="fine-print">${H("assistant.sources_scope")}</p><pre class="source-document">${esc(typeof source.content === "string" ? source.content : JSON.stringify(source.content, null, 2))}</pre>${source.url ? U.sourceLink(source.url, T("Первоисточник")) : ""}`);
+      openDialog(source.label || T("assistant.sources"), `<p class="fine-print">${H(source.immutable ? "assistant.saved_source" : "assistant.sources_scope")}</p><pre class="source-document">${esc(typeof source.content === "string" ? source.content : JSON.stringify(source.content, null, 2))}</pre>${source.url ? U.sourceLink(source.url, T("Первоисточник")) : ""}`);
     } catch (error) { if (generation === state.generation && sequence === state.eventRequest && !isCancelled(error)) openDialog(T("assistant.sources"), `<p class="notice error">${esc(humanError(error))}</p>`); }
   }
 
@@ -4359,6 +4420,7 @@
     const sequence = state.navigationSequence;
     state.openingRoute = true;
     try {
+      if (route.mode === "public" && route.view === "support") { await loadSupport($("#support")); return; }
       if (route.overlay === "auth") { openAuth(state.authMode || "login"); return; }
       if (route.overlay && transientDialogs.has(route.overlay)) {
         const saved = transientDialogs.get(route.overlay);
@@ -4398,6 +4460,7 @@
   }
   function captureScreenDrafts() {
     for (const form of draftForms()) {
+      if (form.closest("dialog") && !form.closest("dialog").open) continue;
       const key = draftKey(form);
       const values = draftValues(form);
       if (state.screenBaselines[key] === undefined) state.screenBaselines[key] = JSON.stringify(values);
@@ -4409,8 +4472,8 @@
     if (state.tour) return;
     for (const form of draftForms(root)) {
       const key = draftKey(form);
-      if (state.screenBaselines[key] === undefined) state.screenBaselines[key] = JSON.stringify(draftValues(form));
       const draft = state.screenDrafts[key];
+      if (!draft || state.screenBaselines[key] === undefined) state.screenBaselines[key] = JSON.stringify(draftValues(form));
       if (!draft) continue;
       for (const [name, value] of Object.entries(draft)) {
         const control = form.elements.namedItem(name);
@@ -4426,8 +4489,13 @@
     delete state.screenDrafts[key];
     state.screenBaselines[key] = JSON.stringify(draftValues(form));
   }
+  function screenLink(view, [key, title, detail]) {
+    const selected = state.route.screen === key;
+    const note = detail ? `<small>${esc(detail)}</small>` : "";
+    return `<a class="screen-menu-item${selected ? " selected" : ""}" href="${U.routeHash({mode: state.mode, view, screen: key})}" data-route="${view}" data-screen="${key}"${selected ? ' aria-current="page"' : ""}><span><strong>${esc(title)}</strong>${note}</span>${icon("arrow", true)}</a>`;
+  }
   function screenLinks(view, panes) {
-    return `<nav class="screen-menu" aria-label="${H("navigation.sections")}">${panes.map(([key, title, detail]) => `<a class="screen-menu-item${state.route.screen === key ? " selected" : ""}" href="${U.routeHash({mode: state.mode, view, screen: key})}" data-route="${view}" data-screen="${key}"${state.route.screen === key ? ' aria-current="page"' : ""}><span><strong>${esc(title)}</strong>${detail ? `<small>${esc(detail)}</small>` : ""}</span>${icon("arrow", true)}</a>`).join("")}</nav>`;
+    return `<nav class="screen-menu" aria-label="${H("navigation.sections")}">${panes.map(pane => screenLink(view, pane)).join("")}</nav>`;
   }
   function applyScreenLayout(view) {
     if (state.view !== view) return;
@@ -4521,12 +4589,20 @@
     if (!income) return state.loading.has("workspace") ? U.loading(T("state.loading")) : dataError("workspace") || empty(T("История выплат пока недоступна"), T("Для расчёта нужны подтверждённые операции брокера."));
     return infoRows([[T("Купоны"), money(income.coupons_rub)], [T("Дивиденды"), money(income.dividends_rub)], [T("Прочие доходы"), money(income.other_income_rub)], [T("Погашения капитала"), money(income.redemptions_rub)]]) + `<p class="fine-print">${esc(date(income.from))} — ${esc(date(income.to))}</p>`;
   }
+  function ledgerRow(item, names) {
+    const instrument = item.instrument_uid ? `<button class="button secondary small-button" data-asset="${esc(item.instrument_uid)}">${esc(item.ticker || T("Инструмент"))}</button>` : "—";
+    const category = names[item.category] || T("portfolio.unclassified");
+    const amount = money(item.payment?.value, 2, String(item.payment?.currency || "").toUpperCase());
+    return `<tr><td>${esc(date(item.operation_date, true))}</td><td>${esc(item.name || item.description || item.operation_type)}<small class="fine-print">${esc(category)}</small></td><td>${esc(amount)}</td><td>${instrument}</td></tr>`;
+  }
   function ledgerHTML() {
     const data = state.data.ledger;
     if (!data) return state.errors.ledger ? dataError("ledger") : U.loading(T("state.loading"));
     const names = {contribution: T("portfolio.contribution"), withdrawal: T("portfolio.withdrawal"), fee: T("Комиссии за период"), tax: T("Налоги"), income: T("Полученные выплаты"), principal_return: T("Погашения капитала"), internal: T("portfolio.internal"), non_cash_transfer: T("portfolio.non_cash"), unclassified: T("portfolio.unclassified")};
-    const rows = (data.items || []).map(item => `<tr><td>${esc(date(item.operation_date, true))}</td><td>${esc(item.name || item.description || item.operation_type)}<small class="fine-print">${esc(names[item.category] || T("portfolio.unclassified"))}</small></td><td>${esc(money(item.payment?.value, 2, String(item.payment?.currency || "").toUpperCase()))}</td><td>${item.instrument_uid ? `<button class="button secondary small-button" data-asset="${esc(item.instrument_uid)}">${esc(item.ticker || T("Инструмент"))}</button>` : "—"}</td></tr>`).join("");
-    return `${cardHeader(T("portfolio.operations"))}${freshness(data.source || "T-Invest", data.observed_at, data.status)}${dataError("ledger")}<p class="fine-print">${H("portfolio.operations_notice")}</p>${rows ? `<div class="table-scroll"><table class="asset-table"><thead><tr><th>${H("Дата")}</th><th>${H("Операция")}</th><th>${H("Сумма")}</th><th>${H("Инструмент")}</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty(T("portfolio.no_operations"), T("portfolio.no_operations_details"))}${data.next_cursor ? button(T("Загрузить ещё"), "ledger-more", {small: true, extra: state.loading.has("ledger-more") ? " disabled" : ""}) : ""}`;
+    const rows = (data.items || []).map(item => ledgerRow(item, names)).join("");
+    const table = rows ? `<div class="table-scroll"><table class="asset-table"><thead><tr><th>${H("Дата")}</th><th>${H("Операция")}</th><th>${H("Сумма")}</th><th>${H("Инструмент")}</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty(T("portfolio.no_operations"), T("portfolio.no_operations_details"));
+    const more = data.next_cursor ? button(T("Загрузить ещё"), "ledger-more", {small: true, extra: state.loading.has("ledger-more") ? " disabled" : ""}) : "";
+    return `${cardHeader(T("portfolio.operations"))}${freshness(data.source || "T-Invest", data.observed_at, data.status)}${dataError("ledger")}<p class="fine-print">${H("portfolio.operations_notice")}</p>${table}${more}`;
   }
   async function loadLedgerPage() {
     if (!state.data.ledger?.next_cursor || state.loading.has("ledger-more")) return;
@@ -4549,22 +4625,108 @@
   }
   function flagApplicationUpdate() {
     state.outdated = true;
-    const banner = $("#update-banner");
-    if (!banner) return;
-    banner.hidden = false;
-    banner.innerHTML = `<span>${H("pwa.update_available")}</span>${button(T("pwa.apply"), "pwa-update", {small: true})}`;
-  }
-  async function applyApplicationUpdate() {
-    captureScreenDrafts();
-    if (hasPending() || Object.keys(state.screenDrafts).length || [...state.requests].some(controller => controller.omnicioMutation)) {
-      toast(T("pwa.finish_work"), true);
-      return;
+    for (const banner of $$("#update-banner,#dialog-update-banner")) {
+      banner.hidden = false;
+      banner.innerHTML = `<span>${H("pwa.update_available")}</span>${button(T("pwa.apply"), "pwa-update", {small: true})}`;
     }
+  }
+  const updateDraftFields = Object.freeze({
+    "goal-form": ["title", "kind", "target_amount_rub", "target_date", "start_date", "progress_source", "allocation_percent", "manual_amount_rub", "status"],
+    "goal-plan-form": ["monthly_contribution_rub", "monthly_income_rub", "annual_return_percent", "annual_volatility_percent", "annual_inflation_percent", "target_in_today_money"],
+    "profile-form": ["display_name"],
+    "preferences-form": ["theme", "locale", "mask_balances", "notify_portfolio", "notify_payments", "notify_goals", "notify_system", "digest_frequency", "digest_time", "digest_timezone", "quiet_timezone", "quiet_enabled", "quiet_start", "quiet_end"],
+    "assistant-form": ["message", "context", "include_news", "research_run_id"]
+  });
+  function updateDraftPayload() {
+    const drafts = {};
+    const unsupported = new Set();
+    for (const [key, values] of Object.entries(state.screenDrafts)) {
+      const form = key.split(":")[0];
+      const allowed = updateDraftFields[form];
+      if (!allowed) { unsupported.add(form); continue; }
+      let baseline = {};
+      try { baseline = JSON.parse(state.screenBaselines[key] || "{}"); } catch { /* Ignore an unavailable initial form state. */ }
+      const entered = Object.fromEntries(Object.entries(values).filter(([field, value]) => allowed.includes(field) && ["string", "boolean"].includes(typeof value) && String(value).length <= 12000 && value !== baseline[field]));
+      if (Object.keys(entered).length) drafts[key] = entered;
+    }
+    if (state.strategy.dirty) unsupported.add("strategy-form");
+    if (Object.values(state.researchDraft).some(value => value !== "")) unsupported.add("research-form");
+    if ($$('input[type="password"]').some(input => input.value)) unsupported.add("credentials");
+    return {drafts, unsupported: [...unsupported]};
+  }
+  function restoreUpdateDrafts(publicId) {
+    let saved;
+    try {
+      const raw = sessionStorage.getItem("omnicio-update-drafts");
+      if (!raw) return;
+      sessionStorage.removeItem("omnicio-update-drafts");
+      if (new TextEncoder().encode(raw).byteLength > 131072) return;
+      saved = JSON.parse(raw);
+    } catch { return; }
+    if (saved.version !== 1 || saved.public_id !== publicId || !Number.isFinite(saved.expires_at) || saved.expires_at < Date.now() || saved.expires_at > Date.now() + 1800000 || !saved.drafts || typeof saved.drafts !== "object") return;
+    for (const [key, values] of Object.entries(saved.drafts)) {
+      const [form, entity = ""] = key.split(":");
+      const fields = updateDraftFields[form];
+      if (!fields || entity.length > 128 || !values || typeof values !== "object") continue;
+      const restored = Object.fromEntries(Object.entries(values).filter(([name, value]) => fields.includes(name) && ["string", "boolean"].includes(typeof value) && String(value).length <= 12000));
+      if (Object.keys(restored).length) state.screenDrafts[`${form}:${entity}`] = restored;
+    }
+    if (Object.keys(state.screenDrafts).length) toast(T("pwa.drafts_restored"));
+  }
+  async function confirmUpdateReadback() {
+    const awaitingResult = researchPending() || state.assistantBusy || state.billingBusy || state.executionBusy || state.recovery.busy || state.prefs.busy || state.strategy.busy || [...state.requests].some(controller => controller.omnicioMutation);
+    if (awaitingResult) { toast(T("pwa.finish_work"), true); return false; }
+    if ($("#goal-form")?.dataset.uncertain === "true") { toast(T("pwa.goal_readback"), true); return false; }
+    if (!state.assistantRequest || !["running", "uncertain"].includes(state.assistantRequest.status)) return true;
+    const readback = await readAssistantRequest(false);
+    if (readback && state.assistantRequest?.status !== "running") return true;
+    toast(T("pwa.finish_work"), true);
+    return false;
+  }
+  function persistUpdateDrafts(drafts) {
+    try {
+      sessionStorage.removeItem("omnicio-update-drafts");
+      if (!Object.keys(drafts).length || !state.user) return true;
+      const payload = JSON.stringify({version: 1, public_id: state.user.public_id, expires_at: Date.now() + 1800000, drafts});
+      if (new TextEncoder().encode(payload).byteLength > 131072) return false;
+      sessionStorage.setItem("omnicio-update-drafts", payload);
+      return true;
+    } catch { return false; }
+  }
+  function reviewUpdateLosses(unsupported, saved) {
+    const labels = {"research-evidence-form": T("Дополнительные источники исследования"), "research-form": T("Исследование на истории"), "strategy-form": T("Моя настройка"), "assistant-memory-form": T("assistant.memory"), "assistant-sources-form": T("assistant.sources"), credentials: T("API-ключ")};
+    const forms = unsupported.map(name => labels[name] || T("pwa.other_form"));
+    if (!saved) forms.push(T("pwa.storage_unavailable"));
+    const entries = forms.map(name => "<li>" + esc(name) + "</li>").join("");
+    openDialog(T("pwa.review_drafts"), `<p>${H("pwa.unsupported_drafts")}</p><ul>${entries}</ul><div class="form-actions">${button(T("pwa.discard_and_update"), "pwa-update-discard", {primary: true})}<button class="button secondary" data-close-dialog>${H("Отмена")}</button></div>`);
+  }
+  function activateApplicationUpdate() {
     acceptingUpdate = true;
+    updateViewRoute({overlay: ""}, {replace: true});
     saveNavigationPosition();
     rememberRoute(activeRoute());
+    // Whitelisted typed values are restored after the same server identity is verified.
+    // No provider action, response payload, evidence document or credential is replayed.
+    state.screenDrafts = {};
+    state.formDrafts = {};
+    state.prefs.dirty = false;
+    state.strategy.dirty = false;
+    clearTimeout(state.prefs.timer);
+    clearTimeout(state.strategy.timer);
+    state.assistantDraft.message = "";
     if (pwaRegistration?.waiting) pwaRegistration.waiting.postMessage({type: "ACTIVATE_UPDATE"});
     else location.reload();
+  }
+  async function applyApplicationUpdate(discardUnsupported = false) {
+    captureScreenDrafts();
+    if (!await confirmUpdateReadback()) return;
+    const {drafts, unsupported} = updateDraftPayload();
+    const saved = persistUpdateDrafts(drafts);
+    if ((!saved || unsupported.length) && discardUnsupported !== true) {
+      reviewUpdateLosses(unsupported, saved);
+      return;
+    }
+    activateApplicationUpdate();
   }
   function stopTableQuotes() { clearTimeout(tableQuotesTimer); tableQuotesTimer = null; }
   function scheduleTableQuotes(delay = 10000) {
@@ -4575,13 +4737,19 @@
   async function pollTableQuotes() {
     if (tableQuotesBusy || !navigator.onLine) { scheduleTableQuotes(15000); return; }
     const generation = state.generation;
-    const uids = [...new Set([...filteredRows().map(item => item.uid), ...watchlist().map(item => item.instrument_uid)].filter(Boolean))].slice(0, 50);
+    const root = $(`#view-${state.view}`);
+    const uids = [...new Set($$("[data-table-quote]", root || document).filter(item => item.getClientRects().length).map(item => item.dataset.tableQuote))];
     if (!uids.length) { scheduleTableQuotes(); return; }
     tableQuotesBusy = true;
     try {
-      const payload = await api(`/api/market/quotes?instrument_uids=${encodeURIComponent(uids.join(","))}`);
-      if (generation !== state.generation || state.tour) return;
-      for (const item of payload.items || []) if (uids.includes(item.instrument_uid)) state.quotes[item.instrument_uid] = item;
+      // One batch per fifty displayed instruments, never one provider call per cell.
+      for (let offset = 0; offset < uids.length; offset += 50) {
+        const chunk = uids.slice(offset, offset + 50);
+        const payload = await api(`/api/market/quotes?instrument_uids=${encodeURIComponent(chunk.join(","))}`);
+        if (generation !== state.generation || state.tour) return;
+        for (const item of payload.items || []) if (chunk.includes(item.instrument_uid)) state.quotes[item.instrument_uid] = item;
+        paintTableQuotes();
+      }
       paintTableQuotes();
     } catch (error) {
       if (generation === state.generation && !isCancelled(error)) {
@@ -4670,6 +4838,7 @@
       target.innerHTML = ("<p class=\"muted\">" + H("Каталог временно не загрузился. Повторите открытие страницы.") + "</p>");
       return;
     }
+    for (const count of $$("[data-catalog-count]")) count.textContent = String(catalog.presets.length);
     target.innerHTML = catalog.presets.map(raw => {
       const item = I.preset(raw);
       const [symbol] = strategyIcons[item.id] || ["strategies"];
@@ -4783,6 +4952,7 @@
       if (!current()) return;
       if (!/^\d{9}$/.test(user.public_id)) throw new Error("invalid_session_response");
       state.user = user;
+      restoreUpdateDrafts(user.public_id);
       state.locked = false;
       state.session.status = "authenticated";
       const route = parseRoute();
@@ -5203,7 +5373,8 @@
     "session-retry": bootstrap,
     "public-home": () => navigate("public/welcome"),
     "route-back": routeBack,
-    "pwa-update": applyApplicationUpdate,
+    "pwa-update": () => applyApplicationUpdate(false),
+    "pwa-update-discard": () => applyApplicationUpdate(true),
     "route-retry": () => openRouteScreen(activeRoute()),
     "support": () => navigate(state.mode === "public" ? "public/support" : "settings", {screen: state.mode === "public" ? "" : "support"}),
     "leave-tour": () => navigate("public/welcome"),
@@ -5431,7 +5602,7 @@
     run: handleClickEventOpen
   }, {
     matches: ({control}) => control.dataset.newsOpen,
-    run: ({event, control}) => { event.preventDefault(); openNews(control.dataset.newsOpen); }
+    run: async ({event, control}) => { event.preventDefault(); await openNews(control.dataset.newsOpen, "broker"); }
   }, {
     matches: ({
       control
@@ -5484,10 +5655,11 @@
     if (control?.dataset.publicPage) { event.preventDefault(); $(".public-nav").classList.remove("open"); navigate(`public/${control.dataset.publicPage}`); return; }
     if (!control || control.disabled) return;
     try {
+      if (control.dataset.publicNews) { navigate("events", {screen: "news", news: control.dataset.publicNews, news_source: "public"}); return; }
       if (control.dataset.memoryEdit) { const item = state.data.assistantMemory?.items?.find(row => row.id === control.dataset.memoryEdit); if (item) { captureScreenDrafts(); $("#assistant-memory-editor").innerHTML = assistantMemoryForm(item); restoreScreenDrafts($("#assistant-memory-editor")); } return; }
       if (control.dataset.memoryDelete) { openDialog(T("assistant.memory_delete"), `<p>${H("assistant.memory_delete_help")}</p><button class="button danger" data-memory-delete-confirm="${esc(control.dataset.memoryDelete)}">${H("Удалить")}</button>`); return; }
       if (control.dataset.memoryDeleteConfirm) { await deleteAssistantMemory(control.dataset.memoryDeleteConfirm); return; }
-      if (control.dataset.assistantSource) { await readAssistantSource(control.dataset.assistantSource); return; }
+      if (control.dataset.assistantSource) { await readAssistantSource(control.dataset.assistantSource, control.dataset.assistantSourceRequest || ""); return; }
 
       const context = {
         control,
@@ -5544,7 +5716,12 @@
   }];
   document.addEventListener("change", async event => {
     const input = event.target;
-    if (input.dataset.memorySelect) { state.assistantMemorySelected ||= new Set(); if (input.checked) state.assistantMemorySelected.add(input.dataset.memorySelect); else state.assistantMemorySelected.delete(input.dataset.memorySelect); return; }
+    if (input.dataset.memorySelect) {
+      state.assistantMemorySelected ||= new Set();
+      if (input.checked) state.assistantMemorySelected.add(input.dataset.memorySelect);
+      else state.assistantMemorySelected.delete(input.dataset.memorySelect);
+      return;
+    }
     if (input.closest("#goal-plan-form") && input.name === "target_in_today_money") updateGoalPlanFields();
     if (captureFormDraft(input)) return;
     const context = {
@@ -5745,7 +5922,7 @@
   window.addEventListener("hashchange", historyNavigation);
   const refreshVisibleData = async () => {
     clearTimeout(freshnessTimer);
-    if (freshnessBusy || document.visibilityState !== "visible" || !navigator.onLine || !state.user || state.locked) return;
+    if (freshnessBusy || document.visibilityState !== "visible" || !navigator.onLine || !state.user || state.locked || state.mode !== "account") return;
     freshnessBusy = true;
     try {
       await verifySession();
@@ -5770,6 +5947,7 @@
     else { stopQuoteStream(); stopTableQuotes(); clearTimeout(eventSummaryTimer); clearTimeout(freshnessTimer); }
   });
   window.addEventListener("beforeunload", event => {
+    if (acceptingUpdate) return;
     captureScreenDrafts();
     saveNavigationPosition();
     if (hasPending() || Object.keys(state.screenDrafts).length || state.assistantDraft.message.trim()) {
@@ -5980,7 +6158,7 @@
     return `<article class="card"><p class="card-label">${title}</p><strong class="main-value">${esc(value)}</strong></article>`;
   }
   function renderNewsHTMLEventItem(item) {
-    return `<article class="event-item"><span class="event-icon">${icon("events", true)}</span><div class="event-item-body"><h3>${U.sourceLink(item.url, item.title)}</h3><span class="event-meta">${H("Банк России ·")} ${esc(date(item.published_at, true))}</span></div></article>`;
+    return `<article class="event-item"><span class="event-icon">${icon("events", true)}</span><div class="event-item-body"><h3><button class="event-title-button" data-public-news="${esc(item.id)}">${esc(item.title)}</button></h3><span class="event-meta">${H("Банк России ·")} ${esc(date(item.published_at, true))}</span></div></article>`;
   }
   function renderIndicatorCardsValue(key) {
     if (key === "key_rate") {
@@ -6002,7 +6180,7 @@
     return `${T("Официальный курс")} ${state.cbrCurrency}`;
   }
   function renderMarketSearchResult(item) {
-    return `<div class="search-result"><button class="asset-name" data-asset="${esc(item.instrument_uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}<small class="asset-ticker">${esc(item.ticker)}</small></span></button>${watchButton(item)}</div>`;
+    return `<div class="search-result"><button class="asset-name" data-asset="${esc(item.instrument_uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}<small class="asset-ticker">${esc(item.ticker)}</small></span></button><span data-table-quote="${esc(item.instrument_uid)}">${tableQuoteHTML({uid: item.instrument_uid})}</span>${watchButton(item)}</div>`;
   }
   function renderMarketSearchResults() {
     return `<div class="search-results">${watchlist().map(item => renderMarketSearchResult(item)).join("")}</div>`;
@@ -6424,11 +6602,13 @@
   function renderBrokerSettingsHTMLFragment(connection) {
     return `${date(connection.verified_at, true)} ${T("МСК")}`;
   }
-  function renderAssistantLi(source) {
-    return `<li>${U.sourceLink(source.url, source.label)}</li>`;
+  function renderAssistantLi(source, requestId = "") {
+    const label = source.label || source.kind || T("Источник");
+    if (source.id && requestId) return `<li><button class="event-title-button" data-assistant-source="${esc(source.id)}" data-assistant-source-request="${esc(requestId)}">${esc(label)}</button></li>`;
+    return `<li>${source.url ? U.sourceLink(source.url, label) : esc(label)}</li>`;
   }
   function renderAssistantSourceList(item) {
-    return `<ul class="source-list">${item.sources.map(source => renderAssistantLi(source)).join("")}</ul>`;
+    return `<ul class="source-list">${item.sources.map(source => renderAssistantLi(source, item.request_id)).join("")}</ul>`;
   }
   function renderAssistantButton(text, configured) {
     return `<button class="button secondary" data-chat-prompt="${esc(text)}"${!configured ? " disabled" : ""}>${esc(text)}</button>`;

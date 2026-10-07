@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from math import ceil
@@ -23,7 +23,7 @@ from .intelligence import (
     EvidenceDocument,
     InstrumentRiskAssessment,
 )
-from .portfolio import SecurityExposure
+from .portfolio import SecurityExposure, analyze_portfolio
 from .strategy import document_hash, normalize_document
 from .tbank import (
     TBankAccount,
@@ -1277,6 +1277,46 @@ class PortfolioStore:
                 return None
             return _sync_state(cast(dict[str, Any], fetched))
 
+    def reuse_snapshot_metadata(
+        self, user_id: UUID, *, job_run_id: UUID, bundle: BrokerObservationBundle,
+    ) -> BrokerObservationBundle:
+        """Restore held-instrument descriptions after restart without provider reads.
+
+        This is historical catalog evidence for observation, never renewed market
+        or execution authority. Its original retrieval time remains on the bundle.
+        """
+        known = {item.uid for item in bundle.metadata}
+        missing = sorted({position.instrument_uid for position in bundle.portfolio.positions
+                          if position.instrument_uid and position.instrument_uid not in known
+                          and position.instrument_type != "currency"})
+        if not missing:
+            return bundle
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            _require_observation_job(
+                cur, user_id, job_run_id,
+                account_id=bundle.account_id, environment=bundle.environment,
+            )
+            cur.execute(
+                "SELECT instrument_uid AS uid, name, ticker, isin, instrument_type, sector, "
+                "country_of_risk, for_qual_investor, figi, provider_retrieved_at "
+                "FROM instrument_catalog WHERE provider = 'tbank' "
+                "AND instrument_uid = ANY (%s)", (missing,),
+            )
+            rows = [dict(row) for row in cur.fetchall()]
+        if not rows:
+            return bundle
+        times = [row.pop("provider_retrieved_at") for row in rows]
+        metadata = (*bundle.metadata, *(TBankInstrumentMetadata(**row) for row in rows))
+        if bundle.metadata:
+            times.extend(source.retrieved_at for source in bundle.sources if source.id == "catalog")
+        sources = tuple(replace(source, retrieved_at=min(times), status="cached", methods=())
+                        if source.id == "catalog" else source for source in bundle.sources)
+        return replace(
+            bundle, metadata=metadata, sources=sources,
+            analysis=analyze_portfolio(bundle.portfolio, bundle.positions, metadata),
+        )
+
     def _save_snapshot_catalog(
         self,
         cur: Any,
@@ -1449,7 +1489,7 @@ class PortfolioStore:
             if exposure is not None and exposure.nav_percent is not None
             else None
         )
-        sector = info.sector if info else ""
+        sector = exposure.sector if exposure is not None else ""
         country_of_risk = info.country_of_risk if info else ""
         for_qual_investor = info.for_qual_investor if info else None
         return (
@@ -2141,6 +2181,7 @@ class PortfolioStore:
                 SELECT
                     id,
                     account_id,
+                    environment,
                     captured_at,
                     analysis_status,
                     nav_rub,
@@ -2161,6 +2202,18 @@ class PortfolioStore:
             snapshot = dict(cast(dict[str, Any], fetched))
             snapshot_id = cast(UUID, snapshot["id"])
             account_id = str(snapshot["account_id"])
+
+            # Quick NAV snapshots intentionally omit UsersService/GetInfo. Keep
+            # the last actual response and its own time within this account.
+            cur.execute(
+                "SELECT captured_at, evidence->'broker_user' AS document "
+                "FROM portfolio_snapshots WHERE user_id = %s AND account_id = %s "
+                "AND environment = %s AND captured_at <= %s "
+                "AND jsonb_typeof(evidence->'broker_user') = 'object' "
+                "ORDER BY captured_at DESC, created_at DESC, id DESC LIMIT 1",
+                (user_id, account_id, snapshot["environment"], snapshot["captured_at"]),
+            )
+            broker_user_source = cast(dict[str, Any] | None, cur.fetchone())
 
             cur.execute(
                 """
@@ -2329,12 +2382,13 @@ class PortfolioStore:
 
         evidence = snapshot.get("evidence")
         broker_user: dict[str, object] = {}
+        broker_user_as_of = None
         account: dict[str, object] = {}
+        if broker_user_source is not None:
+            broker_user = dict(broker_user_source["document"])
+            broker_user_as_of = broker_user_source["captured_at"]
         if isinstance(evidence, dict):
-            broker_raw = evidence.get("broker_user")
             account_raw = evidence.get("account")
-            if isinstance(broker_raw, dict):
-                broker_user = dict(cast(dict[str, object], broker_raw))
             if isinstance(account_raw, dict):
                 account = dict(cast(dict[str, object], account_raw))
 
@@ -2347,6 +2401,11 @@ class PortfolioStore:
             "rub_cash_unblocked": snapshot["rub_cash_unblocked"],
             "limits_loading_in_progress": snapshot["limits_loading_in_progress"],
             "broker_user": broker_user,
+            "broker_user_as_of": broker_user_as_of,
+            "broker_user_time_basis": "source_snapshot",
+            "broker_user_freshness": _freshness_status(
+                broker_user_as_of, now=datetime.now(UTC), max_age=PORTFOLIO_MAX_AGE,
+            ),
             "account": account,
             "holdings": holdings,
             "candidates": candidates,

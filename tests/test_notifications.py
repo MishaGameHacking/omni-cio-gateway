@@ -202,17 +202,23 @@ def test_digest_skipped_or_repeated_local_minute_has_one_delivery_boundary(
 
 def test_delivery_diagnostics_explain_ambiguity_without_promising_retry_or_receipt() -> None:
     unknown = delivery_error("email_result_unknown", "uncertain")
-    assert unknown and unknown["retryable"] is False and unknown["action_code"] == "check_inbox"
+    assert unknown is not None
+    assert unknown["retryable"] is False
+    assert unknown["action_code"] == "check_inbox"
     expired = delivery_error("push_subscription_expired", "failed")
-    assert expired and expired["action_code"] == "reconnect"
+    assert expired is not None
+    assert expired["action_code"] == "reconnect"
     backoff = delivery_error("push_rate_limited", "queued")
-    assert backoff and backoff["retryable"] is True
+    assert backoff is not None
+    assert backoff["retryable"] is True
     exhausted = delivery_error("push_rate_limited", "failed")
-    assert exhausted and exhausted["retryable"] is False
+    assert exhausted is not None
+    assert exhausted["retryable"] is False
     assert exhausted["action_code"] == "contact_support"
     assert delivery_error("push_provider_accepted", "accepted") is None
     safe = delivery_error("secret-provider-token", "failed")
-    assert safe and safe["code"] == "delivery_error_unknown"
+    assert safe is not None
+    assert safe["code"] == "delivery_error_unknown"
     assert "secret-provider-token" not in json.dumps(safe)
 
 

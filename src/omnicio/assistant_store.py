@@ -12,6 +12,8 @@ from .db import Database, live_execution_lock_key
 from .portfolio_store import SettingsVersionConflict
 from .workspace_store import WorkspaceNotFound
 
+_REQUEST_SQL = "SELECT * FROM assistant_requests WHERE user_id = %s AND id = %s"
+
 
 class AssistantQuotaExceeded(RuntimeError):
     """A durable per-user daily allowance has been exhausted."""
@@ -94,9 +96,11 @@ class AssistantStore:
             previous = cur.fetchone()
             if (previous and expected_version == 0 and previous["version"] == 1
                     and previous["content"] == content and previous["category"] == category):
-                return {key: str(previous[key]) if key == "id" else previous[key]
-                        for key in ("id", "content", "category", "origin", "version",
-                                    "created_at", "updated_at")}
+                return {"_changed": False, **{
+                    key: str(previous[key]) if key == "id" else previous[key]
+                    for key in ("id", "content", "category", "origin", "version",
+                                "created_at", "updated_at")
+                }}
             if expected_version != (previous["version"] if previous else 0):
                 raise SettingsVersionConflict("settings_version_conflict")
             if previous is None:
@@ -117,6 +121,7 @@ class AssistantStore:
             # or removed. The same user lock serializes this with finish().
             self._cancel_running(cur, user_id)
             result["id"] = str(result["id"])
+            result["_changed"] = True
             return result
 
     def delete_memory(self, user_id: UUID, memory_id: UUID, *, expected_version: int) -> bool:
@@ -280,8 +285,11 @@ class AssistantStore:
     def delete_conversation(self, user_id: UUID, conversation_id: UUID) -> bool:
         with self._transaction(user_id) as cur:
             cur.execute(
-                "UPDATE assistant_requests SET status = 'cancelled', finished_at = now() "
-                "WHERE user_id = %s AND conversation_id = %s AND status = 'running'",
+                "UPDATE assistant_requests SET "
+                "status = CASE WHEN status = 'running' THEN 'cancelled' ELSE status END, "
+                "finished_at = COALESCE(finished_at, now()), updated_at = now(), "
+                "reply_prefix = '', source_refs = '[]'::jsonb "
+                "WHERE user_id = %s AND conversation_id = %s",
                 (user_id, conversation_id),
             )
             cur.execute(
@@ -365,7 +373,7 @@ class AssistantStore:
     ) -> dict[str, Any]:
         with self._transaction(user_id) as cur:
             cur.execute(
-                "SELECT * FROM assistant_requests WHERE user_id = %s AND id = %s",
+                _REQUEST_SQL,
                 (user_id, request_id),
             )
             previous = cur.fetchone()
@@ -439,8 +447,7 @@ class AssistantStore:
 
     @classmethod
     def _read_request(cls, cur: Any, user_id: UUID, request_id: UUID) -> dict[str, Any]:
-        cur.execute("SELECT * FROM assistant_requests WHERE user_id = %s AND id = %s",
-                    (user_id, request_id))
+        cur.execute(_REQUEST_SQL, (user_id, request_id))
         request = cur.fetchone()
         if request is None or request["conversation_id"] is None:
             raise WorkspaceNotFound("assistant_request_not_found")
@@ -492,7 +499,7 @@ class AssistantStore:
     ) -> dict[str, Any]:
         with self._transaction(user_id) as cur:
             cur.execute(
-                "SELECT * FROM assistant_requests WHERE user_id = %s AND id = %s",
+                _REQUEST_SQL,
                 (user_id, request_id),
             )
             request = cur.fetchone()

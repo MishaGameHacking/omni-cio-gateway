@@ -6,7 +6,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -178,6 +178,8 @@ class MarketService:
 
     def acquire_stream(self, user_id: UUID) -> str:
         with self._cache_lock:
+            if self._closed:
+                raise MarketStreamLimit("market_stream_closed")
             leases = self._streams.setdefault(user_id, set())
             if len(leases) >= 2:
                 raise MarketStreamLimit("market_stream_limit")
@@ -202,13 +204,13 @@ class MarketService:
             self._trading.clear()
         self._metadata_pool.shutdown(wait=False, cancel_futures=True)
 
-    def _instrument_metadata(
-        self, user_id: UUID, connection: BrokerConnectionStatus, uid: str, *, wait: bool,
-    ) -> tuple[TBankInstrumentMetadata | None, str]:
+    def _metadata_future(
+        self, user_id: UUID, connection: BrokerConnectionStatus, uid: str,
+    ) -> Future[TBankInstrumentMetadata] | None:
         key = (user_id, connection, uid)
         with self._cache_lock:
             if self._closed:
-                return None, "unavailable"
+                return None
             entry = self._metadata.get(key)
             if entry is not None and entry[0] <= time.monotonic() and entry[1].done():
                 self._metadata.pop(key)
@@ -217,26 +219,34 @@ class MarketService:
                 # Bound both the worker count and waiting work, per owner and in total.
                 pending = [key for key, value in self._metadata.items() if not value[1].done()]
                 if len(pending) >= 200 or sum(key[0] == user_id for key in pending) >= 50:
-                    return None, "unavailable"
+                    return None
                 future = self._metadata_pool.submit(
                     self.broker.market_instrument_metadata, user_id, uid,
                 )
                 entry = (time.monotonic() + 60, future)
                 self._metadata[key] = entry
             self._metadata.move_to_end(key)
-            for oldest in list(self._metadata):
-                if len(self._metadata) <= 1024:
-                    break
-                if self._metadata[oldest][1].done():
-                    self._metadata.pop(oldest)
-        future = entry[1]
+            # Materialize completed keys before mutation; pending oldest tasks
+            # must not prevent eviction of later completed cache entries.
+            finished = [key for key, value in self._metadata.items() if value[1].done()]
+            for oldest in finished[:max(0, len(self._metadata) - 1024)]:
+                self._metadata.pop(oldest)
+        return entry[1]
+
+    def _instrument_metadata(
+        self, user_id: UUID, connection: BrokerConnectionStatus, uid: str, *, wait: bool,
+    ) -> tuple[TBankInstrumentMetadata | None, str]:
+        future = self._metadata_future(user_id, connection, uid)
+        if future is None:
+            return None, "unavailable"
         if not wait and not future.done():
             return None, "loading"
         try:
             result = future.result(timeout=10 if wait else 0)
         except TimeoutError:
             return None, "loading"
-        except TBankUnavailable:
+        except (TBankUnavailable, CancelledError):
+            key = (user_id, connection, uid)
             with self._cache_lock:
                 if key in self._metadata:
                     self._metadata[key] = (time.monotonic() + 5, future)
@@ -467,6 +477,9 @@ class MarketService:
         if self.broker.status(user_id) != connection:
             raise BrokerConnectionError("market_account_changed")
         observed = datetime.now(UTC)
+        history_status = "available" if market_candles else "empty"
+        if history_error:
+            history_status = "unavailable"
 
         return InstrumentMarketSnapshot(
             instrument_uid=instrument_uid,
@@ -489,9 +502,7 @@ class MarketService:
             price_currency=live.price_currency,
             cash_price=live.cash_price,
             cash_price_currency=live.cash_price_currency,
-            history_status=(
-                "unavailable" if history_error else "available" if market_candles else "empty"
-            ),
+            history_status=history_status,
             trading_status_status=live.trading_status_status,
             metadata_status=live.metadata_status,
             errors={**live.errors, "history": history_error},
@@ -602,23 +613,19 @@ def _required_market_price(value: str | None) -> str:
     return value
 
 
-def _instrument_live_state(
+def _quote_values(
     instrument_uid: str,
     *,
     observed: datetime,
     last_price: TBankLastPrice | None,
-    trading: TBankTradingStatus | None,
     live_after_seconds: int,
-    metadata: TBankInstrumentMetadata | None,
-) -> InstrumentLiveState:
+) -> tuple[str | None, datetime | None, int | None, str, str | None]:
     price = last_price
-    status = trading
-
     quote_time: datetime | None = None
     age_seconds: int | None = None
     quote_status = "missing"
     price_value: str | None = None
-    errors: dict[str, str | None] = {"quote": None, "metadata": None, "trading_status": None}
+    error = None
     if price is not None:
         try:
             if price.instrument_uid != instrument_uid or price.time.tzinfo is None:
@@ -633,7 +640,26 @@ def _instrument_live_state(
                 price_value = _required_market_price(price.price)
         except TBankUnavailable:
             quote_status, price_value = "unavailable", None
-            errors["quote"] = "source_unavailable"
+            error = "source_unavailable"
+    return price_value, quote_time, age_seconds, quote_status, error
+
+
+def _instrument_live_state(
+    instrument_uid: str,
+    *,
+    observed: datetime,
+    last_price: TBankLastPrice | None,
+    trading: TBankTradingStatus | None,
+    live_after_seconds: int,
+    metadata: TBankInstrumentMetadata | None,
+) -> InstrumentLiveState:
+    price_value, quote_time, age_seconds, quote_status, quote_error = _quote_values(
+        instrument_uid, observed=observed, last_price=last_price,
+        live_after_seconds=live_after_seconds,
+    )
+    errors: dict[str, str | None] = {
+        "quote": quote_error, "metadata": None, "trading_status": None,
+    }
 
     price_unit, currency, cash_price, cash_currency = "unknown", None, None, None
     if metadata is not None:
@@ -646,9 +672,12 @@ def _instrument_live_state(
         except TBankUnavailable:
             metadata = None
             errors["metadata"] = "source_unavailable"
-    if status is not None and status.instrument_uid != instrument_uid:
-        status = None
+    if trading is not None and trading.instrument_uid != instrument_uid:
+        trading = None
         errors["trading_status"] = "source_unavailable"
+    trading_status_status = "available" if trading is not None else "unavailable"
+    if trading is None:
+        trading = TBankTradingStatus(instrument_uid, "UNKNOWN", False, False, False, False, False)
 
     return InstrumentLiveState(
         instrument_uid=instrument_uid,
@@ -657,16 +686,16 @@ def _instrument_live_state(
         quote_time=quote_time.isoformat() if quote_time is not None else None,
         quote_age_seconds=age_seconds,
         quote_status=quote_status,
-        trading_status=status.trading_status if status is not None else "UNKNOWN",
-        api_trade_available=status.api_trade_available if status is not None else False,
-        limit_order_available=status.limit_order_available if status is not None else False,
-        market_order_available=status.market_order_available if status is not None else False,
+        trading_status=trading.trading_status,
+        api_trade_available=trading.api_trade_available,
+        limit_order_available=trading.limit_order_available,
+        market_order_available=trading.market_order_available,
         price_unit=price_unit,
         price_currency=currency,
         cash_price=cash_price,
         cash_price_currency=cash_currency,
         metadata_status="available" if metadata is not None else "unavailable",
-        trading_status_status="available" if status is not None else "unavailable",
+        trading_status_status=trading_status_status,
         errors=errors,
     )
 

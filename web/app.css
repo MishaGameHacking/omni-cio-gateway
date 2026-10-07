@@ -4564,8 +4564,9 @@ body.drawer-open {
 .route-dialog #dialog-content { padding-top: 20px; }
 .route-dialog::backdrop { background: var(--bg); }
 .update-banner { position: sticky; top: 0; z-index: 110; display: flex; justify-content: center; align-items: center; gap: 16px; padding: 12px max(18px, env(safe-area-inset-right)); background: var(--panel); border-bottom: 1px solid var(--line); }
+#dialog-update-banner { position: static; width: min(100%, 1060px); margin: 0 auto 16px; }
 .asset-table [data-table-quote] { min-width: 150px; }
-.asset-table [data-table-quote] .source-line { display: flex; align-items: flex-start; font-size: 10px; white-space: normal; max-width: 230px; margin-top: 5px; }
+.asset-table [data-table-quote] .source-line { display: flex; align-items: flex-start; font-size: var(--font-caption); white-space: normal; max-width: 230px; margin-top: 5px; }
 .asset-table [data-table-quote] .source-line > .icon { display: none; }
 .asset-table .fine-print { display: block; }
 .chart-comparison { fill: none; stroke-width: 2; stroke-dasharray: 5 4; }

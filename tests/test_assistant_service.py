@@ -19,6 +19,7 @@ from omnicio.assistant import (
     AssistantUnavailable,
     _Cancellation,
     investment_context,
+    portfolio_context,
     source_read,
     source_references,
     source_search,
@@ -329,7 +330,7 @@ def test_real_stream_protocol_accumulates_content_and_never_exposes_thinking(pro
     b'{"message":{"role":"assistant","content":"partial","tool_calls":[{}]},"done":true}\n',
     b"{invalid-json}\n",
     b"x" * 131073,
-])
+], ids=("truncated", "token_limit", "tool_call", "malformed", "oversized"))
 def test_stream_truncation_tools_malformed_or_oversized_data_is_not_a_complete_answer(
     raw: bytes,
 ) -> None:
@@ -359,7 +360,8 @@ def test_source_catalog_search_and_read_use_only_selected_real_facts() -> None:
                          "published_at": "2026-10-06T12:00:00Z"},
                         {"title": "Injected", "url": "https://private.example.invalid"}]}
     found = source_search(context, "Ставка")
-    assert found["scope"] == "selected_sources" and found["web_search"] is False
+    assert found["scope"] == "selected_sources"
+    assert found["web_search"] is False
     assert found["total"] == 1
     record = source_read(context, found["items"][0]["id"])
     assert record["content"]["title"] == "Ставка Банка России"
@@ -393,7 +395,8 @@ def test_service_stream_persists_real_prefix_and_finishes_once() -> None:
     assert prefixes[0] == "Реальная "
     assert events[-1]["event"] == "complete"
     assert events[-1]["data"]["result"]["reply"] == "Реальная часть"
-    assert system.store.finish.call_count == 1 and provider.call_count == 1
+    assert system.store.finish.call_count == 1
+    assert provider.call_count == 1
     assert system.store.update_stream.call_args.args[2] in prefixes
 
 
@@ -449,3 +452,130 @@ def test_completed_stream_replay_never_starts_provider_and_disabled_stream_is_lo
         with pytest.raises(AssistantNotConfigured, match="activation_disabled"):
             system.stream(owner, uuid4(), message="Вопрос", context=None,
                           request_id=uuid4(), expected_version=0)
+
+
+def test_closing_browser_stream_does_not_restart_or_discard_background_request() -> None:
+    system, owner = service(), uuid4()
+    started, released, saved = Event(), Event(), Event()
+
+    def delayed(**kwargs):
+        started.set()
+        assert released.wait(3)
+        yield {"result": {"reply": "Сохранённый ответ"}}
+
+    def finish(*args):
+        saved.set()
+        return args[-1]
+
+    system.store.finish.side_effect = finish
+    with patch.object(system.default_client, "stream", side_effect=delayed) as provider:
+        stream = system.stream(owner, uuid4(), message="Вопрос", context=None,
+                               request_id=uuid4(), expected_version=0)
+        assert next(stream)["event"] == "accepted"
+        assert started.wait(3)
+        stream.close()
+        released.set()
+        assert saved.wait(3)
+    assert provider.call_count == 1
+    assert system.store.finish.call_count == 1
+
+
+def test_shutdown_cancels_only_own_active_requests_and_closes_future_admission() -> None:
+    system, owner, request = service(), uuid4(), uuid4()
+    entered = Event()
+    system.store.read_request.return_value = {"status": "cancelled"}
+
+    def delayed(**kwargs):
+        entered.set()
+        assert kwargs["cancellation"].event.wait(3)
+        yield {"result": {"reply": "Must be discarded"}}
+
+    with patch.object(system.default_client, "stream", side_effect=delayed):
+        stream = system.stream(owner, uuid4(), message="Вопрос", context=None,
+                               request_id=request, expected_version=0)
+        assert entered.wait(3)
+        system.close()
+        events = list(stream)
+    system.store.cancel_request.assert_called_once_with(owner, request)
+    assert events[-1]["event"] == "cancelled"
+    system.store.finish.assert_not_called()
+    with pytest.raises(AssistantNotConfigured, match="shutting_down"):
+        system.stream(owner, uuid4(), message="Вопрос", context=None,
+                      request_id=uuid4(), expected_version=0)
+
+
+def test_memory_replay_and_new_request_after_settings_change_do_not_cancel_valid_work() -> None:
+    system, owner, memory, request = service(), uuid4(), uuid4(), uuid4()
+    control = _Cancellation()
+    system._active[(owner, request)] = control
+    system.store.save_memory.return_value = {"id": str(memory), "version": 1, "_changed": False}
+    replay = system.save_memory(owner, memory, "Кратко", "preference",
+                                 expected_version=0, confirmed=True)
+    assert "_changed" not in replay
+    assert not control.event.is_set()
+    system.store.save_memory.return_value = {"id": str(memory), "version": 2, "_changed": True}
+    system.store.read_request.return_value = {"status": "running"}
+    system.save_memory(owner, memory, "Подробно", "preference", expected_version=1, confirmed=True)
+    assert not control.event.is_set()
+    system.store.save_memory.return_value = {"id": str(memory), "version": 3, "_changed": True}
+    system.store.read_request.return_value = {"status": "cancelled"}
+    system.save_memory(owner, memory, "Кратко", "preference", expected_version=2, confirmed=True)
+    assert control.event.is_set()
+
+
+def test_current_valuation_coverage_and_original_payment_currency_survive_context_filter() -> None:
+    context = portfolio_context({
+        "overview": {"status": "stale", "nav_rub": "1000", "valuation_status": "complete",
+                     "sector_status": "partial", "valid_until": "2026-10-07T10:05:00Z"},
+        "income": {"status": "unavailable", "metric_coverage": {
+            "dividends_rub": {"status": "partial", "value_rub": None,
+                              "observed_rub": None, "reason": "fx_unavailable", "secret": "hidden"},
+        }, "native_payment_sums": {"USD": {"dividends": "12.5", "secret": "hidden"}}},
+    })
+    assert context["overview"]["status"] == "stale"
+    assert context["overview"]["sector_status"] == "partial"
+    assert context["income"]["metric_coverage"]["dividends_rub"]["value_rub"] is None
+    assert context["income"]["native_payment_sums"]["currencies"]["USD"]["dividends"] == "12.5"
+    assert "hidden" not in json.dumps(context)
+    validate_source_response("Получено 12,5 USD.", context)
+    with pytest.raises(AssistantUnavailable, match="evidence_unverified"):
+        validate_source_response("Получено 12,5 руб.", context)
+    validate_source_response("Ставка 15%.", {
+        "news": [{"title": "Ставка 15%", "url": "https://www.cbr.ru/press/1"}],
+    })
+
+
+def test_saved_sources_preserve_admitted_facts_after_current_context_changes() -> None:
+    system, owner, request = service(), uuid4(), uuid4()
+    current = {"overview": {"nav_rub": "1000", "observed_at": "2026-10-07T10:00:00Z"}}
+
+    def changed(**kwargs):
+        current["overview"]["nav_rub"] = "9999"
+        assert kwargs["context"]["overview"]["nav_rub"] == "1000"
+        return {"reply": "Стоимость: 1000 руб."}
+
+    with patch.object(system.default_client, "chat", side_effect=changed):
+        reply = system.chat(owner, uuid4(), message="Вопрос", context=current,
+                            request_id=request, expected_version=0)
+    source = reply["sources"][0]
+    assert source["content"]["nav_rub"] == "1000"
+    assert current["overview"]["nav_rub"] == "9999"
+    system.store.read_request.return_value = {"status": "completed", "sources": reply["sources"]}
+    saved = system.read_request_source(owner, request, source["id"])
+    assert saved["content"] == source["content"]
+    assert saved["immutable"] is True
+    assert saved["request_id"] == str(request)
+    with pytest.raises(WorkspaceNotFound):
+        system.read_request_source(owner, request, "missing")
+
+
+def test_oversized_source_catalog_is_rejected_before_quota_claim_or_provider_use() -> None:
+    system, owner = service(), uuid4()
+    context = {"overview": {"nav_rub": "1000"}, "_selection": {"scope": "x" * 10000},
+               "news": [{"title": f"News {number}", "url": f"https://www.cbr.ru/press/{number}"}
+                        for number in range(10)]}
+    with patch.object(system.default_client, "chat") as provider, pytest.raises(ValueError):
+        system.chat(owner, uuid4(), message="Вопрос", context=context,
+                     request_id=uuid4(), expected_version=0)
+    system.store.claim.assert_not_called()
+    provider.assert_not_called()

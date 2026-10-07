@@ -1360,6 +1360,7 @@ def research_assets_from_inputs(inputs: Mapping[str, Any]) -> list[ResearchAsset
     """Replay an owner-authorized archived document with no external I/O."""
     if inputs.get("schema_version") != 1 or inputs.get("engine_version") not in {
         "1.1.0",
+        "1.2.0",
         RESEARCH_ENGINE_VERSION,
     }:
         raise ValueError("research_replay_version_unsupported")

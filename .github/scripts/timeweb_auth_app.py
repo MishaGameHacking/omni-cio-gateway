@@ -1235,8 +1235,9 @@ def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
     if not isinstance(payload, dict):
         raise InfraError("Public auth config is not an object")
     release = payload.get("release")
+    expected_build = release_sha[:12]
     if release_sha and (
-        not isinstance(release, dict) or release.get("build") != release_sha[:12]
+        not isinstance(release, dict) or release.get("build") != expected_build
     ):
         raise InfraError("Public API build does not match the frontend release")
 

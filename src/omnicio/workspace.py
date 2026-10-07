@@ -682,17 +682,24 @@ def _portfolio_goal_amount(
     return current, observed, None
 
 
+def income_goal_start(goal: Mapping[str, Any]) -> datetime:
+    """The goal's inclusive Moscow calendar boundary, shared with ledger selection."""
+    return datetime.combine(
+        _date(goal["start_date"]), time.min, ZoneInfo(_MOSCOW_TIMEZONE),
+    ).astimezone(UTC)
+
+
 def _income_goal_amount(
     goal: Mapping[str, Any], operations: Sequence[Mapping[str, Any]],
     watermark: datetime | None, history_complete: bool, now: datetime,
 ) -> tuple[Decimal | None, datetime | None, str | None]:
     if watermark is None or watermark > now:
         return None, None, "history_incomplete"
-    begin = datetime.combine(_date(goal["start_date"]), time.min, ZoneInfo(_MOSCOW_TIMEZONE))
+    begin = income_goal_start(goal)
     if begin >= watermark:
         return None, None, "goal_period_not_observed"
     flow = cashflow_summary(
-        operations, from_at=begin.astimezone(UTC) - timedelta(microseconds=1),
+        operations, from_at=begin - timedelta(microseconds=1),
         to_at=watermark, complete=history_complete,
     )
     if flow["income"]["status"] != "available":
