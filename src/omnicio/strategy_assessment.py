@@ -1484,6 +1484,27 @@ def _rank_candidates(
     return rows, eligible
 
 
+def _bond_exposure_limits(
+    candidate: StrategyCandidateFacts,
+    data: Mapping[str, Any],
+    as_of: datetime,
+    *,
+    enforce_credit_permission: bool,
+) -> list[tuple[str, str, Decimal, Decimal]]:
+    """Keep rating, credit-category and explicit permission ceilings independent."""
+    fact = _known_fact(candidate, "rating", as_of)
+    notch = fact if isinstance(fact, str) and fact in RATING_LEVELS else "NR"
+    limits = [("rating", notch, Decimal(1), Decimal(data["rules"]["rating_caps"][notch]))]
+    if notch == "NR" or notch in RATING_LEVELS[10:24]:
+        credit_key = "max_unknown_percent" if notch == "NR" else "max_below_grade_percent"
+        cap = _amount(data["policy"][credit_key]) or _ZERO
+        limits.append(("credit", credit_key, Decimal(1), cap))
+    if (enforce_credit_permission and notch in RATING_LEVELS[10:24]
+            and not data["profile"]["allow_below_investment_grade"]):
+        limits.append(("credit", "below_grade_not_allowed", Decimal(1), _ZERO))
+    return limits
+
+
 def _candidate_exposure_limits(
     candidate: StrategyCandidateFacts,
     data: Mapping[str, Any],
@@ -1502,16 +1523,9 @@ def _candidate_exposure_limits(
         else:
             limits.extend((name, key, exposure, cap) for key, exposure in entries.items())
     if candidate.asset_class == "bonds":
-        fact = _known_fact(candidate, "rating", as_of)
-        notch = fact if isinstance(fact, str) and fact in RATING_LEVELS else "NR"
-        limits.append(("rating", notch, Decimal(1), Decimal(data["rules"]["rating_caps"][notch])))
-        if notch == "NR" or notch in RATING_LEVELS[10:24]:
-            credit_key = "max_unknown_percent" if notch == "NR" else "max_below_grade_percent"
-            cap = _amount(data["policy"][credit_key]) or _ZERO
-            limits.append(("credit", credit_key, Decimal(1), cap))
-        if (enforce_credit_permission and notch in RATING_LEVELS[10:24]
-                and not data["profile"]["allow_below_investment_grade"]):
-            limits.append(("credit", "below_grade_not_allowed", Decimal(1), _ZERO))
+        limits.extend(_bond_exposure_limits(
+            candidate, data, as_of, enforce_credit_permission=enforce_credit_permission,
+        ))
     return limits
 
 

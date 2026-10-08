@@ -56,11 +56,13 @@ def test_credentialed_provider_requests_never_follow_redirects(provider, status)
     response.msg = "redirect"
     with patch.object(urllib.request.HTTPSHandler, "https_open", return_value=response) as request:
         if provider == "broker":
+            broker_client = TBankInvestClient()
             with pytest.raises(TBankUnavailable):
-                TBankInvestClient().get_accounts("synthetic-credential-must-not-leak", "prod")
+                broker_client.get_accounts("synthetic-credential-must-not-leak", "prod")
         else:
+            identity_client = VKIDClient("123", "https://omnicio.ru/api/auth/vkid/callback")
             with pytest.raises(VKIDUnavailable):
-                VKIDClient("123", "https://omnicio.ru/api/auth/vkid/callback").exchange_code(
+                identity_client.exchange_code(
                     code="synthetic-code", device_id="device", code_verifier="v" * 64,
                     expected_state="state",
                 )

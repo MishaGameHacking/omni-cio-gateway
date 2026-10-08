@@ -16,6 +16,15 @@ MAX_RESPONSE_BYTES = 2_000_000
 TIMEWEB_HOST = "api.timeweb.cloud"
 
 
+def _safe_error_body(payload: object) -> io.BytesIO:
+    """Retain capacity codes without reflected request data or identifiers."""
+    code = payload.get("error_code", "") if isinstance(payload, dict) else ""
+    safe_error = {"error_code": code if isinstance(code, str) and code in {
+        "no_free_node", "servers_is_run_out_error",
+    } else "unknown"}
+    return io.BytesIO(json.dumps(safe_error).encode("utf-8"))
+
+
 def request_json(request: urllib.request.Request, *, timeout: int) -> dict[str, Any]:
     """Send once to the API origin; redirects never receive credentials or bodies."""
     parsed = urllib.parse.urlsplit(request.full_url)
@@ -38,18 +47,12 @@ def request_json(request: urllib.request.Request, *, timeout: int) -> dict[str, 
                 raise urllib.error.URLError("Timeweb API response is incomplete")
             try:
                 payload = json.loads(body) if body else {}
-            except (ValueError, UnicodeError):
+            except ValueError:
                 payload = None
             if not 200 <= response.status < 300:
-                # Never propagate reflected request data, messages or identifiers.
-                # Capacity codes remain available to the existing fallback policy.
-                code = payload.get("error_code", "") if isinstance(payload, dict) else ""
-                safe_error = {"error_code": code if isinstance(code, str) and code in {
-                    "no_free_node", "servers_is_run_out_error",
-                } else "unknown"}
                 raise urllib.error.HTTPError(
                     request.full_url, response.status, "Timeweb API request failed", Message(),
-                    io.BytesIO(json.dumps(safe_error).encode("utf-8")),
+                    _safe_error_body(payload),
                 )
             if not isinstance(payload, dict):
                 raise urllib.error.URLError("Timeweb API response is not a JSON object")

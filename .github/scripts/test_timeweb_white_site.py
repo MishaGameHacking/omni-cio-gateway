@@ -133,13 +133,12 @@ class TimewebTransportTests(unittest.TestCase):
         response.begin()
         connection = Mock()
         connection.getresponse.return_value = response
+        request = urllib.request.Request("https://api.timeweb.cloud/api/v1/servers")
         with patch.object(
             timeweb_http.http.client, "HTTPSConnection", return_value=connection,
         ):
             with self.assertRaisesRegex(urllib.error.URLError, "incomplete"):
-                timeweb_http.request_json(urllib.request.Request(
-                    "https://api.timeweb.cloud/api/v1/servers",
-                ), timeout=5)
+                timeweb_http.request_json(request, timeout=5)
             connection.request.assert_called_once()
 
     def test_unapproved_api_origin_is_rejected_before_opening_a_connection(self) -> None:
@@ -149,11 +148,12 @@ class TimewebTransportTests(unittest.TestCase):
             "https://api.timeweb.cloud@untrusted.example.test/api/v1/servers",
             "https://api.timeweb.cloud/api/v1/servers#fragment",
         ):
+            request = urllib.request.Request(url)
             with self.subTest(url=url), patch.object(
                 timeweb_http.http.client, "HTTPSConnection",
             ) as connect:
                 with self.assertRaises(urllib.error.URLError):
-                    timeweb_http.request_json(urllib.request.Request(url), timeout=5)
+                    timeweb_http.request_json(request, timeout=5)
                 connect.assert_not_called()
 
 

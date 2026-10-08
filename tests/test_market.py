@@ -966,14 +966,14 @@ def test_public_reference_never_reads_broker_and_releases_admission_after_failur
 def test_cbr_currency_feeds_reject_invalid_values_before_caching(value, feed):
     client = CBRClient()
     payload = _cbr_indicators_xml(effective_date="01.10.2026", usd=value, eur="95")
+    response = FakeXmlResponse(payload)
+    read = client.usd_rub_rate if feed == "usd" else client.latest_indicators
+    arguments = (date(2026, 10, 1),) if feed == "usd" else ()
     with (
-        patch("urllib.request.urlopen", return_value=FakeXmlResponse(payload)),
+        patch("urllib.request.urlopen", return_value=response),
         pytest.raises(CBRUnavailable),
     ):
-        if feed == "usd":
-            client.usd_rub_rate(date(2026, 10, 1))
-        else:
-            client.latest_indicators()
+        read(*arguments)
     assert not client._cached
     assert client._indicator_cached is None
 
@@ -990,21 +990,24 @@ def test_cbr_daily_reference_rejects_ambiguous_or_unbounded_responses(fault):
         payload = payload.replace(b"<ValCurs", b'<!DOCTYPE ValCurs [<!ENTITY x "90">]><ValCurs', 1)
     else:
         payload += b" " * 512_001
+    client, requested = CBRClient(), date(2026, 10, 1)
+    response = FakeXmlResponse(payload)
     with (
-        patch("urllib.request.urlopen", return_value=FakeXmlResponse(payload)),
+        patch("urllib.request.urlopen", return_value=response),
         pytest.raises(CBRUnavailable),
     ):
-        CBRClient().usd_rub_rate(date(2026, 10, 1))
+        client.usd_rub_rate(requested)
 
 
 def test_cbr_requested_date_rejects_future_rate_and_preserves_weekend_effective_date():
     client = CBRClient(cache_seconds=0)
+    requested = date(2026, 10, 3)
     with patch("urllib.request.urlopen", side_effect=[
         FakeXmlResponse(_cbr_xml(effective_date="05.10.2026", value="90")),
         FakeXmlResponse(_cbr_xml(effective_date="02.10.2026", value="90")),
     ]):
         with pytest.raises(CBRUnavailable, match="future rate"):
-            client.usd_rub_rate(date(2026, 10, 3))
+            client.usd_rub_rate(requested)
         # A prior effective date on a non-publication day remains valid.
         rate = client.usd_rub_rate(date(2026, 10, 4))
     assert rate.effective_date == date(2026, 10, 2)

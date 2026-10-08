@@ -746,6 +746,31 @@ def _accrue_distributions(
                     state.cost_basis[uid] = max(_ZERO, state.cost_basis.get(uid, _ZERO) - amount)
 
 
+def _apply_splits_after_entitlements(
+    state: _Simulation,
+    asset: ResearchAsset,
+    *,
+    start: datetime,
+    through: datetime,
+    inclusive: bool,
+) -> None:
+    # Closed trading sessions can contain multiple corporate events.
+    # Accrue each pre-split entitlement using the old unit count, then
+    # apply the split before any entitlement at the same timestamp.
+    splits = sorted(
+        (split for index, split in enumerate(asset.splits)
+         if start <= split.time
+         and (split.time <= through if inclusive else split.time < through)
+         and (asset.candidate.instrument_uid, index) not in state.applied_splits),
+        key=lambda split: split.time,
+    )
+    for split in splits:
+        _accrue_distributions(
+            state, asset, start=start, through=split.time, inclusive=False,
+        )
+        _apply_splits(state, (asset,), split.time - timedelta(microseconds=1), split.time)
+
+
 def _distributions(
     state: _Simulation,
     assets: Sequence[ResearchAsset],
@@ -756,21 +781,9 @@ def _distributions(
 ) -> None:
     for asset in assets:
         if state.chronological_actions:
-            # Closed trading sessions can contain multiple corporate events.
-            # Accrue each pre-split entitlement using the old unit count, then
-            # apply the split before any entitlement at the same timestamp.
-            splits = sorted(
-                (split for index, split in enumerate(asset.splits)
-                 if start <= split.time
-                 and (split.time <= through if inclusive else split.time < through)
-                 and (asset.candidate.instrument_uid, index) not in state.applied_splits),
-                key=lambda split: split.time,
+            _apply_splits_after_entitlements(
+                state, asset, start=start, through=through, inclusive=inclusive,
             )
-            for split in splits:
-                _accrue_distributions(
-                    state, asset, start=start, through=split.time, inclusive=False,
-                )
-                _apply_splits(state, (asset,), split.time - timedelta(microseconds=1), split.time)
         _accrue_distributions(state, asset, start=start, through=through, inclusive=inclusive)
     unpaid = []
     for when, amount, taxable in state.receivables:

@@ -73,22 +73,24 @@ class FakeResponse:
 @pytest.mark.parametrize("body", [b" " * 129, b'{"id":' + b'9' * 5000 + b'}'])
 def test_provider_body_is_bounded_and_malformed_json_fails_closed(body: bytes) -> None:
     limit = 128 if len(body) == 129 else 6000
+    client = TBankInvestClient()
     with (
         patch("omnicio.tbank._MAX_RESPONSE_BYTES", limit),
         patch("urllib.request.OpenerDirector.open", return_value=io.BytesIO(body)) as request,
         pytest.raises(TBankUnavailable),
     ):
-        TBankInvestClient().get_accounts("synthetic-test-credential", "prod")
+        client.get_accounts("synthetic-test-credential", "prod")
     request.assert_called_once()
 
 
 @pytest.mark.parametrize("character", ["\x00", "\x1f", "\x7f", "я", " "])
 def test_invalid_bearer_characters_fail_before_provider_io(character: str) -> None:
+    client = TBankInvestClient()
     with (
         patch("urllib.request.OpenerDirector.open") as request,
         pytest.raises(TBankTokenRejected),
     ):
-        TBankInvestClient().get_accounts("synthetic" + character + "test-credential", "prod")
+        client.get_accounts("synthetic" + character + "test-credential", "prod")
     request.assert_not_called()
 
 
@@ -1104,15 +1106,17 @@ def test_tbank_all_operation_quantities_reuse_bounded_protojson_integer(quantity
 
 def test_operation_history_cannot_attribute_another_accounts_operations_to_requested_account():
     now = datetime.now(UTC)
+    start = now - timedelta(days=1)
+    client = TBankInvestClient()
     body = {"items": [{"id": "operation", "date": now.isoformat(),
                        "brokerAccountId": "other-account"}]}
     with (
         patch.object(TBankInvestClient, "_post", return_value=body),
         pytest.raises(TBankUnavailable, match="different account"),
     ):
-        TBankInvestClient().get_operations_by_cursor(
+        client.get_operations_by_cursor(
             "synthetic-test-credential", "prod", "requested-account",
-            from_at=now - timedelta(days=1), to_at=now,
+            from_at=start, to_at=now,
         )
 
 
@@ -1757,11 +1761,12 @@ def test_account_evidence_is_discarded_after_credentials_change(operation, provi
 
     arguments = ({"from_at": datetime(2026, 1, 1, tzinfo=UTC), "to_at": datetime.now(UTC)}
                  if operation == "history_page" else {})
+    read_source = getattr(service, operation)
     with (
         patch.object(provider, provider_method, side_effect=replace_credential, create=True),
         pytest.raises(BrokerConnectionError, match="connection changed"),
     ):
-        getattr(service, operation)(user_id, **arguments)
+        read_source(user_id, **arguments)
 
 
 def test_broker_service_keeps_two_users_strictly_isolated() -> None:

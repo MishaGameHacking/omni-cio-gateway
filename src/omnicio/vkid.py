@@ -120,7 +120,7 @@ class VKIDClient:
             raise VKIDUnavailable(
                 f"VK ID unavailable: HTTP {exc.code}"
             ) from exc
-        except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
+        except (OSError, http.client.HTTPException) as exc:
             raise VKIDUnavailable(
                 f"VK ID unavailable: {type(exc).__name__}"
             ) from exc
