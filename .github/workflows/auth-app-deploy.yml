@@ -68,9 +68,9 @@ permissions:
   contents: read
 
 concurrency:
-  # PR validation must never block a production deployment. Production-triggered
-  # runs still share one lock so two releases cannot mutate the server at once.
-  group: auth-app-deploy-${{ github.event.pull_request.number || 'production' }}
+  # Replace older validation only within the same PR; isolate every non-PR run.
+  # The deploy job's shared SSH lock serializes production server mutations.
+  group: auth-app-deploy-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
