@@ -24,6 +24,49 @@ PAYOUT_IDENTITY_SQL = (
     "ELSE 'key:' || pe.provider_key END"
 )
 
+# Callers provide payout_scope(instrument_uid), keeping the receipt scan bounded to
+# their visible instruments. Equal observation times disprove safe deduplication;
+# they are not a provider batch ID or proof that the response was complete.
+PAYOUT_READ_CTES = f"""
+    payout_candidates AS (
+        SELECT pe.*, {PAYOUT_IDENTITY_SQL} AS anchor_key,
+            NULLIF(lower(btrim(pe.payload ->> 'dividend_type')), '') AS distribution_type
+        FROM payout_events pe
+        WHERE pe.instrument_uid IN (SELECT instrument_uid FROM payout_scope)
+    ), payout_ambiguous AS (
+        SELECT DISTINCT provider, instrument_uid, event_type, anchor_key
+        FROM (
+            SELECT pe.provider, pe.instrument_uid, pe.event_type, pe.anchor_key
+            FROM payout_candidates pe
+            JOIN source_retrievals sr ON sr.source_document_id = pe.source_document_id
+            WHERE left(pe.anchor_key, 9) = 'dividend:'
+            GROUP BY pe.provider, pe.instrument_uid, pe.event_type,
+                pe.anchor_key, sr.retrieved_at
+            HAVING count(DISTINCT pe.provider_key) > 1 OR count(DISTINCT pe.status) > 1
+                OR count(DISTINCT pe.distribution_type) > 1
+        ) co_observed
+    ), payout_observations AS (
+        SELECT pe.*, sd.source_url, sd.first_retrieved_at, retrieval.retrieved_at,
+            ambiguous.anchor_key IS NOT NULL AS identity_ambiguous,
+            CASE WHEN ambiguous.anchor_key IS NOT NULL THEN 'observation:' ||
+                    jsonb_build_array(pe.provider_key, pe.status, pe.distribution_type)::text
+                 ELSE pe.anchor_key END AS logical_key,
+            max(retrieval.retrieved_at) OVER (
+                PARTITION BY pe.provider, pe.instrument_uid, pe.event_type, pe.anchor_key
+            ) AS latest_positive_at
+        FROM payout_candidates pe
+        JOIN source_documents sd ON sd.id = pe.source_document_id
+        JOIN LATERAL (
+            SELECT COALESCE(max(sr.retrieved_at), sd.first_retrieved_at) AS retrieved_at
+            FROM source_retrievals sr WHERE sr.source_document_id = sd.id
+        ) retrieval ON true
+        LEFT JOIN payout_ambiguous ambiguous
+            ON ambiguous.provider = pe.provider
+            AND ambiguous.instrument_uid = pe.instrument_uid
+            AND ambiguous.event_type = pe.event_type AND ambiguous.anchor_key = pe.anchor_key
+    )
+"""
+
 
 def payout_source_sql(alias: str) -> str:
     """Compare payout facts without treating an equivalent timezone as a correction."""

@@ -3881,18 +3881,26 @@
     }
   };
   const eventSourceLabel = type => ({operation: T("Операция брокера"), payout: T("Календарь выплат"), risk: T("Оценка инструмента"), goal: T("Цель"), audit: T("Журнал аккаунта"), job: T("Сбор данных")})[type] || type || T("Серверный факт");
-  const eventSourceHTML = event => {
-    const source = event.source;
-    if (!source || typeof source !== "object") return `<p class="fine-print">${esc(typeof source === "string" ? source : T("Источник не указан"))}</p>`;
-    const rows = [[T("Источник"), eventSourceLabel(source.type)]];
-    if (source.instrument_uid) rows.push([T("Инструмент"), source.instrument_uid]);
+  const payoutIdentityUncertain = item => item?.identity_status === "ambiguous" || item?.supersession_reason === "identity_ambiguous";
+  const eventSourceValues = source => {
+    const rows = [];
     if (source.amount !== undefined) rows.push([T("Сумма операции"), money(source.amount, 2, source.currency || "")]);
     if (source.amount_per_security != null) rows.push([T("На одну бумагу"), money(source.amount_per_security, 2, source.currency || "", false)]);
     if (source.expected_at) rows.push([T("Плановая дата выплаты"), date(source.expected_at)]);
     if (source.due_date) rows.push([T("Плановая дата цели"), date(source.due_date)]);
     if (source.state || source.status) rows.push([T("Состояние источника"), source.state || source.status]);
+    return rows;
+  };
+  const eventSourceHTML = event => {
+    const source = event.source;
+    if (!source || typeof source !== "object") return `<p class="fine-print">${esc(typeof source === "string" ? source : T("Источник не указан"))}</p>`;
+    const rows = [[T("Источник"), eventSourceLabel(source.type)]];
+    if (source.instrument_uid) rows.push([T("Инструмент"), source.instrument_uid]);
+    const uncertain = source.type === "payout" && payoutIdentityUncertain(source);
+    if (!uncertain) rows.push(...eventSourceValues(source));
+    const notice = uncertain ? `<p class="notice warning">${H("payout.identity.note")}</p>` : "";
     const link = source.url ? `<p class="fine-print">${U.sourceLink(source.url, T("Открыть первоисточник"))}</p>` : "";
-    return infoRows(rows) + link;
+    return notice + infoRows(rows) + link;
   };
   const eventDestinationButton = destination => {
     if (!destination || !views.has(destination.view)) return "";
@@ -3900,6 +3908,11 @@
     if (destination.uid) label = T("Открыть инструмент");
     else if (destination.goal_id) label = T("Открыть цель");
     return button(label, "event-destination", {primary: true});
+  };
+  const showEventDetails = event => {
+    const uncertain = event.source?.type === "payout" && payoutIdentityUncertain(event.source);
+    const details = uncertain ? "" : `<p class="help-copy">${esc(event.detail || T("Подтверждённое событие вашего аккаунта."))}</p><p class="fine-print">${esc(date(event.occurred_at, true))} ${H("МСК")}</p>`;
+    openDialog(uncertain ? T("payout.identity.ambiguous") : event.title, `${details}${eventSourceHTML(event)}${eventDestinationButton(event.destination)}`);
   };
   const openEvent = async id => {
     if (enterRouteScreen("events", "detail", {event: id})) return;
@@ -3911,7 +3924,7 @@
       const event = await api(`/api/events/${id}`);
       if (generation !== state.generation || request !== state.eventRequest || !$("#workspace-dialog").open) return;
       state.eventDetail = event;
-      openDialog(event.title, `<p class="help-copy">${esc(event.detail || T("Подтверждённое событие вашего аккаунта."))}</p><p class="fine-print">${esc(date(event.occurred_at, true))} ${H("МСК")}</p>${eventSourceHTML(event)}${eventDestinationButton(event.destination)}`);
+      showEventDetails(event);
       if (!event.read_at) void markEvents([id]);
     } catch (error) {
       if (generation === state.generation && request === state.eventRequest && $("#workspace-dialog").open && !isCancelled(error)) openDialog(T("Событие недоступно"), `<p class="notice error">${esc(humanError(error))}</p>`);
@@ -7232,10 +7245,20 @@
     })}</div>`;
   }
   function renderAssetFinePrint(item) {
-    return `<p class="fine-print">${esc(item.event_type || T("Выплата"))} · ${esc(date(item.payment_date || item.effective_at))}</p>`;
+    const validDate = value => typeof value === "string" && Number.isFinite(Date.parse(value));
+    const uncertain = payoutIdentityUncertain(item);
+    let paymentDate = T("payout.date.unknown");
+    if (item.status === "paid" && validDate(item.actual_at)) {
+      paymentDate = `${T(uncertain ? "payout.date.source" : "payout.date.actual")}: ${date(item.actual_at)}`;
+    } else if (validDate(item.expected_at)) {
+      paymentDate = `${T("events.expected")}: ${date(item.expected_at)}`;
+    }
+    return `<p class="fine-print">${esc(item.event_type || T("Выплата"))} · ${esc(paymentDate)}${uncertain ? ` · ${H("payout.identity.unconfirmed")}` : ""}</p>`;
   }
   function renderAssetDetailsSummary2(details) {
-    return `<details><summary class="details-summary">${H("Подтверждённые события выплат")}</summary>${details.payouts.slice(0, 12).map(item => renderAssetFinePrint(item)).join("")}</details>`;
+    const uncertain = details.payouts.some(payoutIdentityUncertain);
+    const notice = uncertain ? `<p class="notice warning">${H("payout.identity.note")}</p>` : "";
+    return `<details data-asset-payouts><summary class="details-summary">${H(uncertain ? "payout.identity.ambiguous" : "Подтверждённые события выплат")}</summary>${notice}${details.payouts.slice(0, 12).map(item => renderAssetFinePrint(item)).join("")}</details>`;
   }
   function renderUpdateSaveStatusValue(slot) {
     if (slot.error.status === 409) {

@@ -979,6 +979,94 @@ async function visibleRefreshContracts() {
   state.requests.clear();
   console.log("PASS visible refresh: initial account entry, navigation deadlines, ongoing polling, draft preservation and public/hidden boundaries");
 }
+async function payoutDisplayContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const context = vm.createContext({window: {}, Intl, URL, URLSearchParams});
+  vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
+  vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
+  const ui = context.window.OmniUI, i18n = context.window.OMNICIO_I18N;
+  const details = serverContracts.payout_visualization;
+  const payouts = Object.fromEntries(details.payouts.map(item => [item.provider_key, item]));
+  const original = JSON.stringify(details), dialogs = [], receipts = [];
+  const state = {generation: 1, eventRequest: 1};
+  let activeEvent;
+  Object.assign(context, {U: ui, T: i18n.t, H: i18n.html, esc: ui.escape, date: ui.date,
+    money: ui.money, infoRows: ui.infoRows, button: ui.button, state,
+    views: new Set(["asset", "events", "goals"]), $: () => ({open: true}),
+    enterRouteScreen: () => false, requireUser: () => true, api: async () => activeEvent,
+    openDialog: (title, html) => dialogs.push({title, html}), markEvents: ids => receipts.push(...ids),
+    isCancelled: () => false, humanError: error => error.message});
+  const source = app.slice(app.indexOf("  const eventSourceLabel ="), app.indexOf("  const openNews ="))
+    + app.slice(app.indexOf("  function renderAssetFinePrint("), app.indexOf("  function renderUpdateSaveStatusValue("));
+  vm.runInContext(source + "\nglobalThis.row=renderAssetFinePrint; globalThis.section=renderAssetDetailsSummary2; globalThis.open=openEvent; globalThis.sourceHTML=eventSourceHTML;", context);
+  assert.ok(payouts.scheduled.expected_at && payouts.paid.actual_at && payouts.record_only.record_at);
+  assert.equal(payouts.ambiguous_scheduled.identity_status, "ambiguous", "The actual serializer exposes the disputed source identity");
+  assert.equal(payouts.ambiguous_scheduled.identity_reason, "co_observed_anchor_collision");
+  assert.ok(!Object.hasOwn(payouts.scheduled, "identity_status"), "Unambiguous legacy rows retain their existing DTO");
+  assert.ok(!Object.hasOwn(payouts.scheduled, "payment_date") && !Object.hasOwn(payouts.scheduled, "effective_at"), "The browser must use the real payout date fields");
+  for (const locale of ["ru", "en"]) {
+    ui.setLocale(locale);
+    const planned = context.row(payouts.scheduled), paid = context.row(payouts.paid);
+    assert.ok(planned.includes(ui.escape(ui.date(payouts.scheduled.expected_at))), "The scheduled payout displays the expected date emitted by the actual HTTP route");
+    assert.ok(planned.includes(ui.escape(i18n.t("events.expected"))));
+    assert.ok(!planned.includes(ui.escape(ui.date(payouts.scheduled.actual_at))), "A non-paid source cannot turn an actual_at field into a payment confirmation");
+    assert.ok(paid.includes(ui.escape(ui.date(payouts.paid.actual_at))) && paid.includes(ui.escape(i18n.t("payout.date.actual"))), "Explicit paid status uses and labels its actual payment date");
+    assert.ok(!paid.includes(ui.escape(ui.date(payouts.paid.expected_at))), "The actual payment date takes precedence over the old schedule");
+    const fallback = context.row(payouts.paid_expected);
+    assert.ok(fallback.includes(ui.escape(ui.date(payouts.paid_expected.expected_at))) && fallback.includes(ui.escape(i18n.t("events.expected"))), "A missing actual date may only retain an explicitly planned date");
+    for (const key of ["record_only", "undated"]) {
+      const html = context.row(payouts[key]);
+      assert.ok(html.includes(ui.escape(i18n.t("payout.date.unknown"))), "The UI says when the payment date is unconfirmed");
+      for (const value of [payouts[key].record_at, payouts[key].announced_at].filter(Boolean)) assert.ok(!html.includes(ui.escape(ui.date(value))), "Record and announcement dates are never shown as payment dates");
+    }
+    for (const value of [undefined, null, "", false, 0, "invalid-time"]) {
+      assert.ok(context.row({...payouts.paid, actual_at: value, expected_at: value}).includes(ui.escape(i18n.t("payout.date.unknown"))), "Malformed or missing date fields remain unknown");
+    }
+    const normal = context.section({payouts: [payouts.scheduled, payouts.paid]});
+    assert.ok(normal.includes(i18n.html("Подтверждённые события выплат")), "Ordinary source records preserve their existing section");
+    const ambiguous = context.section(details);
+    assert.ok(ambiguous.includes(i18n.html("payout.identity.ambiguous")) && ambiguous.includes(i18n.html("payout.identity.note")));
+    assert.ok(!ambiguous.includes(i18n.html("Подтверждённые события выплат")), "A disputed source group is never labelled confirmed");
+    const disputedPaid = context.row(payouts.ambiguous_paid);
+    assert.ok(disputedPaid.includes(ui.escape(ui.date(payouts.ambiguous_paid.actual_at))) && disputedPaid.includes(i18n.html("payout.date.source")));
+    assert.ok(disputedPaid.includes(i18n.html("payout.identity.unconfirmed")) && !disputedPaid.includes(i18n.html("payout.date.actual")), "A disputed paid record is labelled as a source claim, not a confirmed payment");
+    for (const [key, label] of [["scheduled", "asset.dividend"], ["record_only", "asset.coupon"], ["undated", "asset.bond_event"]]) {
+      assert.ok(context.row(payouts[key]).startsWith(`<p class="fine-print">${i18n.html(label)} · `), "The real payout type has a localized label in both languages");
+      assert.notEqual(i18n.t(label), label);
+    }
+    const unsafe = '<img src=x onerror="alert(1)">';
+    for (const type of [undefined, null, "unknown_source_type", "constructor", "__proto__", unsafe]) {
+      const html = context.row({...payouts.scheduled, event_type: type});
+      assert.ok(html.startsWith(`<p class="fine-print">${i18n.html("Выплата")} · `), "Unknown and unsafe provider type codes have a neutral translated label");
+      if (type) assert.ok(!html.includes(ui.escape(type)) && !html.includes(type), "Raw internal or untrusted type codes are not displayed");
+    }
+    for (const [key, event] of Object.entries(serverContracts.payout_event_cases)) {
+      activeEvent = event;
+      await context.open(event.id);
+      const dialog = dialogs.at(-1);
+      assert.strictEqual(state.eventDetail, event, "Presentation preserves the original event and destination");
+      if (key === "normal") {
+        assert.equal(dialog.title, event.title);
+        assert.ok(dialog.html.includes(ui.escape(event.detail)) && dialog.html.includes(ui.escape(ui.date(event.source.expected_at))));
+        assert.ok(dialog.html.includes(ui.escape(ui.money(event.source.amount_per_security, 2, event.source.currency, false))), "An undisputed source keeps its original amount");
+      } else {
+        assert.equal(dialog.title, i18n.t("payout.identity.ambiguous"));
+        assert.ok(dialog.html.includes(i18n.html("payout.identity.note")), "Old direct links and the new warning explain the same source uncertainty");
+        assert.ok(!dialog.html.includes(ui.escape(event.title)) && !dialog.html.includes(ui.escape(event.detail)) && !dialog.html.includes("999.19"), "Superseded financial claims cannot survive in the old title or description");
+        assert.ok(!dialog.html.includes(ui.escape(ui.date(event.occurred_at))) && !dialog.html.includes(ui.escape(ui.date(event.occurred_at, true))), "The old calendar event time cannot look like a confirmed payment date");
+        if (event.source.expected_at) assert.ok(!dialog.html.includes(ui.escape(ui.date(event.source.expected_at))) && !dialog.html.includes(ui.escape(ui.money(event.source.amount_per_security, 2, event.source.currency, false))));
+      }
+      assert.ok(dialog.html.includes("synthetic-a") && dialog.html.includes("event-destination"), "Source identity and the instrument path remain available");
+      assert.ok(!dialog.html.includes("undefined") && !dialog.html.includes("NaN"));
+    }
+    for (const key of ["payout.date.actual", "payout.date.source", "payout.date.unknown", "payout.identity.ambiguous", "payout.identity.note", "payout.identity.unconfirmed"]) assert.notEqual(i18n.t(key), key, "Each new state has authored text in both languages");
+  }
+  activeEvent = {...serverContracts.payout_event_cases.superseded, read_at: null};
+  await context.open(activeEvent.id);
+  assert.deepEqual(receipts, [activeEvent.id], "Opening an uncertainty warning preserves the existing read receipt flow");
+  assert.equal(JSON.stringify(details), original, "Rendering does not rewrite source evidence");
+  console.log("PASS payout display: real private DTO, actual/planned/unknown dates, no record-date substitution, ambiguous source labels and safe historical event links");
+}
 async function newsMonitoringContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const context = vm.createContext({window: {}, Intl, console, URLSearchParams});
@@ -2734,6 +2822,7 @@ const runBrowser = async base => {
       await exerciseCanonicalNavigation({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseIndependentPageLoads({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseAssetEnrichment({send, round, base, wait, evaluate, checkLayout});
+      await exercisePayoutDisplay({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
       await exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseQuotePrecision({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
       await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
@@ -2786,6 +2875,7 @@ const runBrowser = async base => {
 (async () => {
   try {
     displayContracts();
+    await payoutDisplayContracts();
     await ledgerPaginationContracts();
     await searchAndAssetPaginationContracts();
     await visibleRefreshContracts();
@@ -3226,7 +3316,7 @@ async function serveTestPortfolioInstruments({
       captured_at: stamp
     },
     sources: [],
-    payouts: [],
+    payouts: fixture.assetPayouts || [],
     history: []
   });
 }
@@ -4595,6 +4685,47 @@ async function exerciseIndependentPageLoads({send, configureViewport, round, bas
   assert.equal(await evaluate("location.hash"), "#account/settings/support");
   await checkLayout(`independent-support-${round}`);
   console.log(`PASS independent reads round ${round}: asset, search, article and support become usable before unrelated responses`);
+}
+async function exercisePayoutDisplay({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot}) {
+  await configureViewport(320);
+  const locale = round === 1 ? "ru" : "en";
+  const key = `signed-payout-display-${round}`, fixture = makeFixture("signed");
+  fixture.prefs.document.locale = locale;
+  fixture.enrichmentName = "Payout contract company";
+  fixture.events = Object.values(clone(serverContracts.payout_event_cases));
+  fixtures.set(key, fixture);
+  const target = `${base}?case=${key}`;
+  for (const disputed of [false, true]) {
+    fixture.assetPayouts = clone(serverContracts.payout_visualization.payouts.filter(item => (item.identity_status === "ambiguous") === disputed));
+    await send("Page.navigate", {url: `${target}#account/asset?uid=synthetic-a`});
+    await wait(`document.documentElement.lang === ${JSON.stringify(locale)} && document.querySelector('#view-asset h1')?.textContent === 'Payout contract company' && document.querySelector('#view-asset [data-asset-payouts]') && !document.querySelector('#view-asset .loading-panel')`, "The asset receives actual payout source records");
+    await click("#view-asset [data-asset-payouts] summary");
+    await wait('document.querySelector("#view-asset [data-asset-payouts]").open', "Payment records have a visible disclosure path");
+    const text = await evaluate('document.querySelector("#view-asset [data-asset-payouts]").textContent');
+    const labels = disputed ? ["payout.identity.ambiguous", "payout.identity.note", "payout.identity.unconfirmed", "payout.date.source"] : ["Подтверждённые события выплат", "events.expected", "payout.date.actual", "payout.date.unknown"];
+    for (const label of labels) assert.ok(text.includes(await evaluate(`window.OMNICIO_I18N.t(${JSON.stringify(label)})`)), "The real disclosure contains its labelled source status: " + label);
+    if (disputed) assert.ok(!text.includes(await evaluate('window.OMNICIO_I18N.t("Подтверждённые события выплат")')));
+    const dated = fixture.assetPayouts.find(item => item.status === "paid" && item.actual_at);
+    assert.ok(text.includes(await evaluate(`window.OmniUI.date(${JSON.stringify(dated.actual_at)})`)), "The actual payment date survives the real source read and DOM rendering");
+    assert.ok(!text.includes(await evaluate(`window.OmniUI.date(${JSON.stringify(dated.record_at)})`)), "The disclosure does not substitute the record date");
+    await evaluate('document.querySelector("#view-asset [data-asset-payouts]").scrollIntoView({block:"start"})');
+    await checkLayout(`payout-source-${disputed ? "ambiguous" : "normal"}-${locale}-320`);
+    await screenshot(`payout-source-${disputed ? "ambiguous" : "normal"}-${locale}-320.png`);
+  }
+  for (const kind of ["superseded", "ambiguous"]) {
+    const event = serverContracts.payout_event_cases[kind];
+    await send("Page.navigate", {url: `${target}#account/events/detail?event=${event.id}`});
+    await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#dialog-title").textContent === window.OMNICIO_I18N.t("payout.identity.ambiguous") && !document.querySelector("#dialog-content .loading-panel")', "The old event bookmark resolves to the uncertainty notice");
+    const text = await evaluate('document.querySelector("#dialog-content").textContent');
+    assert.ok(text.includes(await evaluate('window.OMNICIO_I18N.t("payout.identity.note")')) && text.includes("synthetic-a"));
+    assert.ok(!text.includes(event.detail) && !text.includes("999.19"), "A historic direct link cannot display superseded financial claims");
+    assert.ok(!text.includes(await evaluate(`window.OmniUI.date(${JSON.stringify(event.occurred_at)}, true)`)));
+    await checkLayout(`payout-event-${kind}-${locale}-320`);
+    await screenshot(`payout-event-${kind}-${locale}-320.png`);
+  }
+  await click('#dialog-content [data-action="event-destination"]');
+  await wait('location.hash === "#account/asset?uid=synthetic-a" && document.querySelector("#view-asset [data-asset-payouts]")', "The warning retains its real instrument navigation");
+  console.log(`PASS payout source display round ${round}: real DTO dates, visible uncertain records and safe historical event links at 320px in ${locale}`);
 }
 async function exerciseAssetEnrichment({send, round, base, wait, evaluate, checkLayout}) {
   const key = `signed-late-asset-${round}`;

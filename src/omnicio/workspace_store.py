@@ -22,7 +22,7 @@ from .db import Database, live_execution_lock_key
 from .freshness import PORTFOLIO_MAX_AGE
 from .goal_planning import goal_forecast, goal_plan_fields, normalize_goal_plan
 from .intelligence import ISSUER_NEWS_MAX_AGE
-from .payouts import PAYOUT_IDENTITY_SQL, payout_source_sql, visible_event_sql
+from .payouts import PAYOUT_READ_CTES, payout_source_sql, visible_event_sql
 from .portfolio_store import SettingsVersionConflict
 from .workspace import (
     CATEGORIES,
@@ -1128,19 +1128,14 @@ class WorkspaceStore:
     def _payout_events(self, cur: Any, user_id: UUID, snapshot_id: UUID, now: datetime) -> None:
         cur.execute(
             f"""
-            WITH identified AS (
+            WITH payout_scope AS (
+                SELECT DISTINCT p.instrument_uid FROM portfolio_snapshot_positions p
+                WHERE p.user_id = %s AND p.snapshot_id = %s
+            ), {PAYOUT_READ_CTES}, identified AS (
                 SELECT pe.id, pe.provider, pe.instrument_uid, pe.event_type, pe.provider_key,
-                    pe.status, pe.expected_at, pe.amount, pe.currency, sd.source_url,
-                    {PAYOUT_IDENTITY_SQL} AS logical_key, retrieval.retrieved_at
-                FROM payout_events pe
-                JOIN source_documents sd ON sd.id = pe.source_document_id
-                JOIN LATERAL (
-                    SELECT COALESCE(max(sr.retrieved_at), sd.first_retrieved_at) AS retrieved_at
-                    FROM source_retrievals sr WHERE sr.source_document_id = sd.id
-                ) retrieval ON true
-                WHERE EXISTS (SELECT 1 FROM portfolio_snapshot_positions p
-                    WHERE p.user_id = %s AND p.snapshot_id = %s
-                    AND p.instrument_uid = pe.instrument_uid)
+                    pe.status, pe.expected_at, pe.amount, pe.currency, pe.source_url,
+                    pe.anchor_key AS logical_key, pe.retrieved_at, pe.identity_ambiguous
+                FROM payout_observations pe
             ), latest AS (
                 SELECT DISTINCT ON (provider, instrument_uid, event_type, logical_key) *
                 FROM identified
@@ -1148,20 +1143,21 @@ class WorkspaceStore:
                     retrieved_at DESC, id DESC
             ), aliases AS (
                 SELECT e.id, e.revision, pe.provider, pe.instrument_uid, pe.event_type,
-                    {PAYOUT_IDENTITY_SQL} AS logical_key,
+                    pe.anchor_key AS logical_key,
                     e.source ->> 'superseded_by' AS superseded_by,
-                    pe.status, pe.expected_at, pe.amount, pe.currency, sd.source_url
+                    e.source ->> 'supersession_reason' AS supersession_reason,
+                    pe.status, pe.expected_at, pe.amount, pe.currency, pe.source_url
                 FROM workspace_events e
-                JOIN payout_events pe ON pe.id = CASE
+                JOIN payout_observations pe ON pe.id = CASE
                     WHEN e.source ->> 'id' ~ '^[0-9]{{1,18}}$'
                     THEN (e.source ->> 'id')::bigint END
-                JOIN source_documents sd ON sd.id = pe.source_document_id
                 WHERE e.user_id = %s AND e.kind = 'payout_calendar'
                     AND e.source ->> 'type' = 'payout'
                     AND e.source ->> 'instrument_uid' = pe.instrument_uid
             ), current_events AS (
                 SELECT latest.*, canonical.id AS existing_event_id,
-                    canonical.id IS NOT NULL AND
+                    warning.id AS existing_warning_id,
+                    NOT latest.identity_ambiguous AND canonical.id IS NOT NULL AND
                     ROW(latest.status, latest.expected_at, latest.amount,
                         latest.currency, latest.source_url) IS DISTINCT FROM
                     ROW(canonical.status, canonical.expected_at, canonical.amount,
@@ -1170,11 +1166,16 @@ class WorkspaceStore:
                         WHERE (a.provider, a.instrument_uid, a.event_type, a.logical_key) =
                             (latest.provider, latest.instrument_uid,
                              latest.event_type, latest.logical_key)) AS alias_ids,
-                    EXISTS (SELECT 1 FROM aliases a WHERE a.id <> canonical.id
-                        AND a.superseded_by IS DISTINCT FROM canonical.id
-                        AND (a.provider, a.instrument_uid, a.event_type, a.logical_key) =
+                    EXISTS (SELECT 1 FROM aliases a
+                        WHERE (a.provider, a.instrument_uid, a.event_type, a.logical_key) =
                             (latest.provider, latest.instrument_uid,
-                             latest.event_type, latest.logical_key)) AS needs_supersession
+                             latest.event_type, latest.logical_key)
+                        AND CASE WHEN latest.identity_ambiguous THEN
+                            warning.id IS NULL OR a.superseded_by IS DISTINCT FROM warning.id
+                            OR a.supersession_reason IS DISTINCT FROM 'identity_ambiguous'
+                        ELSE a.id <> canonical.id
+                            AND a.superseded_by IS DISTINCT FROM canonical.id END
+                    ) AS needs_supersession
                 FROM latest
                 LEFT JOIN LATERAL (
                     SELECT a.* FROM aliases a
@@ -1190,13 +1191,22 @@ class WorkspaceStore:
                             (a.provider, a.instrument_uid, a.event_type, a.logical_key)) DESC,
                         a.revision DESC, a.id LIMIT 1
                 ) canonical ON true
+                LEFT JOIN workspace_events warning ON warning.user_id = %s
+                    AND warning.kind = 'payout_identity_ambiguous'
+                    AND warning.source ->> 'type' = 'payout'
+                    AND warning.source ->> 'provider' = latest.provider
+                    AND warning.source ->> 'instrument_uid' = latest.instrument_uid
+                    AND warning.source ->> 'event_type' = latest.event_type
+                    AND warning.source ->> 'anchor_key' = latest.logical_key
             )
             SELECT * FROM current_events
-            WHERE expected_at >= %s OR projection_changed OR needs_supersession
-            ORDER BY projection_changed DESC, needs_supersession DESC,
-                expected_at NULLS LAST, id LIMIT 200
+            WHERE (identity_ambiguous AND (existing_warning_id IS NULL OR needs_supersession))
+                OR (NOT identity_ambiguous AND
+                    (expected_at >= %s OR projection_changed OR needs_supersession))
+            ORDER BY identity_ambiguous DESC, projection_changed DESC, needs_supersession DESC,
+                existing_event_id IS NULL DESC, expected_at NULLS LAST, id LIMIT 200
             """,
-            (user_id, snapshot_id, user_id, now - timedelta(days=7)),
+            (user_id, snapshot_id, user_id, user_id, now - timedelta(days=7)),
         )
         labels = {
             "coupon": "Купон по расписанию",
@@ -1204,6 +1214,9 @@ class WorkspaceStore:
             "bond_event": "Событие облигации",
         }
         for row in cur.fetchall():
+            if row["identity_ambiguous"]:
+                self._payout_identity_warning(cur, user_id, row)
+                continue
             canonical_id = row["existing_event_id"] or event_id(
                 "payout_calendar",
                 [row["provider"], row["instrument_uid"], row["event_type"], row["logical_key"]],
@@ -1243,6 +1256,33 @@ class WorkspaceStore:
                     "url": row["source_url"],
                 },
                 existing_payout_id=canonical_id,
+            )
+
+    def _payout_identity_warning(self, cur: Any, user_id: UUID, row: Mapping[str, Any]) -> None:
+        identity = [row["provider"], row["instrument_uid"], row["event_type"], row["logical_key"]]
+        warning_id = event_id("payout_identity_ambiguous", identity)
+        self._insert_event(
+            cur, user_id, identity=identity, category="payments", kind="payout_identity_ambiguous",
+            title="Данные о выплатах требуют уточнения", severity="warning", target="income",
+            occurred_at=row["retrieved_at"],
+            detail="Источник содержит несколько записей с совпадающими признаками. "
+                   "Условия выплаты требуют уточнения; эти сведения не подтверждают доход "
+                   "или зачисление на счёт.",
+            source={"type": "payout", "provider": row["provider"],
+                    "instrument_uid": row["instrument_uid"], "event_type": row["event_type"],
+                    "anchor_key": row["logical_key"], "identity_status": "ambiguous",
+                    "identity_reason": "co_observed_anchor_collision", "url": row["source_url"]},
+        )
+        if row["alias_ids"]:
+            # Retire the financial assertion, not its identity or historical delivery proof.
+            cur.execute(
+                "UPDATE workspace_events SET source = source || jsonb_build_object("
+                "'superseded_by', %s::text, 'supersession_reason', 'identity_ambiguous') "
+                "WHERE user_id = %s AND id = ANY (%s) AND kind = 'payout_calendar' "
+                "AND source ->> 'type' = 'payout' AND "
+                "(source ->> 'superseded_by' IS DISTINCT FROM %s "
+                "OR source ->> 'supersession_reason' IS DISTINCT FROM 'identity_ambiguous')",
+                (warning_id, user_id, row["alias_ids"], warning_id),
             )
 
     @staticmethod

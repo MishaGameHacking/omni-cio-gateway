@@ -23,7 +23,7 @@ from .intelligence import (
     EvidenceDocument,
     InstrumentRiskAssessment,
 )
-from .payouts import PAYOUT_IDENTITY_SQL
+from .payouts import PAYOUT_READ_CTES
 from .portfolio import SecurityExposure, analyze_portfolio
 from .strategy import document_hash, normalize_document
 from .tbank import (
@@ -2158,11 +2158,15 @@ class PortfolioStore:
 
             cur.execute(
                 f"""
+                WITH payout_scope AS (
+                    SELECT unnest(%s::text[]) AS instrument_uid
+                ), {PAYOUT_READ_CTES}
                 SELECT DISTINCT ON (
                     pe.provider,
                     pe.instrument_uid,
                     pe.event_type,
-                    {PAYOUT_IDENTITY_SQL}
+                    pe.anchor_key,
+                    pe.logical_key
                 )
                     pe.provider,
                     pe.instrument_uid,
@@ -2175,29 +2179,29 @@ class PortfolioStore:
                     pe.amount,
                     pe.currency,
                     pe.status,
-                    sd.source_url,
-                    sd.first_retrieved_at,
-                    retrieval.retrieved_at
-                FROM payout_events AS pe
-                JOIN source_documents AS sd
-                  ON sd.id = pe.source_document_id
-                JOIN LATERAL (
-                    SELECT COALESCE(max(sr.retrieved_at), sd.first_retrieved_at) AS retrieved_at
-                    FROM source_retrievals sr WHERE sr.source_document_id = sd.id
-                ) AS retrieval ON true
-                WHERE pe.instrument_uid = ANY (%s)
+                    pe.source_url,
+                    pe.first_retrieved_at,
+                    pe.retrieved_at,
+                    pe.identity_ambiguous
+                FROM payout_observations AS pe
+                WHERE NOT pe.identity_ambiguous OR pe.retrieved_at = pe.latest_positive_at
                 ORDER BY
                     pe.provider,
                     pe.instrument_uid,
                     pe.event_type,
-                    {PAYOUT_IDENTITY_SQL},
-                    retrieval.retrieved_at DESC,
+                    pe.anchor_key,
+                    pe.logical_key,
+                    pe.retrieved_at DESC,
                     pe.id DESC
                 LIMIT 100
                 """,
                 (subjects,),
             )
             payouts = [dict(row) for row in cur.fetchall()]
+            for payout in payouts:
+                if payout.pop("identity_ambiguous"):
+                    payout.update(identity_status="ambiguous",
+                                  identity_reason="co_observed_anchor_collision")
 
             cur.execute(
                 """
