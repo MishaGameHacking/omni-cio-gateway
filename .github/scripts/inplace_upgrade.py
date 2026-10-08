@@ -14,12 +14,14 @@ import os
 import pathlib
 import re
 import stat
+import sys
 import tomllib
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
 MODE = "single_existing_database"
+RELEASE_SHA_PATTERN = r"[0-9a-f]{40}"
 RECEIPT_PATH = pathlib.Path("/var/lib/omnicio-upgrade/1.3.0.json")
 RELEASE_ROOT = pathlib.Path("/opt/omnicio/releases")
 CURRENT_RELEASE = pathlib.Path("/opt/omnicio/current")
@@ -56,7 +58,7 @@ def validate_plan(value: Any) -> dict[str, Any]:
             or value["target_version"] != "1.3.0"):
         raise UpgradeBlocked("unreviewed_version_transition")
     if (not isinstance(value["source_release"], str)
-            or re.fullmatch(r"[0-9a-f]{40}", value["source_release"]) is None):
+            or re.fullmatch(RELEASE_SHA_PATTERN, value["source_release"]) is None):
         raise UpgradeBlocked("invalid_source_release")
     hashes = value["migration_sha256"]
     if not isinstance(hashes, list) or len(hashes) != 2:
@@ -148,6 +150,8 @@ def _receipt_directory() -> pathlib.Path:
 @contextmanager
 def _operation_lock() -> Iterator[None]:
     # Production runs on the one Linux VDS. Keep this import out of Windows CI.
+    if sys.platform != "linux":
+        raise UpgradeBlocked("upgrade_requires_linux")
     import fcntl
 
     path = _receipt_directory() / "operation.lock"
@@ -167,6 +171,8 @@ def _operation_lock() -> Iterator[None]:
 
 
 def _write_receipt(value: dict[str, Any]) -> None:
+    if sys.platform != "linux":
+        raise UpgradeBlocked("upgrade_requires_linux")
     directory = _receipt_directory()
     temporary = RECEIPT_PATH.with_suffix(".pending")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
@@ -199,7 +205,7 @@ def validate_receipt(receipt: dict[str, Any] | None, identity: dict[str, Any]) -
         raise UpgradeBlocked("upgrade_receipt_mismatch")
     for name in ("release_sha", "installed_release"):
         if (not isinstance(receipt[name], str)
-                or re.fullmatch(r"[0-9a-f]{40}", receipt[name]) is None):
+                or re.fullmatch(RELEASE_SHA_PATTERN, receipt[name]) is None):
             raise UpgradeBlocked("upgrade_receipt_mismatch")
 
 
@@ -297,11 +303,13 @@ def _database_url(expected: dict[str, Any]) -> str:
 
 
 def remote_main(payload: dict[str, Any]) -> None:
+    if sys.platform != "linux":
+        raise UpgradeBlocked("upgrade_requires_linux")
     import psycopg
 
     plan = validate_plan(payload["plan"])
     release_sha = payload["release_sha"]
-    if not isinstance(release_sha, str) or re.fullmatch(r"[0-9a-f]{40}", release_sha) is None:
+    if not isinstance(release_sha, str) or re.fullmatch(RELEASE_SHA_PATTERN, release_sha) is None:
         raise UpgradeBlocked("invalid_target_release")
     migration_bodies(plan, payload["statements"])
     expected = payload["database"]
@@ -347,7 +355,7 @@ def render_remote_upgrade(
     payload = {"plan": plan, "statements": statements, "release_sha": release_sha,
                "database": database,
                "target_query": schema_query(contract.read_text(encoding="utf-8"))}
-    invocation = "\nimport sys\ntry:\n    remote_main(" + repr(payload) + ")\n"
+    invocation = "\ntry:\n    remote_main(" + repr(payload) + ")\n"
     return source + invocation + '''except Exception as exc:
     if isinstance(exc, UpgradeBlocked):
         print("OMNICIO_UPGRADE: " + str(exc), file=sys.stderr)

@@ -73,6 +73,7 @@ PSQL_DIAGNOSTIC = re.compile(
 )
 MAX_DIAGNOSTIC_BYTES = 65536
 UPGRADE_DIAGNOSTIC = re.compile(rb"^OMNICIO_UPGRADE: ([a-z_]{1,64})$", re.MULTILINE)
+UNCONFIRMED_UPGRADE = "In-place upgrade result was not confirmed"
 
 
 class InfraError(RuntimeError):
@@ -939,11 +940,11 @@ def run_inplace_upgrade(
         stage=STAGE_SCHEMA_MIGRATION, migration_step=28,
     )
     if len(raw) > 16384:
-        raise InfraError("In-place upgrade result was not confirmed")
+        raise InfraError(UNCONFIRMED_UPGRADE)
     try:
         result = json.loads(raw)
     except ValueError:
-        raise InfraError("In-place upgrade result was not confirmed") from None
+        raise InfraError(UNCONFIRMED_UPGRADE) from None
     if (not isinstance(result, dict)
             or set(result) != {"status", "cluster_id", "release_sha", "new_database_copies"}
             or result.get("status") not in ("applied", "already_applied")
@@ -951,7 +952,7 @@ def run_inplace_upgrade(
             or result.get("cluster_id") != cluster_id or result.get("release_sha") != release_sha
             or type(result.get("new_database_copies")) is not int
             or result["new_database_copies"] != 0):
-        raise InfraError("In-place upgrade result was not confirmed")
+        raise InfraError(UNCONFIRMED_UPGRADE)
 
 
 def wait_for_database_endpoint(
@@ -978,6 +979,35 @@ def wait_for_database_endpoint(
     )
 
 
+def validate_migration_request(
+    migration_sqls: list[str], *, backup_only: bool, release_sha: str | None,
+) -> bool:
+    if backup_only and release_sha is not None:
+        raise InfraError("Scheduled verification cannot authorize a pre-release copy")
+    single_database = load_policy().mode == SINGLE_DATABASE_MODE
+    if single_database and not backup_only:
+        if not isinstance(release_sha, str) or re.fullmatch(r"[0-9a-f]{40}", release_sha) is None:
+            raise InfraError("In-place upgrade requires an exact accepted release")
+        migration_bodies(load_plan(), migration_sqls)
+    return single_database
+
+
+def apply_database_release(
+    ssh: EphemeralSsh, *, single_database: bool, migration_sqls: list[str], release_sha: str | None,
+    endpoint: DatabaseEndpoint, desired: DesiredDatabase, server_private_cidr: str,
+) -> None:
+    if single_database:
+        run_inplace_upgrade(ssh, migration_sqls=migration_sqls, release_sha=release_sha or "",
+                            endpoint=endpoint, desired=desired)
+        return
+    ensure_server_private_network(ssh, private_cidr=server_private_cidr)
+    secret_bundle = load_or_create_server_secrets(ssh)
+    write_runtime_env(ssh, endpoint=endpoint, desired=desired, secrets=secret_bundle)
+    for migration_step, migration_sql in enumerate(migration_sqls, start=1):
+        run_schema_migration(ssh, migration_sql=migration_sql, migration_step=migration_step,
+                             endpoint=endpoint, desired=desired)
+
+
 def reconcile(
     client: TimewebClient,
     *,
@@ -989,13 +1019,9 @@ def reconcile(
     backup_only: bool = False,
     release_sha: str | None = None,
 ) -> int:
-    if backup_only and release_sha is not None:
-        raise InfraError("Scheduled verification cannot authorize a pre-release copy")
-    single_database = load_policy().mode == SINGLE_DATABASE_MODE
-    if single_database and not backup_only:
-        if not isinstance(release_sha, str) or re.fullmatch(r"[0-9a-f]{40}", release_sha) is None:
-            raise InfraError("In-place upgrade requires an exact accepted release")
-        migration_bodies(load_plan(), migration_sqls)
+    single_database = validate_migration_request(
+        migration_sqls, backup_only=backup_only, release_sha=release_sha,
+    )
     add_summary("## OmniCIO auth PostgreSQL")
     add_summary(
         f"- Desired: PostgreSQL {desired.postgres_version}, "
@@ -1093,17 +1119,11 @@ def reconcile(
             add_summary(f"- Scheduled verification completed: {status}; "
                         "schema and runtime unchanged.")
             return 0
-        if single_database:
-            run_inplace_upgrade(ssh, migration_sqls=migration_sqls, release_sha=release_sha or "",
-                                endpoint=endpoint, desired=desired)
-        else:
-            ensure_server_private_network(ssh, private_cidr=server_private_cidr)
-            secret_bundle = load_or_create_server_secrets(ssh)
-            write_runtime_env(ssh, endpoint=endpoint, desired=desired, secrets=secret_bundle)
-            for migration_step, migration_sql in enumerate(migration_sqls, start=1):
-                run_schema_migration(ssh, migration_sql=migration_sql,
-                                     migration_step=migration_step,
-                                     endpoint=endpoint, desired=desired)
+        apply_database_release(
+            ssh, single_database=single_database, migration_sqls=migration_sqls,
+            release_sha=release_sha, endpoint=endpoint, desired=desired,
+            server_private_cidr=server_private_cidr,
+        )
 
     add_summary(
         "- Result: database_ready. PostgreSQL is private-only, runtime "

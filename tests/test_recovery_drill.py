@@ -30,6 +30,21 @@ SHA = "a" * 40
 KEY = "test-receipt-key-" + "x" * 40
 
 
+def test_remote_upgrade_refuses_non_linux_before_runtime_io(monkeypatch):
+    monkeypatch.setattr(upgrade.sys, "platform", "win32")
+    with patch.object(upgrade, "_private_file") as read, \
+            patch.object(upgrade, "_receipt_directory") as directory:
+        with pytest.raises(upgrade.UpgradeBlocked, match="upgrade_requires_linux"):
+            upgrade.remote_main({})
+        with pytest.raises(upgrade.UpgradeBlocked, match="upgrade_requires_linux"):
+            upgrade._write_receipt({})
+        operation = upgrade._operation_lock()
+        with pytest.raises(upgrade.UpgradeBlocked, match="upgrade_requires_linux"), operation:
+            pass
+    read.assert_not_called()
+    directory.assert_not_called()
+
+
 @pytest.mark.parametrize("runtime_password,stored_password,host", [
     ("synthetic-password", "synthetic-password", "10.0.0.5"),
     (None, None, "10.0.0.5"), (None, "synthetic-password", "10.0.0.5"),
@@ -145,6 +160,7 @@ def test_manual_job_still_requires_exact_checkout_and_successful_main_checks(mon
 def test_single_database_policy_blocks_even_manual_export_before_any_io(monkeypatch, tmp_path):
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
     monkeypatch.setenv("OMNICIO_RESTORE_DRILL_ALLOWED", "true")
+    archive_key = Fernet.generate_key().decode()
     with patch.object(runner, "release_context") as release, \
             patch("psycopg.connect") as connect, \
             patch.object(controller, "restore_artifact_path") as destination:
@@ -153,7 +169,7 @@ def test_single_database_policy_blocks_even_manual_export_before_any_io(monkeypa
         with pytest.raises(controller.RecoveryBlocked, match="single-database policy"):
             controller.export_logical_archive(
                 "never-opened-source", tmp_path, cluster_id=4215095, release_sha=SHA,
-                signing_key=KEY, archive_key=Fernet.generate_key().decode(),
+                signing_key=KEY, archive_key=archive_key,
             )
     release.assert_not_called()
     connect.assert_not_called()

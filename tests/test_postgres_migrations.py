@@ -112,7 +112,8 @@ def inplace_database(monkeypatch):
     if not DATABASE_URL or not os.environ.get("OMNICIO_TEST_POSTGRES_BIN"):
         pytest.skip("disposable PostgreSQL CI launcher is required")
     options = conninfo_to_dict(DATABASE_URL)
-    assert options["host"] == "127.0.0.1" and options["dbname"] == "omnicio_test"
+    assert options["host"] == "127.0.0.1"
+    assert options["dbname"] == "omnicio_test"
     monkeypatch.syspath_prepend(str(ROOT / ".github/scripts"))
     upgrade = importlib.import_module("inplace_upgrade")
     plan = upgrade.load_plan()
