@@ -300,7 +300,7 @@ class CBRClient:
                 request,
                 timeout=self.timeout_seconds,
             ) as response:
-                payload = response.read()
+                payload = response.read(_MAX_PUBLIC_RESPONSE_BYTES + 1)
         except (urllib.error.URLError, TimeoutError) as exc:
             logger.warning(
                 "Bank of Russia daily-rate request failed reason=%s",
@@ -308,37 +308,10 @@ class CBRClient:
             )
             raise CBRUnavailable("Bank of Russia daily rate unavailable") from exc
 
-        try:
-            root = ET.fromstring(payload)
-        except ET.ParseError as exc:
-            raise CBRUnavailable("Bank of Russia returned invalid XML") from exc
-
-        effective_date = _parse_effective_date(root.attrib.get("Date", ""))
-        for valute in root.findall("Valute"):
-            char_code = (valute.findtext("CharCode") or "").strip().upper()
-            if char_code != "USD":
-                continue
-
-            nominal_text = (valute.findtext("Nominal") or "").strip()
-            value_text = (valute.findtext("Value") or "").strip().replace(",", ".")
-            try:
-                nominal = int(nominal_text)
-                value = Decimal(value_text)
-            except (InvalidOperation, ValueError) as exc:
-                raise CBRUnavailable("Bank of Russia returned invalid USD rate") from exc
-            if nominal <= 0:
-                raise CBRUnavailable("Bank of Russia returned invalid USD nominal")
-
-            per_unit = value / Decimal(nominal)
-            return CBRRate(
-                currency="RUB",
-                value=format(per_unit.normalize(), "f"),
-                nominal=1,
-                effective_date=effective_date,
-                fetched_at=datetime.now(UTC),
-            )
-
-        raise CBRUnavailable("Bank of Russia response has no USD rate")
+        rate = _parse_currency_rates(payload, currencies=frozenset({"USD"}))["USD"]
+        if effective_on is not None and rate.effective_date > effective_on:
+            raise CBRUnavailable("Bank of Russia returned a future rate for requested date")
+        return rate
 
     def _fetch_latest_indicator_rates(self) -> dict[str, CBRRate]:
         request = urllib.request.Request(
@@ -360,16 +333,7 @@ class CBRClient:
                 type(getattr(exc, "reason", exc)).__name__,
             )
             raise CBRUnavailable("Bank of Russia currency indicators unavailable") from exc
-        if len(payload) > _MAX_PUBLIC_RESPONSE_BYTES:
-            raise CBRUnavailable("Bank of Russia currency response is too large")
-
-        parser = _CurrencyIndicatorParser()
-        try:
-            parser.feed(payload.decode("windows-1251"))
-            parser.close()
-        except ValueError as exc:
-            raise CBRUnavailable("Bank of Russia returned invalid currency data") from exc
-        return parser.result()
+        return _parse_currency_rates(payload, currencies=_INDICATOR_CURRENCIES)
 
     def _fetch_key_rate(self) -> CBRKeyRate:
         target = datetime.now(_MOSCOW).date()
@@ -433,86 +397,50 @@ class CBRClient:
                      for effective_date, value in sorted(eligible))
 
 
-class _CurrencyIndicatorParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.effective_date = ""
-        self._in_valute = False
-        self._field: str | None = None
-        self._current: dict[str, str] = {}
-        self._rows: list[dict[str, str]] = []
+def _parse_currency_rates(
+    payload: bytes, *, currencies: frozenset[str],
+) -> dict[str, CBRRate]:
+    """One strict daily-feed parser for both the FX reference and public indicators."""
+    if (len(payload) > _MAX_PUBLIC_RESPONSE_BYTES
+            or b"<!DOCTYPE" in payload.upper() or b"<!ENTITY" in payload.upper()):
+        raise CBRUnavailable("Bank of Russia currency payload is invalid")
+    try:
+        root = ET.fromstring(payload)
+    except ET.ParseError as exc:
+        raise CBRUnavailable("Bank of Russia returned invalid currency XML") from exc
+    if root.tag != "ValCurs":
+        raise CBRUnavailable("Bank of Russia currency response identity is invalid")
+    effective_date = _parse_effective_date(root.attrib.get("Date", ""))
+    fetched_at = datetime.now(UTC)
+    rates: dict[str, CBRRate] = {}
+    for row in root.findall("Valute"):
+        code = (row.findtext("CharCode") or "").strip().upper()
+        if code not in currencies:
+            continue
+        if code in rates:
+            raise CBRUnavailable("Bank of Russia returned duplicate currency rate")
+        rates[code] = CBRRate(
+            currency="RUB",
+            value=_parse_currency_value(row.findtext("Nominal") or "", row.findtext("Value") or ""),
+            nominal=1,
+            effective_date=effective_date,
+            fetched_at=fetched_at,
+        )
+    if currencies.difference(rates):
+        raise CBRUnavailable("Bank of Russia response is missing currency rate")
+    return rates
 
-    def handle_starttag(
-        self,
-        tag: str,
-        attrs: list[tuple[str, str | None]],
-    ) -> None:
-        if tag == "valcurs":
-            attributes = dict(attrs)
-            self.effective_date = (attributes.get("date") or "").strip()
-        elif tag == "valute":
-            if self._in_valute:
-                raise ValueError("nested Valute element")
-            self._in_valute = True
-            self._current = {}
-        elif self._in_valute and tag in {"charcode", "nominal", "value"}:
-            self._field = tag
 
-    def handle_data(self, data: str) -> None:
-        if self._in_valute and self._field is not None:
-            self._current[self._field] = self._current.get(self._field, "") + data
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == self._field:
-            self._field = None
-        if tag == "valute":
-            if not self._in_valute:
-                raise ValueError("unexpected Valute end")
-            self._rows.append(self._current)
-            self._current = {}
-            self._in_valute = False
-            self._field = None
-
-    def result(self) -> dict[str, CBRRate]:
-        effective_date = _parse_effective_date(self.effective_date)
-        fetched_at = datetime.now(UTC)
-        result: dict[str, CBRRate] = {}
-        for row in self._rows:
-            char_code = row.get("charcode", "").strip().upper()
-            if char_code not in _INDICATOR_CURRENCIES:
-                continue
-            if char_code in result:
-                raise CBRUnavailable(
-                    f"Bank of Russia returned duplicate {char_code} rate"
-                )
-            nominal_text = row.get("nominal", "").strip()
-            value_text = row.get("value", "").strip().replace(",", ".")
-            try:
-                nominal = int(nominal_text)
-                value = Decimal(value_text)
-            except (InvalidOperation, ValueError) as exc:
-                raise CBRUnavailable(
-                    f"Bank of Russia returned invalid {char_code} rate"
-                ) from exc
-            if nominal <= 0 or not value.is_finite() or value <= 0:
-                raise CBRUnavailable(
-                    f"Bank of Russia returned invalid {char_code} value"
-                )
-            result[char_code] = CBRRate(
-                currency="RUB",
-                value=format((value / Decimal(nominal)).normalize(), "f"),
-                nominal=1,
-                effective_date=effective_date,
-                fetched_at=fetched_at,
-            )
-
-        missing = _INDICATOR_CURRENCIES.difference(result)
-        if missing:
-            raise CBRUnavailable(
-                "Bank of Russia response is missing currency rate: "
-                + ",".join(sorted(missing))
-            )
-        return result
+def _parse_currency_value(nominal_text: str, value_text: str) -> str:
+    """Bound the decimal representation before arithmetic or formatting."""
+    nominal_text, value_text = nominal_text.strip(), value_text.strip()
+    if (not re.fullmatch(r"\d{1,9}", nominal_text, flags=re.ASCII)
+            or not re.fullmatch(r"\d{1,12}(?:[.,]\d{1,9})?", value_text, flags=re.ASCII)):
+        raise CBRUnavailable("Bank of Russia currency value is invalid")
+    nominal, value = Decimal(nominal_text), Decimal(value_text.replace(",", "."))
+    if nominal <= 0 or value <= 0 or value > 1000000000:
+        raise CBRUnavailable("Bank of Russia currency value is invalid")
+    return format((value / nominal).normalize(), "f")
 
 
 class _KeyRateParser(HTMLParser):
@@ -629,20 +557,14 @@ def _parse_reference_record(
         raise CBRUnavailable("Bank of Russia history record is invalid")
     try:
         effective = datetime.strptime(record.attrib["Date"], "%d.%m.%Y").date()
-        nominal_text = (record.findtext("Nominal") or "").strip()
-        value_text = (record.findtext("Value") or "").strip()
-        if (not re.fullmatch(r"\d{1,9}", nominal_text, flags=re.ASCII)
-                or not re.fullmatch(r"\d{1,12}(?:[.,]\d{1,9})?", value_text, flags=re.ASCII)):
-            raise ValueError("invalid source decimal representation")
-        nominal = Decimal(nominal_text)
-        value = Decimal(value_text.replace(",", "."))
-    except (KeyError, ValueError, InvalidOperation) as exc:
-        raise CBRUnavailable("Bank of Russia history value is invalid") from exc
-    if (not start <= effective <= end or not nominal.is_finite() or nominal <= 0
-            or nominal != nominal.to_integral_value() or not value.is_finite()
-            or value <= 0 or value > 1000000000 or nominal > 1000000000):
+    except (KeyError, ValueError) as exc:
+        raise CBRUnavailable("Bank of Russia history date is invalid") from exc
+    if not start <= effective <= end:
         raise CBRUnavailable("Bank of Russia history bounds are invalid")
-    return effective, format((value / nominal).normalize(), "f")
+    per_unit = _parse_currency_value(
+        record.findtext("Nominal") or "", record.findtext("Value") or "",
+    )
+    return effective, per_unit
 
 
 def _parse_reference_history(

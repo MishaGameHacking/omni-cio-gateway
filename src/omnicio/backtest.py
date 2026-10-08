@@ -30,8 +30,9 @@ from .tbank import TBankHistoricCandle
 ResearchBasis = Literal["unadjusted_price", "verified_total_return"]
 HISTORY_SOURCE = "https://developer.tbank.ru/invest/api/market-data-service-get-candles"
 MAX_RESEARCH_ASSETS = 100
-RESEARCH_ENGINE_VERSION = "1.3.2"
-_CORRECTED_MATH_ENGINES = frozenset({"1.3.1", "1.3.2"})
+RESEARCH_ENGINE_VERSION = "1.3.3"
+_CORRECTED_MATH_ENGINES = frozenset({"1.3.1", "1.3.2", "1.3.3"})
+_UNIT_AWARE_ENGINES = frozenset({"1.3.2", "1.3.3"})
 MAX_RESEARCH_DAYS = 1095
 MIN_TRAIN_OBSERVATIONS = 60
 MIN_TEST_OBSERVATIONS = 20
@@ -166,12 +167,12 @@ def history_candidate(
     cashflow_coverage: object = None,
     engine_version: str = RESEARCH_ENGINE_VERSION,
 ) -> StrategyCandidateFacts:
-    """Only completed daily bars; 1.3.2 receives raw bars and explicit split evidence."""
+    """Completed daily bars; engines from 1.3.2 use raw bars and explicit split evidence."""
     completed = [bar for bar in candles if bar.is_complete and as_of - bar.time >= _DAY]
     if not completed:
         return candidate
     past: Sequence[TBankHistoricCandle] = completed
-    if engine_version == RESEARCH_ENGINE_VERSION:
+    if engine_version in _UNIT_AWARE_ENGINES:
         past = split_adjusted_history(completed, splits, as_of)
     prices = [_decimal(bar.close) for bar in past]
     values: dict[str, Decimal | int] = {
@@ -195,7 +196,7 @@ def history_candidate(
         for key in ("growth_beta", "inflation_beta", "factor_observations"):
             facts.pop(key, None)
         facts.update(_factor_facts(past, factors, as_of))
-    if engine_version == RESEARCH_ENGINE_VERSION:
+    if engine_version in _UNIT_AWARE_ENGINES:
         income_end = completed[-1].time + _DAY
         coverage_reasons = _cashflow_window_reasons(
             cashflow_coverage, cashflows, splits, corporate_action_dates, income_end,
@@ -628,7 +629,7 @@ def research_history_candidate(
     if len(bars) < MIN_TRAIN_OBSERVATIONS:
         raise ValueError("insufficient_training_history")
     signal_bars = bars
-    if engine_version != RESEARCH_ENGINE_VERSION:
+    if engine_version not in _UNIT_AWARE_ENGINES:
         signal_bars = split_adjusted_history(bars, asset.splits, as_of)
     return history_candidate(
         asset.candidate,
@@ -662,6 +663,7 @@ class _Simulation:
     tax_rate: Decimal = _ZERO
     applied_splits: set[tuple[str, int]] = field(default_factory=set)
     net_receivables: bool = False
+    chronological_actions: bool = False
     constraint_breach_sessions: int = 0
     constraint_breaches: set[str] = field(default_factory=set)
     constraint_unknown: set[str] = field(default_factory=set)
@@ -744,6 +746,31 @@ def _accrue_distributions(
                     state.cost_basis[uid] = max(_ZERO, state.cost_basis.get(uid, _ZERO) - amount)
 
 
+def _apply_splits_after_entitlements(
+    state: _Simulation,
+    asset: ResearchAsset,
+    *,
+    start: datetime,
+    through: datetime,
+    inclusive: bool,
+) -> None:
+    # Closed trading sessions can contain multiple corporate events.
+    # Accrue each pre-split entitlement using the old unit count, then
+    # apply the split before any entitlement at the same timestamp.
+    splits = sorted(
+        (split for index, split in enumerate(asset.splits)
+         if start <= split.time
+         and (split.time <= through if inclusive else split.time < through)
+         and (asset.candidate.instrument_uid, index) not in state.applied_splits),
+        key=lambda split: split.time,
+    )
+    for split in splits:
+        _accrue_distributions(
+            state, asset, start=start, through=split.time, inclusive=False,
+        )
+        _apply_splits(state, (asset,), split.time - timedelta(microseconds=1), split.time)
+
+
 def _distributions(
     state: _Simulation,
     assets: Sequence[ResearchAsset],
@@ -753,6 +780,10 @@ def _distributions(
     inclusive: bool,
 ) -> None:
     for asset in assets:
+        if state.chronological_actions:
+            _apply_splits_after_entitlements(
+                state, asset, start=start, through=through, inclusive=inclusive,
+            )
         _accrue_distributions(state, asset, start=start, through=through, inclusive=inclusive)
     unpaid = []
     for when, amount, taxable in state.receivables:
@@ -961,11 +992,13 @@ def _simulate(
     costs: ResearchCosts,
     *,
     rebalance_sessions: int | None,
-    current_math: bool,
+    engine_version: str,
 ) -> _Simulation:
     ids = [asset.candidate.instrument_uid for asset in assets]
     state = _Simulation(capital, dict.fromkeys(ids, 0))
+    current_math = engine_version in _CORRECTED_MATH_ENGINES
     state.net_receivables = current_math
+    state.chronological_actions = engine_version == "1.3.3"
     tax = document["policy"]["securities_tax_rate_percent"]
     state.tax_rate = _ZERO if tax is None else _decimal(tax) / 100
     state.curve.append(
@@ -980,7 +1013,8 @@ def _simulate(
     limit = document["profile"]["max_drawdown_percent"]
     for index, when in enumerate(times[1:]):
         previous = times[index]
-        _apply_splits(state, assets, previous, when)
+        if not state.chronological_actions:
+            _apply_splits(state, assets, previous, when)
         # Entitlement before today's trades; paid cash cannot be spent before its date.
         _distributions(state, assets, start=times[1], through=when, inclusive=True)
         if rebalance_sessions is not None and limit is not None:
@@ -1006,7 +1040,9 @@ def _simulate(
         previous_nav = _nav(state, assets, prices)
         peak = max(peak, previous_nav)
         if current_math:
-            _record_holding_constraints(state, assets, prices, previous_nav, document, when)
+            _record_holding_constraints(
+                state, assets, prices, previous_nav, document, when, engine_version=engine_version,
+            )
         state.curve.append(
             {
                 "time": closing_time.isoformat(),
@@ -1025,6 +1061,8 @@ def _record_holding_constraints(
     nav: Decimal,
     document: Mapping[str, Any],
     when: datetime,
+    *,
+    engine_version: str,
 ) -> None:
     weights = {
         asset.candidate.instrument_uid: (
@@ -1034,7 +1072,8 @@ def _record_holding_constraints(
         for asset in assets
     }
     checks = candidate_weight_constraints(
-        document, [asset.candidate for asset in assets], weights, as_of=when + _DAY
+        document, [asset.candidate for asset in assets], weights, as_of=when + _DAY,
+        engine_version=engine_version,
     )
     breaches = [
         reason for reason in checks
@@ -1481,7 +1520,7 @@ def _prepare_research_asset(
     candidate = asset.candidate
     if not unsafe:
         signal_bars = training
-        if engine_version != RESEARCH_ENGINE_VERSION:
+        if engine_version not in _UNIT_AWARE_ENGINES:
             signal_bars = split_adjusted_history(training, asset.splits, split)
         candidate = history_candidate(
             asset.candidate,
@@ -1506,7 +1545,7 @@ def _prepare_research_asset(
         "reasons": sorted(set(reasons)) if engine_version in _CORRECTED_MATH_ENGINES else reasons,
         "price_return_percent": _text((prices[-1] / prices[0] - 1) * 100) if prices else None,
     }
-    if engine_version == RESEARCH_ENGINE_VERSION:
+    if engine_version in _UNIT_AWARE_ENGINES:
         diagnostic["cashflow_yield_coverage"] = _cashflow_coverage_diagnostic(
             asset, split, candles=training,
         )
@@ -1708,7 +1747,7 @@ def _research_asset_fingerprint(asset: ResearchAsset, engine_version: str) -> di
             ]
             for event in asset.observed_cashflows
         ]
-    if engine_version == RESEARCH_ENGINE_VERSION:
+    if engine_version in _UNIT_AWARE_ENGINES:
         row["user_cashflow_coverage"] = _structured_fingerprint(
             asset.provider_observations.get("user_cashflow_coverage"),
         )
@@ -1728,7 +1767,7 @@ def _structured_fingerprint(value: object) -> Any:
 
 def _fact_fingerprint(fact: StrategyFact, engine_version: str) -> list[Any]:
     value: Any = str(fact.value)
-    if engine_version == RESEARCH_ENGINE_VERSION and isinstance(fact.value, Mapping):
+    if engine_version in _UNIT_AWARE_ENGINES and isinstance(fact.value, Mapping):
         value = _structured_fingerprint(fact.value)
     return [value, fact.available_at.isoformat(), fact.source_url]
 
@@ -1771,7 +1810,7 @@ def run_strategy_backtest(
         as_of=split,
         engine_version=engine_version,
     )
-    if engine_version == RESEARCH_ENGINE_VERSION:
+    if engine_version in _UNIT_AWARE_ENGINES:
         _selection_cashflow_gaps(selection, diagnostics)
     chosen = {
         row["instrument_uid"]: Decimal(row["target_weight_percent"])
@@ -1922,11 +1961,11 @@ def _simulate_research_result(
     try:
         state = _simulate(
             selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=period,
-            current_math=engine_version in _CORRECTED_MATH_ENGINES,
+            engine_version=engine_version,
         )
         baseline = _simulate(
             selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=None,
-            current_math=engine_version in _CORRECTED_MATH_ENGINES,
+            engine_version=engine_version,
         )
     except ValueError as exc:
         if str(exc) != "fractional_split_cash_settlement_required":

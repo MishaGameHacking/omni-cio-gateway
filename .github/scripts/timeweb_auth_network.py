@@ -12,6 +12,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from timeweb_http import request_json
+
 API_ROOT = "https://api.timeweb.cloud/api"
 
 
@@ -26,7 +28,6 @@ class TimewebApiError(RuntimeError):
         super().__init__(
             f"Timeweb API HTTP {status_code} "
             f"error_code={error_code or 'unknown'} "
-            f"message={message or 'unknown'}"
         )
         self.status_code = status_code
         self.error_code = error_code
@@ -70,9 +71,7 @@ class TimewebClient:
             method=method,
         )
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                raw = response.read().decode()
-                return json.loads(raw) if raw else {}
+            return request_json(request, timeout=30)
         except urllib.error.HTTPError as exc:
             raw = exc.read().decode(errors="replace")
             try:
@@ -89,6 +88,8 @@ class TimewebClient:
                 str(parsed.get("error_code") or ""),
                 message,
             ) from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise InfraError("Timeweb request outcome was not confirmed") from exc
 
     def get_servers(self) -> list[dict[str, Any]]:
         return list(self.request("GET", "/servers", api_version="v1").get("servers") or [])

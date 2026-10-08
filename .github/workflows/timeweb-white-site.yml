@@ -10,6 +10,7 @@ on:
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_white_site.py"
+      - ".github/scripts/timeweb_http.py"
       - ".github/scripts/test_timeweb_white_site.py"
   schedule:
     - cron: "17,47 * * * *"

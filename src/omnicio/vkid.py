@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
+from .config import positive_numeric_id
+from .security import NoRedirectHandler
+
+_MAX_RESPONSE_BYTES = 65_536
 
 class VKIDError(RuntimeError):
     """Base VK ID provider error."""
@@ -34,7 +39,7 @@ class VKIDClient:
     base_url: str = "https://id.vk.ru"
 
     def authorization_url(self, *, state: str, code_challenge: str) -> str:
-        if not _is_positive_numeric_id(self.app_id):
+        if not positive_numeric_id(self.app_id):
             raise VKIDRejected("VK ID app id is not configured correctly")
         query = urllib.parse.urlencode(
             {
@@ -57,7 +62,7 @@ class VKIDClient:
         code_verifier: str,
         expected_state: str,
     ) -> VKIDIdentity:
-        if not _is_positive_numeric_id(self.app_id):
+        if not positive_numeric_id(self.app_id):
             raise VKIDRejected("VK ID app id is not configured correctly")
         query = urllib.parse.urlencode(
             {
@@ -78,7 +83,7 @@ class VKIDClient:
             raise VKIDRejected("VK ID state mismatch")
 
         user_id = str(payload.get("user_id") or "").strip()
-        if not _is_positive_numeric_id(user_id):
+        if not positive_numeric_id(user_id):
             raise VKIDRejected("VK ID response has no valid user id")
         if not payload.get("access_token"):
             raise VKIDRejected("VK ID response has no access token")
@@ -96,12 +101,18 @@ class VKIDClient:
             },
         )
         try:
-            with urllib.request.urlopen(
+            with urllib.request.build_opener(NoRedirectHandler()).open(
                 request,
                 timeout=self.timeout_seconds,
             ) as response:
-                raw = response.read().decode()
+                expected_length = getattr(response, "length", None)
+                raw = response.read(_MAX_RESPONSE_BYTES + 1)
+                if len(raw) > _MAX_RESPONSE_BYTES:
+                    raise VKIDUnavailable("VK ID response exceeded size limit")
+                if isinstance(expected_length, int) and len(raw) != expected_length:
+                    raise VKIDUnavailable("VK ID response was truncated")
         except urllib.error.HTTPError as exc:
+            exc.close()
             if exc.code in {400, 401, 403, 422}:
                 raise VKIDRejected(
                     f"VK ID rejected request: HTTP {exc.code}"
@@ -109,21 +120,17 @@ class VKIDClient:
             raise VKIDUnavailable(
                 f"VK ID unavailable: HTTP {exc.code}"
             ) from exc
-        except (urllib.error.URLError, TimeoutError) as exc:
+        except (OSError, http.client.HTTPException) as exc:
             raise VKIDUnavailable(
                 f"VK ID unavailable: {type(exc).__name__}"
             ) from exc
 
         try:
             payload = json.loads(raw)
-        except json.JSONDecodeError as exc:
+        except ValueError as exc:
             raise VKIDUnavailable("VK ID returned invalid JSON") from exc
         if not isinstance(payload, dict):
             raise VKIDUnavailable("VK ID returned invalid payload")
         if payload.get("error"):
             raise VKIDRejected("VK ID returned an OAuth error")
         return payload
-
-
-def _is_positive_numeric_id(value: str) -> bool:
-    return value.isdigit() and int(value) > 0

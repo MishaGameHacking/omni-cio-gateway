@@ -535,6 +535,15 @@ class RemoteDiagnosticsTests(unittest.TestCase):
         self.assertTrue(error.exception.__suppress_context__)
         process.assert_called_once()
 
+    def test_long_deploy_budget_does_not_change_default_remote_command_budget(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, b"", b"")
+        with patch.object(MODULE.subprocess, "run", return_value=completed) as process:
+            self.session.run("read current state")
+            self.assertEqual(process.call_args.kwargs["timeout"], 90)
+            self.session.run("bounded deployment", timeout=900)
+            self.assertEqual(process.call_args.kwargs["timeout"], 900)
+            self.assertEqual(process.call_count, 2)
+
     def test_successful_generic_command_keeps_exact_stdout_consumer(self) -> None:
         output = "Сохранённые значения\nsynthetic-secret=unchanged\n"
         with patch.object(MODULE.subprocess, "run", return_value=subprocess.CompletedProcess(

@@ -2089,17 +2089,22 @@ class PortfolioStore:
                     pe.currency,
                     pe.status,
                     sd.source_url,
-                    sd.first_retrieved_at
+                    sd.first_retrieved_at,
+                    retrieval.retrieved_at
                 FROM payout_events AS pe
                 JOIN source_documents AS sd
                   ON sd.id = pe.source_document_id
+                JOIN LATERAL (
+                    SELECT COALESCE(max(sr.retrieved_at), sd.first_retrieved_at) AS retrieved_at
+                    FROM source_retrievals sr WHERE sr.source_document_id = sd.id
+                ) AS retrieval ON true
                 WHERE pe.instrument_uid = ANY (%s)
                 ORDER BY
                     pe.provider,
                     pe.instrument_uid,
                     pe.event_type,
                     pe.provider_key,
-                    sd.first_retrieved_at DESC,
+                    retrieval.retrieved_at DESC,
                     pe.id DESC
                 LIMIT 100
                 """,

@@ -23,11 +23,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from timeweb_addresses import network_addresses
+from timeweb_http import request_json
 from timeweb_ssh_trust import (
     managed_server_identity,
     ssh_base_args,
-    ssh_keygen_executable,
     ssh_host_key_mismatch_message,
+    ssh_keygen_executable,
     trusted_host_entry,
     trusted_host_fingerprint,
 )
@@ -49,7 +50,6 @@ class TimewebApiError(RuntimeError):
         super().__init__(
             f"Timeweb API HTTP {status_code}"
             f" error_code={error_code or 'unknown'}"
-            f" message={message or 'unknown'}"
         )
         self.status_code = status_code
         self.error_code = error_code
@@ -91,9 +91,7 @@ class TimewebClient:
             method=method,
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                body = response.read().decode("utf-8")
-                return json.loads(body) if body else {}
+            return request_json(request, timeout=timeout)
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             try:
@@ -110,6 +108,8 @@ class TimewebClient:
                 str(parsed.get("error_code") or ""),
                 message,
             ) from exc
+        except (urllib.error.URLError, TimeoutError) as exc:
+            raise DeploymentError("Timeweb request outcome was not confirmed") from exc
 
     def get_servers(self) -> list[dict[str, Any]]:
         return list(self.request("GET", "/servers").get("servers") or [])

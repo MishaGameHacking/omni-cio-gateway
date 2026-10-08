@@ -14,6 +14,7 @@ from omnicio.strategy_assessment import (
     StrategyCandidateFacts,
     StrategyFact,
     assess_strategy_account,
+    candidate_weight_constraints,
     normalize_dividend_cashflow_coverage,
     rating_notch,
     select_strategy_candidates,
@@ -234,7 +235,7 @@ def test_unavailable_fund_composition_is_never_guessed_from_the_fund_name():
     assert "missing:fund_constituents" in result["missing_requirements"]
 
 
-@pytest.mark.parametrize("engine", ["1.1.0", "1.2.0", "1.3.0", "1.3.1", "1.3.2"])
+@pytest.mark.parametrize("engine", ["1.1.0", "1.2.0", "1.3.0", "1.3.1", "1.3.2", "1.3.3"])
 def test_ladder_keeps_missing_years_in_cash_and_preserves_archived_allocations(engine):
     data = selection_document("ladder", "bonds")
     rows = [
@@ -243,7 +244,7 @@ def test_ladder_keeps_missing_years_in_cash_and_preserves_archived_allocations(e
     ]
     result = select_strategy_candidates(data, rows, as_of=NOW, engine_version=engine)
     assert len({row["bucket"] for row in result["selected"]}) == 2
-    if engine != "1.3.2":
+    if engine not in {"1.3.2", "1.3.3"}:
         assert [Decimal(row["target_weight_percent"]) for row in result["selected"]] == [50, 50]
         assert result["candidate_selection_ready"] is True
         assert "ladder_rungs" not in result
@@ -475,12 +476,12 @@ def test_dividend_coverage_period_cannot_end_after_the_evidences_availability():
         normalize_dividend_cashflow_coverage(record, available_at=available)
 
 
-@pytest.mark.parametrize("engine", ["1.1.0", "1.2.0", "1.3.0", "1.3.1", "1.3.2"])
+@pytest.mark.parametrize("engine", ["1.1.0", "1.2.0", "1.3.0", "1.3.1", "1.3.2", "1.3.3"])
 def test_dividend_percentages_alone_do_not_prove_cashflow_coverage_in_the_new_engine(engine):
     result = select_strategy_candidates(
         selection_document("dividends"), [candidate_facts()], as_of=NOW, engine_version=engine,
     )
-    if engine == "1.3.2":
+    if engine in {"1.3.2", "1.3.3"}:
         assert result["selected"] == []
         assert "missing:dividend_cashflow_coverage" in result["candidates"][0]["reasons"]
     else:
@@ -656,6 +657,36 @@ def test_future_fact_cannot_make_a_candidate_eligible():
     )
     assert result["selected"] == []
     assert "missing:roe_percent" in result["missing_requirements"]
+
+
+def test_missing_drawdown_limit_does_not_certify_unrestricted_selection():
+    data = selection_document("balanced")
+    data["profile"]["max_drawdown_percent"] = None
+    rows = [candidate_facts()]
+    result = select_strategy_candidates(data, rows, as_of=NOW)
+    assert result["candidate_selection_ready"] is False
+    assert result["selected"] == []
+    assert "missing:drawdown_limit" in result["missing_requirements"]
+    assert select_strategy_candidates(data, rows, as_of=NOW, engine_version="1.3.2")[
+        "candidate_selection_ready"
+    ] is True
+
+
+@pytest.mark.parametrize("notch", ["BB+", "B", "D"])
+def test_residual_holdings_require_credit_permission_independently_of_percentage_caps(notch):
+    data = selection_document("balanced", "bonds")
+    data["policy"]["max_below_grade_percent"] = "100"
+    data["rules"]["rating_caps"][notch] = "100"
+    rows = [candidate_facts("held", "bonds", rating=notch)]
+    weights = {"held": Decimal("1")}
+    assert candidate_weight_constraints(data, rows, weights, as_of=NOW) == [
+        "exposure_cap:credit:below_grade_not_allowed",
+    ]
+    assert candidate_weight_constraints(
+        data, rows, weights, as_of=NOW, engine_version="1.3.2",
+    ) == []
+    data["profile"]["allow_below_investment_grade"] = True
+    assert candidate_weight_constraints(data, rows, weights, as_of=NOW) == []
 
 
 def test_prior_observed_facts_remain_point_in_time_when_current_value_is_newer():

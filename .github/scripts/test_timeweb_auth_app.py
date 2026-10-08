@@ -88,6 +88,71 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIsNone(MODULE.RELEASE_RE.fullmatch("A" * 40))
         self.assertIsNone(MODULE.RELEASE_RE.fullmatch("a" * 39))
 
+    def test_upload_never_removes_the_active_release(self) -> None:
+        from unittest.mock import Mock
+
+        sha = "a" * 40
+        ssh = Mock()
+        ssh.run.return_value = f"/opt/omnicio/releases/{sha}\n"
+        with self.assertRaisesRegex(MODULE.InfraError, "already active"):
+            MODULE.upload_release(ssh, archive_b64="test-only", release_sha=sha)
+        ssh.run.assert_called_once_with(
+            "readlink -f /opt/omnicio/current 2>/dev/null || true",
+        )
+
+        ssh.reset_mock()
+        with self.assertRaisesRegex(MODULE.InfraError, "40-character SHA"):
+            MODULE.upload_release(ssh, archive_b64="test-only", release_sha="../current")
+        ssh.run.assert_not_called()
+
+    def test_release_upload_rechecks_active_target_before_destructive_steps(self) -> None:
+        ssh = FakeSsh(True)
+        MODULE.upload_release(ssh, archive_b64="test-only", release_sha="b" * 40)
+        command = ssh.commands[-1]
+        self.assertTrue(command.startswith("set -euo pipefail; "))
+        self.assertLess(command.index("readlink -f"), command.index("rm -rf"))
+
+    def test_deploy_and_rollback_share_a_lock_and_finish_before_ssh_deadline(self) -> None:
+        from unittest.mock import Mock
+
+        ssh = Mock()
+        sha = "a" * 40
+        MODULE.deploy_remote(ssh, release_sha=sha)
+        MODULE.rollback_remote(ssh, release_sha=sha)
+        deploy, rollback = ssh.run.call_args_list
+        self.assertIn(f"flock -n {MODULE.DEPLOY_LOCK} ", deploy.args[0])
+        self.assertIn(f"flock -w 855 {MODULE.DEPLOY_LOCK} ", rollback.args[0])
+        for call, maximum in ((deploy, 840 + 15), (rollback, 855 + 30 + 5)):
+            self.assertGreater(call.kwargs["timeout"], maximum)
+            self.assertIn("timeout --kill-after=", call.args[0])
+            self.assertNotIn("--foreground", call.args[0])
+        self.assertEqual(deploy.kwargs["input_text"], MODULE.REMOTE_DEPLOY_SCRIPT)
+        self.assertEqual(rollback.kwargs["input_text"], MODULE.REMOTE_ROLLBACK_SCRIPT)
+
+    def test_existing_legacy_brand_links_can_be_republished(self) -> None:
+        if os.name == "nt":
+            bash = str(pathlib.Path(os.environ.get("PROGRAMFILES", r"C:\Program Files"))
+                       / "Git" / "bin" / "bash.exe")
+        else:
+            bash = "/bin/bash"
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+        start = script.index("for name in apple-touch-icon-180.png")
+        loop = script[start:script.index("\ndone", start) + len("\ndone")]
+        with tempfile.TemporaryDirectory() as directory:
+            brand = pathlib.Path(directory) / "assets" / "brand"
+            brand.mkdir(parents=True)
+            (brand / "omnicio-logo.png").write_bytes(b"test-only-brand")
+            for _ in range(2):
+                subprocess.run(
+                    [bash, "-c", 'set -e; WEB_RELEASE=.; ' + loop],
+                    cwd=directory, check=True, capture_output=True, timeout=10,
+                )
+            for name in (
+                "apple-touch-icon-180.png", "pwa-icon-192.png", "pwa-icon-512.png",
+                "pwa-maskable-512.png",
+            ):
+                self.assertEqual((brand / name).read_bytes(), b"test-only-brand")
+
     def test_runtime_gate_requires_remote_environment(self) -> None:
         ready = FakeSsh(True)
         missing = FakeSsh(False)

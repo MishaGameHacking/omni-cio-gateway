@@ -8,7 +8,10 @@ import hmac
 import json
 import re
 import secrets
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import parse_qsl
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -22,8 +25,19 @@ class SecurityValueError(ValueError):
     """Raised when a security-sensitive value is malformed."""
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep provider credentials and one-shot requests at their original endpoint."""
+
+    def redirect_request(
+        self, req: urllib.request.Request, fp: Any, code: int, msg: str,
+        headers: Any, newurl: str,
+    ) -> None:
+        # The URL may contain OAuth secrets; omit it from the raised error too.
+        raise urllib.error.HTTPError("", code, "provider_redirect_rejected", headers, fp)
+
+
 def parse_public_id(value: str) -> int:
-    if len(value) != 9 or not value.isdigit():
+    if len(value) != 9 or not value.isascii() or not value.isdecimal():
         raise SecurityValueError("public id must contain exactly 9 digits")
     parsed = int(value)
     if not PUBLIC_ID_MIN <= parsed <= PUBLIC_ID_MAX:

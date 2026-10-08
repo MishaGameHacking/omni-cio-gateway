@@ -169,6 +169,10 @@ def _transition_values(
     next_lots = leg.lots_executed if lots_executed is None else lots_executed
     if next_lots < 0 or next_lots > leg.lots_requested:
         raise ValueError("executed lots are outside requested bounds")
+    # A delayed reconciliation cannot undo a fill already recorded under the
+    # row lock. Monetary corrections remain allowed: provider fees may change.
+    if next_lots < leg.lots_executed:
+        raise ExecutionLedgerError("execution_leg_state_changed")
     next_amount = leg.executed_amount_rub if executed_amount_rub is None else executed_amount_rub
     next_commission = (
         leg.executed_commission_rub if executed_commission_rub is None else executed_commission_rub
@@ -908,6 +912,9 @@ class ExecutionStore:
                 raise ExecutionLedgerError("execution_leg_not_found")
             leg = _leg_record(cast(dict[str, Any], leg_row))
             if leg.status not in expected_statuses:
+                raise ExecutionLedgerError("execution_leg_state_changed")
+            if (update.provider_status is not None and leg.last_checked_at is not None
+                    and observed_at < leg.last_checked_at):
                 raise ExecutionLedgerError("execution_leg_state_changed")
 
             next_lots, next_amount, next_commission = _transition_values(

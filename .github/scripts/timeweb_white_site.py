@@ -22,6 +22,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from timeweb_addresses import network_addresses
+from timeweb_http import request_json
 
 API_ROOT = "https://api.timeweb.cloud/api"
 PLACEMENT_CAPACITY_ERROR_CODE = "no_free_node"
@@ -50,12 +51,9 @@ class TimewebApiError(RuntimeError):
         super().__init__(
             f"Timeweb API returned HTTP {status_code}"
             f" error_code={error_code or 'unknown'}"
-            f" response_id={response_id or 'unknown'}"
-            f" message={message or 'unknown'}"
         )
         self.status_code = status_code
         self.error_code = error_code
-        self.provider_message = message
         self.response_id = response_id
 
 
@@ -110,9 +108,7 @@ class TimewebClient:
             method=method,
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                body = response.read().decode("utf-8")
-                return json.loads(body) if body else {}
+            return request_json(request, timeout=timeout)
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             try:

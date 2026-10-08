@@ -253,8 +253,8 @@ class BrokerService:
         user_id: UUID,
         instrument_uid: str,
     ) -> tuple[TBankRating, ...]:
-        _record, credential, environment = self._connected_credential(user_id)
-        return cast(
+        record, credential, environment = self._connected_credential(user_id)
+        result = cast(
             tuple[TBankRating, ...],
             self._paced_evidence_read(
                 self.tbank.get_bond_ratings,
@@ -263,6 +263,8 @@ class BrokerService:
                 instrument_uid,
             ),
         )
+        self._require_current_connection(record)
+        return result
 
     def candidate_daily_exchange_candles(
         self,
@@ -409,12 +411,14 @@ class BrokerService:
         user_id: UUID,
         instrument_uid: str,
     ) -> TBankTradingStatus:
-        _record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.get_trading_status(
+        record, credential, environment = self._connected_credential(user_id)
+        result = self.tbank.get_trading_status(
             credential,
             environment,
             instrument_uid,
         )
+        self._require_current_connection(record)
+        return result
 
     def candidate_bond_coupons(
         self,
@@ -424,8 +428,8 @@ class BrokerService:
         from_at: datetime,
         to_at: datetime,
     ) -> tuple[TBankBondCoupon, ...]:
-        _record, credential, environment = self._connected_credential(user_id)
-        return cast(
+        record, credential, environment = self._connected_credential(user_id)
+        result = cast(
             tuple[TBankBondCoupon, ...],
             self._paced_evidence_read(
                 self.tbank.get_bond_coupons,
@@ -436,6 +440,8 @@ class BrokerService:
                 to_at=to_at,
             ),
         )
+        self._require_current_connection(record)
+        return result
 
     def candidate_accrued_interests(
         self, user_id: UUID, instrument_uid: str, *, from_at: datetime, to_at: datetime,
@@ -490,8 +496,8 @@ class BrokerService:
         from_at: datetime,
         to_at: datetime,
     ) -> tuple[TBankBondEvent, ...]:
-        _record, credential, environment = self._connected_credential(user_id)
-        return cast(
+        record, credential, environment = self._connected_credential(user_id)
+        result = cast(
             tuple[TBankBondEvent, ...],
             self._paced_evidence_read(
                 self.tbank.get_bond_events,
@@ -502,18 +508,22 @@ class BrokerService:
                 to_at=to_at,
             ),
         )
+        self._require_current_connection(record)
+        return result
 
     def candidate_market_yields(
         self,
         user_id: UUID,
         instrument_uids: tuple[str, ...],
     ) -> tuple[TBankMarketYield, ...]:
-        _record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.get_market_yields(
+        record, credential, environment = self._connected_credential(user_id)
+        result = self.tbank.get_market_yields(
             credential,
             environment,
             instrument_uids,
         )
+        self._require_current_connection(record)
+        return result
 
     def candidate_last_prices(
         self,
@@ -551,7 +561,7 @@ class BrokerService:
         user_id: UUID,
         asset_uids: tuple[str, ...],
     ) -> tuple[TBankAssetFundamental, ...]:
-        _record, credential, environment = self._connected_credential(user_id)
+        record, credential, environment = self._connected_credential(user_id)
         unique = tuple(dict.fromkeys(value for value in asset_uids if value))
         result: list[TBankAssetFundamental] = []
         for start in range(0, len(unique), 100):
@@ -563,6 +573,7 @@ class BrokerService:
                     unique[start : start + 100],
                 )
             )
+        self._require_current_connection(record)
         return tuple(result)
 
     def candidate_order_book(
@@ -572,13 +583,15 @@ class BrokerService:
         *,
         depth: int = 10,
     ) -> TBankOrderBook:
-        _record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.get_order_book(
+        record, credential, environment = self._connected_credential(user_id)
+        result = self.tbank.get_order_book(
             credential,
             environment,
             instrument_uid,
             depth=depth,
         )
+        self._require_current_connection(record)
+        return result
 
 
     def live_order_state(
@@ -1066,8 +1079,10 @@ class BrokerService:
         )
 
     def user_info(self, user_id: UUID) -> TBankUserInfo:
-        _record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.get_user_info(credential, environment)
+        record, credential, environment = self._connected_credential(user_id)
+        result = self.tbank.get_user_info(credential, environment)
+        self._require_current_connection(record)
+        return result
 
     def revalidate_account(self, user_id: UUID) -> TBankAccount:
         record, credential, environment = self._connected_credential(user_id)
@@ -1080,6 +1095,7 @@ class BrokerService:
             "ACCOUNT_ACCESS_LEVEL_READ_ONLY",
         }:
             raise BrokerAccountNotAccessible("T-Invest read access could not be verified")
+        self._require_current_connection(record)
         return account
 
     def history_page(
@@ -1092,7 +1108,7 @@ class BrokerService:
         limit: int = 1000,
     ) -> TBankOperationsPage:
         record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.get_operations_by_cursor(
+        result = self.tbank.get_operations_by_cursor(
             credential,
             environment,
             record.account_id,
@@ -1101,10 +1117,14 @@ class BrokerService:
             cursor=cursor,
             limit=limit,
         )
+        self._require_current_connection(record)
+        return result
 
     def usd_rub_quote(self, user_id: UUID) -> TBankFxQuote:
-        _record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.get_usd_rub_quote(credential, environment)
+        record, credential, environment = self._connected_credential(user_id)
+        result = self.tbank.get_usd_rub_quote(credential, environment)
+        self._require_current_connection(record)
+        return result
 
     def search_instruments(
         self,
@@ -1113,13 +1133,15 @@ class BrokerService:
         query: str,
         limit: int = 20,
     ) -> tuple[TBankInstrument, ...]:
-        _record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.find_instruments(
+        record, credential, environment = self._connected_credential(user_id)
+        result = self.tbank.find_instruments(
             credential,
             environment,
             query,
             limit=limit,
         )
+        self._require_current_connection(record)
+        return result
 
     def disconnect(self, user_id: UUID) -> bool:
         return self.database.delete_tbank_connection(user_id)
@@ -1168,6 +1190,7 @@ class BrokerService:
             allowed.add("ACCOUNT_ACCESS_LEVEL_READ_ONLY")
         if selected.access_level not in allowed:
             raise BrokerLiveRequired("R7 production account access is not sufficient")
+        self._require_current_connection(record)
         return record, credential, environment
 
     def _sandbox_credential(

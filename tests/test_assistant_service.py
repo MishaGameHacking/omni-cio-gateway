@@ -289,6 +289,41 @@ def test_expanded_context_preserves_evidence_limits_and_excludes_private_raw_fie
     assert "private" not in json.dumps(context)
 
 
+def test_research_context_keeps_partial_coverage_and_metric_limitations() -> None:
+    research = {
+        "status": "computed", "basis": "unadjusted_price",
+        "complete_strategy_coverage": False, "research_asset_weight_percent": "40",
+        "return_label": "Изменение цены после заданных издержек",
+        "metrics": {"net_return_percent": "3"},
+        "limitations": ["Исследована частичная корзина; выплаты не включены."],
+        "missing_requirements": ["verified_cashflows", "eligible_bonds"],
+        "probability_reason": "Один тест не определяет вероятность будущей прибыли.",
+        "raw_account_id": "private-account",
+    }
+    selected = investment_context({}, research=research)["research"]
+    for field in ("complete_strategy_coverage", "research_asset_weight_percent", "return_label",
+                  "limitations", "missing_requirements", "probability_reason"):
+        assert selected[field] == research[field]
+    assert selected["limitations_truncated"] is False
+    assert selected["probability_of_profit"] is None
+    assert "private-account" not in json.dumps(selected)
+    research["limitations"] = ["x" * 501] * 21
+    bounded = investment_context({}, research=research)["research"]
+    assert bounded["limitations_truncated"] is True
+    assert len(bounded["limitations"]) == 20
+    assert len(bounded["limitations"][0]) == 500
+
+
+def test_portfolio_context_preserves_return_method_and_estimate_boundaries() -> None:
+    performance = {
+        "status": "available", "return_percent": "5", "return_method": "modified_dietz",
+        "return_denominator_rub": "10000", "return_is_estimate": True,
+        "return_is_annualized": False, "return_time_basis": "broker_operation_instruction_time",
+        "return_limitations": ["An estimate can differ from time-weighted return."],
+    }
+    assert portfolio_context({"performance": performance})["performance"] == performance
+
+
 @pytest.mark.parametrize("provider", ["ollama", "openai_compatible"])
 def test_real_stream_protocol_accumulates_content_and_never_exposes_thinking(provider: str) -> None:
     client = AssistantClient(base_url="https://model.example.invalid", model="test",

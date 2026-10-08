@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import os
+import urllib.request
+import urllib.response
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from email.message import Message
 from unittest.mock import Mock, patch
 from uuid import UUID
 
@@ -14,7 +18,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import ClientDisconnect, Request
 
-from omnicio.config import ConfigurationError, load_settings, optional_uuid
+from omnicio.config import ConfigurationError, load_settings, optional_uuid, positive_numeric_id
 from omnicio.db import Database, UserRecord
 from omnicio.main import (
     CANONICAL_ORIGIN,
@@ -39,6 +43,40 @@ from omnicio.security import (
     seal_oauth_flow,
     validate_auth_return_to,
 )
+from omnicio.tbank import TBankInvestClient, TBankUnavailable
+from omnicio.vkid import VKIDClient, VKIDUnavailable
+
+
+@pytest.mark.parametrize("provider", ["broker", "vkid"])
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+def test_credentialed_provider_requests_never_follow_redirects(provider, status) -> None:
+    headers = Message()
+    headers["Location"] = "https://untrusted.invalid/collect"
+    response = urllib.response.addinfourl(io.BytesIO(), headers, "https://provider.invalid", status)
+    response.msg = "redirect"
+    with patch.object(urllib.request.HTTPSHandler, "https_open", return_value=response) as request:
+        if provider == "broker":
+            broker_client = TBankInvestClient()
+            with pytest.raises(TBankUnavailable):
+                broker_client.get_accounts("synthetic-credential-must-not-leak", "prod")
+        else:
+            identity_client = VKIDClient("123", "https://omnicio.ru/api/auth/vkid/callback")
+            with pytest.raises(VKIDUnavailable):
+                identity_client.exchange_code(
+                    code="synthetic-code", device_id="device", code_verifier="v" * 64,
+                    expected_state="state",
+                )
+    request.assert_called_once()
+    assert response.closed
+
+
+@pytest.mark.parametrize(
+    "value", ["²", "１２３", "١٢٣", "0", "9" * 129, "9" * 5000],
+    ids=["superscript", "fullwidth", "arabic", "zero", "overlong-id", "oversized-integer"],
+)
+def test_provider_numeric_ids_are_bounded_ascii_without_conversion_errors(value) -> None:
+    assert not positive_numeric_id(value)
+    assert positive_numeric_id("123456789")
 
 
 def test_operator_configuration_is_explicit_and_credentials_preserve_exact_bytes() -> None:
@@ -120,7 +158,7 @@ def test_public_id_parser_rejects_malformed_or_zero_values() -> None:
     assert parse_public_id("000000001") == 1
     assert parse_public_id("999999999") == 999_999_999
 
-    for value in ("1", "000000000", "1000000000", "00000000x"):
+    for value in ("1", "000000000", "1000000000", "00000000x", "²" * 9, "１２３４５６７８９"):
         with pytest.raises(SecurityValueError):
             parse_public_id(value)
 

@@ -626,6 +626,13 @@ def _stale_client_write(request: Request, build: str) -> bool:
             or not request.url.path.startswith("/api/")):
         return False
     path = request.url.path
+    if request.method == "POST" and re.fullmatch(
+        r"/api/(?:portfolio/executions|billing/payments)/"
+        r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}/reconcile", path,
+    ):
+        # These existing-resource routes only read provider state. Their normal
+        # session, profile, consent and ownership checks still apply below.
+        return False
     if (path.startswith("/api/auth/") or path == "/api/billing/notification"
             or path in {"/api/me/sessions/revoke", "/api/me/sessions/revoke-others"}
             or path.endswith("/cancel")
@@ -2504,7 +2511,7 @@ async def usd_rub_market_stream(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> StreamingResponse:
-    user = authenticated_user(request, session_token)
+    user = await asyncio.to_thread(authenticated_user, request, session_token)
     _require_profile_context(user, request.query_params.get("profile_context"))
     market = market_service(request)
     return _market_stream_response(
@@ -2712,7 +2719,7 @@ async def instrument_market_stream(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> StreamingResponse:
-    user = authenticated_user(request, session_token)
+    user = await asyncio.to_thread(authenticated_user, request, session_token)
     _require_profile_context(user, request.query_params.get("profile_context"))
     market = market_service(request)
     return _market_stream_response(
@@ -3199,14 +3206,14 @@ def tbank_analysis(
         ) from exc
 
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return {
+    return _workspace_result(request, session_token, user, {
         **asdict(snapshot),
         "freshness": asdict(describe_freshness(
             snapshot.refreshed_at,
             max_age=PORTFOLIO_MAX_AGE,
             coverage="complete" if snapshot.analysis.status == "observed" else "partial",
         )),
-    }
+    })
 
 
 @app.get(

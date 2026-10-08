@@ -1046,7 +1046,7 @@ def _bond_maturity_bucket(
     months: int,
     engine_version: str,
 ) -> str:
-    if rules["ranking"] != "maturity_ladder" or engine_version != "1.3.2":
+    if rules["ranking"] != "maturity_ladder" or engine_version not in {"1.3.2", "1.3.3"}:
         return str(max(0, months) // int(rules.get("rung_months", 12)))
     maturity = _known_fact(candidate, "maturity_date", as_of)
     if isinstance(maturity, datetime):
@@ -1241,7 +1241,7 @@ def _covered_dividends_score(
     if candidate.asset_class != "shares":
         return None
     keys: tuple[str, ...] = ("dividend_yield_percent", "payout_ratio_percent", "debt_to_ebitda")
-    if engine_version != "1.3.2":
+    if engine_version not in {"1.3.2", "1.3.3"}:
         keys += ("free_cashflow_yield_percent",)
     values, reasons = _required_numbers(
         candidate, as_of, keys,
@@ -1256,7 +1256,7 @@ def _covered_dividends_score(
     )
     if _known_fact(candidate, "dividend_declared", as_of) is not True:
         reasons.append("missing:dividend_decision")
-    if engine_version == "1.3.2":
+    if engine_version in {"1.3.2", "1.3.3"}:
         _, coverage_reasons = _dividend_cashflow_evidence(candidate, as_of)
         reasons.extend(coverage_reasons)
     elif values["free_cashflow_yield_percent"] <= 0:
@@ -1379,6 +1379,8 @@ def _method_score(
     rules = strategy_rule_set(data["base_preset_id"])
     mode = rules["ranking"]
     values, reasons = _training_values(candidate, data, as_of)
+    if engine_version == "1.3.3" and data["profile"]["max_drawdown_percent"] is None:
+        reasons.append("missing:drawdown_limit")
     score, price_reasons = _price_mandate_score(mode, values, rules)
     reasons.extend(price_reasons)
     bucket = ""
@@ -1427,7 +1429,7 @@ _ExposureLedger = dict[str, dict[str, Decimal]]
 
 
 def _candidate_fact_value(key: str, fact: StrategyFact, engine_version: str) -> object:
-    if key == "dividend_cashflow_coverage" and engine_version == "1.3.2":
+    if key == "dividend_cashflow_coverage" and engine_version in {"1.3.2", "1.3.3"}:
         try:
             return normalize_dividend_cashflow_coverage(fact.value, available_at=fact.available_at)
         except ValueError:
@@ -1482,11 +1484,34 @@ def _rank_candidates(
     return rows, eligible
 
 
+def _bond_exposure_limits(
+    candidate: StrategyCandidateFacts,
+    data: Mapping[str, Any],
+    as_of: datetime,
+    *,
+    enforce_credit_permission: bool,
+) -> list[tuple[str, str, Decimal, Decimal]]:
+    """Keep rating, credit-category and explicit permission ceilings independent."""
+    fact = _known_fact(candidate, "rating", as_of)
+    notch = fact if isinstance(fact, str) and fact in RATING_LEVELS else "NR"
+    limits = [("rating", notch, Decimal(1), Decimal(data["rules"]["rating_caps"][notch]))]
+    if notch == "NR" or notch in RATING_LEVELS[10:24]:
+        credit_key = "max_unknown_percent" if notch == "NR" else "max_below_grade_percent"
+        cap = _amount(data["policy"][credit_key]) or _ZERO
+        limits.append(("credit", credit_key, Decimal(1), cap))
+    if (enforce_credit_permission and notch in RATING_LEVELS[10:24]
+            and not data["profile"]["allow_below_investment_grade"]):
+        limits.append(("credit", "below_grade_not_allowed", Decimal(1), _ZERO))
+    return limits
+
+
 def _candidate_exposure_limits(
     candidate: StrategyCandidateFacts,
     data: Mapping[str, Any],
     as_of: datetime,
     missing: set[str],
+    *,
+    enforce_credit_permission: bool = True,
 ) -> list[tuple[str, str, Decimal, Decimal]]:
     dimensions, unknown = _candidate_dimensions(candidate, as_of)
     missing.update("unverified:" + key for key in unknown)
@@ -1498,13 +1523,9 @@ def _candidate_exposure_limits(
         else:
             limits.extend((name, key, exposure, cap) for key, exposure in entries.items())
     if candidate.asset_class == "bonds":
-        fact = _known_fact(candidate, "rating", as_of)
-        notch = fact if isinstance(fact, str) and fact in RATING_LEVELS else "NR"
-        limits.append(("rating", notch, Decimal(1), Decimal(data["rules"]["rating_caps"][notch])))
-        if notch == "NR" or notch in RATING_LEVELS[10:24]:
-            credit_key = "max_unknown_percent" if notch == "NR" else "max_below_grade_percent"
-            cap = _amount(data["policy"][credit_key]) or _ZERO
-            limits.append(("credit", credit_key, Decimal(1), cap))
+        limits.extend(_bond_exposure_limits(
+            candidate, data, as_of, enforce_credit_permission=enforce_credit_permission,
+        ))
     return limits
 
 
@@ -1702,7 +1723,9 @@ def _select_asset_class(
         key=lambda item: (-item[1], item[0].instrument_uid),
     )
     mode = strategy_rule_set(data["base_preset_id"])["ranking"]
-    calendar_ladder = mode == "maturity_ladder" and kind == "bonds" and engine_version == "1.3.2"
+    calendar_ladder = (
+        mode == "maturity_ladder" and kind == "bonds" and engine_version in {"1.3.2", "1.3.3"}
+    )
     if not matching:
         missing.add("eligible_" + kind)
         if not calendar_ladder:
@@ -1755,7 +1778,9 @@ def _selection_status(
     cash_only: bool,
     engine_version: str,
 ) -> str:
-    ready = (bool(selected) or (cash_only and engine_version in {"1.3.1", "1.3.2"})) and not missing
+    ready = (
+        bool(selected) or (cash_only and engine_version in {"1.3.1", "1.3.2", "1.3.3"})
+    ) and not missing
     if ready:
         return "ready"
     if selected:
@@ -1789,7 +1814,7 @@ def select_strategy_candidates(
     candidates: Sequence[StrategyCandidateFacts],
     *,
     as_of: datetime,
-    engine_version: str = "1.3.2",
+    engine_version: str = "1.3.3",
 ) -> dict[str, Any]:
     """Screen dated facts, rank by the mandate and allocate bounded research weights.
 
@@ -1798,7 +1823,7 @@ def select_strategy_candidates(
     """
     data = normalize_document(document)
     if (as_of.tzinfo is None or len(candidates) > 100
-            or engine_version not in {"1.1.0", "1.2.0", "1.3.0", "1.3.1", "1.3.2"}):
+            or engine_version not in {"1.1.0", "1.2.0", "1.3.0", "1.3.1", "1.3.2", "1.3.3"}):
         raise ValueError("strategy_candidate_input_invalid")
     ids = [row.instrument_uid for row in candidates]
     if any(not uid for uid in ids) or len(ids) != len(set(ids)):
@@ -1808,7 +1833,7 @@ def select_strategy_candidates(
     mode = strategy_rule_set(data["base_preset_id"])["ranking"]
     cash_only = data["allocation"]["cash"] == 100
     if mode == "regime_risk" and len({bucket for _, _, bucket in eligible}) < 4 and not (
-        cash_only and engine_version in {"1.3.1", "1.3.2"}
+        cash_only and engine_version in {"1.3.1", "1.3.2", "1.3.3"}
     ):
         missing.add("four_economic_regimes")
     used: _ExposureLedger = {
@@ -1830,7 +1855,7 @@ def select_strategy_candidates(
         if reason.startswith(_MISSING_PREFIX)
     )
     details = {}
-    if engine_version == "1.3.2":
+    if engine_version in {"1.3.2", "1.3.3"}:
         details = _current_selection_evidence(data, candidates, selected, as_of, missing)
     total = sum((Decimal(item["target_weight_percent"]) for item in selected), _ZERO)
     status = _selection_status(
@@ -1861,6 +1886,7 @@ def candidate_weight_constraints(
     weights: Mapping[str, Decimal],
     *,
     as_of: datetime,
+    engine_version: str = "1.3.3",
 ) -> list[str]:
     """Recheck rounded, cost-adjusted holdings with the same look-through caps as selection."""
     data = normalize_document(document)
@@ -1878,7 +1904,7 @@ def candidate_weight_constraints(
         classes[candidate.asset_class] += weight
         _holding_weight_limits(candidate, weight, data, missing)
         for name, key, exposure, limit in _candidate_exposure_limits(
-            candidate, data, as_of, missing
+            candidate, data, as_of, missing, enforce_credit_permission=engine_version == "1.3.3",
         ):
             used[name, key] += weight * exposure
             if used[name, key] > limit:

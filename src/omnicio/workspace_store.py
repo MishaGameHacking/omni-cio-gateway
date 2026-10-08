@@ -1048,12 +1048,15 @@ class WorkspaceStore:
         cur.execute(
             "SELECT * FROM (SELECT DISTINCT ON (pe.provider, pe.instrument_uid, pe.event_type, "
             "pe.provider_key) pe.id, pe.instrument_uid, pe.event_type, pe.provider_key, pe.status, "
-            "pe.expected_at, pe.amount, pe.currency, sd.source_url, sd.first_retrieved_at "
+            "pe.expected_at, pe.amount, pe.currency, sd.source_url, retrieval.retrieved_at "
             "FROM payout_events pe JOIN source_documents sd ON sd.id = pe.source_document_id "
+            "JOIN LATERAL (SELECT COALESCE(max(sr.retrieved_at), sd.first_retrieved_at) "
+            "AS retrieved_at FROM source_retrievals sr WHERE sr.source_document_id = sd.id) "
+            "AS retrieval ON true "
             "WHERE EXISTS (SELECT 1 FROM portfolio_snapshot_positions p WHERE p.user_id = %s "
             "AND p.snapshot_id = %s AND p.instrument_uid = pe.instrument_uid) "
             "ORDER BY pe.provider, pe.instrument_uid, pe.event_type, pe.provider_key, "
-            "sd.first_retrieved_at DESC, pe.id DESC) AS current_events "
+            "retrieval.retrieved_at DESC, pe.id DESC) AS current_events "
             "WHERE expected_at >= %s ORDER BY expected_at, id LIMIT 200",
             (user_id, snapshot_id, now - timedelta(days=7)),
         )
@@ -1070,7 +1073,7 @@ class WorkspaceStore:
                 category="payments",
                 kind="payout_calendar",
                 title=labels[row["event_type"]],
-                occurred_at=row["first_retrieved_at"],
+                occurred_at=row["retrieved_at"],
                 detail="Событие эмитента. Факт зачисления на ваш счёт проверяется по операциям.",
                 target="income",
                 source={

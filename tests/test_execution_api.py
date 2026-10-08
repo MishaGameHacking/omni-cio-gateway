@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from test_execution_service import _run
 
+from omnicio.billing import BillingService
 from omnicio.db import Database, UserRecord
 from omnicio.execution import ExecutionStateError
 from omnicio.execution_service import ExecutionServiceError, PortfolioExecutionService
@@ -16,6 +20,7 @@ from omnicio.main import CANONICAL_ORIGIN, app
 from omnicio.security import session_digest
 from omnicio.service import AuthService
 from omnicio.tbank import TBankUnavailable
+from omnicio.workspace_store import WorkspaceNotFound
 
 USER = UserRecord(UUID(int=501), 501, "active", "user")
 OTHER = UserRecord(UUID(int=502), 502, "active", "user")
@@ -91,6 +96,71 @@ def test_execution_requires_origin_profile_consent_and_server_session(
     response = client.post(path, json=body, headers=HEADERS)
     assert response.status_code == 409
     assert "fixture" not in response.text
+
+
+@pytest.mark.parametrize("kind", ["execution", "payment"])
+def test_old_client_can_reconcile_only_with_current_authority(execution_http, kind):
+    client, _, database, executor = execution_http
+    billing = Mock(spec=BillingService)
+    billing.reconcile.return_value = {"id": str(REFERENCE), "status": "pending"}
+    executor.reconcile.return_value = (replace(_run(), id=REFERENCE, user_id=USER.id), ())
+    path = (
+        f"/api/portfolio/executions/{REFERENCE}/reconcile" if kind == "execution"
+        else f"/api/billing/payments/{REFERENCE}/reconcile"
+    )
+    action = executor.reconcile if kind == "execution" else billing.reconcile
+    headers = {**HEADERS, "X-Omnicio-Client-Build": "b" * 12}
+    with (
+        patch.object(app.state, "settings", SimpleNamespace(release_build="a" * 12), create=True),
+        patch.object(app.state, "billing_service", billing, create=True),
+    ):
+        result = client.post(path, json={}, headers=headers)
+        assert result.status_code == 200, result.text
+        action.assert_called_once_with(USER.id, REFERENCE)
+        action.reset_mock()
+        assert client.post(path, json={}, headers={
+            key: value for key, value in headers.items() if key != "origin"
+        }).status_code == 403
+        assert client.post(path, json={}, headers={
+            **headers, "X-Omnicio-Profile": "000000502",
+        }).status_code == 409
+        database.has_legal_versions.return_value = False
+        assert client.post(path, json={}, headers=headers).status_code == 409
+        database.has_legal_versions.return_value = True
+        action.assert_not_called()
+        action.side_effect = (
+            ExecutionLedgerError("execution_not_found") if kind == "execution"
+            else WorkspaceNotFound("billing_payment_not_found")
+        )
+        assert client.post(path, json={}, headers=headers).status_code == 404
+        client.cookies.clear()
+        action.reset_mock()
+        assert client.post(path, json={}, headers=headers).status_code == 401
+        action.assert_not_called()
+    executor.plan.assert_not_called()
+    executor.confirm.assert_not_called()
+    executor.dispatch.assert_not_called()
+    billing.checkout.assert_not_called()
+
+
+@pytest.mark.parametrize("path", [
+    *(path for path, _, _ in WRITES),
+    "/api/billing/checkout", "/api/anything/reconcile",
+    "/api/portfolio/executions/not-a-uuid/reconcile",
+    f"/api/portfolio/proposals/{REFERENCE}/reconcile",
+    f"/api/billing/payments/{REFERENCE}/reconcile/extra",
+])
+def test_old_client_reconciliation_exception_cannot_create_work(execution_http, path):
+    client, _, _, executor = execution_http
+    with patch.object(
+        app.state, "settings", SimpleNamespace(release_build="a" * 12), create=True,
+    ):
+        response = client.post(
+            path, json={}, headers={**HEADERS, "X-Omnicio-Client-Build": "b" * 12},
+        )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "client_build_changed"
+    assert executor.mock_calls == []
 
 
 @pytest.mark.parametrize(
