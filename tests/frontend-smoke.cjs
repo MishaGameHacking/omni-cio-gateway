@@ -798,6 +798,178 @@ function researchMathContracts(ui, i18n) {
   assert.ok(panel.innerHTML.includes("data-assessment-expired"), "The assessment expires locally without a network refresh or form rerender");
   console.log("PASS research contracts: real calculator results, historical frequency limits, explicit cash model and expiring account assessment");
 }
+function dialogCloseContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const state = {view: "goals", route: {mode: "account", view: "goals", screen: "create", goal_id: "goal-a", overlay: ""}};
+  const handlers = new Map(), queuedClose = [], navigations = [];
+  let routed = true, captured = 0, backed = 0;
+  const dialog = {id: "workspace-dialog", open: true, dataset: {},
+    classList: {contains: name => name === "route-dialog" && routed},
+    addEventListener: (name, handler) => handlers.set(name, handler),
+    showModal() { this.open = true; },
+    close() {
+      if (!this.open) return;
+      this.open = false;
+      // HTML close() clears open immediately and queues the close event for a later task.
+      queuedClose.push(() => handlers.get("close")());
+    }};
+  const context = vm.createContext({state,
+    $$: selector => selector === "dialog[open]" && !dialog.open ? [] : [dialog],
+    saveNavigationPosition() {}, captureScreenDrafts() { captured += 1; },
+    routeBack() { backed += 1; },
+    navigate(view, route, options) {
+      context.closeRoutes();
+      state.view = view;
+      state.route = route;
+      navigations.push({view, route, options});
+    }});
+  const source = app.slice(app.indexOf("  const closeRouteDialogs ="), app.indexOf("  const sessionSurfaceContent ="))
+    + app.slice(app.indexOf('  for (const dialog of $$("dialog")) {'), app.indexOf("  observeDialogHeader();"));
+  vm.runInContext(source + "\nglobalThis.closeRoutes=closeRouteDialogs;", context);
+
+  dialog.close(); // A successful save closes the shared creation dialog.
+  state.route.screen = "plan";
+  dialog.showModal(); // The next editor opens before the old close task is delivered.
+  queuedClose.shift()();
+  assert.equal(navigations.length, 0, "A prior close event cannot navigate away from the reopened editor");
+  assert.equal(dialog.open, true, "A prior close event cannot close the new dialog");
+  assert.equal(state.route.screen, "plan", "The new goal plan retains its addressable route");
+
+  dialog.close();
+  queuedClose.shift()();
+  assert.equal(navigations.length, 1, "A current close still leaves its routed editor");
+  assert.equal(state.route.screen, "");
+  assert.equal(state.route.goal_id, "goal-a", "Normal close retains the selected goal");
+  assert.equal(navigations[0].options.replace, true, "Normal close replaces the closed route");
+
+  state.route.screen = "edit";
+  dialog.showModal();
+  context.closeRoutes();
+  assert.equal(dialog.dataset.routeClosing, "true");
+  state.route.screen = "plan";
+  dialog.showModal();
+  queuedClose.shift()();
+  assert.equal(dialog.dataset.routeClosing, undefined, "A navigation close marker is consumed even after reopening");
+  assert.equal(navigations.length, 1, "A queued navigation close cannot replace the current route");
+  assert.equal(dialog.open, true);
+  dialog.close();
+  queuedClose.shift()();
+  assert.equal(navigations.length, 2, "The consumed marker cannot swallow the next genuine close");
+
+  routed = false;
+  state.route = {...state.route, screen: "archive", overlay: "help"};
+  dialog.showModal();
+  dialog.close();
+  queuedClose.shift()();
+  assert.equal(state.route.screen, "archive", "Closing an overlay preserves its underlying screen");
+  assert.equal(state.route.overlay, "");
+  assert.equal(navigations.length, 3);
+  dialog.showModal();
+  dialog.close();
+  queuedClose.shift()();
+  assert.equal(navigations.length, 3, "A plain dialog without a route does not navigate");
+
+  dialog.showModal();
+  let prevented = false;
+  handlers.get("cancel")({preventDefault() { prevented = true; }});
+  assert.equal(prevented, true, "Escape keeps the existing explicit navigation path");
+  assert.equal(captured, 1);
+  assert.equal(backed, 1);
+  context.closeRoutes();
+  queuedClose.shift()();
+  assert.equal(dialog.dataset.routeClosing, undefined);
+  assert.equal(navigations.length, 3, "Closing for history navigation cannot trigger a second navigation");
+  console.log("PASS dialog close lifecycle: queued old events preserve reopened editors, navigation markers are consumed, and current close, overlay, cancel and history paths remain effective");
+}
+async function assetBackgroundChartContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const state = {generation: 1, user: {public_id: "000000123"}, mode: "account", view: "asset",
+    route: {uid: "a"}, asset: {uid: "a", name: "Initial source", ticker: "A"},
+    assetTab: "chart", assetPeriod: "1m", prefs: {draft: {watchlist: [], mask_balances: false}},
+    data: {}, errors: {}, loading: new Set(), resourceRequests: new Map(), resourceVersions: new Map(), eventFilter: "payments"};
+  const document = {body: {matches: () => false}, activeElement: null};
+  let chart, locale = "ru", sidebarText = "", serial = 0;
+  const watch = {dataset: {}, attributes: {}, setAttribute(key, value) { this.attributes[key] = value; }};
+  const header = {h1: {}, p: {}, ".asset-logo": {}, "[data-watch]": watch};
+  const container = {dataset: {}, set innerHTML(value) {
+    if (document.activeElement === chart) document.activeElement = document.body;
+    chart = {id: ++serial, selected: "last", label: locale, content: value,
+      matches: () => false, focus() { document.activeElement = this; }};
+  }};
+  const sidebar = {set innerHTML(value) { sidebarText = value; }};
+  const context = vm.createContext({state, document, T: value => value, I: {getLocale: () => locale},
+    $: (selector, parent) => parent === header ? header[selector] : ({"#view-asset": container,
+      ".asset-detail-header": header, "[data-asset-sidebar]": sidebar, ".chart-svg": chart})[selector] || null,
+    isWatched: uid => state.prefs.draft.watchlist.some(item => item.instrument_uid === uid),
+    assetPricing: asset => ({asset}), assetSideHTML: () => state.prefs.draft.mask_balances ? "masked source balance" : "visible source balance",
+    assetFrameHTML: () => "new chart source", assetChartHTML() {}, assetOverviewHTML() {}, assetMetricsHTML() {}, assetNewsHTML() {},
+    resourceSnapshot: (_name, payload) => payload, adoptLoadedResource() {}, isCancelled: () => false, eventReadEpoch: () => 0,
+    captureScreenMenuFocus() {}, restoreScreenMenuFocus() {}, updateIdentity() {}, renderConnectionBanner() {},
+    updateRefreshControls() {}, renderInstallPromotion() {}, U: {bindCharts() {}}});
+  for (const name of ["Home", "Portfolio", "Market", "Strategies", "Assistant", "Goals", "Analytics", "Events", "Profile", "Settings", "Search", "Install"]) context["render" + name] = () => {};
+  const source = app.slice(app.indexOf("  const loadResource ="), app.indexOf("  const resourceSnapshot ="))
+    + app.slice(app.indexOf("  const refreshAssetChartContext ="), app.indexOf("  const tradingLabel ="))
+    + app.slice(app.indexOf("  const renderCurrent ="), app.indexOf("  const updateLanguageControls ="));
+  vm.runInContext(source + "\nglobalThis.load=loadResource; globalThis.paint=renderCurrent;", context);
+  const pendingRead = name => {
+    let resolve, reject;
+    context.api = () => new Promise((yes, no) => { resolve = yes; reject = no; });
+    const promise = context.load(name, "/api/" + name, {force: true});
+    return {promise, resolve, reject};
+  };
+  context.paint();
+  chart.focus();
+  chart.selected = "first";
+  const inspected = chart;
+  for (const name of ["news", "workspace", "visualization", "preferences", "connection", "notifications"]) {
+    const read = pendingRead(name);
+    read.resolve({observed: name});
+    await read.promise;
+    assert.equal(chart, inspected, "A late generic resource must not replace the inspected asset SVG: " + name);
+    assert.equal(document.activeElement, inspected, "The actual generic completion path retains chart focus: " + name);
+    assert.equal(chart.selected, "first", "The selected historical observation survives unrelated source arrival");
+    assert.equal(state.data[name].observed, name, "Keeping the chart cannot discard the newly received resource");
+  }
+  const failure = pendingRead("news");
+  failure.reject(Object.assign(new Error("source_unavailable"), {status: 503}));
+  await failure.promise;
+  assert.equal(chart, inspected, "An unrelated source error also preserves the chart");
+  assert.equal(state.errors.news.status, 503);
+  state.prefs.draft.watchlist = [{instrument_uid: "a"}];
+  state.prefs.draft.mask_balances = true;
+  const preferences = pendingRead("preferences");
+  preferences.resolve({observed: "changed preferences"});
+  await preferences.promise;
+  assert.equal(chart, inspected, "Personal display changes do not discard the public-price observation");
+  assert.equal(sidebarText, "masked source balance", "The sidebar is repainted with current privacy state");
+  assert.equal(watch.attributes["aria-pressed"], "true", "Late preferences update the retained watch control");
+  assert.equal(watch.attributes["aria-label"], "Удалить из избранного");
+  locale = "en";
+  const translated = pendingRead("preferences");
+  translated.resolve({observed: "new locale"});
+  await translated.promise;
+  assert.notEqual(chart, inspected, "Changed locale invalidates chart labels instead of retaining the old language");
+  assert.equal(chart.label, "en");
+  for (const change of [() => { state.assetPeriod = "1y"; }, () => { state.assetTab = "overview"; }, () => { state.route.uid = "b"; state.asset = {uid: "b", name: "Other source", ticker: "B"}; }]) {
+    const previous = chart;
+    change();
+    const read = pendingRead("news");
+    read.resolve({observed: "new view context"});
+    await read.promise;
+    assert.notEqual(chart, previous, "Different period, pane or instrument cannot reuse the previous chart");
+  }
+  const beforeExplicit = chart;
+  context.paint();
+  assert.notEqual(chart, beforeExplicit, "Explicit route and market rendering keeps the full repaint default");
+  const stale = pendingRead("news");
+  const beforeGeneration = chart;
+  state.generation += 1;
+  stale.resolve({observed: "obsolete account"});
+  await stale.promise;
+  assert.equal(chart, beforeGeneration, "An old account's resource cannot repaint the current surface");
+  assert.notEqual(state.data.news?.observed, "obsolete account");
+  console.log("PASS asset background chart: actual generic source completions preserve SVG, focus and selection; errors, privacy, watch state, locale and route invalidation remain correct");
+}
 async function ledgerPaginationContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const source = app.slice(app.indexOf("  async function loadLedgerPage()"), app.indexOf("  function supportAddress("));
@@ -2448,6 +2620,8 @@ const runBrowser = async base => {
 (async () => {
   try {
     displayContracts();
+    dialogCloseContracts();
+    await assetBackgroundChartContracts();
     await ledgerPaginationContracts();
     await assistantConversationContracts();
     await assistantMemoryReconciliationContracts();
@@ -4236,17 +4410,30 @@ async function exerciseAssetEnrichment({send, round, base, wait, evaluate, check
   const fixture = makeFixture("signed");
   fixture.holdAssetParts = new Set(["details", "facts", "news"]);
   fixture.heldAssetParts = new Map();
+  fixture.holdPublicNews = true;
+  fixture.holdWorkspace = true;
   fixture.closedPosition = true;
   fixture.enrichmentName = "Late source company";
   fixture.enrichmentTicker = "LATE";
   fixtures.set(key, fixture);
   await send("Page.navigate", {url: `${base}?case=${key}#account/asset?uid=synthetic-a`});
   await until(() => fixture.heldAssetParts.size === 3, "All auxiliary asset responses are deliberately held");
+  await until(() => fixture.heldPublicNews.length === 1 && fixture.heldWorkspace.length === 1, "Generic news and resumed workspace reads remain in flight independently of the asset");
   await wait('document.querySelector("#view-asset .chart-svg") && document.querySelector("#view-asset [data-market-quote] .main-value")?.textContent.includes("251,75")', "The chart is usable while details, facts and news are still pending");
   await evaluate('window.__enrichmentChart = document.querySelector("#view-asset .chart-svg"); window.__enrichmentChart.focus()');
   await send("Input.dispatchKeyEvent", {type: "keyDown", key: "Home", code: "Home", windowsVirtualKeyCode: 36});
   const selected = await evaluate('document.querySelector("#view-asset .chart-readout").textContent');
   const aria = await evaluate('window.__enrichmentChart.getAttribute("aria-label")');
+  for (const [path, flag, pending] of [["/api/public/news", "holdPublicNews", "heldPublicNews"], ["/api/workspace", "holdWorkspace", "heldWorkspace"]]) {
+    const completed = await evaluate(completedResourceCount(path));
+    fixture[flag] = false;
+    fixture[pending].splice(0).forEach(release => release());
+    await wait(`${completedResourceCount(path)} > ${completed}`, "The intentionally late generic response completes: " + path);
+    await checkLayout(`asset-enrichment-background-${path.split("/").at(-1)}-${round}`, {minCharts: 1});
+    assert.equal(await evaluate('document.querySelector("#view-asset .chart-svg") === window.__enrichmentChart && document.activeElement === window.__enrichmentChart'), true, "Generic resource completion cannot replace the chart or its focus: " + path);
+    assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout").textContent'), selected, "The selected candle survives the actual generic repaint: " + path);
+    assert.equal(await evaluate('window.__enrichmentChart.getAttribute("aria-label")'), aria, "The accessible selected observation survives the generic repaint: " + path);
+  }
   const ready = {
     details: `Object.fromEntries([...document.querySelectorAll('#view-asset [data-asset-sidebar] .info-row')].map(row=>[row.querySelector('dt').textContent,row.querySelector('dd').textContent]))['Стоимость в портфеле'] === window.OmniUI.money('0')`,
     facts: `document.querySelector('#view-asset [data-asset-sidebar]').textContent.includes('11,25')`,
@@ -4265,7 +4452,7 @@ async function exerciseAssetEnrichment({send, round, base, wait, evaluate, check
   assert.deepEqual(await evaluate('(() => { const watch=document.querySelector("#view-asset .asset-detail-header [data-watch]"); return [watch.dataset.watchName,watch.dataset.watchTicker]; })()'), ["Late source company", "LATE"], "The existing watch control receives the same final source metadata");
   await checkLayout(`asset-enrichment-${round}`, {minCharts: 1});
   await evaluate('delete window.__enrichmentChart');
-  console.log(`PASS asset enrichment round ${round}: held details/facts/news update their panels while preserving the chosen candle, SVG and focus`);
+  console.log(`PASS asset enrichment round ${round}: late generic news/workspace and held details/facts/news update their consumers while preserving the chosen candle, SVG and focus`);
 }
 function installPromptBrowserFixture() {
   if (new URLSearchParams(location.search).get("case") !== "guest-installation") return;
