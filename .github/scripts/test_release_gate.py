@@ -596,6 +596,35 @@ class ApplicationPushEvidenceTests(unittest.TestCase):
 
 
 class SelfHostedCiPolicyTests(unittest.TestCase):
+    def test_infrastructure_pr_queues_are_isolated_from_production(self) -> None:
+        workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
+        for name in ("auth-postgres", "auth-private-network"):
+            workflow = (workflow_dir / f"{name}.yml").read_text(encoding="utf-8")
+            header, jobs = workflow.split("\njobs:\n", 1)
+            reconcile = jobs.split("\n  reconcile:\n", 1)[1].split(
+                "\n  isolated-restore:\n", 1,
+            )[0]
+            with self.subTest(workflow=name):
+                self.assertEqual(
+                    header.split("\nconcurrency:\n", 1)[1].strip(),
+                    f"group: {name}-"
+                    "${{ github.event.pull_request.number || 'production' }}\n"
+                    "  cancel-in-progress: false",
+                )
+                self.assertIn(
+                    "    concurrency:\n"
+                    "      group: omnicio-production-ssh\n"
+                    "      cancel-in-progress: false\n"
+                    "      queue: max\n",
+                    reconcile,
+                )
+                self.assertIn(
+                    "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'",
+                    reconcile,
+                )
+                self.assertIn("    needs: tests\n", reconcile)
+                self.assertIn("- name: Verify current main release checks\n", reconcile)
+
     def test_inactive_restore_only_binds_sonar_auth_to_the_gated_step(self) -> None:
         workflow = (
             pathlib.Path(__file__).resolve().parent.parent / "workflows" / "auth-postgres.yml"

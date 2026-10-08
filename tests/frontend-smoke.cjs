@@ -1262,6 +1262,95 @@ async function payoutEventHistoryContracts() {
   }
   console.log("PASS payout event history: real private DTOs, appended cache supersession, valid same-instrument history, read receipts, failure visibility and bounded stale-read cancellation");
 }
+async function assetBackgroundChartContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const state = {generation: 1, user: {public_id: "000000123"}, mode: "account", view: "asset",
+    route: {uid: "a"}, asset: {uid: "a", name: "Initial source", ticker: "A"},
+    assetTab: "chart", assetPeriod: "1m", prefs: {draft: {watchlist: [], mask_balances: false}},
+    data: {}, errors: {}, loading: new Set(), resourceRequests: new Map(), resourceVersions: new Map(), eventFilter: "payments"};
+  const document = {body: {matches: () => false}, activeElement: null};
+  let chart, locale = "ru", sidebarText = "", serial = 0;
+  const watch = {dataset: {}, attributes: {}, setAttribute(key, value) { this.attributes[key] = value; }};
+  const header = {h1: {}, p: {}, ".asset-logo": {}, "[data-watch]": watch};
+  const container = {dataset: {}, set innerHTML(value) {
+    if (document.activeElement === chart) document.activeElement = document.body;
+    chart = {id: ++serial, selected: "last", label: locale, content: value,
+      matches: () => false, focus() { document.activeElement = this; }};
+  }};
+  const sidebar = {set innerHTML(value) { sidebarText = value; }};
+  const context = vm.createContext({state, document, T: value => value, I: {getLocale: () => locale},
+    $: (selector, parent) => parent === header ? header[selector] : ({"#view-asset": container,
+      ".asset-detail-header": header, "[data-asset-sidebar]": sidebar, ".chart-svg": chart})[selector] || null,
+    isWatched: uid => state.prefs.draft.watchlist.some(item => item.instrument_uid === uid),
+    assetPricing: asset => ({asset}), assetSideHTML: () => state.prefs.draft.mask_balances ? "masked source balance" : "visible source balance",
+    assetFrameHTML: () => "new chart source", assetChartHTML() {}, assetOverviewHTML() {}, assetMetricsHTML() {}, assetNewsHTML() {},
+    resourceSnapshot: async (_name, payload) => payload, adoptLoadedResource() {}, isCancelled: () => false,
+    captureScreenMenuFocus() {}, restoreScreenMenuFocus() {}, updateIdentity() {}, renderConnectionBanner() {},
+    updateRefreshControls() {}, renderInstallPromotion() {}, U: {bindCharts() {}}});
+  for (const name of ["Home", "Portfolio", "Market", "Strategies", "Assistant", "Goals", "Analytics", "Events", "Profile", "Settings", "Search", "Install"]) context["render" + name] = () => {};
+  const source = app.slice(app.indexOf("  const loadResource ="), app.indexOf("  const resourceSnapshot ="))
+    + app.slice(app.indexOf("  const refreshAssetChartContext ="), app.indexOf("  const tradingLabel ="))
+    + app.slice(app.indexOf("  const renderCurrent ="), app.indexOf("  const updateLanguageControls ="));
+  vm.runInContext(source + "\nglobalThis.load=loadResource; globalThis.paint=renderCurrent;", context);
+  const pendingRead = name => {
+    let resolve, reject;
+    context.api = () => new Promise((yes, no) => { resolve = yes; reject = no; });
+    const promise = context.load(name, "/api/" + name, {force: true});
+    return {promise, resolve, reject};
+  };
+  context.paint();
+  chart.focus();
+  chart.selected = "first";
+  const inspected = chart;
+  for (const name of ["news", "workspace", "visualization", "preferences", "connection", "notifications"]) {
+    const read = pendingRead(name);
+    read.resolve({observed: name});
+    await read.promise;
+    assert.equal(chart, inspected, "A late generic resource must not replace the inspected asset SVG: " + name);
+    assert.equal(document.activeElement, inspected, "The actual generic completion path retains chart focus: " + name);
+    assert.equal(chart.selected, "first", "The selected historical observation survives unrelated source arrival");
+    assert.equal(state.data[name].observed, name, "Keeping the chart cannot discard the newly received resource");
+  }
+  const failure = pendingRead("news");
+  failure.reject(Object.assign(new Error("source_unavailable"), {status: 503}));
+  await failure.promise;
+  assert.equal(chart, inspected, "An unrelated source error also preserves the chart");
+  assert.equal(state.errors.news.status, 503);
+  state.prefs.draft.watchlist = [{instrument_uid: "a"}];
+  state.prefs.draft.mask_balances = true;
+  const preferences = pendingRead("preferences");
+  preferences.resolve({observed: "changed preferences"});
+  await preferences.promise;
+  assert.equal(chart, inspected, "Personal display changes do not discard the public-price observation");
+  assert.equal(sidebarText, "masked source balance", "The sidebar is repainted with current privacy state");
+  assert.equal(watch.attributes["aria-pressed"], "true", "Late preferences update the retained watch control");
+  assert.equal(watch.attributes["aria-label"], "Удалить из избранного");
+  locale = "en";
+  const translated = pendingRead("preferences");
+  translated.resolve({observed: "new locale"});
+  await translated.promise;
+  assert.notEqual(chart, inspected, "Changed locale invalidates chart labels instead of retaining the old language");
+  assert.equal(chart.label, "en");
+  for (const change of [() => { state.assetPeriod = "1y"; }, () => { state.assetTab = "overview"; }, () => { state.route.uid = "b"; state.asset = {uid: "b", name: "Other source", ticker: "B"}; }]) {
+    const previous = chart;
+    change();
+    const read = pendingRead("news");
+    read.resolve({observed: "new view context"});
+    await read.promise;
+    assert.notEqual(chart, previous, "Different period, pane or instrument cannot reuse the previous chart");
+  }
+  const beforeExplicit = chart;
+  context.paint();
+  assert.notEqual(chart, beforeExplicit, "Explicit route and market rendering keeps the full repaint default");
+  const stale = pendingRead("news");
+  const beforeGeneration = chart;
+  state.generation += 1;
+  stale.resolve({observed: "obsolete account"});
+  await stale.promise;
+  assert.equal(chart, beforeGeneration, "An old account's resource cannot repaint the current surface");
+  assert.notEqual(state.data.news?.observed, "obsolete account");
+  console.log("PASS asset background chart: actual generic source completions preserve SVG, focus and selection; errors, privacy, watch state, locale and route invalidation remain correct");
+}
 function assetPayoutDisclosureContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const state = {route: {uid: "a"}, asset: {uid: "a", name: "Initial source", ticker: "A", payoutText: "Planned payout: old date"}, assetTab: "chart", assetPeriod: "1m"};
@@ -1275,8 +1364,8 @@ function assetPayoutDisclosureContracts() {
   };
   const container = {dataset: {}, set innerHTML(text) { replacePayout(text); }};
   const sidebar = {set innerHTML(text) { replacePayout(text); }};
-  const header = {h1: {}, p: {}, ".asset-logo": {}, "[data-watch]": {dataset: {}}};
-  const context = vm.createContext({state, document, T: value => value,
+  const header = {h1: {}, p: {}, ".asset-logo": {}, "[data-watch]": {dataset: {}, setAttribute() {}}};
+  const context = vm.createContext({state, document, T: value => value, I: {getLocale: () => "ru"}, isWatched: () => false,
     $: (selector, parent) => {
       if (parent === header) return header[selector];
       if (selector === "summary") return parent.summary;
@@ -3126,6 +3215,7 @@ const runBrowser = async base => {
     await payoutDisplayContracts();
     await payoutEventHistoryContracts();
     assetPayoutDisclosureContracts();
+    await assetBackgroundChartContracts();
     await ledgerPaginationContracts();
     await searchAndAssetPaginationContracts();
     await visibleRefreshContracts();
@@ -4986,17 +5076,30 @@ async function exerciseAssetEnrichment({send, round, base, wait, evaluate, check
   const fixture = makeFixture("signed");
   fixture.holdAssetParts = new Set(["details", "facts", "news"]);
   fixture.heldAssetParts = new Map();
+  fixture.holdPublicNews = true;
+  fixture.holdWorkspace = true;
   fixture.closedPosition = true;
   fixture.enrichmentName = "Late source company";
   fixture.enrichmentTicker = "LATE";
   fixtures.set(key, fixture);
   await send("Page.navigate", {url: `${base}?case=${key}#account/asset?uid=synthetic-a`});
   await until(() => fixture.heldAssetParts.size === 3, "All auxiliary asset responses are deliberately held");
+  await until(() => fixture.heldPublicNews.length === 1 && fixture.heldWorkspace.length === 1, "Generic news and resumed workspace reads remain in flight independently of the asset");
   await wait('document.querySelector("#view-asset .chart-svg") && document.querySelector("#view-asset [data-market-quote] .main-value")?.textContent.includes("251,75")', "The chart is usable while details, facts and news are still pending");
   await evaluate('window.__enrichmentChart = document.querySelector("#view-asset .chart-svg"); window.__enrichmentChart.focus()');
   await send("Input.dispatchKeyEvent", {type: "keyDown", key: "Home", code: "Home", windowsVirtualKeyCode: 36});
   const selected = await evaluate('document.querySelector("#view-asset .chart-readout").textContent');
   const aria = await evaluate('window.__enrichmentChart.getAttribute("aria-label")');
+  for (const [path, flag, pending] of [["/api/public/news", "holdPublicNews", "heldPublicNews"], ["/api/workspace", "holdWorkspace", "heldWorkspace"]]) {
+    const completed = await evaluate(completedResourceCount(path));
+    fixture[flag] = false;
+    fixture[pending].splice(0).forEach(release => release());
+    await wait(`${completedResourceCount(path)} > ${completed}`, "The intentionally late generic response completes: " + path);
+    await checkLayout(`asset-enrichment-background-${path.split("/").at(-1)}-${round}`, {minCharts: 1});
+    assert.equal(await evaluate('document.querySelector("#view-asset .chart-svg") === window.__enrichmentChart && document.activeElement === window.__enrichmentChart'), true, "Generic resource completion cannot replace the chart or its focus: " + path);
+    assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout").textContent'), selected, "The selected candle survives the actual generic repaint: " + path);
+    assert.equal(await evaluate('window.__enrichmentChart.getAttribute("aria-label")'), aria, "The accessible selected observation survives the generic repaint: " + path);
+  }
   const ready = {
     details: `Object.fromEntries([...document.querySelectorAll('#view-asset [data-asset-sidebar] .info-row')].map(row=>[row.querySelector('dt').textContent,row.querySelector('dd').textContent]))['Стоимость в портфеле'] === window.OmniUI.money('0')`,
     facts: `document.querySelector('#view-asset [data-asset-sidebar]').textContent.includes('11,25')`,
@@ -5015,7 +5118,7 @@ async function exerciseAssetEnrichment({send, round, base, wait, evaluate, check
   assert.deepEqual(await evaluate('(() => { const watch=document.querySelector("#view-asset .asset-detail-header [data-watch]"); return [watch.dataset.watchName,watch.dataset.watchTicker]; })()'), ["Late source company", "LATE"], "The existing watch control receives the same final source metadata");
   await checkLayout(`asset-enrichment-${round}`, {minCharts: 1});
   await evaluate('delete window.__enrichmentChart');
-  console.log(`PASS asset enrichment round ${round}: held details/facts/news update their panels while preserving the chosen candle, SVG and focus`);
+  console.log(`PASS asset enrichment round ${round}: late generic news/workspace and held details/facts/news update their consumers while preserving the chosen candle, SVG and focus`);
 }
 function installPromptBrowserFixture() {
   if (new URLSearchParams(location.search).get("case") !== "guest-installation") return;

@@ -28,7 +28,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: auth-private-network
+  group: auth-private-network-${{ github.event.pull_request.number || 'production' }}
   cancel-in-progress: false
 
 jobs:
