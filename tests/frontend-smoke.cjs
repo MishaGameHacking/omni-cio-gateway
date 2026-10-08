@@ -2729,7 +2729,7 @@ function assertChartLayout(charts, label) {
     for (const axis of chart.axes.slice(3)) assert.ok(axis.rect.top >= chart.svg.bottom && axis.rect.left >= chart.svg.left - 1 && axis.rect.right <= chart.svg.right + 1, label + ": date axis stays below its own plot");
   }
 }
-const screenshotEvidenceNames = new Set(["portfolio-2-320.png", "market-2-320.png", "strategies-2-390.png", "strategies-custom-2-390.png", "auth-2-390.png", "auth-2-320.png", "failure-state.png"]);
+const screenshotEvidenceNames = new Set(["portfolio-2-320.png", "market-2-320.png", "strategies-2-390.png", "strategies-custom-2-390.png", "auth-2-390.png", "auth-2-320.png", "failure-state.png", "payout-source-normal-ru-320.png", "payout-source-ambiguous-ru-320.png", "payout-source-normal-en-320.png", "payout-source-ambiguous-en-320.png"]);
 let screenshotEvidenceCharacters = 0;
 let screenshotEvidenceSequence = 0;
 function logScreenshotEvidence(name, png) {
@@ -4947,8 +4947,12 @@ async function exercisePayoutDisplay({send, configureViewport, round, base, wait
   const target = `${base}?case=${key}`;
   for (const disputed of [false, true]) {
     fixture.assetPayouts = clone(serverContracts.payout_visualization.payouts.filter(item => (item.identity_status === "ambiguous") === disputed));
-    await send("Page.navigate", {url: `${target}#account/asset?uid=synthetic-a`});
-    await wait(`document.documentElement.lang === ${JSON.stringify(locale)} && document.querySelector('#view-asset h1')?.textContent === 'Payout contract company' && document.querySelector('#view-asset [data-asset-payouts]') && !document.querySelector('#view-asset .loading-panel')`, "The asset receives actual payout source records");
+    const cohort = disputed ? "ambiguous" : "normal";
+    const navigation = await send("Page.navigate", {url: `${target}&payout=${cohort}#account/asset?uid=synthetic-a`});
+    assert.ok(navigation.loaderId, "Each payout source cohort loads a new document");
+    const summary = disputed ? "payout.identity.ambiguous" : "Подтверждённые события выплат";
+    await wait(`document.documentElement.lang === ${JSON.stringify(locale)} && document.querySelector('#view-asset h1')?.textContent === 'Payout contract company' && document.querySelector('#view-asset [data-asset-payouts] summary')?.textContent === window.OMNICIO_I18N.t(${JSON.stringify(summary)}) && !document.querySelector('#view-asset .loading-panel')`, "The asset receives the expected payout source cohort: " + cohort);
+    assert.equal(await evaluate('document.querySelector("#view-asset [data-asset-payouts]").open'), false, "The new payout disclosure starts closed before its single native click");
     await click("#view-asset [data-asset-payouts] summary");
     await wait('document.querySelector("#view-asset [data-asset-payouts]").open', "Payment records have a visible disclosure path");
     const text = await evaluate('document.querySelector("#view-asset [data-asset-payouts]").textContent');

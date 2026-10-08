@@ -985,7 +985,7 @@
     state.resourceVersions.set("eventSnapshots", sequence);
     return {sequence, generation: state.generation, navigation: state.navigationSequence, filter: state.eventFilter, epoch: eventReadEpoch()};
   };
-  const currentEventSnapshot = context => context && context.generation === state.generation && context.navigation === state.navigationSequence && context.filter === state.eventFilter && context.sequence === state.resourceVersions.get("eventSnapshots") && currentEventRead(context.epoch);
+  const currentEventSnapshot = context => context?.generation === state.generation && context.navigation === state.navigationSequence && context.filter === state.eventFilter && context.sequence === state.resourceVersions.get("eventSnapshots") && currentEventRead(context.epoch);
   const retryMissingEvents = () => {
     if (!state.data.events && !state.loading.has("events") && !state.eventWrites.size && state.user && !state.locked && state.mode === "account" && ["home", "events"].includes(state.view)) void loadResource("events", eventsPath(), {force: true});
   };
@@ -1724,6 +1724,12 @@
     payoutHistoryReadback = pending.catch(() => {});
     return pending;
   };
+  const readPayoutHistory = async (items, context, received, offset = 0) => {
+    if (offset >= items.length || !currentEventSnapshot(context)) return;
+    const batch = await readPayoutHistoryBatch(items.slice(offset, offset + 4), context);
+    for (const [id, event] of batch) received.set(id, event);
+    return readPayoutHistory(items, context, received, offset + 4);
+  };
   const readEventSnapshot = async (payload, context, append = false) => {
     if (!currentEventSnapshot(context)) return null;
     if ((!state.eventHistoryExtended && !append) || !state.data.events) return payload;
@@ -1731,10 +1737,7 @@
     const omitted = (state.data.events.items || []).filter(item => item.kind === "payout_calendar" && item.source?.type === "payout" && !incoming.has(item.id));
     const received = new Map();
     try {
-      for (let offset = 0; offset < omitted.length; offset += 4) {
-        if (!currentEventSnapshot(context)) return null;
-        for (const [id, event] of await readPayoutHistoryBatch(omitted.slice(offset, offset + 4), context)) received.set(id, event);
-      }
+      await readPayoutHistory(omitted, context, received);
     } catch (error) {
       if (!currentEventSnapshot(context)) return null;
       state.errors.events = error;
@@ -3950,12 +3953,14 @@
     } catch (error) {
       if (current() && !isCancelled(error)) state.errors[name] = error;
     } finally {
-      if (generation === state.generation) {
-        state.loading.delete(busy);
-        if (state.view === "events" && current()) renderEvents();
-        else if (!news) $("#view-events [data-action=events-more]")?.removeAttribute("disabled");
-      }
+      finishEventPage(news, busy, generation, current);
     }
+  };
+  const finishEventPage = (news, busy, generation, current) => {
+    if (generation !== state.generation) return;
+    state.loading.delete(busy);
+    if (state.view === "events" && current()) renderEvents();
+    else if (!news) $("#view-events [data-action=events-more]")?.removeAttribute("disabled");
   };
   const eventSourceLabel = type => ({operation: T("Операция брокера"), payout: T("Календарь выплат"), risk: T("Оценка инструмента"), goal: T("Цель"), audit: T("Журнал аккаунта"), job: T("Сбор данных")})[type] || type || T("Серверный факт");
   const payoutIdentityUncertain = item => item?.identity_status === "ambiguous" || item?.supersession_reason === "identity_ambiguous";
