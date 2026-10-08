@@ -7247,13 +7247,19 @@
   function renderAssetFinePrint(item) {
     const validDate = value => typeof value === "string" && Number.isFinite(Date.parse(value));
     const uncertain = payoutIdentityUncertain(item);
+    const payoutType = new Map([
+      ["dividend", "asset.dividend"],
+      ["coupon", "asset.coupon"],
+      ["bond_event", "asset.bond_event"]
+    ]).get(item.event_type) || "Выплата";
     let paymentDate = T("payout.date.unknown");
     if (item.status === "paid" && validDate(item.actual_at)) {
       paymentDate = `${T(uncertain ? "payout.date.source" : "payout.date.actual")}: ${date(item.actual_at)}`;
     } else if (validDate(item.expected_at)) {
       paymentDate = `${T("events.expected")}: ${date(item.expected_at)}`;
     }
-    return `<p class="fine-print">${esc(item.event_type || T("Выплата"))} · ${esc(paymentDate)}${uncertain ? ` · ${H("payout.identity.unconfirmed")}` : ""}</p>`;
+    const uncertaintyNote = uncertain ? ` · ${H("payout.identity.unconfirmed")}` : "";
+    return `<p class="fine-print">${H(payoutType)} · ${esc(paymentDate)}${uncertaintyNote}</p>`;
   }
   function renderAssetDetailsSummary2(details) {
     const uncertain = details.payouts.some(payoutIdentityUncertain);

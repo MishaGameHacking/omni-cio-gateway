@@ -2197,11 +2197,7 @@ class PortfolioStore:
                 """,
                 (subjects,),
             )
-            payouts = [dict(row) for row in cur.fetchall()]
-            for payout in payouts:
-                if payout.pop("identity_ambiguous"):
-                    payout.update(identity_status="ambiguous",
-                                  identity_reason="co_observed_anchor_collision")
+            payouts = [_payout_payload(dict(row)) for row in cur.fetchall()]
 
             cur.execute(
                 """
@@ -2576,6 +2572,15 @@ class PortfolioStore:
                 page=page,
             )
         return inserted
+
+
+def _payout_payload(payout: dict[str, Any]) -> dict[str, Any]:
+    if payout.pop("identity_ambiguous"):
+        payout.update(
+            identity_status="ambiguous",
+            identity_reason="co_observed_anchor_collision",
+        )
+    return payout
 
 
 def _age_seconds(value: datetime | None, *, now: datetime) -> int | None:

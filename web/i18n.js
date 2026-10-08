@@ -492,6 +492,7 @@
     "asset.maturity": ["Погашение","Maturity"],
     "asset.coupon": ["Купон","Coupon"],
     "asset.dividend": ["Дивиденд","Dividend"],
+    "asset.bond_event": ["Событие облигации","Bond event"],
     "asset.yield": ["Доходность","Return"],
     "asset.volume": ["Объём","Volume"],
     "asset.spread": ["Спред","Spread"],
