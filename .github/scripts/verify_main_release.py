@@ -328,7 +328,8 @@ def main() -> int:
     try:
         sha, token = release_context()
         require_checkout(sha)
-        client = GitHubClient(token, deadline=time.monotonic() + 600)
+        # Cover the 12-minute application check plus runner startup and cleanup.
+        client = GitHubClient(token, deadline=time.monotonic() + 900)
         wait_for_release(client, sha)
     except ReleaseBlocked as exc:
         print(f"::error::{exc}", file=sys.stderr)

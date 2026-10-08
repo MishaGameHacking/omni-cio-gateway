@@ -4603,13 +4603,11 @@ body.drawer-open {
 .screen-menu-picker { margin-bottom: 24px; }
 .screen-menu-picker > .screen-menu { margin: 12px 0 0; }
 .screen-menu-toggle { display: none; width: 100%; justify-content: space-between; text-align: left; white-space: normal; }
+.screen-menu-picker[data-compact="true"] > .screen-menu-toggle { display: flex; }
 .screen-menu-toggle::-webkit-details-marker { display: none; }
 .screen-menu-toggle:focus-visible { outline: 2px solid var(--blue-light); outline-offset: 3px; }
 .screen-menu-toggle .icon { transform: rotate(90deg); flex-shrink: 0; }
 .screen-menu-picker[open] > .screen-menu-toggle .icon { transform: rotate(-90deg); }
-@media (max-width: 960px) {
-  .screen-menu-toggle { display: flex; }
-}
 .has-screen-menu .screen-layout { display: contents; }
 .has-screen-menu [data-screen-content]:not([hidden]) { margin-bottom: 22px; min-width: 0; }
 .has-screen-menu .strategy-catalog { position: static; width: 100%; }
