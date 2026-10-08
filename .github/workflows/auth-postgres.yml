@@ -20,6 +20,7 @@ on:
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/inplace_upgrade.py"
       - ".github/scripts/timeweb_recovery.py"
       - ".github/scripts/run_recovery_drill.py"
       - ".github/scripts/test_timeweb_recovery.py"
@@ -46,6 +47,7 @@ on:
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/inplace_upgrade.py"
       - ".github/scripts/timeweb_recovery.py"
       - ".github/scripts/run_recovery_drill.py"
       - ".github/scripts/test_timeweb_recovery.py"
@@ -56,7 +58,7 @@ on:
   workflow_dispatch:
     inputs:
       restore_drill:
-        description: "Read-only production logical export, isolated restore, signed proof installation"
+        description: "Legacy logical restore drill (disabled by the single-database policy)"
         type: boolean
         required: false
         default: false
@@ -93,7 +95,7 @@ jobs:
 
       - name: Compile reconciler
         shell: cmd
-        run: '"%OMNICIO_PYTHON%" -m py_compile .github\scripts\timeweb_auth_postgres.py'
+        run: '"%OMNICIO_PYTHON%" -m py_compile .github\scripts\inplace_upgrade.py .github\scripts\timeweb_auth_postgres.py'
 
       - name: Run reconciler tests
         shell: cmd
@@ -190,32 +192,6 @@ jobs:
             --min-cpu "%MIN_DB_CPU%" ^
             --min-ram-mb "%MIN_DB_RAM_MB%" ^
             --min-disk-mb "%MIN_DB_DISK_MB%" ^
-            --migration migrations/0001_phone_auth.sql ^
-            --migration migrations/0002_tbank_connection.sql ^
-            --migration migrations/0003_vkid_owner_identity.sql ^
-            --migration migrations/0004_user_role.sql ^
-            --migration migrations/0005_drop_phone_auth.sql ^
-            --migration migrations/0006_portfolio_observer.sql ^
-            --migration migrations/0007_portfolio_evidence.sql ^
-            --migration migrations/0008_balancing_policy.sql ^
-            --migration migrations/0009_portfolio_proposals.sql ^
-            --migration migrations/0010_portfolio_execution.sql ^
-            --migration migrations/0011_portfolio_live_execution.sql ^
-            --migration migrations/0012_strategy_drafts.sql ^
-            --migration migrations/0013_strategy_assessment_admission.sql ^
-            --migration migrations/0014_workspace.sql ^
-            --migration migrations/0015_tid_identity.sql ^
-            --migration migrations/0016_portfolio_refresh.sql ^
-            --migration migrations/0017_notifications.sql ^
-            --migration migrations/0018_strategy_research.sql ^
-            --migration migrations/0019_session_security.sql ^
-            --migration migrations/0020_goal_plans.sql ^
-            --migration migrations/0021_assistant_workspace.sql ^
-            --migration migrations/0022_billing.sql ^
-            --migration migrations/0023_strategy_execution_guards.sql ^
-            --migration migrations/0024_background_reliability.sql ^
-            --migration migrations/0025_billing_recovery.sql ^
-            --migration migrations/0026_strategy_research_capacity.sql ^
             --migration migrations/0027_assistant_stream_memory.sql ^
             --migration migrations/0028_notification_device_binding.sql
 
@@ -242,7 +218,7 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
       TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}
-      OMNICIO_RESTORE_DRILL_ALLOWED: "true"
+      OMNICIO_RESTORE_DRILL_ALLOWED: "false"
       OMNICIO_RESTORE_SOURCE_DSN: ${{ secrets.OMNICIO_RESTORE_SOURCE_DSN }}
       OMNICIO_RESTORE_ARCHIVE_KEY: ${{ secrets.OMNICIO_RESTORE_ARCHIVE_KEY }}
       OMNICIO_RESTORE_RECEIPT_KEY: ${{ secrets.OMNICIO_RESTORE_RECEIPT_KEY }}

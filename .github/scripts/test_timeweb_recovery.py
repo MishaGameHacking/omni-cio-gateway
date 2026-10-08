@@ -6,8 +6,10 @@ import copy
 import json
 import unittest
 from contextlib import ExitStack
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -75,7 +77,7 @@ class Provider:
         return copy.deepcopy(self.post_response) if method == "POST" else {}
 
 
-class RecoveryTests(unittest.TestCase):
+class ControllerFixture(unittest.TestCase):
     def setUp(self) -> None:
         self.provider = Provider()
         self.state: dict[str, Any] = {}
@@ -106,6 +108,15 @@ class RecoveryTests(unittest.TestCase):
 
     def mutations(self, method: str) -> list[str]:
         return [path for verb, path in self.provider.calls if verb == method]
+
+
+class RecoveryTests(ControllerFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        self.stack.enter_context(patch.object(
+            recovery, "load_policy",
+            return_value=replace(recovery.load_policy(), mode="managed_backups"),
+        ))
 
     def test_first_copy_and_daily_schedule_are_verified_and_second_run_is_read_only(self) -> None:
         self.run_controller()
@@ -621,16 +632,112 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(len(self.mutations("POST")), 1)
 
 
+class SingleDatabaseTests(ControllerFixture):
+    def test_only_future_copy_schedule_is_stopped_and_existing_evidence_is_preserved(self) -> None:
+        self.provider.schedule = {"is_enabled": True, "copy_count": 7, "interval": "day"}
+        self.provider.backups = [backup(11, age=100), backup(12, kind="auto", age=50)]
+        self.state = {"schema_version": 1, "cluster_id": CLUSTER_ID, "weekly_owned": [{"id": 11}],
+                      "restore_verification": {"signature": "retained"}}
+        old_backups, old_state = copy.deepcopy(self.provider.backups), copy.deepcopy(self.state)
+        with patch.object(self.provider, "request", wraps=self.provider.request) as request:
+            self.run_controller(release_sha=RELEASE_SHA)
+            self.run_controller()
+        mutations = [call for call in request.call_args_list if call.args[0] != "GET"]
+        self.assertEqual(len(mutations), 1)
+        self.assertEqual(mutations[0].args, ("PATCH", f"/dbs/{CLUSTER_ID}/auto-backups"))
+        self.assertEqual(mutations[0].kwargs, {"payload": {"is_enabled": False}})
+        self.assertEqual(self.provider.backups, old_backups)
+        for key, value in old_state.items():
+            self.assertEqual(self.state[key], value)
+        self.assertEqual(self.state["provider_status"], "ok")
+        self.assertEqual(self.state["existing_copy_count"], 2)
+        self.assertEqual(self.state["latest_backup_id"], 12)
+        self.assertIs(self.state["copy_creation_enabled"], False)
+
+    def test_disabled_schedule_without_any_backups_does_not_create_one(self) -> None:
+        self.run_controller(release_sha=RELEASE_SHA)
+        self.assertIsNone(self.state["latest_backup_id"])
+        self.assertIsNone(self.state["latest_backup_at"])
+        self.assertTrue(all(method == "GET" for method, _ in self.provider.calls))
+        report = recovery.inspect_provider_recovery(self.provider)
+        self.assertTrue(report["schedule"]["matches_policy"])
+        self.assertEqual(report["schedule"]["policy_mode"], recovery.SINGLE_DATABASE_MODE)
+        self.assertFalse(report["restore_verified"])
+
+    def test_stop_response_loss_reconciles_and_unconfirmed_request_is_never_repeated(self) -> None:
+        for applied in (True, False):
+            with self.subTest(applied=applied):
+                self.provider, self.state = Provider(), {}
+                self.provider.schedule = {"is_enabled": True}
+                if applied:
+                    self.provider.lose_response = {"PATCH"}
+                    self.run_controller()
+                    self.run_controller()
+                else:
+                    self.provider.drop_request = {"PATCH"}
+                    for _ in range(2):
+                        with self.assertRaises(recovery.RecoveryBlocked):
+                            self.run_controller()
+                self.assertEqual(len(self.mutations("PATCH")), 1)
+                self.assertEqual(self.mutations("POST"), [])
+                self.assertEqual(self.mutations("DELETE"), [])
+
+    def test_changed_final_schedule_cannot_be_reported_disabled(self) -> None:
+        with patch.object(recovery, "get_schedule", side_effect=[
+            {"is_enabled": False}, {"is_enabled": True},
+        ]), self.assertRaisesRegex(recovery.RecoveryBlocked, "changed during verification"):
+            self.run_controller()
+        self.assertEqual(self.state["provider_status"], "unavailable")
+        self.assertNotIn("copy_creation_enabled", self.state)
+
+    def test_missing_mode_never_defaults_to_paid_copy_creation(self) -> None:
+        for upgrade in (None, {}, {"mode": "unknown"}, {"mode": []}):
+            document = {"tool": {"omnicio": {"timeweb": {"backups": {}, "upgrade": upgrade}}}}
+            with (self.subTest(upgrade=upgrade),
+                  patch.object(recovery.tomllib, "load", return_value=document),
+                  self.assertRaisesRegex(recovery.RecoveryBlocked, "Unknown production")):
+                self.run_controller()
+        self.assertEqual(self.provider.calls, [])
+
+    def test_direct_mutation_cannot_create_delete_or_reconfigure_backups(self) -> None:
+        for method, suffix, payload in (
+            ("POST", "backups", {}), ("DELETE", "backups/11", {}),
+            ("PATCH", "auto-backups", {"is_enabled": True}),
+            ("PATCH", "auto-backups", {"is_enabled": False, "copy_count": 1}),
+            ("PATCH", "auto-backups", {"is_enabled": 0}),
+        ):
+            with (self.subTest(method=method, payload=payload),
+                  self.assertRaises(recovery.RecoveryBlocked)):
+                recovery.mutate_once(self.provider, method, f"/dbs/{CLUSTER_ID}/{suffix}",
+                                     payload=payload)
+        self.assertEqual(self.provider.calls, [])
+
+    def test_stop_receipt_must_persist_before_mutation(self) -> None:
+        self.provider.schedule = {"is_enabled": True}
+        self.write.side_effect = OSError("synthetic disk full")
+        with self.assertRaises(OSError):
+            self.run_controller()
+        self.assertEqual(self.mutations("PATCH"), [])
+
+
 class MigrationGateTests(unittest.TestCase):
-    def test_backup_gate_protects_migrations_and_scheduled_checks_keep_runtime(self) -> None:
+    def test_database_policy_guards_migrations_and_scheduled_checks_keep_runtime(self) -> None:
         desired = postgres.DesiredDatabase(
             "managed", "omnicio", "app", "18", "ru-3", "msk-1", Decimal(1110), 1, 2048, 20480
         )
-        for backup_only, rejected in ((False, True), (True, False), (False, False)):
-            with self.subTest(backup_only=backup_only, rejected=rejected), ExitStack() as stack:
+        cases = [(single, scheduled, rejected) for single in (False, True)
+                 for scheduled, rejected in ((False, True), (True, False), (False, False))]
+        root = Path(__file__).resolve().parents[2]
+        reviewed = [path.read_text(encoding="utf-8")
+                    for path in sorted((root / "migrations").glob("*.sql"))[-2:]]
+        for single, backup_only, rejected in cases:
+            with (self.subTest(single=single, scheduled=backup_only, rejected=rejected),
+                  ExitStack() as stack):
                 client = Mock()
                 mocks: dict[str, Any] = {}
                 values = {
+                    "load_policy": replace(recovery.load_policy(), mode=(
+                        recovery.SINGLE_DATABASE_MODE if single else "managed_backups")),
                     "find_managed_server": {"id": 9235089},
                     "find_vpc": {"id": "private"},
                     "find_vpc_service": {"local_ip": "10.77.0.4"},
@@ -646,6 +753,7 @@ class MigrationGateTests(unittest.TestCase):
                     "ensure_server_private_network": None,
                     "write_runtime_env": None,
                     "run_schema_migration": None,
+                    "run_inplace_upgrade": None,
                     "add_summary": None,
                     "set_output": None,
                     "ensure_recovery_point": None,
@@ -669,7 +777,7 @@ class MigrationGateTests(unittest.TestCase):
                     server_name="server",
                     server_comment="managed",
                     vpc_name="private",
-                    migration_sqls=["SELECT 1"],
+                    migration_sqls=reviewed if single else ["SELECT 1"],
                     backup_only=backup_only,
                     release_sha=None if backup_only else RELEASE_SHA,
                 )
@@ -684,7 +792,12 @@ class MigrationGateTests(unittest.TestCase):
                     "load_or_create_server_secrets",
                     "ensure_server_private_network",
                 ):
-                    self.assertEqual(mocks[name].call_count, int(not backup_only and not rejected))
+                    self.assertEqual(mocks[name].call_count,
+                                     int(not single and not backup_only and not rejected))
+                self.assertEqual(mocks["run_inplace_upgrade"].call_count,
+                                 int(single and not backup_only and not rejected))
+                self.assertEqual(mocks["inspect_restore_capacity"].call_count,
+                                 int(not single and not rejected))
                 self.assertEqual(
                     [entry[0] for entry in order.mock_calls], ["inspect", "ssh", "guard"],
                 )
@@ -695,10 +808,21 @@ class MigrationGateTests(unittest.TestCase):
                 )
                 if rejected:
                     mocks["set_output"].assert_not_called()
+                elif backup_only:
+                    mocks["set_output"].assert_called_once_with(
+                        "status",
+                        "single_database_policy_ready" if single else "recovery_point_ready",
+                    )
                 client.create_database_cluster.assert_not_called()
 
 
 class ProviderInspectionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        policy = replace(recovery.load_policy(), mode="managed_backups")
+        self.policy = patch.object(recovery, "load_policy", return_value=policy)
+        self.policy.start()
+        self.addCleanup(self.policy.stop)
+
     def test_metadata_is_get_only_and_never_certifies_recovery(self) -> None:
         provider = Provider()
         provider.schedule = {

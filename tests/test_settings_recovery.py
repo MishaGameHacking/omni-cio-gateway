@@ -16,6 +16,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -357,6 +358,10 @@ def test_operator_logical_restore_tool_uses_distinct_cluster_and_authenticated_e
     monkeypatch.setitem(sys.modules, spec.name, recovery)
     spec.loader.exec_module(recovery)
     monkeypatch.setattr(recovery, "RESTORE_ROOT", tmp_path)
+    # The archived tool is exercised only against synthetic loopback fixtures;
+    # the production policy independently blocks exports before opening a DSN.
+    policy = replace(recovery.load_policy(), mode="managed_backups")
+    monkeypatch.setattr(recovery, "load_policy", lambda: policy)
     binary = Path(os.environ["OMNICIO_TEST_POSTGRES_BIN"])
     suffix = ".exe" if os.name == "nt" else ""
     base = os.environ["OMNICIO_TEST_DATABASE_URL"]

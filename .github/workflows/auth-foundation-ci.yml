@@ -47,9 +47,9 @@ jobs:
       matrix:
         include:
           - name: Ruff
-            command: '"%OMNICIO_PYTHON%" -m ruff check src tests .github/scripts/run_recovery_drill.py .github/scripts/timeweb_recovery.py .github/scripts/test_timeweb_recovery.py .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py .github/scripts/test_with_postgres.py .github/scripts/report_sonar_annotations.py'
+            command: '"%OMNICIO_PYTHON%" -m ruff check src tests .github/scripts/inplace_upgrade.py .github/scripts/run_recovery_drill.py .github/scripts/timeweb_recovery.py .github/scripts/test_timeweb_recovery.py .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py .github/scripts/test_with_postgres.py .github/scripts/report_sonar_annotations.py'
           - name: Mypy
-            command: '"%OMNICIO_PYTHON%" -m mypy src .github/scripts/run_recovery_drill.py .github/scripts/timeweb_recovery.py .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py .github/scripts/test_with_postgres.py .github/scripts/report_sonar_annotations.py'
+            command: '"%OMNICIO_PYTHON%" -m mypy src .github/scripts/inplace_upgrade.py .github/scripts/run_recovery_drill.py .github/scripts/timeweb_recovery.py .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py .github/scripts/test_with_postgres.py .github/scripts/report_sonar_annotations.py'
           - name: Release gate tests
             command: '"%OMNICIO_PYTHON%" .github/scripts/test_release_gate.py'
           - name: Full tests (includes security)
@@ -59,6 +59,7 @@ jobs:
       - name: Checkout accepted main state
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: ${{ matrix.name == 'Full tests (includes security)' && '0' || '1' }}
           persist-credentials: false
           clean: true
 

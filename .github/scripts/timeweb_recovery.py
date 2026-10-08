@@ -18,6 +18,8 @@ from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Protocol, cast
 
+from inplace_upgrade import MODE as SINGLE_DATABASE_MODE
+
 REMOTE_STATUS_PATH = "/var/lib/omnicio-recovery/status.json"
 REMOTE_PYTHON = "python3 -"
 BOOTSTRAP_COMMENT = "Managed by OmniCIO: initial R0 recovery point v1"
@@ -54,6 +56,7 @@ class BackupPolicy:
     max_monthly_rub: int
     rub_per_gib: int
     weekly_copies: int
+    mode: str = "managed_backups"
 
     @property
     def max_copies(self) -> int:
@@ -64,8 +67,13 @@ class BackupPolicy:
 def load_policy() -> BackupPolicy:
     path = pathlib.Path(__file__).resolve().parents[2] / "pyproject.toml"
     with path.open("rb") as handle:
-        values = tomllib.load(handle)["tool"]["omnicio"]["timeweb"]["backups"]
-    policy = BackupPolicy(**values)
+        settings = tomllib.load(handle)["tool"]["omnicio"]["timeweb"]
+    values = settings["backups"]
+    upgrade = settings.get("upgrade")
+    mode = upgrade.get("mode") if isinstance(upgrade, dict) else None
+    if mode not in ("managed_backups", SINGLE_DATABASE_MODE):
+        raise RecoveryBlocked("Unknown production database policy")
+    policy = BackupPolicy(**values, mode=mode)
     if any(type(value) is not int or value <= 0 for value in values.values()):
         raise RecoveryBlocked("Backup policy values must be positive integers")
     if policy.copies != 7 or policy.weekly_copies != 4:
@@ -199,7 +207,9 @@ def _inspection_schedule(client: Provider, policy: BackupPolicy) -> dict[str, An
     interval = schedule.get("interval")
     count = schedule.get("copy_count")
     return {
-        "status": "ok", "matches_policy": schedule_matches(schedule, policy, datetime.now(UTC)),
+        "status": "ok", "policy_mode": policy.mode,
+        "matches_policy": (schedule["is_enabled"] is False if policy.mode == SINGLE_DATABASE_MODE
+                           else schedule_matches(schedule, policy, datetime.now(UTC))),
         "is_enabled": schedule["is_enabled"],
         "interval": interval if interval in ("day", "week", "month") else "unknown",
         "copy_count": count if type(count) is int else None, "creation_start_at": start,
@@ -313,11 +323,76 @@ def inspect_provider_recovery(client: Provider) -> dict[str, Any]:
 
 def mutate_once(client: Provider, method: str, path: str, **kwargs: Any) -> dict[str, Any] | None:
     """Only a subsequent read may confirm an operation, including after a lost response."""
+    policy = load_policy()
+    payload = kwargs.get("payload")
+    stopping = (method == "PATCH" and path == f"/dbs/{policy.cluster_id}/auto-backups"
+                and isinstance(payload, dict) and set(payload) == {"is_enabled"}
+                and payload["is_enabled"] is False)
+    if policy.mode == SINGLE_DATABASE_MODE and not stopping:
+        raise RecoveryBlocked("New backup operations are disabled by the single-database policy")
     try:
         return client.request(method, path, **kwargs)
     except (RuntimeError, OSError, ValueError):
         print("Provider mutation was not confirmed; reconciling by read without repeating it.")
         return None
+
+
+def _stop_copy_schedule(
+    client: Provider, ssh: Remote, state: dict[str, Any], policy: BackupPolicy,
+) -> None:
+    if get_schedule(client, policy.cluster_id)["is_enabled"] is False:
+        return
+    if "copy_disable_attempted_at" not in state:
+        state["copy_disable_attempted_at"] = datetime.now(UTC).isoformat()
+        write_state(ssh, state)
+        mutate_once(client, "PATCH", f"/dbs/{policy.cluster_id}/auto-backups",
+                    payload={"is_enabled": False})
+    for _ in range(6):
+        if get_schedule(client, policy.cluster_id)["is_enabled"] is False:
+            return
+        time.sleep(5)
+    raise RecoveryBlocked("Stopping automatic copies is unconfirmed; update was not repeated")
+
+
+def observe_single_database(
+    client: Provider, ssh: Remote, cluster: dict[str, Any], policy: BackupPolicy,
+) -> None:
+    """Stop future automatic copies; preserve existing copies and every historical receipt."""
+    if cluster.get("id") != policy.cluster_id:
+        raise RecoveryBlocked("Single-database policy does not authorize this cluster")
+    state = read_state(ssh)
+    if state and (state.get("schema_version") != 1 or state.get("cluster_id") != policy.cluster_id):
+        raise RecoveryBlocked("Recovery state belongs to another contract or cluster")
+    state.update(schema_version=1, cluster_id=policy.cluster_id)
+    try:
+        validate_budget(cluster, policy)
+        _stop_copy_schedule(client, ssh, state, policy)
+        backups = get_backups(client, policy.cluster_id)
+        now = datetime.now(UTC)
+        completed = [item for item in backups if completed_backup(item, now, max_age=None)]
+        latest = max(completed, key=lambda item: timestamp(item["created_at"]), default=None)
+        if latest is not None:
+            latest = confirm_backup(client, policy.cluster_id, latest["id"], max_age=None)
+        if get_schedule(client, policy.cluster_id)["is_enabled"] is not False:
+            raise RecoveryBlocked("Automatic copy schedule changed during verification")
+        state.update(
+            provider_status="ok", observed_at=datetime.now(UTC).isoformat(),
+            policy_mode=policy.mode,
+            copy_creation_enabled=False, schedule_enabled=False, schedule_interval=None,
+            existing_copy_count=len(backups),
+            latest_backup_at=latest["created_at"] if latest else None,
+            latest_backup_id=latest["id"] if latest else None,
+        )
+        write_state(ssh, state)
+        print(f"Single existing database observed: cluster={policy.cluster_id}, "
+              f"existing_copies={len(backups)}; new copies disabled. "
+              "Existing backups were not deleted; no restore verification was performed.")
+    except (RuntimeError, OSError, ValueError, TypeError, KeyError) as exc:
+        state.update(provider_status="unavailable", observed_at=datetime.now(UTC).isoformat())
+        write_state(ssh, state)
+        if isinstance(exc, RecoveryBlocked):
+            raise
+        raise RecoveryBlocked("Single-database policy could not be verified") from None
 
 
 def reconcile_schedule(
@@ -860,6 +935,9 @@ def ensure_recovery_point(
     if release_sha is not None:
         _require_release_sha(release_sha)
     policy = load_policy()
+    if policy.mode == SINGLE_DATABASE_MODE:
+        observe_single_database(client, ssh, cluster, policy)
+        return
     if cluster.get("id") != policy.cluster_id:
         raise RecoveryBlocked("Backup policy does not authorize this database cluster")
     state = read_state(ssh)
@@ -985,6 +1063,8 @@ def export_logical_archive(
     cluster_id: int, release_sha: str, signing_key: str, archive_key: str,
 ) -> dict[str, Any]:
     """Explicit operator export, not the scheduled physical-backup reconciler."""
+    if load_policy().mode == SINGLE_DATABASE_MODE:
+        raise RecoveryBlocked("Logical exports are disabled by the single-database policy")
     import psycopg
     from cryptography.fernet import Fernet
 

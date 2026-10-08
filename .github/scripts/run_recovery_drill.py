@@ -38,6 +38,8 @@ from omnicio.recovery import sign_recovery_evidence
 
 
 def authorize() -> tuple[str, str]:
+    if load_policy().mode == "single_existing_database":
+        raise RecoveryBlocked("Production export is disabled by the single-database policy")
     if (os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
             or os.environ.get("OMNICIO_RESTORE_DRILL_ALLOWED") != "true"):
         raise RecoveryBlocked("An explicit accepted-main restore-drill dispatch is required")

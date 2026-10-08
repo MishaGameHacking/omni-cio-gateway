@@ -16,6 +16,7 @@ on:
       - ".github/scripts/timeweb_auth_app.py"
       - ".github/scripts/test_timeweb_auth_app.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/inplace_upgrade.py"
       - ".github/scripts/timeweb_recovery.py"
       - ".github/scripts/timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_ssh_trust.py"
@@ -41,6 +42,7 @@ on:
       - ".github/scripts/timeweb_auth_app.py"
       - ".github/scripts/test_timeweb_auth_app.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/inplace_upgrade.py"
       - ".github/scripts/timeweb_recovery.py"
       - ".github/scripts/timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_ssh_trust.py"
@@ -104,7 +106,7 @@ jobs:
       - name: Compile deploy scripts
         shell: cmd
         run: |
-          "%OMNICIO_PYTHON%" -m py_compile .github\scripts\timeweb_auth_postgres.py .github\scripts\timeweb_auth_app.py
+          "%OMNICIO_PYTHON%" -m py_compile .github\scripts\inplace_upgrade.py .github\scripts\timeweb_auth_postgres.py .github\scripts\timeweb_auth_app.py
 
       - name: Validate browser JavaScript syntax
         shell: cmd
