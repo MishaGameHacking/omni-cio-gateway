@@ -21,6 +21,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterable
+from email.message import Message
 
 from timeweb_auth_postgres import (
     AmbiguousProviderError,
@@ -69,8 +70,22 @@ BRAND_RUNTIME_FILES = (
 BRAND_PUBLIC_MARK = "/assets/brand/omnicio-logo.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
+CALLBACK_PUBLIC_PATHS = (
+    "/api/auth/tid/callback?error=access_denied",
+    "/api/auth/vkid/callback?error=access_denied",
+)
 JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
 PNG_CONTENT_TYPE = "image/png"
+PUBLIC_SECURITY_HEADERS = {
+    "Strict-Transport-Security": "max-age=31536000",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Content-Security-Policy": (
+        "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; "
+        "script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+    ),
+}
 OPTIONAL_INTEGRATION_KEYS = (
     "TID_CLIENT_ID", "TID_CLIENT_SECRET", "TID_LOGIN_ENABLED", "TID_PKCE_ENABLED",
     "ASSISTANT_BASE_URL", "ASSISTANT_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_ENABLED",
@@ -93,6 +108,16 @@ OPTIONAL_SECRET_KEYS = frozenset({
 
 def add_summary(line: str) -> None:
     print(line)
+
+
+def nginx_security_headers(indent: int) -> str:
+    # Nginx discards inherited add_header directives whenever a location adds its own.
+    # Render the same policy into every such scope and keep rollback configs self-contained.
+    return "\n".join(
+        f"{' ' * indent}add_header {name} "
+        f"{json.dumps('$omnicio_referrer_policy' if name == 'Referrer-Policy' else value)} always;"
+        for name, value in PUBLIC_SECURITY_HEADERS.items()
+    )
 
 
 def set_output(name: str, value: str) -> None:
@@ -441,7 +466,7 @@ def commit_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
         add_summary("- Warning: stale product environment rollback backup remains.")
 
 
-REMOTE_DEPLOY_SCRIPT = r"""set -euo pipefail
+_REMOTE_DEPLOY_TEMPLATE = r"""set -euo pipefail
 
 SHA="$1"
 RELEASE="/opt/omnicio/releases/$SHA"
@@ -763,6 +788,11 @@ limit_req_zone $binary_remote_addr zone=omnicio_auth_callback:10m rate=30r/m;
 limit_req_zone $binary_remote_addr zone=omnicio_api:10m rate=120r/m;
 limit_conn_zone $binary_remote_addr zone=omnicio_conn:10m;
 
+map $upstream_http_referrer_policy $omnicio_referrer_policy {
+    default __OMNICIO_DEFAULT_REFERRER_POLICY__;
+    "no-referrer" "no-referrer";
+}
+
 server {
     listen 80;
     listen [::]:80;
@@ -809,11 +839,8 @@ server {
     root /var/www/omnicio.ru/current;
     index index.html;
 
-    add_header Strict-Transport-Security "max-age=31536000" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
-    add_header Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" always;
+    proxy_hide_header Referrer-Policy;
+__OMNICIO_SERVER_SECURITY_HEADERS__
 
     location = /api/auth/vkid/start {
         limit_req zone=omnicio_auth_start burst=5 nodelay;
@@ -987,52 +1014,62 @@ server {
 
     location = /assets/app.css {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location = /assets/app.js {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location = /assets/workspace.js {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location = /assets/i18n.js {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location = /sw.js {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
         add_header Service-Worker-Allowed "/";
     }
 
     location = /offline.html {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location /assets/ {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "public, max-age=86400";
     }
 
     location = /manifest.webmanifest {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location = /version.js {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location / {
         try_files $uri $uri/ /index.html;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 }
@@ -1060,6 +1097,13 @@ systemctl restart omnicio-observer.timer
 systemctl is-enabled omnicio-observer.timer >/dev/null
 systemctl is-active omnicio-observer.timer >/dev/null
 """
+REMOTE_DEPLOY_SCRIPT = _REMOTE_DEPLOY_TEMPLATE.replace(
+    "__OMNICIO_SERVER_SECURITY_HEADERS__", nginx_security_headers(4),
+).replace(
+    "__OMNICIO_LOCATION_SECURITY_HEADERS__", nginx_security_headers(8),
+).replace(
+    "__OMNICIO_DEFAULT_REFERRER_POLICY__", json.dumps(PUBLIC_SECURITY_HEADERS["Referrer-Policy"]),
+)
 
 
 REMOTE_ROLLBACK_SCRIPT = r"""set -euo pipefail
@@ -1238,6 +1282,17 @@ def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
         add_summary("- Warning: application rollback was not confirmed; inspect release state.")
 
 
+def verify_public_security_headers(
+    headers: Message, path: str, *, referrer_policy: str | None = None,
+) -> None:
+    expected_headers = dict(PUBLIC_SECURITY_HEADERS)
+    if referrer_policy is not None:
+        expected_headers["Referrer-Policy"] = referrer_policy
+    for name, expected in expected_headers.items():
+        if headers.get_all(name, []) != [expected]:
+            raise InfraError(f"Public application security header invalid: {name}: {path}")
+
+
 def fetch_public(path: str, context: ssl.SSLContext) -> tuple[bytes, str]:
     request = urllib.request.Request(
         f"https://{DOMAIN}{path}",
@@ -1246,10 +1301,36 @@ def fetch_public(path: str, context: ssl.SSLContext) -> tuple[bytes, str]:
     with urllib.request.urlopen(request, timeout=15, context=context) as response:
         if response.status != 200:
             raise InfraError(f"Public application returned non-200: {path}")
+        verify_public_security_headers(response.headers, path)
         body = response.read(4 * 1024 * 1024 + 1)
         if len(body) > 4 * 1024 * 1024:
             raise InfraError(f"Public application response is too large: {path}")
         return body, response.headers.get_content_type()
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(
+        self, req: object, fp: object, code: int, msg: str, headers: Message, newurl: str,
+    ) -> None:
+        return None
+
+
+def verify_public_callbacks(context: ssl.SSLContext) -> None:
+    # No cookie processor, auth flow or redirect follow: inspect only rejection responses.
+    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect())
+    for path in CALLBACK_PUBLIC_PATHS:
+        request = urllib.request.Request(
+            f"https://{DOMAIN}{path}", headers={"User-Agent": "omnicio-auth-deploy/1.0"},
+        )
+        try:
+            response = opener.open(request, timeout=15)
+        except urllib.error.HTTPError as exc:
+            response = exc
+        with response:
+            if (response.status != 303
+                    or response.headers.get_all("Location", []) != ["/?auth_error=flow"]):
+                raise InfraError(f"Public auth callback rejection invalid: {path}")
+            verify_public_security_headers(response.headers, path, referrer_policy="no-referrer")
 
 
 def verify_public_root(body: bytes, release_sha: str) -> None:
@@ -1359,6 +1440,7 @@ def verify_public(release_sha: str) -> None:
         verify_public_assets(context, release_sha)
         config, _ = fetch_public("/api/auth/config", context)
         verify_public_config(config, release_sha=release_sha)
+        verify_public_callbacks(context)
         for path, marker in LEGAL_PAGES.items():
             body, content_type = fetch_public(path, context)
             rendered = body.decode(errors="replace")

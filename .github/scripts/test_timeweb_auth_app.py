@@ -20,6 +20,7 @@ import tempfile
 import unittest
 from email.message import Message
 from unittest.mock import patch
+from urllib.response import addinfourl
 
 SCRIPT_DIR = pathlib.Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -689,6 +690,109 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("limit_conn_status 429", script)
         self.assertIn("limit_req_status 429", script)
 
+    def test_nginx_effective_security_headers_survive_location_overrides_and_errors(self) -> None:
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+        nginx = script.split('cat > "$NGINX_SITE.new" <<\'EOF\'\n', 1)[1].split(
+            "\nEOF", 1,
+        )[0]
+        https = nginx.split("    listen 443 ssl;", 1)[1]
+        expected = {
+            "Strict-Transport-Security": ("max-age=31536000", True),
+            "X-Content-Type-Options": ("nosniff", True),
+            "Referrer-Policy": ("$omnicio_referrer_policy", True),
+            "Permissions-Policy": ("camera=(), microphone=(), geolocation=()", True),
+            "Content-Security-Policy": (
+                "default-src 'self'; connect-src 'self'; img-src 'self' data:; "
+                "style-src 'self'; script-src 'self'; base-uri 'none'; "
+                "frame-ancestors 'none'; form-action 'self'", True,
+            ),
+        }
+
+        def headers(scope: str) -> dict[str, tuple[str, bool]]:
+            result = {}
+            for line in re.findall(r"^\s*add_header .+;$", scope, flags=re.M):
+                tokens = shlex.split(line.strip().removesuffix(";"))
+                self.assertIn(len(tokens), (3, 4))
+                self.assertNotIn(tokens[1], result)
+                result[tokens[1]] = (tokens[2], tokens[3:] == ["always"])
+            return result
+
+        server_headers = headers(https.split("    location ", 1)[0])
+        self.assertEqual(server_headers, expected)
+        locations = dict(re.findall(
+            r"^    location ([^\n]+) \{\n(.*?)^    \}", https, flags=re.M | re.S,
+        ))
+        self.assertEqual(len(locations), len(re.findall(r"^    location ", https, re.M)))
+        self.assertTrue({
+            "/", "/api/", "/health/", "/assets/", "= /assets/app.css",
+            "= /assets/app.js", "= /assets/workspace.js", "= /assets/i18n.js",
+            "= /sw.js", "= /offline.html", "= /manifest.webmanifest", "= /version.js",
+        }.issubset(locations))
+        for location, scope in locations.items():
+            with self.subTest(location=location):
+                # Nginx inherits only when this location defines no add_header at all.
+                # Requiring always also covers rate-limit and other 4xx/5xx responses.
+                effective = headers(scope) or server_headers
+                self.assertEqual(
+                    {name: effective.get(name) for name in expected}, expected,
+                )
+                if location == "/assets/":
+                    self.assertEqual(effective["Cache-Control"], ("public, max-age=86400", False))
+                elif "Cache-Control" in effective:
+                    self.assertEqual(effective["Cache-Control"], ("no-cache", False))
+        self.assertEqual(headers(locations["= /sw.js"])["Service-Worker-Allowed"], ("/", False))
+        self.assertNotIn("__OMNICIO_SERVER_SECURITY_HEADERS__", script)
+        self.assertNotIn("__OMNICIO_LOCATION_SECURITY_HEADERS__", script)
+        self.assertNotIn("__OMNICIO_DEFAULT_REFERRER_POLICY__", script)
+        self.assertNotIn("add_header_inherit", nginx)
+        self.assertNotIn("nginx-security-headers.conf", script)
+
+    def test_nginx_preserves_callback_policy_and_emits_one_referrer_header(self) -> None:
+        nginx = MODULE.REMOTE_DEPLOY_SCRIPT.split(
+            'cat > "$NGINX_SITE.new" <<\'EOF\'\n', 1,
+        )[1].split("\nEOF", 1)[0]
+        http = nginx.split("server {", 1)[0]
+        mapping = re.search(
+            r"map \$upstream_http_referrer_policy \$omnicio_referrer_policy \{\n(.*?)\n\}",
+            http, flags=re.S,
+        )
+        self.assertIsNotNone(mapping)
+        entries = dict(shlex.split(line.strip().removesuffix(";"))
+                       for line in mapping[1].splitlines())
+        self.assertEqual(entries, {
+            "default": "strict-origin-when-cross-origin", "no-referrer": "no-referrer",
+        })
+        https = nginx.split("    listen 443 ssl;", 1)[1]
+        server = https.split("    location ", 1)[0]
+        server_hidden = re.findall(r"proxy_hide_header ([^;]+);", server)
+        self.assertEqual(server_hidden, ["Referrer-Policy"])
+        self.assertNotRegex(https, r"(?i)proxy_pass_header\s+Referrer-Policy\s*;")
+        locations = dict(re.findall(
+            r"^    location ([^\n]+) \{\n(.*?)^    \}", https, flags=re.M | re.S,
+        ))
+        for location, scope in locations.items():
+            local_hidden = re.findall(r"proxy_hide_header ([^;]+);", scope)
+            hidden = local_hidden or server_hidden
+            additions = re.findall(r'^\s*add_header Referrer-Policy "([^\"]+)" always;',
+                                   scope, flags=re.M)
+            if not re.search(r"^\s*add_header ", scope, flags=re.M):
+                additions = re.findall(
+                    r'^\s*add_header Referrer-Policy "([^\"]+)" always;', server, flags=re.M,
+                )
+            for upstream, expected in (
+                ([], "strict-origin-when-cross-origin"),
+                (["no-referrer"], "no-referrer"),
+                (["unsafe-url"], "strict-origin-when-cross-origin"),
+                (["no-referrer", "unsafe-url"], "strict-origin-when-cross-origin"),
+            ):
+                with self.subTest(location=location, upstream=upstream):
+                    # Apply proxy response filtering before add_header; duplicates are unsafe.
+                    output = [] if "Referrer-Policy" in hidden else list(upstream)
+                    mapped = entries.get(", ".join(upstream).lower(), entries["default"])
+                    output.extend(mapped if value == "$omnicio_referrer_policy" else value
+                                  for value in additions)
+                    self.assertEqual(output, [expected])
+
     def test_remote_service_is_loopback_only_bounded_and_registration_is_gated(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn("--host 127.0.0.1 --port 8001", script)
@@ -1001,6 +1105,8 @@ class PublicResponse(io.BytesIO):
         self.status = status
         self.headers = Message()
         self.headers["Content-Type"] = content_type
+        for name, value in MODULE.PUBLIC_SECURITY_HEADERS.items():
+            self.headers[name] = value
 
 
 class PublicReleaseVerificationTests(unittest.TestCase):
@@ -1045,6 +1151,8 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ),
             "/api/auth/config": (config, "application/json", 200),
         }
+        for path in MODULE.CALLBACK_PUBLIC_PATHS:
+            self.responses[path] = (b"", "text/plain", 303)
         for path, body, content_type in (
             ("/assets/app.js", b"window.OmniUI " + self.sha[:12].encode(), "text/javascript"),
             ("/assets/workspace.js", b"window.OmniUI " + self.sha[:12].encode(),
@@ -1069,7 +1177,10 @@ class PublicReleaseVerificationTests(unittest.TestCase):
                 200,
             )
 
-    def verify(self) -> set[str]:
+    def verify(
+        self, *, missing_header_path: str | None = None,
+        callback_referrer: list[str] | None = None,
+    ) -> set[str]:
         requested: set[str] = set()
 
         def open_response(request, *, timeout, context):
@@ -1080,10 +1191,34 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             self.assertEqual(context.verify_mode, MODULE.ssl.CERT_REQUIRED)
             path = request.full_url.removeprefix(prefix)
             requested.add(path)
-            return PublicResponse(*self.responses[path])
+            response = PublicResponse(*self.responses[path])
+            if path in MODULE.CALLBACK_PUBLIC_PATHS:
+                self.assertEqual(request.get_method(), "GET")
+                self.assertIsNone(request.get_header("Cookie"))
+                self.assertIsNone(request.get_header("Authorization"))
+                self.assertIsNone(request.get_header("Referer"))
+                response.headers["Location"] = "/?auth_error=flow"
+                del response.headers["Referrer-Policy"]
+                for value in (["no-referrer"] if callback_referrer is None else callback_referrer):
+                    response.headers["Referrer-Policy"] = value
+            if path == missing_header_path:
+                del response.headers["Content-Security-Policy"]
+            return response
+
+        def https_response(handler, request):
+            # Exercise urllib's real 303 processing. Following Location would request an
+            # unexpected URL and fail, rather than testing only a mocked redirect handler.
+            self.assertIn(request.full_url.removeprefix(f"https://{MODULE.DOMAIN}"),
+                          MODULE.CALLBACK_PUBLIC_PATHS)
+            response = open_response(request, timeout=request.timeout, context=handler._context)
+            wrapped = addinfourl(response, response.headers, request.full_url, response.status)
+            wrapped.msg = "Synthetic callback response"
+            return wrapped
 
         with (
             patch.object(MODULE.urllib.request, "urlopen", side_effect=open_response),
+            patch.object(MODULE.urllib.request.HTTPSHandler, "https_open", autospec=True,
+                         side_effect=https_response),
             patch.object(MODULE, "vkid_configuration_ready", return_value=False),
         ):
             MODULE.verify_public(self.sha)
@@ -1091,6 +1226,46 @@ class PublicReleaseVerificationTests(unittest.TestCase):
 
     def test_matching_release_checks_every_public_surface(self) -> None:
         self.assertEqual(self.verify(), set(self.responses))
+
+    def test_security_headers_are_required_on_every_public_surface(self) -> None:
+        for path in self.responses:
+            with self.subTest(path=path), self.assertRaisesRegex(
+                MODULE.InfraError, "security header invalid: Content-Security-Policy",
+            ):
+                self.verify(missing_header_path=path)
+
+    def test_missing_weakened_or_duplicate_security_headers_reject_public_response(self) -> None:
+        context = MODULE.ssl.create_default_context()
+        for name, expected in MODULE.PUBLIC_SECURITY_HEADERS.items():
+            for values in ([], ["unsafe-test-value"], [expected, expected]):
+                response = PublicResponse(b"test", "text/plain")
+                del response.headers[name]
+                for value in values:
+                    response.headers[name] = value
+                with (
+                    self.subTest(header=name, values=values),
+                    patch.object(MODULE.urllib.request, "urlopen", return_value=response),
+                    self.assertRaisesRegex(MODULE.InfraError, f"security header invalid: {name}"),
+                ):
+                    MODULE.fetch_public("/", context)
+
+    def test_callback_rejection_requires_one_no_referrer_without_following_redirect(self) -> None:
+        for values in ([], ["unsafe-url"], ["strict-origin-when-cross-origin"],
+                       ["no-referrer", "strict-origin-when-cross-origin"],
+                       ["no-referrer", "no-referrer"]):
+            with self.subTest(values=values), self.assertRaisesRegex(
+                MODULE.InfraError, "security header invalid: Referrer-Policy",
+            ):
+                self.verify(callback_referrer=values)
+
+    def test_callback_verification_rejects_non_redirect_responses(self) -> None:
+        path = MODULE.CALLBACK_PUBLIC_PATHS[0]
+        for status in (200, 401, 500):
+            self.responses[path] = (b"", "text/plain", status)
+            with self.subTest(status=status), self.assertRaisesRegex(
+                MODULE.InfraError, "Public auth callback rejection invalid",
+            ):
+                self.verify()
 
     def test_public_login_readiness_is_independent_for_each_provider(self) -> None:
         base = json.loads(self.responses["/api/auth/config"][0])
