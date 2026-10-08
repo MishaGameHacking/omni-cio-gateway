@@ -25,6 +25,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / ".github" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 controller = importlib.import_module("timeweb_recovery")
 runner = importlib.import_module("run_recovery_drill")
+gate = importlib.import_module("verify_main_release")
 upgrade = importlib.import_module("inplace_upgrade")
 SHA = "a" * 40
 KEY = "test-receipt-key-" + "x" * 40
@@ -150,11 +151,72 @@ def test_manual_job_still_requires_exact_checkout_and_successful_main_checks(mon
                      return_value=replace(runner.load_policy(), mode="managed_backups")),
         patch.object(runner, "release_context", return_value=(SHA, "test-token")),
         patch.object(runner, "require_checkout") as checkout,
-        patch.object(runner, "wait_for_release") as checks,
+        patch.object(runner, "wait_for_main_release") as checks,
     ):
         assert runner.authorize() == (SHA, "test-token")
     checkout.assert_called_once_with(SHA)
-    assert checks.call_args.args[1] == SHA
+    checks.assert_called_once_with(SHA, "test-token", timeout=600)
+
+
+def test_restore_main_rejects_failed_overall_gate_before_any_provider_or_export_io(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["run_recovery_drill.py"])
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("OMNICIO_RESTORE_DRILL_ALLOWED", "true")
+    policy = replace(runner.load_policy(), mode="managed_backups")
+    with (
+        patch.object(runner, "load_policy", return_value=policy),
+        patch.object(runner, "release_context", return_value=(SHA, "test-token")),
+        patch.object(runner, "require_checkout") as checkout,
+        patch.object(runner, "wait_for_main_release",
+                     side_effect=gate.ReleaseBlocked("overall inventory unavailable")) as checks,
+        patch.object(runner, "TimewebClient") as provider,
+        patch.object(runner, "export_logical_archive") as export,
+        pytest.raises(gate.ReleaseBlocked, match="overall inventory unavailable"),
+    ):
+        runner.main()
+    checkout.assert_called_once_with(SHA)
+    checks.assert_called_once_with(SHA, "test-token", timeout=600)
+    provider.assert_not_called()
+    export.assert_not_called()
+
+
+def test_restore_receipt_is_not_installed_after_later_main_gate_failure(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "argv", ["run_recovery_drill.py"])
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("OMNICIO_RESTORE_SOURCE_DSN", "synthetic-never-opened-source")
+    monkeypatch.setenv("OMNICIO_RESTORE_RECEIPT_KEY", KEY)
+    monkeypatch.setenv("OMNICIO_RESTORE_ARCHIVE_KEY", Fernet.generate_key().decode())
+    managed_id, managed_ip = 9235089, "194.87.151.244"
+    proof = receipt()
+    with (
+        patch.object(runner, "authorize", return_value=(SHA, "test-token")),
+        patch.object(runner, "TimewebClient"),
+        patch.object(runner, "validate_export_source"),
+        patch.object(runner, "managed_server_identity", return_value=(managed_id, managed_ip)),
+        patch.object(runner, "find_managed_server", return_value={"id": managed_id}),
+        patch.object(runner, "public_ipv4", return_value=managed_ip),
+        patch.object(runner, "trusted_host_entry"),
+        patch.object(runner, "restore_artifact_path", return_value=tmp_path / "no-artifact"),
+        patch.object(runner, "install_binaries", return_value=tmp_path / "no-binaries"),
+        patch.object(runner, "available_port", return_value=5432),
+        patch.object(runner, "native"),
+        patch.object(runner, "export_logical_archive", return_value={}),
+        patch.object(runner, "verify_logical_archive", return_value=proof),
+        patch.object(runner, "_private_json") as saved,
+        patch.object(runner, "require_checkout") as checkout,
+        patch.object(runner, "wait_for_main_release",
+                     side_effect=gate.ReleaseBlocked("main analysis changed")) as checks,
+        patch.object(runner, "EphemeralSsh") as ssh,
+        patch.object(runner, "install_restore_receipt") as install,
+        pytest.raises(gate.ReleaseBlocked, match="main analysis changed"),
+    ):
+        runner.main()
+    saved.assert_called_once_with("restore-verification.json", proof)
+    checkout.assert_called_once_with(SHA)
+    checks.assert_called_once_with(SHA, "test-token", timeout=600)
+    ssh.assert_not_called()
+    install.assert_not_called()
 
 
 def test_single_database_policy_blocks_even_manual_export_before_any_io(monkeypatch, tmp_path):
@@ -268,12 +330,16 @@ def test_remote_runtime_independently_verifies_and_preserves_physical_receipts(
 def test_native_child_does_not_inherit_production_credentials(monkeypatch):
     monkeypatch.setenv("OMNICIO_RESTORE_SOURCE_DSN", "private-source-credential")
     monkeypatch.setenv("OMNICIO_RESTORE_ARCHIVE_KEY", "private-key")
+    monkeypatch.setenv("GITHUB_TOKEN", "synthetic-github-token")
+    monkeypatch.setenv("SONAR_TOKEN", "synthetic-sonar-token")
     with patch.object(
         runner.subprocess, "Popen", return_value=Mock(wait=Mock(return_value=0))
     ) as proc:
         runner.native(["owned-pg_ctl", "start"], timeout=1)
     assert "OMNICIO_RESTORE_SOURCE_DSN" not in proc.call_args.kwargs["env"]
     assert "OMNICIO_RESTORE_ARCHIVE_KEY" not in proc.call_args.kwargs["env"]
+    assert "GITHUB_TOKEN" not in proc.call_args.kwargs["env"]
+    assert "SONAR_TOKEN" not in proc.call_args.kwargs["env"]
     for channel in ("stdin", "stdout", "stderr"):
         assert proc.call_args.kwargs[channel] == runner.subprocess.DEVNULL
 
