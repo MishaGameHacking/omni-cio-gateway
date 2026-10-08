@@ -82,7 +82,8 @@ jobs:
        github.event.pull_request.author_association == 'OWNER')
     name: Test auth deployer
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 8
+    # Include both browser rounds, artifacts and bounded Sonar diagnostics.
+    timeout-minutes: 12
 
     steps:
       - name: Checkout candidate state
