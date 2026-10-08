@@ -1002,7 +1002,7 @@
         state.loading.delete(name);
         state.resourceRequests.delete(name);
         if (name === "events" && !currentEventRead(eventsEpoch)) { retryMissingEvents(); return; }
-        if (state.mode !== "public" && (state.user || state.tour) && !state.locked && !document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent();
+        if (state.mode !== "public" && (state.user || state.tour) && !state.locked && !document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent({preserveAssetChart: true});
       }
     });
     state.resourceRequests.set(name, {path, promise});
@@ -1947,6 +1947,7 @@
   };
   const refreshAssetChartContext = (container, context) => {
     if (state.assetTab !== "chart" || container.dataset.assetPane !== "chart" || container.dataset.assetUid !== context.asset.uid || container.dataset.assetPeriod !== state.assetPeriod || !$(".chart-svg", container)) return false;
+    if (container.dataset.assetLocale !== I.getLocale()) return false;
     const header = $(".asset-detail-header", container);
     const sidebar = $("[data-asset-sidebar]", container);
     if (!header || !sidebar) return false;
@@ -1957,6 +1958,9 @@
     const watch = $("[data-watch]", header);
     watch.dataset.watchName = asset.name || asset.ticker || T("Актив");
     watch.dataset.watchTicker = asset.ticker || "";
+    const watched = isWatched(asset.uid);
+    watch.setAttribute("aria-pressed", String(watched));
+    watch.setAttribute("aria-label", watched ? T("Удалить из избранного") : T("Добавить в избранное"));
     sidebar.innerHTML = assetSideHTML(context);
     return true;
   };
@@ -1984,6 +1988,7 @@
     container.dataset.assetUid = asset.uid;
     container.dataset.assetPeriod = state.assetPeriod;
     container.dataset.assetPane = state.assetTab;
+    container.dataset.assetLocale = I.getLocale();
     container.innerHTML = assetFrameHTML(context, renderer(context));
   };
   const tradingLabel = value => ({
@@ -5633,7 +5638,7 @@
     openDialog(preset.title, `<p class="help-copy">${esc(preset.description || "")}</p><p class="notice">${esc(preset.risk || "")}</p><h3>${H("Методика и источники")}</h3><ul class="source-list">${sources.map(renderStrategiesLi).join("")}</ul><p class="fine-print">${H("strategy.demo_description")}</p>${button(T("Войти"), "login", {primary: true})}`);
   }
 
-  const renderCurrent = () => {
+  const renderCurrent = ({preserveAssetChart = false} = {}) => {
     if ((state.locked || !state.user && !state.tour) && state.view !== "install") return;
     const menuFocus = captureScreenMenuFocus();
     updateIdentity();
@@ -5649,7 +5654,7 @@
       events: renderEvents,
       profile: renderProfile,
       settings: renderSettings,
-      asset: renderAsset,
+      asset: () => renderAsset({preserveChart: preserveAssetChart}),
       search: renderSearch,
       install: renderInstall
     };
