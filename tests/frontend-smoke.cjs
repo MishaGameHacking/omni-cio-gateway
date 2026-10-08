@@ -798,6 +798,89 @@ function researchMathContracts(ui, i18n) {
   assert.ok(panel.innerHTML.includes("data-assessment-expired"), "The assessment expires locally without a network refresh or form rerender");
   console.log("PASS research contracts: real calculator results, historical frequency limits, explicit cash model and expiring account assessment");
 }
+function dialogCloseContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const state = {view: "goals", route: {mode: "account", view: "goals", screen: "create", goal_id: "goal-a", overlay: ""}};
+  const handlers = new Map(), queuedClose = [], navigations = [];
+  let routed = true, captured = 0, backed = 0;
+  const dialog = {id: "workspace-dialog", open: true, dataset: {},
+    classList: {contains: name => name === "route-dialog" && routed},
+    addEventListener: (name, handler) => handlers.set(name, handler),
+    showModal() { this.open = true; },
+    close() {
+      if (!this.open) return;
+      this.open = false;
+      // HTML close() clears open immediately and queues the close event for a later task.
+      queuedClose.push(() => handlers.get("close")());
+    }};
+  const context = vm.createContext({state,
+    $$: selector => selector === "dialog[open]" && !dialog.open ? [] : [dialog],
+    saveNavigationPosition() {}, captureScreenDrafts() { captured += 1; },
+    routeBack() { backed += 1; },
+    navigate(view, route, options) {
+      context.closeRoutes();
+      state.view = view;
+      state.route = route;
+      navigations.push({view, route, options});
+    }});
+  const source = app.slice(app.indexOf("  const closeRouteDialogs ="), app.indexOf("  const sessionSurfaceContent ="))
+    + app.slice(app.indexOf('  for (const dialog of $$("dialog")) {'), app.indexOf("  observeDialogHeader();"));
+  vm.runInContext(source + "\nglobalThis.closeRoutes=closeRouteDialogs;", context);
+
+  dialog.close(); // A successful save closes the shared creation dialog.
+  state.route.screen = "plan";
+  dialog.showModal(); // The next editor opens before the old close task is delivered.
+  queuedClose.shift()();
+  assert.equal(navigations.length, 0, "A prior close event cannot navigate away from the reopened editor");
+  assert.equal(dialog.open, true, "A prior close event cannot close the new dialog");
+  assert.equal(state.route.screen, "plan", "The new goal plan retains its addressable route");
+
+  dialog.close();
+  queuedClose.shift()();
+  assert.equal(navigations.length, 1, "A current close still leaves its routed editor");
+  assert.equal(state.route.screen, "");
+  assert.equal(state.route.goal_id, "goal-a", "Normal close retains the selected goal");
+  assert.equal(navigations[0].options.replace, true, "Normal close replaces the closed route");
+
+  state.route.screen = "edit";
+  dialog.showModal();
+  context.closeRoutes();
+  assert.equal(dialog.dataset.routeClosing, "true");
+  state.route.screen = "plan";
+  dialog.showModal();
+  queuedClose.shift()();
+  assert.equal(dialog.dataset.routeClosing, undefined, "A navigation close marker is consumed even after reopening");
+  assert.equal(navigations.length, 1, "A queued navigation close cannot replace the current route");
+  assert.equal(dialog.open, true);
+  dialog.close();
+  queuedClose.shift()();
+  assert.equal(navigations.length, 2, "The consumed marker cannot swallow the next genuine close");
+
+  routed = false;
+  state.route = {...state.route, screen: "archive", overlay: "help"};
+  dialog.showModal();
+  dialog.close();
+  queuedClose.shift()();
+  assert.equal(state.route.screen, "archive", "Closing an overlay preserves its underlying screen");
+  assert.equal(state.route.overlay, "");
+  assert.equal(navigations.length, 3);
+  dialog.showModal();
+  dialog.close();
+  queuedClose.shift()();
+  assert.equal(navigations.length, 3, "A plain dialog without a route does not navigate");
+
+  dialog.showModal();
+  let prevented = false;
+  handlers.get("cancel")({preventDefault() { prevented = true; }});
+  assert.equal(prevented, true, "Escape keeps the existing explicit navigation path");
+  assert.equal(captured, 1);
+  assert.equal(backed, 1);
+  context.closeRoutes();
+  queuedClose.shift()();
+  assert.equal(dialog.dataset.routeClosing, undefined);
+  assert.equal(navigations.length, 3, "Closing for history navigation cannot trigger a second navigation");
+  console.log("PASS dialog close lifecycle: queued old events preserve reopened editors, navigation markers are consumed, and current close, overlay, cancel and history paths remain effective");
+}
 async function assetBackgroundChartContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const state = {generation: 1, user: {public_id: "000000123"}, mode: "account", view: "asset",
@@ -2537,6 +2620,7 @@ const runBrowser = async base => {
 (async () => {
   try {
     displayContracts();
+    dialogCloseContracts();
     await assetBackgroundChartContracts();
     await ledgerPaginationContracts();
     await assistantConversationContracts();
