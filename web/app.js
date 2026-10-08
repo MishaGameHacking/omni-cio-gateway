@@ -5254,8 +5254,29 @@
       const focused = picker.contains(document.activeElement);
       picker.dataset.compact = String(compact);
       picker.open = !compact;
-      if (focused) $(compact ? "summary" : '[aria-current="page"]', picker)?.focus();
+      if (focused) $(compact ? "summary" : '[aria-current="page"]', picker)?.focus({preventScroll: true});
     }
+  }
+  function captureScreenMenuFocus() {
+    const root = $(`#view-${state.view}`);
+    const active = document.activeElement;
+    const picker = active?.closest(".screen-menu-picker");
+    if (!picker || !root?.contains(picker) || root.dataset.screen !== state.route.screen) return null;
+    return {root, screen: root.dataset.screen, compact: picker.dataset.compact,
+      open: picker.open, target: active.dataset.screen || null};
+  }
+  function restoreScreenMenuFocus(saved) {
+    if (!saved || !saved.root.isConnected || saved.root.hidden || saved.root.dataset.screen !== saved.screen) return;
+    const picker = $(".screen-menu-picker", saved.root);
+    if (!picker) return;
+    const compact = picker.dataset.compact === "true";
+    const sameBreakpoint = picker.dataset.compact === saved.compact;
+    picker.open = compact && sameBreakpoint ? saved.open : !compact;
+    let target = $(compact ? "summary" : '[aria-current="page"]', picker);
+    if (sameBreakpoint && saved.target && picker.open) {
+      target = $(`[data-screen="${CSS.escape(saved.target)}"]`, picker) || target;
+    }
+    target?.focus({preventScroll: true});
   }
   function layoutMarket({root, attach}) {
     const columns = $$(":scope > .two-column > section", root);
@@ -5597,6 +5618,7 @@
 
   const renderCurrent = () => {
     if ((state.locked || !state.user && !state.tour) && state.view !== "install") return;
+    const menuFocus = captureScreenMenuFocus();
     updateIdentity();
     renderConnectionBanner();
     const renderers = {
@@ -5618,6 +5640,7 @@
     updateRefreshControls();
     U.bindCharts($(`#view-${state.view}`));
     renderInstallPromotion();
+    restoreScreenMenuFocus(menuFocus);
   };
   const updateLanguageControls = () => {
     for (const control of $$('[data-action="language"]')) {

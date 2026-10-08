@@ -4792,7 +4792,8 @@ async function exerciseCompactScreenMenu({send, configureViewport, round, click,
   await click('#view-strategies .screen-menu [data-screen="editor"]');
   await wait('location.hash.endsWith("/strategies/editor") && document.querySelector("#strategy-form")?.getClientRects().length', "Compact navigation opens the existing strategy editor route");
   const before = await evaluate('({hash:location.hash,history:history.length,value:document.querySelector("#allocation-shares").value})');
-  const saved = clone(fixture.strategy);
+  const saved = clone(fixture.selection);
+  const writes = strategyWrites(fixture);
   assert.equal(await evaluate('document.querySelector("#view-strategies .screen-menu-picker").open'), false);
   assert.ok(await evaluate('document.querySelector("#view-strategies .screen-menu-toggle").textContent.includes("Моя настройка")'));
   await evaluate('document.querySelector("#view-strategies .screen-menu-toggle").focus()');
@@ -4806,10 +4807,11 @@ async function exerciseCompactScreenMenu({send, configureViewport, round, click,
     await wait(`document.querySelector('#view-strategies .screen-menu-picker').open===${expected}`, "Native keyboard activation toggles the section summary: " + code);
   }
   assert.deepEqual(await evaluate('({hash:location.hash,history:history.length,value:document.querySelector("#allocation-shares").value})'), before, "Opening a menu cannot navigate or change a draft");
-  for (const width of [1366, 390, 320]) {
+  for (const width of [1366, 960, 961, 390, 320]) {
     await configureViewport(width);
-    await wait(`document.querySelector('#view-strategies .screen-menu-picker').open===${width > 960}`, "The menu matches its breakpoint without a page reload");
-    assert.equal(await evaluate(`document.activeElement.matches(${JSON.stringify(width > 960 ? '.screen-menu [aria-current="page"]' : '.screen-menu-toggle')})`), true, "Responsive changes keep keyboard focus on a visible navigation control");
+    await wait(`innerWidth===${width} && document.querySelector('#view-strategies .screen-menu-picker').dataset.compact===${JSON.stringify(String(width <= 960))} && document.querySelector('#view-strategies .screen-menu-picker').open===${width > 960}`, "The menu matches its breakpoint without a page reload");
+    const focus = await evaluate(`(() => {const picker=document.querySelector('#view-strategies .screen-menu-picker');const active=document.activeElement;return {expected:active===picker.querySelector(${JSON.stringify(width > 960 ? '.screen-menu [aria-current="page"]' : '.screen-menu-toggle')}),visible:active.getClientRects().length>0,tag:active.tagName,id:active.id,classes:active.className,compact:picker.dataset.compact,open:picker.open};})()`);
+    assert.equal(focus.expected && focus.visible, true, `Responsive changes keep keyboard focus on a visible navigation control at ${width}px: ${JSON.stringify(focus)}`);
     assert.deepEqual(await evaluate('({hash:location.hash,history:history.length,value:document.querySelector("#allocation-shares").value})'), before);
     await evaluate('window.scrollTo({top:0,behavior:"instant"})');
     if (width <= 390) {
@@ -4819,8 +4821,30 @@ async function exerciseCompactScreenMenu({send, configureViewport, round, click,
     await checkLayout(`compact-strategy-${round}/${width}`);
     await screenshot(`strategy-compact-${round}-${width}.png`);
   }
-  assert.deepEqual(fixture.strategy, saved, "Changing screen density does not save or replace the strategy");
-  console.log(`PASS compact section menu round ${round}: native keyboard, responsive focus, stable route/draft and visible mobile fields`);
+  for (const linkFocused of [false, true]) {
+    await wait('document.querySelector("#research-form [type=submit]")?.disabled===false', "Research prerequisites are ready before refresh");
+    fixture.holdResearchReads = true;
+    await click('#view-strategies [data-action="refresh"]');
+    await until(() => fixture.heldResearchReads.length > 0, "A refresh has a delayed research response");
+    assert.equal(await evaluate('document.querySelector("#research-form [type=submit]").disabled'), true, "The held response keeps research prerequisites pending");
+    const selector = linkFocused ? '.screen-menu [data-screen="research"]' : '.screen-menu-toggle';
+    await evaluate(`(() => {const picker=document.querySelector('#view-strategies .screen-menu-picker');picker.open=${linkFocused};picker.querySelector(${JSON.stringify(selector)}).focus();window.__menuBeforeRead=picker;})()`);
+    fixture.holdResearchReads = false;
+    fixture.heldResearchReads.splice(0).forEach(release => release());
+    await wait('document.querySelector("#view-strategies .screen-menu-picker")!==window.__menuBeforeRead && document.querySelector("#research-form [type=submit]")?.disabled===false', "Late research data is acknowledged on the existing screen");
+    assert.equal(await evaluate(`document.activeElement===document.querySelector('#view-strategies .screen-menu-picker').querySelector(${JSON.stringify(selector)}) && document.activeElement.getClientRects().length>0`), true, "A late response preserves the same visible menu control");
+    assert.equal(await evaluate('document.querySelector("#view-strategies .screen-menu-picker").open'), linkFocused, "A late response preserves the compact menu disclosure");
+    assert.deepEqual(await evaluate('({hash:location.hash,history:history.length,value:document.querySelector("#allocation-shares").value})'), before);
+  }
+  await evaluate('document.querySelector("#allocation-shares").focus()');
+  for (const width of [1366, 320]) {
+    await configureViewport(width);
+    await wait(`document.querySelector('#view-strategies .screen-menu-picker').dataset.compact===${JSON.stringify(String(width <= 960))}`, "Resize with focus outside the menu");
+    assert.equal(await evaluate('document.activeElement.id'), "allocation-shares", "Responsive navigation cannot steal focus from the strategy editor");
+  }
+  assert.deepEqual(fixture.selection, saved, "Changing screen density does not replace the strategy");
+  assert.equal(strategyWrites(fixture), writes, "Responsive navigation and late reads cannot save the strategy");
+  console.log(`PASS compact section menu round ${round}: native keyboard, breakpoint focus, late-response focus/disclosure, editor focus, stable route/draft and visible mobile fields`);
 }
 async function exerciseScreenPages({view, label, click, wait, evaluate, checkLayout, screenshot, width}) {
   for (const [screen, minCharts, minTables] of screenPages[view] || []) {
