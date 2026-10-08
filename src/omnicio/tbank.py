@@ -1019,18 +1019,22 @@ class TBankInvestClient:
             body["cursor"] = cursor
         payload = self._post(token=token, environment=environment,
                              service="InstrumentsService", method="News", body=body)
-        raw_items = _required_list(payload, "items")
+        # ProtoJSON omits empty repeated fields and false scalar defaults.
+        raw_items = _optional_list(payload, "items")
         if len(raw_items) > limit:
             raise TBankUnavailable("news page exceeded requested limit")
         items = tuple(_news_item(raw) for raw in raw_items)
         if len({item.id for item in items}) != len(items):
             raise TBankUnavailable("duplicate news identity")
-        next_cursor = str(payload.get("nextCursor", "0"))
-        if not next_cursor.isdecimal() or len(next_cursor) > 19 or int(next_cursor) > 2**63 - 1:
+        has_next = _optional_bool(payload, "hasNext") is True
+        next_cursor = _integer_text(payload.get("nextCursor"))
+        if int(next_cursor) < 0:
             raise TBankUnavailable("news cursor invalid")
-        if cursor is not None and next_cursor == cursor and items:
+        if has_next and (next_cursor == "0" or (
+            cursor is not None and int(next_cursor) == int(cursor)
+        )):
             raise TBankUnavailable("news cursor did not advance")
-        return TBankNewsPage(items, next_cursor if next_cursor != "0" else None)
+        return TBankNewsPage(items, next_cursor if has_next else None)
 
     def get_fund_profile(
         self, token: str, environment: TBankEnvironment, asset_uid: str,

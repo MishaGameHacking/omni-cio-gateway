@@ -830,6 +830,201 @@ async function ledgerPaginationContracts() {
   assert.equal(state.loading.has("ledger-more"), false);
   console.log("PASS ledger pagination contracts: corrected snapshots and explicit cursor restart");
 }
+async function searchAndAssetPaginationContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const runSearch ="), app.indexOf("  const mergePage ="))
+    + app.slice(app.indexOf("  const loadSearchPage ="), app.indexOf("  const archiveNewsItem ="))
+    + app.slice(app.indexOf("  const loadAssetNewsPage ="), app.indexOf("  const assetSideHTML ="));
+  const page = (id, cursor = "next") => ({items: [{id}], next_cursor: cursor});
+  const state = {generation: 1, view: "search", tour: false, searchSequence: 1, searchQuery: "old", route: {q: "old"},
+    loading: new Set(), errors: {}, resourceVersions: new Map(), searchPages: {events: page("old-event"), news: null}, searchFailures: {}};
+  const pending = [];
+  const context = vm.createContext({state, encodeURIComponent, safeSegment: encodeURIComponent, isCancelled: () => false,
+    renderSearch() {}, renderAsset() {}, $: () => ({value: "", removeAttribute() {}}),
+    routeSearchQuery: () => state.route.q, api: () => new Promise(resolve => pending.push(resolve)),
+    mergePage: (before, after) => ({...after, items: [...before.items, ...after.items]})});
+  vm.runInContext(source + "\nglobalThis.search=runSearch; globalThis.more=loadSearchPage; globalThis.assetMore=loadAssetNewsPage;", context);
+  const oldPage = context.more("events");
+  const finishOldPage = pending.shift();
+  state.route.q = "new";
+  const newSearch = context.search("new");
+  pending.splice(0).forEach((finish, index) => finish(page("new-" + index)));
+  await newSearch;
+  const newEvents = state.searchPages.events;
+  finishOldPage(page("obsolete-event", null));
+  await oldPage;
+  assert.equal(state.searchPages.events, newEvents, "An earlier query page cannot merge into a new search");
+  assert.equal(state.loading.has("search-events"), false, "Changing a query cannot leave its pagination permanently disabled");
+  const currentPage = context.more("events");
+  assert.equal(pending.length, 1, "The new query can request its next page after the old read settles");
+  pending.shift()(page("new-event-page", null));
+  await currentPage;
+  assert.deepEqual(state.searchPages.events.items.map(item => item.id), ["new-1", "new-event-page"]);
+  state.route.q = "pending";
+  const oldSearch = context.search("pending");
+  state.route.q = "";
+  await context.search("");
+  pending.splice(0).forEach(finish => finish(page("obsolete-result")));
+  await oldSearch;
+  assert.equal(state.loading.has("search"), false, "Clearing an in-flight query restores the empty search screen");
+  assert.equal(state.searchResults.length, 0);
+  state.view = "asset";
+  state.asset = {uid: "a", news: page("a-first")};
+  state.resourceVersions.set("asset", 1);
+  const oldAssetPage = context.assetMore();
+  const currentAsset = {uid: "b", news: page("b-first")};
+  state.asset = currentAsset;
+  state.resourceVersions.set("asset", 2);
+  pending.shift()(page("a-obsolete", null));
+  await oldAssetPage;
+  assert.equal(state.asset, currentAsset);
+  assert.equal(state.asset.news.items[0].id, "b-first");
+  assert.equal(state.loading.has("asset-news-more"), false, "Leaving an asset cannot lock every subsequent news archive");
+  const staleAssetPage = context.assetMore();
+  assert.equal(pending.length, 1);
+  const refreshed = page("b-refreshed", "fresh-cursor");
+  currentAsset.news = refreshed;
+  currentAsset.newsError = new Error("A newer refresh failed");
+  state.resourceVersions.set("asset", 3);
+  pending.shift()(page("b-obsolete", null));
+  await staleAssetPage;
+  assert.equal(currentAsset.news, refreshed, "An old cursor cannot replace a newer first page for the same instrument");
+  assert.equal(currentAsset.newsError.message, "A newer refresh failed", "An obsolete page cannot erase the current retry state");
+  const validAssetPage = context.assetMore();
+  pending.shift()(page("b-new-page", null));
+  await validAssetPage;
+  assert.deepEqual(currentAsset.news.items.map(item => item.id), ["b-refreshed", "b-new-page"]);
+  state.asset.news = page("b-later");
+  const previousAccount = context.assetMore();
+  state.generation += 1;
+  state.loading = new Set(["asset-news-more"]);
+  pending.shift()(page("other-account-page", null));
+  await previousAccount;
+  assert.equal(state.loading.has("asset-news-more"), true, "Old-account cleanup cannot release a new account's pending request");
+  console.log("PASS search and asset pagination: changed queries, empty searches, instrument switches, refresh races and session isolation");
+}
+async function visibleRefreshContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const start = app.indexOf("  const stopVisibleRefresh =");
+  const scheduler = start < 0 ? "" : app.slice(start, app.indexOf("  const stopQuoteStream =", start));
+  const navigation = app.slice(app.indexOf("  const navigate ="), app.indexOf("  const loadNavigationScreen ="));
+  const refresh = app.slice(app.indexOf("  const refreshVisibleData ="), app.indexOf('  window.addEventListener("focus",'));
+  const state = {user: {public_id: "000000123"}, mode: "account", view: "home", route: {}, viewState: {}, navigationSequence: 0, devicePush: {status: "active"}, requests: new Set()};
+  const timers = new Map(), reads = [];
+  let sequence = 0, checks = 0, editing = false;
+  const node = {setAttribute() {}, focus() {}};
+  const schedule = (callback, delay) => { const id = ++sequence; timers.set(id, {callback, delay}); return id; };
+  const context = vm.createContext({state, document: {visibilityState: "visible", activeElement: null}, navigator: {onLine: true},
+    window: {setTimeout: schedule}, setTimeout: schedule, clearTimeout: id => timers.delete(id), T: value => value,
+    U: {navigation: [["home", "Home"], ["portfolio", "Portfolio"]]}, $: selector => selector === "dialog[open]" ? null : node, $$: () => [],
+    resolveNavigationRoute: (view, detail) => ({view, ...detail}),
+    saveNavigationPosition() {}, captureScreenDrafts() {}, closeRouteDialogs() {}, closeDrawer() {}, stopQuoteStream() {}, stopTableQuotes() {},
+    restoreRouteControls() {}, updateRouteHistory() {}, renderNav() {}, renderCurrent() {}, restoreNavigationScroll() {},
+    loadNavigationScreen: async () => {}, scheduleTableQuotes() {}, scheduleEventSummary() {}, refreshPushDevice: async () => {},
+    verifySession: async () => { checks += 1; }, hasPending: () => editing,
+    loadForView: async (view, route, force) => reads.push({view, force})});
+  vm.runInContext("let freshnessTimer=null, freshnessBusy=false;\n" + scheduler + navigation + refresh + "\nglobalThis.go=navigate;", context);
+  context.go("home", {mode: "account"});
+  assert.equal(timers.size, 1, "Initial authenticated route entry starts periodic data refresh without a focus event");
+  const initial = [...timers.keys()][0];
+  assert.equal(timers.get(initial).delay, 60000, "Background page refresh remains bounded to the existing interval");
+  context.go("portfolio", {mode: "account"});
+  assert.equal([...timers.keys()][0], initial, "Frequent navigation cannot postpone refresh indefinitely");
+  const tick = async () => {
+    const [id, timer] = [...timers.entries()][0];
+    timers.delete(id);
+    timer.callback();
+    await new Promise(resolve => setImmediate(resolve));
+  };
+  await tick();
+  assert.equal(checks, 1);
+  assert.deepEqual(reads, [{view: "portfolio", force: true}], "The timer refreshes the current page after rechecking the session");
+  assert.equal(timers.size, 1, "A completed refresh schedules its next observation");
+  editing = true;
+  await tick();
+  assert.equal(reads.length, 1, "An active draft prevents background replacement of the editor");
+  assert.equal(checks, 2, "Session verification continues while a draft is being edited");
+  assert.equal(timers.size, 1);
+  editing = false;
+  state.requests.add({omnicioMutation: true});
+  await tick();
+  assert.equal(reads.length, 1, "A pending form submission cannot be replaced by a background page refresh");
+  state.requests.clear();
+  await tick();
+  assert.equal(reads.length, 2, "Background refresh resumes after the submission settles");
+  assert.equal(checks, 4);
+  state.mode = "public";
+  await tick();
+  assert.equal(checks, 4, "Public mode does not perform private background reads");
+  assert.equal(timers.size, 0);
+  context.go("home", {mode: "account"});
+  assert.equal(timers.size, 1, "Returning from a public page restarts periodic account refresh");
+  context.document.visibilityState = "hidden";
+  await tick();
+  assert.equal(checks, 4, "Hidden documents do not start refresh requests");
+  assert.equal(timers.size, 0);
+  console.log("PASS visible refresh: initial account entry, navigation deadlines, ongoing polling, draft preservation and public/hidden boundaries");
+}
+async function offlineQuoteContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const start = app.indexOf("  const quoteForConnection =");
+  const helper = start < 0 ? "" : app.slice(start, app.indexOf("  const startQuoteStream =", start));
+  const stream = app.slice(app.indexOf("  const startQuoteStream ="), app.indexOf("  const clearPrivateState ="));
+  const tables = app.slice(app.indexOf("  function adoptTableQuotes("), app.indexOf("  async function pollTableQuotes()"));
+  const events = app.slice(app.indexOf('  window.addEventListener("offline",'), app.indexOf('  prefersDark.addEventListener("change",'));
+  const stamp = "2026-10-08T12:00:00Z";
+  const quote = {instrument_uid: "a", last_price: "123.000000001", quote_status: "live", quote_time: stamp, observed_at: stamp, price_unit: "currency", price_currency: "RUB"};
+  const state = {generation: 1, user: {public_id: "000000123"}, view: "asset", asset: {uid: "a", market: {...quote}}, quotes: {a: {...quote}}, session: {status: "authenticated"}};
+  const source = {innerHTML: "live"}, price = {innerHTML: quote.last_price}, callbacks = {}, streams = [];
+  class EventSourceFixture {
+    constructor() { this.listeners = {}; streams.push(this); }
+    addEventListener(name, callback) { this.listeners[name] = callback; }
+    close() { this.closed = true; }
+  }
+  const context = vm.createContext({state, navigator: {onLine: false}, document: {visibilityState: "visible"}, EventSource: EventSourceFixture,
+    window: {EventSource: EventSourceFixture, addEventListener: (name, callback) => { callbacks[name] = callback; }},
+    $: selector => ({"[data-market-source]": source, "[data-market-quote]": price}[selector] || {}), $$: () => [],
+    T: value => value, assetPricing: asset => ({market: asset.market}), assetQuoteHTML: value => value.market.last_price,
+    freshness: (name, at, status) => status, safeSegment: encodeURIComponent, encodeURIComponent,
+    clearTimeout() {}, setTimeout: () => 1, toast() {}, lockSession() {}, refreshVisibleData() {}, scheduleTableQuotes() {}, scheduleEventSummary() {}, paintTableQuotes() {},
+    stopQuoteStream: () => { if (streams.length) streams.at(-1).close(); }});
+  vm.runInContext("let quoteStream=null, quoteFailures=0, quoteReconnectTimer=null;\n" + helper + stream + tables + events
+    + "\nglobalThis.accept=adoptTableQuotes; globalThis.unavailable=markTableQuotesUnavailable;", context);
+  callbacks.offline();
+  assert.equal(state.asset.market.quote_status, "offline", "An offline event immediately removes the live label from the asset");
+  assert.equal(state.quotes.a.quote_status, "offline", "Remembered table quotes cannot remain live while offline");
+  assert.equal(source.innerHTML, "offline", "The existing source indicator updates without replacing the chart");
+  assert.equal(price.innerHTML, quote.last_price);
+  assert.equal(state.asset.market.quote_time, stamp, "Connectivity loss cannot fabricate a new observation timestamp");
+  context.accept([{...quote, last_price: "123.000000002"}], ["a"]);
+  assert.equal(state.quotes.a.quote_status, "offline", "A delayed pre-offline response cannot restore a live badge");
+  const assetLoad = app.slice(app.indexOf("  const loadAsset ="), app.indexOf("  const fundamentalMetricsHTML ="));
+  state.resourceVersions = new Map();
+  state.assetPeriod = "1m";
+  Object.assign(state.asset, {details: {}, facts: {}, news: {items: []}});
+  let finishAsset;
+  Object.assign(context, {renderAsset: () => true, U: {bindCharts() {}}, api: () => new Promise(resolve => { finishAsset = resolve; })});
+  vm.runInContext(assetLoad + "\nglobalThis.loadAssetNow=loadAsset;", context);
+  const pendingAsset = context.loadAssetNow("a");
+  finishAsset(quote);
+  await pendingAsset;
+  assert.equal(state.asset.market.quote_status, "offline", "An asset REST response received offline cannot claim a live source");
+  assert.equal(state.asset.market.quote_time, stamp);
+  context.navigator.onLine = true;
+  callbacks.online();
+  assert.equal(state.asset.market.quote_status, "connecting", "Restored connectivity waits for source confirmation");
+  assert.equal(state.quotes.a.quote_status, "offline", "Online alone does not certify previously received table data");
+  context.accept([quote], ["a"]);
+  assert.equal(state.quotes.a.quote_status, "live", "A new source response can restore table freshness");
+  streams.at(-1).listeners.market({data: JSON.stringify({...quote, observed_at: "2026-10-08T12:00:01Z"})});
+  assert.equal(state.asset.market.quote_status, "live");
+  streams.at(-1).listeners.status({data: JSON.stringify({state: "disconnected"})});
+  assert.equal(state.asset.market.quote_status, "reconnect", "An explicit source disconnect removes the live badge while retrying");
+  context.unavailable(["a"]);
+  assert.equal(state.quotes.a.quote_status, "unavailable", "A failed or timed-out batch retains its unavailable source status");
+  assert.equal(state.quotes.a.last_price, quote.last_price);
+  console.log("PASS offline quotes: source/table state, exact retained values, late responses, reconnect confirmation and source failures");
+}
 async function assistantConversationContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const lifecycle = app.slice(app.indexOf("  const loadAssistantConversation ="), app.indexOf("  const openAssistantConnection ="));
@@ -2449,6 +2644,9 @@ const runBrowser = async base => {
   try {
     displayContracts();
     await ledgerPaginationContracts();
+    await searchAndAssetPaginationContracts();
+    await visibleRefreshContracts();
+    await offlineQuoteContracts();
     await assistantConversationContracts();
     await assistantMemoryReconciliationContracts();
     await strategyInputContracts();

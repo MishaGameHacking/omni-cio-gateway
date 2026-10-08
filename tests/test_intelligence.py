@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from omnicio.broker import AnalysisSource, BrokerEvidenceSnapshot, BrokerObservationBundle
 from omnicio.intelligence import assess_candidate_fundamental_risk, build_tbank_evidence
 from omnicio.portfolio import PortfolioAnalysis
@@ -177,7 +179,7 @@ def test_unknown_rating_stays_data_missing_even_with_fresh_fundamentals() -> Non
     assert assessments[0].state == "data_missing"
     assert assessments[0].rating_status == "data_missing"
     assert assessments[0].fundamental_status == "received"
-    assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v1"
+    assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v2"
     assert "credit_rating_feed_not_verified" in assessments[0].reasons
 
 
@@ -213,6 +215,80 @@ def test_documented_bond_default_date_is_confirmed_default() -> None:
     assert documents[0].payout.status == "defaulted"
     assert assessments[0].state == "confirmed_default"
     assert assessments[0].evidence["default_date"] == "2026-09-30T00:00:00+00:00"
+
+
+@pytest.mark.parametrize("execution", ["ED", "ET"])
+def test_fulfilled_default_preserves_history_without_claiming_current_default(
+    execution: str,
+) -> None:
+    bundle = _bundle()
+    now = bundle.refreshed_at
+    default_at, paid_at = now - timedelta(days=2), now - timedelta(days=1)
+    event = TBankBondEvent(
+        instrument_uid="bond-uid", event_number=7, event_date=default_at,
+        event_type="EVENT_TYPE_CPN", default_date=default_at, real_pay_date=paid_at,
+        pay_date=default_at - timedelta(days=1), pay_one_bond=TBankMoney("RUB", "50"),
+        execution=execution, operation_type="OPERATION_TYPE_COUPON", note="",
+    )
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now, dividends=(), coupons=(), bond_events=(event,), reports=(),
+        fundamentals=(), sources=_sources(now),
+    )
+    documents, assessments = build_tbank_evidence(bundle, evidence, assessed_at=now)
+    document, assessment = documents[0], assessments[0]
+    assert document.payout is not None
+    assert document.payout.status == "paid"
+    assert document.payout.actual_at == paid_at
+    assert document.facts[0].fact_key == "default_date"
+    assert document.facts[0].effective_at == default_at
+    assert assessment.state == "watch"
+    assert assessment.evidence["default_date"] is None
+    assert assessment.evidence["resolved_default_date"] == default_at.isoformat()
+    assert "tbank_default_obligation_fulfilled" in assessment.reasons
+
+    future_event = replace(event, event_date=now + timedelta(days=1))
+    _, future = build_tbank_evidence(
+        bundle, replace(evidence, bond_events=(future_event,)),
+        assessed_at=now,
+    )
+    assert future[0].state == "confirmed_default"
+    assert future[0].evidence["resolved_default_date"] is None
+
+    # Paying one obligation never clears a separate unresolved default.
+    unresolved = replace(event, event_number=8, real_pay_date=None, execution="D")
+    for events in ((event, unresolved), (unresolved, event)):
+        _, outstanding = build_tbank_evidence(
+            bundle, replace(evidence, bond_events=events), assessed_at=now,
+        )
+        assert outstanding[0].state == "confirmed_default"
+        assert outstanding[0].evidence["default_date"] == default_at.isoformat()
+
+
+@pytest.mark.parametrize(
+    ("execution", "paid_days"), [("D", -1), ("", -1), ("ED", None), ("ET", 1), ("ED", -3)],
+)
+def test_default_resolution_requires_execution_code_and_confirmed_later_payment(
+    execution: str, paid_days: int | None,
+) -> None:
+    bundle = _bundle()
+    now = bundle.refreshed_at
+    default_at = now - timedelta(days=2)
+    event = TBankBondEvent(
+        instrument_uid="bond-uid", event_number=7, event_date=default_at,
+        event_type="EVENT_TYPE_CPN", default_date=default_at,
+        real_pay_date=now + timedelta(days=paid_days) if paid_days is not None else None,
+        pay_date=default_at - timedelta(days=1), pay_one_bond=TBankMoney("RUB", "50"),
+        execution=execution, operation_type="OPERATION_TYPE_COUPON", note="",
+    )
+    evidence = BrokerEvidenceSnapshot(
+        refreshed_at=now, dividends=(), coupons=(), bond_events=(event,), reports=(),
+        fundamentals=(), sources=_sources(now),
+    )
+    documents, assessments = build_tbank_evidence(bundle, evidence, assessed_at=now)
+    assert documents[0].payout is not None
+    assert documents[0].payout.status == "defaulted"
+    assert documents[0].payout.actual_at is None
+    assert assessments[0].state == "confirmed_default"
 
 
 def test_report_date_is_preserved_as_publication_time() -> None:
@@ -373,7 +449,7 @@ def test_stale_evidence_retrieval_is_fail_closed() -> None:
     assert assessments[0].state == "data_missing"
     assert "provider_evidence_stale" in assessments[0].reasons
     assert assessments[0].evidence["evidence_retrieval_max_age_hours"] == 36
-    assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v1"
+    assert assessments[0].evidence["ruleset_version"] == "r3-evidence-v2"
 
 
 

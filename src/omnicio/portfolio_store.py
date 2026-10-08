@@ -40,6 +40,7 @@ REFRESH_JOB_TYPE = "portfolio_refresh"
 REFRESH_COOLDOWN_SECONDS = 60
 REFRESH_MAX_ATTEMPTS = 3
 DAILY_MAX_ATTEMPTS = 3
+MONITORING_FULL_INTERVAL = timedelta(hours=1)
 
 
 def _has_refresh_legal(cur: Any, user_id: UUID, versions: object) -> bool:
@@ -1013,19 +1014,61 @@ class PortfolioStore:
                 or active["details"].get("legal_versions") != legal_versions
             ):
                 self._fail_refresh(cur, user_id, active["id"], "observation_context_changed")
+            elif active is not None and active["status"] == "queued" and scope == "full":
+                # A queued quick observation may have been scheduled without the
+                # browser. An explicit full request upgrades it before any reads.
+                cur.execute(
+                    "UPDATE job_runs SET details = details || %s::jsonb "
+                    "WHERE id = %s AND user_id = %s AND status = 'queued'",
+                    (_json({"refresh_scope": "full", "trigger": "manual"}), active["id"], user_id),
+                )
             current = self._refresh_status(cur, user_id, connection)
             if not current["can_refresh"]:
                 if current["status"] not in {"queued", "running"}:
                     current["reason"] = "refresh_cooldown"
                 return current
-            context = {key: connection[key] for key in ("account_id", "environment", "verified_at")}
-            cur.execute(
-                "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, details) "
-                "VALUES (%s, 'portfolio_refresh', NULL, 'queued', %s::jsonb)",
-                (user_id, _json({"connection": context, "legal_versions": legal_versions,
-                                 "refresh_scope": scope})),
-            )
+            self._enqueue_refresh(cur, user_id, connection, legal_versions,
+                                  scope=scope, trigger="manual")
             return self._refresh_status(cur, user_id, connection)
+
+    @staticmethod
+    def _enqueue_refresh(
+        cur: Any, user_id: UUID, connection: Mapping[str, Any], legal_versions: dict[str, str],
+        *, scope: str, trigger: str,
+    ) -> dict[str, Any]:
+        context = {key: connection[key] for key in ("account_id", "environment", "verified_at")}
+        cur.execute(
+            "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, details) "
+            "VALUES (%s, 'portfolio_refresh', NULL, 'queued', %s::jsonb) RETURNING *",
+            (user_id, _json({"connection": context, "legal_versions": legal_versions,
+                             "refresh_scope": scope, "trigger": trigger})),
+        )
+        return cast(dict[str, Any], cur.fetchone())
+
+    @staticmethod
+    def _monitoring_scope(
+        cur: Any, user_id: UUID, connection: Mapping[str, Any], legal_versions: dict[str, str],
+    ) -> str | None:
+        """Use durable attempt times; a restart or outage cannot create a hot loop."""
+        context = {key: connection[key] for key in ("account_id", "environment", "verified_at")}
+        now = connection["server_now"]
+        cur.execute(
+            "SELECT max(GREATEST(requested_at, started_at, finished_at)) AS last_attempt_at, "
+            "max(GREATEST(requested_at, started_at, finished_at)) FILTER "
+            "(WHERE COALESCE(details->>'refresh_scope', 'full') "
+            "= 'full') AS last_full_at FROM job_runs WHERE user_id = %s "
+            "AND job_type IN ('portfolio_daily', 'portfolio_refresh') "
+            "AND details->'connection' = %s::jsonb AND details->'legal_versions' = %s::jsonb "
+            "AND GREATEST(requested_at, started_at, finished_at) >= %s",
+            (user_id, _json(context), _json(legal_versions), now - MONITORING_FULL_INTERVAL),
+        )
+        row = cast(dict[str, Any], cur.fetchone())
+        last_attempt = row["last_attempt_at"]
+        if last_attempt is not None and now < last_attempt + PORTFOLIO_MAX_AGE:
+            return None
+        last_full = row["last_full_at"]
+        return ("full" if last_full is None or now >= last_full + MONITORING_FULL_INTERVAL
+                else "quick")
 
     def _resume_refresh(
         self, cur: Any, user_id: UUID, row: dict[str, Any],
@@ -1040,6 +1083,7 @@ class PortfolioStore:
             "legal_versions": row["details"]["legal_versions"],
             "resumed_from": str(row["id"]),
             "refresh_scope": row["details"].get("refresh_scope", "full"),
+            "trigger": row["details"].get("trigger", "manual"),
         }
         cur.execute(
             "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, attempt, "
@@ -1051,7 +1095,7 @@ class PortfolioStore:
         return _job_run(cast(dict[str, Any], cur.fetchone()))
 
     def claim_refresh_job(
-        self, user_id: UUID, legal_versions: dict[str, str],
+        self, user_id: UUID, legal_versions: dict[str, str], *, schedule_if_due: bool = False,
     ) -> JobRunRecord | None:
         """Claim/recover only while the caller holds this owner's observer session lock."""
         with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
@@ -1059,13 +1103,19 @@ class PortfolioStore:
             cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
             connection = self._refresh_connection(cur, user_id)
             row = self._refresh_row(cur, user_id, active_only=True)
+            if connection is None or not _has_refresh_legal(cur, user_id, legal_versions):
+                if row is not None:
+                    self._fail_refresh(cur, user_id, row["id"], "observation_context_changed")
+                return None
+            if row is None and schedule_if_due:
+                scope = self._monitoring_scope(cur, user_id, connection, legal_versions)
+                if scope is not None:
+                    row = self._enqueue_refresh(cur, user_id, connection, legal_versions,
+                                                scope=scope, trigger="automatic")
             if row is None:
                 return None
-            if connection is None or (
-                not _refresh_context_matches(row["details"].get("connection"), connection)
-                or row["details"].get("legal_versions") != legal_versions
-                or not _has_refresh_legal(cur, user_id, legal_versions)
-            ):
+            if (not _refresh_context_matches(row["details"].get("connection"), connection)
+                    or row["details"].get("legal_versions") != legal_versions):
                 self._fail_refresh(cur, user_id, row["id"], "observation_context_changed")
                 return None
             if row["status"] == "running":

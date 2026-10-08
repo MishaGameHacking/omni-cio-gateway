@@ -537,10 +537,38 @@
   let quoteReconnectTimer = null;
   let freshnessTimer = null;
   let freshnessBusy = false;
+  const stopVisibleRefresh = () => {
+    clearTimeout(freshnessTimer);
+    freshnessTimer = null;
+  };
+  const scheduleVisibleRefresh = () => {
+    if (freshnessTimer !== null || freshnessBusy || !state.user || state.locked || state.mode !== "account" || document.visibilityState !== "visible" || !navigator.onLine) return;
+    freshnessTimer = setTimeout(() => {
+      freshnessTimer = null;
+      void refreshVisibleData();
+    }, 60000);
+  };
   const stopQuoteStream = () => {
     clearTimeout(quoteReconnectTimer);
     quoteStream?.close();
     quoteStream = null;
+  };
+  const quoteForConnection = payload => navigator.onLine ? payload : {...payload, quote_status: "offline"};
+  const repaintAssetQuote = () => {
+    if (!state.asset?.market || state.view !== "asset" || state.tour || state.locked) return;
+    const container = $("#view-asset");
+    // A source update must not replace a chart or focused control being inspected.
+    const quote = $("[data-market-quote]", container);
+    if (quote) quote.innerHTML = assetQuoteHTML(assetPricing(state.asset));
+    const source = $("[data-market-source]", container);
+    const market = state.asset.market;
+    if (source) source.innerHTML = freshness(market.source || "T-Invest", market.quote_time || market.observed_at, market.quote_status);
+    for (const row of $$(".asset-tab-content .info-row", container)) {
+      const label = $("dt", row)?.textContent;
+      const value = $("dd", row);
+      if (value && label === T("Последняя цена")) value.textContent = marketPrice(market.last_price, market.price_unit, market.price_currency);
+      if (value && label === T("Время цены")) value.textContent = date(market.quote_time, true);
+    }
   };
   const startQuoteStream = () => {
     stopQuoteStream();
@@ -550,34 +578,19 @@
     const stream = new EventSource(`/api/market/instruments/${safeSegment(uid)}/stream?profile_context=${encodeURIComponent(state.user.public_id)}`);
     quoteStream = stream;
     const current = () => quoteStream === stream && generation === state.generation && state.view === "asset" && state.asset?.uid === uid && !state.locked;
-    const repaint = () => {
-      const container = $("#view-asset");
-      // A tick must not replace a chart or focused control being inspected.
-      const quote = $("[data-market-quote]", container);
-      if (quote) quote.innerHTML = assetQuoteHTML(assetPricing(state.asset));
-      const source = $("[data-market-source]", container);
-      const market = state.asset.market;
-      if (source) source.innerHTML = freshness(market.source || "T-Invest", market.quote_time || market.observed_at, market.quote_status);
-      for (const row of $$(".asset-tab-content .info-row", container)) {
-        const label = $("dt", row)?.textContent;
-        const value = $("dd", row);
-        if (value && label === T("Последняя цена")) value.textContent = marketPrice(market.last_price, market.price_unit, market.price_currency);
-        if (value && label === T("Время цены")) value.textContent = date(market.quote_time, true);
-      }
-    };
     const reconnect = () => {
       if (!current()) return;
       stopQuoteStream();
       quoteFailures += 1;
       state.asset.market.quote_status = navigator.onLine ? "reconnect" : "offline";
-      repaint();
+      repaintAssetQuote();
       if (navigator.onLine && document.visibilityState === "visible") quoteReconnectTimer = setTimeout(() => {
         if (generation === state.generation && state.view === "asset" && state.asset?.uid === uid) startQuoteStream();
       }, Math.min(30000, 1000 * 2 ** Math.min(quoteFailures, 5)));
     };
     state.asset.market.quote_status = "connecting";
-    repaint();
-    stream.addEventListener("open", () => { if (current()) { state.asset.market.quote_status = "connecting"; repaint(); } });
+    repaintAssetQuote();
+    stream.addEventListener("open", () => { if (current()) { state.asset.market.quote_status = "connecting"; repaintAssetQuote(); } });
     stream.addEventListener("market", event => {
       if (!current()) return;
       try {
@@ -587,7 +600,7 @@
         if (observedAt < Date.parse(state.asset.market.observed_at)) return;
         state.asset.market = {...state.asset.market, ...payload};
         quoteFailures = 0;
-        repaint();
+        repaintAssetQuote();
       } catch {
         reconnect();
       }
@@ -603,7 +616,7 @@
       }
       state.asset.market.quote_status = status;
       if (["offline", "invalid", "disconnected", "reconnect"].includes(status)) { reconnect(); return; }
-      repaint();
+      repaintAssetQuote();
     });
     stream.onerror = reconnect;
   };
@@ -618,7 +631,7 @@
     state.authReturn = null;
     transientDialogs.clear();
     try { sessionStorage.removeItem("omnicio-update-drafts"); } catch { /* No stored draft can survive an identity reset. */ }
-    clearTimeout(freshnessTimer);
+    stopVisibleRefresh();
     state.generation += 1;
     for (const controller of state.requests) controller.abort();
     state.requests.clear();
@@ -919,6 +932,7 @@
     restoreNavigationScroll(scrollPosition, sequence);
     scheduleTableQuotes(100);
     scheduleEventSummary(100);
+    scheduleVisibleRefresh();
     if (state.devicePush.status === "checking") void refreshPushDevice();
   };
   const loadNavigationScreen = async (route, scrollPosition, sequence) => {
@@ -962,8 +976,6 @@
     navigate(view, {...route, view, screen: views.has(view) ? route.screen : "", mode: tour ? "demo" : "account", invalid: false}, {replace: !tour});
     if (!tour) {
       void resumeWorkspaceRefresh();
-      clearTimeout(freshnessTimer);
-      freshnessTimer = setTimeout(() => void refreshVisibleData(), 60000);
     }
   };
   const eventReadEpoch = () => state.resourceVersions.get("eventReads") || 0;
@@ -1618,12 +1630,8 @@
     state.searchPages = {events: null, news: null};
     state.searchFailures = {};
     state.searchResults = [];
-    if (!trimmed) {
-      state.searchResults = [];
-      renderSearch();
-      return;
-    }
-    if (state.tour) {
+    if (!trimmed || state.tour) {
+      state.loading.delete("search");
       renderSearch();
       return;
     }
@@ -1672,9 +1680,10 @@
     } catch (error) {
       if (generation === state.generation && sequence === state.searchSequence && !isCancelled(error)) state.searchFailures[kind] = error;
     } finally {
-      if (generation === state.generation && sequence === state.searchSequence) {
+      if (generation === state.generation) {
         state.loading.delete(`search-${kind}`);
-        if (state.view === "search") renderSearch();
+        if (state.view === "search" && sequence === state.searchSequence) renderSearch();
+        else $(`#view-search [data-action=search-more-${kind}]`)?.removeAttribute("disabled");
       }
     }
   };
@@ -1735,7 +1744,7 @@
       try {
         const value = await promise;
         if (!current()) return;
-        asset[key] = value;
+        asset[key] = key === "market" ? quoteForConnection(value) : value;
         asset[`${key}Error`] = null;
       } catch (error) {
         if (!current() || isCancelled(error)) return;
@@ -1908,19 +1917,24 @@
     if (!asset?.news?.next_cursor || state.loading.has("asset-news-more")) return;
     const generation = state.generation;
     const uid = asset.uid;
+    const news = asset.news;
+    const version = state.resourceVersions.get("asset") || 0;
+    const currentAsset = () => generation === state.generation && state.asset === asset && version === (state.resourceVersions.get("asset") || 0);
+    const currentPage = () => currentAsset() && asset.news === news;
     state.loading.add("asset-news-more");
     renderAsset();
     try {
-      const page = await api(`/api/news?instrument_uid=${safeSegment(uid)}&limit=50&cursor=${encodeURIComponent(asset.news.next_cursor)}`);
-      if (generation !== state.generation || state.asset?.uid !== uid) return;
-      asset.news = mergePage(asset.news, page);
+      const page = await api(`/api/news?instrument_uid=${safeSegment(uid)}&limit=50&cursor=${encodeURIComponent(news.next_cursor)}`);
+      if (!currentPage()) return;
+      asset.news = mergePage(news, page);
       asset.newsError = null;
     } catch (error) {
-      if (generation === state.generation && state.asset?.uid === uid && !isCancelled(error)) asset.newsError = error;
+      if (currentPage() && !isCancelled(error)) asset.newsError = error;
     } finally {
-      if (generation === state.generation && state.asset?.uid === uid) {
+      if (generation === state.generation) {
         state.loading.delete("asset-news-more");
-        if (state.view === "asset") renderAsset();
+        if (state.view === "asset" && currentAsset()) renderAsset();
+        else $("#view-asset [data-action=asset-news-more]")?.removeAttribute("disabled");
       }
     }
   };
@@ -5567,12 +5581,12 @@
   }
   function adoptTableQuotes(items, uids) {
     for (const item of items || []) {
-      if (uids.includes(item.instrument_uid)) state.quotes[item.instrument_uid] = item;
+      if (uids.includes(item.instrument_uid)) state.quotes[item.instrument_uid] = quoteForConnection(item);
     }
     paintTableQuotes();
   }
-  function markTableQuotesUnavailable(uids) {
-    for (const uid of uids) state.quotes[uid] = {...state.quotes[uid], quote_status: "unavailable"};
+  function markTableQuotesUnavailable(uids, status = "unavailable") {
+    for (const uid of uids) state.quotes[uid] = {...state.quotes[uid], quote_status: status};
     paintTableQuotes();
   }
   async function pollTableQuotes() {
@@ -6803,17 +6817,17 @@
   window.addEventListener("popstate", historyNavigation);
   window.addEventListener("hashchange", historyNavigation);
   const refreshVisibleData = async () => {
-    clearTimeout(freshnessTimer);
+    stopVisibleRefresh();
     if (freshnessBusy || document.visibilityState !== "visible" || !navigator.onLine || !state.user || state.locked || state.mode !== "account") return;
     freshnessBusy = true;
     try {
       await verifySession();
       void refreshPushDevice();
-      const editing = document.activeElement?.matches("input, textarea, select") || $("dialog[open]") || hasPending();
+      const editing = document.activeElement?.matches("input, textarea, select") || $("dialog[open]") || hasPending() || [...state.requests].some(controller => controller.omnicioMutation);
       if (!state.locked && state.user && !editing) await loadForView(state.view, state.route, true);
     } finally {
       freshnessBusy = false;
-      if (state.user && !state.locked) freshnessTimer = setTimeout(() => void refreshVisibleData(), 60000);
+      scheduleVisibleRefresh();
     }
   };
   window.addEventListener("focus", () => {
@@ -6827,7 +6841,7 @@
   });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") { void refreshVisibleData(); scheduleTableQuotes(100); scheduleEventSummary(100); startQuoteStream(); }
-    else { stopQuoteStream(); stopTableQuotes(); clearTimeout(eventSummaryTimer); clearTimeout(freshnessTimer); }
+    else { stopQuoteStream(); stopTableQuotes(); clearTimeout(eventSummaryTimer); stopVisibleRefresh(); }
   });
   window.addEventListener("beforeunload", event => {
     if (acceptingUpdate) return;
@@ -6841,7 +6855,7 @@
     stopQuoteStream();
     stopTableQuotes();
     clearTimeout(eventSummaryTimer);
-    clearTimeout(freshnessTimer);
+    stopVisibleRefresh();
     const pendingGoal = $("#goal-form");
     if (pendingGoal?.dataset.busy === "true") reportGoalSaveError(pendingGoal, Object.assign(new Error("request_interrupted"), {
       status: 0
@@ -6860,7 +6874,13 @@
     syncScreenMenus();
     syncDialogScrollPadding();
   });
-  window.addEventListener("offline", () => { stopQuoteStream(); toast(T("Нет соединения. Новые данные и изменения требуют сети."), true); });
+  window.addEventListener("offline", () => {
+    stopQuoteStream();
+    if (state.asset?.market) state.asset.market.quote_status = "offline";
+    repaintAssetQuote();
+    markTableQuotesUnavailable(Object.keys(state.quotes), "offline");
+    toast(T("Нет соединения. Новые данные и изменения требуют сети."), true);
+  });
   window.addEventListener("online", () => {
     toast(T("Соединение восстановлено. Проверяем сессию и обновляем данные."));
     void refreshVisibleData();

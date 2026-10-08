@@ -28,6 +28,8 @@ from omnicio.assistant import (
 )
 from omnicio.broker import BrokerConnectionStatus, BrokerService
 from omnicio.main import app
+from omnicio.news import NewsClient, NewsUnavailable
+from omnicio.portfolio_store import PortfolioStore
 
 
 def configured(**changes: Any) -> AssistantClient:
@@ -531,3 +533,50 @@ def test_assistant_http_discards_reply_after_account_switch(
         )
     assert response.status_code == 409
     assert "private-old-account-analysis" not in response.text
+
+
+@pytest.mark.parametrize("freshness", ["fresh", "cached", "stale", "unavailable"])
+def test_selected_news_keeps_source_freshness_through_authenticated_context(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock], freshness: str,
+) -> None:
+    client, _, workspace, _ = workspace_http
+    workspace.dashboard.return_value = {}
+    assistant = Mock(spec=AssistantService)
+    assistant.status.return_value = {"enabled": True, "configured": True}
+    assistant.chat.return_value = {"reply": "Ответ", "context_used": "investment"}
+    portfolio = Mock(spec=PortfolioStore)
+    portfolio.portfolio_visualization.return_value = {}
+    portfolio.current_strategy_draft.return_value = None
+    news = Mock(spec=NewsClient)
+    item = {"title": "Сообщение Банка России", "url": "https://www.cbr.ru/press/1",
+            "published_at": "2026-10-07T10:00:00+00:00"}
+    news.headlines.return_value = {
+        "items": [item], "freshness": freshness, "fetched_at": "2026-10-08T09:00:00+00:00",
+    }
+    if freshness == "unavailable":
+        news.headlines.side_effect = NewsUnavailable("news_source_unavailable")
+    with (
+        patch.object(app.state, "assistant_service", assistant, create=True),
+        patch.object(app.state, "portfolio_store", portfolio, create=True),
+        patch.object(app.state, "news_client", news, create=True),
+    ):
+        response = client.post("/api/assistant/messages", headers=HEADERS, json=chat_body(
+            context="investment", include_news=True,
+        ))
+        if freshness == "unavailable":
+            assert response.status_code == 503
+            assert response.json()["detail"] == "news_unavailable"
+            assistant.chat.assert_not_called()
+        else:
+            assert response.status_code == 200
+            selected = assistant.chat.call_args.kwargs["context"]["news"]
+            assert selected == [{**item, "freshness": freshness,
+                                 "fetched_at": "2026-10-08T09:00:00+00:00"}]
+            assert "freshness" not in item
+        news.headlines.reset_mock()
+        omitted = client.post("/api/assistant/messages", headers=HEADERS, json=chat_body(
+            context="investment", include_news=False,
+        ))
+        assert omitted.status_code == 200
+        assert assistant.chat.call_args.kwargs["context"]["news"] == []
+        news.headlines.assert_not_called()

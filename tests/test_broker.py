@@ -123,6 +123,7 @@ def test_fund_profile_reads_explicit_expense_percent_and_preserves_provider_iden
 
 def test_provider_news_keeps_exact_instrument_links_cursor_and_untrusted_text():
     payload = {
+        "hasNext": True,
         "nextCursor": "15",
         "items": [
             {
@@ -152,6 +153,44 @@ def test_provider_news_keeps_exact_instrument_links_cursor_and_untrusted_text():
         pytest.raises(TBankUnavailable),
     ):
         client.get_news("test-fixture", "prod", cursor="20")
+
+
+@pytest.mark.parametrize("has_next", [False, None])
+def test_provider_news_terminal_flag_overrides_remaining_cursor(has_next: bool | None) -> None:
+    payload = {
+        "nextCursor": "20",
+        "items": [{"id": "20", "title": "Observed news", "ts": "2026-10-06T10:00:00Z"}],
+    }
+    if has_next is not None:
+        payload["hasNext"] = has_next
+    with patch.object(TBankInvestClient, "_post", return_value=payload):
+        page = TBankInvestClient().get_news("test-fixture", "prod", cursor="20")
+    assert page.next_cursor is None
+    assert len(page.items) == 1
+
+
+def test_provider_news_accepts_empty_protojson_terminal_page() -> None:
+    with patch.object(TBankInvestClient, "_post", return_value={}):
+        page = TBankInvestClient().get_news("test-fixture", "prod")
+    assert page.items == ()
+    assert page.next_cursor is None
+
+
+@pytest.mark.parametrize("payload", [
+    {"hasNext": "false", "nextCursor": "15"},
+    {"hasNext": 1, "nextCursor": "15"},
+    {"hasNext": True},
+    {"hasNext": True, "nextCursor": "0"},
+    {"hasNext": True, "nextCursor": "020"},
+    {"hasNext": True, "nextCursor": "9223372036854775808"},
+    {"hasNext": True, "nextCursor": "-1"},
+])
+def test_provider_news_rejects_invalid_flag_or_nonadvancing_continuation(payload: dict) -> None:
+    with (
+        patch.object(TBankInvestClient, "_post", return_value={**payload, "items": []}),
+        pytest.raises(TBankUnavailable),
+    ):
+        TBankInvestClient().get_news("test-fixture", "prod", cursor="20")
 
 
 def test_tbank_get_accounts_uses_bearer_without_exposing_token() -> None:

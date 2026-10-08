@@ -535,18 +535,27 @@ class PortfolioRefreshCoordinator:
         self.store.database.record_worker_heartbeat("portfolio_refresh", status="running")
         users = self.store.observer_user_ids()
         ordered = self._fair_order(users)
-        for user_id in ordered:
-            with self.store.observer_lock(user_id) as locked:
-                if not locked:
-                    continue
-                job = self.store.claim_refresh_job(user_id, self.legal_versions)
-                if job is None:
-                    job = self.store.claim_pending_daily_job(user_id, self.legal_versions)
-                if job is not None:
-                    self._last_user = user_id
-                    self._run_claimed(job)
-                    self.store.database.record_worker_heartbeat("portfolio_refresh")
-                    return True
+        # Existing user requests and daily recovery take priority for every
+        # owner. The second pass schedules bounded observation even with no
+        # browser open; the database enforces cadence across processes/restarts.
+        for schedule_if_due in (False, True):
+            for user_id in ordered:
+                with self.store.observer_lock(user_id) as locked:
+                    if not locked:
+                        continue
+                    if schedule_if_due:
+                        job = self.store.claim_refresh_job(
+                            user_id, self.legal_versions, schedule_if_due=True,
+                        )
+                    else:
+                        job = self.store.claim_refresh_job(user_id, self.legal_versions)
+                        if job is None:
+                            job = self.store.claim_pending_daily_job(user_id, self.legal_versions)
+                    if job is not None:
+                        self._last_user = user_id
+                        self._run_claimed(job)
+                        self.store.database.record_worker_heartbeat("portfolio_refresh")
+                        return True
         self.store.database.record_worker_heartbeat("portfolio_refresh")
         return False
 

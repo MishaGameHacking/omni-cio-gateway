@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import copy
 import hashlib
 import importlib.util
 import io
@@ -13,6 +14,7 @@ import os
 import pathlib
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -689,6 +691,62 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("limit_conn_status 429", script)
         self.assertIn("limit_req_status 429", script)
 
+    def test_nginx_effective_security_headers_survive_location_overrides_and_errors(self) -> None:
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+        nginx = script.split('cat > "$NGINX_SITE.new" <<\'EOF\'\n', 1)[1].split(
+            "\nEOF", 1,
+        )[0]
+        https = nginx.split("    listen 443 ssl;", 1)[1]
+        expected = {
+            "Strict-Transport-Security": ("max-age=31536000", True),
+            "X-Content-Type-Options": ("nosniff", True),
+            "Referrer-Policy": ("strict-origin-when-cross-origin", True),
+            "Permissions-Policy": ("camera=(), microphone=(), geolocation=()", True),
+            "Content-Security-Policy": (
+                "default-src 'self'; connect-src 'self'; img-src 'self' data:; "
+                "style-src 'self'; script-src 'self'; base-uri 'none'; "
+                "frame-ancestors 'none'; form-action 'self'", True,
+            ),
+        }
+
+        def headers(scope: str) -> dict[str, tuple[str, bool]]:
+            result = {}
+            for line in re.findall(r"^\s*add_header .+;$", scope, flags=re.M):
+                tokens = shlex.split(line.strip().removesuffix(";"))
+                self.assertIn(len(tokens), (3, 4))
+                self.assertNotIn(tokens[1], result)
+                result[tokens[1]] = (tokens[2], tokens[3:] == ["always"])
+            return result
+
+        server_headers = headers(https.split("    location ", 1)[0])
+        self.assertEqual(server_headers, expected)
+        locations = dict(re.findall(
+            r"^    location ([^\n]+) \{\n(.*?)^    \}", https, flags=re.M | re.S,
+        ))
+        self.assertEqual(len(locations), len(re.findall(r"^    location ", https, re.M)))
+        self.assertTrue({
+            "/", "/api/", "/health/", "/assets/", "= /assets/app.css",
+            "= /assets/app.js", "= /assets/workspace.js", "= /assets/i18n.js",
+            "= /sw.js", "= /offline.html", "= /manifest.webmanifest", "= /version.js",
+        }.issubset(locations))
+        for location, scope in locations.items():
+            with self.subTest(location=location):
+                # Nginx inherits only when this location defines no add_header at all.
+                # Requiring always also covers rate-limit and other 4xx/5xx responses.
+                effective = headers(scope) or server_headers
+                self.assertEqual(
+                    {name: effective.get(name) for name in expected}, expected,
+                )
+                if location == "/assets/":
+                    self.assertEqual(effective["Cache-Control"], ("public, max-age=86400", False))
+                elif "Cache-Control" in effective:
+                    self.assertEqual(effective["Cache-Control"], ("no-cache", False))
+        self.assertEqual(headers(locations["= /sw.js"])["Service-Worker-Allowed"], ("/", False))
+        self.assertNotIn("__OMNICIO_SERVER_SECURITY_HEADERS__", script)
+        self.assertNotIn("__OMNICIO_LOCATION_SECURITY_HEADERS__", script)
+        self.assertNotIn("add_header_inherit", nginx)
+        self.assertNotIn("nginx-security-headers.conf", script)
+
     def test_remote_service_is_loopback_only_bounded_and_registration_is_gated(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn("--host 127.0.0.1 --port 8001", script)
@@ -741,6 +799,132 @@ class AuthAppDeployTests(unittest.TestCase):
                 2,
                 release_path,
             )
+
+    def test_workflow_events_preserve_validation_and_report_blocked_releases(self) -> None:
+        workflow = (SCRIPT_DIR.parent / "workflows/auth-app-deploy.yml").read_text(
+            encoding="utf-8",
+        )
+        tests, deploy = workflow.split("\n  tests:\n", 1)[1].split("\n  deploy:\n", 1)
+        expressions = []
+        for job in (tests, deploy):
+            match = re.search(r"^    if: >-\n((?:      .+\n)+)", job, flags=re.M)
+            self.assertIsNotNone(match)
+            expressions.append(match[1].strip())
+        prerequisite = tests.split(
+            "      - name: Require successful PostgreSQL release prerequisite", 1,
+        )[1].split("      - name:", 1)[0]
+        match = re.search(r"^        if: (.+)$", prerequisite, flags=re.M)
+        self.assertIsNotNone(match)
+        expressions.append(match[1])
+        self.assertIn("          exit /b 1\n", prerequisite)
+        self.assertLess(tests.index("id: prerequisite"), tests.index("Checkout candidate state"))
+        for name in ("Upload synthetic interface screenshots", "Report source-specific Sonar"):
+            step = tests.split("      - name: " + name, 1)[1].split("      - name:", 1)[0]
+            self.assertIn("if: always() && steps.checkout.outcome == 'success'", step)
+        self.assertIn("steps.python.outcome == 'success'", step)
+
+        baseline = {
+            "event_name": "workflow_run", "repository": "test/omnicio", "sha": "a" * 40,
+            "ref": "refs/heads/main",
+            "event": {
+                "workflow_run": {
+                    "event": "push", "conclusion": "success", "head_sha": "a" * 40,
+                    "head_branch": "main", "head_repository": {"full_name": "test/omnicio"},
+                },
+                "pull_request": {
+                    "author_association": "OWNER",
+                    "head": {"repo": {"full_name": "test/omnicio"}},
+                },
+            },
+        }
+        scenarios = (
+            ("accepted upstream push", {}, [True, True, False]),
+            ("failed upstream push", {"event.workflow_run.conclusion": "failure"},
+             [True, False, True]),
+            ("cancelled upstream push", {"event.workflow_run.conclusion": "cancelled"},
+             [True, False, True]),
+            ("missing upstream outcome", {"event.workflow_run.conclusion": ""},
+             [True, False, True]),
+            ("successful scheduled backup", {"event.workflow_run.event": "schedule"},
+             [False, False, False]),
+            ("failed scheduled backup", {"event.workflow_run.event": "schedule",
+                                         "event.workflow_run.conclusion": "failure"},
+             [False, False, False]),
+            ("stale upstream push", {"event.workflow_run.head_sha": "b" * 40},
+             [False, False, False]),
+            ("foreign upstream", {"event.workflow_run.head_repository.full_name": "fork/omnicio"},
+             [False, False, False]),
+            ("other upstream branch", {"event.workflow_run.head_branch": "feature"},
+             [False, False, False]),
+            ("upstream pull request", {"event.workflow_run.event": "pull_request"},
+             [False, False, False]),
+            ("push validation", {"event_name": "push"}, [True, False, False]),
+            ("owner PR validation", {"event_name": "pull_request"}, [True, False, False]),
+            ("fork PR", {"event_name": "pull_request",
+                         "event.pull_request.head.repo.full_name": "fork/omnicio"},
+             [False, False, False]),
+            ("nonowner PR", {"event_name": "pull_request",
+                             "event.pull_request.author_association": "CONTRIBUTOR"},
+             [False, False, False]),
+            ("manual main release", {"event_name": "workflow_dispatch"}, [True, True, False]),
+            ("manual branch validation", {"event_name": "workflow_dispatch",
+                                          "ref": "refs/heads/feature"}, [True, False, False]),
+        )
+        contexts = []
+        for _, changes, _ in scenarios:
+            context = copy.deepcopy(baseline)
+            for path, value in changes.items():
+                parent = context
+                *keys, last = path.split(".")
+                for key in keys:
+                    parent = parent[key]
+                parent[last] = value
+            contexts.append(context)
+        # These conditions use only string equality and boolean operators shared
+        # by GitHub expressions and JavaScript. Execute the workflow expressions
+        # themselves using Node, already required by this job's browser checks.
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "Node is required by the application workflow")
+        source = (
+            "const contexts = " + json.dumps(contexts) + ";\n"
+            "const results = contexts.map(github => {\n"
+            f"  const tests = Boolean({expressions[0]});\n"
+            f"  const deploy = tests && Boolean({expressions[1]});\n"
+            f"  const blocked = tests && Boolean({expressions[2]});\n"
+            "  return [tests, deploy, blocked];\n});\n"
+            "process.stdout.write(JSON.stringify(results));\n"
+        )
+        result = subprocess.run([node, "-"], input=source, text=True,
+                                capture_output=True, check=True, timeout=10)
+        for (name, _, expected), actual in zip(scenarios, json.loads(result.stdout), strict=True):
+            with self.subTest(event=name):
+                self.assertEqual(actual, expected)
+
+    def test_deploy_completion_requires_confirmed_app_ready(self) -> None:
+        workflow = (SCRIPT_DIR.parent / "workflows/auth-app-deploy.yml").read_text(
+            encoding="utf-8",
+        )
+        step = workflow.split("      - name: Confirm application readiness\n", 1)[1]
+        step = step.split("      - name:", 1)[0]
+        self.assertIsNone(re.search(r"^        if:", step, flags=re.M))
+        self.assertIn("AUTH_DEPLOY_STATUS: ${{ steps.app.outputs.status }}", step)
+        self.assertIn("          if errorlevel 1 exit /b 1\n", step)
+        match = re.search(r'^          "%OMNICIO_PYTHON%" -c "(.+)"$', step, flags=re.M)
+        self.assertIsNotNone(match)
+        for status in (
+            None, "", "pending_database", "unknown", "APP_READY", "app_ready\n", "app_ready",
+        ):
+            environment = dict(os.environ)
+            environment.pop("AUTH_DEPLOY_STATUS", None)
+            if status is not None:
+                environment["AUTH_DEPLOY_STATUS"] = status
+            result = subprocess.run([sys.executable, "-c", match[1]], env=environment,
+                                    text=True, capture_output=True, timeout=10)
+            with self.subTest(status=status):
+                self.assertEqual(result.returncode, 0 if status == "app_ready" else 1)
+                if status != "app_ready":
+                    self.assertIn("::error::Application deployment did not reach app_ready",
+                                  result.stderr)
 
     def test_remote_daily_observer_is_read_only_bounded_and_rollback_safe(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
@@ -1001,6 +1185,8 @@ class PublicResponse(io.BytesIO):
         self.status = status
         self.headers = Message()
         self.headers["Content-Type"] = content_type
+        for name, value in MODULE.PUBLIC_SECURITY_HEADERS.items():
+            self.headers[name] = value
 
 
 class PublicReleaseVerificationTests(unittest.TestCase):
@@ -1069,7 +1255,7 @@ class PublicReleaseVerificationTests(unittest.TestCase):
                 200,
             )
 
-    def verify(self) -> set[str]:
+    def verify(self, *, missing_header_path: str | None = None) -> set[str]:
         requested: set[str] = set()
 
         def open_response(request, *, timeout, context):
@@ -1080,7 +1266,10 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             self.assertEqual(context.verify_mode, MODULE.ssl.CERT_REQUIRED)
             path = request.full_url.removeprefix(prefix)
             requested.add(path)
-            return PublicResponse(*self.responses[path])
+            response = PublicResponse(*self.responses[path])
+            if path == missing_header_path:
+                del response.headers["Content-Security-Policy"]
+            return response
 
         with (
             patch.object(MODULE.urllib.request, "urlopen", side_effect=open_response),
@@ -1091,6 +1280,28 @@ class PublicReleaseVerificationTests(unittest.TestCase):
 
     def test_matching_release_checks_every_public_surface(self) -> None:
         self.assertEqual(self.verify(), set(self.responses))
+
+    def test_security_headers_are_required_on_every_public_surface(self) -> None:
+        for path in self.responses:
+            with self.subTest(path=path), self.assertRaisesRegex(
+                MODULE.InfraError, "security header invalid: Content-Security-Policy",
+            ):
+                self.verify(missing_header_path=path)
+
+    def test_missing_weakened_or_duplicate_security_headers_reject_public_response(self) -> None:
+        context = MODULE.ssl.create_default_context()
+        for name, expected in MODULE.PUBLIC_SECURITY_HEADERS.items():
+            for values in ([], ["unsafe-test-value"], [expected, expected]):
+                response = PublicResponse(b"test", "text/plain")
+                del response.headers[name]
+                for value in values:
+                    response.headers[name] = value
+                with (
+                    self.subTest(header=name, values=values),
+                    patch.object(MODULE.urllib.request, "urlopen", return_value=response),
+                    self.assertRaisesRegex(MODULE.InfraError, f"security header invalid: {name}"),
+                ):
+                    MODULE.fetch_public("/", context)
 
     def test_public_login_readiness_is_independent_for_each_provider(self) -> None:
         base = json.loads(self.responses["/api/auth/config"][0])

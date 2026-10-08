@@ -71,6 +71,16 @@ WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
 JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
 PNG_CONTENT_TYPE = "image/png"
+PUBLIC_SECURITY_HEADERS = {
+    "Strict-Transport-Security": "max-age=31536000",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Content-Security-Policy": (
+        "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; "
+        "script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+    ),
+}
 OPTIONAL_INTEGRATION_KEYS = (
     "TID_CLIENT_ID", "TID_CLIENT_SECRET", "TID_LOGIN_ENABLED", "TID_PKCE_ENABLED",
     "ASSISTANT_BASE_URL", "ASSISTANT_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_ENABLED",
@@ -93,6 +103,15 @@ OPTIONAL_SECRET_KEYS = frozenset({
 
 def add_summary(line: str) -> None:
     print(line)
+
+
+def nginx_security_headers(indent: int) -> str:
+    # Nginx discards inherited add_header directives whenever a location adds its own.
+    # Render the same policy into every such scope and keep rollback configs self-contained.
+    return "\n".join(
+        f"{' ' * indent}add_header {name} {json.dumps(value)} always;"
+        for name, value in PUBLIC_SECURITY_HEADERS.items()
+    )
 
 
 def set_output(name: str, value: str) -> None:
@@ -441,7 +460,7 @@ def commit_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
         add_summary("- Warning: stale product environment rollback backup remains.")
 
 
-REMOTE_DEPLOY_SCRIPT = r"""set -euo pipefail
+_REMOTE_DEPLOY_TEMPLATE = r"""set -euo pipefail
 
 SHA="$1"
 RELEASE="/opt/omnicio/releases/$SHA"
@@ -809,11 +828,7 @@ server {
     root /var/www/omnicio.ru/current;
     index index.html;
 
-    add_header Strict-Transport-Security "max-age=31536000" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
-    add_header Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" always;
+__OMNICIO_SERVER_SECURITY_HEADERS__
 
     location = /api/auth/vkid/start {
         limit_req zone=omnicio_auth_start burst=5 nodelay;
@@ -987,52 +1002,62 @@ server {
 
     location = /assets/app.css {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location = /assets/app.js {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location = /assets/workspace.js {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location = /assets/i18n.js {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location = /sw.js {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
         add_header Service-Worker-Allowed "/";
     }
 
     location = /offline.html {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location /assets/ {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "public, max-age=86400";
     }
 
     location = /manifest.webmanifest {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location = /version.js {
         try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 
     location / {
         try_files $uri $uri/ /index.html;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
         add_header Cache-Control "no-cache";
     }
 }
@@ -1060,6 +1085,11 @@ systemctl restart omnicio-observer.timer
 systemctl is-enabled omnicio-observer.timer >/dev/null
 systemctl is-active omnicio-observer.timer >/dev/null
 """
+REMOTE_DEPLOY_SCRIPT = _REMOTE_DEPLOY_TEMPLATE.replace(
+    "__OMNICIO_SERVER_SECURITY_HEADERS__", nginx_security_headers(4),
+).replace(
+    "__OMNICIO_LOCATION_SECURITY_HEADERS__", nginx_security_headers(8),
+)
 
 
 REMOTE_ROLLBACK_SCRIPT = r"""set -euo pipefail
@@ -1246,6 +1276,9 @@ def fetch_public(path: str, context: ssl.SSLContext) -> tuple[bytes, str]:
     with urllib.request.urlopen(request, timeout=15, context=context) as response:
         if response.status != 200:
             raise InfraError(f"Public application returned non-200: {path}")
+        for name, expected in PUBLIC_SECURITY_HEADERS.items():
+            if response.headers.get_all(name, []) != [expected]:
+                raise InfraError(f"Public application security header invalid: {name}: {path}")
         body = response.read(4 * 1024 * 1024 + 1)
         if len(body) > 4 * 1024 * 1024:
             raise InfraError(f"Public application response is too large: {path}")

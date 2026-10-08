@@ -1174,7 +1174,10 @@ def _assistant_news_context(request: Request, include_news: bool) -> list[dict[s
         return []
     try:
         payload = cast(NewsClient, request.app.state.news_client).headlines()
-        return cast(list[dict[str, Any]], payload["items"])
+        return [
+            {**item, "freshness": payload["freshness"], "fetched_at": payload["fetched_at"]}
+            for item in cast(list[dict[str, Any]], payload["items"])
+        ]
     except NewsUnavailable as exc:
         raise HTTPException(status_code=503, detail="news_unavailable") from exc
 
