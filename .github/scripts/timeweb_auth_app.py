@@ -54,6 +54,7 @@ LEGAL_DOCUMENT_KEYS = {
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
 LEGACY_RESET_MARKER = "/etc/omnicio/legacy-profile-reset-v1.done"
+DEPLOY_LOCK = "/run/omnicio-auth-deploy.lock"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
 INVALID_RELEASE_SHA = "Release SHA must be a full lowercase 40-character SHA"
 BRAND_SOURCE = "assets/brand/omnicio-logo.png"
@@ -556,7 +557,7 @@ install -m 0644 "$RELEASE/assets/brand/web/auth-mountains.png" "$WEB_RELEASE/ass
 # Existing installed clients may still request the former PNG URLs. All resolve
 # to the owner's unchanged original, while the new manifest uses its canonical URL.
 for name in apple-touch-icon-180.png pwa-icon-192.png pwa-icon-512.png pwa-maskable-512.png; do
-    ln -s omnicio-logo.png "$WEB_RELEASE/assets/brand/$name"
+    ln -sfn omnicio-logo.png "$WEB_RELEASE/assets/brand/$name"
 done
 set -a
 . /etc/omnicio/product.env
@@ -1117,8 +1118,18 @@ def upload_release(
     archive_b64: str,
     release_sha: str,
 ) -> None:
+    if not RELEASE_RE.fullmatch(release_sha):
+        raise InfraError(INVALID_RELEASE_SHA)
     release = f"/opt/omnicio/releases/{release_sha}"
+    current = ssh.run("readlink -f /opt/omnicio/current 2>/dev/null || true").strip()
+    if current == release:
+        # A retry must never erase the venv/source used by live worker processes
+        # or turn the rollback target into the partially uploaded candidate.
+        raise InfraError("The requested release is already active; no files were changed")
     command = (
+        "set -euo pipefail; "
+        # Recheck remotely immediately before removal as a second safety boundary.
+        f'test "$(readlink -f /opt/omnicio/current 2>/dev/null || true)" != {release}; '
         f"rm -rf {release}; "
         f"install -d -m 0755 {release}; "
         f"base64 -d | tar -xzf - -C {release}"
@@ -1127,7 +1138,12 @@ def upload_release(
 
 
 def deploy_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
-    ssh.run(f"bash -s -- {release_sha}", input_text=REMOTE_DEPLOY_SCRIPT)
+    # Keep the remote process group bounded before the SSH controller deadline.
+    # The same lock makes rollback wait after an ambiguous SSH disconnection.
+    ssh.run(
+        f"flock -n {DEPLOY_LOCK} timeout --kill-after=15s 840s bash -s -- {release_sha}",
+        input_text=REMOTE_DEPLOY_SCRIPT, timeout=900,
+    )
 
 
 def retire_legacy_profile(ssh: EphemeralSsh) -> None:
@@ -1214,9 +1230,12 @@ COMMIT;
 
 def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
     try:
-        ssh.run(f"bash -s -- {release_sha}", input_text=REMOTE_ROLLBACK_SCRIPT)
+        ssh.run(
+            f"flock -w 855 {DEPLOY_LOCK} timeout --kill-after=5s 30s bash -s -- {release_sha}",
+            input_text=REMOTE_ROLLBACK_SCRIPT, timeout=900,
+        )
     except InfraError:
-        pass
+        add_summary("- Warning: application rollback was not confirmed; inspect release state.")
 
 
 def fetch_public(path: str, context: ssl.SSLContext) -> tuple[bytes, str]:

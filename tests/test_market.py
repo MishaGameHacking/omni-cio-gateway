@@ -828,7 +828,8 @@ def test_invalid_protojson_price_cannot_escape_or_contaminate_valid_quotes(bad_p
     service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
     try:
         with patch(
-            "urllib.request.urlopen", side_effect=lambda *args, **kwargs: io.BytesIO(payload),
+            "urllib.request.OpenerDirector.open",
+            side_effect=lambda *args, **kwargs: io.BytesIO(payload),
         ):
             batch = client.get_last_prices_batch(
                 "synthetic-test-credential", "prod", ("good", "bad"),
@@ -958,3 +959,53 @@ def test_public_reference_never_reads_broker_and_releases_admission_after_failur
     assert partial["history"] is not None
     assert partial["indicators"] is None
     assert not broker.mock_calls
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-1", "0", "1e999999999", "1000000001"])
+@pytest.mark.parametrize("feed", ["usd", "indicators"])
+def test_cbr_currency_feeds_reject_invalid_values_before_caching(value, feed):
+    client = CBRClient()
+    payload = _cbr_indicators_xml(effective_date="01.10.2026", usd=value, eur="95")
+    with (
+        patch("urllib.request.urlopen", return_value=FakeXmlResponse(payload)),
+        pytest.raises(CBRUnavailable),
+    ):
+        if feed == "usd":
+            client.usd_rub_rate(date(2026, 10, 1))
+        else:
+            client.latest_indicators()
+    assert not client._cached
+    assert client._indicator_cached is None
+
+
+@pytest.mark.parametrize("fault", ["duplicate", "truncated", "doctype", "oversized"])
+def test_cbr_daily_reference_rejects_ambiguous_or_unbounded_responses(fault):
+    payload = _cbr_xml(effective_date="01.10.2026", value="90")
+    if fault == "duplicate":
+        row = payload[payload.index(b"  <Valute"):payload.index(b"</ValCurs>")]
+        payload = payload.replace(b"</ValCurs>", row + b"</ValCurs>")
+    elif fault == "truncated":
+        payload = payload.replace(b"</ValCurs>", b"")
+    elif fault == "doctype":
+        payload = payload.replace(b"<ValCurs", b'<!DOCTYPE ValCurs [<!ENTITY x "90">]><ValCurs', 1)
+    else:
+        payload += b" " * 512_001
+    with (
+        patch("urllib.request.urlopen", return_value=FakeXmlResponse(payload)),
+        pytest.raises(CBRUnavailable),
+    ):
+        CBRClient().usd_rub_rate(date(2026, 10, 1))
+
+
+def test_cbr_requested_date_rejects_future_rate_and_preserves_weekend_effective_date():
+    client = CBRClient(cache_seconds=0)
+    with patch("urllib.request.urlopen", side_effect=[
+        FakeXmlResponse(_cbr_xml(effective_date="05.10.2026", value="90")),
+        FakeXmlResponse(_cbr_xml(effective_date="02.10.2026", value="90")),
+    ]):
+        with pytest.raises(CBRUnavailable, match="future rate"):
+            client.usd_rub_rate(date(2026, 10, 3))
+        # A prior effective date on a non-publication day remains valid.
+        rate = client.usd_rub_rate(date(2026, 10, 4))
+    assert rate.effective_date == date(2026, 10, 2)
+    assert rate.value == "90"

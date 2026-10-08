@@ -830,6 +830,147 @@ async function ledgerPaginationContracts() {
   assert.equal(state.loading.has("ledger-more"), false);
   console.log("PASS ledger pagination contracts: corrected snapshots and explicit cursor restart");
 }
+async function assistantConversationContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const lifecycle = app.slice(app.indexOf("  const loadAssistantConversation ="), app.indexOf("  const openAssistantConnection ="));
+  const sending = app.slice(app.indexOf("  const reportAssistantFailure ="), app.indexOf("  function assistantRequestHTML()"));
+  const readback = app.slice(app.indexOf("  async function readAssistantRequest("), app.indexOf("  function assistantMemoryChoice("));
+  const pending = new Map();
+  const conversation = id => ({id, title: id, version: 0, messages: [], next_before: null});
+  const state = {generation: 1, view: "assistant", assistantBusy: false, assistantConversation: conversation("old"), assistantRequest: {id: "old-request", conversation_id: "old", status: "uncertain", reply_prefix: "Old private context"}, chat: [], route: {}, data: {assistantStatus: {enabled: true, configured: true}}, eventRequest: 1};
+  const dialog = {open: true, close() { this.open = false; }};
+  let delayReads = true;
+  let delayReadbacks = false;
+  let delayConversationWrites = false;
+  let requestSequence = 0;
+  let reportedFailures = 0;
+  const context = vm.createContext({
+    state, requireUser: () => true, safeSegment: encodeURIComponent, renderAssistant() {},
+    T: value => value, H: value => value, esc: value => value, button: () => "", openDialog() {},
+    updateViewRoute: route => { state.route = route; }, loadResource: async () => {},
+    $: selector => selector === "#workspace-dialog" ? dialog : null,
+    crypto: {randomUUID: () => `new-request-${++requestSequence}`},
+    assistantDraftFromForm: () => ({message: "A question for the selected conversation", context: "general"}),
+    ensureAssistantConversation: async () => {}, paintAssistantRequest() {},
+    readAssistantStream() {}, isCancelled: () => false, humanError: error => error.message,
+    toast: () => { reportedFailures++; }, showMessage: () => { reportedFailures++; },
+    api: async (path, options = {}) => {
+      if (path === "/api/assistant/conversations") return delayConversationWrites ? new Promise(resolve => pending.set("create", resolve)) : conversation("created");
+      if (options.method === "DELETE") return delayConversationWrites ? new Promise(resolve => pending.set("delete", resolve)) : {deleted: true};
+      if (path === "/api/assistant/messages/stream") return new Promise((resolve, reject) => { pending.set("stream", resolve); pending.set("streamError", reject); });
+      if (path.startsWith("/api/assistant/requests/")) return delayReadbacks ? new Promise((resolve, reject) => { pending.set("readback", resolve); pending.set("readbackError", reject); }) : {request_id: state.assistantRequest.id, conversation_id: state.assistantConversation.id, status: "cancelled"};
+      const id = path.split("/").at(-1).split("?")[0];
+      if (!delayReads) return conversation(id);
+      return new Promise(resolve => pending.set(id, resolve));
+    }
+  });
+  vm.runInContext(lifecycle + sending + readback + "\nglobalThis.load=loadAssistantConversation;globalThis.create=newAssistantConversation;globalThis.remove=deleteAssistantConversation;globalThis.send=sendAssistant;globalThis.readRequest=readAssistantRequest;", context);
+  const loadingEmpty = context.load("empty");
+  pending.get("empty")(conversation("empty"));
+  await loadingEmpty;
+  assert.equal(state.assistantRequest, null, "A conversation without a request cannot retain another conversation's provisional answer or cancel action");
+
+  state.assistantRequest = {id: "old-request", conversation_id: "empty", status: "uncertain"};
+  const loadingOld = context.load("old");
+  await context.create();
+  pending.get("old")({...conversation("old"), latest_request: {request_id: "old-request", conversation_id: "old", status: "uncertain"}});
+  await loadingOld;
+  assert.equal(state.assistantConversation.id, "created", "An earlier conversation read cannot replace a newly created conversation");
+  assert.equal(state.assistantRequest, null, "A new conversation starts without old request controls");
+  assert.equal(state.route.conversation, "created");
+
+  state.assistantRequest = {id: "created-request", conversation_id: "created", status: "cancelled"};
+  state.assistantDeleteConfirmation = {id: "created", sequence: state.eventRequest};
+  await context.remove(true);
+  assert.equal(state.assistantConversation, null);
+  assert.equal(state.assistantRequest, null, "Deleting a conversation also removes its request and provisional text");
+
+  delayReadbacks = delayConversationWrites = true;
+  for (const operation of ["delete", "create"]) {
+    state.assistantConversation = conversation("readback-race");
+    state.assistantRequest = {id: "pending-readback", conversation_id: "readback-race", status: "uncertain"};
+    state.assistantDeleteConfirmation = {id: "readback-race", sequence: state.eventRequest};
+    const readbackResult = context.readRequest(false);
+    const writing = operation === "delete" ? context.remove(true) : context.create();
+    if (operation === "delete") pending.get("readback")({request_id: "pending-readback", conversation_id: "readback-race", status: "completed"});
+    else pending.get("readbackError")(new Error("stale_readback_failure"));
+    await until(() => pending.has(operation), "The conversation mutation awaits its response");
+    await Promise.resolve();
+    assert.equal(state.assistantBusy, true, "An old readback cannot unlock an in-flight conversation mutation");
+    assert.equal(pending.has("readback-race"), false, "A late readback cannot launch history that resurrects a deleted conversation");
+    assert.equal(await readbackResult, undefined, "A superseded readback cannot confirm the current conversation's request state");
+    assert.equal(reportedFailures, 0, "A stale readback error cannot appear on a new conversation");
+    pending.get(operation)(operation === "delete" ? {deleted: true} : conversation("created"));
+    await writing;
+  }
+  delayReadbacks = delayConversationWrites = false;
+  state.assistantConversation = conversation("history-race");
+  state.assistantRequest = {id: "history-readback", conversation_id: "history-race", status: "uncertain"};
+  const historyReadback = context.readRequest(false);
+  await until(() => pending.has("history-race"), "A completed request readback starts its history reconciliation");
+  await context.create();
+  pending.get("history-race")(conversation("history-race"));
+  assert.equal(await historyReadback, undefined, "Readback ownership is checked again after waiting for history");
+  assert.equal(state.assistantConversation.id, "created");
+
+  state.view = "home";
+  state.assistantConversation = conversation("selected");
+  const loadingOther = context.load("other");
+  const sendingQuestion = context.send({reportValidity: () => true});
+  await until(() => pending.has("stream"), "The isolated assistant send reaches its stream request");
+  assert.equal(state.assistantRequest.conversation_id, "selected");
+  pending.get("other")(conversation("other"));
+  await loadingOther;
+  assert.equal(state.assistantConversation.id, "selected", "A pre-send history response cannot move an active question to another conversation");
+  assert.equal(state.assistantRequest.id, "new-request-1");
+  delayReads = false;
+  state.assistantRequest.status = "cancelled";
+  pending.get("stream")();
+  await sendingQuestion;
+  assert.equal(state.assistantBusy, false);
+  for (const outcome of ["stream", "streamError"]) {
+    pending.delete("stream");
+    const cancelledSend = context.send({reportValidity: () => true});
+    await until(() => pending.has("stream"), "The request awaiting cancellation starts its stream");
+    const releaseCancelled = pending.get(outcome);
+    await context.readRequest(true);
+    assert.equal(state.assistantBusy, false, "Confirmed cancellation allows a new question before the old connection has closed");
+    pending.delete("stream");
+    const nextSend = context.send({reportValidity: () => true});
+    await until(() => pending.has("stream"), "The next question starts before the cancelled connection closes");
+    const activeId = state.assistantRequest.id;
+    releaseCancelled(new Error("old_stream_interrupted"));
+    await cancelledSend;
+    assert.equal(state.assistantBusy, true, "A late completion or failure from the cancelled stream cannot unlock the new question");
+    assert.equal(state.assistantRequest.id, activeId, "The old stream cannot replace the active request");
+    assert.equal(state.assistantRequest.status, "running");
+    assert.equal(reportedFailures, 0, "An old connection error does not become an error on the new question");
+    state.assistantRequest.status = "cancelled";
+    pending.get("stream")();
+    await nextSend;
+  }
+  console.log("PASS assistant conversation isolation: empty, created and deleted histories clear old request state; earlier reads cannot replace a new conversation or active send");
+}
+async function assistantMemoryReconciliationContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  function assistantMemoryForm("), app.indexOf("  async function saveAssistantMemory("));
+  const saved = {id: "saved-note", version: 1, category: "preference", content: "Explain source timestamps"};
+  const state = {generation: 1, view: "assistant", assistantMemoryDraftId: saved.id, data: {assistantMemory: {items: [saved]}}};
+  let rendered = "", cleared = 0, failures = 0;
+  const context = vm.createContext({state, crypto: {randomUUID: () => "next-note"}, T: value => value, H: value => value, esc: value => value, select: () => "", loadResource: async () => {}, clearScreenDraft: () => { cleared++; }, humanError: () => "Unconfirmed", $: () => ({}), showMessage: () => { failures++; }, renderAssistant: () => { rendered = context.form(); }});
+  vm.runInContext(source + "\nglobalThis.form=assistantMemoryForm;globalThis.reconcile=reconcileAssistantMemory;", context);
+  const form = {dataset: {id: saved.id, version: "0"}};
+  await context.reconcile(form, saved, new Error("lost_ack"), 1);
+  assert.equal(cleared, 1);
+  assert.ok(rendered.includes('data-id="next-note"'), "After a confirmed lost creation response, the next memory form must use a fresh ID instead of recreating the saved note");
+  assert.equal(failures, 0);
+  state.assistantMemoryDraftId = "unconfirmed-note";
+  await context.reconcile({dataset: {id: "unconfirmed-note", version: "0"}}, saved, new Error("lost_ack"), 1);
+  assert.equal(state.assistantMemoryDraftId, "unconfirmed-note", "An unconfirmed result retains its original idempotency ID for reconciliation");
+  assert.equal(cleared, 1);
+  assert.equal(failures, 1);
+  console.log("PASS assistant memory reconciliation: confirmed creation advances the next draft ID; an uncertain creation retains its identity");
+}
 async function strategyInputContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const between = (from, to) => {
@@ -2308,6 +2449,8 @@ const runBrowser = async base => {
   try {
     displayContracts();
     await ledgerPaginationContracts();
+    await assistantConversationContracts();
+    await assistantMemoryReconciliationContracts();
     await strategyInputContracts();
     await installLifecycleContracts();
     await installPromptInterleavingContracts();
@@ -3769,9 +3912,11 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   await until(()=>fixture.conversations.length===0,"Delete owned conversation");
   assert.equal(fixture.ai.quota.used,2,"Deleting conversation does not reset accepted request quota");
   await wait('!document.querySelector("#workspace-dialog").open && document.querySelector("[data-action=assistant-new]")?.disabled===false',"Deletion finishes in the original dialog");
+  assert.equal(await evaluate('Boolean(document.querySelector(".assistant-stream"))'), false, "Deleting a conversation removes its cancelled request and provisional answer");
   await click('#view-assistant [data-action="assistant-new"]');
   await until(()=>fixture.conversations.length===1,"Create conversation for deletion race");
   await wait('document.querySelector("[data-action=chat-clear]")',"New conversation becomes selected");
+  assert.equal(await evaluate('Boolean(document.querySelector(".assistant-stream"))'), false, "A new conversation has no controls for a request from the previous conversation");
   fixture.holdAssistantDelete=true;
   await click('#view-assistant [data-action="chat-clear"]');
   await click('#workspace-dialog [data-action="assistant-delete-confirm"]');

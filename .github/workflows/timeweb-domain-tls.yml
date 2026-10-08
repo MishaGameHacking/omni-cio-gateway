@@ -10,6 +10,7 @@ on:
       - ".github/scripts/verify_main_release.py"
       - ".github/scripts/test_release_gate.py"
       - ".github/scripts/timeweb_domain_tls.py"
+      - ".github/scripts/timeweb_http.py"
       - ".github/scripts/timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_domain_tls.py"

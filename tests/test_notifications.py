@@ -388,6 +388,8 @@ def test_push_receipt_ignores_irrelevant_retry_headers_and_bounds_retry_decimal(
 @pytest.mark.parametrize(("error", "expected"), [
     (smtplib.SMTPDataError(451, b"temporary rejection"), "queued"),
     (smtplib.SMTPDataError(550, b"permanent rejection"), "failed"),
+    (smtplib.SMTPRecipientsRefused({"verified@example.org": (450, b"try later")}), "queued"),
+    (smtplib.SMTPRecipientsRefused({"verified@example.org": (550, b"no mailbox")}), "failed"),
     (smtplib.SMTPServerDisconnected("unknown after DATA"), "uncertain"),
     (None, "accepted"),
 ])
@@ -407,6 +409,43 @@ def test_email_uses_tls_and_retains_ambiguous_outcome(
     assert result.status == expected
     assert connect.call_args.kwargs["context"].check_hostname is True
     assert smtp.send_message.call_args.args[0]["Message-ID"] == "<stable-dedup-key@omnicio.ru>"
+    smtp.close.assert_called_once()
+
+
+@pytest.mark.parametrize("error", [
+    smtplib.SMTPResponseException(451, b"temporary QUIT rejection"),
+    smtplib.SMTPServerDisconnected("disconnected after DATA acceptance"),
+])
+def test_email_cleanup_failure_cannot_retry_an_accepted_message(error: Exception) -> None:
+    smtp = Mock()
+    smtp.__enter__ = Mock(return_value=smtp)
+    smtp.__exit__ = Mock(side_effect=error)
+    smtp.quit.side_effect = error
+    config = NotificationConfig(crypto_key="unused", smtp_host="smtp.example.org",
+                                smtp_sender="operator@example.org")
+    with patch("omnicio.notifications.smtplib.SMTP_SSL", return_value=smtp):
+        result = NotificationTransport(config).send_email({"email": "verified@example.org"}, {
+            "title": "Test", "body": "No real delivery", "tag": "stable-dedup-key",
+        })
+    assert result.status == "accepted"
+    smtp.send_message.assert_called_once()
+    smtp.close.assert_called_once()
+
+
+def test_email_cleanup_cannot_replace_an_ambiguous_send_with_a_retryable_error() -> None:
+    smtp = Mock()
+    smtp.__enter__ = Mock(return_value=smtp)
+    smtp.__exit__ = Mock(side_effect=smtplib.SMTPResponseException(451, b"QUIT unavailable"))
+    smtp.send_message.side_effect = smtplib.SMTPServerDisconnected("DATA result unknown")
+    config = NotificationConfig(crypto_key="unused", smtp_host="smtp.example.org",
+                                smtp_sender="operator@example.org")
+    with patch("omnicio.notifications.smtplib.SMTP_SSL", return_value=smtp):
+        result = NotificationTransport(config).send_email({"email": "verified@example.org"}, {
+            "title": "Test", "body": "No real delivery", "tag": "stable-dedup-key",
+        })
+    assert result.status == "uncertain"
+    smtp.quit.assert_not_called()
+    smtp.close.assert_called_once()
 
 
 @pytest.mark.parametrize(("target", "expected"), [

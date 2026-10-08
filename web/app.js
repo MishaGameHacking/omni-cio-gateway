@@ -4759,6 +4759,7 @@
   const loadAssistantConversation = async (id, more = false) => {
     if (!requireUser() || state.assistantBusy) return;
     const generation = state.generation;
+    if (state.assistantConversation?.id !== id) state.assistantSendSequence = (state.assistantSendSequence || 0) + 1;
     const sequence = state.assistantLoadSequence = (state.assistantLoadSequence || 0) + 1;
     const before = more && state.assistantConversation?.id === id ? state.assistantConversation.next_before : null;
     const cursor = before ? "&before=" + before : "";
@@ -4767,12 +4768,14 @@
     if (payload.id !== id || !Array.isArray(payload.messages)) throw new Error("invalid_server_response");
     state.chat = more ? [...new Map([...payload.messages, ...state.chat].map(item => [item.position, item])).values()].sort((a,b) => a.position - b.position) : payload.messages;
     state.assistantConversation = payload;
-    if (payload.latest_request) state.assistantRequest = {...payload.latest_request, id: payload.latest_request.request_id};
+    state.assistantRequest = payload.latest_request ? {...payload.latest_request, id: payload.latest_request.request_id} : null;
     if (state.view === "assistant") renderAssistant();
   };
   const newAssistantConversation = async () => {
     if (!requireUser() || state.assistantBusy) return;
     const generation = state.generation;
+    state.assistantSendSequence = (state.assistantSendSequence || 0) + 1;
+    state.assistantLoadSequence = (state.assistantLoadSequence || 0) + 1;
     state.assistantBusy = true;
     renderAssistant();
     let created;
@@ -4785,6 +4788,7 @@
     }
     if (generation !== state.generation) return;
     state.assistantConversation = {...created, messages: [], next_before: null};
+    state.assistantRequest = null;
     updateViewRoute({screen: "conversation", conversation: created.id});
     state.chat = [];
     await loadResource("assistantConversations", "/api/assistant/conversations", {force: true});
@@ -4802,6 +4806,7 @@
     if (confirmation?.id !== selected.id || confirmation.sequence !== state.eventRequest) return;
     state.assistantDeleteConfirmation = null;
     const generation = state.generation;
+    state.assistantSendSequence = (state.assistantSendSequence || 0) + 1;
     state.assistantBusy = true;
     state.assistantLoadSequence = (state.assistantLoadSequence || 0) + 1;
     renderAssistant();
@@ -4810,6 +4815,7 @@
       if (generation !== state.generation) return;
       if (state.assistantConversation?.id === selected.id) {
         state.assistantConversation = null;
+        state.assistantRequest = null;
         state.chat = [];
       }
       if (confirmation.sequence === state.eventRequest && $("#workspace-dialog").open) $("#workspace-dialog").close();
@@ -4872,12 +4878,12 @@
     const created = await api("/api/assistant/conversations", {method: "POST", body: {title: message.slice(0, 120)}});
     if (generation === state.generation) state.assistantConversation = {...created, messages: [], next_before: null};
   };
-  const reportAssistantFailure = async (error, generation) => {
-    if (generation !== state.generation || isCancelled(error)) return;
+  const reportAssistantFailure = async (error, current) => {
+    if (!current() || isCancelled(error)) return;
     state.assistantBusy = false;
     if (state.assistantRequest) state.assistantRequest.status = "uncertain";
     if (state.assistantConversation) await loadAssistantConversation(state.assistantConversation.id).catch(() => null);
-    if (generation !== state.generation) return;
+    if (!current()) return;
     if (state.view === "assistant") {
       renderAssistant();
       showMessage($("#assistant-message"), humanError(error) + T(" Проверьте историю перед отправкой нового вопроса."), true);
@@ -4889,6 +4895,10 @@
     const message = draft.message.trim();
     if (!message) return;
     const generation = state.generation;
+    const sequence = state.assistantSendSequence = (state.assistantSendSequence || 0) + 1;
+    let conversationId = null;
+    const current = () => generation === state.generation && sequence === state.assistantSendSequence && (!conversationId || state.assistantConversation?.id === conversationId);
+    state.assistantLoadSequence = (state.assistantLoadSequence || 0) + 1;
     state.assistantDraft = draft;
     state.assistantBusy = true;
     renderAssistant();
@@ -4896,6 +4906,7 @@
       await ensureAssistantConversation(message, generation);
       if (generation !== state.generation) return;
       const selected = state.assistantConversation;
+      conversationId = selected.id;
       state.assistantBusy = true;
       renderAssistant();
       const request = {id: crypto.randomUUID(), conversation_id: selected.id, status: "running", reply_prefix: "", stream_sequence: 0};
@@ -4908,18 +4919,19 @@
         research_run_id: draft.context === "investment" ? draft.research_run_id || null : null,
         memory_ids: [...(state.assistantMemorySelected || [])]
       }, onStream: (response, ensure) => readAssistantStream(response, request, ensure)});
-      if (generation !== state.generation) return;
+      if (!current()) return;
       if (state.assistantRequest?.status === "completed") { state.assistantDraft.message = ""; const currentForm = $("#assistant-form"); if (currentForm) { currentForm.elements.message.value = ""; clearScreenDraft(currentForm); } }
       state.assistantBusy = false;
       await loadAssistantConversation(selected.id);
+      if (!current()) return;
       await Promise.allSettled([loadResource("assistantStatus", "/api/assistant/status", {force: true}), loadResource("assistantConversations", "/api/assistant/conversations", {force: true})]);
-      if (generation === state.generation && state.view === "assistant") {
+      if (current() && state.view === "assistant") {
         renderAssistant();
         $("#chat-messages").scrollTop = $("#chat-messages").scrollHeight;
       }
     } catch (error) {
-      await reportAssistantFailure(error, generation);
-    } finally { if (generation === state.generation) state.assistantBusy = false; }
+      await reportAssistantFailure(error, current);
+    } finally { if (current()) state.assistantBusy = false; }
   };
 
   function assistantRequestHTML() {
@@ -4975,17 +4987,21 @@
     const request = state.assistantRequest;
     if (!requireUser() || !request?.id) return;
     const generation = state.generation;
+    const sequence = state.assistantSendSequence;
+    const conversationId = state.assistantConversation?.id;
+    const current = () => generation === state.generation && sequence === state.assistantSendSequence && conversationId === state.assistantConversation?.id && state.assistantRequest?.id === request.id;
     try {
       const saved = await api(`/api/assistant/requests/${safeSegment(request.id)}${cancel ? "/cancel" : ""}`, cancel ? {method: "POST", body: {}} : {});
-      if (generation !== state.generation || state.assistantRequest?.id !== request.id) return;
+      if (!current()) return;
       state.assistantRequest = {...saved, id: saved.request_id || request.id};
       paintAssistantRequest();
       if (["completed", "cancelled"].includes(saved.status)) {
         state.assistantBusy = false;
         if (state.assistantConversation) await loadAssistantConversation(state.assistantConversation.id);
       }
+      if (!current()) return;
       return saved;
-    } catch (error) { if (generation === state.generation && !isCancelled(error)) showMessage($("#assistant-message"), humanError(error), true); }
+    } catch (error) { if (current() && !isCancelled(error)) showMessage($("#assistant-message"), humanError(error), true); }
   }
   function assistantMemoryChoice(item) {
     const checked = state.assistantMemorySelected?.has(item.id) ? " checked" : "";
@@ -5015,6 +5031,7 @@
     const confirmed = actual && actual.content === body.content && actual.category === body.category && actual.version > Number(form.dataset.version);
     if (confirmed) {
       clearScreenDraft(form);
+      if (!Number(form.dataset.version)) state.assistantMemoryDraftId = null;
       if (state.view === "assistant") renderAssistant();
     } else showMessage($("#assistant-memory-message"), humanError(error), true);
   }

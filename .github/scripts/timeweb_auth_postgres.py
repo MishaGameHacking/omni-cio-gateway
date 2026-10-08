@@ -32,6 +32,7 @@ from inplace_upgrade import (
     render_remote_upgrade,
 )
 from timeweb_addresses import network_addresses
+from timeweb_http import request_json
 from timeweb_recovery import (
     RecoveryBlocked,
     ensure_recovery_point,
@@ -91,7 +92,6 @@ class TimewebApiError(RuntimeError):
         super().__init__(
             f"Timeweb API HTTP {status_code} "
             f"error_code={error_code or 'unknown'} "
-            f"message={message or 'unknown'}"
         )
         self.status_code = status_code
         self.error_code = error_code
@@ -148,9 +148,7 @@ class TimewebClient:
             method=method,
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                raw = response.read().decode()
-                return json.loads(raw) if raw else {}
+            return request_json(request, timeout=timeout)
         except urllib.error.HTTPError as exc:
             raw = exc.read().decode(errors="replace")
             try:
@@ -650,6 +648,7 @@ class EphemeralSsh:
     def run(
         self, command: str, *, input_text: str | None = None,
         stage: str = "remote_command", migration_step: int | None = None,
+        timeout: int = 90,
     ) -> str:
         context = remote_operation_context(stage, migration_step)
         if self._key_path is None or self._known_hosts is None:
@@ -664,7 +663,7 @@ class EphemeralSsh:
                 input=payload,
                 check=False,
                 capture_output=True,
-                timeout=90,
+                timeout=timeout,
             )
         except subprocess.TimeoutExpired:
             raise InfraError(f"Remote command timed out ({context})") from None

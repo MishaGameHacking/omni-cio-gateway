@@ -47,10 +47,10 @@ jobs:
       matrix:
         include:
           - name: Ruff
-            command: '"%OMNICIO_PYTHON%" -m ruff check src tests .github/scripts/inplace_upgrade.py .github/scripts/run_recovery_drill.py .github/scripts/timeweb_recovery.py .github/scripts/test_timeweb_recovery.py .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py .github/scripts/test_with_postgres.py .github/scripts/report_sonar_annotations.py'
+            command: '"%OMNICIO_PYTHON%" -m ruff check src tests .github/scripts/inplace_upgrade.py .github/scripts/run_recovery_drill.py .github/scripts/timeweb_recovery.py .github/scripts/test_timeweb_recovery.py .github/scripts/verify_main_release.py .github/scripts/test_release_gate.py .github/scripts/timeweb_ssh_trust.py .github/scripts/test_timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py .github/scripts/timeweb_http.py .github/scripts/test_with_postgres.py .github/scripts/report_sonar_annotations.py'
           - name: Mypy
             command: |
-              "%OMNICIO_PYTHON%" -m mypy src .github/scripts/inplace_upgrade.py .github/scripts/run_recovery_drill.py .github/scripts/timeweb_recovery.py .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py .github/scripts/test_with_postgres.py .github/scripts/report_sonar_annotations.py
+              "%OMNICIO_PYTHON%" -m mypy src .github/scripts/inplace_upgrade.py .github/scripts/run_recovery_drill.py .github/scripts/timeweb_recovery.py .github/scripts/verify_main_release.py .github/scripts/timeweb_ssh_trust.py .github/scripts/timeweb_addresses.py .github/scripts/timeweb_http.py .github/scripts/test_with_postgres.py .github/scripts/report_sonar_annotations.py
               if errorlevel 1 exit /b 1
               "%OMNICIO_PYTHON%" -m mypy --platform linux .github/scripts/inplace_upgrade.py
           - name: Release gate tests

@@ -65,8 +65,31 @@ class FakeResponse:
     def __exit__(self, *args: object) -> None:
         return None
 
-    def read(self) -> bytes:
-        return json.dumps(self.payload).encode()
+    def read(self, limit: int = -1) -> bytes:
+        body = json.dumps(self.payload).encode()
+        return body if limit < 0 else body[:limit]
+
+
+@pytest.mark.parametrize("body", [b" " * 129, b'{"id":' + b'9' * 5000 + b'}'])
+def test_provider_body_is_bounded_and_malformed_json_fails_closed(body: bytes) -> None:
+    limit = 128 if len(body) == 129 else 6000
+    with (
+        patch("omnicio.tbank._MAX_RESPONSE_BYTES", limit),
+        patch("urllib.request.OpenerDirector.open", return_value=io.BytesIO(body)) as request,
+        pytest.raises(TBankUnavailable),
+    ):
+        TBankInvestClient().get_accounts("synthetic-test-credential", "prod")
+    request.assert_called_once()
+
+
+@pytest.mark.parametrize("character", ["\x00", "\x1f", "\x7f", "я", " "])
+def test_invalid_bearer_characters_fail_before_provider_io(character: str) -> None:
+    with (
+        patch("urllib.request.OpenerDirector.open") as request,
+        pytest.raises(TBankTokenRejected),
+    ):
+        TBankInvestClient().get_accounts("synthetic" + character + "test-credential", "prod")
+    request.assert_not_called()
 
 
 def test_fund_profile_reads_explicit_expense_percent_and_preserves_provider_identity():
@@ -144,7 +167,7 @@ def test_tbank_get_accounts_uses_bearer_without_exposing_token() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         accounts = client.get_accounts(credential, "prod")
 
     assert accounts == [
@@ -177,7 +200,7 @@ def test_tbank_get_user_info_parses_qualification_context() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         info = client.get_user_info(credential, "prod")
 
     assert info == TBankUserInfo(
@@ -220,7 +243,7 @@ def test_tbank_bond_ratings_are_read_only_and_keep_agency_metadata() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         result = client.get_bond_ratings(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -280,7 +303,7 @@ def test_tbank_market_yields_are_batched_read_only_shortlist_signals() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         result = client.get_market_yields(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -313,7 +336,7 @@ def test_tbank_order_book_preserves_lot_depth_and_consistency() -> None:
             "asks": [{"price": {"units": "100", "nano": 100000000}, "quantity": "8"}],
         }
     )
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         result = client.get_order_book(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -339,7 +362,7 @@ def test_tbank_order_book_preserves_lot_depth_and_consistency() -> None:
 def test_sandbox_mutation_rejects_production_environment_before_network() -> None:
     client = TBankInvestClient()
     with (
-        patch("urllib.request.urlopen") as urlopen,
+        patch("urllib.request.OpenerDirector.open") as urlopen,
         pytest.raises(ValueError, match="sandbox environment"),
     ):
         client.cancel_sandbox_order(
@@ -368,7 +391,7 @@ def test_get_sandbox_order_state_reconciles_by_request_id() -> None:
             "orderType": "ORDER_TYPE_LIMIT",
         }
     )
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         state = client.get_sandbox_order_state(
             "t.fake-owner-credential-1234567890",
             "sandbox",
@@ -392,7 +415,7 @@ def test_cancel_sandbox_order_uses_request_id_not_exchange_guess() -> None:
     client = TBankInvestClient()
     request_id = "00000000-0000-0000-0000-000000000704"
     response = FakeResponse({"time": "2026-10-03T09:30:00Z"})
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         result = client.cancel_sandbox_order(
             "t.fake-owner-credential-1234567890",
             "sandbox",
@@ -422,7 +445,7 @@ def test_tbank_get_user_info_rejects_malformed_capabilities(
 ) -> None:
     client = TBankInvestClient()
     with (
-        patch("urllib.request.urlopen", return_value=FakeResponse(payload)),
+        patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(payload)),
         pytest.raises(TBankUnavailable),
     ):
         client.get_user_info("t.fake-owner-credential-1234567890", "prod")
@@ -475,7 +498,7 @@ def test_tbank_operation_history_uses_cursor_without_write_methods() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         page = client.get_operations_by_cursor(
             credential,
             "prod",
@@ -511,7 +534,7 @@ def test_tbank_operation_history_uses_operations_service_on_sandbox_host() -> No
     client = TBankInvestClient()
     response = FakeResponse({"hasNext": False, "nextCursor": "", "items": []})
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         client.get_operations_by_cursor(
             "t.fake-owner-credential-1234567890",
             "sandbox",
@@ -562,7 +585,7 @@ def test_tbank_find_instruments_filters_to_api_trade_available_results() -> None
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         instruments = client.find_instruments(credential, "prod", "SBER", limit=20)
 
     assert instruments == (
@@ -593,7 +616,7 @@ def test_tbank_find_instruments_rejects_blank_query_before_network_call() -> Non
     client = TBankInvestClient()
 
     with (
-        patch("urllib.request.urlopen") as urlopen,
+        patch("urllib.request.OpenerDirector.open") as urlopen,
         pytest.raises(ValueError, match="1 to 64"),
     ):
         client.find_instruments(
@@ -671,7 +694,7 @@ def test_tbank_reads_latest_usd_rub_quote_without_hardcoded_instrument_id() -> N
     )
 
     with patch(
-        "urllib.request.urlopen",
+        "urllib.request.OpenerDirector.open",
         side_effect=[instruments_response, market_response],
     ) as urlopen:
         quote = client.get_usd_rub_quote(credential, "prod")
@@ -747,7 +770,7 @@ def test_tbank_reads_portfolio_and_positions() -> None:
         }
     )
     with patch(
-        "urllib.request.urlopen",
+        "urllib.request.OpenerDirector.open",
         side_effect=[portfolio_response, positions_response],
     ) as urlopen:
         portfolio = client.get_portfolio(credential, "prod", "account-1")
@@ -795,7 +818,7 @@ def test_position_yield_is_nullable_money_not_percent(
             "positions": [{"instrumentUid": "position-1", **position_fields}],
         }
     )
-    with patch("urllib.request.urlopen", return_value=response):
+    with patch("urllib.request.OpenerDirector.open", return_value=response):
         portfolio = TBankInvestClient().get_portfolio(
             "t.fake-owner-credential-1234567890", "prod", "account-1"
         )
@@ -825,7 +848,7 @@ def test_metadata_adapter_preserves_unknown_qualification_and_all_status_records
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         result = client.get_instrument_metadata(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -882,7 +905,7 @@ def test_bond_metadata_preserves_structure_required_for_r4_screening() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response):
+    with patch("urllib.request.OpenerDirector.open", return_value=response):
         result = client.get_instrument_metadata(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -920,7 +943,7 @@ def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> 
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         result = client.get_daily_exchange_candles(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -977,7 +1000,7 @@ def test_tbank_daily_candles_require_confirmed_exchange_source(
     response = FakeResponse({"candles": [candle]})
     from_at = now - timedelta(days=30)
     monkeypatch.setattr(
-        "urllib.request.urlopen",
+        "urllib.request.OpenerDirector.open",
         lambda *_args, **_kwargs: response,
     )
 
@@ -1010,7 +1033,7 @@ def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         prices = client.get_last_prices(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -1053,7 +1076,7 @@ def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
 def test_tbank_money_preserves_protojson_integer_edges_and_defaults(parts, expected) -> None:
     client = TBankInvestClient()
     response = FakeResponse({"totalAmountPortfolio": {"currency": "RUB", **parts}})
-    with patch("urllib.request.urlopen", return_value=response):
+    with patch("urllib.request.OpenerDirector.open", return_value=response):
         portfolio = client.get_portfolio("synthetic-test-credential", "prod", "synthetic-account")
     assert portfolio.total.value == expected
 
@@ -1068,7 +1091,7 @@ def test_tbank_all_operation_quantities_reuse_bounded_protojson_integer(quantity
             "quantityRest": quantity, "quantityDone": quantity,
             "tradesInfo": {"trades": [{"date": now.isoformat(), "quantity": quantity}]}}
     client = TBankInvestClient()
-    with patch("urllib.request.urlopen", return_value=FakeResponse({"items": [item]})):
+    with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse({"items": [item]})):
         page = client.get_operations_by_cursor(
             "synthetic-test-credential", "prod", "synthetic-account",
             from_at=now - timedelta(days=1), to_at=now,
@@ -1079,6 +1102,20 @@ def test_tbank_all_operation_quantities_reuse_bounded_protojson_integer(quantity
     )
 
 
+def test_operation_history_cannot_attribute_another_accounts_operations_to_requested_account():
+    now = datetime.now(UTC)
+    body = {"items": [{"id": "operation", "date": now.isoformat(),
+                       "brokerAccountId": "other-account"}]}
+    with (
+        patch.object(TBankInvestClient, "_post", return_value=body),
+        pytest.raises(TBankUnavailable, match="different account"),
+    ):
+        TBankInvestClient().get_operations_by_cursor(
+            "synthetic-test-credential", "prod", "requested-account",
+            from_at=now - timedelta(days=1), to_at=now,
+        )
+
+
 @pytest.mark.parametrize("parts", [
     {"units": "9223372036854775808"}, {"units": "-9223372036854775809"},
     {"nano": 2147483648}, {"nano": -2147483649},
@@ -1087,7 +1124,7 @@ def test_tbank_money_rejects_parts_outside_signed_wire_types(parts) -> None:
     client = TBankInvestClient()
     response = FakeResponse({"totalAmountPortfolio": {"currency": "RUB", **parts}})
     with (
-        patch("urllib.request.urlopen", return_value=response),
+        patch("urllib.request.OpenerDirector.open", return_value=response),
         pytest.raises(TBankUnavailable),
     ):
         client.get_portfolio("synthetic-test-credential", "prod", "synthetic-account")
@@ -1113,7 +1150,7 @@ def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> 
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         candles = client.get_exchange_candles(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -1150,7 +1187,7 @@ def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> 
     }
 
 
-@patch("urllib.request.urlopen")
+@patch("urllib.request.OpenerDirector.open")
 def test_tbank_exchange_candles_reject_too_short_window_before_network(
     urlopen: Mock,
 ) -> None:
@@ -1185,7 +1222,7 @@ def test_tbank_trading_status_is_bound_to_requested_instrument() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         result = client.get_trading_status(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -1224,7 +1261,7 @@ def test_tbank_accrued_interest_preserves_value_and_timestamp() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         result = client.get_accrued_interests(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -1288,7 +1325,7 @@ def test_malformed_metadata_cannot_look_like_a_valid_catalog(
     response = FakeResponse(payload)
 
     with (
-        patch("urllib.request.urlopen", return_value=response),
+        patch("urllib.request.OpenerDirector.open", return_value=response),
         pytest.raises(TBankUnavailable),
     ):
         client.get_instrument_metadata(
@@ -1305,7 +1342,7 @@ def test_non_finite_broker_money_fails_at_provider_boundary(units: str) -> None:
     response = FakeResponse(payload)
 
     with (
-        patch("urllib.request.urlopen", return_value=response),
+        patch("urllib.request.OpenerDirector.open", return_value=response),
         pytest.raises(TBankUnavailable),
     ):
         client.get_portfolio(
@@ -1320,7 +1357,7 @@ def test_tbank_tls_verification_failure_is_reported_as_unavailable() -> None:
     error = urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate verify failed"))
 
     with (
-        patch("urllib.request.urlopen", side_effect=error),
+        patch("urllib.request.OpenerDirector.open", side_effect=error),
         pytest.raises(TBankUnavailable, match="TLS certificate verification failed"),
     ):
         client.get_accounts("t.fake-owner-credential-1234567890", "prod")
@@ -1343,7 +1380,7 @@ def test_tbank_preserves_http_error_authority_without_response_body(
     client = TBankInvestClient()
 
     with (
-        patch("urllib.request.urlopen", side_effect=error),
+        patch("urllib.request.OpenerDirector.open", side_effect=error),
         pytest.raises(expected, match=message) as failure,
     ):
         client.get_accounts("t.fake-owner-credential-1234567890", "prod")
@@ -1371,7 +1408,7 @@ def test_tbank_real_response_failure_is_safe_and_never_replays(failure, consumer
         sender.shutdown(socket.SHUT_WR)
         with HTTPResponse(receiver) as response:
             response.begin()
-            with patch("urllib.request.urlopen", return_value=response) as request:
+            with patch("urllib.request.OpenerDirector.open", return_value=response) as request:
                 if consumer == "market":
                     payload = service.batch_quotes(UUID(int=1), ("uid-1",))
                     item = payload["items"][0]
@@ -1701,6 +1738,32 @@ def test_new_source_reads_recheck_original_connection_after_provider_io(operatio
         read_source(user_id, "uid")
 
 
+@pytest.mark.parametrize("operation,provider_method", [
+    ("history_page", "get_operations_by_cursor"),
+    ("user_info", "get_user_info"),
+    ("revalidate_account", "get_accounts"),
+])
+def test_account_evidence_is_discarded_after_credentials_change(operation, provider_method):
+    database, provider, user_id = FakeDatabase(), FakeTBank(), UUID(int=1)
+    service = BrokerService(database, credential_key=Fernet.generate_key().decode(), tbank=provider)
+    service.connect(
+        user_id=user_id, credential="t.fake-owner-credential-1234567890", environment="prod",
+        account_id="account-1", terms_version="2026-10-01-v2",
+    )
+
+    def replace_credential(*args, **kwargs):
+        database.record = replace(database.record, verified_at=datetime.now(UTC))
+        return provider.accounts if operation == "revalidate_account" else Mock()
+
+    arguments = ({"from_at": datetime(2026, 1, 1, tzinfo=UTC), "to_at": datetime.now(UTC)}
+                 if operation == "history_page" else {})
+    with (
+        patch.object(provider, provider_method, side_effect=replace_credential, create=True),
+        pytest.raises(BrokerConnectionError, match="connection changed"),
+    ):
+        getattr(service, operation)(user_id, **arguments)
+
+
 def test_broker_service_keeps_two_users_strictly_isolated() -> None:
     database = FakeDatabase()
     first_user = UUID("00000000-0000-0000-0000-000000000001")
@@ -1926,7 +1989,7 @@ def test_tbank_asset_fundamentals_are_batched_and_finite() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         result = client.get_asset_fundamentals(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -1967,7 +2030,7 @@ def test_tbank_bond_events_preserve_documented_default_date() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         events = client.get_bond_events(
             "t.fake-owner-credential-1234567890",
             "prod",
@@ -2011,7 +2074,7 @@ def test_tbank_asset_reports_reject_mismatched_instrument_subject() -> None:
     from_at = datetime(2026, 9, 1, tzinfo=UTC)
     to_at = datetime(2026, 10, 2, tzinfo=UTC)
     with (
-        patch("urllib.request.urlopen", return_value=response),
+        patch("urllib.request.OpenerDirector.open", return_value=response),
         pytest.raises(TBankUnavailable, match="instrument does not match"),
     ):
         client.get_asset_reports(
@@ -2038,7 +2101,7 @@ def test_tbank_fundamentals_reject_non_finite_provider_values() -> None:
     )
 
     with (
-        patch("urllib.request.urlopen", return_value=response),
+        patch("urllib.request.OpenerDirector.open", return_value=response),
         pytest.raises(TBankUnavailable, match="non-finite"),
     ):
         client.get_asset_fundamentals(

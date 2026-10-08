@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from omnicio.vkid import VKIDClient, VKIDRejected
+from omnicio.vkid import VKIDClient, VKIDRejected, VKIDUnavailable
 
 
 class FakeResponse:
@@ -21,8 +21,9 @@ class FakeResponse:
     def __exit__(self, *args: object) -> None:
         return None
 
-    def read(self) -> bytes:
-        return json.dumps(self.payload).encode()
+    def read(self, limit: int = -1) -> bytes:
+        body = json.dumps(self.payload).encode()
+        return body if limit < 0 else body[:limit]
 
 
 def test_authorization_url_uses_oauth21_pkce_parameters() -> None:
@@ -66,7 +67,7 @@ def test_exchange_code_returns_provider_verified_user_id() -> None:
         }
     )
 
-    with patch("urllib.request.urlopen", return_value=response) as urlopen:
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
         identity = client.exchange_code(
             code="authorization-code",
             device_id="device-1",
@@ -100,7 +101,7 @@ def test_exchange_code_rejects_state_mismatch() -> None:
     )
 
     with (
-        patch("urllib.request.urlopen", return_value=response),
+        patch("urllib.request.OpenerDirector.open", return_value=response),
         pytest.raises(VKIDRejected, match="state mismatch"),
     ):
         client.exchange_code(
@@ -111,7 +112,7 @@ def test_exchange_code_rejects_state_mismatch() -> None:
         )
 
 
-@pytest.mark.parametrize("user_id", ["", "0", "-1", "not-a-number"])
+@pytest.mark.parametrize("user_id", ["", "0", "-1", "not-a-number", "²", "１２３", "9" * 129])
 def test_exchange_code_rejects_invalid_user_id(user_id: str) -> None:
     client = VKIDClient(
         app_id="123456",
@@ -126,7 +127,7 @@ def test_exchange_code_rejects_invalid_user_id(user_id: str) -> None:
     )
 
     with (
-        patch("urllib.request.urlopen", return_value=response),
+        patch("urllib.request.OpenerDirector.open", return_value=response),
         pytest.raises(VKIDRejected, match="valid user id"),
     ):
         client.exchange_code(
@@ -151,7 +152,7 @@ def test_provider_401_is_rejected_without_response_body_leakage() -> None:
     )
 
     with (
-        patch("urllib.request.urlopen", side_effect=error),
+        patch("urllib.request.OpenerDirector.open", side_effect=error),
         pytest.raises(VKIDRejected, match="HTTP 401"),
     ):
         client.exchange_code(
@@ -169,7 +170,7 @@ def test_invalid_app_id_fails_before_network_call() -> None:
     )
 
     with (
-        patch("urllib.request.urlopen") as urlopen,
+        patch("urllib.request.OpenerDirector.open") as urlopen,
         pytest.raises(VKIDRejected, match="app id"),
     ):
         client.authorization_url(
@@ -178,3 +179,15 @@ def test_invalid_app_id_fails_before_network_call() -> None:
         )
 
     urlopen.assert_not_called()
+
+
+@pytest.mark.parametrize("body", [b" " * 65_537, b'\xff', b'{"id":' + b'9' * 5000 + b'}'])
+def test_malformed_or_oversized_identity_response_fails_closed(body: bytes) -> None:
+    client = VKIDClient("123", "https://omnicio.ru/api/auth/vkid/callback")
+    with (
+        patch("urllib.request.OpenerDirector.open", return_value=io.BytesIO(body)) as request,
+        pytest.raises(VKIDUnavailable),
+    ):
+        client.exchange_code(code="synthetic-code", device_id="device",
+                             code_verifier="v" * 64, expected_state="state")
+    request.assert_called_once()

@@ -1420,6 +1420,7 @@ def research_assets_from_inputs(inputs: Mapping[str, Any]) -> list[ResearchAsset
         "1.2.0",
         "1.3.0",
         "1.3.1",
+        "1.3.2",
         RESEARCH_ENGINE_VERSION,
     }:
         raise ValueError("research_replay_version_unsupported")

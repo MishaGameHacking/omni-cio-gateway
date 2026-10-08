@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/scripts/timeweb_addresses.py"
+      - ".github/scripts/timeweb_http.py"
       - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - ".github/workflows/timeweb-white-site.yml"
       - ".github/workflows/timeweb-white-site-ci.yml"

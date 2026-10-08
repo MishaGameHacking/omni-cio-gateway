@@ -566,6 +566,12 @@ def portfolio_context(workspace: Mapping[str, Any]) -> dict[str, Any]:
             "nav_status",
             "return_status",
             "return_reason",
+            "return_method",
+            "return_denominator_rub",
+            "return_is_estimate",
+            "return_is_annualized",
+            "return_time_basis",
+            "return_limitations",
         },
         "income": {
             "status",
@@ -917,7 +923,9 @@ class AssistantClient:
 def _research_context(research: Mapping[str, Any]) -> dict[str, Any]:
     result = {
         key: research[key]
-        for key in ("status", "strategy_version", "engine_version", "basis", "created_at")
+        for key in ("status", "strategy_version", "engine_version", "basis", "created_at",
+                    "method", "complete_strategy_coverage", "research_asset_weight_percent",
+                    "return_label", "probability_reason")
         if key in research and isinstance(research[key], (str, int, float, bool))
     }
     for section, allowed in {
@@ -934,6 +942,13 @@ def _research_context(research: Mapping[str, Any]) -> dict[str, Any]:
                 for key, value in source.items()
                 if key in allowed and (value is None or isinstance(value, (str, int, float, bool)))
             }
+    for section in ("limitations", "missing_requirements"):
+        source = research.get(section)
+        if isinstance(source, list):
+            result[section] = [item[:500] for item in source[:20] if isinstance(item, str)]
+            result[section + "_truncated"] = len(source) > 20 or any(
+                isinstance(item, str) and len(item) > 500 for item in source[:20]
+            )
     result["probability_of_profit"] = None
     return result
 

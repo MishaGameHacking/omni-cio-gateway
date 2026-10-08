@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/scripts/timeweb_addresses.py"
+      - ".github/scripts/timeweb_http.py"
       - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - "uv.lock"
       - "requirements-runtime.txt"
@@ -32,6 +33,7 @@ on:
       - main
     paths:
       - ".github/scripts/timeweb_addresses.py"
+      - ".github/scripts/timeweb_http.py"
       - ".github/scripts/bootstrap_self_hosted_python.cmd"
       - "uv.lock"
       - "requirements-runtime.txt"
@@ -184,7 +186,8 @@ jobs:
        github.event.workflow_run.head_sha == github.sha)
     needs: tests
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 30
+    # Cover the release gate, bounded SSH propagation, deployment and rollback.
+    timeout-minutes: 45
     env:
       TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
       TIMEWEB_SSH_KNOWN_HOSTS: ${{ vars.TIMEWEB_SSH_KNOWN_HOSTS }}

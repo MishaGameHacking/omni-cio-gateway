@@ -3,13 +3,20 @@
 
 from __future__ import annotations
 
+import http.client
 import importlib.util
+import io
+import json
 import pathlib
 import sys
 import unittest
+import urllib.error
+import urllib.request
 from decimal import Decimal
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+import timeweb_http
 
 MODULE_PATH = pathlib.Path(__file__).with_name("timeweb_white_site.py")
 SPEC = importlib.util.spec_from_file_location("timeweb_white_site", MODULE_PATH)
@@ -34,6 +41,120 @@ class FakeClient:
 
     def get_servers(self) -> list[dict[str, Any]]:
         return []
+
+
+class TimewebTransportTests(unittest.TestCase):
+    def test_provider_redirect_never_receives_credentials_or_replays_mutation(self) -> None:
+        request = urllib.request.Request(
+            "https://api.timeweb.cloud/api/v1/servers", data=b'{"name":"test"}',
+            headers={"Authorization": "Bearer test-only-token"}, method="POST",
+        )
+        for status in (301, 302, 303, 307, 308):
+            connection = Mock()
+            response = connection.getresponse.return_value
+            response.status = status
+            response.read.return_value = b'{"message":"test-only-reflected-secret"}'
+            response.length = len(response.read.return_value)
+            response.headers = {"Location": "https://untrusted.example.test/collect"}
+            with self.subTest(status=status), patch.object(
+                timeweb_http.http.client, "HTTPSConnection", return_value=connection,
+            ) as connect:
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    timeweb_http.request_json(request, timeout=5)
+                connect.assert_called_once_with("api.timeweb.cloud", timeout=5)
+                connection.request.assert_called_once()
+                self.assertEqual(connection.request.call_args.args[:2],
+                                 ("POST", "/api/v1/servers"))
+                self.assertNotIn(b"test-only-reflected-secret", raised.exception.read())
+                connection.close.assert_called_once()
+
+    def test_provider_response_is_bounded_and_must_be_an_object(self) -> None:
+        request = urllib.request.Request("https://api.timeweb.cloud/api/v1/servers")
+        for body in (b'[]', b'invalid', b'\xff', b'x' * (timeweb_http.MAX_RESPONSE_BYTES + 1)):
+            connection = Mock()
+            response = connection.getresponse.return_value
+            response.status = 200
+            response.read.return_value = body
+            response.length = len(body)
+            with self.subTest(size=len(body)), patch.object(
+                timeweb_http.http.client, "HTTPSConnection", return_value=connection,
+            ):
+                with self.assertRaises(urllib.error.URLError):
+                    timeweb_http.request_json(request, timeout=5)
+                response.read.assert_called_once_with(timeweb_http.MAX_RESPONSE_BYTES + 1)
+                connection.request.assert_called_once()
+
+    def test_provider_error_retains_only_recognized_capacity_codes(self) -> None:
+        request = urllib.request.Request("https://api.timeweb.cloud/api/v1/servers")
+        for code in ("no_free_node", "servers_is_run_out_error", "secret-value", []):
+            connection = Mock()
+            response = connection.getresponse.return_value
+            response.status = 423
+            response.read.return_value = json.dumps({
+                "error_code": code, "message": "secret-value", "response_id": "secret-value",
+            }).encode()
+            response.length = len(response.read.return_value)
+            with self.subTest(code=code), patch.object(
+                timeweb_http.http.client, "HTTPSConnection", return_value=connection,
+            ):
+                with self.assertRaises(urllib.error.HTTPError) as raised:
+                    timeweb_http.request_json(request, timeout=5)
+                self.assertEqual(json.loads(raised.exception.read()), {
+                    "error_code": code if code in (
+                        "no_free_node", "servers_is_run_out_error",
+                    ) else "unknown",
+                })
+
+    def test_all_reconcilers_use_the_single_safe_transport(self) -> None:
+        for name in (
+            "timeweb_white_site", "timeweb_domain_tls", "timeweb_auth_network",
+            "timeweb_auth_postgres",
+        ):
+            module = importlib.import_module(name)
+            connection = Mock()
+            response = connection.getresponse.return_value
+            response.status = 200
+            response.read.return_value = b'{"servers":[]}'
+            response.length = len(response.read.return_value)
+            with self.subTest(module=name), patch.object(
+                timeweb_http.http.client, "HTTPSConnection", return_value=connection,
+            ):
+                self.assertEqual(module.TimewebClient("test-only-token").get_servers(), [])
+                connection.request.assert_called_once()
+                headers = connection.request.call_args.kwargs["headers"]
+                self.assertEqual(headers["Authorization"], "Bearer test-only-token")
+
+    def test_truncated_content_length_is_not_accepted_even_when_json_is_complete(self) -> None:
+        socket = Mock()
+        socket.makefile.return_value = io.BytesIO(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{}",
+        )
+        response = http.client.HTTPResponse(socket)
+        response.begin()
+        connection = Mock()
+        connection.getresponse.return_value = response
+        with patch.object(
+            timeweb_http.http.client, "HTTPSConnection", return_value=connection,
+        ):
+            with self.assertRaisesRegex(urllib.error.URLError, "incomplete"):
+                timeweb_http.request_json(urllib.request.Request(
+                    "https://api.timeweb.cloud/api/v1/servers",
+                ), timeout=5)
+            connection.request.assert_called_once()
+
+    def test_unapproved_api_origin_is_rejected_before_opening_a_connection(self) -> None:
+        for url in (
+            "http://api.timeweb.cloud/api/v1/servers",
+            "https://untrusted.example.test/api/v1/servers",
+            "https://api.timeweb.cloud@untrusted.example.test/api/v1/servers",
+            "https://api.timeweb.cloud/api/v1/servers#fragment",
+        ):
+            with self.subTest(url=url), patch.object(
+                timeweb_http.http.client, "HTTPSConnection",
+            ) as connect:
+                with self.assertRaises(urllib.error.URLError):
+                    timeweb_http.request_json(urllib.request.Request(url), timeout=5)
+                connect.assert_not_called()
 
 
 class TimewebWhiteSiteTests(unittest.TestCase):

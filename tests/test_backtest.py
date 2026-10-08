@@ -1197,3 +1197,36 @@ def test_post_close_price_drift_breaches_are_reported_without_claiming_hard_prot
     result = run([first, prices("b")], document=data)
     assert result["holding_constraints"]["breach_sessions"] > 0
     assert "instrument_cap:a" in result["holding_constraints"]["breaches"]
+
+
+@pytest.mark.parametrize("entitlement_offset", [-12, 0, 12])
+def test_distribution_around_split_during_closed_sessions_uses_entitlement_units(
+    entitlement_offset,
+):
+    asset = prices()
+    split = HistoricalSplit(START + timedelta(days=156), Decimal(2), SOURCE)
+    entitlement = split.time + timedelta(hours=entitlement_offset)
+    per_unit = Decimal(10 if entitlement_offset < 0 else 5)
+    # A 10-ruble distribution followed by a 2:1 split preserves economic value:
+    # 100 old shares * 10 rubles + 200 new shares * 45 rubles = 10,000 rubles.
+    bars = tuple(
+        replace(bar, open="45", high="46", low="44", close="45")
+        if bar.time >= split.time else bar
+        for bar in asset.candles if (bar.time - START).days not in {155, 156}
+    )
+    asset = replace(
+        asset, candles=bars, basis="verified_total_return",
+        cashflows=(HistoricalCashflow(entitlement, START + timedelta(days=170), per_unit, SOURCE),),
+        splits=(split,), lot_history_verified=True, cashflow_history_verified=True,
+        verification_source=SOURCE,
+    )
+    result = run([asset])
+    assert result["status"] == "computed", result["missing_requirements"]
+    assert all(Decimal(row["nav_rub"]) == 10000 for row in result["equity_curve"])
+    assert Decimal(result["metrics"]["ending_nav_rub"]) == 10000
+    # Immutable 1.3.2 archives retain their original calculation and fingerprint.
+    archived = run([asset], engine_version="1.3.2")
+    assert Decimal(archived["metrics"]["ending_nav_rub"]) == (
+        11000 if entitlement_offset < 0 else 10000
+    )
+    assert archived["data_hash"] != result["data_hash"]

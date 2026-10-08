@@ -2504,7 +2504,7 @@ async def usd_rub_market_stream(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> StreamingResponse:
-    user = authenticated_user(request, session_token)
+    user = await asyncio.to_thread(authenticated_user, request, session_token)
     _require_profile_context(user, request.query_params.get("profile_context"))
     market = market_service(request)
     return _market_stream_response(
@@ -2712,7 +2712,7 @@ async def instrument_market_stream(
     request: Request,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> StreamingResponse:
-    user = authenticated_user(request, session_token)
+    user = await asyncio.to_thread(authenticated_user, request, session_token)
     _require_profile_context(user, request.query_params.get("profile_context"))
     market = market_service(request)
     return _market_stream_response(

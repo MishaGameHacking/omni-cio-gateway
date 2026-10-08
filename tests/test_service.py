@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
+from threading import Event
+from unittest.mock import Mock, patch
 from uuid import UUID
 
 import pytest
 from cryptography.fernet import Fernet
+from starlette.requests import Request
 
 from omnicio.config import Settings
 from omnicio.db import (
@@ -14,6 +18,7 @@ from omnicio.db import (
     UserRecord,
     live_execution_lock_key,
 )
+from omnicio.main import instrument_market_stream, usd_rub_market_stream
 from omnicio.service import (
     AccountDeletionRejected,
     AuthService,
@@ -98,6 +103,53 @@ def test_live_execution_cleanup_lock_is_stable_and_user_scoped() -> None:
     assert live_execution_lock_key(user_id) == (
         "portfolio-live-execution:00000000-0000-0000-0000-000000000123"
     )
+
+
+@pytest.mark.parametrize("instrument", [False, True])
+def test_market_stream_authentication_does_not_block_the_event_loop(instrument: bool) -> None:
+    started, heartbeat = Event(), Event()
+    progressed = []
+    user = UserRecord(UUID(int=101), 101, "active", "user")
+    request = Request({
+        "type": "http", "method": "GET", "path": "/", "headers": [],
+        "query_string": b"profile_context=000000101",
+    })
+
+    def slow_session_lookup(token: str) -> UserRecord:
+        assert token == "synthetic-session"
+        started.set()
+        # A blocked event loop cannot send this heartbeat until this wait ends.
+        progressed.append(heartbeat.wait(timeout=1))
+        return user
+
+    async def exercise():
+        async def open_stream():
+            if instrument:
+                return await instrument_market_stream("uid-1", request, "synthetic-session")
+            return await usd_rub_market_stream(request, "synthetic-session")
+
+        async def send_heartbeat():
+            while not started.is_set():
+                await asyncio.sleep(0)
+            heartbeat.set()
+
+        response, _ = await asyncio.gather(open_stream(), send_heartbeat())
+        await response.body_iterator.aclose()
+        return response
+
+    auth, market = Mock(), Mock()
+    auth.refresh_session.side_effect = slow_session_lookup
+    market.acquire_stream.return_value = "synthetic-lease"
+    with (
+        patch("omnicio.main.service", return_value=auth),
+        patch("omnicio.main.market_service", return_value=market),
+    ):
+        response = asyncio.run(exercise())
+    assert progressed == [True]
+    assert response.status_code == 200
+    assert response.media_type == "text/event-stream"
+    auth.refresh_session.assert_called_once_with("synthetic-session")
+    market.acquire_stream.assert_called_once_with(user.id)
 
 
 def test_vkid_login_creates_user_session_without_owner_binding() -> None:

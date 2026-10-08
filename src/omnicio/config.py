@@ -44,7 +44,8 @@ def boolean(name: str, default: bool = False) -> bool:
 
 
 def positive_numeric_id(value: str) -> bool:
-    return value.isdigit() and int(value) > 0
+    return bool(1 <= len(value) <= 128 and value.isascii() and value.isdecimal()
+                and value.strip("0"))
 
 
 def optional_uuid(name: str) -> UUID | None:

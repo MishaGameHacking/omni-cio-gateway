@@ -21,7 +21,7 @@ import socket
 import ssl
 import struct
 from collections.abc import Mapping
-from contextlib import closing
+from contextlib import closing, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
@@ -440,7 +440,10 @@ class NotificationTransport:
                       if self.config.smtp_mode == "tls" else smtplib.SMTP(
                           self.config.smtp_host, self.config.smtp_port, timeout=10,
                       ))
-            with client:
+            # SMTP.__exit__ sends QUIT and can raise after DATA was already
+            # accepted, or replace the original send failure. Neither cleanup
+            # outcome may change the delivery receipt or trigger a duplicate.
+            with closing(client):
                 if self.config.smtp_mode == "starttls":
                     client.ehlo()
                     client.starttls(context=context)
@@ -448,11 +451,17 @@ class NotificationTransport:
                 if self.config.smtp_username:
                     client.login(self.config.smtp_username, self.config.smtp_password)
                 client.send_message(message)
+                # DATA succeeded; closing the connection is sufficient if QUIT fails.
+                with suppress(OSError, smtplib.SMTPException):
+                    client.quit()
         except smtplib.SMTPResponseException as exc:
             if 400 <= exc.smtp_code < 500:
                 return DeliveryResult("queued", "email_temporary_rejection", 300)
             return DeliveryResult("failed", "email_provider_rejected")
-        except smtplib.SMTPRecipientsRefused:
+        except smtplib.SMTPRecipientsRefused as exc:
+            if exc.recipients and all(400 <= error[0] < 500
+                                      for error in exc.recipients.values()):
+                return DeliveryResult("queued", "email_temporary_rejection", 300)
             return DeliveryResult("failed", "email_recipient_rejected")
         except (OSError, smtplib.SMTPException):
             return DeliveryResult("uncertain", "email_result_unknown")

@@ -15,6 +15,8 @@ from typing import Literal, Never, cast
 from urllib.parse import urlsplit
 from uuid import UUID
 
+from .security import NoRedirectHandler
+
 TBankEnvironment = Literal["prod", "sandbox"]
 TBankQuoteSource = Literal["exchange", "dealer"]
 
@@ -26,6 +28,7 @@ _REST_BASES: dict[TBankEnvironment, str] = {
 }
 _API_PREFIX = "tinkoff.public.invest.api.contract.v1."
 _INSTRUMENT_UID_FIELD = "instrument uid"
+_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 
 
 class TBankError(RuntimeError):
@@ -913,6 +916,7 @@ def _raise_tbank_http_error(
     exc: urllib.error.HTTPError,
 ) -> Never:
     tracking_id = exc.headers.get("x-tracking-id", "")
+    exc.close()
     logger.warning(
         "T-Invest request failed method=%s status=%s tracking_id=%s",
         method,
@@ -959,15 +963,20 @@ def _read_tbank_response(
     method: str,
 ) -> str:
     try:
-        with urllib.request.urlopen(
+        with urllib.request.build_opener(NoRedirectHandler()).open(
             request,
             timeout=timeout_seconds,
         ) as response:
-            raw = response.read()
+            expected_length = getattr(response, "length", None)
+            raw = response.read(_MAX_RESPONSE_BYTES + 1)
             if not isinstance(raw, bytes):
                 raise TBankUnavailable(
                     "T-Invest API returned invalid response body"
                 )
+            if len(raw) > _MAX_RESPONSE_BYTES:
+                raise TBankUnavailable("T-Invest API response exceeded size limit")
+            if isinstance(expected_length, int) and len(raw) != expected_length:
+                raise TBankUnavailable("T-Invest API response was truncated")
             return raw.decode()
     except urllib.error.HTTPError as exc:
         _raise_tbank_http_error(method, exc)
@@ -985,7 +994,7 @@ def _read_tbank_response(
 def _decode_tbank_response(raw: str) -> dict[str, object]:
     try:
         payload_raw = json.loads(raw)
-    except json.JSONDecodeError as exc:
+    except ValueError as exc:
         raise TBankUnavailable("T-Invest API returned invalid JSON") from exc
     if not isinstance(payload_raw, dict):
         raise TBankUnavailable("T-Invest API returned invalid payload")
@@ -1886,8 +1895,9 @@ class TBankInvestClient:
         if len(cursor) > 4096 or "\n" in cursor or "\r" in cursor:
             raise ValueError("operation history cursor is invalid")
 
+        account = _validate_account_id(account_id)
         body: dict[str, object] = {
-            "accountId": _validate_account_id(account_id),
+            "accountId": account,
             "from": _utc_timestamp(from_at),
             "to": _utc_timestamp(to_at),
             "limit": limit,
@@ -1907,13 +1917,13 @@ class TBankInvestClient:
             body=body,
         )
         has_next, next_cursor = _operation_page_cursor(payload)
+        items = tuple(_operation(raw) for raw in _required_list(payload, "items"))
+        if any(item.broker_account_id and item.broker_account_id != account for item in items):
+            raise TBankUnavailable("T-Invest operation returned a different account")
         return TBankOperationsPage(
             has_next=has_next,
             next_cursor=next_cursor,
-            items=tuple(
-                _operation(raw)
-                for raw in _required_list(payload, "items")
-            ),
+            items=items,
         )
 
     def get_dividends(
@@ -2275,8 +2285,8 @@ def _validate_token(token: str) -> str:
     clean = token.strip()
     if not 20 <= len(clean) <= 4096:
         raise TBankTokenRejected("T-Invest token has invalid length")
-    if "\n" in clean or "\r" in clean:
-        raise TBankTokenRejected("T-Invest token contains an invalid newline")
+    if any(ord(char) < 33 or ord(char) > 126 for char in clean):
+        raise TBankTokenRejected("T-Invest token contains an invalid character")
     return clean
 
 

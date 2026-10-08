@@ -25,6 +25,7 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from omnicio.db import Database
+from omnicio.intelligence import EvidenceDocument, PayoutEvidence
 from omnicio.notifications import (
     DeliveryResult,
     NotificationConfig,
@@ -39,6 +40,9 @@ from omnicio.portfolio_store import (
     PortfolioStore,
     SettingsVersionConflict,
     _save_operation_observation,
+    _save_payout_event,
+    _save_source_retrieval,
+    _source_document_id,
 )
 from omnicio.tbank import TBankMoney, TBankOperation
 from omnicio.workspace import cashflow_summary, default_preferences
@@ -1640,6 +1644,71 @@ def test_dashboard_uses_latest_operation_correction_and_complete_ledger(
     assert corrected[0]["read_at"] is None
     assert corrected[0]["source"]["state"] == "OPERATION_STATE_CANCELED"
     assert store.dashboard(owner)["income"]["total_rub"] == "0"
+
+
+def test_payout_correction_reverting_to_old_fact_uses_latest_provider_receipt(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    workspace, portfolio = WorkspaceStore(database), PortfolioStore(database)
+    snapshot_id, instrument_uid = uuid4(), str(uuid4())
+    start = datetime.now(UTC) - timedelta(hours=1)
+    expected = start + timedelta(days=1)
+    with workspace._transaction(owner) as cur:
+        cur.execute(
+            "INSERT INTO portfolio_snapshots (id, user_id, account_id, environment, captured_at, "
+            "analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, rub_cash_unblocked, "
+            "limits_loading_in_progress, evidence) "
+            "VALUES (%s, %s, %s, 'prod', %s, 'observed', 1000, 0, 0, 0, false, '{}'::jsonb)",
+            (snapshot_id, owner, str(owner), start),
+        )
+        cur.execute(
+            "INSERT INTO portfolio_snapshot_positions (snapshot_id, user_id, instrument_uid, "
+            "ticker, instrument_type, quantity, blocked, blocked_lots) "
+            "VALUES (%s, %s, %s, 'TEST', 'bond', 1, false, 0)",
+            (snapshot_id, owner, instrument_uid),
+        )
+    event_identity = None
+    previous_revision = None
+    for index, value in enumerate(("10", "12", "10", "10")):
+        received_at = start + timedelta(minutes=index)
+        payload = {"amount": value}
+        document = EvidenceDocument(
+            provider="tbank", document_type="bond_coupon", subject_uid=instrument_uid,
+            provider_key="coupon-1", source_url="https://developer.tbank.ru/invest/",
+            published_at=None, effective_at=expected, payload=payload,
+            payout=PayoutEvidence(
+                instrument_uid=instrument_uid, event_type="coupon", provider_key="coupon-1",
+                announced_at=None, record_at=None, expected_at=expected, actual_at=None,
+                amount=Decimal(value), currency="RUB", status="scheduled", payload=payload,
+            ),
+        )
+        with workspace._transaction(owner) as cur:
+            document_id, created = _source_document_id(cur, document, received_at)
+            assert created is (index < 2)
+            _save_source_retrieval(cur, document_id, received_at)
+            _save_payout_event(cur, document_id, document)
+        visible = portfolio.instrument_visualization(owner, instrument_uid)
+        assert visible is not None
+        assert len(visible["payouts"]) == 1
+        assert visible["payouts"][0]["amount"] == Decimal(value)
+        assert visible["payouts"][0]["retrieved_at"] == received_at
+        alerts = [row for row in workspace.events(owner)["items"]
+                  if row["kind"] == "payout_calendar"]
+        assert len(alerts) == 1
+        alert = alerts[0]
+        assert Decimal(alert["source"]["amount_per_security"]) == Decimal(value)
+        if event_identity is not None:
+            assert alert["id"] == event_identity
+        if index < 3:
+            assert alert["read_at"] is None
+            assert alert["occurred_at"] == received_at
+        else:
+            assert alert["read_at"] is not None
+            assert alert["revision"] == previous_revision
+        event_identity, previous_revision = alert["id"], alert["revision"]
+        workspace.mark_events_read(owner, [alert["id"]])
 
 
 def test_risk_alerts_survive_unchanged_snapshots_and_notify_actual_state_changes(
