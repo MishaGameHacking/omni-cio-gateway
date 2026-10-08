@@ -573,15 +573,61 @@ class AuthAppDeployTests(unittest.TestCase):
         workflow = (
             SCRIPT_DIR.parent / "workflows" / "auth-app-deploy.yml"
         ).read_text(encoding="utf-8")
+        concurrency = workflow.split("\nconcurrency:\n", 1)[1].split("\njobs:\n", 1)[0]
+        group = re.search(r"^  group: (.*?)\$\{\{\s*(.*?)\s*\}\}(.*?)$", concurrency, re.M)
+        cancel = re.search(r"^  cancel-in-progress: \$\{\{\s*(.*?)\s*\}\}$", concurrency, re.M)
+        self.assertIsNotNone(group)
+        self.assertIsNotNone(cancel)
+        self.assertNotIn("queue:", concurrency, "PR cancellation cannot use a bounded queue")
 
-        self.assertIn(
-            "github.event.pull_request.number || 'production'",
-            workflow,
+        scenarios = (
+            ("first PR run", "pull_request", 765, 1001),
+            ("newer same PR", "pull_request", 765, 1002),
+            ("different PR", "pull_request", 766, 1003),
+            ("main push", "push", None, 2001),
+            ("PostgreSQL completion", "workflow_run", None, 2002),
+            ("manual release", "workflow_dispatch", None, 2003),
+            ("later main push", "push", None, 2004),
+            ("later PostgreSQL completion", "workflow_run", None, 2005),
+            ("later manual release", "workflow_dispatch", None, 2006),
         )
-        self.assertIn(
-            "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
-            workflow,
+        contexts = [
+            {"event_name": event, "run_id": run_id, "sha": "a" * 40,
+             "event": {"pull_request": {"number": pr}}}
+            for _, event, pr, run_id in scenarios
+        ]
+        # Evaluate the actual workflow expressions using their shared string,
+        # truthiness and boolean semantics in Node, already required by this job.
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "Node is required by the application workflow")
+        source = (
+            "const contexts = " + json.dumps(contexts) + ";\n"
+            "const results = contexts.map(github => [\n"
+            f"  {json.dumps(group[1])} + String({group[2]}) + {json.dumps(group[3])},\n"
+            f"  Boolean({cancel[1]})\n"
+            "]);\nprocess.stdout.write(JSON.stringify(results));\n"
         )
+        result = subprocess.run([node, "-"], input=source, text=True,
+                                capture_output=True, check=True, timeout=10)
+        actual = json.loads(result.stdout)
+        self.assertEqual(actual[0], actual[1], "New commits of one PR share their queue")
+        self.assertEqual(len({item[0] for item in actual}), len(scenarios) - 1,
+                         "Different PRs and every non-PR run need independent queues")
+        for (name, event, _, _), (_, cancels) in zip(scenarios, actual, strict=True):
+            with self.subTest(event=name):
+                self.assertEqual(cancels, event == "pull_request")
+
+        tests, deploy = workflow.split("\n  tests:\n", 1)[1].split("\n  deploy:\n", 1)
+        self.assertNotIn("omnicio-production-ssh", tests, "Validation cannot occupy the SSH lock")
+        self.assertEqual(
+            deploy.split("    concurrency:\n", 1)[1].split("    if:", 1)[0],
+            "      group: omnicio-production-ssh\n"
+            "      cancel-in-progress: false\n"
+            "      queue: max\n",
+        )
+        self.assertIn("    needs: tests\n", deploy)
+        self.assertLess(deploy.index("name: Verify current main release checks"),
+                        deploy.index("name: Validate Timeweb secret"))
 
     def test_product_environment_is_backed_up_for_rollback(self) -> None:
         old = dict(os.environ)
