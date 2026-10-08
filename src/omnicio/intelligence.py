@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -34,6 +36,8 @@ DataStatus = Literal["data_missing", "received", "stale", "not_applicable"]
 EVIDENCE_RETRIEVAL_MAX_AGE = timedelta(hours=36)
 FUNDAMENTAL_MAX_AGE = timedelta(days=550)
 RISK_RULESET_VERSION = "r3-evidence-v2"
+ISSUER_NEWS_MAX_AGE = timedelta(hours=48)
+TBANK_NEWS_SOURCE = "https://developer.tbank.ru/invest/services/instruments/methods"
 MONETARY_FUNDAMENTAL_FIELDS = (
     "revenue_ttm",
     "ebitda_ttm",
@@ -122,6 +126,53 @@ class InstrumentRiskAssessment:
     source_status: EvidenceStatus
     reasons: tuple[str, ...]
     evidence: dict[str, object]
+
+
+def held_news_instrument_uids(bundle: BrokerObservationBundle) -> frozenset[str]:
+    """Bind news to current nonzero holdings by provider UID, never by a name match."""
+    matches: dict[str, set[str]] = {}
+    for item in bundle.metadata:
+        if item.figi:
+            matches.setdefault(item.figi, set()).add(item.uid)
+    by_figi = {figi: next(iter(uids)) for figi, uids in matches.items() if len(uids) == 1}
+    return frozenset(
+        uid for position in bundle.portfolio.positions
+        if position.instrument_type != "currency" and Decimal(position.quantity) != 0
+        if (uid := position.instrument_uid or by_figi.get(position.figi, ""))
+    )
+
+
+def build_news_evidence(
+    held_uids: frozenset[str], items: Sequence[Mapping[str, object]], *, observed_at: datetime,
+) -> tuple[EvidenceDocument, ...]:
+    """Keep recent source-linked facts, including later priority corrections."""
+    if observed_at.tzinfo is None:
+        raise ValueError("news observation time must be timezone-aware")
+    documents = []
+    for item in items:
+        ident, title = item.get("id"), item.get("title")
+        published, uids = item.get("occurred_at"), item.get("instrument_uids")
+        if (not isinstance(ident, str) or re.fullmatch(r"[1-9][0-9]{0,18}", ident) is None
+                or int(ident) > 2**63 - 1 or not isinstance(title, str) or not title.strip()
+                or not isinstance(published, datetime) or published.tzinfo is None
+                or not observed_at - ISSUER_NEWS_MAX_AGE <= published <= observed_at
+                or not isinstance(uids, (tuple, list))
+                or any(not isinstance(uid, str) for uid in uids)
+                or not held_uids.intersection(uids) or type(item.get("priority")) is not bool):
+            continue
+        payload = {key: item.get(key) for key in (
+            "id", "title", "summary", "source", "source_url", "occurred_at", "priority",
+        )}
+        # Preserve public source associations, not the user's private matched holdings.
+        payload["instrument_uids"] = sorted(set(uids))
+        if any("\x00" in value for value in payload.values() if isinstance(value, str)):
+            continue
+        documents.append(EvidenceDocument(
+            provider="tbank", document_type="issuer_news", subject_uid=ident,
+            provider_key=ident, source_url=TBANK_NEWS_SOURCE,
+            published_at=published, effective_at=published, payload=payload,
+        ))
+    return tuple(documents)
 
 
 def rating_source_references() -> tuple[dict[str, str], ...]:
@@ -515,6 +566,22 @@ def _held_position_assessment(
     )
 
 
+def _bond_default_dates(
+    events: tuple[TBankBondEvent, ...], assessed_at: datetime,
+) -> tuple[dict[str, datetime], dict[str, datetime]]:
+    defaults: dict[str, datetime] = {}
+    resolved: dict[str, datetime] = {}
+    for item in events:
+        if item.default_date is None or item.default_date > assessed_at:
+            continue
+        status, _ = _bond_event_status(item, assessed_at)
+        dates = resolved if status == "paid" else defaults
+        dates[item.instrument_uid] = max(
+            dates.get(item.instrument_uid, item.default_date), item.default_date,
+        )
+    return defaults, resolved
+
+
 def build_tbank_evidence(
     bundle: BrokerObservationBundle,
     evidence: BrokerEvidenceSnapshot,
@@ -543,16 +610,7 @@ def build_tbank_evidence(
     )
     metadata_by_uid = {item.uid: item for item in bundle.metadata}
     metadata_by_figi = {item.figi: item for item in bundle.metadata if item.figi}
-    defaults: dict[str, datetime] = {}
-    resolved_defaults: dict[str, datetime] = {}
-    for item in evidence.bond_events:
-        if item.default_date is None or item.default_date > assessed_at:
-            continue
-        status, _ = _bond_event_status(item, assessed_at)
-        dates = resolved_defaults if status == "paid" else defaults
-        dates[item.instrument_uid] = max(
-            dates.get(item.instrument_uid, item.default_date), item.default_date,
-        )
+    defaults, resolved_defaults = _bond_default_dates(evidence.bond_events, assessed_at)
     assessments: list[InstrumentRiskAssessment] = []
     seen: set[str] = set()
     for position in bundle.portfolio.positions:

@@ -17,12 +17,14 @@ import psycopg
 import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from test_intelligence import news_item
 from test_observer import LEGAL_VERSIONS, USER_ID, FakeBroker, bundle
-from test_workspace_postgres import user
+from test_workspace_postgres import user, workspace_database_context
 from test_workspace_postgres import workspace_database as workspace_database
 
 from omnicio.broker import BrokerService
 from omnicio.db import Database
+from omnicio.intelligence import build_news_evidence
 from omnicio.observer import PortfolioObserver, PortfolioRefreshCoordinator
 from omnicio.portfolio_store import ObservationCancelled, PortfolioStore
 from omnicio.tbank import TBankOperationsPage, TBankUnavailable
@@ -34,6 +36,14 @@ pytestmark = pytest.mark.skipif(
 REFRESH_MIGRATION = (
     Path(__file__).resolve().parents[1] / "migrations" / "0016_portfolio_refresh.sql"
 )
+
+
+@pytest.fixture
+def isolated_workspace_database() -> Iterator[tuple[Database, str, str]]:
+    # Replaying an older migration changes its then-current constraints. Keep
+    # that historical-schema exercise separate from latest-schema runtime tests.
+    with workspace_database_context() as database:
+        yield database
 
 
 @pytest.fixture
@@ -335,9 +345,9 @@ def _accepted_daily_insert(database: Database, ident: UUID, day: date) -> dict[s
 
 
 def test_native_refresh_preserves_accepted_daily_insert_and_reader_during_rollback(
-    workspace_database: tuple[Database, str, str],
+    isolated_workspace_database: tuple[Database, str, str],
 ) -> None:
-    database, admin_url, schema = workspace_database
+    database, admin_url, schema = isolated_workspace_database
     ident, store, day = owner(database), PortfolioStore(database), date.today()
     daily = _accepted_daily_insert(database, ident, day)
     assert daily is not None
@@ -422,9 +432,9 @@ def test_native_active_refresh_guard_applies_when_scheduled_dates_are_null(
 
 
 def test_native_refresh_migration_recovers_earlier_candidate_without_losing_job_lineage(
-    workspace_database: tuple[Database, str, str],
+    isolated_workspace_database: tuple[Database, str, str],
 ) -> None:
-    database, admin_url, schema = workspace_database
+    database, admin_url, schema = isolated_workspace_database
     ident, store = owner(database), PortfolioStore(database)
     day = date.today()
     daily = _accepted_daily_insert(database, ident, day)
@@ -469,9 +479,9 @@ def test_native_refresh_migration_recovers_earlier_candidate_without_losing_job_
 
 
 def test_native_manual_refresh_is_not_daily_success_and_cooldown_is_durable(
-    workspace_database: tuple[Database, str, str],
+    isolated_workspace_database: tuple[Database, str, str],
 ) -> None:
-    database, admin_url, schema = workspace_database
+    database, admin_url, schema = isolated_workspace_database
     store, ident = PortfolioStore(database), owner(database)
     earlier = datetime.now(UTC) - timedelta(hours=1)
     observation = replace(bundle(), account_id=str(ident), refreshed_at=earlier)
@@ -634,9 +644,9 @@ def _age_monitoring_attempts(database: Database, ident: UUID, minutes: int) -> N
 
 
 def test_native_continuous_worker_refreshes_without_browser_and_keeps_durable_cadence(
-    workspace_database: tuple[Database, str, str],
+    isolated_workspace_database: tuple[Database, str, str],
 ) -> None:
-    database = workspace_database[0]
+    database = isolated_workspace_database[0]
     store, ident = PortfolioStore(database), owner(database)
     broker = _monitoring_broker(ident)
     worker = PortfolioRefreshCoordinator(store, broker, legal_versions=LEGAL_VERSIONS)
@@ -675,9 +685,9 @@ def test_native_continuous_worker_refreshes_without_browser_and_keeps_durable_ca
 
 
 def test_native_automatic_provider_failure_is_throttled_across_restart(
-    workspace_database: tuple[Database, str, str],
+    isolated_workspace_database: tuple[Database, str, str],
 ) -> None:
-    database = workspace_database[0]
+    database = isolated_workspace_database[0]
     store, ident = PortfolioStore(database), owner(database)
     broker = _monitoring_broker(ident)
     broker.revalidate_account.side_effect = TBankUnavailable("synthetic outage")
@@ -849,3 +859,54 @@ def test_native_refresh_cannot_persist_after_authority_or_connection_revocation(
         replacement = store.request_refresh(ident, LEGAL_VERSIONS)
         assert replacement["status"] == "queued"
         assert replacement["job_id"] != str(job.id)
+
+
+def test_native_news_page_checkpoint_is_atomic_resumable_and_connection_bound(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    store, ident, other = PortfolioStore(database), owner(database), owner(database)
+    store.request_refresh(ident, LEGAL_VERSIONS)
+    job = store.claim_refresh_job(ident, LEGAL_VERSIONS)
+    assert job is not None
+    now = datetime.now(UTC)
+    observation = replace(bundle(), account_id=str(ident), refreshed_at=now)
+    snapshot = store.save_snapshot(ident, job_run_id=job.id, bundle=observation)
+    news_id = str(uuid4().int % 10**18 + 1)
+    documents = build_news_evidence(frozenset({"bond-uid"}), [news_item(news_id)], observed_at=now)
+    checkpoint = {"cursor": "10", "seen_cursors": [], "status": "partial",
+                  "observed_at": now.isoformat(), "pages": 1, "scanned_items": 1,
+                  "documents_new": 0, "scope": "held_instrument_links"}
+    arguments = {"job_run_id": job.id, "snapshot_id": snapshot, "documents": documents,
+                 "assessments": (), "retrieved_at": now, "news_checkpoint": checkpoint}
+    with (
+        patch("omnicio.portfolio_store._save_source_retrieval",
+              side_effect=RuntimeError("synthetic failed transaction")),
+        pytest.raises(RuntimeError, match="failed transaction"),
+    ):
+        store.save_evidence(ident, **arguments)
+    assert store.news_state(ident, job_run_id=job.id) == {}
+    with database.pool.connection() as connection:
+        assert connection.execute(
+            "SELECT count(*) AS total FROM source_documents WHERE provider_key = %s", (news_id,),
+        ).fetchone()["total"] == 0
+    assert store.save_evidence(ident, **arguments) == (1, 0)
+    saved = PortfolioStore(database).news_state(ident, job_run_id=job.id)
+    assert saved["cursor"] == "10"
+    assert saved["documents_new"] == 1
+    visible = store.refresh_status(ident)["news"]
+    assert visible["status"] == "partial"
+    assert visible["documents_new"] == 1
+    assert "cursor" not in visible
+    assert "seen_cursors" not in visible
+    with pytest.raises(ObservationCancelled):
+        store.news_state(other, job_run_id=job.id)
+    assert store.finish_job(ident, job.id, status="succeeded", details={})
+    age_request(database, ident)
+    store.request_refresh(ident, LEGAL_VERSIONS)
+    resumed = PortfolioStore(database).claim_refresh_job(ident, LEGAL_VERSIONS)
+    assert resumed is not None
+    assert store.news_state(ident, job_run_id=resumed.id)["cursor"] == "10"
+    assert database.delete_tbank_connection(ident)
+    with pytest.raises(ObservationCancelled):
+        store.news_state(ident, job_run_id=resumed.id)

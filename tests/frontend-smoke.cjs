@@ -188,6 +188,7 @@ const makeFixture = mode => {
       snapshot_saved: false,
       history_status: null,
       history_pages: 0,
+      news: clone(serverContracts.refresh_news_cases.not_requested.news),
       can_refresh: true,
       retry_after_seconds: 0,
       cooldown_until: null,
@@ -909,9 +910,9 @@ async function visibleRefreshContracts() {
   const scheduler = start < 0 ? "" : app.slice(start, app.indexOf("  const stopQuoteStream =", start));
   const navigation = app.slice(app.indexOf("  const navigate ="), app.indexOf("  const loadNavigationScreen ="));
   const refresh = app.slice(app.indexOf("  const refreshVisibleData ="), app.indexOf('  window.addEventListener("focus",'));
-  const state = {user: {public_id: "000000123"}, mode: "account", view: "home", route: {}, viewState: {}, navigationSequence: 0, devicePush: {status: "active"}, requests: new Set()};
+  const state = {generation: 1, user: {public_id: "000000123"}, mode: "account", view: "home", route: {}, viewState: {}, navigationSequence: 0, devicePush: {status: "active"}, requests: new Set()};
   const timers = new Map(), reads = [];
-  let sequence = 0, checks = 0, editing = false;
+  let sequence = 0, checks = 0, statusReads = 0, editing = false;
   const node = {setAttribute() {}, focus() {}};
   const schedule = (callback, delay) => { const id = ++sequence; timers.set(id, {callback, delay}); return id; };
   const context = vm.createContext({state, document: {visibilityState: "visible", activeElement: null}, navigator: {onLine: true},
@@ -922,6 +923,7 @@ async function visibleRefreshContracts() {
     restoreRouteControls() {}, updateRouteHistory() {}, renderNav() {}, renderCurrent() {}, restoreNavigationScroll() {},
     loadNavigationScreen: async () => {}, scheduleTableQuotes() {}, scheduleEventSummary() {}, refreshPushDevice: async () => {},
     verifySession: async () => { checks += 1; }, hasPending: () => editing,
+    resumeWorkspaceRefresh: async canAdopt => { assert.equal(canAdopt(), true); statusReads += 1; },
     loadForView: async (view, route, force) => reads.push({view, force})});
   vm.runInContext("let freshnessTimer=null, freshnessBusy=false;\n" + scheduler + navigation + refresh + "\nglobalThis.go=navigate;", context);
   context.go("home", {mode: "account"});
@@ -939,6 +941,7 @@ async function visibleRefreshContracts() {
   await tick();
   assert.equal(checks, 1);
   assert.deepEqual(reads, [{view: "portfolio", force: true}], "The timer refreshes the current page after rechecking the session");
+  assert.equal(statusReads, 1, "The same visible cycle reads autonomous collection status without a manual refresh");
   assert.equal(timers.size, 1, "A completed refresh schedules its next observation");
   editing = true;
   await tick();
@@ -949,6 +952,7 @@ async function visibleRefreshContracts() {
   state.requests.add({omnicioMutation: true});
   await tick();
   assert.equal(reads.length, 1, "A pending form submission cannot be replaced by a background page refresh");
+  assert.equal(statusReads, 1, "Drafts and active mutations also defer collection-status adoption");
   state.requests.clear();
   await tick();
   assert.equal(reads.length, 2, "Background refresh resumes after the submission settles");
@@ -963,7 +967,146 @@ async function visibleRefreshContracts() {
   await tick();
   assert.equal(checks, 4, "Hidden documents do not start refresh requests");
   assert.equal(timers.size, 0);
+  context.document.visibilityState = "visible";
+  context.go("portfolio", {mode: "account"});
+  context.loadForView = async () => { state.generation += 1; };
+  const beforeChange = statusReads;
+  await tick();
+  assert.equal(statusReads, beforeChange, "A session change during the view read cannot start an old cycle's status request");
+  context.loadForView = async () => { state.requests.add({omnicioMutation: true}); };
+  await tick();
+  assert.equal(statusReads, beforeChange, "A mutation started during the view read prevents subsequent status adoption");
+  state.requests.clear();
   console.log("PASS visible refresh: initial account entry, navigation deadlines, ongoing polling, draft preservation and public/hidden boundaries");
+}
+async function newsMonitoringContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const context = vm.createContext({window: {}, Intl, console, URLSearchParams});
+  vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
+  vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
+  const ui = context.window.OmniUI, i18n = context.window.OMNICIO_I18N;
+  const cases = serverContracts.refresh_news_cases;
+  const connection = {connected: true, environment: "prod", account_id: "synthetic-account", account_name: "Synthetic account"};
+  const state = {generation: 1, user: {public_id: "000000123"}, refresh: {sequence: 1, busy: false},
+    data: {connection, workspace: {connection, overview: {observed_at: cases.received.observed_at, status: "stale"}}}, errors: {}};
+  const banner = {innerHTML: "", hidden: true, classList: {toggle() {}}}, sourceStatus = {textContent: ""};
+  let reloads = 0, polls = 0;
+  Object.assign(context, {state, U: ui, T: i18n.t, H: i18n.html, esc: ui.escape, date: ui.date, format: ui.format, infoRows: ui.infoRows, button: ui.button,
+    $: selector => selector === "#connection-banner" ? banner : selector === "[data-news-monitor-status]" ? sourceStatus : null,
+    humanError: error => error.message, brokerDisconnectDescription: () => "Disconnect help", disconnectBlocked: () => false,
+    renderConnectionBannerValue: () => i18n.t("action.refresh"), renderConnectionBannerValue2: () => "workspace-refresh", renderConnectionBannerValue3: () => "",
+    updateRefreshControls() {}, clearTimeout() {}, isCancelled: () => false,
+    reloadWorkspaceObservation: async () => { reloads += 1; }, scheduleRefreshPoll: () => { polls += 1; }});
+  const source = app.slice(app.indexOf("  const refreshActive ="), app.indexOf("  const refreshUnavailable ="))
+    + app.slice(app.indexOf("  const workspaceRefreshText ="), app.indexOf("  const scheduleRefreshPoll ="))
+    + app.slice(app.indexOf("  const adoptRefreshStatus ="), app.indexOf("  const requestWorkspaceRefresh ="))
+    + app.slice(app.indexOf("  const connectionStatusText ="), app.indexOf("  const portfolioRows ="))
+    + app.slice(app.indexOf("  const brokerSettingsHTML ="), app.indexOf("  const assistantHealthLabel ="));
+  vm.runInContext(source + "\nglobalThis.newsText=workspaceNewsText; globalThis.paint=renderConnectionBanner; globalThis.sourceHTML=brokerSettingsHTML; globalThis.adopt=adoptRefreshStatus; globalThis.resume=resumeWorkspaceRefresh;", context);
+  for (const locale of ["ru", "en"]) {
+    ui.setLocale(locale);
+    for (const [status, result] of Object.entries(cases)) {
+      assert.equal(result.news.status, status, "The browser consumes the real server's news status");
+      assert.ok(!Object.hasOwn(result.news, "next_cursor") && !Object.hasOwn(result.news, "error"), "Internal broker traversal details do not enter the browser DTO");
+      state.data.refreshStatus = result;
+      const text = context.newsText(true);
+      assert.ok(text.includes(i18n.t(`news.monitor.${status}`)));
+      assert.ok(text.includes(i18n.t("news.monitor.scope")), "Every detailed status states the held-instrument broker-feed boundary in both languages");
+      assert.ok(!text.includes("undefined") && !text.includes("NaN") && !text.includes("synthetic-private-provider-cursor"));
+      if (result.news.observed_at) assert.ok(text.includes(i18n.t("news.monitor.observed", {time: ui.date(result.news.observed_at, true)})), "Failed scans retain the actual last successful page time");
+      const html = context.sourceHTML();
+      assert.ok(html.includes("data-news-monitor-status") && html.includes(ui.escape(text)), "The existing broker settings render the actual escaped source status");
+      context.paint();
+      assert.ok(banner.innerHTML.includes(ui.escape(i18n.t("Последнее наблюдение устарело. Значения помечены временем получения; обновите данные."))), "News status cannot hide stale portfolio data");
+      if (["partial", "unavailable"].includes(status)) {
+        assert.ok(banner.innerHTML.includes(ui.escape(context.newsText())));
+        assert.ok(!text.includes(i18n.t("news.monitor.received")), "Partial scans and outages never claim a completed feed check");
+      }
+      state.data.workspace.overview.status = "available";
+      context.paint();
+      assert.equal(banner.hidden, !["partial", "unavailable"].includes(status), "Only news gaps add a banner when financial data is available");
+      state.data.workspace.overview.status = "stale";
+    }
+    state.data.refreshStatus = {...cases.received, news: {...cases.received.news, documents_new: 0}};
+    assert.ok(context.newsText(true).includes(i18n.t("news.monitor.saved", {count: ui.format(0, 0)})), "Zero newly saved items is an explicit write count, not proof that no news exists");
+    state.data.refreshStatus.news = {...cases.received.news, scope: "unconfirmed_source", documents_new: 999};
+    assert.ok(context.newsText(true).includes(i18n.t("news.monitor.unknown")) && !context.newsText(true).includes("999"), "An unrecognized scope cannot inherit a successful feed claim");
+    state.data.refreshStatus.news = {...cases.received.news, documents_new: null, observed_at: "invalid-time"};
+    assert.ok(!context.newsText(true).includes(i18n.t("news.monitor.saved", {count: ui.format(0, 0)})), "Missing counts stay unknown");
+    assert.ok(!context.newsText(true).includes("invalid-time"));
+  }
+  state.data.refreshStatus = cases.partial;
+  await context.adopt(cases.received, {generation: 1, sequence: 1});
+  assert.equal(sourceStatus.textContent, context.newsText(true), "A status-only change updates the existing paragraph in place");
+  assert.equal(reloads, 0, "News-only completion does not reload financial views or editors");
+  assert.equal(polls, 0, "Completed source status does not create an extra polling loop");
+  const accepted = sourceStatus.textContent;
+  await context.adopt(cases.unavailable, {generation: 0, sequence: 1});
+  assert.equal(sourceStatus.textContent, accepted, "An older account cannot replace current news status");
+  await context.adopt(cases.unavailable, {generation: 1, sequence: 1, canAdopt: () => false});
+  assert.equal(sourceStatus.textContent, accepted, "A draft or mutation started during a background GET prevents late adoption");
+  let finishRead, guard = true;
+  context.api = () => new Promise(resolve => { finishRead = resolve; });
+  const pending = context.resume(() => guard);
+  guard = false;
+  finishRead(cases.unavailable);
+  await pending;
+  assert.equal(sourceStatus.textContent, accepted, "The actual status GET carries its live editing guard through the response");
+  state.tour = true;
+  context.paint();
+  assert.equal(banner.hidden, true, "Private monitoring status stays hidden in the public tour");
+  console.log("PASS news monitoring: real refresh DTO, bilingual scope, partial/outage truthfulness, retained source time, in-place updates and session/draft boundaries");
+}
+function settingsRecoveryContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const context = vm.createContext({window: {}, Intl, URLSearchParams});
+  vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
+  vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
+  const ui = context.window.OmniUI, i18n = context.window.OMNICIO_I18N;
+  const state = {view: "settings", route: {screen: "appearance"}, data: {}, formDrafts: {},
+    prefs: {server: defaultPreferences(), draft: defaultPreferences().document, dirty: true, busy: false, error: {status: 0, code: "request_interrupted"}}};
+  const notice = () => ({innerHTML: "", hidden: !state.prefs.error});
+  const sections = [0, 1].map(() => ({dataset: {}, notices: [], insertAdjacentHTML(position, html) {
+    if (html.includes('data-save-error="prefs"')) this.notices.push(notice());
+  }}));
+  const form = {id: "preferences-form"};
+  const status = {dataset: {}, textContent: "", closest: () => form};
+  const view = {set innerHTML(html) {
+    sections.forEach(section => { section.notices = []; });
+    if (html.includes('data-save-error="prefs"')) sections[1].notices.push(notice());
+  }};
+  Object.assign(context, {state, U: ui, I: i18n, T: i18n.t, H: i18n.html, esc: ui.escape, select: ui.select, field: ui.field, heading: ui.heading, button: ui.button, infoRows: ui.infoRows,
+    $: selector => ({"#view-settings": view, "#preferences-form": form, "[data-release-version]": {textContent: version}}[selector] || null),
+    $$: selector => selector === ":scope > section" ? sections : selector === '[data-save-status="prefs"]' ? [status] : selector === '[data-save-error="prefs"]' ? sections.flatMap(section => section.notices) : [],
+    humanError: error => error.code, captureScreenDrafts() {}, restoreEditableForm() {}, restoreScreenDrafts() {}, addScreenNavigation() {},
+    brokerSettingsHTML: () => "", recoveryPanelHTML: () => "", notificationContentsHTML: () => "", operationalMetricsHTML: () => ""});
+  const source = app.slice(app.indexOf("  const updateSaveStatus ="), app.indexOf("  const applySavedEffects ="))
+    + app.slice(app.indexOf("  const saveErrorHTML ="), app.indexOf("  const preservePersonal ="))
+    + app.slice(app.indexOf("  const renderSettings ="), app.indexOf("  const brokerSettingsHTML ="))
+    + app.slice(app.indexOf("  function layoutSettings("), app.indexOf("  function layoutProfile("))
+    + app.slice(app.indexOf("  function applyScreenLayout("), app.indexOf("  function incomePaneHTML("))
+    + app.slice(app.indexOf("  function renderUpdateSaveStatusValue("), app.indexOf("  function renderStrategiesStrategyOption("));
+  vm.runInContext(source + "\nconst screenLayoutHandlers={settings:layoutSettings}; globalThis.render=renderSettings;", context);
+  for (const locale of ["ru", "en"]) {
+    ui.setLocale(locale);
+    for (const error of [{status: 0, code: "request_interrupted"}, {status: 503, code: "source_unavailable"}, {status: 409, code: "settings_version_conflict"}]) {
+      state.prefs.error = error;
+      context.render();
+      const visible = sections[0].notices[0];
+      assert.equal(sections[0].hidden, false, "The appearance screen is the actual visible section");
+      assert.equal(status.dataset.state, error.status === 409 ? "conflict" : "error");
+      assert.ok(visible.innerHTML.includes('data-action="prefs-reload"'), "Rerendering unconfirmed settings keeps recovery controls in the visible Appearance section");
+      assert.equal(visible.innerHTML.includes('data-action="prefs-retry"'), error.status !== 409, "Interrupted writes retain readback; version conflicts require explicit reload");
+      assert.equal(visible.hidden, false);
+    }
+    state.prefs.error = null;
+    state.prefs.dirty = false;
+    context.render();
+    assert.equal(status.dataset.state, "saved");
+    assert.equal(sections[0].notices[0].hidden, true);
+    assert.equal(sections[0].notices[0].innerHTML, "", "Confirmed settings remove obsolete recovery actions");
+  }
+  console.log("PASS settings recovery: rerendered Appearance controls, interrupted/failed/conflicting writes and confirmed-state cleanup in both languages");
 }
 async function offlineQuoteContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
@@ -2646,6 +2789,8 @@ const runBrowser = async base => {
     await ledgerPaginationContracts();
     await searchAndAssetPaginationContracts();
     await visibleRefreshContracts();
+    await newsMonitoringContracts();
+    settingsRecoveryContracts();
     await offlineQuoteContracts();
     await assistantConversationContracts();
     await assistantMemoryReconciliationContracts();
@@ -3437,6 +3582,27 @@ async function exerciseNotificationChannels({fixture, click, wait, evaluate}) {
   assert.equal(await evaluate('document.querySelectorAll("#notification-email-form, form[id^=notification-verify]").length'), 0, "Push setup does not ask the user for email, SMS or external credentials");
   assert.equal(fixture.requests.filter(item => item.path.startsWith("/api/notifications/email/")).length, 0);
 }
+async function exerciseNewsMonitoring({fixture, click, wait, evaluate, checkLayout, screenshot, round}) {
+  const original = clone(fixture.refreshStatus);
+  const refreshPosts = () => fixture.requests.filter(item => item.path === "/api/workspace/refresh" && item.method === "POST").length;
+  const before = refreshPosts();
+  await click('#view-settings [data-screen="broker"]');
+  for (const status of ["received", "partial", "unavailable"]) {
+    fixture.refreshStatus = {...original, status: "succeeded", news: clone(serverContracts.refresh_news_cases[status].news)};
+    await evaluate('document.querySelector("#main-content").focus(); window.dispatchEvent(new Event("focus"))');
+    const expected = await evaluate(`window.OMNICIO_I18N.t(${JSON.stringify("news.monitor." + status)})`);
+    await wait(`document.querySelector("[data-news-monitor-status]")?.textContent.includes(${JSON.stringify(expected)})`, "The current news status arrives through the visible refresh GET");
+    assert.ok(await evaluate('document.querySelector("[data-news-monitor-status]").textContent.includes(window.OMNICIO_I18N.t("news.monitor.scope"))'), "The settings show the limited broker-feed coverage");
+    if (status !== "received") assert.ok(await evaluate(`!document.querySelector("#connection-banner").hidden && document.querySelector("#connection-banner").textContent.includes(${JSON.stringify(expected)})`), "News gaps are visible alongside usable account data");
+    await checkLayout(`news-monitoring-${status}-${round}-390`);
+  }
+  assert.equal(refreshPosts(), before, "Checking autonomous news status never enqueues a portfolio refresh");
+  await screenshot(`news-monitoring-unavailable-${round}-390.png`);
+  fixture.refreshStatus = original;
+  await evaluate('document.querySelector("#main-content").focus(); window.dispatchEvent(new Event("focus"))');
+  await wait('document.querySelector("[data-news-monitor-status]")?.textContent.includes(window.OMNICIO_I18N.t("news.monitor.not_requested"))', "The isolated case restores its original collection state");
+  await click('#sidebar-nav [data-route="settings"]');
+}
 async function exerciseNotificationRetry({fixture, click, fieldValue, wait, evaluate}) {
   const retry = '#notification-settings [data-action="resource-retry"][data-resource="notifications"]';
   await wait(`document.querySelector(${JSON.stringify(retry)})`, "An initial notification failure has a resource-specific retry");
@@ -3812,6 +3978,7 @@ async function exerciseReadConsistency(options) {
   await send("Page.navigate", {url: `${base}?case=${key}#settings`});
   await wait(`performance.timeOrigin!==${previousDocumentTimeOrigin} && document.querySelector("#preferences-form")`, "A fresh signed-in settings document");
   const context = {...options, fixture};
+  await exerciseNewsMonitoring(context);
   await exerciseNotificationRetry(context);
   await exerciseAnalyticsReadConsistency(context);
   await exerciseSearchReadConsistency(context);

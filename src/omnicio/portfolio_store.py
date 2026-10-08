@@ -23,6 +23,7 @@ from .intelligence import (
     EvidenceDocument,
     InstrumentRiskAssessment,
 )
+from .payouts import PAYOUT_IDENTITY_SQL
 from .portfolio import SecurityExposure, analyze_portfolio
 from .strategy import document_hash, normalize_document
 from .tbank import (
@@ -933,6 +934,8 @@ class PortfolioStore:
             "status": "not_connected", "job_id": None, "requested_at": None,
             "started_at": None, "finished_at": None, "observed_at": None,
             "snapshot_saved": False, "history_status": None, "history_pages": 0,
+            "news": {"status": "not_requested", "observed_at": None,
+                     "scope": "held_instrument_links"},
             "can_refresh": False, "retry_after_seconds": 0, "cooldown_until": None,
             "reason": "broker_not_connected",
         }
@@ -970,6 +973,11 @@ class PortfolioStore:
             cooldown_until=cooldown.isoformat(),
             reason=reason or job["details"].get("stage_error"),
         )
+        news = job["details"].get("news")
+        if isinstance(news, dict):
+            result["news"] = {key: news[key] for key in (
+                "status", "observed_at", "pages", "scanned_items", "documents_new", "scope",
+            ) if key in news}
         return result
 
     def refresh_status(self, user_id: UUID) -> dict[str, Any]:
@@ -1769,6 +1777,23 @@ class PortfolioStore:
             )
             return snapshot_id
 
+    def news_state(self, user_id: UUID, *, job_run_id: UUID) -> dict[str, Any]:
+        """Resume only evidence collected under this exact connection and consent."""
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            _require_observation_job(cur, user_id, job_run_id)
+            cur.execute(
+                "SELECT prior.details -> 'news' AS news FROM job_runs prior "
+                "JOIN job_runs current ON current.user_id = prior.user_id AND current.id = %s "
+                "WHERE prior.user_id = %s AND jsonb_typeof(prior.details -> 'news') = 'object' "
+                "AND prior.details -> 'connection' = current.details -> 'connection' "
+                "AND prior.details -> 'legal_versions' = current.details -> 'legal_versions' "
+                "ORDER BY prior.started_at DESC, prior.id DESC LIMIT 1",
+                (job_run_id, user_id),
+            )
+            row = cast(Mapping[str, Any] | None, cur.fetchone())
+            return dict(row["news"]) if row is not None else {}
+
     def save_evidence(
         self,
         user_id: UUID,
@@ -1778,6 +1803,7 @@ class PortfolioStore:
         documents: tuple[EvidenceDocument, ...],
         assessments: tuple[InstrumentRiskAssessment, ...],
         retrieved_at: datetime,
+        news_checkpoint: dict[str, object] | None = None,
     ) -> tuple[int, int]:
         if retrieved_at.tzinfo is None:
             raise ValueError("evidence retrieval time must be timezone-aware")
@@ -1811,6 +1837,17 @@ class PortfolioStore:
                         assessment=assessment,
                         retrieved_at=retrieved_at,
                     )
+                )
+            if news_checkpoint is not None:
+                checkpoint = {
+                    **news_checkpoint,
+                    "documents_new": cast(int, news_checkpoint.get("documents_new", 0))
+                    + documents_written,
+                }
+                cur.execute(
+                    "UPDATE job_runs SET details = details || %s::jsonb "
+                    "WHERE user_id = %s AND id = %s AND status = 'running'",
+                    (_json({"news": checkpoint}), user_id, job_run_id),
                 )
         return documents_written, assessments_written
 
@@ -2120,12 +2157,12 @@ class PortfolioStore:
             subjects = list(dict.fromkeys(subjects))
 
             cur.execute(
-                """
+                f"""
                 SELECT DISTINCT ON (
                     pe.provider,
                     pe.instrument_uid,
                     pe.event_type,
-                    pe.provider_key
+                    {PAYOUT_IDENTITY_SQL}
                 )
                     pe.provider,
                     pe.instrument_uid,
@@ -2153,7 +2190,7 @@ class PortfolioStore:
                     pe.provider,
                     pe.instrument_uid,
                     pe.event_type,
-                    pe.provider_key,
+                    {PAYOUT_IDENTITY_SQL},
                     retrieval.retrieved_at DESC,
                     pe.id DESC
                 LIMIT 100

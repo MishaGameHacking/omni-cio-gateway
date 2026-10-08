@@ -1286,7 +1286,7 @@
     generation: state.generation,
     sequence: ++state.refresh.sequence
   });
-  const currentRefresh = context => context.generation === state.generation && context.sequence === state.refresh.sequence && Boolean(state.user) && !state.locked;
+  const currentRefresh = context => context.generation === state.generation && context.sequence === state.refresh.sequence && Boolean(state.user) && !state.locked && (!context.canAdopt || context.canAdopt());
   const refreshUnavailable = () => {
     if (state.refresh.busy) return true;
     if (state.errors.refreshStatus) return false;
@@ -1336,6 +1336,24 @@
     if (text && result?.observed_at) text += ` ${T("Последнее наблюдение:")} ${date(result.observed_at, true)} ${T("МСК.")}`;
     return text;
   };
+  const workspaceNewsText = (details = false) => {
+    const news = state.data.refreshStatus?.news;
+    const labels = {
+      not_requested: T("news.monitor.not_requested"),
+      not_applicable: T("news.monitor.not_applicable"),
+      received: T("news.monitor.received"),
+      partial: T("news.monitor.partial"),
+      unavailable: T("news.monitor.unavailable"),
+      unknown: T("news.monitor.unknown")
+    };
+    const status = news?.scope === "held_instrument_links" && Object.hasOwn(labels, news.status) ? news.status : "unknown";
+    let text = `${T("news.monitor.title")}: ${labels[status]}`;
+    if (!details) return text;
+    text += " " + T("news.monitor.scope");
+    if (["received", "partial"].includes(status) && Number.isSafeInteger(news.documents_new) && news.documents_new >= 0) text += " " + T("news.monitor.saved", {count: format(news.documents_new, 0)});
+    if (["received", "partial", "unavailable"].includes(status) && typeof news.observed_at === "string" && Number.isFinite(Date.parse(news.observed_at))) text += " " + T("news.monitor.observed", {time: date(news.observed_at, true)});
+    return text;
+  };
   const scheduleRefreshPoll = (context, delay) => {
     clearTimeout(state.refresh.timer);
     state.refresh.timer = window.setTimeout(() => {
@@ -1369,6 +1387,8 @@
     const previous = state.data.refreshStatus;
     state.data.refreshStatus = result;
     delete state.errors.refreshStatus;
+    const newsStatus = $("[data-news-monitor-status]");
+    if (newsStatus) newsStatus.textContent = workspaceNewsText(true);
     renderConnectionBanner();
     updateRefreshControls();
     const changedObservation = result.observed_at && result.observed_at !== state.data.workspace?.overview?.observed_at;
@@ -1391,9 +1411,9 @@
       refreshFailed(error, context);
     }
   };
-  const resumeWorkspaceRefresh = async () => {
-    if (!state.user || state.tour || state.locked || state.refresh.busy) return;
-    const context = refreshContext();
+  const resumeWorkspaceRefresh = async (canAdopt = () => true) => {
+    if (!state.user || state.tour || state.locked || state.refresh.busy || !canAdopt()) return;
+    const context = {...refreshContext(), canAdopt};
     clearTimeout(state.refresh.timer);
     await pollWorkspaceRefresh(context);
   };
@@ -1443,7 +1463,8 @@
       banner.hidden = true;
       return;
     }
-    const text = connectionStatusText(connection, ws);
+    const news = connection?.connected && ["partial", "unavailable"].includes(state.data.refreshStatus?.news?.status) ? workspaceNewsText() : "";
+    const text = [connectionStatusText(connection, ws), news].filter(Boolean).join(" ");
     banner.hidden = !text;
     banner.classList.toggle("error", Boolean(state.errors.workspace || state.errors.refreshStatus) || state.data.refreshStatus?.status === "failed");
     banner.innerHTML = text ? `<span>${esc(text)}</span>${button(renderConnectionBannerValue(connection), renderConnectionBannerValue2(connection), {
@@ -1740,6 +1761,10 @@
       promise: api(`/api/news?instrument_uid=${segment}&limit=50`)
     });
     const current = () => generation === state.generation && state.resourceVersions.get("asset") === sequence && state.asset?.uid === uid && state.assetPeriod === requestedPeriod;
+    const repaint = preserveChart => {
+      const preservedChart = renderAsset({preserveChart});
+      if (!preservedChart) U.bindCharts($("#view-asset"));
+    };
     await Promise.allSettled(requests.map(async ({key, promise}) => {
       try {
         const value = await promise;
@@ -1753,8 +1778,7 @@
       } finally {
         if (current() && state.view === "asset") {
           if (key === "market") asset.loading = false;
-          const preservedChart = renderAsset({preserveChart: key !== "market"});
-          if (!preservedChart) U.bindCharts($("#view-asset"));
+          repaint(key !== "market");
           if (key === "market" && asset.market) startQuoteStream();
         }
       }
@@ -1764,8 +1788,7 @@
     asset.ticker = asset.facts?.ticker || asset.details?.latest?.ticker || asset.ticker;
     asset.loading = false;
     if (state.view === "asset") {
-      const preservedChart = renderAsset({preserveChart: true});
-      if (!preservedChart) U.bindCharts($("#view-asset"));
+      repaint(true);
       quoteFailures = 0;
       startQuoteStream();
     }
@@ -4714,13 +4737,13 @@
     restoreEditableForm("preferences-form");
     $("#view-settings .settings-layout > div")?.insertAdjacentHTML("beforeend", `<section class="card section-gap" id="notification-settings">${notificationContentsHTML()}</section>`);
     $("#view-settings .settings-layout > div:last-child")?.insertAdjacentHTML("beforeend", operationalMetricsHTML());
-    updateSaveStatus("prefs");
     applyScreenLayout("settings");
+    updateSaveStatus("prefs");
   };
   const brokerSettingsHTML = () => {
     const connection = state.data.connection;
     if (!connection) return state.errors.connection ? dataError("connection") : U.loading(T("Проверяем подключение…"));
-    if (connection.connected) return `<div class="connection-state"><span class="provider-mark">T</span><div><strong>${esc(connection.account_name || T("Счёт T-Invest"))}</strong><small>${connection.environment === "sandbox" ? T("Тестовая среда") : T("Основной счёт")}</small></div><span class="status-dot"></span></div>${infoRows([[T("ID счёта"), connection.account_id], [T("Проверен"), connection.verified_at ? renderBrokerSettingsHTMLFragment(connection) : "—"]])}<p class="fine-print section-gap">${esc(brokerDisconnectDescription())}</p><div class="form-actions">${button(T("Обновить данные"), "refresh", {
+    if (connection.connected) return `<div class="connection-state"><span class="provider-mark">T</span><div><strong>${esc(connection.account_name || T("Счёт T-Invest"))}</strong><small>${connection.environment === "sandbox" ? T("Тестовая среда") : T("Основной счёт")}</small></div><span class="status-dot"></span></div>${infoRows([[T("ID счёта"), connection.account_id], [T("Проверен"), connection.verified_at ? renderBrokerSettingsHTMLFragment(connection) : "—"]])}<p class="fine-print" data-news-monitor-status>${esc(workspaceNewsText(true))}</p><p class="fine-print section-gap">${esc(brokerDisconnectDescription())}</p><div class="form-actions">${button(T("Обновить данные"), "refresh", {
       small: true
     })}${button(T("Отключить"), "disconnect-start", {
       small: true,
@@ -6819,12 +6842,16 @@
   const refreshVisibleData = async () => {
     stopVisibleRefresh();
     if (freshnessBusy || document.visibilityState !== "visible" || !navigator.onLine || !state.user || state.locked || state.mode !== "account") return;
+    const generation = state.generation;
+    const canRefresh = () => generation === state.generation && state.user && !state.locked && state.mode === "account" && document.visibilityState === "visible" && navigator.onLine && !(document.activeElement?.matches("input, textarea, select") || $("dialog[open]") || hasPending() || [...state.requests].some(controller => controller.omnicioMutation));
     freshnessBusy = true;
     try {
       await verifySession();
       void refreshPushDevice();
-      const editing = document.activeElement?.matches("input, textarea, select") || $("dialog[open]") || hasPending() || [...state.requests].some(controller => controller.omnicioMutation);
-      if (!state.locked && state.user && !editing) await loadForView(state.view, state.route, true);
+      if (canRefresh()) {
+        await loadForView(state.view, state.route, true);
+        if (canRefresh()) await resumeWorkspaceRefresh(canRefresh);
+      }
     } finally {
       freshnessBusy = false;
       scheduleVisibleRefresh();

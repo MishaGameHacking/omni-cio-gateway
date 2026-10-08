@@ -28,6 +28,7 @@ from omnicio.cbr import CBRClient
 from omnicio.db import UserRecord
 from omnicio.goal_planning import goal_forecast
 from omnicio.market import MarketService
+from omnicio.portfolio_store import PortfolioStore
 from omnicio.service import AuthService
 from omnicio.tbank import (
     TBankHistoricCandle,
@@ -276,8 +277,37 @@ def billing_contract() -> dict[str, Any]:
     return {"billing_disabled": disabled_status, "billing_enabled": enabled_status}
 
 
+def refresh_news_contract() -> dict[str, Any]:
+    """Use the actual refresh serializer; broker cursors remain server-side."""
+    now = datetime(2026, 10, 8, 10, tzinfo=UTC)
+    connection = {"account_id": "synthetic-account", "environment": "prod",
+                  "verified_at": now, "server_now": now + timedelta(minutes=5)}
+    context = {"account_id": connection["account_id"], "environment": "prod",
+               "verified_at": now.isoformat()}
+    cases = {}
+    store = PortfolioStore(Mock())
+    for status in ("not_requested", "not_applicable", "received", "partial", "unavailable"):
+        details: dict[str, Any] = {"connection": context, "refresh_scope": "quick",
+                                   "history_status": "complete", "valuation_status": "complete"}
+        if status != "not_requested":
+            received = status in {"received", "partial"}
+            details["news"] = {
+                "status": status, "scope": "held_instrument_links",
+                "observed_at": now.isoformat() if status != "not_applicable" else None,
+                "pages": 1 if received else 0, "scanned_items": 18 if received else 0,
+                "documents_new": 2 if received else 0,
+                "next_cursor": "synthetic-private-provider-cursor", "error": "internal-detail",
+            }
+        row = {"id": UUID(int=456), "status": "succeeded", "requested_at": now,
+               "started_at": now, "finished_at": now, "snapshot_at": now, "details": details}
+        cursor = Mock()
+        cursor.fetchone.side_effect = [{"captured_at": now}, row]
+        cases[status] = store._refresh_status(cursor, UUID(int=123), connection)
+    return {"refresh_news_cases": cases}
+
+
 if __name__ == "__main__":
     print(json.dumps({**market_contract(), "market_precision_cases": market_precision_contract(),
                       **goal_contract(), **research_contract(), **preset_math_contract(),
-                      **billing_contract()},
+                      **billing_contract(), **refresh_news_contract()},
                      ensure_ascii=True))

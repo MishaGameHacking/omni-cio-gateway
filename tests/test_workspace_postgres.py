@@ -9,6 +9,7 @@ import os
 import secrets
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -23,9 +24,10 @@ import pytest
 from cryptography.fernet import Fernet
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from test_intelligence import news_item
 
 from omnicio.db import Database
-from omnicio.intelligence import EvidenceDocument, PayoutEvidence
+from omnicio.intelligence import EvidenceDocument, PayoutEvidence, build_news_evidence
 from omnicio.notifications import (
     DeliveryResult,
     NotificationConfig,
@@ -45,7 +47,7 @@ from omnicio.portfolio_store import (
     _source_document_id,
 )
 from omnicio.tbank import TBankMoney, TBankOperation
-from omnicio.workspace import cashflow_summary, default_preferences
+from omnicio.workspace import cashflow_summary, default_preferences, event_id
 from omnicio.workspace_store import WorkspaceNotFound, WorkspaceStore
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
@@ -53,8 +55,8 @@ pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="ephemeral PostgreSQL i
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture(scope="module")
-def workspace_database() -> Iterator[tuple[Database, str, str]]:
+@contextmanager
+def workspace_database_context() -> Iterator[tuple[Database, str, str]]:
     config = conninfo_to_dict(DATABASE_URL)
     assert config.get("host") in {"127.0.0.1", "localhost", "::1"}
     assert config.get("dbname", "").endswith("_test")
@@ -104,6 +106,12 @@ def workspace_database() -> Iterator[tuple[Database, str, str]]:
         with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
             admin.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(name)))
             admin.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+@pytest.fixture(scope="module")
+def workspace_database() -> Iterator[tuple[Database, str, str]]:
+    with workspace_database_context() as database:
+        yield database
 
 
 def user(database: Database, *, account: bool = False) -> UUID:
@@ -1646,8 +1654,10 @@ def test_dashboard_uses_latest_operation_correction_and_complete_ledger(
     assert store.dashboard(owner)["income"]["total_rub"] == "0"
 
 
+@pytest.mark.parametrize("event_type", ["coupon", "dividend"])
 def test_payout_correction_reverting_to_old_fact_uses_latest_provider_receipt(
     workspace_database: tuple[Database, str, str],
+    event_type: str,
 ) -> None:
     database = workspace_database[0]
     owner = user(database, account=True)
@@ -1674,13 +1684,19 @@ def test_payout_correction_reverting_to_old_fact_uses_latest_provider_receipt(
     for index, value in enumerate(("10", "12", "10", "10")):
         received_at = start + timedelta(minutes=index)
         payload = {"amount": value}
+        provider_key = "coupon-1"
+        if event_type == "dividend":
+            payload["created_at"] = (start - timedelta(days=1)).isoformat()
+            payload["regularity"] = "Annual"
+            provider_key = f"{instrument_uid}|{expected.isoformat()}|RUB|{value}"
         document = EvidenceDocument(
-            provider="tbank", document_type="bond_coupon", subject_uid=instrument_uid,
-            provider_key="coupon-1", source_url="https://developer.tbank.ru/invest/",
+            provider="tbank", document_type=event_type, subject_uid=instrument_uid,
+            provider_key=provider_key, source_url="https://developer.tbank.ru/invest/",
             published_at=None, effective_at=expected, payload=payload,
             payout=PayoutEvidence(
-                instrument_uid=instrument_uid, event_type="coupon", provider_key="coupon-1",
-                announced_at=None, record_at=None, expected_at=expected, actual_at=None,
+                instrument_uid=instrument_uid, event_type=event_type, provider_key=provider_key,
+                announced_at=start - timedelta(days=1),
+                record_at=expected - timedelta(days=1), expected_at=expected, actual_at=None,
                 amount=Decimal(value), currency="RUB", status="scheduled", payload=payload,
             ),
         )
@@ -1709,6 +1725,216 @@ def test_payout_correction_reverting_to_old_fact_uses_latest_provider_receipt(
             assert alert["revision"] == previous_revision
         event_identity, previous_revision = alert["id"], alert["revision"]
         workspace.mark_events_read(owner, [alert["id"]])
+
+
+def payout_position(store: WorkspaceStore, owner: UUID, uid: str, at: datetime) -> None:
+    snapshot = uuid4()
+    with store._transaction(owner) as cur:
+        cur.execute(
+            "INSERT INTO portfolio_snapshots (id, user_id, account_id, environment, captured_at, "
+            "analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, rub_cash_unblocked, "
+            "limits_loading_in_progress, evidence) "
+            "VALUES (%s, %s, %s, 'prod', %s, 'observed', 1000, 0, 0, 0, false, '{}'::jsonb)",
+            (snapshot, owner, str(owner), at),
+        )
+        cur.execute(
+            "INSERT INTO portfolio_snapshot_positions (snapshot_id, user_id, instrument_uid, "
+            "ticker, instrument_type, quantity, blocked, blocked_lots) "
+            "VALUES (%s, %s, %s, 'DIV', 'share', 1, false, 0)", (snapshot, owner, uid),
+        )
+
+
+def dividend_revision(
+    store: WorkspaceStore, owner: UUID, uid: str, received: datetime, *,
+    created: object, expected: datetime | None, value: str, status: str = "scheduled",
+    note: str = "", anchors: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    # Preserve the original amount/date-derived key and immutable source format.
+    distribution = {"record_at": datetime(2026, 10, 1, tzinfo=UTC),
+                    "announced_at": datetime(2026, 9, 25, tzinfo=UTC),
+                    "regularity": "Annual", "currency": "RUB"}
+    distribution.update(anchors or {})
+    record = distribution["record_at"]
+    currency = distribution["currency"]
+    key = f"{uid}|{record}|{expected.isoformat() if expected else ''}|{currency}|{value}"
+    payload = {"created_at": created, "amount": value, "payment_date": expected,
+               "status": status, "note": note, "regularity": distribution["regularity"]}
+    document = EvidenceDocument(
+        provider="tbank", document_type="dividend", subject_uid=uid, provider_key=key,
+        source_url="https://developer.tbank.ru/invest/", published_at=None,
+        effective_at=expected, payload=payload,
+        payout=PayoutEvidence(
+            instrument_uid=uid, event_type="dividend", provider_key=key,
+            announced_at=distribution["announced_at"], record_at=record,
+            expected_at=expected, actual_at=None,
+            amount=Decimal(value), currency=currency, status=status, payload=payload,
+        ),
+    )
+    with store._transaction(owner) as cur:
+        document_id, _ = _source_document_id(cur, document, received)
+        _save_source_retrieval(cur, document_id, received)
+        _save_payout_event(cur, document_id, document)
+        cur.execute("SELECT id, amount FROM payout_events WHERE source_document_id = %s",
+                    (document_id,))
+        row = cur.fetchone()
+    return {"provider_key": key, "source": {
+        "type": "payout", "id": str(row["id"]), "instrument_uid": uid,
+        "expected_at": expected, "amount_per_security": str(row["amount"]),
+        "currency": currency, "status": status, "url": document.source_url,
+    }}
+
+
+def test_dividend_legacy_aliases_preserve_receipts_and_follow_date_corrections(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, other = user(database, account=True), user(database)
+    store, portfolio = WorkspaceStore(database), PortfolioStore(database)
+    service, transport, _ = notification_service(database)
+    start, uid = datetime.now(UTC) - timedelta(hours=1), str(uuid4())
+    created, expected = start - timedelta(days=2), start + timedelta(days=2)
+    payout_position(store, owner, uid, start)
+    preferences = default_preferences()
+    preferences["digest_frequency"] = "off"
+    preferences["quiet_hours"]["enabled"] = False
+    store.save_preferences(owner, preferences, expected_version=0)
+    with store._transaction(owner) as cur:
+        channel = service._insert_channel(
+            cur, owner, kind="email", destination={"email": "payout-test@example.org"},
+            label="Synthetic payout test", status="active", now=start,
+        )
+    old_events = []
+    for index, value in enumerate(("10", "12")):
+        at = start + timedelta(minutes=index)
+        saved = dividend_revision(store, owner, uid, at, created=created,
+                                  expected=expected, value=value)
+        ident = event_id("payout_calendar", [uid, "dividend", saved["provider_key"]])
+        with store._transaction(owner) as cur:
+            store._insert_event(
+                cur, owner, identity=[uid, "dividend", saved["provider_key"]],
+                category="payments", kind="payout_calendar", title="Old payout",
+                occurred_at=at, target="income", source=saved["source"],
+            )
+            cur.execute("UPDATE workspace_events SET created_at = %s WHERE user_id = %s "
+                        "AND id = %s RETURNING *", (at, owner, ident))
+            legacy = dict(cur.fetchone())
+            service._queue_event(cur, owner, channel, legacy, preferences, start)
+            if index == 0:
+                cur.execute("UPDATE notification_outbox SET status = 'accepted', accepted_at = %s "
+                            "WHERE user_id = %s", (start, owner))
+                cur.execute("UPDATE workspace_events SET read_at = %s WHERE user_id = %s "
+                            "AND id = %s", (start, owner, ident))
+        old_events.append(legacy)
+    canonical, alias = old_events
+    with store._transaction(other) as cur:
+        store._insert_event(
+            cur, other, identity="other-owner", category="payments", kind="payout_calendar",
+            title="Other owner history", occurred_at=start, source=alias["source"],
+        )
+    unrelated = insert_notification_event(
+        store, owner, 400, source={"type": "payout", "superseded_by": canonical["id"]},
+    )
+    events = store.events(owner)
+    assert {item["id"] for item in events["items"]} == {canonical["id"], unrelated}
+    assert events["unread_count"] == 2
+    assert store.events_summary(owner)["unread_total"] == 2
+    updated = store.get_event(owner, canonical["id"])
+    assert updated["revision"] > canonical["revision"]
+    assert updated["source"]["amount_per_security"] == alias["source"]["amount_per_security"]
+    retained = store.get_event(owner, alias["id"])
+    assert retained["revision"] == alias["revision"]
+    assert retained["read_at"] is None
+    assert retained["source"]["superseded_by"] == canonical["id"]
+    assert "superseded_by" not in store.events(other)["items"][0]["source"]
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service._claim(owner, datetime.now(UTC)) is None
+    transport.send_email.assert_not_called()
+    with store._transaction(owner) as cur:
+        cur.execute("SELECT event_id, event_revision FROM notification_outbox_events "
+                    "WHERE user_id = %s", (owner,))
+        assert {(row["event_id"], row["event_revision"]) for row in cur.fetchall()} == {
+            (row["id"], row["revision"]) for row in old_events
+        }
+        cur.execute("SELECT status FROM notification_outbox WHERE user_id = %s", (owner,))
+        assert {row["status"] for row in cur.fetchall()} == {"accepted", "cancelled"}
+    store.mark_events_read(owner, [canonical["id"]])
+    revision = updated["revision"]
+    dividend_revision(store, owner, uid, start + timedelta(minutes=2), created=created,
+                      expected=expected, value="12", note="provider metadata corrected")
+    current = next(row for row in store.events(owner)["items"]
+                   if row["kind"] == "payout_calendar")
+    assert current["id"] == canonical["id"]
+    assert current["read_at"] is not None and current["revision"] == revision
+    assert current["source"]["id"] != alias["source"]["id"]
+    for index, date in enumerate((None, start - timedelta(days=20), expected + timedelta(days=1))):
+        dividend_revision(store, owner, uid, start + timedelta(minutes=3 + index),
+                          created=created, expected=date, value="12", status="cancelled")
+        current = next(row for row in store.events(owner)["items"]
+                       if row["kind"] == "payout_calendar")
+        assert current["id"] == canonical["id"]
+        assert current["read_at"] is None and current["revision"] > revision
+        revision = current["revision"]
+        assert current["source"]["expected_at"] == (str(date) if date is not None else None)
+        assert current["source"]["status"] == "cancelled"
+        visible = portfolio.instrument_visualization(owner, uid)
+        assert visible is not None and len(visible["payouts"]) == 1
+        assert visible["payouts"][0]["expected_at"] == date
+        store.mark_events_read(owner, [canonical["id"]])
+
+
+@pytest.mark.parametrize(("created", "count"), [
+    ((None, None), 2),
+    (("", ""), 2),
+    (("invalid", "invalid"), 2),
+    (("2026-02-30T00:00:00Z", "2026-02-30T00:00:00Z"), 2),
+    (("2026-10-01T00:00:00", "2026-10-01T00:00:00"), 2),
+    ((123, 123), 2),
+    (("2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z"), 2),
+    (("2026-10-01T00:00:00Z", "2026-10-01T03:00:00+03:00"), 1),
+])
+def test_dividend_projection_requires_a_valid_creation_identity(
+    workspace_database: tuple[Database, str, str], created: tuple[object, object], count: int,
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    store, portfolio = WorkspaceStore(database), PortfolioStore(database)
+    now, uid = datetime.now(UTC) - timedelta(hours=1), str(uuid4())
+    payout_position(store, owner, uid, now)
+    for index, metadata in enumerate(created):
+        dividend_revision(store, owner, uid, now + timedelta(minutes=index), created=metadata,
+                          expected=now + timedelta(days=1), value=str(10 + index))
+    visible = portfolio.instrument_visualization(owner, uid)
+    assert visible is not None and len(visible["payouts"]) == count
+    alerts = [row for row in store.events(owner)["items"] if row["kind"] == "payout_calendar"]
+    assert len(alerts) == count
+
+
+@pytest.mark.parametrize("anchors", [
+    {"record_at": datetime(2026, 10, 2, tzinfo=UTC)},
+    {"announced_at": datetime(2026, 9, 26, tzinfo=UTC)},
+    {"regularity": "Quarterly"},
+    {"currency": "USD"},
+    {"record_at": None},
+    {"announced_at": None},
+    {"regularity": ""},
+    {"currency": None},
+])
+def test_dividends_created_in_one_batch_keep_distinct_distribution_anchors(
+    workspace_database: tuple[Database, str, str], anchors: dict[str, Any],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    store, portfolio = WorkspaceStore(database), PortfolioStore(database)
+    now, uid = datetime.now(UTC) - timedelta(hours=1), str(uuid4())
+    payout_position(store, owner, uid, now)
+    for index, changed in enumerate(({}, anchors)):
+        dividend_revision(store, owner, uid, now + timedelta(minutes=index),
+                          created=now - timedelta(days=2), expected=now + timedelta(days=1),
+                          value=str(10 + index), anchors=changed)
+    visible = portfolio.instrument_visualization(owner, uid)
+    assert visible is not None and len(visible["payouts"]) == 2
+    alerts = [row for row in store.events(owner)["items"] if row["kind"] == "payout_calendar"]
+    assert len(alerts) == 2
 
 
 def test_risk_alerts_survive_unchanged_snapshots_and_notify_actual_state_changes(
@@ -2271,3 +2497,85 @@ def test_new_nav_snapshot_keeps_original_risk_time_and_closed_position_is_not_cu
     assert sold["current_holding"]["status"] == "not_held"
     assert sold["current_holding"]["quantity"] == "0"
     assert len(sold["history"]) == 1  # No manufactured zero-price history point.
+
+
+def test_issuer_news_projects_only_priority_current_holdings_and_revises_real_corrections(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    store = WorkspaceStore(database)
+    owner, other = user(database, account=True), user(database, account=True)
+    uid, other_uid = str(uuid4()), str(uuid4())
+    start = datetime.now(UTC) - timedelta(seconds=10)
+    payout_position(store, owner, uid, start)
+    payout_position(store, other, other_uid, start)
+    ident = str(uuid4().int % 10**18 + 1)
+    ignored = (
+        news_item(str(int(ident) + 1), uid=uid, priority=False, published=start),
+        news_item(str(int(ident) + 2), uid=other_uid, published=start),
+    )
+    with store._transaction(owner) as cur:
+        for document in build_news_evidence(frozenset({uid, other_uid}), ignored,
+                                            observed_at=start):
+            document_id, _ = _source_document_id(cur, document, start)
+            _save_source_retrieval(cur, document_id, start)
+    assert not [row for row in store.events(owner)["items"] if row["kind"] == "instrument_news"]
+    # The same public source is relevant to the other owner only through their own holding.
+    other_alerts = [row for row in store.events(other)["items"] if row["kind"] == "instrument_news"]
+    assert len(other_alerts) == 1
+    assert other_alerts[0]["source"]["news_id"] == str(int(ident) + 2)
+
+    event_identity = previous_revision = None
+    for index, (title, priority) in enumerate((
+        ("Исходное сообщение", True), ("Уточнённое сообщение", True),
+        ("Исходное сообщение", True), ("Исходное сообщение", True),
+        ("Исходное сообщение", False),
+    )):
+        received = start + timedelta(seconds=index)
+        item = news_item(ident, uid=uid, published=start - timedelta(minutes=1),
+                         title=title, priority=priority)
+        document = build_news_evidence(frozenset({uid}), [item], observed_at=received)[0]
+        with store._transaction(owner) as cur:
+            document_id, _ = _source_document_id(cur, document, received)
+            _save_source_retrieval(cur, document_id, received)
+        alerts = [row for row in store.events(owner)["items"] if row["kind"] == "instrument_news"]
+        assert len(alerts) == 1
+        alert = alerts[0]
+        assert alert["title"] == title
+        assert alert["source"]["priority"] is priority
+        assert alert["source"]["url"] == item["source_url"]
+        if event_identity is not None:
+            assert alert["id"] == event_identity
+        if index == 3:
+            assert alert["read_at"] is not None
+            assert alert["revision"] == previous_revision
+        else:
+            assert alert["read_at"] is None
+        assert alert["severity"] == ("warning" if priority else "info")
+        event_identity, previous_revision = alert["id"], alert["revision"]
+        store.mark_events_read(owner, [alert["id"]])
+    assert not [row for row in store.events(owner, important_only=True)["items"]
+                if row["kind"] == "instrument_news"]
+
+
+@pytest.mark.parametrize("holding", ["stale", "closed", "disconnected"])
+def test_issuer_news_does_not_invent_current_portfolio_binding_from_old_snapshot(
+    workspace_database: tuple[Database, str, str], holding: str,
+) -> None:
+    database = workspace_database[0]
+    store, owner = WorkspaceStore(database), user(database, account=True)
+    uid, ident = str(uuid4()), str(uuid4().int % 10**18 + 1)
+    now = datetime.now(UTC)
+    payout_position(store, owner, uid,
+                    now - (timedelta(minutes=6) if holding == "stale" else timedelta(seconds=1)))
+    item = news_item(ident, uid=uid, published=now - timedelta(minutes=1))
+    document = build_news_evidence(frozenset({uid}), [item], observed_at=now)[0]
+    with store._transaction(owner) as cur:
+        document_id, _ = _source_document_id(cur, document, now)
+        _save_source_retrieval(cur, document_id, now)
+        if holding == "closed":
+            cur.execute("UPDATE portfolio_snapshot_positions SET quantity = 0 WHERE user_id = %s",
+                        (owner,))
+    if holding == "disconnected":
+        database.delete_tbank_connection(owner)
+    assert not [row for row in store.events(owner)["items"] if row["kind"] == "instrument_news"]

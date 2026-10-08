@@ -186,11 +186,12 @@ def test_provider_news_accepts_empty_protojson_terminal_page() -> None:
     {"hasNext": True, "nextCursor": "-1"},
 ])
 def test_provider_news_rejects_invalid_flag_or_nonadvancing_continuation(payload: dict) -> None:
+    client = TBankInvestClient()
     with (
         patch.object(TBankInvestClient, "_post", return_value={**payload, "items": []}),
         pytest.raises(TBankUnavailable),
     ):
-        TBankInvestClient().get_news("test-fixture", "prod", cursor="20")
+        client.get_news("test-fixture", "prod", cursor="20")
 
 
 def test_tbank_get_accounts_uses_bearer_without_exposing_token() -> None:

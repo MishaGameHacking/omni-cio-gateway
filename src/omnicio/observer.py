@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 from .broker import BrokerConnectionError, BrokerObservationBundle, BrokerService
 from .config import load_settings
 from .db import Database
-from .intelligence import build_tbank_evidence
+from .intelligence import build_news_evidence, build_tbank_evidence, held_news_instrument_uids
 from .portfolio_store import BrokerSyncState, JobRunRecord, ObservationCancelled, PortfolioStore
 from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
 
@@ -32,6 +32,9 @@ QUICK_REFRESH_BUDGET_SECONDS = 35
 HISTORY_PAGE_SIZE = 1000
 HISTORY_CORRECTION_OVERLAP = timedelta(days=7)
 PROVIDER_READ_ATTEMPTS = 3
+NEWS_MAX_PAGES_PER_RUN = 3
+NEWS_PAGE_SIZE = 50
+NEWS_BUDGET_SECONDS = 12
 _AWARE_OBSERVER_TIME_REQUIRED = "observer time must be timezone-aware"
 
 
@@ -312,6 +315,78 @@ class PortfolioObserver:
         )
         details.update(history_pages=pages, history_new_observations=inserted,
                        history_status=history_status)
+        _checkpoint(should_stop)
+        self._news(job, bundle, snapshot_id, details, should_stop)
+
+    def _news(
+        self, job: JobRunRecord, bundle: BrokerObservationBundle, snapshot_id: UUID,
+        details: dict[str, object], should_stop: Callable[[], bool] | None,
+    ) -> None:
+        state: dict[str, object] = {
+            "cursor": None, "seen_cursors": [], "status": "partial",
+            "observed_at": None, "pages": 0, "scanned_items": 0,
+            "documents_new": 0, "scope": "held_instrument_links",
+        }
+        details["news"] = state
+        held_uids = held_news_instrument_uids(bundle)
+        if not held_uids:
+            state["status"] = (
+                "not_applicable" if bundle.analysis.security_count == 0 else "unavailable"
+            )
+            return
+        previous = self.store.news_state(job.user_id, job_run_id=job.id)
+        pending = cast(str | None, previous.get("cursor"))
+        state.update(cursor=pending, observed_at=previous.get("observed_at"),
+                     seen_cursors=previous.get("seen_cursors", []) if pending else [])
+        deadline = time.monotonic() + NEWS_BUDGET_SECONDS
+        cursor = None
+        try:
+            for _page_number in range(NEWS_MAX_PAGES_PER_RUN):
+                _checkpoint(should_stop)
+                if time.monotonic() >= deadline:
+                    break
+                if not self._news_page(job, snapshot_id, held_uids, state,
+                                       cursor=cursor, resume_cursor=pending):
+                    break
+                cursor, pending = cast(str | None, state["cursor"]), None
+        except ObservationCancelled:
+            raise
+        except (TBankUnavailable, ValueError) as exc:
+            # News cannot turn a valid NAV or ledger into unavailable financial data.
+            # Keep the last committed cursor and observation time for restart/readback.
+            state.update(status="partial" if state["pages"] else "unavailable",
+                         error=type(exc).__name__)
+
+    def _news_page(
+        self, job: JobRunRecord, snapshot_id: UUID, held_uids: frozenset[str],
+        state: dict[str, object], *, cursor: str | None, resume_cursor: str | None,
+    ) -> bool:
+        """Commit a source page and its continuation together before advancing in memory."""
+        page = self.broker.instrument_news(job.user_id, cursor=cursor, limit=NEWS_PAGE_SIZE)
+        observed = datetime.fromisoformat(page["observed_at"])
+        documents = build_news_evidence(held_uids, page["items"], observed_at=observed)
+        seen = list(cast(list[str], state["seen_cursors"]))
+        if cursor is not None:
+            seen.append(cursor)
+        # Every run polls the newest page before resuming older work.
+        next_cursor = resume_cursor if resume_cursor is not None else page["next_cursor"]
+        repeated = next_cursor is not None and next_cursor in seen
+        if repeated:
+            next_cursor = None
+        checkpoint = dict(state)
+        checkpoint.update(
+            cursor=next_cursor, seen_cursors=seen[-64:] if next_cursor else [],
+            status="partial" if next_cursor or repeated else "received",
+            observed_at=observed.isoformat(), pages=cast(int, state["pages"]) + 1,
+            scanned_items=cast(int, state["scanned_items"]) + page["scanned_items"],
+        )
+        written, _ = self.store.save_evidence(
+            job.user_id, job_run_id=job.id, snapshot_id=snapshot_id,
+            documents=documents, assessments=(), retrieved_at=observed,
+            news_checkpoint=checkpoint,
+        )
+        state.update(checkpoint, documents_new=cast(int, state["documents_new"]) + written)
+        return next_cursor is not None
 
     def _snapshot(
         self, job: JobRunRecord, details: dict[str, object],
@@ -540,24 +615,29 @@ class PortfolioRefreshCoordinator:
         # browser open; the database enforces cadence across processes/restarts.
         for schedule_if_due in (False, True):
             for user_id in ordered:
-                with self.store.observer_lock(user_id) as locked:
-                    if not locked:
-                        continue
-                    if schedule_if_due:
-                        job = self.store.claim_refresh_job(
-                            user_id, self.legal_versions, schedule_if_due=True,
-                        )
-                    else:
-                        job = self.store.claim_refresh_job(user_id, self.legal_versions)
-                        if job is None:
-                            job = self.store.claim_pending_daily_job(user_id, self.legal_versions)
-                    if job is not None:
-                        self._last_user = user_id
-                        self._run_claimed(job)
-                        self.store.database.record_worker_heartbeat("portfolio_refresh")
-                        return True
+                if self._run_pending_user(user_id, schedule_if_due=schedule_if_due):
+                    self.store.database.record_worker_heartbeat("portfolio_refresh")
+                    return True
         self.store.database.record_worker_heartbeat("portfolio_refresh")
         return False
+
+    def _run_pending_user(self, user_id: UUID, *, schedule_if_due: bool) -> bool:
+        with self.store.observer_lock(user_id) as locked:
+            if not locked:
+                return False
+            if schedule_if_due:
+                job = self.store.claim_refresh_job(
+                    user_id, self.legal_versions, schedule_if_due=True,
+                )
+            else:
+                job = self.store.claim_refresh_job(user_id, self.legal_versions)
+                if job is None:
+                    job = self.store.claim_pending_daily_job(user_id, self.legal_versions)
+            if job is None:
+                return False
+            self._last_user = user_id
+            self._run_claimed(job)
+            return True
 
     def _fair_order(self, users: tuple[UUID, ...]) -> tuple[UUID, ...]:
         if self._last_user not in users:

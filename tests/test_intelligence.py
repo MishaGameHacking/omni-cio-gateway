@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from omnicio.broker import AnalysisSource, BrokerEvidenceSnapshot, BrokerObservationBundle
-from omnicio.intelligence import assess_candidate_fundamental_risk, build_tbank_evidence
+from omnicio.intelligence import (
+    assess_candidate_fundamental_risk,
+    build_news_evidence,
+    build_tbank_evidence,
+    held_news_instrument_uids,
+)
 from omnicio.portfolio import PortfolioAnalysis
 from omnicio.tbank import (
     TBankAssetFundamental,
@@ -14,6 +19,7 @@ from omnicio.tbank import (
     TBankBondEvent,
     TBankInstrumentMetadata,
     TBankMoney,
+    TBankNewsItem,
     TBankPortfolio,
     TBankPortfolioPosition,
     TBankPositions,
@@ -131,6 +137,61 @@ def _sources(now: datetime) -> tuple[AnalysisSource, ...]:
             status="not_requested",
         ),
     )
+
+
+def news_item(
+    ident: str = "101", *, uid: str = "bond-uid", published: datetime | None = None,
+    priority: bool = True, title: str = "Публикация эмитента",
+) -> dict[str, object]:
+    return asdict(TBankNewsItem(
+        id=ident, title=title, summary="Подтверждённое сообщение источника", content="",
+        source="https://news.example.test/article", source_url="https://news.example.test/article",
+        occurred_at=published or datetime.now(UTC) - timedelta(minutes=1),
+        instrument_uids=(uid,), priority=priority,
+    ))
+
+
+def test_news_evidence_requires_source_identity_time_and_current_holding_link() -> None:
+    now = datetime.now(UTC)
+    observed = _bundle()
+    item = news_item(published=now - timedelta(minutes=1))
+    rejected = [
+        {**item, "id": ""}, {**item, "id": "0"},
+        {**item, "occurred_at": None}, {**item, "occurred_at": now.replace(tzinfo=None)},
+        {**item, "occurred_at": now + timedelta(seconds=1)},
+        {**item, "occurred_at": now - timedelta(hours=49)},
+        {**item, "instrument_uids": ("other-bond",)},
+        {**item, "priority": None}, {**item, "title": ""},
+    ]
+    documents = build_news_evidence(held_news_instrument_uids(observed), [item, *rejected],
+                                    observed_at=now)
+    assert len(documents) == 1
+    document = documents[0]
+    assert document.provider_key == document.subject_uid == "101"
+    assert document.published_at == item["occurred_at"]
+    assert document.document_type == "issuer_news"
+    assert document.payload["instrument_uids"] == ["bond-uid"]
+    assert "account_id" not in document.payload
+    assert "quantity" not in document.payload
+    # An issuer retracting the priority marker must be able to correct its old alert.
+    corrected = build_news_evidence(frozenset({"bond-uid"}), [{**item, "priority": False}],
+                                    observed_at=now)
+    assert corrected[0].provider_key == document.provider_key
+    assert corrected[0].payload["priority"] is False
+
+
+def test_news_binding_never_guesses_ambiguous_figi_or_includes_closed_positions() -> None:
+    observed = _bundle()
+    holding = replace(observed.portfolio.positions[0], instrument_uid="")
+    observed = replace(observed, portfolio=replace(observed.portfolio, positions=(holding,)))
+    assert held_news_instrument_uids(observed) == frozenset({"bond-uid"})
+    ambiguous = replace(observed.metadata[0], uid="different-uid")
+    assert held_news_instrument_uids(replace(observed, metadata=(*observed.metadata, ambiguous))) \
+        == frozenset()
+    closed = replace(holding, quantity="0.000")
+    assert held_news_instrument_uids(
+        replace(observed, portfolio=replace(observed.portfolio, positions=(closed,))),
+    ) == frozenset()
 
 
 def test_unknown_rating_stays_data_missing_even_with_fresh_fundamentals() -> None:
