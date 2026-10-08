@@ -94,6 +94,7 @@ jobs:
         shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: '"%OMNICIO_PYTHON%" .github\scripts\verify_main_release.py'
 
       - name: Validate Timeweb secret
