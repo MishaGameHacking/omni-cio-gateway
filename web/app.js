@@ -5266,7 +5266,7 @@
       open: picker.open, target: active.dataset.screen || null};
   }
   function restoreScreenMenuFocus(saved) {
-    if (!saved || !saved.root.isConnected || saved.root.hidden || saved.root.dataset.screen !== saved.screen) return;
+    if (!saved?.root.isConnected || saved.root.hidden || saved.root.dataset.screen !== saved.screen) return;
     const picker = $(".screen-menu-picker", saved.root);
     if (!picker) return;
     const compact = picker.dataset.compact === "true";
