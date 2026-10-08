@@ -71,7 +71,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: auth-postgres
+  group: auth-postgres-${{ github.event.pull_request.number || 'production' }}
   cancel-in-progress: false
 
 jobs:
