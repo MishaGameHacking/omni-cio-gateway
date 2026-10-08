@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from contextlib import closing
+from datetime import datetime
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -19,7 +20,15 @@ FOUNDATION_PATH = ".github/workflows/auth-foundation-ci.yml"
 APPLICATION_PATH = ".github/workflows/auth-app-deploy.yml"
 APPLICATION_TEST_JOB = "Test auth deployer"
 SONAR_PROJECT = "MishaGameHacking_omni-cio-gateway"
+SONAR_ANALYSES_PATH = (
+    f"/api/project_analyses/search?project={SONAR_PROJECT}&branch=main&p=1&ps=1"
+)
+SONAR_ISSUES_PATH = (
+    f"/api/issues/search?componentKeys={SONAR_PROJECT}&branch=main"
+    "&issueStatuses=OPEN,CONFIRMED,ACCEPTED&p=1&ps=1"
+)
 MAX_RESPONSE_BYTES = 2_000_000
+RELEASE_TIMEOUT = "Timed out waiting for accepted main checks"
 
 
 class ReleaseBlocked(RuntimeError):
@@ -30,45 +39,52 @@ class PendingChecks(RuntimeError):
     """The exact main checks have not completed yet."""
 
 
+def request_json(
+    host: str, path: str, headers: dict[str, str], *, deadline: float, label: str,
+) -> Any:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise ReleaseBlocked(RELEASE_TIMEOUT)
+    try:
+        with closing(http.client.HTTPSConnection(
+            host, timeout=min(15, remaining),
+        )) as connection:
+            connection.request("GET", path, headers=headers)
+            response = connection.getresponse()
+            # Redirects are never followed, so credentials stay on their fixed host.
+            if response.status in {408, 429} or 500 <= response.status <= 599:
+                raise PendingChecks(f"{label} verification is temporarily unavailable")
+            if response.status != 200:
+                raise ReleaseBlocked(
+                    f"{label} did not return verification data (HTTP {response.status})"
+                )
+            body = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise ReleaseBlocked(f"{label} verification response is too large")
+            if time.monotonic() >= deadline:
+                raise ReleaseBlocked(RELEASE_TIMEOUT)
+            try:
+                return json.loads(body)
+            except ValueError:
+                raise ReleaseBlocked(f"{label} verification response is malformed") from None
+    except PendingChecks:
+        raise
+    except (OSError, http.client.HTTPException):
+        raise PendingChecks(f"{label} verification is temporarily unavailable") from None
+
+
 class GitHubClient:
     def __init__(self, token: str, *, deadline: float) -> None:
         self.token = token
         self.deadline = deadline
 
     def _request(self, path: str) -> Any:
-        remaining = self.deadline - time.monotonic()
-        if remaining <= 0:
-            raise ReleaseBlocked("Timed out waiting for accepted main checks")
-        try:
-            with closing(http.client.HTTPSConnection(
-                "api.github.com", timeout=min(15, remaining),
-            )) as connection:
-                connection.request("GET", f"/repos/{REPOSITORY}{path}", headers={
-                    "Accept": "application/vnd.github+json",
-                    "Authorization": f"Bearer {self.token}",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                    "User-Agent": "omnicio-release-gate/1.0",
-                })
-                response = connection.getresponse()
-                # Do not follow redirects or forward credentials to another host.
-                if response.status in {408, 429} or 500 <= response.status <= 599:
-                    raise PendingChecks("GitHub verification is temporarily unavailable")
-                if response.status != 200:
-                    raise ReleaseBlocked("GitHub did not return verification data")
-                body = response.read(MAX_RESPONSE_BYTES + 1)
-                if len(body) > MAX_RESPONSE_BYTES:
-                    raise ReleaseBlocked("GitHub verification response is too large")
-                try:
-                    data = json.loads(body)
-                except ValueError:
-                    raise ReleaseBlocked(
-                        "GitHub verification response is malformed"
-                    ) from None
-        except PendingChecks:
-            raise
-        except (OSError, http.client.HTTPException):
-            raise PendingChecks("GitHub verification is temporarily unavailable") from None
-        return data
+        return request_json("api.github.com", f"/repos/{REPOSITORY}{path}", {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {self.token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "omnicio-release-gate/1.0",
+        }, deadline=self.deadline, label="GitHub")
 
     def get(self, path: str) -> dict[str, Any]:
         data = self._request(path)
@@ -94,6 +110,88 @@ class GitHubClient:
             if len(batch) < 100:
                 return rows
         raise ReleaseBlocked("GitHub verification pagination limit exceeded")
+
+
+class SonarClient:
+    """Read overall evidence on the fixed EU project; never reuse GitHub auth."""
+
+    def __init__(self, token: str, *, deadline: float) -> None:
+        if token and re.fullmatch(r"[\x21-\x7e]{1,512}", token) is None:
+            raise ReleaseBlocked("SonarCloud verification token is malformed")
+        self.token = token
+        self.deadline = deadline
+
+    def get(self, path: str) -> dict[str, Any]:
+        if path not in {SONAR_ANALYSES_PATH, SONAR_ISSUES_PATH}:
+            raise ReleaseBlocked("SonarCloud verification scope is invalid")
+        headers = {
+            "Accept": "application/json", "Cache-Control": "no-cache",
+            "User-Agent": "omnicio-release-gate/1.0",
+        }
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        data = request_json(
+            "sonarcloud.io", path, headers, deadline=self.deadline, label="SonarCloud",
+        )
+        if not isinstance(data, dict):
+            raise ReleaseBlocked("SonarCloud verification response is not an object")
+        return data
+
+
+def sonar_first_page(data: dict[str, Any], key: str) -> tuple[int, list[dict[str, Any]]]:
+    """Validate the API's total, not the size of a possibly truncated page."""
+    paging = data.get("paging")
+    if not isinstance(paging, dict):
+        raise ReleaseBlocked("SonarCloud inventory paging is missing")
+    for field in ("pageIndex", "pageSize", "total"):
+        if type(paging.get(field)) is not int:
+            raise ReleaseBlocked("SonarCloud inventory paging is malformed")
+    if paging["pageIndex"] != 1 or paging["pageSize"] != 1 or paging["total"] < 0:
+        raise ReleaseBlocked("SonarCloud inventory page does not match its request")
+    # V1 may include these deprecated aliases; contradictory counts cannot pass.
+    for old, current in (("p", "pageIndex"), ("ps", "pageSize"), ("total", "total")):
+        if old in data and (type(data[old]) is not int or data[old] != paging[current]):
+            raise ReleaseBlocked("SonarCloud inventory totals are inconsistent")
+    rows = data.get(key)
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise ReleaseBlocked("SonarCloud inventory list is malformed")
+    if len(rows) != min(paging["total"], 1):
+        raise ReleaseBlocked("SonarCloud inventory list is incomplete")
+    return paging["total"], rows
+
+
+def current_sonar_analysis(client: SonarClient, sha: str) -> tuple[str, str, str]:
+    """The API sorts processed analyses newest first; a PR result is not queried."""
+    _, analyses = sonar_first_page(client.get(SONAR_ANALYSES_PATH), "analyses")
+    if not analyses:
+        raise PendingChecks("Waiting for SonarCloud overall main analysis")
+    analysis = analyses[0]
+    key, revision, date = (analysis.get(field) for field in ("key", "revision", "date"))
+    if not isinstance(key, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", key) is None:
+        raise ReleaseBlocked("SonarCloud analysis identity is malformed")
+    if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise ReleaseBlocked("SonarCloud analysis is missing a valid source revision")
+    if not isinstance(date, str):
+        raise ReleaseBlocked("SonarCloud analysis date is missing")
+    try:
+        timestamp = datetime.fromisoformat(date)
+    except ValueError:
+        raise ReleaseBlocked("SonarCloud analysis date is malformed") from None
+    if timestamp.tzinfo is None:
+        raise ReleaseBlocked("SonarCloud analysis date has no time zone")
+    if revision != sha:
+        raise PendingChecks("Waiting for SonarCloud overall analysis of the exact main SHA")
+    return key, revision, date
+
+
+def require_overall_sonar(client: SonarClient, sha: str) -> None:
+    before = current_sonar_analysis(client, sha)
+    # No new-code/date/assignee/rule filter: even one older or accepted issue blocks.
+    total, _ = sonar_first_page(client.get(SONAR_ISSUES_PATH), "issues")
+    if total != 0:
+        raise ReleaseBlocked("SonarCloud overall main has Open, Confirmed or Accepted issues")
+    if current_sonar_analysis(client, sha) != before:
+        raise PendingChecks("SonarCloud main analysis changed during inventory verification")
 
 
 def sonar_scope(check: dict[str, Any]) -> str:
@@ -166,7 +264,7 @@ def require_clean_sonar_output(check: dict[str, Any]) -> None:
         )
 
 
-def require_sonar(checks: list[dict[str, Any]], sha: str) -> None:
+def require_sonar(checks: list[dict[str, Any]], sha: str) -> tuple[int, str]:
     candidates = [
         check for check in checks
         if check.get("head_sha") == sha
@@ -181,6 +279,10 @@ def require_sonar(checks: list[dict[str, Any]], sha: str) -> None:
         raise PendingChecks("Waiting for unambiguous main SonarCloud analysis")
     require_success(check, "Main SonarCloud analysis")
     require_clean_sonar_output(check)
+    completed_at = check.get("completed_at")
+    if not isinstance(completed_at, str) or not completed_at:
+        raise ReleaseBlocked("SonarCloud check completion identity is missing")
+    return check["id"], completed_at
 
 
 def latest_push_run(
@@ -252,31 +354,46 @@ def require_current_main(client: GitHubClient, sha: str) -> None:
         raise ReleaseBlocked("Release SHA is no longer the current main")
 
 
-def verify(client: GitHubClient, sha: str) -> None:
+def verify(client: GitHubClient, sha: str, sonar: SonarClient) -> None:
     require_current_main(client, sha)
     # filter=all is essential: a later PR analysis can hide main's failed check.
     checks = client.collect(f"/commits/{sha}/check-runs?filter=all", "check_runs")
-    require_sonar(checks, sha)
+    sonar_check = require_sonar(checks, sha)
     runs = client.collect(
         f"/actions/workflows/auth-foundation-ci.yml/runs?event=push&head_sha={sha}",
         "workflow_runs",
     )
     require_foundation(runs, sha)
     require_application_tests(client, sha)
+    require_overall_sonar(sonar, sha)
+    current_checks = client.collect(f"/commits/{sha}/check-runs?filter=all", "check_runs")
+    if require_sonar(current_checks, sha) != sonar_check:
+        raise PendingChecks("SonarCloud main check changed during inventory verification")
     require_current_main(client, sha)
 
 
-def wait_for_release(client: GitHubClient, sha: str) -> None:
+def wait_for_release(client: GitHubClient, sha: str, sonar: SonarClient) -> None:
     while True:
         try:
-            verify(client, sha)
+            verify(client, sha, sonar)
             return
         except PendingChecks as exc:
             remaining = client.deadline - time.monotonic()
             if remaining <= 0:
-                raise ReleaseBlocked("Timed out waiting for accepted main checks") from None
+                raise ReleaseBlocked(RELEASE_TIMEOUT) from None
             print(str(exc), flush=True)
             time.sleep(min(15, remaining))
+
+
+def wait_for_main_release(sha: str, github_token: str, *, timeout: int = 900) -> None:
+    """Every production caller uses the full gate and separate Sonar credentials."""
+    deadline = time.monotonic() + timeout
+    client = GitHubClient(github_token, deadline=deadline)
+    sonar_token = os.environ.get("SONAR_TOKEN", "")
+    if sonar_token and sonar_token == github_token:
+        raise ReleaseBlocked("SonarCloud verification must not reuse the GitHub token")
+    sonar = SonarClient(sonar_token, deadline=deadline)
+    wait_for_release(client, sha, sonar)
 
 
 def release_context() -> tuple[str, str]:
@@ -329,8 +446,7 @@ def main() -> int:
         sha, token = release_context()
         require_checkout(sha)
         # Cover the 12-minute application check plus runner startup and cleanup.
-        client = GitHubClient(token, deadline=time.monotonic() + 900)
-        wait_for_release(client, sha)
+        wait_for_main_release(sha, token)
     except ReleaseBlocked as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
