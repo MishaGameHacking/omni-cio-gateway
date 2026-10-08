@@ -1222,7 +1222,7 @@ async function deletedDraftContracts() {
   }
   console.log("PASS deleted drafts: delayed goal ACK, goal/plan and memory ownership, confirmed responses, generation changes and preserved unrelated input");
 }
-async function nativeDialogProtocolContracts() {
+async function browserProtocolContracts() {
   const source = readFileSync(join(root, "tests", "frontend-smoke.cjs"), "utf8");
   const from = source.indexOf("\nconst protocolClient = async url => {") + 1;
   const to = source.indexOf("\nconst runBrowser =", from);
@@ -1234,8 +1234,9 @@ async function nativeDialogProtocolContracts() {
     send(value) { this.sent.push(JSON.parse(value)); }
     close() {}
   }
-  const context = vm.createContext({WebSocket: SyntheticSocket, setTimeout, clearTimeout});
-  vm.runInContext(source.slice(from, to) + "\nglobalThis.connect=protocolClient;", context);
+  let protocolNow = 0;
+  const context = vm.createContext({WebSocket: SyntheticSocket, setTimeout, clearTimeout, performance: {now: () => protocolNow}, until: (read, label) => until(read, label, 6)});
+  vm.runInContext(source.slice(from, to) + "\nglobalThis.connect=protocolClient;globalThis.session=browserSession;", context);
   const client = await context.connect("ws://synthetic.invalid");
   const navigate = client.send("Page.navigate", {url: "http://127.0.0.1/?case=next"}, "target");
   const stopped = assert.rejects(navigate, error => error.code === "unexpected_native_dialog" && error.dialog.type === "beforeunload" && error.message.includes("Page.navigate"));
@@ -1247,8 +1248,86 @@ async function nativeDialogProtocolContracts() {
   socket.emit("message", {data: JSON.stringify({id: socket.sent.at(-1).id, result: {}})});
   await close;
   assert.deepEqual(socket.sent.map(item => item.method), ["Page.navigate", "Browser.close"], "Diagnostics neither evaluate a blocked renderer nor accept or dismiss native dialogs");
+  socket.emit("message", {data: JSON.stringify({method: "Page.javascriptDialogClosed", sessionId: "target"})});
+  const read = client.send("Runtime.evaluate", {expression: "document.readyState"}, "target");
+  const rejected = assert.rejects(read, error => error.method === "Runtime.evaluate" && error.code === -32000 && error.protocolMessage === "Inspected target navigated or closed");
+  socket.emit("message", {data: JSON.stringify({id: socket.sent.at(-1).id, error: {code: -32000, message: "Inspected target navigated or closed"}})});
+  await rejected;
+  assert.equal(socket.sent.filter(item => item.method === "Runtime.evaluate").length, 1, "The transport never replays an evaluation");
+  await assert.rejects(client.send("Runtime.evaluate", {expression: "document.readyState"}, "target", 5), /CDP timeout: Runtime.evaluate/, "A stalled read respects the remaining navigation budget");
+  assert.equal(socket.sent.filter(item => item.method === "Runtime.evaluate").length, 2, "A read timeout cannot replay its command");
   client.close();
-  console.log("PASS native dialog diagnostics: exact event metadata, immediate target failure and safe browser cleanup without acceptance");
+  for (const method of ["Page.navigate", "Page.reload"]) {
+    let frames = 0, reads = 0, actions = 0;
+    const navigationParams = method === "Page.navigate" ? {url: "http://127.0.0.1/?case=next"} : {ignoreCache: true};
+    const send = context.session({send: async (command, params, sessionId) => {
+      assert.equal(sessionId, "target");
+      if (command === "Page.getFrameTree") return {frameTree: {frame: {id: "main", loaderId: ++frames < 3 ? "old" : "new"}}};
+      if (command === method) { assert.deepEqual(params, navigationParams); actions += 1; return {frameId: "main", loaderId: "new"}; }
+      assert.equal(command, "Runtime.evaluate");
+      assert.equal(params.expression, "document.readyState", "Only a fixed read-only readiness expression may be retried");
+      reads += 1;
+      if (reads === 1) throw Object.assign(new Error("Context changed"), {method: command, code: -32000, protocolMessage: "Inspected target navigated or closed"});
+      return {result: {value: reads === 2 ? "loading" : "interactive"}};
+    }}, "target");
+    await send(method, navigationParams);
+    assert.equal(actions, 1, "Navigation is issued once while the new document becomes readable");
+    assert.equal(reads, 3, "A changed loader alone cannot acknowledge a loading document");
+  }
+  const sameDocumentCalls = [];
+  const sameDocument = context.session({send: async command => {
+    sameDocumentCalls.push(command);
+    return command === "Page.getFrameTree" ? {frameTree: {frame: {id: "main", loaderId: "same"}}} : {};
+  }}, "target");
+  await sameDocument("Page.navigate", {url: "http://127.0.0.1/#next"});
+  assert.deepEqual(sameDocumentCalls, ["Page.getFrameTree", "Page.navigate"], "Same-document navigation does not wait for a nonexistent new loader");
+  for (const failure of [
+    {navigation: {errorText: "net::ERR_CONNECTION_REFUSED"}, message: /did not open a document/},
+    {navigation: {isDownload: true}, message: /did not open a document/},
+    {frame: {id: "other", loaderId: "new"}, message: /changed the inspected main frame/},
+    {frame: {id: "main"}, message: /loader identity is missing/},
+    {frame: {id: "main", loaderId: ""}, message: /loader identity is missing/},
+    {evaluation: {exceptionDetails: {text: "Context unavailable"}}, message: /readiness evaluation failed/},
+    {evaluation: {result: {value: null}}, message: /readiness is missing/}
+  ]) {
+    let frames = 0, actions = 0, reads = 0;
+    const failed = context.session({send: async command => {
+      if (command === "Page.getFrameTree") return {frameTree: {frame: ++frames === 1 ? {id: "main", loaderId: "old"} : failure.frame || {id: "main", loaderId: "new"}}};
+      if (command === "Page.navigate") { actions += 1; return failure.navigation || {frameId: "main", loaderId: "new"}; }
+      assert.equal(command, "Runtime.evaluate");
+      reads += 1;
+      return failure.evaluation || {result: {value: "interactive"}};
+    }}, "target");
+    await assert.rejects(failed("Page.navigate", {url: "http://127.0.0.1/?case=invalid"}), failure.message);
+    assert.equal(actions, 1, "Invalid navigation evidence cannot replay the action");
+    assert.equal(reads, failure.evaluation ? 1 : 0, "Malformed navigation, frame or readiness evidence fails immediately");
+  }
+  let actions = 0;
+  const unchanged = context.session({send: async command => {
+    if (command === "Page.getFrameTree") return {frameTree: {frame: {id: "main", loaderId: "old"}}};
+    actions += 1;
+    return {loaderId: "new"};
+  }}, "target");
+  await assert.rejects(unchanged("Page.reload"), /Timed out: New document after Page.reload/);
+  assert.equal(actions, 1, "An unchanged document times out without replaying the reload");
+  for (const failure of [new Error("Application read failed"), Object.assign(new Error("Other protocol error"), {method: "Runtime.evaluate", code: -32000, protocolMessage: "Other failure"})]) {
+    let frames = 0;
+    const failed = context.session({send: async command => {
+      if (command === "Page.getFrameTree") return {frameTree: {frame: {id: "main", loaderId: ++frames === 1 ? "old" : "new"}}};
+      if (command === "Page.reload") return {};
+      throw failure;
+    }}, "target");
+    await assert.rejects(failed("Page.reload"), error => error === failure, "Other errors are never treated as pending navigation");
+  }
+  const budgets = [];
+  const expired = context.session({send: async (command, params, sessionId, timeout) => {
+    budgets.push(timeout);
+    protocolNow += 8000;
+    return command === "Page.getFrameTree" ? {frameTree: {frame: {id: "main", loaderId: "old"}}} : {};
+  }}, "target");
+  await assert.rejects(expired("Page.reload"), /Timed out: New document after Page.reload/);
+  assert.deepEqual(budgets, [15000, 7000], "Slow commands share one deadline and no request starts after it");
+  console.log("PASS browser protocol: native dialog failure, exact command diagnostics, new-document acknowledgement, same-document navigation, bounded read-only retry and no action replay");
 }
 function goalVersionContracts(ui) {
   const known = [{
@@ -1912,18 +1991,18 @@ const protocolClient = async url => {
     if (!waiter) return;
     pending.delete(message.id);
     clearTimeout(waiter.timer);
-    if (message.error) waiter.reject(new Error(JSON.stringify(message.error)));else waiter.done(message.result);
+    if (message.error) waiter.reject(Object.assign(new Error(`CDP ${waiter.method}: ${message.error.message}`), {method: waiter.method, code: message.error.code, protocolMessage: message.error.message}));else waiter.done(message.result);
   });
   return {
     get nativeDialog() { return nativeDialog; },
-    send(method, params = {}, sessionId) {
+    send(method, params = {}, sessionId, timeout = 15000) {
       if (nativeDialog && nativeDialog.sessionId === sessionId && method !== "Browser.close") return Promise.reject(dialogError(method));
       return new Promise((done, reject) => {
         const id = ++sequence;
         const timer = setTimeout(() => {
           pending.delete(id);
           reject(new Error("CDP timeout: " + method));
-        }, 15000);
+        }, timeout);
         pending.set(id, {
           method,
           sessionId,
@@ -1941,6 +2020,37 @@ const protocolClient = async url => {
     },
     close: () => socket.close()
   };
+};
+const browserSession = (client, sessionId) => async (method, params = {}) => {
+  if (!["Page.navigate", "Page.reload"].includes(method)) return client.send(method, params, sessionId);
+  const label = "New document after " + method;
+  const deadline = performance.now() + 15000;
+  const command = (name, options = {}) => {
+    const remaining = deadline - performance.now();
+    if (remaining <= 0) throw new Error("Timed out: " + label);
+    return client.send(name, options, sessionId, remaining);
+  };
+  const previous = (await command("Page.getFrameTree")).frameTree.frame;
+  if (!previous.id || typeof previous.loaderId !== "string") throw new Error("Main frame identity is missing");
+  const result = await command(method, params);
+  if (result.errorText || result.isDownload) throw new Error(`${method} did not open a document: ${result.errorText || "download"}`);
+  if (method === "Page.navigate" && !result.loaderId) return result;
+  await until(async () => {
+    const current = (await command("Page.getFrameTree")).frameTree.frame;
+    if (current.id !== (result.frameId || previous.id)) throw new Error("Navigation changed the inspected main frame");
+    if (current.loaderId === previous.loaderId) return false;
+    if (typeof current.loaderId !== "string" || !current.loaderId) throw new Error("New document loader identity is missing");
+    try {
+      const document = await command("Runtime.evaluate", {expression: "document.readyState", returnByValue: true, awaitPromise: false});
+      if (document.exceptionDetails) throw new Error("Document readiness evaluation failed: " + document.exceptionDetails.text);
+      if (!["loading", "interactive", "complete"].includes(document.result?.value)) throw new Error("Document readiness is missing");
+      return document.result.value !== "loading";
+    } catch (error) {
+      if (error.method === "Runtime.evaluate" && error.code === -32000 && error.protocolMessage === "Inspected target navigated or closed") return false;
+      throw error;
+    }
+  }, label);
+  return result;
 };
 const runBrowser = async base => {
   const candidates = [process.env.OMNICIO_TEST_BROWSER, "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser", "C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:/Program Files/Microsoft/Edge/Application/msedge.exe"].filter(Boolean);
@@ -1979,7 +2089,7 @@ const runBrowser = async base => {
       targetId: target.targetId,
       flatten: true
     });
-    const send = (method, params = {}) => client.send(method, params, sessionId);
+    const send = browserSession(client, sessionId);
     let requestedViewport = null;
     const configureViewport = async (width, height = 900) => {
       const params = {
@@ -2206,7 +2316,7 @@ const runBrowser = async base => {
     await pushBindingReceiptContracts();
     await pushPermissionReadFailureContracts();
     await deletedDraftContracts();
-    await nativeDialogProtocolContracts();
+    await browserProtocolContracts();
     styleContracts();
     await workerContract();
     await new Promise(done => server.listen(0, "127.0.0.1", done));
