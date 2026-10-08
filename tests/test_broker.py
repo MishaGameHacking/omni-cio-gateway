@@ -1757,9 +1757,13 @@ def test_account_evidence_is_discarded_after_credentials_change(operation, provi
         user_id=user_id, credential="t.fake-owner-credential-1234567890", environment="prod",
         account_id="account-1", terms_version="2026-10-01-v2",
     )
+    replacement_credential = Fernet(service.credential_key.encode()).encrypt(
+        b"synthetic-replacement-credential"
+    )
 
     def replace_credential(*args, **kwargs):
-        database.record = replace(database.record, verified_at=datetime.now(UTC))
+        # Equal clock ticks must not hide an actual credential replacement.
+        database.record = replace(database.record, encrypted_credential=replacement_credential)
         return provider.accounts if operation == "revalidate_account" else Mock()
 
     arguments = ({"from_at": datetime(2026, 1, 1, tzinfo=UTC), "to_at": datetime.now(UTC)}
