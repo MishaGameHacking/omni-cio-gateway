@@ -15,7 +15,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 
 from cryptography.fernet import Fernet
 from psycopg.conninfo import make_conninfo
@@ -32,7 +31,7 @@ from timeweb_recovery import (
     verify_logical_archive,
 )
 from timeweb_ssh_trust import managed_server_identity, trusted_host_entry
-from verify_main_release import GitHubClient, release_context, require_checkout, wait_for_release
+from verify_main_release import release_context, require_checkout, wait_for_main_release
 
 from omnicio.recovery import sign_recovery_evidence
 
@@ -45,7 +44,7 @@ def authorize() -> tuple[str, str]:
         raise RecoveryBlocked("An explicit accepted-main restore-drill dispatch is required")
     sha, token = release_context()
     require_checkout(sha)
-    wait_for_release(GitHubClient(token, deadline=time.monotonic() + 600), sha)
+    wait_for_main_release(sha, token, timeout=600)
     return sha, token
 
 
@@ -134,7 +133,7 @@ def main() -> int:
     _private_json("restore-verification.json", receipt)
     # Refuse an obsolete source checkout before touching operational runtime state.
     require_checkout(sha)
-    wait_for_release(GitHubClient(token, deadline=time.monotonic() + 600), sha)
+    wait_for_main_release(sha, token, timeout=600)
     with EphemeralSsh(client=client, server_id=managed_id, server_ip=managed_ip) as ssh:
         install_restore_receipt(ssh, receipt, sha)
     print("Logical restore proof verified and installed; "
