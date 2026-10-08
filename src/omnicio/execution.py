@@ -365,6 +365,19 @@ def _planned_order_leg(
     }
 
 
+def _projected_liquidity_blockers(
+    projected_lots: Mapping[str, int],
+    candidates: Mapping[str, StrategyCandidateFacts],
+    sizing: _OrderSizing,
+) -> list[str]:
+    blockers = []
+    for uid, count in projected_lots.items():
+        candidate = candidates.get(uid)
+        if candidate is not None and count > _execution_volume_capacity(candidate, sizing)[1]:
+            blockers.append("liquidity_horizon:" + uid)
+    return blockers
+
+
 def strategy_order_plan(
     document: Mapping[str, Any],
     candidates: Sequence[StrategyCandidateFacts],
@@ -453,10 +466,7 @@ def strategy_order_plan(
         if count
     }
     blockers = candidate_weight_constraints(document, candidates, projected_weights, as_of=now)
-    for uid, count in projected.items():
-        candidate = by_uid.get(uid)
-        if candidate is not None and count > _execution_volume_capacity(candidate, sizing)[1]:
-            blockers.append("liquidity_horizon:" + uid)
+    blockers.extend(_projected_liquidity_blockers(projected, by_uid, sizing))
     if available < reserve:
         blockers.append("cash_reserve")
     return {

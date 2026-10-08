@@ -532,10 +532,11 @@ def test_historical_result_cannot_override_an_unavailable_or_expired_current_sel
     else:
         offset = timedelta(days=-2) if current == "stale" else timedelta(hours=1)
         result["current_selection"]["as_of"] = (datetime.now(UTC) + offset).isoformat()
+    commission, slippage = Decimal(10), Decimal(0)
     with pytest.raises(ExecutionServiceError, match="execution_current_research_required"):
         service.plan(
             owner, expected_version=1, research_run_id=archive_id, session_digest=DIGEST,
-            commission_bps=Decimal(10), slippage_bps=Decimal(0),
+            commission_bps=commission, slippage_bps=slippage,
         )
     broker.observation_bundle.assert_not_called()
     broker.candidate_order_book.assert_not_called()
@@ -554,10 +555,11 @@ def test_execution_revalidates_archived_evidence_before_current_candidate_arithm
             "time": asset["candles"][1]["time"], "ratio": "0",
             "source_url": "https://synthetic.example",
         }]
+    commission, slippage = Decimal(10), Decimal(0)
     with pytest.raises(ExecutionServiceError, match="execution_current_research_required"):
         service.plan(
             owner, expected_version=1, research_run_id=archive_id, session_digest=DIGEST,
-            commission_bps=Decimal(10), slippage_bps=Decimal(0),
+            commission_bps=commission, slippage_bps=slippage,
         )
     broker.observation_bundle.assert_not_called()
     broker.candidate_order_book.assert_not_called()
@@ -580,10 +582,11 @@ def test_fresh_archive_timestamps_cannot_make_stale_provider_candles_current_for
         # which the daily-history arithmetic correctly excludes until day end.
         opening = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         candles.append({**candles[-1], "time": opening.isoformat(), "is_complete": True})
+    commission, slippage = Decimal(10), Decimal(0)
     with pytest.raises(ExecutionServiceError, match="execution_current_research_required"):
         service.plan(
             owner, expected_version=1, research_run_id=archive_id, session_digest=DIGEST,
-            commission_bps=Decimal(10), slippage_bps=Decimal(0),
+            commission_bps=commission, slippage_bps=slippage,
         )
     broker.observation_bundle.assert_not_called()
     broker.candidate_order_book.assert_not_called()

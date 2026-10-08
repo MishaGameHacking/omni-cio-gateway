@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import random
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from decimal import ROUND_CEILING, Decimal
@@ -457,7 +456,7 @@ def research_history_candidate(
     reasons = _asset_reasons(asset, begin, as_of)
     reasons.extend(_cashflow_reasons(asset.observed_cashflows))
     if reasons:
-        raise ValueError(sorted(set(reasons))[0])
+        raise ValueError(min(reasons))
     bars = _validated_bars(asset, begin, as_of)
     if len(bars) < MIN_TRAIN_OBSERVATIONS:
         raise ValueError("insufficient_training_history")
@@ -718,12 +717,10 @@ def _apply_rebalance(
             delta = targets[uid]
             if (delta > 0) != (side > 0) or delta == 0:
                 continue
-            if side == 1 and current_math:
-                cap_lots = int(
-                    buying_nav_floor * weights[uid] / 100
-                    / (opening_prices[uid] * asset.candidate.lot_size)
-                )
-                delta = min(delta, max(0, cap_lots - state.lots[uid]))
+            delta, allocation_target = _rebalance_order_target(
+                state, asset, delta, weights[uid], opening_prices[uid], buying_nav_floor,
+                current_math=current_math,
+            )
             turnover -= _order(
                 state,
                 uid,
@@ -736,11 +733,32 @@ def _apply_rebalance(
                     asset, panel[uid], session, participation, current_math=current_math
                 ),
                 costs=costs,
-                allocation_target=(buying_nav_floor * weights[uid] / 100)
-                if current_math and not state.risk_stopped else None,
+                allocation_target=allocation_target,
                 minimum_effect=_decimal(document["policy"]["min_replace_benefit_rub"] or "0"),
                 turnover_includes_commission=current_math,
             )
+
+
+def _rebalance_order_target(
+    state: _Simulation,
+    asset: ResearchAsset,
+    delta: int,
+    weight: Decimal,
+    opening_price: Decimal,
+    nav_floor: Decimal,
+    *,
+    current_math: bool,
+) -> tuple[int, Decimal | None]:
+    """Bound buys by opening value and retain the final-fill allocation target."""
+    if not current_math:
+        return delta, None
+    allocation_target = nav_floor * weight / 100
+    if delta > 0:
+        cap_lots = int(allocation_target / (opening_price * asset.candidate.lot_size))
+        delta = min(delta, max(0, cap_lots - state.lots[asset.candidate.instrument_uid]))
+    if state.risk_stopped:
+        return delta, None
+    return delta, allocation_target
 
 
 def _session_volume_limit(
@@ -953,6 +971,37 @@ def _percentile(values: Sequence[Decimal], probability: Decimal) -> Decimal:
     return values[lower] + (values[upper] - values[lower]) * (index - lower)
 
 
+def _bootstrap_words(seed: str) -> Iterator[int]:
+    """Domain-separated SHA-256 counter stream for local statistical resampling.
+
+    The public seed identifies the observed data and window size. Fixed byte
+    order and a counter make the resampling reproducible across Python runtimes.
+    """
+    prefix = hashlib.sha256(b"omnicio-stationary-bootstrap-v1\x00" + seed.encode()).digest()
+    counter = 0
+    while True:
+        digest = hashlib.sha256(prefix + counter.to_bytes(8, "big")).digest()
+        counter += 1
+        for offset in range(0, len(digest), 8):
+            yield int.from_bytes(digest[offset:offset + 8], "big")
+
+
+def _bootstrap_index(words: Iterator[int], size: int) -> int:
+    """Uniform index under uniform 64-bit words, with no remainder bias.
+
+    Reject the incomplete upper residue group. Each accepted index then has
+    exactly floor(2**64 / size) preimages before the modulo operation.
+    """
+    space = 1 << 64
+    if not 1 <= size <= space:
+        raise ValueError("bootstrap_sample_size_invalid")
+    ceiling = space - space % size
+    for word in words:
+        if word < ceiling:
+            return word % size
+    raise ValueError("bootstrap_word_stream_exhausted")
+
+
 def _profit_frequency_interval(
     gains: Sequence[Decimal], *, seed: str, risk_stopped: bool,
 ) -> dict[str, Any]:
@@ -974,6 +1023,7 @@ def _profit_frequency_interval(
         "replicates": _BOOTSTRAP_REPLICATES,
         "expected_block_length_windows": block_length,
         "block_length_selection": "ceiling_cube_root_window_count_not_optimized",
+        "resampling_generator": "sha256_counter_64bit_rejection_v1",
         "reason": None,
         "assumption": "Стационарность и слабая временная зависимость внутри выбранного "
         "периода; интервал не учитывает смену режима и ошибку выбора модели.",
@@ -987,14 +1037,14 @@ def _profit_frequency_interval(
     if min(indicators) == max(indicators):
         result["reason"] = "no_profit_indicator_variation"
         return result
-    rng = random.Random(seed)  # reproducible research, not authentication or order randomness
+    words = _bootstrap_words(seed)
     totals = []
     for _ in range(_BOOTSTRAP_REPLICATES):
-        position = rng.randrange(count)
+        position = _bootstrap_index(words, count)
         wins = indicators[position]
         for _ in range(1, count):
-            if rng.randrange(block_length) == 0:
-                position = rng.randrange(count)
+            if _bootstrap_index(words, block_length) == 0:
+                position = _bootstrap_index(words, count)
             else:
                 position = (position + 1) % count
             wins += indicators[position]
@@ -1090,10 +1140,11 @@ def _historical_outcomes(
         for row in rows:
             row["reason"] = "cash_only_no_market_observations"
     computed = sum(row["status"] == "computed" for row in rows)
+    status = "computed"
+    if computed < len(rows):
+        status = "partial" if computed else "insufficient_data"
     return {
-        "status": "computed" if computed == len(rows) else (
-            "partial" if computed else "insufficient_data"
-        ),
+        "status": status,
         "method": "non_overlapping_held_out_net_strategy_nav",
         "source": "no_market_observations_cash_model" if result["basis"] == "cash_balance_model"
         else "executed_strategy_equity_curve",
@@ -1221,54 +1272,60 @@ def _prepare_research_assets(
     diagnostics: list[dict[str, Any]] = []
     clean_assets = []
     for asset in assets:
-        reasons = _asset_reasons(asset, from_at, to_at)
-        if engine_version == RESEARCH_ENGINE_VERSION:
-            reasons.extend(_cashflow_reasons(asset.observed_cashflows))
-        try:
-            bars = _validated_bars(asset, from_at, to_at)
-        except ValueError as exc:
-            bars = ()
-            reasons.append(str(exc))
-        training = tuple(bar for bar in bars if split - bar.time >= _DAY)
-        if len(training) < MIN_TRAIN_OBSERVATIONS:
-            reasons.append("insufficient_training_history")
-        unsafe = engine_version == RESEARCH_ENGINE_VERSION and bool(
-            set(reasons) & _MALFORMED_HISTORY_REASONS
+        clean, diagnostic = _prepare_research_asset(
+            asset, from_at, to_at, split, document, costs, engine_version
         )
-        candidate = asset.candidate
-        if not unsafe:
-            candidate = history_candidate(
-                asset.candidate,
-                split_adjusted_history(training, asset.splits, split),
-                as_of=split,
-                factors=asset.factors,
-                cashflows=asset.observed_cashflows if engine_version != "1.1.0" else (),
-                document=document,
-                costs=costs,
-            )
-        prices = [_decimal(bar.close) for bar in bars]
-        diagnostics.append(
-            {
-                "instrument_uid": asset.candidate.instrument_uid,
-                "ticker": asset.candidate.ticker,
-                "observations": len(bars),
-                "train_observations": len(training),
-                "status": "observed" if not reasons else "incomplete",
-                "reasons": sorted(set(reasons)) if engine_version == RESEARCH_ENGINE_VERSION
-                else reasons,
-                "price_return_percent": _text((prices[-1] / prices[0] - 1) * 100)
-                if prices
-                else None,
-            }
-        )
-        clean_assets.append(
-            replace(
-                asset,
-                candles=bars,
-                candidate=candidate,
-            )
-        )
+        clean_assets.append(clean)
+        diagnostics.append(diagnostic)
     return clean_assets, diagnostics
+
+
+def _prepare_research_asset(
+    asset: ResearchAsset,
+    from_at: datetime,
+    to_at: datetime,
+    split: datetime,
+    document: Mapping[str, Any],
+    costs: ResearchCosts,
+    engine_version: str,
+) -> tuple[ResearchAsset, dict[str, Any]]:
+    """Validate one series and derive its facts from the training window only."""
+    reasons = _asset_reasons(asset, from_at, to_at)
+    if engine_version == RESEARCH_ENGINE_VERSION:
+        reasons.extend(_cashflow_reasons(asset.observed_cashflows))
+    try:
+        bars = _validated_bars(asset, from_at, to_at)
+    except ValueError as exc:
+        bars = ()
+        reasons.append(str(exc))
+    training = tuple(bar for bar in bars if split - bar.time >= _DAY)
+    if len(training) < MIN_TRAIN_OBSERVATIONS:
+        reasons.append("insufficient_training_history")
+    unsafe = engine_version == RESEARCH_ENGINE_VERSION and bool(
+        set(reasons) & _MALFORMED_HISTORY_REASONS
+    )
+    candidate = asset.candidate
+    if not unsafe:
+        candidate = history_candidate(
+            asset.candidate,
+            split_adjusted_history(training, asset.splits, split),
+            as_of=split,
+            factors=asset.factors,
+            cashflows=asset.observed_cashflows if engine_version != "1.1.0" else (),
+            document=document,
+            costs=costs,
+        )
+    prices = [_decimal(bar.close) for bar in bars]
+    diagnostic = {
+        "instrument_uid": asset.candidate.instrument_uid,
+        "ticker": asset.candidate.ticker,
+        "observations": len(bars),
+        "train_observations": len(training),
+        "status": "observed" if not reasons else "incomplete",
+        "reasons": sorted(set(reasons)) if engine_version == RESEARCH_ENGINE_VERSION else reasons,
+        "price_return_percent": _text((prices[-1] / prices[0] - 1) * 100) if prices else None,
+    }
+    return replace(asset, candles=bars, candidate=candidate), diagnostic
 
 
 def _selected_evidence_requirements(
@@ -1364,6 +1421,91 @@ def _research_limitations(
     return limitations
 
 
+def _research_asset_fingerprint(asset: ResearchAsset, engine_version: str) -> dict[str, Any]:
+    """Serialize every observed input with the archived engine's provenance schema."""
+    row: dict[str, Any] = {
+        "uid": asset.candidate.instrument_uid,
+        "asset_class": asset.candidate.asset_class,
+        "currency": asset.candidate.currency,
+        "basis": asset.basis,
+        "lot_size": asset.candidate.lot_size,
+        "lot_history_verified": asset.lot_history_verified,
+        "cashflow_history_verified": asset.cashflow_history_verified,
+        "verification_source": asset.verification_source,
+        "corporate_actions": [when.isoformat() for when in asset.corporate_action_dates],
+        "constituents": [
+            [
+                row.issuer_id,
+                row.group_id,
+                row.sector,
+                str(row.weight_percent),
+                row.available_at.isoformat(),
+                row.source_url,
+            ]
+            for row in asset.candidate.constituents
+        ],
+        "bars": [
+            [bar.time.isoformat(), bar.open, bar.high, bar.low, bar.close, bar.volume_lots]
+            for bar in asset.candles
+        ],
+        "facts": {
+            key: [str(f.value), f.available_at.isoformat(), f.source_url]
+            for key, f in asset.candidate.facts.items()
+        },
+        "cashflows": [
+            [
+                e.entitlement_at.isoformat(),
+                e.paid_at.isoformat(),
+                str(e.amount_per_unit_rub),
+                e.source_url,
+                e.kind,
+            ]
+            for e in asset.cashflows
+        ],
+        "factors": [
+            [
+                row.time.isoformat(),
+                row.available_at.isoformat(),
+                str(row.growth_change),
+                str(row.inflation_change),
+                row.source_url,
+            ]
+            for row in asset.factors
+        ],
+        "splits": [
+            [row.time.isoformat(), str(row.ratio), row.source_url] for row in asset.splits
+        ],
+        "bond_valuations": [
+            [
+                row.time.isoformat(),
+                str(row.nominal_rub),
+                str(row.accrued_interest_open_rub),
+                str(row.accrued_interest_close_rub),
+                row.source_url,
+            ]
+            for row in asset.bond_valuations
+        ],
+    }
+    if engine_version != "1.1.0":
+        row["fact_history"] = {
+            key: [
+                [str(f.value), f.available_at.isoformat(), f.source_url] for f in observations
+            ]
+            for key, observations in asset.candidate.fact_history.items()
+        }
+        row["observed_cashflows"] = [
+            [
+                event.entitlement_at.isoformat(),
+                event.paid_at.isoformat(),
+                str(event.amount_per_unit_rub),
+                event.source_url,
+                event.kind,
+            ]
+            for event in asset.observed_cashflows
+        ]
+    return row
+
+
 def run_strategy_backtest(
     document: object,
     assets: Sequence[ResearchAsset],
@@ -1417,91 +1559,8 @@ def run_strategy_backtest(
         "to": to_at.isoformat(),
         "capital": _text(capital),
         "costs": [str(costs.commission_bps), str(costs.slippage_bps)],
-        "assets": [
-            {
-                "uid": asset.candidate.instrument_uid,
-                "asset_class": asset.candidate.asset_class,
-                "currency": asset.candidate.currency,
-                "basis": asset.basis,
-                "lot_size": asset.candidate.lot_size,
-                "lot_history_verified": asset.lot_history_verified,
-                "cashflow_history_verified": asset.cashflow_history_verified,
-                "verification_source": asset.verification_source,
-                "corporate_actions": [when.isoformat() for when in asset.corporate_action_dates],
-                "constituents": [
-                    [
-                        row.issuer_id,
-                        row.group_id,
-                        row.sector,
-                        str(row.weight_percent),
-                        row.available_at.isoformat(),
-                        row.source_url,
-                    ]
-                    for row in asset.candidate.constituents
-                ],
-                "bars": [
-                    [bar.time.isoformat(), bar.open, bar.high, bar.low, bar.close, bar.volume_lots]
-                    for bar in asset.candles
-                ],
-                "facts": {
-                    key: [str(f.value), f.available_at.isoformat(), f.source_url]
-                    for key, f in asset.candidate.facts.items()
-                },
-                "cashflows": [
-                    [
-                        e.entitlement_at.isoformat(),
-                        e.paid_at.isoformat(),
-                        str(e.amount_per_unit_rub),
-                        e.source_url,
-                        e.kind,
-                    ]
-                    for e in asset.cashflows
-                ],
-                "factors": [
-                    [
-                        row.time.isoformat(),
-                        row.available_at.isoformat(),
-                        str(row.growth_change),
-                        str(row.inflation_change),
-                        row.source_url,
-                    ]
-                    for row in asset.factors
-                ],
-                "splits": [
-                    [row.time.isoformat(), str(row.ratio), row.source_url] for row in asset.splits
-                ],
-                "bond_valuations": [
-                    [
-                        row.time.isoformat(),
-                        str(row.nominal_rub),
-                        str(row.accrued_interest_open_rub),
-                        str(row.accrued_interest_close_rub),
-                        row.source_url,
-                    ]
-                    for row in asset.bond_valuations
-                ],
-            }
-            for asset in clean_assets
-        ],
+        "assets": [_research_asset_fingerprint(asset, engine_version) for asset in clean_assets],
     }
-    if engine_version != "1.1.0":
-        for row, asset in zip(fingerprint["assets"], clean_assets, strict=True):
-            row["fact_history"] = {
-                key: [
-                    [str(f.value), f.available_at.isoformat(), f.source_url] for f in observations
-                ]
-                for key, observations in asset.candidate.fact_history.items()
-            }
-            row["observed_cashflows"] = [
-                [
-                    event.entitlement_at.isoformat(),
-                    event.paid_at.isoformat(),
-                    str(event.amount_per_unit_rub),
-                    event.source_url,
-                    event.kind,
-                ]
-                for event in asset.observed_cashflows
-            ]
     limitations = _research_limitations(data, selection, basis)
     result: dict[str, Any] = {
         "status": "insufficient_data",
@@ -1611,6 +1670,25 @@ def run_strategy_backtest(
             result["historical_outcomes"] = _historical_outcomes(result, data)
         return result
     times = [training_times[-1], *test_times]
+    return _simulate_research_result(
+        result, data, selected_assets, panel, times, chosen, capital, costs,
+        engine_version=engine_version,
+    )
+
+
+def _simulate_research_result(
+    result: dict[str, Any],
+    data: Mapping[str, Any],
+    selected_assets: Sequence[ResearchAsset],
+    panel: Mapping[str, Mapping[datetime, TBankHistoricCandle]],
+    times: Sequence[datetime],
+    chosen: Mapping[str, Decimal],
+    capital: Decimal,
+    costs: ResearchCosts,
+    *,
+    engine_version: str,
+) -> dict[str, Any]:
+    """Run the admitted holdout and baseline, then attach their observed results."""
     period = strategy_rule_set(data["base_preset_id"])["rebalance_sessions"]
     try:
         state = _simulate(
@@ -1634,7 +1712,7 @@ def run_strategy_backtest(
         equity_curve=state.curve,
         benchmark={
             "name": "Та же начальная корзина без перебалансировок",
-            "basis": basis,
+            "basis": result["basis"],
             "metrics": _metrics(baseline, capital),
         },
     )

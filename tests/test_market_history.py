@@ -392,7 +392,9 @@ def test_legacy_market_http_discards_results_after_session_changes(
         ]
         response = client.get(f"/api/market/{endpoint}")
     assert response.status_code == (401 if change == "revoked" else 409)
-    assert "price" not in response.json() and "key_rate" not in response.json()
+    body = response.json()
+    assert "price" not in body
+    assert "key_rate" not in body
 
 
 @pytest.mark.parametrize(

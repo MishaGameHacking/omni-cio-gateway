@@ -3,6 +3,7 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from itertools import islice
 
 import pytest
 
@@ -394,8 +395,9 @@ def test_future_window_and_nonfinite_costs_are_rejected_before_research():
 
 
 def test_out_of_range_exponent_is_rejected_without_decimal_context_overflow():
+    invalid_costs = ResearchCosts(Decimal("1e1000000"), Decimal(0))
     with pytest.raises(ValueError, match="research_decimal_invalid"):
-        run(costs=ResearchCosts(Decimal("1e1000000"), Decimal(0)))
+        run(costs=invalid_costs)
 
 
 def test_rebalance_band_and_minimum_effect_control_actual_simulated_orders():
@@ -781,15 +783,53 @@ def test_non_overlapping_outcomes_are_computed_from_executed_nav_without_future_
     assert Decimal(daily["loss_frequency_percent"]) == 50
     assert daily["from"] == result["equity_curve"][0]["time"]
     assert daily["to"] == result["equity_curve"][-1]["time"]
-    assert weekly["windows"] == 12 and monthly["windows"] == 2
+    assert weekly["windows"] == 12
+    assert monthly["windows"] == 2
     assert monthly["discarded_trailing_sessions"] == 18
     assert weekly["profit_frequency_percent"] is None
     assert monthly["profit_frequency_percent"] is None
     interval = daily["sampling_interval"]
     assert interval["method"] == "stationary_block_bootstrap_of_profit_indicators"
+    assert interval["resampling_generator"] == "sha256_counter_64bit_rejection_v1"
     assert interval["confidence"] == "0.95"
     assert Decimal(interval["lower_percent"]) < 50 < Decimal(interval["upper_percent"])
     assert outcomes == run([asset])["historical_outcomes"]
+
+
+def test_bootstrap_counter_stream_reproduces_the_data_hash_and_window_horizon():
+    from omnicio.backtest import _bootstrap_words
+
+    data_hash = "a" * 64
+    first = tuple(islice(_bootstrap_words(data_hash + ":5"), 12))
+    repeated = tuple(islice(_bootstrap_words(data_hash + ":5"), 12))
+    other_horizon = tuple(islice(_bootstrap_words(data_hash + ":21"), 12))
+    assert first == repeated
+    assert first != other_horizon
+    assert all(0 <= word < 1 << 64 for word in first)
+
+
+def test_bootstrap_index_rejects_the_incomplete_residue_group_and_handles_one_choice():
+    from omnicio.backtest import _bootstrap_index
+
+    space = 1 << 64
+    # 2**64 leaves one excess residue for three choices: the largest word must
+    # be rejected. Taking modulo directly would return 0 instead of 2 here.
+    rejected_then_valid = iter((space - 1, space - 2))
+    assert _bootstrap_index(rejected_then_valid, 3) == 2
+    one_choice = iter((0, space - 1))
+    assert _bootstrap_index(one_choice, 1) == 0
+    assert _bootstrap_index(one_choice, 1) == 0
+    full_space = iter((space - 1,))
+    assert _bootstrap_index(full_space, space) == space - 1
+
+
+@pytest.mark.parametrize("size", [0, (1 << 64) + 1])
+def test_bootstrap_index_rejects_unsupported_choice_counts(size):
+    from omnicio.backtest import _bootstrap_index
+
+    words = iter((0,))
+    with pytest.raises(ValueError, match="bootstrap_sample_size_invalid"):
+        _bootstrap_index(words, size)
 
 
 def test_constant_outcomes_do_not_get_a_falsely_certain_bootstrap_interval():

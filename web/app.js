@@ -2694,6 +2694,15 @@
     const scope = {issuer: T("Один эмитент"), group: T("Одна группа компаний"), sector: T("Один сектор")}[category] || category;
     return T("research.holdings.exposure", {scope, id: identity.join(":")});
   };
+  const strategyConfigurationRequirement = key => {
+    if (key.startsWith("policy.")) {
+      const title = policyFields().find(row => row[0] === key.slice(7))?.[1];
+      return title ? T("strategy.required_field", {field: title}) : T("Не указан необходимый предел в настройках портфеля.");
+    }
+    if (!key.startsWith("profile.")) return null;
+    const title = {reserve_rub: T("Резерв вне инвестиций"), planned_withdrawal_rub: T("Планируемый вывод"), horizon_months: T("Инвестиционный горизонт"), max_drawdown_percent: T("Допустимая просадка"), liquidity_horizon_days: T("Срок доступности денег")}[key.slice(8)];
+    return title ? T("strategy.required_field", {field: title}) : null;
+  };
   const humanRequirement = value => {
     if (value && typeof value === "object") return humanRequirement(value.title || value.reason || "");
     const key = String(value || "");
@@ -2705,14 +2714,8 @@
     if (["missing", "unverified"].includes(prefix)) return factLabels()[name] ? `${T("Не подтверждены данные:")} ${factLabels()[name]}.` : T("Не подтверждён необходимый показатель источника.");
     const allocationReason = allocationRequirement(key, prefix, name);
     if (allocationReason) return allocationReason;
-    if (key.startsWith("policy.")) {
-      const title = policyFields().find(row => row[0] === key.slice(7))?.[1];
-      return title ? T("strategy.required_field", {field: title}) : T("Не указан необходимый предел в настройках портфеля.");
-    }
-    if (key.startsWith("profile.")) {
-      const title = {reserve_rub: T("Резерв вне инвестиций"), planned_withdrawal_rub: T("Планируемый вывод"), horizon_months: T("Инвестиционный горизонт"), max_drawdown_percent: T("Допустимая просадка"), liquidity_horizon_days: T("Срок доступности денег")}[key.slice(8)];
-      if (title) return T("strategy.required_field", {field: title});
-    }
+    const configurationReason = strategyConfigurationRequirement(key);
+    if (configurationReason) return configurationReason;
     if (factLabels()[key]) return `${T("Не получены данные:")} ${factLabels()[key]}.`;
     return T("Требуется проверка условий и полноты исходных данных.");
   };
@@ -2791,7 +2794,8 @@
       }, Math.min(2147483647, Math.max(1, Date.parse(result.valid_until) - Date.now() + 1)));
     }
     const content = `<div class="assessment-metrics section-gap"><div class="assessment-metric"><span>${H("Стоимость счёта")}</span><strong>${esc(money(result.nav_rub))}</strong></div><div class="assessment-metric"><span>${H("Проверок")}</span><strong>${result.checks?.length || 0}</strong></div><div class="assessment-metric"><span>${H("Вероятность прибыли")}</span><strong>—</strong></div></div><p class="fine-print section-gap">${esc(result.probability_reason || T("Проверка ограничений не оценивает вероятность будущей прибыли."))}</p>${(result.checks || []).map(item => renderAssessmentDetailsSummary(item)).join("")}${selectionHTML(result.selection)}`;
-    return `${freshness(T("Состав T-Invest"), result.captured_at, current ? "fresh" : "stale")}${current ? content : `<p class="notice warning" data-assessment-expired>${H("strategy.assessment_expired")}</p><details><summary class="details-summary">${H("strategy.assessment_previous")}</summary>${content}</details>`}`;
+    const displayed = current ? content : `<p class="notice warning" data-assessment-expired>${H("strategy.assessment_expired")}</p><details><summary class="details-summary">${H("strategy.assessment_previous")}</summary>${content}</details>`;
+    return `${freshness(T("Состав T-Invest"), result.captured_at, current ? "fresh" : "stale")}${displayed}`;
   };
   const assessStrategy = async () => {
     if (!requireUser() || state.loading.has("assessment")) return;
@@ -2958,7 +2962,8 @@
   const researchCashProjectionHTML = result => {
     const cash = result.cash_projection;
     if (result.basis !== "cash_balance_model" || cash?.method !== "constant_nominal_cash_zero_rate_no_flows") return "";
-    return `<section class="section-gap" data-research-cash-model><h3 class="panel-title">${H("research.cash.title")}</h3><p>${H("research.cash.scope")}</p><p class="fine-print">${esc(date(cash.from))} — ${esc(date(cash.to))}</p>${infoRows([[T("research.cash.start"), money(cash.starting_cash_rub)], [T("research.cash.end"), money(cash.ending_cash_rub)], [T("research.cash.rate"), percent(cash.assumed_annual_cash_rate_percent)], [T("research.cash.required"), money(cash.required_retained_cash_rub)]])}${cash.personal_constraints_ready ? "" : `<p class="notice warning">${H("research.cash.conditions_missing")}</p>`}<p class="notice">${H("research.cash.no_observations")}</p></section>`;
+    const readiness = cash.personal_constraints_ready ? "" : `<p class="notice warning">${H("research.cash.conditions_missing")}</p>`;
+    return `<section class="section-gap" data-research-cash-model><h3 class="panel-title">${H("research.cash.title")}</h3><p>${H("research.cash.scope")}</p><p class="fine-print">${esc(date(cash.from))} — ${esc(date(cash.to))}</p>${infoRows([[T("research.cash.start"), money(cash.starting_cash_rub)], [T("research.cash.end"), money(cash.ending_cash_rub)], [T("research.cash.rate"), percent(cash.assumed_annual_cash_rate_percent)], [T("research.cash.required"), money(cash.required_retained_cash_rub)]])}${readiness}<p class="notice">${H("research.cash.no_observations")}</p></section>`;
   };
   const researchOutcomeReason = reason => ({
     cash_only_no_market_observations: T("research.cash.no_observations"),
@@ -2969,24 +2974,32 @@
     insufficient_calendar_horizon_history: T("research.outcomes.horizon_missing"),
     future_probability_not_calibrated: T("research.outcomes.future_unknown")
   }[reason] || T("research.outcomes.unavailable"));
+  const researchOutcomeUncertaintyHTML = row => {
+    if (row.status !== "computed") return "";
+    const interval = row.sampling_interval;
+    if (interval?.method !== "stationary_block_bootstrap_of_profit_indicators" || interval.lower_percent == null || interval.upper_percent == null || interval.reason) return `<p class="notice">${esc(researchOutcomeReason(interval?.reason))}</p>`;
+    return `<p><strong>${H("research.outcomes.interval")}:</strong> ${esc(percent(interval.lower_percent))} — ${esc(percent(interval.upper_percent))}</p>${infoRows([[T("research.outcomes.replicates"), format(interval.replicates, 0)], [T("research.outcomes.block_length"), format(interval.expected_block_length_windows, 0)]])}<p class="fine-print">${H("research.outcomes.assumption")}</p>`;
+  };
   const researchOutcomeWindowHTML = row => {
     const title = {1: T("research.outcomes.session_1"), 5: T("research.outcomes.session_5"), 21: T("research.outcomes.session_21")}[row.sessions];
     if (!title) return "";
     const computed = row.status === "computed";
     const counts = infoRows([[T("research.outcomes.windows"), format(row.windows, 0)], [T("research.outcomes.profit_windows"), format(row.profit_windows, 0)], [T("research.outcomes.loss_windows"), format(row.loss_windows, 0)], [T("research.outcomes.flat_windows"), format(row.flat_windows, 0)], [T("research.outcomes.trailing"), format(row.discarded_trailing_sessions, 0)]]);
     const metrics = computed ? infoRows([[T("research.outcomes.profit_frequency"), percent(row.profit_frequency_percent)], [T("research.outcomes.loss_frequency"), percent(row.loss_frequency_percent)], [T("research.outcomes.median"), percent(row.median_return_percent)], [T("research.outcomes.worst"), percent(row.worst_return_percent)], [T("research.outcomes.var"), percent(row.var_95_loss_percent)], [T("research.outcomes.shortfall"), percent(row.expected_shortfall_95_loss_percent)]]) : `<p class="notice">${esc(researchOutcomeReason(row.reason))}</p>`;
-    const interval = row.sampling_interval;
-    const intervalAvailable = computed && interval?.method === "stationary_block_bootstrap_of_profit_indicators" && interval.lower_percent != null && interval.upper_percent != null && !interval.reason;
-    const uncertainty = intervalAvailable ? `<p><strong>${H("research.outcomes.interval")}:</strong> ${esc(percent(interval.lower_percent))} — ${esc(percent(interval.upper_percent))}</p>${infoRows([[T("research.outcomes.replicates"), format(interval.replicates, 0)], [T("research.outcomes.block_length"), format(interval.expected_block_length_windows, 0)]])}<p class="fine-print">${H("research.outcomes.assumption")}</p>` : (computed ? `<p class="notice">${esc(researchOutcomeReason(interval?.reason))}</p>` : "");
+    const uncertainty = researchOutcomeUncertaintyHTML(row);
     const period = row.from && row.to ? `<p class="fine-print">${esc(date(row.from))} — ${esc(date(row.to))}</p>` : "";
     return `<details class="section-gap" data-research-outcome-sessions="${esc(row.sessions)}" data-outcome-status="${esc(row.status)}"><summary class="details-summary">${esc(title)} · ${computed ? esc(percent(row.profit_frequency_percent)) : H("Данные неполные")}</summary>${period}${counts}${metrics}${uncertainty}</details>`;
+  };
+  const researchRequestedHorizonHTML = horizon => {
+    if (horizon?.calendar_months == null) return "";
+    const term = `${format(horizon.calendar_months, 0)} ${T("мес.")}`;
+    return `<h4 class="section-gap">${H("research.outcomes.personal_horizon")}</h4>${infoRows([[T("Инвестиционный горизонт"), term], [T("research.outcomes.first_window_end"), date(horizon.first_window_end)]])}<p class="notice">${esc(researchOutcomeReason(horizon.reason))}</p>`;
   };
   const researchOutcomesHTML = result => {
     const outcomes = result.historical_outcomes;
     if (outcomes?.method !== "non_overlapping_held_out_net_strategy_nav" || !Array.isArray(outcomes.horizons)) return "";
     if (result.basis === "cash_balance_model") return `<p class="notice">${H("research.cash.no_observations")}</p>`;
-    const horizon = outcomes.requested_horizon;
-    const requested = horizon?.calendar_months != null ? `<h4 class="section-gap">${H("research.outcomes.personal_horizon")}</h4>${infoRows([[T("Инвестиционный горизонт"), `${format(horizon.calendar_months, 0)} ${T("мес.")}`], [T("research.outcomes.first_window_end"), date(horizon.first_window_end)]])}<p class="notice">${esc(researchOutcomeReason(horizon.reason))}</p>` : "";
+    const requested = researchRequestedHorizonHTML(outcomes.requested_horizon);
     const source = U.external(outcomes.method_source_url);
     const methodSource = source ? `<p class="data-footnote"><a href="${esc(source)}" target="_blank" rel="noopener noreferrer">${H("research.outcomes.method_source")}</a></p>` : "";
     return `<section class="section-gap" data-research-outcomes><h3 class="panel-title">${H("research.outcomes.title")}</h3><p>${H("research.outcomes.scope")}</p><p class="fine-print">${H("research.outcomes.minimum", {count: format(outcomes.minimum_windows, 0)})}</p>${outcomes.horizons.map(researchOutcomeWindowHTML).join("")}${requested}<p class="fine-print">${H("research.outcomes.calendar_scope")}</p>${methodSource}</section>`;
@@ -2995,7 +3008,8 @@
     const checks = result.holding_constraints;
     if (!checks) return "";
     const reasons = [...(checks.breaches || []), ...(checks.unknown || [])];
-    return `<details class="section-gap" data-research-holding-constraints><summary class="details-summary">${H("research.holdings.title")}</summary>${infoRows([[T("research.holdings.sessions"), format(checks.evaluated_sessions, 0)], [T("research.holdings.breaches"), format(checks.breach_sessions, 0)]])}<p class="fine-print">${H("research.holdings.scope")}</p>${reasons.length ? `<ul class="risk-list">${reasons.map(renderFundamentalMetricsHTMLLi2).join("")}</ul>` : ""}</details>`;
+    const limitations = reasons.length ? `<ul class="risk-list">${reasons.map(renderFundamentalMetricsHTMLLi2).join("")}</ul>` : "";
+    return `<details class="section-gap" data-research-holding-constraints><summary class="details-summary">${H("research.holdings.title")}</summary>${infoRows([[T("research.holdings.sessions"), format(checks.evaluated_sessions, 0)], [T("research.holdings.breaches"), format(checks.breach_sessions, 0)]])}<p class="fine-print">${H("research.holdings.scope")}</p>${limitations}</details>`;
   };
   const researchWindowHTML = item => {
     const result = item.status === "computed" ? infoRows([[T("Результат"), percent(item.metrics?.net_return_percent)], [T("Просадка"), percent(item.metrics?.max_drawdown_percent)]]) : ("<p class=\"notice\">" + H("Недостаточно данных для этого окна.") + "</p>");
@@ -3203,7 +3217,8 @@
   const executionPlanLegHTML = leg => `<article class="recovery-leg"><h3>${esc(leg.action === "buy" ? T("Покупка") : T("Продажа"))} · ${esc(leg.ticker || leg.instrument_uid)}</h3>${infoRows([[T("execution.lots"), format(leg.lots, 0)], [T("execution.lot_size"), format(leg.lot_size, 0)], [T("execution.limit"), money(leg.limit_price, 4, "RUB", false)], [T("execution.gross"), money(leg.gross_amount_rub)], [T("execution.commission"), money(leg.commission_cap_rub)], [T("execution.tax"), money(leg.tax_reserve_rub)]])}</article>`;
   const executionPlanHTML = plan => {
     const payload = plan.payload;
-    return `<p class="notice">${H("execution.shadow_notice")}</p>${infoRows([[T("execution.nav"), money(payload.nav_rub)], [T("execution.cash_before"), money(payload.cash_before_rub)], [T("execution.cash_after"), money(payload.cash_after_rub)], [T("execution.reserve"), money(payload.reserve_rub)], [T("execution.nav_floor"), money(payload.allocation_nav_floor_rub)], [T("execution.cost_buffer"), money(payload.maximum_cost_buffer_rub)], [T("execution.turnover"), money(payload.gross_turnover_rub)], [T("execution.expires"), date(plan.expires_at, true)]])}<div class="recovery-legs">${payload.legs.map(executionPlanLegHTML).join("")}</div>${payload.allocation_nav_floor_rub != null ? `<p class="fine-print">${H("execution.cost_bound_scope")}</p>` : ""}<p class="fine-print">${H("execution.quoted")}</p><label class="check-field section-gap"><input id="execution-review-consent" type="checkbox"><span>${H("execution.review_consent")}</span></label><div class="form-actions">${button(T("execution.confirm"), "execution-confirm", {primary: true})}${button(T("execution.recalculate"), "execution-plan")}</div><output id="execution-plan-message" class="form-message"></output>`;
+    const costBound = payload.allocation_nav_floor_rub != null ? `<p class="fine-print">${H("execution.cost_bound_scope")}</p>` : "";
+    return `<p class="notice">${H("execution.shadow_notice")}</p>${infoRows([[T("execution.nav"), money(payload.nav_rub)], [T("execution.cash_before"), money(payload.cash_before_rub)], [T("execution.cash_after"), money(payload.cash_after_rub)], [T("execution.reserve"), money(payload.reserve_rub)], [T("execution.nav_floor"), money(payload.allocation_nav_floor_rub)], [T("execution.cost_buffer"), money(payload.maximum_cost_buffer_rub)], [T("execution.turnover"), money(payload.gross_turnover_rub)], [T("execution.expires"), date(plan.expires_at, true)]])}<div class="recovery-legs">${payload.legs.map(executionPlanLegHTML).join("")}</div>${costBound}<p class="fine-print">${H("execution.quoted")}</p><label class="check-field section-gap"><input id="execution-review-consent" type="checkbox"><span>${H("execution.review_consent")}</span></label><div class="form-actions">${button(T("execution.confirm"), "execution-confirm", {primary: true})}${button(T("execution.recalculate"), "execution-plan")}</div><output id="execution-plan-message" class="form-message"></output>`;
   };
   const displayExecutionPlan = result => {
     if (result.status !== "blocked" && result.status !== "no_change") {
@@ -5907,46 +5922,53 @@
   const updateStrategyField = input => {
     const slot = state.strategy;
     if (!slot.draft || slot.error?.status === 409) return;
-    const path = input.name.split(".").slice(1);
-    if (path.length < 2 || path.length > 3 || !["profile", "policy", "rules"].includes(path[0])) return;
-    let parent = slot.draft;
-    for (const key of path.slice(0, -1)) {
-      if (!Object.hasOwn(parent, key) || !parent[key] || typeof parent[key] !== "object") return;
-      parent = parent[key];
-    }
-    const key = path.at(-1);
-    if (!Object.hasOwn(parent, key)) return;
+    const target = strategyFieldLocation(slot.draft, input.name);
+    if (!target) return;
+    const {parent, key} = target;
     slot.invalidInputs ||= {};
     const recovering = Object.hasOwn(slot.invalidInputs, input.name);
-    if (input.type === "number") {
-      if (recovering) input.setCustomValidity("");
-      if (!input.validity.valid) {
-        slot.invalidInputs[input.name] = input.value;
-        input.setAttribute("aria-invalid", "true");
-        slot.revision += 1;
-        slot.dirty = true;
-        slot.assessment = null;
-        slot.research = null;
-        clearTimeout(slot.timer);
-        validateStrategyInputs(slot);
-        return;
-      }
-    }
+    if (!validateEditedStrategyInput(slot, input, recovering)) return;
     delete slot.invalidInputs[input.name];
     input.removeAttribute("aria-invalid");
     if (!Object.keys(slot.invalidInputs).length && slot.error?.message === "strategy_input_invalid") slot.error = null;
     const value = input.type === "checkbox" ? input.checked : renderUpdateStrategyFieldValue(input);
     if (parent[key] === value) {
-      if (recovering) {
-        if (!Object.keys(slot.invalidInputs).length && !slot.busy && slot.server && same(slot.draft, slot.server.document)) slot.dirty = false;
-        updateSaveStatus("strategy");
-        if (slot.dirty) scheduleSave("strategy");
-      }
+      if (recovering) recoverSavedStrategyInput(slot);
       return;
     }
     parent[key] = value;
     documentChanged();
     if (Object.keys(slot.invalidInputs).length) validateStrategyInputs(slot);
+  };
+  const strategyFieldLocation = (document, name) => {
+    const path = name.split(".").slice(1);
+    if (path.length < 2 || path.length > 3 || !["profile", "policy", "rules"].includes(path[0])) return null;
+    let parent = document;
+    for (const key of path.slice(0, -1)) {
+      if (!Object.hasOwn(parent, key) || !parent[key] || typeof parent[key] !== "object") return null;
+      parent = parent[key];
+    }
+    const key = path.at(-1);
+    return Object.hasOwn(parent, key) ? {parent, key} : null;
+  };
+  const validateEditedStrategyInput = (slot, input, recovering) => {
+    if (input.type !== "number") return true;
+    if (recovering) input.setCustomValidity("");
+    if (input.validity.valid) return true;
+    slot.invalidInputs[input.name] = input.value;
+    input.setAttribute("aria-invalid", "true");
+    slot.revision += 1;
+    slot.dirty = true;
+    slot.assessment = null;
+    slot.research = null;
+    clearTimeout(slot.timer);
+    validateStrategyInputs(slot);
+    return false;
+  };
+  const recoverSavedStrategyInput = slot => {
+    if (!Object.keys(slot.invalidInputs).length && !slot.busy && slot.server && same(slot.draft, slot.server.document)) slot.dirty = false;
+    updateSaveStatus("strategy");
+    if (slot.dirty) scheduleSave("strategy");
   };
   const stepField = control => {
     const input = document.getElementsByName(control.dataset.stepField)[0];

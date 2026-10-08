@@ -1966,8 +1966,8 @@ def test_reconfirmed_prior_operation_changes_current_totals_and_invalidates_old_
         fees = [row for row in fresh["items"] if row["category"] == "fee"]
         assert len(fees) == 1
         assert fees[0]["payment"]["value"] == "-10"
-        assert fees[0]["operation_date"] == source_at.isoformat()
-        assert fees[0]["observed_at"] == (began + timedelta(seconds=5)).isoformat()
+        assert datetime.fromisoformat(fees[0]["operation_date"]) == source_at
+        assert datetime.fromisoformat(fees[0]["observed_at"]) == began + timedelta(seconds=5)
         assert store.operations(other)["items"][0]["payment"]["value"] == "-12"
     # An exact semantic replay after a provider-ID rotation remains idempotent;
     # this does not infer a relation between different financial facts.

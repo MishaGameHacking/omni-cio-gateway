@@ -64,6 +64,20 @@ class ExecutionServiceError(RuntimeError):
         self.code = code
 
 
+def _execution_snapshot_lots(
+    snapshot: BrokerPortfolioSnapshot, lot_sizes: dict[str, Any]
+) -> dict[str, int]:
+    actual_lots = {}
+    for row in snapshot.portfolio.positions:
+        if row.instrument_type == "currency" or Decimal(row.quantity) == 0:
+            continue
+        uid = row.instrument_uid
+        if uid in actual_lots or uid not in lot_sizes:
+            raise ExecutionServiceError("execution_portfolio_changed")
+        actual_lots[uid] = execution_position_lots(row, lot_sizes[uid])[0]
+    return actual_lots
+
+
 class PortfolioExecutionService:
     def __init__(
         self,
@@ -798,15 +812,7 @@ class PortfolioExecutionService:
                     expected_lots.get(previous.instrument_uid, 0) + sign * previous.lots_executed
                 )
                 expected_cash -= sign * previous.executed_amount_rub
-        actual_lots = {}
-        lot_sizes = payload.get("lot_sizes", {})
-        for row in snapshot.portfolio.positions:
-            if row.instrument_type == "currency" or Decimal(row.quantity) == 0:
-                continue
-            uid = row.instrument_uid
-            if uid in actual_lots or uid not in lot_sizes:
-                raise ExecutionServiceError("execution_portfolio_changed")
-            actual_lots[uid] = execution_position_lots(row, lot_sizes[uid])[0]
+        actual_lots = _execution_snapshot_lots(snapshot, payload.get("lot_sizes", {}))
         if actual_lots != {uid: count for uid, count in expected_lots.items() if count} or abs(
             cash - expected_cash
         ) > Decimal("0.01"):

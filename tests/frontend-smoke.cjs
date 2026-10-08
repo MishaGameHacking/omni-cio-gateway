@@ -3090,10 +3090,10 @@ async function exerciseResearchMathematics({fixture,click,wait,evaluate,configur
   await open();
   await wait('document.querySelector("#dialog-content [data-research-outcomes]")', "The UI receives the actual calculator's historical-outcome schema");
   await click('#dialog-content [data-research-outcome-sessions="1"] summary');
-  const actual = await evaluate('document.querySelector("#dialog-content [data-research-outcome-sessions=\"1\"]").textContent');
+  const actual = await evaluate(`document.querySelector('#dialog-content [data-research-outcome-sessions="1"]').textContent`);
   assert.ok(actual.includes("Историческая частота прибыли") && actual.includes("50") && actual.includes("95% интервал исторической частоты"));
   await click('#dialog-content [data-research-outcome-sessions="5"] summary');
-  const insufficient = await evaluate('document.querySelector("#dialog-content [data-research-outcome-sessions=\"5\"]").textContent');
+  const insufficient = await evaluate(`document.querySelector('#dialog-content [data-research-outcome-sessions="5"]').textContent`);
   assert.ok(insufficient.includes("12") && insufficient.includes("Полных непересекающихся окон недостаточно"), "The longer horizon shows real window counts without inventing a percentage");
   for (const width of [390, 1366]) {
     await configureViewport(width);

@@ -103,8 +103,9 @@ def test_allocated_income_preserves_twenty_decimal_places_without_relaxing_user_
     result = goal_forecast({**document, "progress": progress}, plan(), today=now.date())
     assert result["status"] == "available"
     assert Decimal(result["source_amount_rub"]) == Decimal("1e-20")
+    too_precise_plan = plan(monthly_income_rub="0.000000001")
     with pytest.raises(ValueError, match="precision"):
-        normalize_goal_plan(plan(monthly_income_rub="0.000000001"), kind="income")
+        normalize_goal_plan(too_precise_plan, kind="income")
 
 
 def test_deterministic_attainment_uses_unrounded_amounts_and_large_money_is_decimal() -> None:
