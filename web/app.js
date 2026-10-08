@@ -495,7 +495,7 @@
   const observeDialogHeader = () => {
     if (!window.ResizeObserver) return;
     const observer = new ResizeObserver(syncDialogScrollPadding);
-    observer.observe($("#workspace-dialog .dialog-header"));
+    observer.observe($("#workspace-dialog .dialog-header"), {box: "border-box"});
   };
   const openDialog = (title, content) => {
     captureScreenDrafts();

@@ -3134,10 +3134,13 @@ async function exerciseResearchMathematics({fixture,click,wait,evaluate,configur
       section.scrollIntoView({behavior:'instant',block:'start'});
       const heading = section.querySelector(':scope > summary, :scope > h3');
       const rect = heading.getBoundingClientRect();
-      const header = document.querySelector('#workspace-dialog .dialog-header').getBoundingClientRect();
-      return {width:innerWidth,height:innerHeight,top:rect.top,bottom:rect.bottom,headerBottom:header.bottom,
+      const dialog = document.querySelector('#workspace-dialog');
+      const header = dialog.querySelector('.dialog-header').getBoundingClientRect();
+      return {width:innerWidth,height:innerHeight,top:rect.top,bottom:rect.bottom,headerBottom:header.bottom,headerTop:header.top,
+        scrollportTop:dialog.getBoundingClientRect().top+dialog.clientTop,
         hittable:heading.contains(document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2))};
     })()`);
+    assert.ok(visible.headerTop <= visible.scrollportTop + 1, 'The sticky header covers the top of the scrollport: ' + marker);
     assert.ok(visible.top >= visible.headerBottom, 'The research heading is below the sticky header: ' + marker);
     assert.ok(visible.bottom <= visible.height, 'The complete research heading fits the viewport: ' + marker);
     assert.equal(visible.hittable, true, 'The research heading is not covered by another element: ' + marker);
