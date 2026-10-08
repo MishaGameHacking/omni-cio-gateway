@@ -1067,6 +1067,254 @@ async function payoutDisplayContracts() {
   assert.equal(JSON.stringify(details), original, "Rendering does not rewrite source evidence");
   console.log("PASS payout display: real private DTO, actual/planned/unknown dates, no record-date substitution, ambiguous source labels and safe historical event links");
 }
+async function payoutEventHistoryContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const eventReadEpoch ="), app.indexOf("  const workspacePeriod ="))
+    + app.slice(app.indexOf("  const eventsPath ="), app.indexOf("  const goalPreview ="))
+    + app.slice(app.indexOf("  const mergePage ="), app.indexOf("  const loadSearchPage ="))
+    + app.slice(app.indexOf("  const eventIsRead ="), app.indexOf("  const paintEventRow ="))
+    + app.slice(app.indexOf("  const loadEventPage ="), app.indexOf("  const eventSourceLabel ="))
+    + app.slice(app.indexOf("  function renderEventsHTMLEventTitleButton("), app.indexOf("  function renderHomeGoalsGoalsPreviewList("));
+  const normal = clone(serverContracts.payout_event_cases.normal);
+  const warning = clone(serverContracts.payout_event_cases.ambiguous);
+  const superseded = clone(serverContracts.payout_event_cases.superseded);
+  const alias = {...normal, id: superseded.id, title: "Obsolete payout", detail: "Obsolete financial claim 777.77"};
+  const valid = {...normal, title: "Another valid payout for the same instrument", occurred_at: "2026-09-01T00:00:00Z"};
+  const older = {...normal, id: "d".repeat(64), kind: "broker_operation", title: "Retained older operation", occurred_at: "2026-08-01T00:00:00Z", source: {type: "operation", amount: "42", currency: "RUB"}};
+  const incoming = {items: [warning], next_cursor: null, read_all_before: 20, unread_count: 1};
+  const state = {};
+  const context = vm.createContext({state, console, safeSegment: encodeURIComponent, T: value => value, H: value => value,
+    esc: value => String(value), date: value => value, icon: () => "", U: {},
+    document: {activeElement: null}, $: selector => selector === "#workspace-freshness" ? {} : null,
+    renderCurrent() {}, renderEvents() {}, adoptPreferences() {}, adoptStrategy() {}, mergeGoalList: value => value,
+    renderAdoptWorkspaceValue: () => "", isCancelled: error => error.name === "AbortError", dataError: name => `<p data-error="${name}">Refresh is unconfirmed</p>`});
+  vm.runInContext(source + "\nglobalThis.load=loadResource; globalThis.more=loadEventPage; globalThis.rows=eventsHTML;", context);
+  const reset = (items = [alias, valid]) => Object.assign(state, {generation: 1, navigationSequence: 1, eventFilter: "all", mode: "account", view: "events", user: {public_id: "000000123"},
+    eventHistoryExtended: false, eventWrites: new Set(), resourceVersions: new Map(), resourceRequests: new Map(), loading: new Set(), errors: {},
+    data: {events: {items: clone(items), next_cursor: "older", read_all_before: 20}}});
+  const freshValid = {...valid, read_at: "2026-10-08T11:00:00Z"};
+  const records = new Map([[alias.id, superseded], [valid.id, freshValid]]);
+  for (const resource of ["events", "workspace"]) {
+    reset();
+    const reads = [];
+    let collision = false;
+    context.api = async path => {
+      reads.push(path);
+      if (path.includes("cursor=")) return {items: [clone(older)], next_cursor: "still-older", read_all_before: 20};
+      if (path.startsWith("/api/events/")) return clone(collision ? records.get(path.split("/").at(-1)) : [alias, valid].find(item => path.endsWith(item.id)));
+      return resource === "workspace" ? {events: clone(incoming), overview: {observed_at: "2026-10-08T12:00:00Z"}} : clone(incoming);
+    };
+    await context.more();
+    assert.equal(state.eventHistoryExtended, true, "The regression starts with an actually appended event page");
+    assert.ok(state.data.events.items.some(item => item.id === alias.id));
+    const retainedOperation = state.data.events.items.find(item => item.id === older.id);
+    collision = true;
+    reads.length = 0;
+    await context.load(resource, `/api/${resource}`, {force: true});
+    await new Promise(resolve => setImmediate(resolve));
+    const items = state.data.events.items;
+    assert.ok(!items.some(item => item.id === alias.id), "An authoritative refresh removes the cached alias superseded by an ambiguity warning");
+    assert.ok(items.some(item => item.id === warning.id));
+    assert.equal(items.find(item => item.id === valid.id).read_at, freshValid.read_at, "A valid other-anchor payout for the same instrument survives with its authoritative read receipt");
+    assert.equal(items.find(item => item.id === older.id), retainedOperation, "Unrelated appended history and its read receipt remain intact");
+    assert.equal(state.data.events.next_cursor, "still-older", "Reconciliation preserves the appended history continuation");
+    assert.equal(state.data.events.read_all_before, 20, "Source-only supersession is reconciled even without a new revision ceiling");
+    assert.deepEqual(reads.filter(path => /^\/api\/events\/[a-f0-9]{64}$/.test(path)).sort(), [alias.id, valid.id].map(id => `/api/events/${id}`).sort(), "Only omitted cached payouts need individual authoritative reads");
+    assert.ok(!context.rows(false).includes(alias.detail), "The real feed renderer cannot retain the old financial claim");
+  }
+  reset([alias, valid, older]);
+  state.eventHistoryExtended = true;
+  context.api = async path => path.endsWith(alias.id) ? {...superseded, source: {...alias.source, superseded_by: valid.id}} : {...incoming, items: [freshValid]};
+  await context.load("events", "/api/events", {force: true});
+  assert.ok(!state.data.events.items.some(item => item.id === alias.id), "Ordinary consolidation also removes an alias without an ambiguity reason or revision change");
+  const failure = Object.assign(new Error("source_unavailable"), {status: 503});
+  for (const resource of ["events", "workspace"]) {
+    reset([alias, valid, older]);
+    state.eventHistoryExtended = true;
+    const before = state.data.events;
+    context.api = async path => {
+      if (path.endsWith(alias.id)) throw failure;
+      if (path.endsWith(valid.id)) return freshValid;
+      return resource === "workspace" ? {events: incoming} : incoming;
+    };
+    const result = await context.load(resource, `/api/${resource}`, {force: true});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(result === null, resource === "events", "An event failure cannot fail the successful unrelated workspace read");
+    assert.equal(state.data.events, before, "A partly failed readback cannot certify or replace the retained history");
+    assert.equal(state.errors.events, failure);
+    assert.ok(context.rows(true).includes('data-error="events"') && !context.rows(false).includes(alias.detail), "Both the compact feed and full event list expose failure instead of unverified financial claims");
+    let finishRead;
+    context.api = async path => {
+      if (path.endsWith(alias.id)) return new Promise(resolve => { finishRead = resolve; });
+      if (path.endsWith(valid.id)) return freshValid;
+      return resource === "workspace" ? {events: incoming} : incoming;
+    };
+    const retry = context.load(resource, `/api/${resource}`, {force: true});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(state.errors.events, failure, "Starting a retry cannot remove the uncertainty before payout readback succeeds");
+    assert.ok(!context.rows(true).includes(alias.detail) && !context.rows(false).includes(alias.detail));
+    finishRead(superseded);
+    await retry;
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(state.errors.events, undefined);
+    assert.ok(!state.data.events.items.some(item => item.id === alias.id));
+  }
+  reset([alias, valid]);
+  context.api = async path => path.endsWith(alias.id) ? superseded : path.endsWith(valid.id) ? freshValid : {items: [older], next_cursor: "next-history-page", read_all_before: 20};
+  await context.more();
+  assert.ok(!state.data.events.items.some(item => item.id === alias.id), "The first pagination response also reconciles aliases hidden since page one");
+  assert.ok(state.data.events.items.some(item => item.id === valid.id) && state.data.events.items.some(item => item.id === older.id));
+  assert.equal(state.data.events.next_cursor, "next-history-page");
+  reset([alias, valid, older]);
+  state.eventHistoryExtended = true;
+  const priorEvents = state.data.events;
+  const workspace = {events: incoming, overview: {nav_rub: "12345.67", observed_at: "2026-10-08T12:00:00Z"}, goals: {items: [{id: "current-goal"}]}, connection: {connected: true, account_id: "current-account"}};
+  let failRead;
+  context.api = async path => {
+    if (path.endsWith(alias.id)) return new Promise((resolve, reject) => { failRead = reject; });
+    if (path.endsWith(valid.id)) return freshValid;
+    return workspace;
+  };
+  assert.equal(await context.load("workspace", "/api/workspace", {force: true}), workspace);
+  assert.equal(state.data.workspace.overview.nav_rub, "12345.67", "Workspace valuation adopts immediately while event readback is pending");
+  assert.equal(state.data.goals, workspace.goals);
+  assert.equal(state.data.connection, workspace.connection);
+  assert.equal(state.data.events, priorEvents, "Unconfirmed events do not replace retained history while the workspace becomes usable");
+  failRead(failure);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(state.errors.events, failure);
+  assert.equal(state.errors.workspace, undefined, "An event-detail outage remains isolated from successful valuation, goals and connection data");
+  assert.equal(state.data.workspace, workspace);
+  reset([alias, valid]);
+  state.eventHistoryExtended = true;
+  const held = [];
+  let hold = true;
+  context.api = async path => {
+    if (path.includes("cursor=")) return {items: [older], next_cursor: "winning-page-cursor", read_all_before: 20};
+    if (path.startsWith("/api/events/")) {
+      const event = records.get(path.split("/").at(-1));
+      return hold ? new Promise(resolve => held.push(() => resolve(event))) : event;
+    }
+    return incoming;
+  };
+  const prePaginationRefresh = context.load("events", "/api/events", {force: true});
+  await new Promise(resolve => setImmediate(resolve));
+  const winningPagination = context.more();
+  hold = false;
+  held.forEach(resolve => resolve());
+  await Promise.all([prePaginationRefresh, winningPagination]);
+  assert.ok(!state.data.events.items.some(item => item.id === alias.id), "Pagination that supersedes an in-flight refresh must itself remove the retired payout claim");
+  assert.ok(state.data.events.items.some(item => item.id === valid.id) && state.data.events.items.some(item => item.id === older.id));
+  assert.equal(state.data.events.next_cursor, "winning-page-cursor");
+  const many = Array.from({length: 9}, (_, index) => ({...valid, id: (index + 32).toString(16).padStart(64, "0")}));
+  const tick = () => new Promise(resolve => setImmediate(resolve));
+  const deferredFixture = () => {
+    reset(many);
+    state.eventHistoryExtended = true;
+    const pending = [], reads = [];
+    let active = 0, peak = 0;
+    context.api = async path => {
+      if (!/^\/api\/events\/[a-f0-9]{64}$/.test(path)) return path === "/api/workspace" ? {events: incoming} : incoming;
+      reads.push(path);
+      active += 1;
+      peak = Math.max(peak, active);
+      const item = many.find(event => path.endsWith(event.id));
+      return new Promise((resolve, reject) => pending.push({
+        resolve: () => { active -= 1; resolve(clone(item)); },
+        reject: () => { active -= 1; reject(failure); }
+      }));
+    };
+    return {pending, reads, peak: () => peak};
+  };
+  const overlap = deferredFixture();
+  const oldRefresh = context.load("events", "/api/events", {force: true});
+  await tick();
+  assert.equal(overlap.pending.length, 4);
+  const newRefresh = context.load("workspace", "/api/workspace", {force: true});
+  overlap.pending.shift().reject();
+  await tick();
+  assert.equal(overlap.reads.length, 4, "An early rejection cannot start another batch while the other three requests remain active");
+  while (overlap.pending.length) {
+    overlap.pending.splice(0).forEach(item => item.resolve());
+    await tick();
+  }
+  await Promise.all([oldRefresh, newRefresh]);
+  assert.equal(overlap.peak(), 4, "Overlapping workspace/event refreshes share a global four-request bound");
+  assert.equal(overlap.reads.length, 4 + many.length, "A superseded refresh starts no later batches and the current refresh reads each omitted payout once");
+  assert.ok(state.data.events.items.some(item => item.id === warning.id));
+  assert.equal(state.errors.events, undefined, "An old refresh failure cannot replace the current result");
+  for (const interruption of ["navigation", "logout", "read_receipt"]) {
+    const fixture = deferredFixture();
+    const before = state.data.events;
+    const refreshing = context.load("events", "/api/events", {force: true});
+    await tick();
+    if (interruption === "navigation") state.navigationSequence += 1;
+    else if (interruption === "logout") state.generation += 1;
+    else if (interruption === "read_receipt") {
+      state.resourceVersions.set("eventReads", 1);
+      state.data.events = {...before, items: before.items.map(item => ({...item, read_confirmed: true}))};
+    }
+    const protectedHistory = state.data.events;
+    fixture.pending.splice(0).forEach(item => item.resolve());
+    await refreshing;
+    assert.equal(state.data.events, protectedHistory, "A late readback cannot overwrite a newer navigation, account, read receipt or pagination result: " + interruption);
+    assert.equal(fixture.reads.length, 4, "An invalidated readback stops before another request batch: " + interruption);
+  }
+  console.log("PASS payout event history: real private DTOs, appended cache supersession, valid same-instrument history, read receipts, failure visibility and bounded stale-read cancellation");
+}
+function assetPayoutDisclosureContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const state = {route: {uid: "a"}, asset: {uid: "a", name: "Initial source", ticker: "A", payoutText: "Planned payout: old date"}, assetTab: "chart", assetPeriod: "1m"};
+  const document = {activeElement: null, body: {}};
+  let disclosure;
+  const replacePayout = text => {
+    if (disclosure?.contains(document.activeElement)) document.activeElement = document.body;
+    const next = {open: false, textContent: text, contains: element => element === next.summary};
+    next.summary = {focus(options) { this.focusOptions = options; document.activeElement = this; }};
+    disclosure = next;
+  };
+  const container = {dataset: {}, set innerHTML(text) { replacePayout(text); }};
+  const sidebar = {set innerHTML(text) { replacePayout(text); }};
+  const header = {h1: {}, p: {}, ".asset-logo": {}, "[data-watch]": {dataset: {}}};
+  const context = vm.createContext({state, document, T: value => value,
+    $: (selector, parent) => {
+      if (parent === header) return header[selector];
+      if (selector === "summary") return parent.summary;
+      return {"#view-asset": container, "[data-asset-payouts]": disclosure, "[data-asset-sidebar]": sidebar, ".asset-detail-header": header, ".chart-svg": {}}[selector];
+    }, assetPricing: asset => ({asset}), assetSideHTML: ({asset}) => asset.payoutText,
+    assetFrameHTML: ({asset}) => asset.payoutText, assetChartHTML: () => "", assetOverviewHTML: () => "", assetMetricsHTML: () => "", assetNewsHTML: () => ""});
+  const source = app.slice(app.indexOf("  const refreshAssetChartContext ="), app.indexOf("  const tradingLabel ="));
+  vm.runInContext(source + "\nglobalThis.render=renderAsset;", context);
+  context.render();
+  disclosure.open = true;
+  disclosure.summary.focus();
+  for (const preserveChart of [true, false, true, false]) {
+    const previous = disclosure;
+    state.asset.payoutText = "Corrected source payment; ambiguous identity: " + preserveChart;
+    context.render({preserveChart});
+    assert.notEqual(disclosure, previous, "Late renders must replace stale payout content with the newly received source records");
+    assert.equal(disclosure.open, true, "Both sidebar enrichment and full background repaint retain an opened same-asset disclosure");
+    assert.equal(document.activeElement, disclosure.summary, "The replacement disclosure retains keyboard focus");
+    assert.equal(disclosure.summary.focusOptions.preventScroll, true);
+    assert.equal(disclosure.textContent, state.asset.payoutText, "Open-state preservation cannot preserve obsolete dates or financial assertions");
+    assert.ok(!disclosure.textContent.includes("old date"));
+  }
+  const otherControl = {};
+  disclosure.open = false;
+  document.activeElement = otherControl;
+  context.render({preserveChart: true});
+  assert.equal(disclosure.open, false, "A deliberately closed disclosure remains closed");
+  assert.equal(document.activeElement, otherControl, "A payout repaint does not steal focus from another control");
+  disclosure.open = true;
+  disclosure.summary.focus();
+  state.route.uid = "b";
+  state.asset = {uid: "b", name: "Other source", ticker: "B", payoutText: "Another instrument's payout"};
+  context.render({preserveChart: true});
+  assert.equal(disclosure.open, false, "Switching instruments starts with a fresh disclosure state");
+  assert.notEqual(document.activeElement, disclosure.summary, "Focus from another instrument is not carried into the new disclosure");
+  assert.equal(disclosure.textContent, state.asset.payoutText);
+  console.log("PASS payout disclosure: repeated late sidebar/full repaints retain same-asset open state and focus while replacing source content; instrument switches reset it");
+}
 async function newsMonitoringContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const context = vm.createContext({window: {}, Intl, console, URLSearchParams});
@@ -2876,6 +3124,8 @@ const runBrowser = async base => {
   try {
     displayContracts();
     await payoutDisplayContracts();
+    await payoutEventHistoryContracts();
+    assetPayoutDisclosureContracts();
     await ledgerPaginationContracts();
     await searchAndAssetPaginationContracts();
     await visibleRefreshContracts();

@@ -980,6 +980,12 @@
   };
   const eventReadEpoch = () => state.resourceVersions.get("eventReads") || 0;
   const currentEventRead = epoch => epoch === eventReadEpoch() && state.eventWrites.size === 0;
+  const eventSnapshotContext = () => {
+    const sequence = (state.resourceVersions.get("eventSnapshots") || 0) + 1;
+    state.resourceVersions.set("eventSnapshots", sequence);
+    return {sequence, generation: state.generation, navigation: state.navigationSequence, filter: state.eventFilter, epoch: eventReadEpoch()};
+  };
+  const currentEventSnapshot = context => context && context.generation === state.generation && context.navigation === state.navigationSequence && context.filter === state.eventFilter && context.sequence === state.resourceVersions.get("eventSnapshots") && currentEventRead(context.epoch);
   const retryMissingEvents = () => {
     if (!state.data.events && !state.loading.has("events") && !state.eventWrites.size && state.user && !state.locked && state.mode === "account" && ["home", "events"].includes(state.view)) void loadResource("events", eventsPath(), {force: true});
   };
@@ -996,16 +1002,19 @@
     state.resourceVersions.set(name, sequence);
     const generation = state.generation;
     const goalsSequence = state.resourceVersions.get("goals") || 0;
-    const eventsEpoch = eventReadEpoch();
+    const eventsContext = name === "events" || name === "workspace" && state.eventFilter === "all" ? eventSnapshotContext() : null;
     const current = () => generation === state.generation && state.resourceVersions.get(name) === sequence;
-    const currentResult = () => current() && (name !== "events" || currentEventRead(eventsEpoch));
+    const currentResult = () => current() && (name !== "events" || currentEventSnapshot(eventsContext));
     state.loading.add(name);
-    delete state.errors[name];
-    const promise = (read ? read() : api(path, options)).then(payload => {
+    if (name !== "events") delete state.errors[name];
+    const promise = (read ? read() : api(path, options)).then(async payload => {
       if (!currentResult()) return null;
-      state.data[name] = resourceSnapshot(name, payload);
-      adoptLoadedResource(name, payload, goalsSequence, eventsEpoch);
-      return payload;
+      const snapshot = await resourceSnapshot(name, payload, eventsContext);
+      if (!snapshot || !currentResult()) return null;
+      state.data[name] = snapshot;
+      if (name === "events") delete state.errors.events;
+      adoptLoadedResource(name, snapshot, goalsSequence, eventsContext);
+      return snapshot;
     }).catch(error => {
       if (currentResult() && !isCancelled(error)) state.errors[name] = error;
       return null;
@@ -1013,27 +1022,40 @@
       if (current()) {
         state.loading.delete(name);
         state.resourceRequests.delete(name);
-        if (name === "events" && !currentEventRead(eventsEpoch)) { retryMissingEvents(); return; }
+        if (name === "events" && !currentEventSnapshot(eventsContext)) { retryMissingEvents(); return; }
         if (state.mode !== "public" && (state.user || state.tour) && !state.locked && !document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent();
       }
     });
     state.resourceRequests.set(name, {path, promise});
     return promise;
   };
-  const resourceSnapshot = (name, payload) => {
+  const resourceSnapshot = async (name, payload, eventsContext) => {
     if (name === "goals") return mergeGoalList(payload);
-    if (name === "events") return eventSnapshot(payload);
+    if (name === "events") return readEventSnapshot(payload, eventsContext);
     return payload;
   };
-  const adoptWorkspace = (payload, goalsSequence, eventsEpoch) => {
+  const adoptWorkspaceEvents = async (payload, context) => {
+    try {
+      const events = await readEventSnapshot(payload, context);
+      if (!events || !currentEventSnapshot(context)) return;
+      state.data.events = events;
+      delete state.errors.events;
+    } catch (error) {
+      if (!currentEventSnapshot(context) || isCancelled(error)) return;
+      state.errors.events = error;
+    } finally {
+      if (currentEventSnapshot(context) && ["home", "events"].includes(state.view) && !document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent();
+    }
+  };
+  const adoptWorkspace = (payload, goalsSequence, eventsContext) => {
     if (payload.preferences) adoptPreferences(payload.preferences);
     if (payload.goals && goalsSequence === (state.resourceVersions.get("goals") || 0)) state.data.goals = mergeGoalList(payload.goals);
-    if (payload.events && currentEventRead(eventsEpoch) && state.eventFilter === "all") state.data.events = eventSnapshot(payload.events);
+    if (payload.events && currentEventSnapshot(eventsContext)) void adoptWorkspaceEvents(payload.events, eventsContext);
     if (payload.connection) state.data.connection = payload.connection;
     $("#workspace-freshness").textContent = payload.overview?.observed_at ? `T-Invest · ${date(payload.overview.observed_at, true)} ${T("МСК · Стоимость по последнему наблюдению")}` : renderAdoptWorkspaceValue(payload);
   };
-  const adoptLoadedResource = (name, payload, goalsSequence, eventsEpoch) => {
-    if (name === "workspace") adoptWorkspace(payload, goalsSequence, eventsEpoch);
+  const adoptLoadedResource = (name, payload, goalsSequence, eventsContext) => {
+    if (name === "workspace") adoptWorkspace(payload, goalsSequence, eventsContext);
     if (name === "preferences") adoptPreferences(payload);
     if (name === "strategy") adoptStrategy(payload);
   };
@@ -1554,6 +1576,7 @@
   };
   const eventsHTML = (compact = true) => {
     const rows = eventItems();
+    if (!state.tour && state.eventFilter !== "market" && state.errors.events) return dataError("events");
     if (state.loading.has("events") && !state.data.events && !state.tour && state.eventFilter !== "market") return U.loading(T("state.loading"));
     if (!rows.length) return empty(state.eventFilter === "market" ? T("Новостной источник не подключён") : T("Нет новых событий"), state.eventFilter === "market" ? T("Система не подставляет заголовки. События счёта появятся после подключения данных.") : T("Подтверждённые события портфеля и целей появятся здесь."), "", "", "events");
     return `<div class="event-list">${(compact ? rows.slice(0, 4) : rows).map(item => renderEventsHTMLEventItem(item, compact)).join("")}</div>`;
@@ -1679,11 +1702,52 @@
   const mergePage = (previous, incoming) => ({...incoming, items: [...new Map([
     ...(previous?.items || []), ...(incoming?.items || [])
   ].map(item => [item.id, item])).values()]});
-  const eventSnapshot = payload => {
-    if (!state.eventHistoryExtended || !state.data.events) return payload;
-    const combined = mergePage(state.data.events, payload);
+  let payoutHistoryReadback = Promise.resolve();
+  const readPayoutHistoryBatch = (items, context) => {
+    const pending = payoutHistoryReadback.then(async () => {
+      if (!currentEventSnapshot(context)) return [];
+      const results = await Promise.allSettled(items.map(async item => {
+        try {
+          const event = await api(`/api/events/${safeSegment(item.id)}`);
+          if (event.id !== item.id || event.kind !== "payout_calendar" || event.source?.type !== "payout") throw Object.assign(new Error("invalid_server_response"), {status: 502});
+          return [item.id, event];
+        } catch (error) {
+          if (error.status === 404) return [item.id, null];
+          throw error;
+        }
+      }));
+      const failed = results.find(result => result.status === "rejected");
+      if (failed) throw failed.reason;
+      return results.map(result => result.value);
+    });
+    // Keep a single batch in flight even when a newer refresh replaces this one.
+    payoutHistoryReadback = pending.catch(() => {});
+    return pending;
+  };
+  const readEventSnapshot = async (payload, context, append = false) => {
+    if (!currentEventSnapshot(context)) return null;
+    if ((!state.eventHistoryExtended && !append) || !state.data.events) return payload;
+    const incoming = new Set((payload.items || []).map(item => item.id));
+    const omitted = (state.data.events.items || []).filter(item => item.kind === "payout_calendar" && item.source?.type === "payout" && !incoming.has(item.id));
+    const received = new Map();
+    try {
+      for (let offset = 0; offset < omitted.length; offset += 4) {
+        if (!currentEventSnapshot(context)) return null;
+        for (const [id, event] of await readPayoutHistoryBatch(omitted.slice(offset, offset + 4), context)) received.set(id, event);
+      }
+    } catch (error) {
+      if (!currentEventSnapshot(context)) return null;
+      state.errors.events = error;
+      throw error;
+    }
+    if (!currentEventSnapshot(context)) return null;
+    const retained = state.data.events.items.filter(item => {
+      const event = received.get(item.id);
+      return !received.has(item.id) || event && !/^[a-f0-9]{64}$/.test(event.source.superseded_by || "");
+    });
+    const combined = mergePage({...state.data.events, items: confirmEventItems(retained, () => false, received)}, payload);
     combined.items.sort((left, right) => new Date(right.occurred_at) - new Date(left.occurred_at));
-    combined.next_cursor = state.data.events.next_cursor;
+    combined.next_cursor = append ? payload.next_cursor : state.data.events.next_cursor;
     return combined;
   };
   const loadSearchPage = async kind => {
@@ -2009,8 +2073,19 @@
       container.innerHTML = U.loading(T("Получаем данные актива…"));
       return;
     }
+    const payout = container.dataset.assetUid === asset.uid ? $("[data-asset-payouts]", container) : null;
+    const payoutFocused = payout?.contains(document.activeElement);
+    const restorePayout = () => {
+      const current = $("[data-asset-payouts]", container);
+      if (!payout || !current) return;
+      current.open = payout.open;
+      if (payoutFocused) $("summary", current)?.focus({preventScroll: true});
+    };
     const context = assetPricing(asset);
-    if (preserveChart && refreshAssetChartContext(container, context)) return true;
+    if (preserveChart && refreshAssetChartContext(container, context)) {
+      restorePayout();
+      return true;
+    }
     const renderers = {
       chart: assetChartHTML,
       overview: assetOverviewHTML,
@@ -2022,6 +2097,7 @@
     container.dataset.assetPeriod = state.assetPeriod;
     container.dataset.assetPane = state.assetTab;
     container.innerHTML = assetFrameHTML(context, renderer(context));
+    restorePayout();
   };
   const tradingLabel = value => ({
     SECURITY_TRADING_STATUS_NORMAL_TRADING: T("Основная сессия"),
@@ -3859,15 +3935,16 @@
     const cursor = state.data[name]?.next_cursor;
     if (!cursor || state.loading.has(busy)) return;
     const generation = state.generation;
-    const eventsEpoch = eventReadEpoch();
-    const filter = state.eventFilter;
-    const current = () => generation === state.generation && (news || filter === state.eventFilter && currentEventRead(eventsEpoch));
+    const eventsContext = news ? null : eventSnapshotContext();
+    const current = () => generation === state.generation && (news || currentEventSnapshot(eventsContext));
     state.loading.add(busy);
     renderEvents();
     try {
       const page = await api(`${news ? "/api/news?limit=50" : eventsPath()}&cursor=${encodeURIComponent(cursor)}`);
       if (!current()) return;
-      state.data[name] = mergePage(state.data[name], page);
+      const snapshot = news ? mergePage(state.data[name], page) : await readEventSnapshot(page, eventsContext, true);
+      if (!snapshot || !current()) return;
+      state.data[name] = snapshot;
       if (!news) state.eventHistoryExtended = true;
       delete state.errors[name];
     } catch (error) {
