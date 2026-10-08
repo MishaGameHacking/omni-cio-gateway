@@ -28,6 +28,7 @@ SONAR_ISSUES_PATH = (
     "&issueStatuses=OPEN,CONFIRMED,ACCEPTED&p=1&ps=1"
 )
 MAX_RESPONSE_BYTES = 2_000_000
+RELEASE_TIMEOUT = "Timed out waiting for accepted main checks"
 
 
 class ReleaseBlocked(RuntimeError):
@@ -43,7 +44,7 @@ def request_json(
 ) -> Any:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        raise ReleaseBlocked("Timed out waiting for accepted main checks")
+        raise ReleaseBlocked(RELEASE_TIMEOUT)
     try:
         with closing(http.client.HTTPSConnection(
             host, timeout=min(15, remaining),
@@ -61,7 +62,7 @@ def request_json(
             if len(body) > MAX_RESPONSE_BYTES:
                 raise ReleaseBlocked(f"{label} verification response is too large")
             if time.monotonic() >= deadline:
-                raise ReleaseBlocked("Timed out waiting for accepted main checks")
+                raise ReleaseBlocked(RELEASE_TIMEOUT)
             try:
                 return json.loads(body)
             except ValueError:
@@ -379,9 +380,20 @@ def wait_for_release(client: GitHubClient, sha: str, sonar: SonarClient) -> None
         except PendingChecks as exc:
             remaining = client.deadline - time.monotonic()
             if remaining <= 0:
-                raise ReleaseBlocked("Timed out waiting for accepted main checks") from None
+                raise ReleaseBlocked(RELEASE_TIMEOUT) from None
             print(str(exc), flush=True)
             time.sleep(min(15, remaining))
+
+
+def wait_for_main_release(sha: str, github_token: str, *, timeout: int = 900) -> None:
+    """Every production caller uses the full gate and separate Sonar credentials."""
+    deadline = time.monotonic() + timeout
+    client = GitHubClient(github_token, deadline=deadline)
+    sonar_token = os.environ.get("SONAR_TOKEN", "")
+    if sonar_token and sonar_token == github_token:
+        raise ReleaseBlocked("SonarCloud verification must not reuse the GitHub token")
+    sonar = SonarClient(sonar_token, deadline=deadline)
+    wait_for_release(client, sha, sonar)
 
 
 def release_context() -> tuple[str, str]:
@@ -434,12 +446,7 @@ def main() -> int:
         sha, token = release_context()
         require_checkout(sha)
         # Cover the 12-minute application check plus runner startup and cleanup.
-        client = GitHubClient(token, deadline=time.monotonic() + 900)
-        sonar_token = os.environ.get("SONAR_TOKEN", "")
-        if sonar_token and sonar_token == token:
-            raise ReleaseBlocked("SonarCloud verification must not reuse the GitHub token")
-        sonar = SonarClient(sonar_token, deadline=client.deadline)
-        wait_for_release(client, sha, sonar)
+        wait_for_main_release(sha, token)
     except ReleaseBlocked as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1

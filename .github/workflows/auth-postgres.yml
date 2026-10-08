@@ -249,6 +249,8 @@ jobs:
 
       - name: Export encrypted archive and verify on a new isolated cluster
         shell: cmd
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: '"%OMNICIO_PYTHON%" .github\scripts\run_recovery_drill.py'
 
       - name: Keep only encrypted archive and signed provenance for one day
