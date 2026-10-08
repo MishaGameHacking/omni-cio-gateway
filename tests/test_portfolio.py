@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot, BrokerNotConnected
-from omnicio.db import ActiveLiveExecutionError, BrokerConnectionConflict, Database
+from omnicio.db import ActiveLiveExecutionError, BrokerConnectionConflict, Database, UserRecord
 from omnicio.main import app
 from omnicio.market import (
     CBRIndicator,
@@ -574,6 +574,50 @@ def test_analysis_http_is_private_tenant_scoped_and_never_grants_execution() -> 
     assert response.headers["cache-control"] == "private, no-store"
     assert response.json()["analysis"]["execution_enabled"] is False
     broker.return_value.analysis.assert_called_once_with("server-resolved-user")
+
+
+@pytest.mark.parametrize(("session_change", "expected_status", "expected_detail"), [
+    ("revoked", 401, "authentication required"),
+    ("switched", 409, "profile_context_changed"),
+])
+def test_analysis_http_revalidates_session_after_provider_read(
+    session_change: str, expected_status: int, expected_detail: str,
+) -> None:
+    user = UserRecord(UUID(int=901), 901, "active", "user")
+    other = UserRecord(UUID(int=902), 902, "active", "user")
+    snapshot = BrokerAnalysisSnapshot(
+        account_id="private-account", account_name="Private portfolio", environment="prod",
+        refreshed_at=datetime.now(UTC),
+        analysis=analyze_portfolio(portfolio(asset_total="0"), cash(), ()), sources=(),
+    )
+    with (
+        patch("omnicio.main.service") as auth,
+        patch("omnicio.main.broker_service") as broker,
+    ):
+        auth.return_value.refresh_session.return_value = user
+
+        def read_analysis(user_id: UUID) -> BrokerAnalysisSnapshot:
+            assert user_id == user.id
+            auth.return_value.refresh_session.return_value = (
+                None if session_change == "revoked" else other
+            )
+            return snapshot
+
+        broker.return_value.analysis.side_effect = read_analysis
+        client = TestClient(app, cookies={"omnicio_session": "synthetic-session"})
+        try:
+            response = client.get(
+                "/api/broker/tbank/analysis", headers={"X-Omnicio-Profile": "000000901"},
+            )
+        finally:
+            client.close()
+
+    assert response.status_code == expected_status
+    assert response.json()["detail"] == expected_detail
+    assert response.headers["cache-control"] == "private, no-store"
+    assert "private-account" not in response.text
+    assert "analysis" not in response.json()
+    broker.return_value.analysis.assert_called_once_with(user.id)
 
 
 @pytest.mark.parametrize(

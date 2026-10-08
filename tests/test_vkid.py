@@ -181,7 +181,10 @@ def test_invalid_app_id_fails_before_network_call() -> None:
     urlopen.assert_not_called()
 
 
-@pytest.mark.parametrize("body", [b" " * 65_537, b'\xff', b'{"id":' + b'9' * 5000 + b'}'])
+@pytest.mark.parametrize(
+    "body", [b" " * 65_537, b'\xff', b'{"id":' + b'9' * 5000 + b'}'],
+    ids=["oversized-response", "invalid-utf8", "oversized-json-integer"],
+)
 def test_malformed_or_oversized_identity_response_fails_closed(body: bytes) -> None:
     client = VKIDClient("123", "https://omnicio.ru/api/auth/vkid/callback")
     with (

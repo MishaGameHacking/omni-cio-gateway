@@ -70,7 +70,10 @@ class FakeResponse:
         return body if limit < 0 else body[:limit]
 
 
-@pytest.mark.parametrize("body", [b" " * 129, b'{"id":' + b'9' * 5000 + b'}'])
+@pytest.mark.parametrize(
+    "body", [b" " * 129, b'{"id":' + b'9' * 5000 + b'}'],
+    ids=["oversized-response", "oversized-json-integer"],
+)
 def test_provider_body_is_bounded_and_malformed_json_fails_closed(body: bytes) -> None:
     limit = 128 if len(body) == 129 else 6000
     client = TBankInvestClient()

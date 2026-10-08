@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import subprocess
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -619,11 +620,12 @@ def _settle_legacy_records(
         details={"retry_post_order": False},
     )
     assert pending.status == "reconciling"
+    _exercise_execution_observation_order(ledger, runs["sandbox"], legs["sandbox"])
     run, leg = ledger.transition_leg(
         USER_ONE,
         run_id=runs["sandbox"],
         leg_id=legs["sandbox"],
-        expected_statuses=("reconciling",),
+        expected_statuses=("partially_filled",),
         new_status="filled",
         event_type="provider_state_reconciled",
         details={},
@@ -641,8 +643,53 @@ def _settle_legacy_records(
     assert saved is not None
     assert [event.event_type for event in saved[2]] == [
         "provider_read_unavailable",
+        "provider_partial_reconciled",
+        "provider_amount_corrected",
         "provider_state_reconciled",
     ]
+
+
+def _exercise_execution_observation_order(
+    ledger: ExecutionStore, run_id: UUID, leg_id: UUID,
+) -> None:
+    """A delayed competing read must not overwrite the committed receipt."""
+    checked_at = datetime.now(UTC)
+    ledger.transition_leg(
+        USER_ONE, run_id=run_id, leg_id=leg_id, expected_statuses=("reconciling",),
+        new_status="partially_filled", event_type="provider_partial_reconciled", details={},
+        now=checked_at,
+        observation=ExecutionLegObservation(
+            provider_status="EXECUTION_REPORT_STATUS_PARTIALLYFILL", lots_executed=1,
+            executed_amount_rub=Decimal("1100"), executed_commission_rub=Decimal("5"),
+        ),
+    )
+    committed = ledger.execution(USER_ONE, run_id)
+    for lots, at in ((0, checked_at + timedelta(seconds=1)),
+                     (1, checked_at - timedelta(seconds=1))):
+        observation = ExecutionLegObservation(
+            provider_status="EXECUTION_REPORT_STATUS_PARTIALLYFILL", lots_executed=lots,
+            executed_amount_rub=Decimal("1000"),
+        )
+        with pytest.raises(ExecutionLedgerError, match="execution_leg_state_changed"):
+            ledger.transition_leg(
+                USER_ONE, run_id=run_id, leg_id=leg_id,
+                expected_statuses=("submitted", "partially_filled", "reconciling"),
+                new_status="partially_filled", event_type="stale_receipt", details={}, now=at,
+                observation=observation,
+            )
+        assert ledger.execution(USER_ONE, run_id) == committed
+    _, corrected = ledger.transition_leg(
+        USER_ONE, run_id=run_id, leg_id=leg_id, expected_statuses=("partially_filled",),
+        new_status="partially_filled", event_type="provider_amount_corrected", details={},
+        now=checked_at + timedelta(seconds=2),
+        observation=ExecutionLegObservation(
+            provider_status="EXECUTION_REPORT_STATUS_PARTIALLYFILL", lots_executed=1,
+            executed_amount_rub=Decimal("1099"), executed_commission_rub=Decimal("4"),
+        ),
+    )
+    assert corrected.lots_executed == 1
+    assert corrected.executed_amount_rub == Decimal("1099")
+    assert corrected.executed_commission_rub == Decimal("4")
 
 
 def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:

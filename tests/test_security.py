@@ -70,7 +70,10 @@ def test_credentialed_provider_requests_never_follow_redirects(provider, status)
     assert response.closed
 
 
-@pytest.mark.parametrize("value", ["²", "１２３", "١٢٣", "0", "9" * 129, "9" * 5000])
+@pytest.mark.parametrize(
+    "value", ["²", "１２３", "١٢٣", "0", "9" * 129, "9" * 5000],
+    ids=["superscript", "fullwidth", "arabic", "zero", "overlong-id", "oversized-integer"],
+)
 def test_provider_numeric_ids_are_bounded_ascii_without_conversion_errors(value) -> None:
     assert not positive_numeric_id(value)
     assert positive_numeric_id("123456789")
