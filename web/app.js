@@ -492,6 +492,11 @@
     const height = $(".dialog-header", dialog).getBoundingClientRect().height;
     dialog.style.setProperty("--dialog-header-height", `${height}px`);
   };
+  const observeDialogHeader = () => {
+    if (!window.ResizeObserver) return;
+    const observer = new ResizeObserver(syncDialogScrollPadding);
+    observer.observe($("#workspace-dialog .dialog-header"));
+  };
   const openDialog = (title, content) => {
     captureScreenDrafts();
     const routed = dialogScreens.has(`${state.view}/${state.route.screen}`);
@@ -6748,10 +6753,7 @@
       }
     });
   }
-  if (window.ResizeObserver) {
-    const headerObserver = new ResizeObserver(syncDialogScrollPadding);
-    headerObserver.observe($("#workspace-dialog .dialog-header"));
-  }
+  observeDialogHeader();
   let scrollSaveScheduled = false;
   window.addEventListener("scroll", () => {
     if (scrollSaveScheduled) return;
