@@ -10,12 +10,14 @@ import os
 import runpy
 import subprocess
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
 from cryptography.fernet import Fernet
+from psycopg.conninfo import make_conninfo
 
 from omnicio.recovery import sign_recovery_evidence
 
@@ -23,8 +25,82 @@ SCRIPTS = Path(__file__).resolve().parents[1] / ".github" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 controller = importlib.import_module("timeweb_recovery")
 runner = importlib.import_module("run_recovery_drill")
+upgrade = importlib.import_module("inplace_upgrade")
 SHA = "a" * 40
 KEY = "test-receipt-key-" + "x" * 40
+
+
+def test_remote_upgrade_refuses_non_linux_before_runtime_io(monkeypatch):
+    monkeypatch.setattr(upgrade.sys, "platform", "win32")
+    with patch.object(upgrade, "_private_file") as read, \
+            patch.object(upgrade, "_receipt_directory") as directory:
+        with pytest.raises(upgrade.UpgradeBlocked, match="upgrade_requires_linux"):
+            upgrade.remote_main({})
+        with pytest.raises(upgrade.UpgradeBlocked, match="upgrade_requires_linux"):
+            upgrade._write_receipt({})
+        operation = upgrade._operation_lock()
+        with pytest.raises(upgrade.UpgradeBlocked, match="upgrade_requires_linux"), operation:
+            pass
+    read.assert_not_called()
+    directory.assert_not_called()
+
+
+@pytest.mark.parametrize("runtime_password,stored_password,host", [
+    ("synthetic-password", "synthetic-password", "10.0.0.5"),
+    (None, None, "10.0.0.5"), (None, "synthetic-password", "10.0.0.5"),
+    ("synthetic-password", "other-password", "10.0.0.5"),
+    ("synthetic-password", "synthetic-password", "10.0.0.6"),
+])
+def test_upgrade_requires_explicit_existing_database_credentials(
+    monkeypatch, runtime_password, stored_password, host,
+):
+    expected = {"host": "10.0.0.5", "port": 5432, "database": "omnicio", "user": "omnicio_app"}
+    dsn = make_conninfo(host=host, port=5432, dbname="omnicio", user="omnicio_app",
+                        password=runtime_password)
+    keys = "CLIENT_IP_KEY=synthetic-ip\nBROKER_TOKEN_CRYPTO_KEY=synthetic-broker\n"
+    keys += "VKID_FLOW_CRYPTO_KEY=synthetic-flow\n"
+    environment = "DATABASE_URL=" + dsn + "\n" + keys
+    secrets_file = keys + ("OMNICIO_DB_ADMIN_PASSWORD=" + stored_password + "\n"
+                           if stored_password is not None else "")
+    monkeypatch.setattr(upgrade, "_private_file", lambda path, _maximum:
+                        environment if path.name == "runtime.env" else secrets_file)
+    if runtime_password and runtime_password == stored_password and host == expected["host"]:
+        assert upgrade._database_url(expected) == dsn
+    else:
+        with pytest.raises(upgrade.UpgradeBlocked, match="runtime_database_"):
+            upgrade._database_url(expected)
+
+
+def test_upgrade_receipt_keeps_actual_installation_trusted_after_failed_deploy(
+    monkeypatch, tmp_path,
+):
+    plan = upgrade.load_plan()
+    source = "READINESS_QUERY = 'SELECT true'\n"
+    plan = plan | {"source_schema_sha256": upgrade._digest(source)}
+    baseline = tmp_path / plan["source_release"] / "src/omnicio/schema.py"
+    baseline.parent.mkdir(parents=True)
+    baseline.write_text(source, encoding="utf-8")
+    monkeypatch.setattr(upgrade, "RELEASE_ROOT", tmp_path)
+    identity = upgrade.operation_identity(plan, {"database": "synthetic"})
+    receipt = {"identity": identity, "phase": "completed", "release_sha": "b" * 40,
+               "installed_release": "a" * 40}
+    for current, saved, succeeds in (
+        (plan["source_release"], None, True), ("a" * 40, None, False),
+        ("a" * 40, receipt, True), ("c" * 40, receipt, False),
+    ):
+        selected = Mock(resolve=Mock(return_value=tmp_path / current))
+        monkeypatch.setattr(upgrade, "CURRENT_RELEASE", selected)
+        version = "1.2.0" if current == plan["source_release"] else "1.3.0"
+        monkeypatch.setattr("importlib.metadata.version", lambda _package, value=version: value)
+        upgrade.validate_receipt(saved, identity)
+        if succeeds:
+            assert upgrade._existing_installation(plan, saved, "b" * 40) == ("SELECT true", current)
+        else:
+            with pytest.raises(upgrade.UpgradeBlocked, match="source_release_mismatch"):
+                upgrade._existing_installation(plan, saved, "b" * 40)
+    for changes in ({"identity": {}}, {"installed_release": []}, {"phase": "unknown"}):
+        with pytest.raises(upgrade.UpgradeBlocked, match="upgrade_receipt_mismatch"):
+            upgrade.validate_receipt(receipt | changes, identity)
 
 
 def receipt(**changes):
@@ -57,6 +133,8 @@ def test_restore_job_cannot_run_without_explicit_manual_input(monkeypatch, event
     monkeypatch.setenv("GITHUB_EVENT_NAME", event)
     monkeypatch.setenv("OMNICIO_RESTORE_DRILL_ALLOWED", allowed)
     with (
+        patch.object(runner, "load_policy",
+                     return_value=replace(runner.load_policy(), mode="managed_backups")),
         patch.object(runner, "release_context") as release,
         pytest.raises(controller.RecoveryBlocked),
     ):
@@ -68,6 +146,8 @@ def test_manual_job_still_requires_exact_checkout_and_successful_main_checks(mon
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
     monkeypatch.setenv("OMNICIO_RESTORE_DRILL_ALLOWED", "true")
     with (
+        patch.object(runner, "load_policy",
+                     return_value=replace(runner.load_policy(), mode="managed_backups")),
         patch.object(runner, "release_context", return_value=(SHA, "test-token")),
         patch.object(runner, "require_checkout") as checkout,
         patch.object(runner, "wait_for_release") as checks,
@@ -75,6 +155,25 @@ def test_manual_job_still_requires_exact_checkout_and_successful_main_checks(mon
         assert runner.authorize() == (SHA, "test-token")
     checkout.assert_called_once_with(SHA)
     assert checks.call_args.args[1] == SHA
+
+
+def test_single_database_policy_blocks_even_manual_export_before_any_io(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
+    monkeypatch.setenv("OMNICIO_RESTORE_DRILL_ALLOWED", "true")
+    archive_key = Fernet.generate_key().decode()
+    with patch.object(runner, "release_context") as release, \
+            patch("psycopg.connect") as connect, \
+            patch.object(controller, "restore_artifact_path") as destination:
+        with pytest.raises(controller.RecoveryBlocked, match="single-database policy"):
+            runner.authorize()
+        with pytest.raises(controller.RecoveryBlocked, match="single-database policy"):
+            controller.export_logical_archive(
+                "never-opened-source", tmp_path, cluster_id=4215095, release_sha=SHA,
+                signing_key=KEY, archive_key=archive_key,
+            )
+    release.assert_not_called()
+    connect.assert_not_called()
+    destination.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -235,7 +334,9 @@ def test_restore_rejects_symlink_or_junction_before_database_process_and_cleanup
     monkeypatch.setattr(controller, "RESTORE_ROOT", root)
     monkeypatch.setattr(sys, "argv", ["run_recovery_drill.py", "--cleanup-artifact"])
     archive_key = Fernet.generate_key().decode()
-    with patch("psycopg.connect") as database, \
+    with patch.object(controller, "load_policy",
+                      return_value=replace(controller.load_policy(), mode="managed_backups")), \
+            patch("psycopg.connect") as database, \
             patch.object(controller, "_postgres_process") as process:
         with pytest.raises(controller.RecoveryBlocked, match="link or escapes"):
             controller.export_logical_archive(

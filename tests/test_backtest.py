@@ -1,8 +1,11 @@
 """Synthetic prices exist only here; test the chronology and money invariants."""
 
+import hashlib
+import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from itertools import islice
 
 import pytest
 
@@ -12,7 +15,9 @@ from omnicio.backtest import (
     HistoricalSplit,
     ResearchAsset,
     ResearchCosts,
+    cashflow_coverage_reasons,
     history_candidate,
+    research_history_candidate,
     run_strategy_backtest,
 )
 from omnicio.strategy import preset_document
@@ -23,6 +28,20 @@ START = datetime(2025, 1, 1, tzinfo=UTC)
 END = START + timedelta(days=200)
 SOURCE = "https://synthetic.example/test-fixture"
 ZERO_COSTS = ResearchCosts(Decimal(0), Decimal(0))
+
+
+def income_coverage(as_of=END, **changes):
+    coverage = {
+        "from": (as_of - timedelta(days=365)).isoformat(),
+        "to": as_of.isoformat(),
+        "cashflows_complete": True,
+        "corporate_actions_complete": True,
+        "lot_history_complete": True,
+        "source_url": SOURCE,
+        "cashflow_unit_basis": "entitlement_security",
+    }
+    coverage.update(changes)
+    return coverage
 
 
 def research_document(preset="balanced"):
@@ -103,6 +122,26 @@ def test_flat_prices_charge_real_cost_model_once_and_do_not_spend_negative_cash(
     assert result["benchmark"]["basis"] == result["basis"]
 
 
+def test_history_boundary_trim_uses_only_observed_common_sessions_and_preserves_old_replay():
+    from omnicio.backtest import _common_research_times
+
+    first, second = prices("a"), prices("b")
+    panel = {
+        "a": {bar.time: bar for bar in first.candles},
+        "b": {bar.time: bar for bar in second.candles[3:-2]},
+    }
+    split = START + (END - START) * 0.7
+    observations, training, testing, missing = _common_research_times(panel, split)
+    assert not missing
+    assert observations == len(second.candles) - 5
+    assert all(when in panel["a"] and when in panel["b"] for when in (*training, *testing))
+    assert "unaligned_history" in _common_research_times(
+        panel, split, trim_boundaries=False,
+    )[3]
+    panel["b"].pop(second.candles[100].time)
+    assert "unaligned_history" in _common_research_times(panel, split)[3]
+
+
 def test_historical_income_screen_uses_only_paid_income_and_never_future_principal():
     asset = prices()
     cutoff = START + timedelta(days=140)
@@ -130,14 +169,307 @@ def test_historical_income_screen_uses_only_paid_income_and_never_future_princip
         cashflows=observed,
         document=document,
         costs=ZERO_COSTS,
+        cashflow_coverage=income_coverage(cutoff),
     )
     assert candidate.facts["cashflow_yield_percent"].value == 6
     assert candidate.facts["dividend_yield_percent"].value == 6
     assert candidate.facts["net_yield_percent"].value == Decimal("5.22")
     assert candidate.facts["dividend_declared"].available_at == cutoff
-    assert not history_candidate(
-        asset.candidate, asset.candles, as_of=START + timedelta(days=100), cashflows=observed
-    ).facts.get("cashflow_yield_percent")
+    earlier = START + timedelta(days=100)
+    no_paid_income = history_candidate(
+        asset.candidate, asset.candles, as_of=earlier, cashflows=observed,
+        cashflow_coverage=income_coverage(earlier),
+    )
+    assert no_paid_income.facts["cashflow_yield_percent"].value == 0
+    assert "dividend_declared" not in no_paid_income.facts
+
+
+@pytest.mark.parametrize(
+    "change,reason",
+    [
+        (None, "cashflow_coverage_missing"),
+        ({"from": (END - timedelta(days=364)).isoformat()}, "cashflow_coverage_incomplete"),
+        ({"to": (END - timedelta(seconds=1)).isoformat()}, "cashflow_coverage_incomplete"),
+        ({"cashflows_complete": False}, "cashflow_coverage_incomplete"),
+        ({"corporate_actions_complete": False}, "cashflow_coverage_incomplete"),
+        ({"lot_history_complete": False}, "cashflow_coverage_incomplete"),
+        ({"cashflow_unit_basis": None}, "cashflow_unit_basis_unverified"),
+        ({"cashflow_unit_basis": "payment_security"}, "cashflow_unit_basis_unverified"),
+        ({"cashflows_complete": 1}, "cashflow_coverage_invalid"),
+        ({"source_url": "https://"}, "cashflow_coverage_invalid"),
+        ({"source_url": "https://user:password@example.com/"}, "cashflow_coverage_invalid"),
+        ({"from": "2024-01-01"}, "cashflow_coverage_invalid"),
+        ({"from": "not-a-date"}, "cashflow_coverage_invalid"),
+    ],
+)
+def test_annual_cashflow_yield_requires_complete_dated_unit_evidence(change, reason):
+    event = HistoricalCashflow(START + timedelta(days=100),
+                              START + timedelta(days=150), Decimal(6), SOURCE)
+    metadata = {} if change is None else {"user_cashflow_coverage": income_coverage(**change)}
+    asset = replace(prices(), observed_cashflows=(event,), provider_observations=metadata)
+    candidate = research_history_candidate(asset, as_of=END, document=research_document("income"),
+                                           costs=ZERO_COSTS)
+    assert reason in cashflow_coverage_reasons(asset, as_of=END)
+    assert "cashflow_yield_percent" not in candidate.facts
+    assert "dividend_yield_percent" not in candidate.facts
+    assert "net_yield_percent" not in candidate.facts
+    assert "dividend_declared" not in candidate.facts
+
+
+def test_payment_year_uses_open_left_closed_right_bounds_and_excludes_principal():
+    year_start = END - timedelta(days=365)
+    flows = (
+        HistoricalCashflow(year_start - timedelta(days=1), year_start, Decimal(40), SOURCE),
+        HistoricalCashflow(year_start, year_start + timedelta(seconds=1), Decimal(2), SOURCE),
+        HistoricalCashflow(END - timedelta(days=1), END, Decimal(3), SOURCE),
+        HistoricalCashflow(END, END + timedelta(seconds=1), Decimal(90), SOURCE),
+        HistoricalCashflow(START, START + timedelta(days=1), Decimal(50), SOURCE, "principal"),
+    )
+    asset = replace(prices(), observed_cashflows=flows,
+                    provider_observations={"user_cashflow_coverage": income_coverage()})
+    candidate = research_history_candidate(asset, as_of=END)
+    assert cashflow_coverage_reasons(asset, as_of=END) == []
+    assert candidate.facts["cashflow_yield_percent"].value == 5
+    assert candidate.facts["dividend_yield_percent"].value == 5
+    assert candidate.facts["cashflow_yield_percent"].source_url == SOURCE
+
+
+@pytest.mark.parametrize(
+    "split_day,expected_yield",
+    [(90, "6"), (100, "6"), (120, "3"), (150, "3"), (180, "3"),
+     (200, "3"), (201, "6")],
+)
+def test_cashflow_units_follow_entitlement_not_payment_and_only_effective_splits(
+    split_day, expected_yield,
+):
+    split = HistoricalSplit(START + timedelta(days=split_day), Decimal(2), SOURCE)
+    event = HistoricalCashflow(START + timedelta(days=100),
+                              START + timedelta(days=150), Decimal(6), SOURCE)
+    asset = prices()
+    # Every completed close represents 100 in the as-of unit. A prior unit is
+    # worth 200 only when the 2:1 split is already effective at the cutoff.
+    bars = tuple(replace(bar, open="200", high="202", low="198", close="200")
+                 if bar.time < split.time <= END else bar for bar in asset.candles)
+    asset = replace(asset, candles=bars, observed_cashflows=(event,), splits=(split,),
+                    corporate_action_dates=(split.time,),
+                    provider_observations={"user_cashflow_coverage": income_coverage()})
+    candidate = research_history_candidate(asset, as_of=END)
+    assert candidate.facts["price_rub"].value == 100
+    assert candidate.facts["cashflow_yield_percent"].value == Decimal(expected_yield)
+
+
+def test_payment_inside_year_needs_action_coverage_back_to_its_earlier_entitlement():
+    year_start = END - timedelta(days=365)
+    entitlement = year_start - timedelta(days=30)
+    event = HistoricalCashflow(entitlement, START + timedelta(days=150), Decimal(6), SOURCE)
+    split = HistoricalSplit(year_start - timedelta(days=10), Decimal(2), SOURCE)
+    asset = replace(prices(), observed_cashflows=(event,), splits=(split,),
+                    provider_observations={"user_cashflow_coverage": income_coverage()})
+    assert cashflow_coverage_reasons(asset, as_of=END) == ["cashflow_coverage_incomplete"]
+    assert "cashflow_yield_percent" not in research_history_candidate(asset, as_of=END).facts
+    full = replace(asset, provider_observations={"user_cashflow_coverage": income_coverage(
+        **{"from": entitlement.isoformat()},
+    )})
+    assert cashflow_coverage_reasons(full, as_of=END) == []
+    assert research_history_candidate(full, as_of=END).facts["cashflow_yield_percent"].value == 3
+
+
+def test_missing_observed_income_does_not_replace_explicit_dated_scalar_evidence():
+    asset = prices()
+    facts = {**asset.candidate.facts,
+             "cashflow_yield_percent": StrategyFact(Decimal(6), START, SOURCE)}
+    explicit = replace(asset, candidate=replace(asset.candidate, facts=facts))
+    document = research_document("income")
+    document["rules"]["yield_floor"] = "none"
+    result = run([explicit], document=document)
+    assert result["status"] == "computed", result["missing_requirements"]
+    assert result["selection"]["candidates"][0]["facts"]["cashflow_yield_percent"]["value"] == "6"
+    coverage = result["asset_diagnostics"][0]["cashflow_yield_coverage"]
+    assert coverage["status"] == "incomplete"
+    assert coverage["reasons"] == ["cashflow_coverage_missing"]
+    without_scalar = run([asset], document=document)
+    assert without_scalar["status"] == "insufficient_data"
+    assert "missing:cashflow_coverage_missing" in without_scalar["missing_requirements"]
+
+
+def test_complete_empty_payment_history_is_known_zero_without_inventing_a_dividend_decision():
+    asset = replace(prices(), provider_observations={"user_cashflow_coverage": income_coverage()})
+    document = research_document("income")
+    unknown_tax = research_history_candidate(asset, as_of=END, document=document, costs=ZERO_COSTS)
+    assert "net_yield_percent" not in unknown_tax.facts
+    document["policy"]["securities_tax_rate_percent"] = "13"
+    candidate = research_history_candidate(asset, as_of=END, document=document, costs=ZERO_COSTS)
+    assert candidate.facts["cashflow_yield_percent"].value == 0
+    assert candidate.facts["dividend_yield_percent"].value == 0
+    assert candidate.facts["net_yield_percent"].value == 0
+    assert "dividend_declared" not in candidate.facts
+
+
+def test_current_income_is_observed_at_the_completed_close_without_instant_expiration():
+    now = END + timedelta(hours=12)
+    event = HistoricalCashflow(START + timedelta(days=100),
+                              START + timedelta(days=150), Decimal(6), SOURCE)
+    coverage = income_coverage(to=(now - timedelta(seconds=1)).isoformat())
+    asset = replace(prices(), observed_cashflows=(event,),
+                    provider_observations={"user_cashflow_coverage": coverage})
+    candidate = research_history_candidate(asset, as_of=now)
+    assert cashflow_coverage_reasons(asset, as_of=now) == []
+    assert candidate.facts["cashflow_yield_percent"].value == 6
+    assert candidate.facts["cashflow_yield_percent"].available_at == END
+    stale = replace(asset, provider_observations={"user_cashflow_coverage": income_coverage(
+        to=(END - timedelta(seconds=1)).isoformat(),
+    )})
+    assert cashflow_coverage_reasons(stale, as_of=now) == ["cashflow_coverage_incomplete"]
+    assert "cashflow_yield_percent" not in research_history_candidate(stale, as_of=now).facts
+
+
+def test_actions_and_payments_after_income_observation_do_not_change_its_unit_or_window():
+    now = END + timedelta(hours=12)
+    split = HistoricalSplit(END + timedelta(hours=6), Decimal(2), SOURCE)
+    observed = (
+        HistoricalCashflow(START + timedelta(days=100),
+                           START + timedelta(days=150), Decimal(6), SOURCE),
+        HistoricalCashflow(END, END + timedelta(hours=3), Decimal(50), SOURCE),
+    )
+    asset = replace(prices(), observed_cashflows=observed, splits=(split,),
+                    corporate_action_dates=(split.time,),
+                    provider_observations={"user_cashflow_coverage": income_coverage()})
+    candidate = research_history_candidate(asset, as_of=now)
+    # Current price signals use the newly effective 2:1 share unit. The earlier
+    # completed income observation uses its own 100 close and its own payments.
+    assert candidate.facts["price_rub"].value == 50
+    assert candidate.facts["cashflow_yield_percent"].value == 6
+    assert candidate.facts["cashflow_yield_percent"].available_at == END
+
+
+def test_training_coverage_diagnostic_uses_the_last_completed_observation_end():
+    document = research_document("income")
+    document["rules"]["yield_floor"] = "none"
+    split = START + (END - START) * 0.7
+    asset = prices()
+    asset = replace(asset, candles=asset.candles[:137] + asset.candles[140:],
+                    observed_cashflows=(HistoricalCashflow(
+                        START + timedelta(days=100), START + timedelta(days=110),
+                        Decimal(6), SOURCE,
+                    ),), provider_observations={"user_cashflow_coverage": income_coverage(split)})
+    result = run([asset], document=document)
+    coverage = result["asset_diagnostics"][0]["cashflow_yield_coverage"]
+    assert coverage["as_of"] == (START + timedelta(days=137)).isoformat()
+    # A 365-day claim ending at the later requested split omits three days at
+    # the left of this actual observation's year; those days cannot be invented.
+    assert coverage["status"] == "incomplete"
+    assert coverage["reasons"] == ["cashflow_coverage_incomplete"]
+
+
+def test_empty_training_coverage_does_not_fall_back_to_older_asset_candles():
+    asset = prices()
+    asset = replace(asset, candles=tuple(
+        replace(bar, time=bar.time - timedelta(days=200)) for bar in asset.candles
+    ), provider_observations={"user_cashflow_coverage": income_coverage(START)})
+    assert cashflow_coverage_reasons(asset, as_of=START) == []
+    assert cashflow_coverage_reasons(asset, as_of=START, candles=()) == [
+        "insufficient_training_history",
+    ]
+    result = run([asset])
+    coverage = result["asset_diagnostics"][0]["cashflow_yield_coverage"]
+    assert coverage == {
+        "status": "incomplete", "reasons": ["insufficient_training_history"],
+        "window_days": 365, "as_of": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "hours,value,source,expected,expected_hours",
+    [
+        (1, Decimal(12), SOURCE, Decimal(12), 1),
+        (1, Decimal(-2), SOURCE, Decimal(-2), 1),
+        (-1, Decimal(12), SOURCE, Decimal(6), 0),
+        (0, Decimal(12), SOURCE, Decimal(6), 0),
+        (13, Decimal(12), SOURCE, Decimal(6), 0),
+        (1, Decimal("NaN"), SOURCE, Decimal(6), 0),
+        (1, Decimal(12), "http://unverified.example/", Decimal(6), 0),
+    ],
+)
+def test_daily_income_preserves_only_valid_newer_known_scalar_evidence(
+    hours, value, source, expected, expected_hours,
+):
+    now = END + timedelta(hours=12)
+    asset = prices()
+    supplied = StrategyFact(value, END + timedelta(hours=hours), source)
+    asset = replace(asset, candidate=replace(asset.candidate, facts={
+        **asset.candidate.facts, "cashflow_yield_percent": supplied,
+    }), observed_cashflows=(HistoricalCashflow(
+        START + timedelta(days=100), START + timedelta(days=150), Decimal(6), SOURCE,
+    ),), provider_observations={"user_cashflow_coverage": income_coverage()})
+    fact = research_history_candidate(asset, as_of=now).facts["cashflow_yield_percent"]
+    assert fact.value == expected
+    assert fact.available_at == END + timedelta(hours=expected_hours)
+
+
+@pytest.mark.parametrize(
+    "value,hours,expected", [(False, 1, False), (1, 1, True), (False, 13, True)],
+)
+def test_daily_income_requires_a_real_boolean_for_a_later_dividend_decision(value, hours, expected):
+    asset = prices()
+    asset = replace(asset, candidate=replace(asset.candidate, facts={
+        **asset.candidate.facts,
+        "dividend_declared": StrategyFact(value, END + timedelta(hours=hours), SOURCE),
+    }), observed_cashflows=(HistoricalCashflow(
+        START + timedelta(days=100), START + timedelta(days=150), Decimal(6), SOURCE,
+    ),), provider_observations={"user_cashflow_coverage": income_coverage()})
+    result = research_history_candidate(asset, as_of=END + timedelta(hours=12))
+    assert result.facts["dividend_declared"].value is expected
+
+
+def test_current_fingerprint_is_independent_of_structured_evidence_key_order():
+    asset = prices()
+    value = {
+        "issuer_id": "issuer-a",
+        "scope": "consolidated_issuer_all_equity",
+        "currency": "RUB",
+        "period_start": (START - timedelta(days=365)).isoformat(),
+        "period_end": START.isoformat(),
+        "operating_cashflow": "120",
+        "capital_expenditure": "20",
+        "gross_dividends_paid": "100",
+        "cashflows_complete": True,
+    }
+    reordered = dict(reversed(list(value.items())))
+    evidence = StrategyFact(value, START, SOURCE)
+    coverage = income_coverage()
+    original = replace(asset, candidate=replace(asset.candidate, facts={
+        **asset.candidate.facts, "dividend_cashflow_coverage": evidence,
+    }), provider_observations={"user_cashflow_coverage": coverage})
+    reordered_asset = replace(original, candidate=replace(original.candidate, facts={
+        **original.candidate.facts,
+        "dividend_cashflow_coverage": replace(evidence, value=reordered),
+    }), provider_observations={"user_cashflow_coverage": dict(reversed(list(coverage.items())))})
+    first, second = run([original]), run([reordered_asset])
+    assert first["data_hash"] == second["data_hash"]
+    changed = replace(original, provider_observations={"user_cashflow_coverage": income_coverage(
+        cashflows_complete=False,
+    )})
+    assert run([changed])["data_hash"] != first["data_hash"]
+
+
+def test_archived_131_income_result_exactly_reproduces_the_published_engine():
+    document = research_document("income")
+    document["rules"]["yield_floor"] = "none"
+    payments = tuple(HistoricalCashflow(
+        START + timedelta(days=entitlement), START + timedelta(days=paid),
+        Decimal(amount), SOURCE,
+    ) for entitlement, paid, amount in ((100, 110, 6), (155, 160, 10)))
+    asset = replace(
+        prices(), basis="verified_total_return", cashflows=payments, observed_cashflows=payments,
+        lot_history_verified=True, cashflow_history_verified=True, verification_source=SOURCE,
+    )
+    result = run([asset], document=document, engine_version="1.3.1")
+    encoded = json.dumps(result, sort_keys=True, ensure_ascii=False).encode()
+    # Full DTO from isolated CP17 source 5441e133, including its historical
+    # automatic income evidence, selection, ledger and input fingerprint.
+    assert hashlib.sha256(encoded).hexdigest() == (
+        "be86366a687fd2d2ff10b232fb97e326e470d6dd4510ef5ed2bbb94dbeb00a46"
+    )
 
 
 def test_test_prices_cannot_change_training_selection_or_first_execution():
@@ -372,6 +704,12 @@ def test_future_window_and_nonfinite_costs_are_rejected_before_research():
         run(costs=nonfinite_costs)
 
 
+def test_out_of_range_exponent_is_rejected_without_decimal_context_overflow():
+    invalid_costs = ResearchCosts(Decimal("1e1000000"), Decimal(0))
+    with pytest.raises(ValueError, match="research_decimal_invalid"):
+        run(costs=invalid_costs)
+
+
 def test_rebalance_band_and_minimum_effect_control_actual_simulated_orders():
     ordinary = research_document()
     baseline = run(document=ordinary)
@@ -496,3 +834,366 @@ def test_dalio_factors_are_jointly_estimated_only_from_published_observations():
     singular = [replace(row, inflation_change=row.growth_change) for row in factors]
     missing = history_candidate(asset.candidate, bars, factors=singular, as_of=cutoff)
     assert "growth_beta" not in missing.facts
+
+
+@pytest.mark.parametrize("ratio", [Decimal(0), Decimal("NaN")])
+def test_corrupt_split_is_unavailable_before_math_and_cannot_replace_a_chosen_asset(ratio):
+    asset = replace(
+        prices(), splits=(HistoricalSplit(START + timedelta(days=60), ratio, SOURCE),)
+    )
+    result = run([asset, prices("b")])
+    assert result["status"] == "insufficient_data"
+    assert "split_evidence_invalid" in result["missing_requirements"]
+    assert result["metrics"] is None
+    assert all(row["instrument_uid"] != "a" for row in result["selection"]["selected"])
+    with pytest.raises(ValueError, match="split_evidence_invalid"):
+        research_history_candidate(asset, as_of=END)
+
+
+def test_invalid_observed_income_is_not_allowed_to_poison_an_otherwise_valid_price_screen():
+    asset = replace(
+        prices(),
+        observed_cashflows=(HistoricalCashflow(
+            START + timedelta(days=60), START + timedelta(days=65), Decimal("NaN"), SOURCE
+        ),),
+    )
+    result = run([asset])
+    assert result["status"] == "insufficient_data"
+    assert "invalid_distribution_event" in result["missing_requirements"]
+    with pytest.raises(ValueError, match="invalid_distribution_event"):
+        research_history_candidate(asset, as_of=END)
+
+
+def test_naive_factor_time_is_rejected_before_comparison_with_aware_cutoff():
+    asset = replace(prices(), factors=(FactorObservation(
+        START, START.replace(tzinfo=None), Decimal(1), Decimal(1), SOURCE,
+    ),))
+    result = run([asset])
+    assert result["status"] == "insufficient_data"
+    assert "factor_history_invalid" in result["missing_requirements"]
+
+
+def test_current_candidate_requires_actual_bars_even_if_imported_facts_claim_history():
+    asset = prices()
+    candidate = history_candidate(asset.candidate, asset.candles, as_of=END)
+    asset = replace(asset, candidate=candidate, candles=())
+    with pytest.raises(ValueError, match="insufficient_training_history"):
+        research_history_candidate(asset, as_of=END)
+
+
+def test_actual_provider_future_timestamp_cannot_overflow_or_enter_history_math():
+    from omnicio.tbank import _historic_exchange_candle
+
+    future = _historic_exchange_candle({
+        "time": "9999-12-31T00:00:00Z", "isComplete": True,
+        "candleSourceType": "CANDLE_SOURCE_EXCHANGE", "volume": "100",
+        **{key: {"units": "999", "nano": 0} for key in ("open", "high", "low", "close")},
+    }, "a")
+    asset = prices()
+    asset = replace(asset, candles=(*asset.candles, future))
+    result = run([asset])
+    assert result["status"] == "computed"
+    assert result["period"]["observations"] == 200
+    candidate = research_history_candidate(asset, as_of=END)
+    assert candidate.facts["history_observations"].value == 200
+    assert candidate.facts["price_rub"].value == 100
+
+
+def test_complete_flag_does_not_make_an_unfinished_daily_interval_available():
+    asset = prices()
+    premature = replace(asset.candles[-1], time=END, open="999", high="999",
+                        low="999", close="999", is_complete=True)
+    asset = replace(asset, candles=(*asset.candles, premature))
+    candidate = research_history_candidate(asset, as_of=END + timedelta(hours=12))
+    assert candidate.facts["history_observations"].value == 200
+    assert candidate.facts["price_rub"].value == 100
+
+
+def test_current_engine_preserves_withdrawals_in_addition_to_target_cash_and_replays_old_math():
+    data = research_document()
+    data["allocation"].update(shares=50, cash=50)
+    data["profile"].update(reserve_rub="1000", planned_withdrawal_rub="2000")
+    current = run(document=data)
+    old = run(document=data, engine_version="1.3.0")
+    assert Decimal(current["metrics"]["ending_cash_rub"]) == 7000
+    assert Decimal(old["metrics"]["ending_cash_rub"]) == 5000
+    assert "historical_outcomes" not in old
+    assert "holding_constraints" not in old
+
+
+def test_observed_zero_volume_prevents_phantom_fills_even_when_previous_volume_was_high():
+    asset = prices()
+    asset = replace(asset, candles=tuple(
+        replace(bar, volume_lots=0) if index >= 140 else bar
+        for index, bar in enumerate(asset.candles)
+    ))
+    current = run([asset])
+    old = run([asset], engine_version="1.3.0")
+    assert current["metrics"]["trades"] == 0
+    assert Decimal(current["metrics"]["ending_cash_rub"]) == 10000
+    assert old["metrics"]["trades"] == 1
+
+
+def test_minimum_rebalance_effect_applies_to_actual_fill_after_liquidity_clipping():
+    data = research_document()
+    data["policy"]["min_replace_benefit_rub"] = "500"
+    asset = prices()
+    asset = replace(asset, candles=tuple(
+        replace(bar, volume_lots=1) if index >= 140 else bar
+        for index, bar in enumerate(asset.candles)
+    ))
+    result = run([asset], document=data)
+    assert result["status"] == "computed"
+    assert result["metrics"]["trades"] == 0
+    assert Decimal(result["metrics"]["ending_cash_rub"]) == 10000
+
+
+def test_current_turnover_budget_includes_commission_and_preserves_archived_gross_only_math():
+    data = research_document()
+    data["policy"]["turnover_budget_percent"] = "10"
+    costs = ResearchCosts(Decimal(100), Decimal(0))
+    current = run(document=data, costs=costs)
+    old = run(document=data, costs=costs, engine_version="1.3.0")
+    # A 1000 RUB budget permits nine 100 RUB lots plus their 9 RUB commission.
+    # Ten lots would spend 1010 RUB and exceed the same execution-plan budget.
+    assert Decimal(current["equity_curve"][1]["cash_rub"]) == 9091
+    assert Decimal(old["equity_curve"][1]["cash_rub"]) == 8990
+
+
+def test_cash_only_model_is_computed_without_invented_candles_sessions_or_probabilities():
+    from omnicio.backtest import research_robustness
+
+    data = research_document()
+    data["allocation"].update(shares=0, cash=100)
+    data["policy"]["securities_tax_rate_percent"] = "0"
+    result = run_strategy_backtest(
+        data, [], from_at=START, to_at=END, now=END,
+        initial_capital_rub=Decimal(10000), costs=ZERO_COSTS,
+    )
+    assert result["status"] == "computed"
+    assert result["basis"] == "cash_balance_model"
+    assert result["equity_curve"] == []
+    assert result["sources"] == []
+    assert result["benchmark"] is None
+    assert result["period"]["observations"] == 0
+    assert result["period"]["train_end"] is None
+    assert result["period"]["test_from"] is None
+    metrics = result["metrics"]
+    assert metrics["return_observations"] == metrics["trades"] == 0
+    assert Decimal(metrics["ending_cash_rub"]) == Decimal(metrics["ending_nav_rub"]) == 10000
+    assert Decimal(metrics["net_return_percent"]) == 0
+    assert metrics["var_95_percent"] is metrics["expected_shortfall_95_percent"] is None
+    assert metrics["annualized_volatility_percent"] is None
+    assert result["probability_of_profit"] is None
+    projection = result["cash_projection"]
+    assert projection["assumed_annual_cash_rate_percent"] == "0"
+    assert projection["personal_constraints_ready"] is True
+    assert all(row["reason"] == "cash_only_no_market_observations"
+               and row["windows"] == 0 and row["profit_frequency_percent"] is None
+               for row in result["historical_outcomes"]["horizons"])
+    robustness = research_robustness(
+        data, [], from_at=START, to_at=END, now=END,
+        initial_capital_rub=Decimal(10000), costs=ZERO_COSTS,
+    )
+    assert robustness["method"] == "not_applicable_cash_balance_model"
+    assert robustness["windows"] == []
+    assert robustness["computed_windows"] == 0
+
+
+@pytest.mark.parametrize("problem", ["unknown", "withdrawal_conflict"])
+def test_cash_only_model_preserves_unknown_or_conflicting_personal_requirements(problem):
+    data = research_document()
+    data["allocation"].update(shares=0, cash=100)
+    data["policy"]["securities_tax_rate_percent"] = "0"
+    if problem == "unknown":
+        data["profile"]["reserve_rub"] = None
+        reason = "profile.reserve_rub"
+    else:
+        data["profile"]["planned_withdrawal_rub"] = "100"
+        reason = "cash_reserve_conflict"
+    result = run_strategy_backtest(
+        data, [], from_at=START, to_at=END, now=END,
+        initial_capital_rub=Decimal(10000), costs=ZERO_COSTS,
+    )
+    assert result["status"] == "insufficient_data"
+    assert result["complete_strategy_coverage"] is False
+    assert result["selection"]["candidate_selection_ready"] is False
+    assert reason in result["missing_requirements"]
+    assert result["cash_projection"]["personal_constraints_ready"] is False
+    assert result["metrics"] is None
+
+
+def test_open_price_gap_cannot_spend_another_assets_allocation_or_breach_concentration():
+    first = prices()
+    first = replace(first, candles=tuple(
+        replace(bar, open="140", high="141", low="139", close="140") if index >= 140 else bar
+        for index, bar in enumerate(first.candles)
+    ))
+    data = research_document()
+    data["policy"]["max_instrument_percent"] = "50"
+    result = run([first, prices("b")], document=data)
+    # Opening prices permit 35 lots of A and 50 lots of B. The old previous-close
+    # sizing bought 50 A (=70% NAV) and left only enough cash for 30 B.
+    assert result["metrics"]["trades"] == 2
+    assert Decimal(result["metrics"]["ending_cash_rub"]) == 100
+    assert result["holding_constraints"]["breach_sessions"] == 0
+    assert result["holding_constraints"]["breaches"] == []
+
+
+def test_later_purchase_fees_do_not_push_earlier_purchase_above_weight_ceiling():
+    data = research_document()
+    data["policy"]["max_instrument_percent"] = "50"
+    result = run([prices(), prices("b")], document=data,
+                 costs=ResearchCosts(Decimal(10), Decimal(0)))
+    assert result["metrics"]["trades"] == 2
+    assert Decimal(result["metrics"]["ending_nav_rub"]) == Decimal("9990.2")
+    assert Decimal(result["metrics"]["ending_cash_rub"]) == Decimal("190.2")
+    assert result["holding_constraints"]["breach_sessions"] == 0
+
+
+def test_expected_distribution_tax_is_in_nav_at_entitlement_not_a_fake_payment_day_loss():
+    asset = prices()
+    event = HistoricalCashflow(
+        START + timedelta(days=155), START + timedelta(days=160), Decimal(10), SOURCE
+    )
+    asset = replace(
+        asset,
+        candles=tuple(replace(bar, open="90", high="91", low="89", close="90")
+                      if index >= 155 else bar for index, bar in enumerate(asset.candles)),
+        basis="verified_total_return", cashflows=(event,), lot_history_verified=True,
+        cashflow_history_verified=True, verification_source=SOURCE,
+    )
+    data = research_document()
+    data["policy"]["securities_tax_rate_percent"] = "13"
+    result = run([asset], document=data)
+    unpaid = result["equity_curve"][20]
+    paid = result["equity_curve"][21]
+    assert Decimal(unpaid["receivables_rub"]) == 870
+    assert Decimal(unpaid["nav_rub"]) == Decimal(paid["nav_rub"]) == 9870
+    assert Decimal(paid["receivables_rub"]) == 0
+    assert Decimal(result["metrics"]["taxes_rub"]) == 130
+
+
+def test_non_overlapping_outcomes_are_computed_from_executed_nav_without_future_probability():
+    asset = prices()
+    asset = replace(asset, candles=tuple(
+        replace(bar, open="100", high="103", low="99",
+                close="102" if index % 2 == 0 else "100") if index >= 140 else bar
+        for index, bar in enumerate(asset.candles)
+    ))
+    result = run([asset])
+    outcomes = result["historical_outcomes"]
+    daily, weekly, monthly = outcomes["horizons"]
+    assert result["probability_of_profit"] is None
+    assert outcomes["future_probability_calibrated"] is False
+    assert daily["windows"] == 60
+    assert daily["profit_windows"] == daily["loss_windows"] == 30
+    assert daily["flat_windows"] == 0
+    assert Decimal(daily["profit_frequency_percent"]) == 50
+    assert Decimal(daily["loss_frequency_percent"]) == 50
+    assert daily["from"] == result["equity_curve"][0]["time"]
+    assert daily["to"] == result["equity_curve"][-1]["time"]
+    assert weekly["windows"] == 12
+    assert monthly["windows"] == 2
+    assert monthly["discarded_trailing_sessions"] == 18
+    assert weekly["profit_frequency_percent"] is None
+    assert monthly["profit_frequency_percent"] is None
+    interval = daily["sampling_interval"]
+    assert interval["method"] == "stationary_block_bootstrap_of_profit_indicators"
+    assert interval["resampling_generator"] == "sha256_counter_64bit_rejection_v1"
+    assert interval["confidence"] == "0.95"
+    assert Decimal(interval["lower_percent"]) < 50 < Decimal(interval["upper_percent"])
+    assert outcomes == run([asset])["historical_outcomes"]
+
+
+def test_bootstrap_counter_stream_reproduces_the_data_hash_and_window_horizon():
+    from omnicio.backtest import _bootstrap_words
+
+    data_hash = "a" * 64
+    first = tuple(islice(_bootstrap_words(data_hash + ":5"), 12))
+    repeated = tuple(islice(_bootstrap_words(data_hash + ":5"), 12))
+    other_horizon = tuple(islice(_bootstrap_words(data_hash + ":21"), 12))
+    assert first == repeated
+    assert first != other_horizon
+    assert all(0 <= word < 1 << 64 for word in first)
+
+
+def test_bootstrap_index_rejects_the_incomplete_residue_group_and_handles_one_choice():
+    from omnicio.backtest import _bootstrap_index
+
+    space = 1 << 64
+    # 2**64 leaves one excess residue for three choices: the largest word must
+    # be rejected. Taking modulo directly would return 0 instead of 2 here.
+    rejected_then_valid = iter((space - 1, space - 2))
+    assert _bootstrap_index(rejected_then_valid, 3) == 2
+    one_choice = iter((0, space - 1))
+    assert _bootstrap_index(one_choice, 1) == 0
+    assert _bootstrap_index(one_choice, 1) == 0
+    full_space = iter((space - 1,))
+    assert _bootstrap_index(full_space, space) == space - 1
+
+
+@pytest.mark.parametrize("size", [0, (1 << 64) + 1])
+def test_bootstrap_index_rejects_unsupported_choice_counts(size):
+    from omnicio.backtest import _bootstrap_index
+
+    words = iter((0,))
+    with pytest.raises(ValueError, match="bootstrap_sample_size_invalid"):
+        _bootstrap_index(words, size)
+
+
+def test_constant_outcomes_do_not_get_a_falsely_certain_bootstrap_interval():
+    row = run([prices(increasing=True)])["historical_outcomes"]["horizons"][0]
+    assert Decimal(row["profit_frequency_percent"]) == 100
+    assert row["sampling_interval"]["lower_percent"] is None
+    assert row["sampling_interval"]["upper_percent"] is None
+    assert row["sampling_interval"]["reason"] == "no_profit_indicator_variation"
+
+
+def test_partial_basket_is_not_advertised_as_the_whole_strategy_profit_frequency():
+    data = research_document()
+    data["allocation"].update(shares=30, bonds=50, funds=10, cash=10)
+    outcomes = run(document=data)["historical_outcomes"]
+    assert outcomes["status"] == "insufficient_data"
+    assert outcomes["complete_strategy_coverage"] is False
+    assert all(row["profit_frequency_percent"] is None for row in outcomes["horizons"])
+    assert all(row["reason"] == "incomplete_strategy_coverage" for row in outcomes["horizons"])
+
+
+def test_requested_horizon_uses_calendar_months_and_never_silently_21_sessions():
+    data = research_document()
+    data["profile"]["horizon_months"] = "2"
+    horizon = run(document=data)["historical_outcomes"]["requested_horizon"]
+    assert horizon["calendar_months"] == "2"
+    assert horizon["first_window_end"] == "2025-07-21T00:00:00+00:00"
+    assert horizon["one_window_covered"] is False
+    assert horizon["future_probability_of_profit"] is None
+    assert horizon["reason"] == "insufficient_calendar_horizon_history"
+
+
+def test_risk_stop_does_not_make_stationary_interval_from_a_known_cash_regime_change():
+    data = research_document()
+    data["profile"]["max_drawdown_percent"] = "1"
+    asset = prices()
+    asset = replace(asset, candles=tuple(
+        replace(bar, open="90", high="91", low="89", close="90") if index >= 150 else bar
+        for index, bar in enumerate(asset.candles)
+    ))
+    result = run([asset], document=data)
+    assert result["metrics"]["risk_limit_triggered"] is True
+    interval = result["historical_outcomes"]["horizons"][0]["sampling_interval"]
+    assert interval["lower_percent"] is None
+    assert interval["reason"] == "strategy_risk_stop_regime_change"
+
+
+def test_post_close_price_drift_breaches_are_reported_without_claiming_hard_protection():
+    data = research_document()
+    data["policy"]["max_instrument_percent"] = "50"
+    first = prices()
+    first = replace(first, candles=tuple(
+        replace(bar, open="100", high="111", low="99", close="110") if index >= 141 else bar
+        for index, bar in enumerate(first.candles)
+    ))
+    result = run([first, prices("b")], document=data)
+    assert result["holding_constraints"]["breach_sessions"] > 0
+    assert "instrument_cap:a" in result["holding_constraints"]["breaches"]

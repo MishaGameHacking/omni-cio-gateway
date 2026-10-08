@@ -14,7 +14,7 @@ from test_workspace_postgres import DATABASE_URL, goal_document, user
 from test_workspace_postgres import workspace_database as workspace_database
 
 from omnicio.db import Database
-from omnicio.goal_planning import goal_forecast, normalize_goal_plan
+from omnicio.goal_planning import goal_forecast, goal_plan_fields, normalize_goal_plan
 from omnicio.portfolio_store import SettingsVersionConflict
 from omnicio.workspace_store import WorkspaceNotFound, WorkspaceStore
 
@@ -42,6 +42,84 @@ def test_zero_return_has_exact_linear_growth_and_required_contribution() -> None
     assert result["simulation"] is None
     assert result["source_status"] == "available"
     assert result["source_as_of"] == "2026-01-01T00:00:00+00:00"
+
+
+@pytest.mark.parametrize("kind,annual_return,inflation", [
+    ("capital", "0", "0"), ("capital", "-30", "10"),
+    ("capital", "15", "0"), ("income", "0", "0"),
+])
+def test_minimum_monthly_payment_reaches_target_and_one_kopeck_less_does_not(
+    kind: str, annual_return: str, inflation: str,
+) -> None:
+    observed = goal(kind=kind, target_amount_rub="100", target_date="2026-04-01",
+                    progress={"amount_rub": "0", "status": "available"})
+    assumptions = plan(monthly_contribution_rub="0", monthly_income_rub="0",
+                       annual_return_percent=annual_return, annual_inflation_percent=inflation)
+    result = goal_forecast(observed, assumptions, today=date(2026, 1, 1))
+    payment = Decimal(result["required_monthly_rub"])
+    field = "monthly_income_rub" if kind == "income" else "monthly_contribution_rub"
+    funded = goal_forecast(observed, {**assumptions, field: str(payment)}, today=date(2026, 1, 1))
+    short = goal_forecast(observed, {**assumptions, field: str(payment - Decimal("0.01"))},
+                          today=date(2026, 1, 1))
+    assert funded["deterministic_months_to_target"] is not None
+    assert short["deterministic_months_to_target"] is None
+    assert Decimal(funded["projected_amount_rub"]) >= Decimal(
+        funded["inflation_adjusted_target_rub"],
+    )
+
+
+def test_allocated_portfolio_progress_keeps_derived_decimal_precision_in_forecast() -> None:
+    from omnicio.workspace import goal_progress
+
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    document = {**goal(), "progress_source": "portfolio", "account_id": "A",
+                "environment": "prod", "allocation_percent": "33.333333333"}
+    progress = goal_progress(
+        document, connection={"account_id": "A", "environment": "prod"},
+        snapshot={"captured_at": now, "analysis_status": "observed", "nav_rub": "1000.01"},
+        operations=[], watermark=None, history_complete=True, now=now,
+    )
+    assert progress["amount_rub"] == "333.3366666633333"
+    result = goal_forecast({**document, "progress": progress}, plan(), today=now.date())
+    assert result["status"] == "available"
+    assert result["source_amount_rub"] == progress["amount_rub"]
+    assert result["projected_amount_rub"] == "120333.34"
+
+
+def test_allocated_income_preserves_twenty_decimal_places_without_relaxing_user_inputs() -> None:
+    from omnicio.workspace import goal_progress
+
+    now = datetime(2026, 1, 2, tzinfo=UTC)
+    document = {**goal(kind="income"), "progress_source": "income", "account_id": "A",
+                "environment": "prod", "allocation_percent": "0.000000001",
+                "start_date": "2026-01-01"}
+    progress = goal_progress(
+        document, connection={"account_id": "A", "environment": "prod"}, snapshot=None,
+        operations=[{"operation_date": now, "operation_type": "OPERATION_TYPE_COUPON",
+                     "operation_state": "OPERATION_STATE_EXECUTED",
+                     "payment_value": "0.000000001", "payment_currency": "RUB"}],
+        watermark=now, history_complete=True, now=now,
+    )
+    result = goal_forecast({**document, "progress": progress}, plan(), today=now.date())
+    assert result["status"] == "available"
+    assert Decimal(result["source_amount_rub"]) == Decimal("1e-20")
+    too_precise_plan = plan(monthly_income_rub="0.000000001")
+    with pytest.raises(ValueError, match="precision"):
+        normalize_goal_plan(too_precise_plan, kind="income")
+
+
+def test_deterministic_attainment_uses_unrounded_amounts_and_large_money_is_decimal() -> None:
+    almost = goal(target_amount_rub="100", target_date="2026-02-01",
+                  progress={"amount_rub": "99.995", "status": "available"})
+    result = goal_forecast(almost, plan(monthly_contribution_rub="0"), today=date(2026, 1, 1))
+    assert result["projected_amount_rub"] == "100.00"
+    assert result["deterministic_months_to_target"] is None
+    assert result["required_monthly_rub"] == "0.01"
+    large = goal(target_date="2056-01-01", target_amount_rub="1000000000000",
+                 progress={"amount_rub": "999999999999.99", "status": "available"})
+    result = goal_forecast(large, plan(monthly_contribution_rub="999999999999.99"),
+                           today=date(2026, 1, 1))
+    assert result["projected_amount_rub"] == "360999999999996.39"
 
 
 def test_stale_portfolio_progress_cannot_be_presented_as_a_current_forecast() -> None:
@@ -91,6 +169,48 @@ def test_income_goal_never_counts_capital_contributions_or_appreciation_as_incom
     assert result["projected_amount_rub"] == "112000.00"
     assert result["required_monthly_kind"] == "income"
     assert result["simulation"] is None
+
+
+def test_income_plan_accepts_only_its_active_inputs_and_ignores_inactive_values() -> None:
+    document = {"monthly_income_rub": "2500", "target_in_today_money": False,
+                "annual_return_percent": "not applicable", "annual_volatility_percent": None,
+                "monthly_contribution_rub": -10, "annual_inflation_percent": "unused", "seed": None}
+    normalized = normalize_goal_plan(document, kind="income")
+    assert normalized["monthly_income_rub"] == "2500"
+    assert normalized["monthly_contribution_rub"] == "0"
+    assert normalized["annual_return_percent"] == "0"
+    assert normalized["seed"] == 42
+    result = goal_forecast(goal(kind="income"), document, today=date(2026, 1, 1))
+    assert result["projected_amount_rub"] == "130000.00"
+    assert result["applicable_fields"] == list(goal_plan_fields("income"))
+    assert "annual_return_percent" not in result["applicable_fields"]
+
+
+def test_capital_plan_does_not_require_income_or_optional_simulation_fields() -> None:
+    document = {"monthly_contribution_rub": "10000", "annual_return_percent": "0",
+                "target_in_today_money": False}
+    result = goal_forecast(goal(), document, today=date(2026, 1, 1))
+    assert result["projected_amount_rub"] == "220000.00"
+    assert result["simulation"] is None
+    assert result["chart_contract"]["observed_history"] is False
+    assert result["chart_contract"]["x"] == "model_month"
+    assert result["scenario_path"][0] == {
+        "month": 0, "amount_rub": "100000.00", "contributions_rub": "0.00",
+        "source_amount_rub": "100000.00", "target_rub": "220000.00",
+    }
+    assert result["scenario_path"][-1]["contributions_rub"] == "120000.00"
+
+
+@pytest.mark.parametrize("document", [
+    {"monthly_income_rub": "2500", "target_in_today_money": True},
+    {"monthly_income_rub": "-1", "target_in_today_money": False},
+    {"monthly_income_rub": "2500", "target_in_today_money": False, "unknown": 1},
+])
+def test_typed_plan_still_rejects_missing_active_or_unknown_inputs(
+    document: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError):
+        normalize_goal_plan(document, kind="income")
 
 
 def test_model_probability_is_reproducible_conditional_and_has_sampling_interval() -> None:

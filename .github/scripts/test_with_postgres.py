@@ -104,6 +104,7 @@ def run_suite(binary: Path, directory: Path) -> int:
         return _run_native(
             [
                 sys.executable, "-m", "pytest", "-vv", "--durations=10",
+                "--junitxml=artifacts/postgres/pytest.xml",
                 "-o", "faulthandler_timeout=60",
             ],
             cwd=Path(__file__).resolve().parents[2], env=environment,

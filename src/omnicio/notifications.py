@@ -25,7 +25,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
@@ -35,9 +35,12 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from psycopg import Error as PostgresError
+from psycopg.errors import UniqueViolation
+from psycopg.rows import dict_row
 
 from .db import Database
-from .security import decrypt_secret, encrypt_secret
+from .security import SecurityValueError, decrypt_secret, encrypt_secret
 from .workspace import quiet_now
 from .workspace_store import WorkspaceNotFound, WorkspaceStore, _event_record, _json
 
@@ -46,6 +49,7 @@ _EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9.-]{1,189}
 _PUSH_HOSTS = {"fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com"}
 _PUSH_SUFFIXES = (".push.apple.com", ".notify.windows.com")
 _MAILTO_SCHEME = "mailto:"
+_HTTPS_SCHEME = "https://"
 _SETTINGS_TARGET = "/#settings"
 _EVENTS_TARGET = "/#events"
 
@@ -72,11 +76,20 @@ class NotificationUnavailable(RuntimeError):
     """The requested channel is not configured; no provider mutation occurred."""
 
 
+class NotificationConflict(RuntimeError):
+    """A device cannot be activated under the requested binding."""
+
+
+class NotificationRateLimited(RuntimeError):
+    """The owner already queued an explicit device test in the last minute."""
+
+
 @dataclass(frozen=True, slots=True)
 class NotificationConfig:
     crypto_key: str
     public_origin: str = "https://omnicio.ru"
     enabled: bool = False
+    email_enabled: bool = False
     vapid_private_key: str = ""
     vapid_subject: str = ""
     smtp_host: str = ""
@@ -94,6 +107,57 @@ class DeliveryResult:
     code: str
     retry_after: int = 0
     expired: bool = False
+
+
+_DELIVERY_ERRORS = {
+    "push_dns_unavailable": ("Сервис push временно недоступен.", "wait"),
+    "push_result_unknown": ("Сервис push не подтвердил результат отправки.", "check_device"),
+    "push_subscription_expired": ("Подписка этого устройства истекла.", "reconnect"),
+    "push_rate_limited": ("Сервис push попросил повторить отправку позже.", "wait"),
+    "push_provider_rejected": ("Сервис push отклонил уведомление.", "reconnect"),
+    "push_authorization_unavailable": (
+        "Сервер временно не может подготовить авторизацию push.", "wait",
+    ),
+    "email_temporary_rejection": ("Почтовый сервер временно отложил отправку.", "wait"),
+    "email_provider_rejected": ("Почтовый сервер отклонил письмо.", "contact_support"),
+    "email_recipient_rejected": ("Почтовый сервер не принял адрес получателя.", "verify_email"),
+    "email_result_unknown": ("Почтовый сервер не подтвердил результат отправки.", "check_inbox"),
+    "verification_replaced": ("Этот код заменён новым кодом подтверждения.", "use_latest_code"),
+    "channel_revoked": ("Канал уведомлений отключён пользователем.", "reconnect"),
+    "push_binding_expired": ("Привязка устройства к сеансу завершена.", "reconnect"),
+    "push_binding_changed": ("Привязка устройства обновлена.", "reconnect"),
+    "email_disabled": ("Отправка по электронной почте отключена.", "open_events"),
+    "legacy_digest_membership_unknown": (
+        "Для прежнего дайджеста нет подтверждения состава отправленных событий.", "open_events",
+    ),
+    "delivery_preference_changed": (
+        "Отправка отменена после изменения настроек или прочтения событий.", "open_events",
+    ),
+    "worker_result_unknown": (
+        "Сервер не получил подтверждение результата отправки.", "open_events",
+    ),
+    "delivery_expired": (
+        "Срок отправки уведомления истёк; события доступны в кабинете.", "open_events",
+    ),
+}
+
+
+def delivery_error(code: str | None, status: str) -> dict[str, Any] | None:
+    """Stable public diagnostics, never raw provider payloads or destinations."""
+    if status == "accepted" or not code:
+        return None
+    public_code = code if code in _DELIVERY_ERRORS else "delivery_error_unknown"
+    title, action = _DELIVERY_ERRORS.get(public_code, (
+        "Причину отправки пока не удалось определить.", "contact_support",
+    ))
+    retryable = status == "queued" and public_code in {
+        "push_dns_unavailable", "push_rate_limited", "push_authorization_unavailable",
+        "email_temporary_rejection",
+    }
+    if status == "failed" and action == "wait":
+        title += " Автоматические попытки завершены."
+        action = "contact_support"
+    return {"code": public_code, "title": title, "action_code": action, "retryable": retryable}
 
 
 def _decode(value: str, length: int) -> bytes:
@@ -143,8 +207,9 @@ def normalize_subscription(value: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("notification_subscription_invalid")
     public = _decode(keys["p256dh"], 65)
     ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), public)
-    _decode(keys["auth"], 16)
-    return {"endpoint": endpoint, "keys": {"p256dh": _b64(public), "auth": keys["auth"]}}
+    auth = _decode(keys["auth"], 16)
+    canonical = _HTTPS_SCHEME + host + parsed.path + ("?" + parsed.query if parsed.query else "")
+    return {"endpoint": canonical, "keys": {"p256dh": _b64(public), "auth": _b64(auth)}}
 
 
 def push_public_key(private_key: str) -> str:
@@ -189,7 +254,7 @@ def vapid_authorization(config: NotificationConfig, endpoint: str, now: datetime
     header = _b64(b'{"typ":"JWT","alg":"ES256"}')
     body = _b64(_json({
         "aud": f"{parsed.scheme}://{parsed.hostname}",
-        "exp": int(now.timestamp()) + 3600, "sub": config.vapid_subject,
+        "exp": int(now.timestamp()) + 7200, "sub": config.vapid_subject,
     }).encode())
     private = ec.derive_private_key(
         int.from_bytes(_decode(config.vapid_private_key, 32)), ec.SECP256R1(),
@@ -230,13 +295,104 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
             raise
 
 
-class NotificationTransport:
-    def __init__(self, config: NotificationConfig) -> None:
-        self.config = config
+def _push_retry_delay(value: str) -> int:
+    """Bound provider delta-seconds without accepting Unicode digits or huge ints."""
+    value = value.strip()
+    if re.fullmatch(r"\d+", value, flags=re.ASCII) is None:
+        return 60
+    significant = value.lstrip("0") or "0"
+    if len(significant) > 5:
+        return 86400
+    return min(86400, max(30, int(significant)))
 
-    def send_push(self, destination: Mapping[str, Any], payload: dict[str, Any]) -> DeliveryResult:
+
+class NotificationTransport:
+    def __init__(self, config: NotificationConfig, *, database: Database | None = None) -> None:
+        self.config = config
+        self.database = database
+        self._authorization_lock = Lock()
+        self._authorizations: dict[str, tuple[datetime, str]] = {}
+
+    def _authorization(self, endpoint: str, now: datetime) -> str | None:
+        if self.database is not None:
+            return self._shared_authorization(endpoint)
+        # Isolated transport/RFC tests need no database. Application instances
+        # always use the durable store shared by workers and process restarts.
+        origin = _HTTPS_SCHEME + (urlsplit(endpoint).hostname or "")
+        with self._authorization_lock:
+            # Apple requires reusing a JWT for at least one hour. Keep a second
+            # hour of validity so a just-reused token does not expire in transit.
+            # A clock discontinuity must not keep stale or far-future claims.
+            self._authorizations = {
+                key: entry for key, entry in self._authorizations.items()
+                if entry[0] <= now < entry[0] + timedelta(hours=1)
+            }
+            existing = self._authorizations.get(origin)
+            if existing:
+                return existing[1]
+            if len(self._authorizations) >= 128:
+                # Do not evict an unexpired origin and then regenerate its JWT
+                # too frequently. Defer excess work through the existing queue.
+                return None
+            header = vapid_authorization(self.config, endpoint, now)
+            self._authorizations[origin] = (now, header)
+            return header
+
+    def _shared_authorization(self, endpoint: str) -> str | None:
+        if self.database is None:
+            raise NotificationUnavailable("notification_authorization_store_unavailable")
+        origin = _HTTPS_SCHEME + (urlsplit(endpoint).hostname or "")
+        identity = hashlib.sha256(_json([
+            push_public_key(self.config.vapid_private_key), self.config.vapid_subject,
+        ]).encode()).hexdigest()
+        with (self.database.pool.connection() as conn, conn.transaction(),
+              conn.cursor(row_factory=dict_row) as cur):
+            # A short operational lock also makes the global bound exact. No
+            # provider request happens while it is held; no user data is stored.
+            cur.execute("SELECT pg_advisory_xact_lock("
+                        "hashtextextended('omnicio:notification-vapid', 0))")
+            cur.execute("SELECT clock_timestamp() AS now")
+            now = cast(dict[str, Any], cur.fetchone())["now"]
+            cur.execute(
+                "DELETE FROM notification_push_authorizations WHERE issued_at <= %s "
+                "OR issued_at > %s OR expires_at <= %s", (now - timedelta(hours=1), now, now),
+            )
+            cur.execute(
+                "SELECT authorization_ciphertext FROM notification_push_authorizations "
+                "WHERE origin = %s AND identity_hash = %s", (origin, identity),
+            )
+            found = cur.fetchone()
+            if found is not None:
+                return decrypt_secret(bytes(found["authorization_ciphertext"]),
+                                      self.config.crypto_key)
+            cur.execute("SELECT count(*) AS total FROM notification_push_authorizations")
+            if cast(dict[str, Any], cur.fetchone())["total"] >= 128:
+                return None
+            header = vapid_authorization(self.config, endpoint, now)
+            expires = datetime.fromtimestamp(int(now.timestamp()) + 7200, UTC)
+            cur.execute(
+                "INSERT INTO notification_push_authorizations "
+                "(origin, identity_hash, issued_at, expires_at, authorization_ciphertext) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (origin, identity, now, expires, encrypt_secret(header, self.config.crypto_key)),
+            )
+            return header
+
+    def send_push(
+        self, destination: Mapping[str, Any], payload: dict[str, Any], *, ttl_seconds: int = 86400,
+    ) -> DeliveryResult:
+        if type(ttl_seconds) is not int or not 0 <= ttl_seconds <= 86400:
+            raise ValueError("notification_ttl_invalid")
         subscription = normalize_subscription(destination)
         endpoint = subscription["endpoint"]
+        try:
+            authorization = self._authorization(endpoint, datetime.now(UTC))
+        except (PostgresError, SecurityValueError):
+            # This failure precedes DNS, connection creation and every provider
+            # request. Retrying is safe; it is not an ambiguous network receipt.
+            return DeliveryResult("queued", "push_authorization_unavailable", 60)
+        if authorization is None:
+            return DeliveryResult("queued", "push_rate_limited", 300)
         parsed = urlsplit(endpoint)
         host = parsed.hostname or ""
         try:
@@ -248,17 +404,16 @@ class NotificationTransport:
             with closing(_PinnedHTTPSConnection(host, address)) as conn:
                 conn.request("POST", parsed.path + ("?" + parsed.query if parsed.query else ""),
                              body=content, headers={
-                                 "Authorization": vapid_authorization(
-                                     self.config, endpoint, datetime.now(UTC),
-                                 ),
-                                 "Content-Encoding": "aes128gcm", "TTL": "86400",
+                                 "Authorization": authorization,
+                                 "Content-Encoding": "aes128gcm",
+                                 "TTL": str(ttl_seconds),
                                  "Content-Type": "application/octet-stream",
                                  "Topic": hashlib.sha256(payload["tag"].encode()).hexdigest()[:32],
                              })
                 response = conn.getresponse()
                 status = response.status
-                raw_retry = response.getheader("Retry-After", "")
-                retry = min(86400, max(30, int(raw_retry))) if raw_retry.isdigit() else 60
+                raw_retry = (response.getheader("Retry-After", "")
+                             if status in {429, 503} else "")
                 response.read(4096)
         except (OSError, http.client.HTTPException):
             return DeliveryResult("uncertain", "push_result_unknown")
@@ -267,7 +422,7 @@ class NotificationTransport:
         if status in {404, 410}:
             return DeliveryResult("failed", "push_subscription_expired", expired=True)
         if status in {429, 503}:
-            return DeliveryResult("queued", "push_rate_limited", retry)
+            return DeliveryResult("queued", "push_rate_limited", _push_retry_delay(raw_retry))
         return DeliveryResult("failed", "push_provider_rejected")
 
     def send_email(self, destination: Mapping[str, Any], payload: dict[str, Any]) -> DeliveryResult:
@@ -326,7 +481,7 @@ class NotificationService:
         self.workspace = WorkspaceStore(database)
         self.config = config
         self.legal_versions = dict(legal_versions)
-        self.transport = transport or NotificationTransport(config)
+        self.transport = transport or NotificationTransport(config, database=database)
         self._stop = Event()
         self._wake = Event()
         self._thread: Thread | None = None
@@ -334,15 +489,17 @@ class NotificationService:
         self._user_cursor: UUID | None = None
         if config.public_origin != "https://omnicio.ru":
             raise ValueError("notification_origin_invalid")
-        if config.smtp_mode not in {"tls", "starttls"} or not 1 <= config.smtp_port <= 65535:
+        if config.email_enabled and (
+            config.smtp_mode not in {"tls", "starttls"} or not 1 <= config.smtp_port <= 65535
+        ):
             raise ValueError("notification_smtp_invalid")
-        if config.smtp_sender:
+        if config.email_enabled and config.smtp_sender:
             normalize_email(config.smtp_sender)
         if config.vapid_private_key:
             push_public_key(config.vapid_private_key)
             subject = config.vapid_subject
             if (any(ord(char) < 33 or ord(char) > 126 for char in subject)
-                    or not subject.startswith((_MAILTO_SCHEME, "https://"))):
+                    or not subject.startswith((_MAILTO_SCHEME, _HTTPS_SCHEME))):
                 raise ValueError("notification_vapid_subject_invalid")
             if subject.startswith(_MAILTO_SCHEME):
                 normalize_email(subject.removeprefix(_MAILTO_SCHEME))
@@ -354,7 +511,8 @@ class NotificationService:
 
     @property
     def email_configured(self) -> bool:
-        return bool(self.config.enabled and self.config.smtp_host and self.config.smtp_sender)
+        return bool(self.config.enabled and self.config.email_enabled
+                    and self.config.smtp_host and self.config.smtp_sender)
 
     def _seal(self, value: object) -> bytes:
         return encrypt_secret(_json(value), self.config.crypto_key)
@@ -368,8 +526,53 @@ class NotificationService:
     def _hash(self, value: str) -> str:
         return hmac.new(self.config.crypto_key.encode(), value.encode(), hashlib.sha256).hexdigest()
 
-    def status(self, user_id: UUID) -> dict[str, Any]:
+    @staticmethod
+    def _session(cur: Any, user_id: UUID, digest: bytes) -> UUID:
+        cur.execute(
+            "SELECT id FROM sessions WHERE user_id = %s AND token_digest = %s "
+            "AND revoked_at IS NULL AND expires_at > clock_timestamp() FOR SHARE",
+            (user_id, digest),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise PermissionError("session_expired")
+        return UUID(str(row["id"]))
+
+    def _maintain_channels(self, cur: Any, user_id: UUID, now: datetime) -> None:
+        """Enforce authority before status, queueing or claiming, retaining receipts."""
+        cur.execute(
+            "UPDATE notification_channels SET status = 'expired', verification_digest = NULL, "
+            "updated_at = %s WHERE user_id = %s AND kind = 'email' "
+            "AND status IN ('active', 'pending') AND NOT %s",
+            (now, user_id, self.config.email_enabled),
+        )
+        cur.execute(
+            "UPDATE notification_channels c SET status = 'expired', updated_at = %s "
+            "WHERE c.user_id = %s AND c.kind = 'push' AND c.status = 'active' "
+            "AND (c.binding_id IS NULL OR NOT EXISTS (SELECT 1 FROM sessions s "
+            "WHERE s.user_id = c.user_id AND s.id = c.session_id "
+            "AND s.revoked_at IS NULL AND s.expires_at > %s))", (now, user_id, now),
+        )
+        cur.execute(
+            "UPDATE notification_outbox o SET status = 'cancelled', "
+            "last_error = CASE WHEN c.kind = 'email' THEN 'email_disabled' "
+            "ELSE 'push_binding_expired' END, updated_at = %s "
+            "FROM notification_channels c WHERE o.user_id = %s "
+            "AND c.user_id = o.user_id AND c.id = o.channel_id AND o.status = 'queued' "
+            "AND ((c.kind = 'email' AND NOT %s) OR (c.kind = 'push' AND "
+            "(c.status <> 'active' OR o.binding_id IS DISTINCT FROM c.binding_id)))",
+            (now, user_id, self.config.email_enabled),
+        )
+
+    def _configured_kinds(self) -> list[str]:
+        return [kind for kind, configured in (
+            ("push", self.push_configured), ("email", self.email_configured),
+        ) if configured]
+
+    def status(self, user_id: UUID, *, session_digest: bytes | None = None) -> dict[str, Any]:
         with self.workspace._transaction(user_id) as cur:
+            session_id = self._session(cur, user_id, session_digest) if session_digest else None
+            self._maintain_channels(cur, user_id, datetime.now(UTC))
             cur.execute(
                 "UPDATE notification_channels SET status = 'expired', "
                 "verification_digest = NULL WHERE user_id = %s AND status = 'pending' "
@@ -377,12 +580,19 @@ class NotificationService:
             )
             cur.execute(
                 "SELECT id, kind, label, status, verified_at, created_at, "
-                "verification_expires_at, verification_attempts, destination_ciphertext "
+                "verification_expires_at, verification_attempts, destination_ciphertext, "
+                "session_id, binding_id "
                 "FROM notification_channels WHERE user_id = %s "
-                "AND status <> 'revoked' ORDER BY created_at", (user_id,),
+                "AND (kind = 'push' OR status <> 'revoked') "
+                "ORDER BY (status IN ('active', 'pending')) DESC, updated_at DESC, id DESC "
+                "LIMIT 32", (user_id,),
             )
             channels = [dict(row) for row in cur.fetchall()]
             for channel in channels:
+                channel_session = channel.pop("session_id")
+                channel["current_session"] = bool(
+                    session_id and channel_session == session_id,
+                )
                 destination = self._open(channel.pop("destination_ciphertext"))
                 channel["endpoint_fingerprint"] = (hashlib.sha256(
                     destination["endpoint"].encode(),
@@ -391,11 +601,21 @@ class NotificationService:
                     0, 5 - channel.pop("verification_attempts"),
                 )
             cur.execute(
-                "SELECT id, channel_id, kind, status, attempts, last_error, created_at, "
-                "accepted_at, next_attempt_at FROM notification_outbox WHERE user_id = %s "
-                "ORDER BY created_at DESC, id DESC LIMIT 30", (user_id,),
+                "SELECT o.id, o.channel_id, o.kind, o.status, o.attempts, o.last_error, "
+                "o.created_at, o.accepted_at, o.next_attempt_at, c.kind AS channel_kind, "
+                "c.label AS channel_label, c.status AS channel_status "
+                "FROM notification_outbox o JOIN notification_channels c "
+                "ON c.user_id = o.user_id AND c.id = o.channel_id WHERE o.user_id = %s "
+                "ORDER BY o.created_at DESC, o.id DESC LIMIT 30", (user_id,),
             )
             deliveries = [dict(row) for row in cur.fetchall()]
+            for delivery in deliveries:
+                delivery["channel"] = {
+                    "id": delivery["channel_id"], "kind": delivery.pop("channel_kind"),
+                    "label": delivery.pop("channel_label"),
+                    "status": delivery.pop("channel_status"),
+                }
+                delivery["error"] = delivery_error(delivery["last_error"], delivery["status"])
         return {
             "push_configured": self.push_configured, "email_configured": self.email_configured,
             "vapid_public_key": push_public_key(self.config.vapid_private_key)
@@ -464,20 +684,102 @@ class NotificationService:
 
     def subscribe_push(
         self, user_id: UUID, subscription: dict[str, Any], label: str = "Это устройство",
+        *, session_digest: bytes, intent: str = "enable",
     ) -> dict[str, Any]:
         if not self.push_configured:
             raise NotificationUnavailable("notification_push_not_configured")
         normalized = normalize_subscription(subscription)
+        if intent not in {"enable", "sync"}:
+            raise ValueError("notification_intent_invalid")
         if (not isinstance(label, str) or not 1 <= len(label.strip()) <= 100
                 or any(ord(char) < 32 for char in label)):
             raise ValueError("notification_label_invalid")
-        with self.workspace._transaction(user_id) as cur:
-            ident = self._insert_channel(
-                cur, user_id, kind="push", destination=normalized, label=label.strip(),
-                status="active", now=datetime.now(UTC),
-            )
+        try:
+            with self.workspace._transaction(user_id) as cur:
+                session_id = self._session(cur, user_id, session_digest)
+                now = datetime.now(UTC)
+                self._maintain_channels(cur, user_id, now)
+                result = self._bind_push(cur, user_id, normalized, label.strip(),
+                                         session_id, intent, now)
+        except UniqueViolation as exc:
+            if exc.diag.constraint_name != "notification_push_active_destination_key":
+                raise
+            raise NotificationConflict("notification_device_conflict") from None
         self._wake.set()
-        return {"id": str(ident), "status": "active"}
+        return result
+
+    def _bind_push(
+        self, cur: Any, user_id: UUID, subscription: dict[str, Any], label: str,
+        session_id: UUID, intent: str, now: datetime,
+    ) -> dict[str, Any]:
+        cur.execute(
+            "SELECT id, status, session_id, binding_id, destination_ciphertext "
+            "FROM notification_channels WHERE user_id = %s AND kind = 'push' "
+            "AND destination_hash = %s FOR UPDATE",
+            (user_id, self._hash(subscription["endpoint"])),
+        )
+        previous = cur.fetchone()
+        if previous and previous["status"] == "revoked" and intent == "sync":
+            return {"id": str(previous["id"]), "status": "revoked",
+                    "binding_id": str(previous["binding_id"]) if previous["binding_id"] else None,
+                    "current_session": previous["session_id"] == session_id}
+        unchanged = bool(previous and previous["status"] == "active"
+                         and previous["session_id"] == session_id and previous["binding_id"]
+                         and self._open(previous["destination_ciphertext"]) == subscription)
+        binding = previous["binding_id"] if unchanged else uuid4()
+        ident = self._insert_channel(cur, user_id, kind="push", destination=subscription,
+                                     label=label, status="active", now=now)
+        cur.execute(
+            "UPDATE notification_channels SET session_id = %s, binding_id = %s "
+            "WHERE user_id = %s AND id = %s", (session_id, binding, user_id, ident),
+        )
+        if not unchanged:
+            cur.execute(
+                "UPDATE notification_outbox SET status = 'cancelled', "
+                "last_error = 'push_binding_changed', updated_at = clock_timestamp() "
+                "WHERE user_id = %s AND channel_id = %s AND status = 'queued'",
+                (user_id, ident),
+            )
+        return {"id": str(ident), "status": "active", "binding_id": str(binding),
+                "current_session": True}
+
+    def test_push(
+        self, user_id: UUID, channel_id: UUID, *, session_digest: bytes,
+    ) -> dict[str, Any]:
+        if not self.push_configured:
+            raise NotificationUnavailable("notification_push_not_configured")
+        now = datetime.now(UTC)
+        with self.workspace._transaction(user_id) as cur:
+            session_id = self._session(cur, user_id, session_digest)
+            self._maintain_channels(cur, user_id, now)
+            cur.execute(
+                "SELECT status FROM notification_channels WHERE user_id = %s AND id = %s "
+                "AND kind = 'push' AND session_id = %s", (user_id, channel_id, session_id),
+            )
+            channel = cur.fetchone()
+            if channel is None:
+                raise WorkspaceNotFound("notification_channel_not_found")
+            if channel["status"] != "active":
+                raise NotificationConflict("notification_channel_inactive")
+            cur.execute(
+                "SELECT 1 FROM notification_outbox WHERE user_id = %s AND kind = 'test' "
+                "AND created_at > %s LIMIT 1", (user_id, now - timedelta(minutes=1)),
+            )
+            if cur.fetchone() is not None:
+                raise NotificationRateLimited("notification_test_rate_limited")
+            key = "test:" + str(uuid4())
+            self._enqueue(cur, user_id, channel_id, key, "test", {
+                "title": "Проверка уведомлений OMNICIO",
+                "body": "Уведомления на этом устройстве подключены.",
+                "url": _SETTINGS_TARGET,
+            }, now)
+            cur.execute(
+                "SELECT id FROM notification_outbox WHERE user_id = %s AND channel_id = %s "
+                "AND message_key = %s", (user_id, channel_id, key),
+            )
+            ident = cur.fetchone()["id"]
+        self._wake.set()
+        return {"id": str(ident), "status": "queued"}
 
     def request_email_verification(self, user_id: UUID, email: str) -> dict[str, Any]:
         if not self.email_configured:
@@ -519,6 +821,8 @@ class NotificationService:
                 "expires_at": (now + timedelta(minutes=15)).isoformat()}
 
     def verify_email(self, user_id: UUID, channel_id: UUID, code: str) -> dict[str, Any]:
+        if not self.email_configured:
+            raise NotificationUnavailable("notification_email_not_configured")
         if not isinstance(code, str) or re.fullmatch(r"\d{6}", code, flags=re.ASCII) is None:
             raise ValueError("notification_verification_invalid")
         now = datetime.now(UTC)
@@ -575,14 +879,20 @@ class NotificationService:
     ) -> None:
         tag = hashlib.sha256(f"{user_id}:{channel_id}:{message_key}".encode()).hexdigest()
         content = {**payload, "tag": tag}
+        cur.execute(
+            "SELECT binding_id FROM notification_channels WHERE user_id = %s AND id = %s",
+            (user_id, channel_id),
+        )
+        binding_id = cur.fetchone()["binding_id"]
         if members is not None:
             content["membership_version"] = 1
         sealed = self._seal(content)
         cur.execute(
             "INSERT INTO notification_outbox (user_id, channel_id, message_key, kind, "
-            "payload_ciphertext, next_attempt_at) VALUES (%s, %s, %s, %s, %s, %s) "
+            "payload_ciphertext, next_attempt_at, binding_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT (user_id, channel_id, message_key) DO NOTHING RETURNING id",
-            (user_id, channel_id, message_key, kind, sealed, due),
+            (user_id, channel_id, message_key, kind, sealed, due, binding_id),
         )
         stored = cur.fetchone()
         if members is None:
@@ -593,10 +903,11 @@ class NotificationService:
             cur.execute(
                 "UPDATE notification_outbox SET status = 'queued', payload_ciphertext = %s, "
                 "next_attempt_at = %s, created_at = clock_timestamp(), "
-                "updated_at = clock_timestamp(), last_error = NULL "
+                "updated_at = clock_timestamp(), last_error = NULL, binding_id = %s "
                 "WHERE user_id = %s AND channel_id = %s AND message_key = %s "
                 "AND status = 'cancelled' AND last_error = 'delivery_preference_changed' "
-                "AND attempts < 6 RETURNING id", (sealed, due, user_id, channel_id, message_key),
+                "AND attempts < 6 RETURNING id",
+                (sealed, due, binding_id, user_id, channel_id, message_key),
             )
             stored = cur.fetchone()
         if stored is not None:
@@ -707,12 +1018,42 @@ class NotificationService:
         )
 
     @staticmethod
-    def _digest_boundary(preferences: Mapping[str, Any], now: datetime) -> datetime:
-        local = now.astimezone(ZoneInfo(preferences["quiet_hours"]["timezone"]))
-        end = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    def _digest_calendar_time(preferences: Mapping[str, Any], day: datetime) -> datetime:
+        zone = ZoneInfo(preferences.get("digest_timezone")
+                        or preferences["quiet_hours"]["timezone"])
+        hour, minute = (int(part) for part in preferences.get("digest_time", "00:00").split(":"))
+        local = day.astimezone(zone).replace(hour=hour, minute=minute, second=0, microsecond=0)
+        # A repeated local minute is delivered once, after its second occurrence.
+        # A skipped minute is postponed to the first existing local minute. Store
+        # the actual instant so a DST retry cannot create another digest period.
+        for _ in range(24 * 60 + 1):
+            candidate = local.replace(fold=1)
+            returned = candidate.astimezone(UTC).astimezone(zone)
+            if returned.replace(tzinfo=None) == candidate.replace(tzinfo=None):
+                return returned
+            local += timedelta(minutes=1)
+        raise ValueError("notification_digest_time_invalid")
+
+    @classmethod
+    def _digest_boundary(cls, preferences: Mapping[str, Any], now: datetime) -> datetime:
+        local = now.astimezone(ZoneInfo(preferences.get("digest_timezone")
+                                      or preferences["quiet_hours"]["timezone"]))
         if preferences["digest_frequency"] == "weekly":
-            end -= timedelta(days=end.weekday())
+            local -= timedelta(days=local.weekday())
+        end = cls._digest_calendar_time(preferences, local)
+        if end.astimezone(UTC) > now.astimezone(UTC):
+            end = cls._digest_calendar_time(preferences, local - timedelta(
+                days=7 if preferences["digest_frequency"] == "weekly" else 1,
+            ))
         return end
+
+    @classmethod
+    def _next_digest_boundary(
+        cls, preferences: Mapping[str, Any], boundary: datetime,
+    ) -> datetime:
+        return cls._digest_calendar_time(preferences, boundary + timedelta(
+            days=7 if preferences["digest_frequency"] == "weekly" else 1,
+        ))
 
     def _queue_event(
         self, cur: Any, user_id: UUID, channel_id: UUID, event: dict[str, Any],
@@ -760,7 +1101,7 @@ class NotificationService:
             end = self._digest_boundary(preferences, now)
             frequency = preferences["digest_frequency"]
             if any(event["updated_at"] >= end for event in members):
-                end += timedelta(days=7 if frequency == "weekly" else 1)
+                end = self._next_digest_boundary(preferences, end)
             key = hashlib.sha256((frequency + ":" + ":".join(
                 sorted(str(ident) for ident in identifiers),
             )).encode()).hexdigest()
@@ -814,7 +1155,7 @@ class NotificationService:
                 previous_end = end
                 end = self._digest_boundary(preferences, now)
                 if any(event["updated_at"] >= end for event in members):
-                    end += timedelta(days=7 if preferences["digest_frequency"] == "weekly" else 1)
+                    end = self._next_digest_boundary(preferences, end)
                 row["payload"]["to"] = end.isoformat()
                 boundary_changed = end != previous_end
             earliest = max(now, end)
@@ -833,10 +1174,11 @@ class NotificationService:
         now = now or datetime.now(UTC)
         self.workspace.synchronize_events(user_id)
         with self.workspace._transaction(user_id) as cur:
+            self._maintain_channels(cur, user_id, now)
             preferences = self.workspace._preferences(cur, user_id)["document"]
             cur.execute(
                 "SELECT * FROM notification_channels WHERE user_id = %s AND status = 'active' "
-                "ORDER BY id FOR UPDATE", (user_id,),
+                "AND kind = ANY (%s) ORDER BY id FOR UPDATE", (user_id, self._configured_kinds()),
             )
             channels = cur.fetchall()
             for channel in channels:
@@ -938,6 +1280,12 @@ class NotificationService:
                         and row["verification_attempts"] < 5)
         if row["channel_status"] != "active":
             return False
+        if row["channel_kind"] == "push" and (
+            not row["binding_id"] or row["binding_id"] != row["channel_binding_id"]
+        ):
+            return False
+        if row["kind"] == "test":
+            return bool(row["channel_kind"] == "push")
         if row["kind"] == "event":
             return self._event_delivery_allowed(cur, user_id, payload, preferences, row["id"])
         if row["kind"] == "digest":
@@ -952,6 +1300,8 @@ class NotificationService:
         if row["kind"] == "verification":
             return False
         eligible_at = cast(datetime, row["created_at"])
+        if row["kind"] == "test":
+            return eligible_at + timedelta(minutes=5) <= now
         if row["kind"] == "digest":
             # A frequency handoff can queue a full weekly period in advance.
             # Give that period its delivery window after it closes, including
@@ -966,10 +1316,11 @@ class NotificationService:
         ):
             return None
         with self.workspace._transaction(user_id) as cur:
+            self._maintain_channels(cur, user_id, now)
             preferences = self.workspace._preferences(cur, user_id)["document"]
             cur.execute(
-                "SELECT id FROM notification_channels WHERE user_id = %s AND status = 'active'",
-                (user_id,),
+                "SELECT id FROM notification_channels WHERE user_id = %s AND status = 'active' "
+                "AND kind = ANY (%s)", (user_id, self._configured_kinds()),
             )
             for channel in cur.fetchall():
                 self._prepare_channel_messages(cur, user_id, channel["id"], preferences, now)
@@ -981,15 +1332,17 @@ class NotificationService:
             )
             cur.execute(
                 "SELECT o.*, c.kind AS channel_kind, c.status AS channel_status, "
-                "c.destination_ciphertext, c.verification_expires_at, c.verification_attempts "
+                "c.destination_ciphertext, c.verification_expires_at, c.verification_attempts, "
+                "c.binding_id AS channel_binding_id "
                 "FROM notification_outbox o JOIN notification_channels c "
                 "ON c.id = o.channel_id AND c.user_id = o.user_id "
                 "WHERE o.user_id = %s AND o.status = 'queued' AND o.next_attempt_at <= %s "
                 "AND c.kind = ANY (%s) "
+                "AND (c.kind <> 'push' OR EXISTS (SELECT 1 FROM sessions s "
+                "WHERE s.user_id = c.user_id AND s.id = c.session_id "
+                "AND s.revoked_at IS NULL AND s.expires_at > %s)) "
                 "ORDER BY o.next_attempt_at, o.created_at LIMIT 1 FOR UPDATE OF o SKIP LOCKED",
-                (user_id, now, [kind for kind, configured in (
-                    ("push", self.push_configured), ("email", self.email_configured),
-                ) if configured]),
+                (user_id, now, self._configured_kinds(), now),
             )
             found = cur.fetchone()
             if found is None:
@@ -1007,7 +1360,8 @@ class NotificationService:
                      user_id, row["id"]),
                 )
                 return None
-            due = now if row["kind"] == "verification" else delivery_time(preferences, now)
+            due = (now if row["kind"] in {"verification", "test"}
+                   else delivery_time(preferences, now))
             if due > now:
                 cur.execute(
                     "UPDATE notification_outbox SET next_attempt_at = %s, "
@@ -1032,7 +1386,18 @@ class NotificationService:
         if row is None:
             return False
         if row["channel_kind"] == "push":
-            result = self.transport.send_push(row["destination"], row["payload"])
+            # Push providers and lock screens get no instrument or event source
+            # metadata. An opaque binding lets the service worker reject an old
+            # account's notification after a shared-device account switch.
+            payload = {key: row["payload"][key] for key in ("title", "body", "tag")}
+            payload.update(url=_notification_target(row["payload"]),
+                           binding_id=str(row["binding_id"]), kind=row["kind"])
+            ttl = 86400
+            if row["kind"] == "test":
+                ttl = max(0, min(300, int((
+                    row["created_at"] + timedelta(minutes=5) - now
+                ).total_seconds())))
+            result = self.transport.send_push(row["destination"], payload, ttl_seconds=ttl)
         else:
             result = self.transport.send_email(row["destination"], row["payload"])
         state = result.status
@@ -1040,6 +1405,15 @@ class NotificationService:
             state = "failed"
         delay = max(result.retry_after, min(21600, 30 * 2 ** row["attempts"]))
         with self.workspace._transaction(user_id) as cur:
+            if state == "queued" and row["channel_kind"] == "push":
+                self._maintain_channels(cur, user_id, now)
+                cur.execute(
+                    "SELECT 1 FROM notification_channels WHERE user_id = %s AND id = %s "
+                    "AND status = 'active' AND binding_id = %s",
+                    (user_id, row["channel_id"], row["binding_id"]),
+                )
+                if cur.fetchone() is None:
+                    state = "cancelled"
             cur.execute(
                 "UPDATE notification_outbox SET status = %s, last_error = %s, "
                 "next_attempt_at = %s, accepted_at = %s, lease_until = NULL, "
@@ -1051,8 +1425,9 @@ class NotificationService:
             if result.expired:
                 cur.execute(
                     "UPDATE notification_channels SET status = 'expired', updated_at = %s "
-                    "WHERE user_id = %s AND id = %s AND status = 'active'",
-                    (now, user_id, row["channel_id"]),
+                    "WHERE user_id = %s AND id = %s AND status = 'active' "
+                    "AND binding_id IS NOT DISTINCT FROM %s",
+                    (now, user_id, row["channel_id"], row["binding_id"]),
                 )
         return True
 
@@ -1063,12 +1438,13 @@ class NotificationService:
         if re.fullmatch(r"[a-z0-9_-]{1,100}", key) is None or not 1 <= len(title) <= 160:
             raise ValueError("notification_operational_alert_invalid")
         with self.workspace._transaction(user_id) as cur:
+            self._maintain_channels(cur, user_id, datetime.now(UTC))
             prefs = self.workspace._preferences(cur, user_id)["document"]
             if not prefs["notifications"]["system"]:
                 return
             cur.execute(
-                "SELECT id FROM notification_channels WHERE user_id = %s AND status = 'active'",
-                (user_id,),
+                "SELECT id FROM notification_channels WHERE user_id = %s AND status = 'active' "
+                "AND kind = ANY (%s)", (user_id, self._configured_kinds()),
             )
             for channel in cur.fetchall():
                 self._enqueue(cur, user_id, channel["id"], "operational:" + key,

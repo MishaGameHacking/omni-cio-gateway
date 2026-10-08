@@ -4,6 +4,8 @@ import copy
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from unittest.mock import Mock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -13,6 +15,7 @@ from omnicio.workspace import (
     event_digest,
     event_id,
     goal_progress,
+    income_goal_start,
     normalize_goal,
     normalize_preferences,
     portfolio_performance,
@@ -57,6 +60,33 @@ def operation(
     }
 
 
+@pytest.mark.parametrize(("target", "payment", "reached"), (
+    ("100000.00", "100.000000000", False),
+    ("3.00", "2.000000000", False),
+    ("100.00", "200.000000000", True),
+))
+def test_goal_events_accept_calculated_percent_precision_from_stored_money(
+    target: str, payment: str, reached: bool,
+) -> None:
+    owner = uuid4()
+    goal = goal_document(
+        id=str(uuid4()), version=1, kind="income", progress_source="income",
+        target_amount_rub=Decimal(target), allocation_percent=Decimal("50.00"),
+        manual_amount_rub=None, target_date=None, account_id="account", environment="prod",
+    )
+    goal["progress"] = goal_progress(
+        goal, connection={"account_id": "account", "environment": "prod"}, snapshot=None,
+        operations=[operation("COUPON", payment)], watermark=END, history_complete=True, now=END,
+    )
+    assert goal["progress"]["status"] == "available"
+    store = WorkspaceStore(Mock())
+    with patch.object(store, "_insert_event") as insert:
+        store._goal_events(Mock(), owner, [goal], END)
+    assert insert.call_count == int(reached)
+    if reached:
+        assert insert.call_args.kwargs["kind"] == "goal_reached"
+
+
 def test_income_uses_selected_period_and_keeps_principal_separate() -> None:
     basis = _Basis(
         connection=None,
@@ -89,6 +119,54 @@ def test_preferences_defaults_have_no_invented_user_facts_and_do_not_alias() -> 
     assert fresh["display_name"] == ""
     assert normalize_preferences(fresh) == fresh
     assert not fresh["quiet_hours"]["enabled"]
+
+
+def test_old_digest_preferences_keep_midnight_schedule_and_new_defaults_are_explicit() -> None:
+    preferences = default_preferences()
+    assert preferences["digest_time"] == "20:30"
+    preferences.pop("digest_time")
+    preferences.pop("digest_timezone")
+    preferences["quiet_hours"]["timezone"] = "Europe/Berlin"
+    old = normalize_preferences(preferences)
+    assert old["digest_time"] == "00:00"
+    assert old["digest_timezone"] == "Europe/Berlin"
+    with pytest.raises(ValueError, match="digest_time_invalid"):
+        normalize_preferences({**old, "digest_time": "24:00"})
+
+
+def test_independent_nav_coverage_unlocks_fund_return_but_unknown_legacy_partial_does_not() -> None:
+    snapshots = [
+        {"captured_at": START, "analysis_status": "partial", "nav_rub": "1000",
+         "valuation_status": "complete"},
+        {"captured_at": END, "analysis_status": "partial", "nav_rub": "1100",
+         "valuation_status": "complete"},
+    ]
+    result = portfolio_performance(snapshots, [], watermark=END, history_complete=True)
+    assert result["return_percent"] == "10.0"
+    assert result["investment_result_rub"] == "100"
+    snapshots[0].pop("valuation_status")
+    assert portfolio_performance(snapshots, [], watermark=END, history_complete=True)[
+        "return_status"
+    ] == "unavailable"
+
+
+def test_foreign_internal_payments_do_not_require_fabricated_fx_for_rub_nav_return() -> None:
+    snapshots = [
+        {"captured_at": START, "analysis_status": "observed", "nav_rub": "1000"},
+        {"captured_at": END, "analysis_status": "observed", "nav_rub": "1100"},
+    ]
+    operations = [operation("DIVIDEND", "2", currency="USD"), operation("BROKER_FEE", "-1")]
+    result = portfolio_performance(snapshots, operations, watermark=END, history_complete=True)
+    assert result["return_percent"] == "10.0"
+    assert result["income_received_rub"] is None
+    assert result["fees_rub"] == "1"
+    assert result["metric_coverage"]["dividends_rub"]["status"] == "unavailable"
+    assert result["native_payment_sums"]["currencies"]["USD"]["dividends"] == "2"
+    operations.append(operation("INPUT", "2", currency="USD"))
+    result = portfolio_performance(snapshots, operations, watermark=END, history_complete=True)
+    assert result["return_percent"] is None
+    assert result["nav_change_rub"] == "100"
+    assert result["metric_coverage"]["fees_rub"]["status"] == "complete"
 
 
 @pytest.mark.parametrize(
@@ -274,6 +352,15 @@ def test_unknown_external_flows_block_performance(row: dict[str, Any], reason: s
     assert flow["net_contributions_rub"] is None
 
 
+def test_repeated_invalid_flow_preserves_the_actual_reason_for_each_metric() -> None:
+    flow = cashflow_summary(
+        [operation("INPUT", "-100"), operation("INPUT", "-50", day=11)],
+        from_at=START, to_at=END, complete=True,
+    )
+    assert flow["metrics"]["net_contributions_rub"]["reason"] == "external_flow_sign_invalid"
+    assert flow["income"]["total_rub"] == "0"
+
+
 def test_canceled_pending_and_outside_period_operations_are_excluded() -> None:
     rows = [
         operation("INPUT", "10", operation_state="OPERATION_STATE_CANCELED"),
@@ -292,8 +379,10 @@ def test_incomplete_history_never_displays_zero_as_known_income() -> None:
     assert flow["income"]["status"] == "unavailable"
     assert flow["income"]["total_rub"] is None
     assert flow["income"]["by_month"] == []
+    assert flow["income"]["metric_coverage"]["coupons_rub"]["status"] == "unavailable"
     no_payments = cashflow_summary([], from_at=START, to_at=END, complete=True)
     assert no_payments["income"]["total_rub"] == "0"
+    assert no_payments["income"]["metric_coverage"]["coupons_rub"]["status"] == "complete"
 
 
 def test_performance_never_extrapolates_after_sync_watermark() -> None:
@@ -368,6 +457,14 @@ def test_income_goal_uses_only_allocated_received_income() -> None:
         now=END,
     )
     assert result["amount_rub"] == "250"
+
+
+def test_income_goal_start_accepts_stored_date_and_serialized_calendar_date() -> None:
+    expected = datetime(2025, 12, 31, 21, tzinfo=UTC)
+    assert income_goal_start({"start_date": "2026-01-01"}) == expected
+    assert income_goal_start({"start_date": START.date()}) == expected
+    with pytest.raises(ValueError, match="workspace_date_invalid"):
+        income_goal_start({"start_date": START})
 
 
 def test_income_goal_calendar_start_includes_midnight_without_earlier_payments() -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
 from typing import Any, Literal
 
 from .strategy_assessment import StrategyCandidateFacts, candidate_weight_constraints
@@ -124,9 +124,12 @@ def execution_quote(
         )
         if multiplier <= 0 or nkd < 0:
             raise ExecutionStateError("execution_bond_valuation_invalid")
-    buy = (ask * (1 + slippage_bps / 10000) / tick).to_integral_value(rounding=ROUND_CEILING) * tick
-    sell = (bid * (1 - slippage_bps / 10000) / tick).to_integral_value(rounding=ROUND_FLOOR) * tick
-    if sell <= 0 or any(
+    # Slippage is an upper bound, not permission to widen by one more native tick.
+    buy = (ask * (1 + slippage_bps / 10000) / tick).to_integral_value(rounding=ROUND_FLOOR) * tick
+    sell = (
+        (bid * (1 - slippage_bps / 10000) / tick).to_integral_value(rounding=ROUND_CEILING) * tick
+    )
+    if not 0 < sell <= bid <= ask <= buy or any(
         value * 10**9 != (value * 10**9).to_integral_value()
         for value in (buy * multiplier, sell * multiplier)
     ):
@@ -161,11 +164,43 @@ class _ExecutionInventory:
 @dataclass(frozen=True, slots=True)
 class _OrderSizing:
     nav: Decimal
+    allocation_nav: Decimal
     reserve: Decimal
     max_order: Decimal
     commission_bps: Decimal
+    liquidity_days: Decimal
     policy: Mapping[str, Any]
     now: datetime
+
+
+def execution_position_lots(position: TBankPortfolioPosition, lot_size: int) -> tuple[int, int]:
+    """Convert the provider's position and blocked *pieces* to whole executable lots."""
+    try:
+        quantity, blocked = Decimal(position.quantity), Decimal(position.blocked_lots)
+    except InvalidOperation as exc:
+        raise ExecutionStateError("execution_inventory_incomplete") from exc
+    if (
+        type(lot_size) is not int
+        or lot_size <= 0
+        or not quantity.is_finite()
+        or not blocked.is_finite()
+        or not 0 <= blocked <= quantity
+        or quantity % lot_size != 0
+    ):
+        raise ExecutionStateError("execution_inventory_incomplete")
+    held = int(quantity / lot_size)
+    free = 0 if position.blocked else int((quantity - blocked) / lot_size)
+    return held, free
+
+
+def execution_cash_reserve(
+    document: Mapping[str, Any], *, nav: Decimal, blocked_cash: Decimal
+) -> Decimal:
+    """Retain the stricter cash target/free reserve, and additionally all withdrawals."""
+    return max(
+        blocked_cash + Decimal(document["profile"]["reserve_rub"]),
+        nav * Decimal(document["allocation"]["cash"]) / 100,
+    ) + Decimal(document["profile"]["planned_withdrawal_rub"])
 
 
 def _execution_inventory(
@@ -179,24 +214,63 @@ def _execution_inventory(
             continue
         uid = position.instrument_uid
         quote = quotes.get(uid)
-        count = Decimal(position.quantity_lots)
-        blocked = Decimal(position.blocked_lots)
-        if (
-            uid in held
-            or quote is None
-            or count != int(count)
-            or count < 0
-            or blocked < 0
-            or blocked != int(blocked)
-            or Decimal(position.quantity) != count * quote["lot"]
-        ):
+        if uid in held or quote is None:
             raise ExecutionStateError("execution_inventory_incomplete")
-        held[uid] = int(count)
-        free[uid] = 0 if position.blocked else max(0, int(count - blocked))
+        held[uid], free[uid] = execution_position_lots(position, quote["lot"])
         average = position.average_price_fifo
         if average is not None and average.currency == "RUB":
             cost_basis[uid] = Decimal(average.value) * quote["lot"]
     return _ExecutionInventory(held, free, cost_basis)
+
+
+def _execution_volume_capacity(
+    candidate: StrategyCandidateFacts, sizing: _OrderSizing
+) -> tuple[int, int]:
+    volume = candidate.facts.get("daily_volume_lots")
+    if volume is None or volume.available_at.tzinfo is None or volume.available_at > sizing.now:
+        raise ExecutionStateError("execution_volume_missing")
+    try:
+        observed = Decimal(str(volume.value))
+    except InvalidOperation as exc:
+        raise ExecutionStateError("execution_volume_missing") from exc
+    if not observed.is_finite() or observed < 0:
+        raise ExecutionStateError("execution_volume_missing")
+    participation = Decimal(sizing.policy["max_daily_turnover_participation_percent"]) / 100
+    daily = observed * participation
+    return int(daily), int(daily * sizing.liquidity_days)
+
+
+def _allocation_capital(
+    nav: Decimal,
+    turnover: Decimal,
+    quotes: Mapping[str, Mapping[str, Any]],
+    inventory: _ExecutionInventory,
+    commission_bps: Decimal,
+    tax_rate: Decimal,
+) -> Decimal:
+    """Lower bound NAV after any plan spending at most the gross turnover budget.
+
+    Every future leg can reduce NAV. Sizing against the current intermediate NAV
+    alone would let a later fee push an earlier purchase above its weight ceiling.
+    """
+    largest_loss_ratio = Decimal(0)
+    for uid, quote in quotes.items():
+        mark = quote["mark"] * quote["lot"]
+        for action in ("buy", "sell"):
+            if action == "sell" and not inventory.held.get(uid):
+                continue
+            amount = (quote[action + "_limit"] + quote["nkd"]) * quote["lot"]
+            fee = amount * commission_bps / 10000
+            if action == "buy":
+                loss = amount + fee - mark
+            else:
+                # Missing purchase basis must never reduce the reserve. If a sale
+                # is actually needed, _order_tax separately requires that basis.
+                basis = inventory.cost_basis.get(uid, Decimal(0))
+                tax = max(Decimal(0), amount - fee - basis) * tax_rate
+                loss = mark - max(Decimal(0), amount - fee - tax)
+            largest_loss_ratio = max(largest_loss_ratio, loss / (amount + fee))
+    return max(Decimal(0), nav - turnover * largest_loss_ratio)
 
 
 def _order_tax(
@@ -231,7 +305,8 @@ def _planned_order_leg(
         raise ExecutionStateError("execution_held_evidence_missing")
     mark = quote["mark"] * quote["lot"]
     current = inventory.held.get(uid, 0) * mark
-    target = sizing.nav * target_weight / 100
+    volume_cap, exit_capacity = _execution_volume_capacity(candidate, sizing)
+    target = min(sizing.allocation_nav * target_weight / 100, exit_capacity * mark)
     delta = int(target / mark) - inventory.held.get(uid, 0)
     band = Decimal(sizing.policy["no_trade_band_percent"])
     if (
@@ -240,11 +315,6 @@ def _planned_order_leg(
         or abs(target - current) / sizing.nav * 100 <= band
     ):
         return None
-    volume = candidate.facts.get("daily_volume_lots")
-    if volume is None or volume.available_at > sizing.now:
-        raise ExecutionStateError("execution_volume_missing")
-    participation = Decimal(sizing.policy["max_daily_turnover_participation_percent"]) / 100
-    volume_cap = int(Decimal(str(volume.value)) * participation)
     amount = (quote[action + "_limit"] + quote["nkd"]) * quote["lot"]
     fee = amount * sizing.commission_bps / 10000
     lots = min(
@@ -262,7 +332,8 @@ def _planned_order_leg(
         return None
     signed_lots = lots if action == "buy" else -lots
     reduction = abs(target - current) - abs(target - current - signed_lots * mark)
-    if reduction - lots * fee < Decimal(sizing.policy["min_replace_benefit_rub"]):
+    price_loss = max(Decimal(0), amount - mark if action == "buy" else mark - amount)
+    if reduction - lots * (fee + price_loss) < Decimal(sizing.policy["min_replace_benefit_rub"]):
         return None
     tax = _order_tax(
         action,
@@ -294,6 +365,19 @@ def _planned_order_leg(
     }
 
 
+def _projected_liquidity_blockers(
+    projected_lots: Mapping[str, int],
+    candidates: Mapping[str, StrategyCandidateFacts],
+    sizing: _OrderSizing,
+) -> list[str]:
+    blockers = []
+    for uid, count in projected_lots.items():
+        candidate = candidates.get(uid)
+        if candidate is not None and count > _execution_volume_capacity(candidate, sizing)[1]:
+            blockers.append("liquidity_horizon:" + uid)
+    return blockers
+
+
 def strategy_order_plan(
     document: Mapping[str, Any],
     candidates: Sequence[StrategyCandidateFacts],
@@ -323,17 +407,27 @@ def strategy_order_plan(
     weights = {
         row["instrument_uid"]: Decimal(str(row["target_weight_percent"])) for row in selected
     }
-    reserve = (
-        max(
-            Decimal(document["profile"]["reserve_rub"])
-            + Decimal(document["profile"]["planned_withdrawal_rub"]),
-            nav * Decimal(document["allocation"]["cash"]) / 100,
-        )
-        + blocked_cash
-    )
+    reserve = execution_cash_reserve(document, nav=nav, blocked_cash=blocked_cash)
     available = cash
     remaining = min(max_daily, nav * Decimal(document["policy"]["turnover_budget_percent"]) / 100)
-    sizing = _OrderSizing(nav, reserve, max_order, commission_bps, document["policy"], now)
+    allocation_nav = _allocation_capital(
+        nav,
+        remaining,
+        quotes,
+        inventory,
+        commission_bps,
+        Decimal(document["policy"]["securities_tax_rate_percent"]) / 100,
+    )
+    sizing = _OrderSizing(
+        nav,
+        allocation_nav,
+        reserve,
+        max_order,
+        commission_bps,
+        Decimal(document["profile"]["liquidity_horizon_days"]),
+        document["policy"],
+        now,
+    )
     legs = []
     projected = dict(held)
     for action in ("sell", "buy"):
@@ -372,15 +466,19 @@ def strategy_order_plan(
         if count
     }
     blockers = candidate_weight_constraints(document, candidates, projected_weights, as_of=now)
+    blockers.extend(_projected_liquidity_blockers(projected, by_uid, sizing))
     if available < reserve:
         blockers.append("cash_reserve")
     return {
         "legs": legs,
         "blockers": blockers,
         "nav_rub": str(nav),
+        "allocation_nav_floor_rub": str(allocation_nav),
+        "maximum_cost_buffer_rub": str(nav - allocation_nav),
         "cash_before_rub": str(cash),
         "blocked_cash_rub": str(blocked_cash),
         "initial_lots": held,
+        "lot_sizes": {uid: quote["lot"] for uid, quote in quotes.items()},
         "cash_after_rub": str(available),
         "reserve_rub": str(reserve),
         "projected_weights": {uid: str(value) for uid, value in projected_weights.items()},

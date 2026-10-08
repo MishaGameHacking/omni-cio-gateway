@@ -10,6 +10,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from http.client import HTTPException
 from typing import Literal, Never, cast
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -122,6 +123,12 @@ class TBankLastPrice:
     instrument_uid: str
     price: str
     time: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class TBankLastPriceBatch:
+    prices: tuple[TBankLastPrice, ...]
+    unavailable_uids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -969,6 +976,10 @@ def _read_tbank_response(
     except TimeoutError as exc:
         logger.warning("T-Invest request timed out method=%s", method)
         raise TBankUnavailable("T-Invest API request timed out") from exc
+    except (HTTPException, OSError, UnicodeDecodeError) as exc:
+        reason = type(exc).__name__
+        logger.warning("T-Invest response failed method=%s reason=%s", method, reason)
+        raise TBankUnavailable(f"T-Invest API response unavailable: {reason}") from exc
 
 
 def _decode_tbank_response(raw: str) -> dict[str, object]:
@@ -1306,6 +1317,16 @@ class TBankInvestClient:
         environment: TBankEnvironment,
         instrument_uids: tuple[str, ...],
     ) -> tuple[TBankLastPrice, ...]:
+        batch = self.get_last_prices_batch(token, environment, instrument_uids)
+        if batch.unavailable_uids:
+            # Existing planning/execution readers require all returned evidence
+            # to be valid. UI display has a separate, explicitly partial contract.
+            raise TBankUnavailable("T-Invest last price is missing required fields")
+        return batch.prices
+
+    def get_last_prices_batch(
+        self, token: str, environment: TBankEnvironment, instrument_uids: tuple[str, ...],
+    ) -> TBankLastPriceBatch:
         clean = tuple(
             dict.fromkeys(
                 _validate_provider_id(value, _INSTRUMENT_UID_FIELD)
@@ -1313,7 +1334,7 @@ class TBankInvestClient:
             )
         )
         if not clean:
-            return ()
+            return TBankLastPriceBatch(())
         payload = self._post(
             token=token,
             environment=environment,
@@ -1328,16 +1349,21 @@ class TBankInvestClient:
         requested = set(clean)
         seen: set[str] = set()
         result: list[TBankLastPrice] = []
+        unavailable: list[str] = []
         for raw in _required_list(payload, "lastPrices"):
             item = _required_object(raw, "last price")
             uid = _text(item.get("instrumentUid")).strip()
             if not uid or uid not in requested or uid in seen:
                 raise TBankUnavailable("T-Invest last prices returned invalid instrument uid")
             seen.add(uid)
-            price = _quotation(item.get("price"))
-            quote_time = _optional_provider_timestamp(item.get("time"))
-            if price is None or Decimal(price) <= 0 or quote_time is None:
-                raise TBankUnavailable("T-Invest last price is missing required fields")
+            try:
+                price = _quotation(item.get("price"))
+                quote_time = _optional_provider_timestamp(item.get("time"))
+                if price is None or Decimal(price) <= 0 or quote_time is None:
+                    raise TBankUnavailable("T-Invest last price is missing required fields")
+            except TBankUnavailable:
+                unavailable.append(uid)
+                continue
             result.append(
                 TBankLastPrice(
                     instrument_uid=uid,
@@ -1345,7 +1371,7 @@ class TBankInvestClient:
                     time=quote_time,
                 )
             )
-        return tuple(result)
+        return TBankLastPriceBatch(tuple(result), tuple(unavailable))
 
     def get_accrued_interests(
         self,
@@ -2324,31 +2350,32 @@ def _text(value: object) -> str:
 _INVALID_INTEGER_VALUE_ERROR = "T-Invest API returned invalid integer value"
 
 
-def _integer_text(value: object) -> str:
+def _integer_text(value: object, *, bits: Literal[32, 64] = 64) -> str:
     if value is None:
         return "0"
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         raise TBankUnavailable(_INVALID_INTEGER_VALUE_ERROR)
-    if isinstance(value, (str, int)):
-        text = str(value)
-        try:
-            int(text)
-        except ValueError as exc:
-            raise TBankUnavailable(_INVALID_INTEGER_VALUE_ERROR) from exc
-        return text
-    raise TBankUnavailable(_INVALID_INTEGER_VALUE_ERROR)
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise TBankUnavailable(_INVALID_INTEGER_VALUE_ERROR) from exc
+    boundary = 2 ** (bits - 1)
+    # ProtoJSON accepts integral decimal/exponent notation, but not fractions
+    # or values outside the declared type. Check before expanding or doing math.
+    if (not number.is_finite() or not -boundary <= number < boundary
+            or number != number.to_integral_value()):
+        raise TBankUnavailable(_INVALID_INTEGER_VALUE_ERROR)
+    return str(int(number))
 
 
 def _quotation(value: object) -> str | None:
     if value is None:
         return None
     data = _required_object(value, "numeric value")
-    units = data.get("units", 0)
-    nano = data.get("nano", 0)
-    if isinstance(units, bool) or isinstance(nano, bool):
-        raise TBankUnavailable("T-Invest API returned invalid numeric value")
+    units = _integer_text(data.get("units"))
+    nano = _integer_text(data.get("nano"), bits=32)
     try:
-        amount = Decimal(str(units)) + Decimal(str(nano)) / Decimal(1_000_000_000)
+        amount = Decimal(units) + Decimal(nano) / Decimal(1_000_000_000)
     except (InvalidOperation, ValueError) as exc:
         raise TBankUnavailable("T-Invest API returned invalid numeric value") from exc
     if amount == 0:

@@ -86,6 +86,7 @@ class Settings:
     assistant_api_key: str = ""
     assistant_model: str = ""
     notifications_enabled: bool = False
+    notification_email_enabled: bool = False
     notification_crypto_key: str = ""
     notification_vapid_private_key: str = ""
     notification_vapid_subject: str = ""
@@ -108,6 +109,9 @@ class Settings:
     assistant_allowed_endpoints: tuple[str, ...] = ()
     assistant_daily_request_limit: int = 30
     operator_user_id: UUID | None = None
+    legal_operator_name: str = ""
+    legal_operator_email: str = ""
+    release_build: str = ""
 
     @property
     def vkid_ready(self) -> bool:
@@ -127,6 +131,7 @@ class Settings:
 
 
 def load_settings() -> Settings:
+    email_enabled = boolean("NOTIFICATION_EMAIL_ENABLED", False)
     live_max_order = positive_int("PORTFOLIO_LIVE_MAX_ORDER_RUB", 10_000)
     live_max_daily = positive_int("PORTFOLIO_LIVE_MAX_DAILY_RUB", 20_000)
     if live_max_daily < live_max_order:
@@ -162,15 +167,22 @@ def load_settings() -> Settings:
         assistant_api_key=os.environ.get("ASSISTANT_API_KEY", ""),
         assistant_model=os.environ.get("ASSISTANT_MODEL", "").strip(),
         notifications_enabled=boolean("NOTIFICATIONS_ENABLED", False),
+        notification_email_enabled=email_enabled,
         notification_crypto_key=os.environ.get("NOTIFICATION_CRYPTO_KEY", "").strip(),
         notification_vapid_private_key=os.environ.get("NOTIFICATION_VAPID_PRIVATE_KEY", "").strip(),
         notification_vapid_subject=os.environ.get("NOTIFICATION_VAPID_SUBJECT", "").strip(),
-        notification_smtp_host=os.environ.get("NOTIFICATION_SMTP_HOST", "").strip(),
-        notification_smtp_port=positive_int("NOTIFICATION_SMTP_PORT", 465),
-        notification_smtp_username=os.environ.get("NOTIFICATION_SMTP_USERNAME", "").strip(),
-        notification_smtp_password=os.environ.get("NOTIFICATION_SMTP_PASSWORD", ""),
-        notification_smtp_sender=os.environ.get("NOTIFICATION_SMTP_SENDER", "").strip(),
-        notification_smtp_mode=os.environ.get("NOTIFICATION_SMTP_MODE", "tls").strip(),
+        notification_smtp_host=(os.environ.get("NOTIFICATION_SMTP_HOST", "").strip()
+                                if email_enabled else ""),
+        notification_smtp_port=(positive_int("NOTIFICATION_SMTP_PORT", 465)
+                               if email_enabled else 465),
+        notification_smtp_username=(os.environ.get("NOTIFICATION_SMTP_USERNAME", "").strip()
+                                    if email_enabled else ""),
+        notification_smtp_password=(os.environ.get("NOTIFICATION_SMTP_PASSWORD", "")
+                                    if email_enabled else ""),
+        notification_smtp_sender=(os.environ.get("NOTIFICATION_SMTP_SENDER", "").strip()
+                                  if email_enabled else ""),
+        notification_smtp_mode=(os.environ.get("NOTIFICATION_SMTP_MODE", "tls").strip()
+                                if email_enabled else "tls"),
         billing_enabled=boolean("BILLING_ENABLED", False),
         billing_terminal_key=os.environ.get("BILLING_TERMINAL_KEY", "").strip(),
         billing_password=os.environ.get("BILLING_PASSWORD", ""),
@@ -187,4 +199,7 @@ def load_settings() -> Settings:
         ),
         assistant_daily_request_limit=positive_int("ASSISTANT_DAILY_REQUEST_LIMIT", 30),
         operator_user_id=optional_uuid("OPERATOR_USER_ID"),
+        legal_operator_name=os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
+        legal_operator_email=os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip(),
+        release_build=os.environ.get("OMNICIO_RELEASE_BUILD", "").strip(),
     )

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
@@ -32,6 +33,7 @@ from .tbank import (
     TBankInstrumentMetadata,
     TBankInvestClient,
     TBankLastPrice,
+    TBankLastPriceBatch,
     TBankMarketYield,
     TBankOperationsPage,
     TBankOrderBook,
@@ -125,6 +127,7 @@ class BrokerEvidenceSnapshot:
     reports: tuple[TBankAssetReport, ...]
     fundamentals: tuple[TBankAssetFundamental, ...]
     sources: tuple[AnalysisSource, ...]
+    ratings: dict[str, tuple[TBankRating, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +156,10 @@ class BrokerService:
         self.tbank = tbank
         self._instrument_evidence_lock = threading.Lock()
         self._next_instrument_evidence_at = 0.0
+        self._metadata_lock = threading.Lock()
+        self._metadata_cache: OrderedDict[
+            tuple[UUID, str, str, datetime, str], tuple[float, TBankInstrumentMetadata, datetime]
+        ] = OrderedDict()
 
     def preview_accounts(
         self,
@@ -310,11 +317,36 @@ class BrokerService:
     ) -> TBankInstrumentMetadata:
         """Typed quote units without coupling quote availability to fundamentals."""
         record, credential, environment = self._connected_credential(user_id)
-        metadata = self.tbank.get_instrument_overview(credential, environment, instrument_uid)
+        key = (user_id, record.account_id, environment, record.verified_at, instrument_uid)
+        with self._metadata_lock:
+            cached = self._metadata_cache.get(key)
+            if cached is not None and time.monotonic() < cached[0]:
+                self._metadata_cache.move_to_end(key)
+                return cached[1]
+        metadata = self._paced_evidence_read(
+            self.tbank.get_instrument_overview, credential, environment, instrument_uid,
+        )
+        metadata = cast(TBankInstrumentMetadata, metadata)
         self._require_current_connection(record)
         if metadata.uid != instrument_uid.strip():
             raise TBankUnavailable("instrument metadata identity mismatch")
+        self._remember_metadata(record, (metadata,))
         return metadata
+
+    def _remember_metadata(
+        self, record: TBankConnectionRecord, metadata: tuple[TBankInstrumentMetadata, ...],
+    ) -> None:
+        with self._metadata_lock:
+            for item in metadata:
+                key = (record.user_id, record.account_id, record.environment,
+                       record.verified_at, item.uid)
+                self._metadata_cache[key] = (
+                    time.monotonic() + (60 if item.instrument_type == "bond" else 300), item,
+                    datetime.now(UTC),
+                )
+                self._metadata_cache.move_to_end(key)
+            while len(self._metadata_cache) > 4096:
+                self._metadata_cache.popitem(last=False)
 
     def execution_instrument(self, user_id: UUID, instrument_uid: str) -> TBankInstrumentMetadata:
         record, credential, environment = self._connected_credential(user_id)
@@ -488,12 +520,14 @@ class BrokerService:
         user_id: UUID,
         instrument_uids: tuple[str, ...],
     ) -> tuple[TBankLastPrice, ...]:
-        _record, credential, environment = self._connected_credential(user_id)
-        return self.tbank.get_last_prices(
+        record, credential, environment = self._connected_credential(user_id)
+        result = self.tbank.get_last_prices(
             credential,
             environment,
             instrument_uids,
         )
+        self._require_current_connection(record)
+        return result
 
     def market_last_price(
         self,
@@ -502,6 +536,15 @@ class BrokerService:
     ) -> TBankLastPrice | None:
         prices = self.candidate_last_prices(user_id, (instrument_uid,))
         return next(iter(prices), None)
+
+    def market_last_prices(
+        self, user_id: UUID, instrument_uids: tuple[str, ...],
+    ) -> TBankLastPriceBatch:
+        """Partial quote display never changes strict execution readers."""
+        record, credential, environment = self._connected_credential(user_id)
+        result = self.tbank.get_last_prices_batch(credential, environment, instrument_uids)
+        self._require_current_connection(record)
+        return result
 
     def candidate_fundamentals(
         self,
@@ -626,15 +669,30 @@ class BrokerService:
         user_id: UUID,
         *,
         full_catalog: bool = False,
+        quick: bool = False,
     ) -> BrokerObservationBundle:
         record, credential, environment = self._connected_credential(user_id)
         snapshot = self._read_portfolio(record, credential, environment)
-        metadata, catalog_methods, catalog_status = self._read_catalog(
-            credential,
-            environment,
-            snapshot.portfolio,
-            full_catalog=full_catalog,
-        )
+        catalog_methods: tuple[str, ...]
+        catalog_observed_at = datetime.now(UTC)
+        if quick:
+            with self._metadata_lock:
+                entries = tuple(
+                    cached for position in snapshot.portfolio.positions
+                    if (cached := self._metadata_cache.get((
+                        user_id, record.account_id, environment, record.verified_at,
+                        position.instrument_uid,
+                    ))) is not None
+                )
+            metadata = tuple(entry[1] for entry in entries)
+            if entries:
+                catalog_observed_at = min(entry[2] for entry in entries)
+            catalog_methods, catalog_status = (), "cached" if metadata else "not_requested"
+        else:
+            metadata, catalog_methods, catalog_status = self._read_catalog(
+                credential, environment, snapshot.portfolio, full_catalog=full_catalog,
+            )
+            self._remember_metadata(record, metadata)
         source_root = "https://developer.tbank.ru/invest/api/"
         sources = (
             AnalysisSource(
@@ -658,7 +716,7 @@ class BrokerService:
                 name="T-Invest: справочники инструментов",
                 url=source_root + "instruments-service",
                 methods=catalog_methods,
-                retrieved_at=datetime.now(UTC),
+                retrieved_at=catalog_observed_at,
                 status=catalog_status,
             ),
         )
@@ -820,6 +878,10 @@ class BrokerService:
                     )
                 ] = ("GetDividends", item.uid)
             if item.instrument_type == "bond":
+                tasks[reads.submit(
+                    self._paced_evidence_read, self.tbank.get_bond_ratings,
+                    credential, environment, item.uid,
+                )] = ("BondBy", item.uid)
                 tasks[
                     reads.submit(
                         self._paced_evidence_read,
@@ -859,22 +921,26 @@ class BrokerService:
     @staticmethod
     def _collect_evidence_tasks(
         tasks: dict[Any, tuple[str, str]],
+        *, deadline: float,
     ) -> tuple[
         list[TBankDividend],
         list[TBankBondCoupon],
         list[TBankBondEvent],
         list[TBankAssetReport],
         set[str],
+        dict[str, tuple[TBankRating, ...]],
     ]:
         dividends: list[TBankDividend] = []
         coupons: list[TBankBondCoupon] = []
         bond_events: list[TBankBondEvent] = []
         reports: list[TBankAssetReport] = []
         failed_methods: set[str] = set()
-        for future, (method, _instrument_uid) in tasks.items():
+        ratings: dict[str, tuple[TBankRating, ...]] = {}
+        for future, (method, instrument_uid) in tasks.items():
             try:
-                rows = future.result()
-            except TBankUnavailable:
+                rows = future.result(timeout=max(0, deadline - time.monotonic()))
+            except (TBankUnavailable, TimeoutError):
+                future.cancel()
                 failed_methods.add(method)
                 continue
             if method == "GetDividends":
@@ -885,7 +951,9 @@ class BrokerService:
                 bond_events.extend(cast(tuple[TBankBondEvent, ...], rows))
             elif method == "GetAssetReports":
                 reports.extend(cast(tuple[TBankAssetReport, ...], rows))
-        return dividends, coupons, bond_events, reports, failed_methods
+            elif method == "BondBy":
+                ratings[instrument_uid] = cast(tuple[TBankRating, ...], rows)
+        return dividends, coupons, bond_events, reports, failed_methods, ratings
 
     def evidence(
         self,
@@ -894,8 +962,11 @@ class BrokerService:
         *,
         now: datetime | None = None,
     ) -> BrokerEvidenceSnapshot:
-        _record, credential, environment = self._connected_credential(user_id)
+        record, credential, environment = self._connected_credential(user_id)
+        if (bundle.account_id != record.account_id or bundle.environment != environment):
+            raise BrokerConnectionError("evidence_account_changed")
         observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+        deadline = time.monotonic() + 180
         window_from = observed_at - timedelta(days=400)
         window_to = observed_at + timedelta(days=400)
 
@@ -938,7 +1009,11 @@ class BrokerService:
                 bond_events,
                 reports,
                 failed_methods,
-            ) = self._collect_evidence_tasks(tasks)
+                ratings,
+            ) = self._collect_evidence_tasks(tasks, deadline=deadline)
+
+        self._require_current_connection(record)
+        observed_at = datetime.now(UTC)
 
         root = "https://developer.tbank.ru/invest/services/instruments/methods"
         calendar_methods = ("InstrumentsService/GetDividends", "InstrumentsService/GetBondCoupons")
@@ -953,6 +1028,7 @@ class BrokerService:
             bond_events=tuple(bond_events),
             reports=tuple(reports),
             fundamentals=tuple(fundamentals),
+            ratings=ratings,
             sources=(
                 AnalysisSource(
                     id="payout_calendar",
@@ -980,11 +1056,11 @@ class BrokerService:
                 ),
                 AnalysisSource(
                     id="credit_ratings",
-                    name="Банк России: рейтинговый репозитарий — reference only",
-                    url="https://ratings.cbr.ru/",
-                    methods=(),
+                    name="T-Invest: опубликованные рейтинги эмитентов облигаций",
+                    url="https://developer.tbank.ru/invest/api/instruments-service-bond-by",
+                    methods=("InstrumentsService/BondBy",),
                     retrieved_at=observed_at,
-                    status="not_requested",
+                    status="partial" if "BondBy" in failed_methods else "received",
                 ),
             ),
         )

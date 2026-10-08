@@ -12,10 +12,13 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from .freshness import PORTFOLIO_MAX_AGE
 
 CATEGORIES = ("portfolio", "payments", "goals", "system")
 _MOSCOW_TIMEZONE = "Europe/Moscow"
@@ -33,6 +36,8 @@ DEFAULT_PREFERENCES: dict[str, Any] = {
         "timezone": _MOSCOW_TIMEZONE,
     },
     "digest_frequency": "off",
+    "digest_time": "20:30",
+    "digest_timezone": _MOSCOW_TIMEZONE,
 }
 GOAL_FIELDS = (
     "title",
@@ -49,6 +54,8 @@ _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
 _MAX_MONEY = Decimal("1000000000000")
 _INCOME_FIELDS = ("coupons_rub", "dividends_rub", "other_income_rub")
+_INCOME_PAYMENT_FIELDS = (*_INCOME_FIELDS, "redemptions_rub")
+_PAYMENT_FIELDS = (*_INCOME_PAYMENT_FIELDS, "net_contributions_rub", "fees_rub", "taxes_rub")
 _SOURCE = "https://developer.tbank.ru/invest/services/operations/methods"
 
 
@@ -106,43 +113,62 @@ def default_preferences() -> dict[str, Any]:
     return copy.deepcopy(DEFAULT_PREFERENCES)
 
 
-def normalize_preferences(value: object) -> dict[str, Any]:
-    data = _exact(value, tuple(DEFAULT_PREFERENCES))
-    notifications = _exact(data["notifications"], CATEGORIES)
-    quiet = _exact(data["quiet_hours"], ("enabled", "start", "end", "timezone"))
-    enabled = _boolean(quiet["enabled"])
-    for key in ("start", "end"):
-        if not isinstance(quiet[key], str) or not re.fullmatch(
-            r"(?:[01]\d|2[0-3]):[0-5]\d",
-            quiet[key],
-            flags=re.ASCII,
-        ):
-            raise ValueError("workspace_quiet_time_invalid")
-    if enabled and quiet["start"] == quiet["end"]:
-        raise ValueError("workspace_quiet_interval_empty")
-    timezone = _text(quiet["timezone"], maximum=64)
+def _preference_clock(value: object, error_code: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(
+        r"(?:[01]\d|2[0-3]):[0-5]\d", value, flags=re.ASCII,
+    ):
+        raise ValueError(error_code)
+    return value
+
+
+def _preference_timezone(value: object) -> str:
+    timezone = _text(value, maximum=64)
     try:
         ZoneInfo(timezone)
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise ValueError("workspace_timezone_invalid") from exc
-    watchlist = data["watchlist"]
-    if not isinstance(watchlist, list) or len(watchlist) > 50:
+    return timezone
+
+
+def _preference_watchlist(value: object) -> list[dict[str, str]]:
+    if not isinstance(value, list) or len(value) > 50:
         raise ValueError("workspace_watchlist_limit")
     instruments = []
     seen = set()
-    for raw in watchlist:
+    for raw in value:
         item = _exact(raw, ("instrument_uid", "ticker", "name"))
         uid = _text(item["instrument_uid"], maximum=128)
         if not re.fullmatch(r"[\w-]+", uid, flags=re.ASCII) or uid in seen:
             raise ValueError("workspace_watchlist_identity")
         seen.add(uid)
-        instruments.append(
-            {
-                "instrument_uid": uid,
-                "ticker": _text(item["ticker"], maximum=64, empty=True),
-                "name": _text(item["name"], maximum=256, empty=True),
-            }
-        )
+        instruments.append({
+            "instrument_uid": uid,
+            "ticker": _text(item["ticker"], maximum=64, empty=True),
+            "name": _text(item["name"], maximum=256, empty=True),
+        })
+    return instruments
+
+
+def normalize_preferences(value: object) -> dict[str, Any]:
+    # Legacy clients/documents retain the original midnight delivery schedule.
+    if isinstance(value, dict) and set(value) == set(DEFAULT_PREFERENCES) - {
+        "digest_time", "digest_timezone",
+    }:
+        quiet_value = value.get("quiet_hours")
+        legacy_zone = quiet_value.get("timezone") if isinstance(quiet_value, dict) else None
+        value = {**value, "digest_time": "00:00", "digest_timezone": legacy_zone}
+    data = _exact(value, tuple(DEFAULT_PREFERENCES))
+    notifications = _exact(data["notifications"], CATEGORIES)
+    quiet = _exact(data["quiet_hours"], ("enabled", "start", "end", "timezone"))
+    enabled = _boolean(quiet["enabled"])
+    for key in ("start", "end"):
+        _preference_clock(quiet[key], "workspace_quiet_time_invalid")
+    if enabled and quiet["start"] == quiet["end"]:
+        raise ValueError("workspace_quiet_interval_empty")
+    timezone = _preference_timezone(quiet["timezone"])
+    digest_time = _preference_clock(data["digest_time"], "workspace_digest_time_invalid")
+    digest_timezone = _preference_timezone(data["digest_timezone"])
+    instruments = _preference_watchlist(data["watchlist"])
     result: dict[str, Any] = {
         "display_name": _text(data["display_name"], maximum=80, empty=True),
         "locale": _choice(data["locale"], ("ru", "en")),
@@ -157,6 +183,8 @@ def normalize_preferences(value: object) -> dict[str, Any]:
             "timezone": timezone,
         },
         "digest_frequency": _choice(data["digest_frequency"], ("off", "daily", "weekly")),
+        "digest_time": digest_time,
+        "digest_timezone": digest_timezone,
     }
     # Match the database's JSONB text-size boundary before attempting a write.
     # Individual field limits alone do not bound a 50-item Unicode watchlist.
@@ -304,6 +332,31 @@ _NON_INCOME_TRANSFERS = {
 }
 
 
+def operation_category(operation_type: object) -> str:
+    """One classification shared by the ledger and financial explanations."""
+    kind = str(operation_type or "").removeprefix("OPERATION_TYPE_")
+    for choices, category in (
+        (_INPUT, "contribution"), (_OUTPUT, "withdrawal"), (_FEES, "fee"),
+        (_TAXES, "tax"), (_INCOME.keys(), "income"), (_REDEMPTIONS, "principal_return"),
+        (_INTERNAL, "internal"), (_NON_INCOME_TRANSFERS, "non_cash_transfer"),
+    ):
+        if kind in choices:
+            return category
+    return "unclassified"
+
+
+def _cashflow_metric(kind: str) -> str:
+    if kind in _INPUT | _OUTPUT:
+        return "net_contributions_rub"
+    if kind in _FEES:
+        return "fees_rub"
+    if kind in _TAXES:
+        return "taxes_rub"
+    if kind in _REDEMPTIONS:
+        return "redemptions_rub"
+    return _INCOME[kind]
+
+
 def _operation_amount(operation: Mapping[str, Any]) -> Decimal | None:
     if str(operation.get("payment_currency") or "").upper() != "RUB":
         return None
@@ -377,6 +430,106 @@ def _accumulate_cashflow(
         monthly[key] += payment
 
 
+@dataclass(slots=True)
+class _PaymentTotals:
+    values: dict[str, Decimal]
+    months: dict[str, dict[str, Decimal]]
+    native: dict[str, dict[str, Decimal]]
+    reasons: set[str]
+    income_reasons: set[str]
+    metric_reasons: dict[str, set[str]]
+    metric_counts: dict[str, int]
+
+
+def _record_payment(
+    totals: _PaymentTotals, operation: Mapping[str, Any], kind: str, at: datetime,
+    reasons: set[str], income_reasons: set[str],
+) -> None:
+    currency = str(operation.get("payment_currency") or "").upper()
+    try:
+        native_payment = amount(operation.get("payment_value"))
+    except ValueError:
+        native_payment = None
+    if native_payment is not None and re.fullmatch(r"[A-Z]{3}", currency):
+        currency_values = totals.native.setdefault(currency, dict.fromkeys(_PAYMENT_FIELDS, _ZERO))
+        _accumulate_cashflow(kind, at, native_payment, currency_values, {})
+    metric = _cashflow_metric(kind)
+    payment = _cashflow_payment(operation, kind, reasons, income_reasons)
+    if payment is None:
+        totals.metric_reasons[metric].update(reasons)
+        return
+    totals.metric_counts[metric] += 1
+    _accumulate_cashflow(kind, at, payment, totals.values, totals.months)
+
+
+def _record_cashflow(
+    totals: _PaymentTotals, operation: Mapping[str, Any], from_at: datetime, to_at: datetime,
+) -> None:
+    # Errors belong to the current operation before they are merged. Repeating
+    # an error already seen in another category must not hide its metric impact.
+    reasons: set[str] = set()
+    income_reasons: set[str] = set()
+    parsed = _executed_cashflow(operation, from_at, to_at, reasons, income_reasons)
+    if parsed is None:
+        for key in totals.values:
+            metric_errors = income_reasons if key in _INCOME_PAYMENT_FIELDS else reasons
+            totals.metric_reasons[key].update(metric_errors)
+    else:
+        kind, at = parsed
+        _record_payment(totals, operation, kind, at, reasons, income_reasons)
+    totals.reasons.update(reasons)
+    totals.income_reasons.update(income_reasons)
+
+
+def _payment_metrics(totals: _PaymentTotals) -> dict[str, dict[str, Any]]:
+    metrics = {}
+    for key, value in totals.values.items():
+        reasons, count = totals.metric_reasons[key], totals.metric_counts[key]
+        status = "complete"
+        if reasons:
+            status = "partial" if count else "unavailable"
+        metrics[key] = {
+            "status": status,
+            "value_rub": decimal_text(value) if not reasons else None,
+            "observed_rub": decimal_text(value) if count else None,
+            "reason": ",".join(sorted(reasons)) or None,
+        }
+    return metrics
+
+
+def _native_payment_sums(
+    native: Mapping[str, Mapping[str, Decimal]], fields: Sequence[str],
+) -> dict[str, dict[str, str]]:
+    return {currency: {key.removesuffix("_rub"): decimal_text(row[key]) for key in fields}
+            for currency, row in sorted(native.items())}
+
+
+def _income_summary(
+    totals: _PaymentTotals, metrics: Mapping[str, dict[str, Any]],
+    from_at: datetime, to_at: datetime,
+) -> dict[str, Any]:
+    reasons = totals.income_reasons
+    values = totals.values
+    income_total = sum((values[key] for key in _INCOME_FIELDS), _ZERO)
+    months = [{"month": month, **{key: decimal_text(row[key]) for key in _INCOME_FIELDS},
+               "total_rub": decimal_text(sum(row.values(), _ZERO))}
+              for month, row in sorted(totals.months.items())]
+    return {
+        "status": "available" if not reasons else "unavailable",
+        "reason": ",".join(sorted(reasons)) or None,
+        "from": from_at.isoformat(),
+        "to": to_at.isoformat(),
+        **{key: decimal_text(values[key]) if not reasons else None
+           for key in _INCOME_PAYMENT_FIELDS},
+        "total_rub": decimal_text(income_total) if not reasons else None,
+        "by_month": [] if reasons else months,
+        "source_url": _SOURCE,
+        "tax_basis": "broker_payments_before_separate_tax_operations",
+        "metric_coverage": {key: metrics[key] for key in _INCOME_PAYMENT_FIELDS},
+        "native_payment_sums": _native_payment_sums(totals.native, _INCOME_PAYMENT_FIELDS),
+    }
+
+
 def cashflow_summary(
     operations: Sequence[Mapping[str, Any]],
     *,
@@ -389,53 +542,42 @@ def cashflow_summary(
     Noncash transfers, card purchases and unfamiliar operations prevent a return
     assertion. Redemption is returned principal, separate from investment income.
     """
-    values = dict.fromkeys(
-        (*_INCOME_FIELDS, "redemptions_rub", "net_contributions_rub", "fees_rub", "taxes_rub"),
-        _ZERO,
-    )
-    months: dict[str, dict[str, Decimal]] = {}
     reasons = set() if complete else {"history_incomplete"}
-    income_reasons = set(reasons)
+    totals = _PaymentTotals(
+        values=dict.fromkeys(_PAYMENT_FIELDS, _ZERO), months={}, native={},
+        reasons=reasons, income_reasons=set(reasons),
+        metric_reasons={key: set(reasons) for key in _PAYMENT_FIELDS},
+        metric_counts=dict.fromkeys(_PAYMENT_FIELDS, 0),
+    )
     for operation in operations:
-        parsed = _executed_cashflow(operation, from_at, to_at, reasons, income_reasons)
-        if parsed is None:
-            continue
-        kind, at = parsed
-        payment = _cashflow_payment(operation, kind, reasons, income_reasons)
-        if payment is None:
-            continue
-        _accumulate_cashflow(kind, at, payment, values, months)
-    income_total = sum((values[key] for key in _INCOME_FIELDS), _ZERO)
+        _record_cashflow(totals, operation, from_at, to_at)
+    metrics = _payment_metrics(totals)
     return {
         "status": "available" if not reasons else "unavailable",
         "reason": ",".join(sorted(reasons)) or None,
-        "from": from_at.isoformat(),
-        "to": to_at.isoformat(),
-        **{key: decimal_text(value) if not reasons else None for key, value in values.items()},
-        "income": {
-            "status": "available" if not income_reasons else "unavailable",
-            "reason": ",".join(sorted(income_reasons)) or None,
-            "from": from_at.isoformat(),
-            "to": to_at.isoformat(),
-            **{
-                key: decimal_text(values[key]) if not income_reasons else None
-                for key in (*_INCOME_FIELDS, "redemptions_rub")
-            },
-            "total_rub": decimal_text(income_total) if not income_reasons else None,
-            "by_month": [
-                {
-                    "month": month,
-                    **{key: decimal_text(row[key]) for key in _INCOME_FIELDS},
-                    "total_rub": decimal_text(sum(row.values(), _ZERO)),
-                }
-                for month, row in sorted(months.items())
-            ]
-            if not income_reasons
-            else [],
-            "source_url": _SOURCE,
-            "tax_basis": "broker_payments_before_separate_tax_operations",
+        "from": from_at.isoformat(), "to": to_at.isoformat(),
+        **{key: decimal_text(value) if not reasons else None
+           for key, value in totals.values.items()},
+        "metrics": metrics,
+        "native_payment_sums": {
+            "basis": "observed_executed_payments_without_fx_conversion",
+            "history_complete": complete,
+            "currencies": _native_payment_sums(totals.native, _PAYMENT_FIELDS),
         },
+        "income": _income_summary(totals, metrics, from_at, to_at),
     }
+
+
+def snapshot_valuation_complete(snapshot: Mapping[str, Any]) -> bool:
+    """Use independent NAV coverage; legacy snapshots require observed status."""
+    valuation_status = snapshot.get("valuation_status")
+    evidence = snapshot.get("evidence")
+    if valuation_status is None and isinstance(evidence, Mapping):
+        analysis = evidence.get("analysis")
+        if isinstance(analysis, Mapping):
+            valuation_status = analysis.get("valuation_status")
+    return (valuation_status == "complete" if valuation_status is not None
+            else snapshot.get("analysis_status") == "observed")
 
 
 def portfolio_performance(
@@ -465,8 +607,10 @@ def portfolio_performance(
         "return_denominator_rub": None,
         "return_is_estimate": True,
         "return_is_annualized": False,
+        "return_time_basis": "broker_operation_instruction_time",
         "return_limitations": [
-            "Cash flows are weighted by their recorded execution time within the observed period.",
+            "Cash flows are weighted by the broker's recorded operation time (OperationItem.date), "
+            "which is the instruction date, not a separately confirmed settlement timestamp.",
             "Large flows and volatility can make this estimate differ from time-weighted return.",
             "This is a historical account result, not a forecast or a probability of success.",
         ],
@@ -483,7 +627,7 @@ def portfolio_performance(
         if watermark is not None
         and (at := timestamp(row.get("captured_at"))) is not None
         and at <= watermark
-        and row.get("analysis_status") == "observed"
+        and snapshot_valuation_complete(row)
     ]
     covered.sort(key=lambda row: timestamp(row["captured_at"]) or datetime.min.replace(tzinfo=UTC))
     if len(covered) < 2:
@@ -506,13 +650,21 @@ def portfolio_performance(
             "nav_change_rub": decimal_text(delta),
             "net_contributions_rub": flow["net_contributions_rub"],
             "income_received_rub": flow["income"]["total_rub"],
-            "fees_rub": flow["fees_rub"],
-            "taxes_rub": flow["taxes_rub"],
+            "fees_rub": flow["metrics"]["fees_rub"]["value_rub"],
+            "taxes_rub": flow["metrics"]["taxes_rub"]["value_rub"],
         }
     )
-    if flow["status"] == "available":
+    contribution = flow["metrics"]["net_contributions_rub"]
+    result["metric_coverage"] = flow["metrics"]
+    result["native_payment_sums"] = flow["native_payment_sums"]
+    result["nav_status"] = "complete"
+    if contribution["status"] == "complete":
+        result.update(status="available", reason=None,
+                      net_contributions_rub=contribution["value_rub"])
         # Expenses and payouts already change NAV: do not subtract/add them twice.
-        investment_result = delta - amount(flow["net_contributions_rub"])
+        # Foreign internal payouts/fees need no FX approximation for the RUB
+        # account result. Only external transfers require a known RUB value.
+        investment_result = delta - amount(contribution["value_rub"])
         result["investment_result_rub"] = decimal_text(investment_result)
         denominator = _dietz_denominator(start_nav, operations, begin, end)
         result["return_denominator_rub"] = decimal_text(denominator)
@@ -523,17 +675,19 @@ def portfolio_performance(
         else:
             result["return_reason"] = "non_positive_or_negligible_invested_capital"
     else:
-        result["return_reason"] = flow["reason"]
+        result["return_reason"] = contribution["reason"]
     return result
 
 
 def _dietz_denominator(
     start_nav: Decimal, operations: Sequence[Mapping[str, Any]], begin: datetime, end: datetime,
 ) -> Decimal:
-    """Modified Dietz; use execution timestamps, never ingestion time or binary money floats.
+    """Modified Dietz estimate using broker operation times, never ingestion time.
 
     A flow at the ending valuation has weight zero; a flow at the beginning
     is already in opening NAV and is excluded by the same accounting boundary.
+    OperationItem.date is the broker's instruction time; exact settlement time
+    is not supplied by this ledger and must not be claimed as known.
     Called only after cash-flow classification and coverage succeed.
     """
     span = end - begin
@@ -560,11 +714,20 @@ def _portfolio_goal_amount(
     observed = timestamp(snapshot.get("captured_at")) if snapshot else None
     if (
         snapshot is None or observed is None or observed > now
-        or snapshot.get("analysis_status") != "observed"
+        or not snapshot_valuation_complete(snapshot)
     ):
         return None, observed, "portfolio_not_reconciled"
     current = amount(snapshot["nav_rub"]) * amount(goal["allocation_percent"]) / _HUNDRED
     return current, observed, None
+
+
+def income_goal_start(goal: Mapping[str, Any]) -> datetime:
+    """The goal's inclusive Moscow calendar boundary, shared with ledger selection."""
+    value = goal["start_date"]
+    started = value if type(value) is date else _date(value)
+    return datetime.combine(
+        started, time.min, ZoneInfo(_MOSCOW_TIMEZONE),
+    ).astimezone(UTC)
 
 
 def _income_goal_amount(
@@ -573,11 +736,11 @@ def _income_goal_amount(
 ) -> tuple[Decimal | None, datetime | None, str | None]:
     if watermark is None or watermark > now:
         return None, None, "history_incomplete"
-    begin = datetime.combine(_date(goal["start_date"]), time.min, ZoneInfo(_MOSCOW_TIMEZONE))
+    begin = income_goal_start(goal)
     if begin >= watermark:
         return None, None, "goal_period_not_observed"
     flow = cashflow_summary(
-        operations, from_at=begin.astimezone(UTC) - timedelta(microseconds=1),
+        operations, from_at=begin - timedelta(microseconds=1),
         to_at=watermark, complete=history_complete,
     )
     if flow["income"]["status"] != "available":
@@ -630,7 +793,7 @@ def goal_progress(
             percent=decimal_text(current / target * _HUNDRED),
             remaining_rub=decimal_text(max(_ZERO, target - current)),
         )
-        if source != "manual" and observed is not None and now - observed > timedelta(hours=36):
+        if source != "manual" and observed is not None and now - observed >= PORTFOLIO_MAX_AGE:
             result["status"] = "stale"
     return result
 
@@ -648,20 +811,35 @@ def event_digest(
     frequency = preferences["digest_frequency"]
     start = now
     if frequency != "off":
-        local = now.astimezone(ZoneInfo(preferences["quiet_hours"]["timezone"]))
+        local = now.astimezone(ZoneInfo(preferences.get(
+            "digest_timezone", preferences["quiet_hours"]["timezone"],
+        )))
         start = local.replace(hour=0, minute=0, second=0, microsecond=0)
         if frequency == "weekly":
             start -= timedelta(days=start.weekday())
     counts = dict.fromkeys(CATEGORIES, 0)
+    selected = []
     if frequency != "off":
         for item in events:
             at = timestamp(item.get("updated_at"))
-            if at is not None and start <= at <= now and item.get("read_at") is None:
+            if (at is not None and start <= at <= now and item.get("read_at") is None
+                    and preferences["notifications"].get(item["category"], False)):
                 counts[item["category"]] += 1
+                selected.append(item)
+    selected.sort(key=lambda item: (
+        {"critical": 2, "warning": 1}.get(str(item.get("severity")), 0),
+        timestamp(item.get("updated_at")) or start,
+    ), reverse=True)
     return {
         "frequency": frequency,
         "period_basis": "available_at",
         "from": start.isoformat(),
+        "to": now.isoformat(),
         "count": sum(counts.values()),
         "by_category": counts,
+        "source_basis": "persisted_owner_events",
+        "highlights": [{key: row.get(key) for key in (
+            "id", "category", "kind", "severity", "title", "detail", "occurred_at", "destination",
+        )} for row in selected[:8]],
+        "highlights_limit": 8,
     }

@@ -17,10 +17,20 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import suppress
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from inplace_upgrade import (
+    MODE as SINGLE_DATABASE_MODE,
+)
+from inplace_upgrade import (
+    UpgradeBlocked,
+    load_plan,
+    migration_bodies,
+    render_remote_upgrade,
+)
 from timeweb_addresses import network_addresses
 from timeweb_recovery import (
     RecoveryBlocked,
@@ -31,8 +41,8 @@ from timeweb_recovery import (
 )
 from timeweb_ssh_trust import (
     ssh_base_args,
-    ssh_keygen_executable,
     ssh_host_key_mismatch_message,
+    ssh_keygen_executable,
     trusted_host_entry,
     trusted_host_fingerprint,
 )
@@ -62,6 +72,8 @@ PSQL_DIAGNOSTIC = re.compile(
     rb"(?:ERROR|FATAL|PANIC):[ \t]+([0-9A-Z]{5})"
 )
 MAX_DIAGNOSTIC_BYTES = 65536
+UPGRADE_DIAGNOSTIC = re.compile(rb"^OMNICIO_UPGRADE: ([a-z_]{1,64})$", re.MULTILINE)
+UNCONFIRMED_UPGRADE = "In-place upgrade result was not confirmed"
 
 
 class InfraError(RuntimeError):
@@ -595,14 +607,10 @@ class EphemeralSsh:
         key_id = self._ssh_key_id
         self._ssh_key_id = None
         if key_id is not None:
-            try:
+            with suppress(InfraError, TimewebApiError, AmbiguousProviderError):
                 self.client.detach_ssh_key(self.server_id, key_id)
-            except (InfraError, TimewebApiError, AmbiguousProviderError):
-                pass
-            try:
+            with suppress(InfraError, TimewebApiError, AmbiguousProviderError):
                 self.client.delete_ssh_key(key_id)
-            except (InfraError, TimewebApiError, AmbiguousProviderError):
-                pass
         if self._tmp is not None:
             self._tmp.cleanup()
             self._tmp = None
@@ -664,6 +672,9 @@ class EphemeralSsh:
             detail = f"{context}, exit_code={completed.returncode}"
             if stage == STAGE_SCHEMA_MIGRATION:
                 detail += ", " + psql_failure_fields(completed.stderr)
+                reason = UPGRADE_DIAGNOSTIC.search(completed.stderr[:MAX_DIAGNOSTIC_BYTES])
+                if reason is not None:
+                    detail += ", reason=" + reason[1].decode("ascii")
             raise InfraError(f"Remote command failed ({detail})")
         try:
             return completed.stdout.decode("utf-8")
@@ -914,6 +925,36 @@ def run_schema_migration(
     )
 
 
+def run_inplace_upgrade(
+    ssh: EphemeralSsh, *, migration_sqls: list[str], release_sha: str,
+    endpoint: DatabaseEndpoint, desired: DesiredDatabase,
+) -> None:
+    cluster_id = load_policy().cluster_id
+    program = render_remote_upgrade(
+        migration_sqls, release_sha=release_sha,
+        database={"cluster_id": cluster_id, "host": endpoint.host, "port": endpoint.port,
+                  "database": desired.instance_name, "user": desired.admin_login},
+    )
+    raw = ssh.run(
+        "/opt/omnicio/current/.venv/bin/python -I -", input_text=program,
+        stage=STAGE_SCHEMA_MIGRATION, migration_step=28,
+    )
+    if len(raw) > 16384:
+        raise InfraError(UNCONFIRMED_UPGRADE)
+    try:
+        result = json.loads(raw)
+    except ValueError:
+        raise InfraError(UNCONFIRMED_UPGRADE) from None
+    if (not isinstance(result, dict)
+            or set(result) != {"status", "cluster_id", "release_sha", "new_database_copies"}
+            or result.get("status") not in ("applied", "already_applied")
+            or type(result.get("cluster_id")) is not int
+            or result.get("cluster_id") != cluster_id or result.get("release_sha") != release_sha
+            or type(result.get("new_database_copies")) is not int
+            or result["new_database_copies"] != 0):
+        raise InfraError(UNCONFIRMED_UPGRADE)
+
+
 def wait_for_database_endpoint(
     client: TimewebClient,
     cluster_id: int,
@@ -938,6 +979,35 @@ def wait_for_database_endpoint(
     )
 
 
+def validate_migration_request(
+    migration_sqls: list[str], *, backup_only: bool, release_sha: str | None,
+) -> bool:
+    if backup_only and release_sha is not None:
+        raise InfraError("Scheduled verification cannot authorize a pre-release copy")
+    single_database = load_policy().mode == SINGLE_DATABASE_MODE
+    if single_database and not backup_only:
+        if not isinstance(release_sha, str) or re.fullmatch(r"[0-9a-f]{40}", release_sha) is None:
+            raise InfraError("In-place upgrade requires an exact accepted release")
+        migration_bodies(load_plan(), migration_sqls)
+    return single_database
+
+
+def apply_database_release(
+    ssh: EphemeralSsh, *, single_database: bool, migration_sqls: list[str], release_sha: str | None,
+    endpoint: DatabaseEndpoint, desired: DesiredDatabase, server_private_cidr: str,
+) -> None:
+    if single_database:
+        run_inplace_upgrade(ssh, migration_sqls=migration_sqls, release_sha=release_sha or "",
+                            endpoint=endpoint, desired=desired)
+        return
+    ensure_server_private_network(ssh, private_cidr=server_private_cidr)
+    secret_bundle = load_or_create_server_secrets(ssh)
+    write_runtime_env(ssh, endpoint=endpoint, desired=desired, secrets=secret_bundle)
+    for migration_step, migration_sql in enumerate(migration_sqls, start=1):
+        run_schema_migration(ssh, migration_sql=migration_sql, migration_step=migration_step,
+                             endpoint=endpoint, desired=desired)
+
+
 def reconcile(
     client: TimewebClient,
     *,
@@ -949,8 +1019,9 @@ def reconcile(
     backup_only: bool = False,
     release_sha: str | None = None,
 ) -> int:
-    if backup_only and release_sha is not None:
-        raise InfraError("Scheduled verification cannot authorize a pre-release copy")
+    single_database = validate_migration_request(
+        migration_sqls, backup_only=backup_only, release_sha=release_sha,
+    )
     add_summary("## OmniCIO auth PostgreSQL")
     add_summary(
         f"- Desired: PostgreSQL {desired.postgres_version}, "
@@ -1040,28 +1111,19 @@ def reconcile(
             )
 
         ensure_recovery_point(client, ssh, cluster, release_sha=release_sha)
-        inspect_restore_capacity(client, ssh, cluster_id)
+        if not single_database:
+            inspect_restore_capacity(client, ssh, cluster_id)
         if backup_only:
-            set_output("status", "recovery_point_ready")
-            add_summary("- Scheduled backup verification completed; schema and runtime unchanged.")
+            status = "single_database_policy_ready" if single_database else "recovery_point_ready"
+            set_output("status", status)
+            add_summary(f"- Scheduled verification completed: {status}; "
+                        "schema and runtime unchanged.")
             return 0
-
-        ensure_server_private_network(ssh, private_cidr=server_private_cidr)
-        secret_bundle = load_or_create_server_secrets(ssh)
-        write_runtime_env(
-            ssh,
-            endpoint=endpoint,
-            desired=desired,
-            secrets=secret_bundle,
+        apply_database_release(
+            ssh, single_database=single_database, migration_sqls=migration_sqls,
+            release_sha=release_sha, endpoint=endpoint, desired=desired,
+            server_private_cidr=server_private_cidr,
         )
-        for migration_step, migration_sql in enumerate(migration_sqls, start=1):
-            run_schema_migration(
-                ssh,
-                migration_sql=migration_sql,
-                migration_step=migration_step,
-                endpoint=endpoint,
-                desired=desired,
-            )
 
     add_summary(
         "- Result: database_ready. PostgreSQL is private-only, runtime "
@@ -1146,6 +1208,7 @@ def main() -> int:
         )
     except (
         InfraError, TimewebApiError, AmbiguousProviderError, RecoveryBlocked, ReleaseBlocked,
+        UpgradeBlocked,
     ) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1

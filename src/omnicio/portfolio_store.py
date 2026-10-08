@@ -15,14 +15,15 @@ from uuid import UUID
 
 from psycopg import DatabaseError
 
-from .broker import BrokerObservationBundle
+from .broker import AnalysisSource, BrokerObservationBundle
 from .db import Database, live_execution_lock_key
+from .freshness import PORTFOLIO_MAX_AGE
 from .intelligence import (
     EVIDENCE_RETRIEVAL_MAX_AGE,
     EvidenceDocument,
     InstrumentRiskAssessment,
 )
-from .portfolio import SecurityExposure
+from .portfolio import SecurityExposure, analyze_portfolio
 from .strategy import document_hash, normalize_document
 from .tbank import (
     TBankAccount,
@@ -36,7 +37,7 @@ from .tbank import (
 
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
 REFRESH_JOB_TYPE = "portfolio_refresh"
-REFRESH_COOLDOWN_SECONDS = 120
+REFRESH_COOLDOWN_SECONDS = 60
 REFRESH_MAX_ATTEMPTS = 3
 DAILY_MAX_ATTEMPTS = 3
 
@@ -208,6 +209,7 @@ class JobRunRecord:
     attempt: int
     started_at: datetime
     finished_at: datetime | None
+    refresh_scope: str = "full"
 
 
 @dataclass(frozen=True, slots=True)
@@ -486,6 +488,7 @@ def _save_operation_observation(
 ) -> bool:
     normalized = _operation_payload(operation)
     semantic = _semantic_operation_payload(normalized)
+    semantic_hash = _hash_json(semantic)
     cur.execute(
         """
         INSERT INTO operation_observations (
@@ -526,7 +529,7 @@ def _save_operation_observation(
             user_id,
             account_id,
             _hash_json(normalized),
-            _hash_json(semantic),
+            semantic_hash,
             operation.id,
             operation.cursor,
             operation.date,
@@ -550,7 +553,25 @@ def _save_operation_observation(
             observed_at,
         ),
     )
-    return cur.fetchone() is not None
+    if cur.fetchone() is not None:
+        return True
+    if operation.id:
+        # A provider correction can return to a previously observed exact fact
+        # (10 -> 12 -> 10). Keep the immutable financial payload and its source
+        # date, but make this later confirmation current within the same typed ID.
+        # An unchanged latest replay and an older/renamed observation do not move it.
+        cur.execute(
+            "WITH current_fact AS (SELECT id, observed_at FROM operation_observations "
+            "WHERE user_id = %s AND account_id = %s AND provider_operation_id = %s "
+            "AND operation_type = %s ORDER BY observed_at DESC, id DESC LIMIT 1) "
+            "UPDATE operation_observations AS prior SET observed_at = %s FROM current_fact "
+            "WHERE prior.user_id = %s AND prior.account_id = %s AND prior.semantic_hash = %s "
+            "AND prior.provider_operation_id = %s AND prior.id <> current_fact.id "
+            "AND current_fact.observed_at < %s",
+            (user_id, account_id, operation.id, operation.operation_type, observed_at,
+             user_id, account_id, semantic_hash, operation.id, observed_at),
+        )
+    return False
 
 
 def _save_history_sync_state(
@@ -624,27 +645,35 @@ class PortfolioStore:
         )
 
     @contextmanager
-    def observer_lock(self) -> Iterator[bool]:
-        lock_name = "omnicio-portfolio-observer"
+    def observer_lock(self, user_id: UUID | None = None) -> Iterator[bool]:
+        # Shared legacy lock allows distinct owners to progress concurrently and
+        # still excludes a pre-1.3 worker holding the global exclusive lock.
+        locks = [("omnicio-portfolio-observer", user_id is not None)]
+        if user_id is not None:
+            locks.append((f"omnicio-portfolio-observer:{user_id}", False))
         with self.database.pool.connection() as conn:
-            locked = False
+            acquired: list[tuple[str, bool]] = []
             try:
-                with conn.transaction(), conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT pg_try_advisory_lock(hashtextextended(%s, 0)) AS locked",
-                        (lock_name,),
-                    )
-                    row = cur.fetchone()
-                    locked = row is not None and bool(cast(dict[str, Any], row)["locked"])
+                for lock_name, shared in locks:
+                    function = "pg_try_advisory_lock_shared" if shared else "pg_try_advisory_lock"
+                    with conn.transaction(), conn.cursor() as cur:
+                        cur.execute(
+                            f"SELECT {function}(hashtextextended(%s, 0)) AS locked", (lock_name,),
+                        )
+                        row = cur.fetchone()
+                    if row is None or not cast(dict[str, Any], row)["locked"]:
+                        break
+                    acquired.append((lock_name, shared))
                 # A session lock excludes other workers without keeping a
                 # database transaction open throughout provider requests.
-                yield locked
+                yield len(acquired) == len(locks)
             finally:
-                if locked:
+                for lock_name, shared in reversed(acquired):
+                    function = "pg_advisory_unlock_shared" if shared else "pg_advisory_unlock"
                     try:
                         with conn.transaction(), conn.cursor() as cur:
                             cur.execute(
-                                "SELECT pg_advisory_unlock(hashtextextended(%s, 0)) AS unlocked",
+                                f"SELECT {function}(hashtextextended(%s, 0)) AS unlocked",
                                 (lock_name,),
                             )
                             released = cur.fetchone()
@@ -933,6 +962,8 @@ class PortfolioStore:
             snapshot_saved=job["snapshot_at"] is not None,
             history_status=job["details"].get("history_status"),
             history_pages=job["details"].get("history_pages", 0),
+            scope=job["details"].get("refresh_scope", "full"),
+            valuation_status=job["details"].get("valuation_status", "unknown"),
             can_refresh=not active and retry == 0 and reason is None,
             retry_after_seconds=max(2, retry) if active else retry,
             cooldown_until=cooldown.isoformat(),
@@ -962,8 +993,12 @@ class PortfolioStore:
             cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
             self._fail_refresh(cur, user_id, job_id, reason)
 
-    def request_refresh(self, user_id: UUID, legal_versions: dict[str, str]) -> dict[str, Any]:
+    def request_refresh(
+        self, user_id: UUID, legal_versions: dict[str, str], *, scope: str = "full",
+    ) -> dict[str, Any]:
         """One durable pending run per owner; cooldown uses the database clock."""
+        if scope not in {"quick", "full"}:
+            raise ValueError("portfolio_refresh_scope_invalid")
         with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             self._tenant(cur, user_id)
             cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
@@ -987,7 +1022,8 @@ class PortfolioStore:
             cur.execute(
                 "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, details) "
                 "VALUES (%s, 'portfolio_refresh', NULL, 'queued', %s::jsonb)",
-                (user_id, _json({"connection": context, "legal_versions": legal_versions})),
+                (user_id, _json({"connection": context, "legal_versions": legal_versions,
+                                 "refresh_scope": scope})),
             )
             return self._refresh_status(cur, user_id, connection)
 
@@ -1003,6 +1039,7 @@ class PortfolioStore:
             "connection": row["details"]["connection"],
             "legal_versions": row["details"]["legal_versions"],
             "resumed_from": str(row["id"]),
+            "refresh_scope": row["details"].get("refresh_scope", "full"),
         }
         cur.execute(
             "INSERT INTO job_runs (user_id, job_type, scheduled_for, status, attempt, "
@@ -1016,7 +1053,7 @@ class PortfolioStore:
     def claim_refresh_job(
         self, user_id: UUID, legal_versions: dict[str, str],
     ) -> JobRunRecord | None:
-        """Claim/recover only while the caller holds the global observer session lock."""
+        """Claim/recover only while the caller holds this owner's observer session lock."""
         with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
             self._tenant(cur, user_id)
             cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
@@ -1259,6 +1296,51 @@ class PortfolioStore:
                 return None
             return _sync_state(cast(dict[str, Any], fetched))
 
+    def reuse_snapshot_metadata(
+        self, user_id: UUID, *, job_run_id: UUID, bundle: BrokerObservationBundle,
+    ) -> BrokerObservationBundle:
+        """Restore held-instrument descriptions after restart without provider reads.
+
+        This is historical catalog evidence for observation, never renewed market
+        or execution authority. Its original retrieval time remains on the bundle.
+        """
+        known = {item.uid for item in bundle.metadata}
+        missing = sorted({position.instrument_uid for position in bundle.portfolio.positions
+                          if position.instrument_uid and position.instrument_uid not in known
+                          and position.instrument_type != "currency"})
+        if not missing:
+            return bundle
+        with self.database.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            self._tenant(cur, user_id)
+            _require_observation_job(
+                cur, user_id, job_run_id,
+                account_id=bundle.account_id, environment=bundle.environment,
+            )
+            cur.execute(
+                "SELECT instrument_uid AS uid, name, ticker, isin, instrument_type, sector, "
+                "country_of_risk, for_qual_investor, figi, provider_retrieved_at "
+                "FROM instrument_catalog WHERE provider = 'tbank' "
+                "AND instrument_uid = ANY (%s)", (missing,),
+            )
+            rows = [dict(row) for row in cur.fetchall()]
+        if not rows:
+            return bundle
+        times = [row.pop("provider_retrieved_at") for row in rows]
+        metadata = (*bundle.metadata, *(TBankInstrumentMetadata(**row) for row in rows))
+        if bundle.metadata:
+            times.extend(source.retrieved_at for source in bundle.sources if source.id == "catalog")
+        sources = tuple(AnalysisSource(
+            id=source.id, name=source.name, url=source.url,
+            retrieved_at=min(times), status="cached", methods=(),
+        ) if source.id == "catalog" else source for source in bundle.sources)
+        return BrokerObservationBundle(
+            account_id=bundle.account_id, account_name=bundle.account_name,
+            environment=bundle.environment, refreshed_at=bundle.refreshed_at,
+            portfolio=bundle.portfolio, positions=bundle.positions,
+            metadata=metadata, sources=sources,
+            analysis=analyze_portfolio(bundle.portfolio, bundle.positions, metadata),
+        )
+
     def _save_snapshot_catalog(
         self,
         cur: Any,
@@ -1266,7 +1348,10 @@ class PortfolioStore:
         bundle: BrokerObservationBundle,
         catalog_retrieved_at: datetime,
     ) -> None:
-        if bundle.metadata:
+        if bundle.metadata and any(
+            source.id == "catalog" and source.status in {"received", "partial"}
+            for source in bundle.sources
+        ):
             catalog_rows = [
                 (
                     item.uid,
@@ -1428,7 +1513,7 @@ class PortfolioStore:
             if exposure is not None and exposure.nav_percent is not None
             else None
         )
-        sector = info.sector if info else ""
+        sector = exposure.sector if exposure is not None else ""
         country_of_risk = info.country_of_risk if info else ""
         for_qual_investor = info.for_qual_investor if info else None
         return (
@@ -1791,15 +1876,21 @@ class PortfolioStore:
                      c.instrument_uid = p.instrument_uid
                      OR (p.figi <> '' AND c.figi = p.figi)
                  )
-                LEFT JOIN portfolio_risk_assessments AS r
-                  ON r.snapshot_id = p.snapshot_id
-                 AND r.user_id = p.user_id
-                 AND r.instrument_uid = p.instrument_uid
+                LEFT JOIN LATERAL (
+                    SELECT assessment.* FROM portfolio_risk_assessments assessment
+                    JOIN portfolio_snapshots assessed ON assessed.id = assessment.snapshot_id
+                        AND assessed.user_id = assessment.user_id
+                    WHERE assessment.user_id = p.user_id
+                        AND assessment.instrument_uid = p.instrument_uid
+                        AND assessed.account_id = %s AND assessed.environment = %s
+                        AND assessed.captured_at <= %s
+                    ORDER BY assessment.assessed_at DESC, assessment.id DESC LIMIT 1
+                ) AS r ON true
                 WHERE p.snapshot_id = %s
                   AND p.user_id = %s
                 ORDER BY p.nav_percent DESC NULLS LAST, p.value_rub DESC NULLS LAST, p.ticker
                 """,
-                (snapshot_id, user_id),
+                (account_id, environment, latest["captured_at"], snapshot_id, user_id),
             )
             positions = [dict(row) for row in cur.fetchall()]
 
@@ -1840,6 +1931,7 @@ class PortfolioStore:
                 "snapshot_freshness": _freshness_status(
                     captured_at,
                     now=observed_at,
+                    max_age=PORTFOLIO_MAX_AGE,
                 ),
                 "analysis_status": latest["analysis_status"],
                 "nav_rub": latest["nav_rub"],
@@ -1879,7 +1971,8 @@ class PortfolioStore:
             self._tenant(cur, user_id)
             cur.execute(
                 """
-                SELECT account_id, environment
+                SELECT id AS current_snapshot_id, captured_at AS current_snapshot_at,
+                    account_id, environment
                 FROM portfolio_snapshots
                 JOIN tbank_connection USING (user_id, account_id, environment)
                 WHERE user_id = %s
@@ -1940,10 +2033,17 @@ class PortfolioStore:
                      c.instrument_uid = p.instrument_uid
                      OR (p.figi <> '' AND c.figi = p.figi)
                  )
-                LEFT JOIN portfolio_risk_assessments AS r
-                  ON r.snapshot_id = p.snapshot_id
-                 AND r.user_id = p.user_id
-                 AND r.instrument_uid = p.instrument_uid
+                LEFT JOIN LATERAL (
+                    SELECT assessment.* FROM portfolio_risk_assessments assessment
+                    JOIN portfolio_snapshots assessed ON assessed.id = assessment.snapshot_id
+                        AND assessed.user_id = assessment.user_id
+                    WHERE assessment.user_id = p.user_id
+                        AND assessment.instrument_uid = p.instrument_uid
+                        AND assessed.account_id = s.account_id
+                        AND assessed.environment = s.environment
+                        AND assessed.captured_at <= s.captured_at
+                    ORDER BY assessment.assessed_at DESC, assessment.id DESC LIMIT 1
+                ) AS r ON true
                 WHERE p.user_id = %s
                   AND p.instrument_uid = %s
                   AND s.account_id = %s
@@ -2066,11 +2166,19 @@ class PortfolioStore:
             "snapshot_freshness": _freshness_status(
                 latest_captured_at,
                 now=observed_at,
+                max_age=PORTFOLIO_MAX_AGE,
             ),
             "latest": {
                 key: value
                 for key, value in latest.items()
                 if key not in {"risk_evidence"}
+            },
+            "current_holding": {
+                "status": "held" if latest["snapshot_id"] == account["current_snapshot_id"]
+                and latest["quantity"] != 0 else "not_held",
+                "quantity": str(latest["quantity"])
+                if latest["snapshot_id"] == account["current_snapshot_id"] else "0",
+                "observed_at": account["current_snapshot_at"].isoformat(),
             },
             "risk_evidence": latest.get("risk_evidence") or {},
             "history": history,
@@ -2097,6 +2205,7 @@ class PortfolioStore:
                 SELECT
                     id,
                     account_id,
+                    environment,
                     captured_at,
                     analysis_status,
                     nav_rub,
@@ -2117,6 +2226,18 @@ class PortfolioStore:
             snapshot = dict(cast(dict[str, Any], fetched))
             snapshot_id = cast(UUID, snapshot["id"])
             account_id = str(snapshot["account_id"])
+
+            # Quick NAV snapshots intentionally omit UsersService/GetInfo. Keep
+            # the last actual response and its own time within this account.
+            cur.execute(
+                "SELECT captured_at, evidence->'broker_user' AS document "
+                "FROM portfolio_snapshots WHERE user_id = %s AND account_id = %s "
+                "AND environment = %s AND captured_at <= %s "
+                "AND jsonb_typeof(evidence->'broker_user') = 'object' "
+                "ORDER BY captured_at DESC, created_at DESC, id DESC LIMIT 1",
+                (user_id, account_id, snapshot["environment"], snapshot["captured_at"]),
+            )
+            broker_user_source = cast(dict[str, Any] | None, cur.fetchone())
 
             cur.execute(
                 """
@@ -2175,10 +2296,20 @@ class PortfolioStore:
                 LEFT JOIN issuers AS i
                   ON i.id = m.issuer_id
                 LEFT JOIN issuer_groups AS g ON g.id = i.group_id
-                LEFT JOIN portfolio_risk_assessments AS r
-                  ON r.snapshot_id = p.snapshot_id
-                 AND r.user_id = p.user_id
-                 AND r.instrument_uid = p.instrument_uid
+                LEFT JOIN LATERAL (
+                    SELECT assessment.* FROM portfolio_risk_assessments assessment
+                    JOIN portfolio_snapshots assessed ON assessed.id = assessment.snapshot_id
+                        AND assessed.user_id = assessment.user_id
+                    JOIN portfolio_snapshots current_snapshot
+                        ON current_snapshot.id = p.snapshot_id
+                        AND current_snapshot.user_id = p.user_id
+                    WHERE assessment.user_id = p.user_id
+                        AND assessment.instrument_uid = p.instrument_uid
+                        AND assessed.account_id = current_snapshot.account_id
+                        AND assessed.environment = current_snapshot.environment
+                        AND assessed.captured_at <= current_snapshot.captured_at
+                    ORDER BY assessment.assessed_at DESC, assessment.id DESC LIMIT 1
+                ) AS r ON true
                 WHERE p.snapshot_id = %s
                   AND p.user_id = %s
                 ORDER BY p.value_rub DESC NULLS LAST, p.ticker
@@ -2186,6 +2317,18 @@ class PortfolioStore:
                 (snapshot_id, user_id),
             )
             holdings = [dict(row) for row in cur.fetchall()]
+
+            cur.execute(
+                "SELECT evidence.version, evidence.received_at, asset->>'instrument_uid' "
+                "AS instrument_uid, asset->'facts'->'issuer_id' AS issuer, "
+                "asset->'facts'->'group_id' AS issuer_group "
+                "FROM strategy_research_evidence evidence, "
+                "LATERAL jsonb_array_elements(evidence.document->'assets') asset "
+                "WHERE evidence.user_id = %s AND asset->>'instrument_uid' = ANY (%s) "
+                "AND (asset->'facts' ? 'issuer_id' OR asset->'facts' ? 'group_id')",
+                (user_id, [row["instrument_uid"] for row in holdings]),
+            )
+            issuer_imports = [dict(row) for row in cur.fetchall()]
 
             cur.execute(
                 """
@@ -2263,12 +2406,13 @@ class PortfolioStore:
 
         evidence = snapshot.get("evidence")
         broker_user: dict[str, object] = {}
+        broker_user_as_of = None
         account: dict[str, object] = {}
+        if broker_user_source is not None:
+            broker_user = dict(broker_user_source["document"])
+            broker_user_as_of = broker_user_source["captured_at"]
         if isinstance(evidence, dict):
-            broker_raw = evidence.get("broker_user")
             account_raw = evidence.get("account")
-            if isinstance(broker_raw, dict):
-                broker_user = dict(cast(dict[str, object], broker_raw))
             if isinstance(account_raw, dict):
                 account = dict(cast(dict[str, object], account_raw))
 
@@ -2281,9 +2425,15 @@ class PortfolioStore:
             "rub_cash_unblocked": snapshot["rub_cash_unblocked"],
             "limits_loading_in_progress": snapshot["limits_loading_in_progress"],
             "broker_user": broker_user,
+            "broker_user_as_of": broker_user_as_of,
+            "broker_user_time_basis": "source_snapshot",
+            "broker_user_freshness": _freshness_status(
+                broker_user_as_of, now=datetime.now(UTC), max_age=PORTFOLIO_MAX_AGE,
+            ),
             "account": account,
             "holdings": holdings,
             "candidates": candidates,
+            "issuer_imports": issuer_imports,
         }
 
     def save_history_page(
@@ -2345,6 +2495,7 @@ def _freshness_status(
     value: datetime | None,
     *,
     now: datetime,
+    max_age: timedelta = EVIDENCE_RETRIEVAL_MAX_AGE,
 ) -> Literal["fresh", "stale", "data_missing"]:
     if value is None:
         return "data_missing"
@@ -2353,7 +2504,7 @@ def _freshness_status(
         return "stale"
     return (
         "stale"
-        if age > int(EVIDENCE_RETRIEVAL_MAX_AGE.total_seconds())
+        if age >= int(max_age.total_seconds())
         else "fresh"
     )
 
@@ -2441,6 +2592,7 @@ def _job_run(row: dict[str, Any]) -> JobRunRecord:
         attempt=int(row["attempt"]),
         started_at=cast(datetime, row["started_at"]),
         finished_at=cast(datetime | None, row["finished_at"]),
+        refresh_scope="quick" if row["details"].get("refresh_scope") == "quick" else "full",
     )
 
 

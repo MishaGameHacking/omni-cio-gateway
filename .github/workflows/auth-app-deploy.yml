@@ -16,6 +16,7 @@ on:
       - ".github/scripts/timeweb_auth_app.py"
       - ".github/scripts/test_timeweb_auth_app.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/inplace_upgrade.py"
       - ".github/scripts/timeweb_recovery.py"
       - ".github/scripts/timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_ssh_trust.py"
@@ -41,6 +42,7 @@ on:
       - ".github/scripts/timeweb_auth_app.py"
       - ".github/scripts/test_timeweb_auth_app.py"
       - ".github/scripts/timeweb_auth_postgres.py"
+      - ".github/scripts/inplace_upgrade.py"
       - ".github/scripts/timeweb_recovery.py"
       - ".github/scripts/timeweb_ssh_trust.py"
       - ".github/scripts/test_timeweb_ssh_trust.py"
@@ -104,7 +106,7 @@ jobs:
       - name: Compile deploy scripts
         shell: cmd
         run: |
-          "%OMNICIO_PYTHON%" -m py_compile .github\scripts\timeweb_auth_postgres.py .github\scripts\timeweb_auth_app.py
+          "%OMNICIO_PYTHON%" -m py_compile .github\scripts\inplace_upgrade.py .github\scripts\timeweb_auth_postgres.py .github\scripts\timeweb_auth_app.py
 
       - name: Validate browser JavaScript syntax
         shell: cmd
@@ -137,6 +139,7 @@ jobs:
             artifacts/frontend/*.png
             artifacts/frontend/failure-state.json
             artifacts/frontend/layout-metrics.json
+            artifacts/frontend/installability.json
           if-no-files-found: warn
           retention-days: 7
 
@@ -203,10 +206,13 @@ jobs:
       ASSISTANT_ENABLED: "false"
       ASSISTANT_ALLOWED_ENDPOINTS: ${{ vars.ASSISTANT_ALLOWED_ENDPOINTS }}
       ASSISTANT_DAILY_REQUEST_LIMIT: ${{ vars.ASSISTANT_DAILY_REQUEST_LIMIT }}
-      NOTIFICATIONS_ENABLED: ${{ vars.NOTIFICATIONS_ENABLED }}
+      # The owner requested native Web Push; user permission and a bound session
+      # remain mandatory. No email delivery is activated by this release.
+      NOTIFICATIONS_ENABLED: "true"
+      NOTIFICATION_EMAIL_ENABLED: "false"
       NOTIFICATION_CRYPTO_KEY: ${{ secrets.NOTIFICATION_CRYPTO_KEY }}
       NOTIFICATION_VAPID_PRIVATE_KEY: ${{ secrets.NOTIFICATION_VAPID_PRIVATE_KEY }}
-      NOTIFICATION_VAPID_SUBJECT: ${{ vars.NOTIFICATION_VAPID_SUBJECT }}
+      NOTIFICATION_VAPID_SUBJECT: "https://omnicio.ru"
       NOTIFICATION_SMTP_HOST: ${{ vars.NOTIFICATION_SMTP_HOST }}
       NOTIFICATION_SMTP_PORT: ${{ vars.NOTIFICATION_SMTP_PORT }}
       NOTIFICATION_SMTP_USERNAME: ${{ secrets.NOTIFICATION_SMTP_USERNAME }}
@@ -231,9 +237,9 @@ jobs:
       LEGACY_PROFILE_RESET_ENABLED: "false"
       LEGAL_OPERATOR_NAME: "КЛИМАЧЕВ МИХАИЛ КОНСТАНТИНОВИЧ"
       LEGAL_OPERATOR_EMAIL: "omnicioinfo@gmail.com"
-      LEGAL_PRIVACY_VERSION: "2026-10-06-v1.0.0"
-      LEGAL_CONSENT_VERSION: "2026-10-06-v1.0.0"
-      LEGAL_TERMS_VERSION: "2026-10-06-v1.0.0"
+      LEGAL_PRIVACY_VERSION: "2026-10-07-v1.3.0"
+      LEGAL_CONSENT_VERSION: "2026-10-07-v1.3.0"
+      LEGAL_TERMS_VERSION: "2026-10-07-v1.3.0"
       SESSION_TTL_SECONDS: "34560000"
       PORTFOLIO_LIVE_EXECUTION_ENABLED: "false"
       PORTFOLIO_LIVE_MAX_ORDER_RUB: "10000"

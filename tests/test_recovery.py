@@ -98,6 +98,28 @@ def test_weekly_confirmation_expires_at_moscow_week_boundary() -> None:
     assert after["daily_schedule"] is True
 
 
+@pytest.mark.parametrize("changes,disabled", [
+    ({}, True), ({"schedule_enabled": True}, False),
+    ({"copy_creation_enabled": 0}, False),
+    ({"observed_at": (NOW - timedelta(hours=8)).isoformat()}, False),
+    ({"provider_status": "unavailable"}, False),
+])
+def test_single_database_status_does_not_refresh_legacy_retention_evidence(
+    changes: dict[str, object], disabled: bool,
+) -> None:
+    payload = evidence() | {"policy_mode": "single_existing_database",
+                            "copy_creation_enabled": False, "schedule_enabled": False} | changes
+    with patch("omnicio.recovery._read_evidence", return_value=payload):
+        result = recovery_status(now=NOW)
+    assert (result["status"] == "copying_disabled") is disabled
+    assert result["copy_creation_enabled"] is (False if disabled else None)
+    assert result["retention_copies"] is None
+    assert result["weekly"]["available_copies"] is None
+    assert result["weekly"]["retention_copies"] is None
+    assert result["production_restore_verified"] is False
+    assert result["backup"]["observed_at"] == NOW - timedelta(hours=2)
+
+
 @pytest.mark.parametrize("body", [None, "{", "[]", '{"schema_version": 2}', " " * 8193])
 def test_absent_or_malformed_evidence_never_claims_protection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str | None,

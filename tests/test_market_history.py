@@ -19,7 +19,7 @@ from omnicio.broker import BrokerConnectionError, BrokerConnectionStatus, Broker
 from omnicio.cbr import CBRClient
 from omnicio.db import Database, TBankConnectionRecord
 from omnicio.main import app
-from omnicio.market import MarketService
+from omnicio.market import CBRIndicator, CBRIndicatorSnapshot, MarketService, UsdRubSnapshot
 from omnicio.security import encrypt_secret
 from omnicio.tbank import (
     TBankHistoricCandle,
@@ -186,10 +186,13 @@ def test_unknown_future_naive_or_over_budget_first_date_fails_before_candle_read
 ) -> None:
     broker = history_broker(first)
     service = market(broker)
-    with patch("omnicio.market.datetime", FixedDatetime), pytest.raises(TBankUnavailable):
-        service.instrument_snapshot(OWNER.id, UID, period="all")
+    with patch("omnicio.market.datetime", FixedDatetime):
+        result = service.instrument_snapshot(OWNER.id, UID, period="all")
+    assert result.history_status == "unavailable"
+    assert result.errors["history"] == "source_unavailable"
+    assert result.last_price is not None
     broker.market_exchange_candles.assert_not_called()
-    broker.market_last_price.assert_not_called()
+    broker.market_last_price.assert_called_once()
 
 
 @pytest.mark.parametrize("surface", ["all", "1m", "live"])
@@ -363,6 +366,35 @@ def test_instrument_facts_http_keeps_owner_precondition_and_discards_revoked_res
         revoked = client.get(f"/api/market/instruments/{UID}/facts")
         assert revoked.status_code == 401
         assert "metrics" not in revoked.json()
+
+
+@pytest.mark.parametrize("endpoint", ["usd-rub", "cbr-indicators"])
+@pytest.mark.parametrize("change", ["revoked", "replaced"])
+def test_legacy_market_http_discards_results_after_session_changes(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock], endpoint: str, change: str,
+) -> None:
+    client, auth, _, _ = workspace_http
+    source = Mock(spec=MarketService)
+    indicator = CBRIndicator("USD", "90", "RUB", NOW.date().isoformat())
+    source.cbr_indicators.return_value = CBRIndicatorSnapshot(
+        "synthetic", NOW.isoformat(), "live", indicator, indicator, indicator,
+    )
+    source.usd_rub.return_value = UsdRubSnapshot(
+        "USD/RUB", "90", "RUB", "USD", "Synthetic USD", "TEST", "synthetic",
+        NOW.isoformat(), NOW.isoformat(), 0, "live", None, None, None, None, None,
+    )
+    with patch.object(app.state, "market_service", source, create=True):
+        available = client.get(f"/api/market/{endpoint}")
+        assert available.status_code == 200
+        assert available.headers["cache-control"] == "private, no-store"
+        auth.refresh_session.side_effect = [
+            OWNER, None if change == "revoked" else replace(OWNER, id=UUID(int=999)),
+        ]
+        response = client.get(f"/api/market/{endpoint}")
+    assert response.status_code == (401 if change == "revoked" else 409)
+    body = response.json()
+    assert "price" not in body
+    assert "key_rate" not in body
 
 
 @pytest.mark.parametrize(

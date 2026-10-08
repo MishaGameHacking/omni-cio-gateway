@@ -4,7 +4,9 @@
 const assert = require("node:assert/strict");
 const vm = require("node:vm");
 const {
-  createHash
+  createHash,
+  createECDH,
+  randomUUID
 } = require("node:crypto");
 const {
   createServer
@@ -65,6 +67,9 @@ const until = async (read, label, attempts = 150) => {
   throw new Error("Timed out: " + label);
 };
 const clone = value => structuredClone(value);
+const pushFixtureCurve = createECDH("prime256v1");
+pushFixtureCurve.generateKeys();
+const pushFixtureKey = pushFixtureCurve.getPublicKey().toString("base64url");
 // PostgreSQL JSONB need not preserve object-key order; reconciliation must compare meaning.
 const reorderJSON = value => Array.isArray(value) ? value.map(reorderJSON) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).reverse().map(key => [key, reorderJSON(value[key])])) : value;
 const stamp = new Date().toISOString();
@@ -90,7 +95,9 @@ const defaultPreferences = () => ({
       end: "08:00",
       timezone: "Europe/Moscow"
     },
-    digest_frequency: "off"
+    digest_frequency: "off",
+    digest_time: "09:00",
+    digest_timezone: "Europe/Moscow"
   }
 });
 const makeFixture = mode => {
@@ -100,6 +107,8 @@ const makeFixture = mode => {
   preset.policy.securities_tax_rate_percent = "13";
   return {
     mode,
+    missingBundle: "",
+    legacyHtml: false,
     tidEnabled: true,
     vkidEnabled: true,
     user: "000000123",
@@ -127,7 +136,18 @@ const makeFixture = mode => {
       source: {type: "operation", amount: "125.50", currency: "RUB", expected_at: stamp, instrument_uid: "synthetic-a", state: "executed"},
       destination: {view: "asset", uid: "synthetic-a"}
     }],
+    holdEventSummary: false,
+    heldEventSummaries: [],
+    holdEventReads: false,
+    heldEventReads: [],
+    ledgerItems: [{id: "fixture-ledger-1", operation_date: stamp, name: "Контрольная выплата", category: "income", instrument_uid: "synthetic-a", ticker: "SYNA", payment: {value: "12.34", currency: "eur"}}],
     notificationChannels: [],
+    notificationDeliveries: [],
+    pushConfigured: true,
+    failPush: false,
+    holdPush: false,
+    heldPush: [],
+    pushSequence: 0,
     news: [{id: "synthetic-news-1", title: "Изолированная публикация инструмента", summary: "Краткое содержание теста", content: "Полный текст публикации из изолированного API", source: "Изолированный источник", source_url: "https://example.test/news/1", occurred_at: stamp, instrument_uids: ["synthetic-a"], priority: 1}],
     requests: [],
     mutationDelay: 0,
@@ -135,6 +155,8 @@ const makeFixture = mode => {
     failWorkspace: false,
     failStrategyLoad: false,
     failNotifications: false,
+    holdNotifications: false,
+    heldNotifications: [],
     conflict: false,
     lostAck: false,
     activeWrites: 0,
@@ -225,13 +247,16 @@ const overview = () => ({
 const eventDTO = (fixture, url = new URL("https://example.test/api/events")) => {
   const [offset, ceiling] = url.searchParams.has("cursor") ? url.searchParams.get("cursor").split(":").map(Number) : [0, Math.max(0, ...fixture.events.map(item => item.revision))];
   const query = (url.searchParams.get("query") || "").toLowerCase();
-  const items = fixture.events.filter(item => item.revision <= ceiling && JSON.stringify(item).toLowerCase().includes(query)).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id.localeCompare(a.id));
+  const category = url.searchParams.get("category") || "all";
+  const includesCategory = item => category === "all" || (category === "assets" ? ["portfolio", "payments"].includes(item.category) : item.category === category);
+  const important = url.searchParams.get("important_only") === "true";
+  const items = fixture.events.filter(item => item.revision <= ceiling && JSON.stringify(item).toLowerCase().includes(query) && includesCategory(item) && (!important || ["warning", "critical", "high"].includes(item.severity))).sort((a, b) => b.occurred_at.localeCompare(a.occurred_at) || b.id.localeCompare(a.id));
   const limit = Number(url.searchParams.get("limit") || 50);
   return {
   items: clone(items.slice(offset, offset + limit)),
   next_cursor: offset + limit < items.length ? `${offset + limit}:${ceiling}` : null,
   read_all_before: ceiling,
-  unread_count: fixture.events.filter(item => !item.read_at).length,
+  unread_count: fixture.events.filter(item => !item.read_at && includesCategory(item)).length,
   alerts_suppressed: false,
   digest: {
     frequency: fixture.prefs.document.digest_frequency,
@@ -368,15 +393,24 @@ const testApiHandlers = [{
   }) => path === "/api/public/market-reference",
   run: serveTestPublicMarketReference
 }, {
+  matches: ({path}) => path === "/api/public/support",
+  run: ({response}) => sendJSON(response, {configured: true, name: "Fixture operator", email: "support@example.test", mailto: "mailto:support@example.test", scope: "user_initiated_email"})
+}, {
   matches: ({
     path
   }) => path === "/api/public/news",
   run: serveTestPublicNews
 }, {
+  matches: ({path}) => path.startsWith("/api/public/news/"),
+  run: ({path,response}) => sendJSON(response,{id:path.split("/").at(-1),title:"Тестовая новость официального источника",content:"Подтверждённый текст изолированного официального источника.",url:"https://www.cbr.ru/press/",published_at:stamp,source:"Банк России",scope:"official_page_text",truncated:false})
+}, {
   matches: ({
     path
   }) => /^\/api\/auth\/(tid|vkid)\/start$/.test(path),
   run: serveTestGuard5
+}, {
+  matches: ({path}) => path === "/api/me",
+  run: serveTestMe
 }, {
   matches: ({
     fixture
@@ -476,6 +510,15 @@ const testApiHandlers = [{
   }) => path.startsWith("/api/portfolio/instruments/"),
   run: serveTestPortfolioInstruments
 }, {
+  matches: ({path}) => path === "/api/market/quotes",
+  run: ({url,response,fixture}) => {
+    const quote = fixture.precisionCase ? JSON.parse(fixture.precisionCase.market_event.split("\ndata: ")[1].trim()) : marketEvent;
+    return sendJSON(response,{items:(url.searchParams.get("instrument_uids") || "").split(",").filter(Boolean).map(uid=>({...quote,instrument_uid:uid,metadata_status:"available"})),source:"T-Invest",observed_at:stamp,refresh_after_seconds:10});
+  }
+}, {
+  matches: ({path}) => path === "/api/workspace/operations",
+  run: ({fixture,response}) => sendJSON(response,{items:clone(fixture.ledgerItems),next_cursor:null,status:"available",source:"T-Invest",observed_at:stamp})
+}, {
   matches: ({
     path
   }) => path.startsWith("/api/market/instruments/") && path.endsWith("/facts"),
@@ -531,7 +574,7 @@ const testApiHandlers = [{
   }) => path === "/api/events" || path.startsWith("/api/events/"),
   run: serveTestEvents
 }, {
-  matches: ({path}) => path === "/api/news",
+  matches: ({path}) => path === "/api/news" || path.startsWith("/api/news/"),
   run: serveTestNews
 }, {
   matches: ({path}) => path === "/api/notifications" || path.startsWith("/api/notifications/"),
@@ -550,12 +593,14 @@ const testApiHandlers = [{
 const routeAPI = async (request, response, url, fixture, body) => {
   const path = url.pathname;
   const method = request.method;
+  response.setHeader("X-Omnicio-Build", fixture.serverBuild || build);
   fixture.requests.push({
     path,
     query: url.searchParams.toString(),
     method,
     body,
     profile: request.headers["x-omnicio-profile"],
+    clientBuild: request.headers["x-omnicio-client-build"],
     origin: request.headers.origin
   });
   const context = {
@@ -590,6 +635,12 @@ const server = createServer(async (request, response) => {
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     if (url.pathname.startsWith("/api/")) return await serveTestApiRequest(request, response, url);
+    const page = new URL(request.headers.referer || url.href);
+    const fixture = fixtures.get((url.pathname === "/" ? url : page).searchParams.get("case"));
+    if (fixture?.missingBundle === url.pathname) {
+      response.statusCode = 404;
+      return response.end();
+    }
     if (url.pathname === "/version.js") {
       response.setHeader("Content-Type", "text/javascript");
       response.end(`window.OMNICIO_RELEASE=${JSON.stringify({
@@ -601,7 +652,7 @@ const server = createServer(async (request, response) => {
     let path = url.pathname;
     if (path === "/") path = "/index.html";
     let file = join(root, "web", path.replace(/^\/assets\//, "").replace(/^\//, ""));
-    if (path.startsWith("/assets/brand/")) file = join(root, "assets", "brand", "web", path.split("/").at(-1));
+    if (path.startsWith("/assets/brand/")) file = path === "/assets/brand/omnicio-logo.png" ? join(root,"assets","brand","omnicio-logo.png") : join(root, "assets", "brand", "web", path.split("/").at(-1));
     if (!file.startsWith(root) || !existsSync(file)) {
       response.statusCode = 404;
       return response.end();
@@ -614,7 +665,9 @@ const server = createServer(async (request, response) => {
       ".webmanifest": "application/manifest+json"
     }[extname(file)] || "application/octet-stream");
     const raw = readFileSync(file);
-    response.end([".html", ".js", ".css"].includes(extname(file)) ? raw.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version) : raw);
+    let content = [".html", ".js", ".css"].includes(extname(file)) ? raw.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version) : raw;
+    if (fixture?.legacyHtml && path === "/index.html") content = content.replace(/<main id="startup-state"[\s\S]*?<\/main>/, "").replace('<div id="public-site" hidden>', '<div id="public-site">');
+    response.end(content);
   } catch (error) {
     response.statusCode = 500;
     response.end("Synthetic test server failure");
@@ -626,7 +679,8 @@ const displayContracts = () => {
     window: {},
     Intl,
     Date,
-    URL
+    URL,
+    URLSearchParams
   });
   vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
   vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
@@ -655,11 +709,547 @@ const displayContracts = () => {
   ui.setPrivacy(false);
   ui.setLocale("en");
   assert.equal(ui.format("1234.56"), "1,234.56", "Locale setting has a real consumer");
+  startupBuildContracts();
+  eventReadReceiptContracts();
+  goalRouteContracts(ui);
+  quotePrecisionContracts(ui);
+  assetQuotePrecisionContracts(ui);
+  quoteChartPrecisionContracts(ui);
   goalVersionContracts(ui);
   chartAxisContracts(ui);
+  researchMathContracts(ui, context.window.OMNICIO_I18N);
+  presetMathContracts(ui, context.window.OMNICIO_I18N);
   viewportSizeContracts();
   console.log("PASS display contracts: unknown values, source escaping, privacy, real-series requirements and locale");
 };
+function presetMathContracts(ui, i18n) {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const strategyMethodLabels ="), app.indexOf("  const assessmentIsCurrent ="));
+  const renderers = app.slice(app.indexOf("  function renderSelectionHTMLNotice("), app.indexOf("  function renderAssessmentValue("));
+  const context = vm.createContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
+    infoRows: ui.infoRows, format: ui.format, percent: ui.percent, money: ui.money, date: ui.date,
+    number: ui.number, policyFields: () => [],
+    renderFundamentalMetricsHTMLLi2: value => `<li>${ui.escape(context.requirement(value))}</li>`});
+  vm.runInContext(source + renderers + "\nglobalThis.selection=selectionHTML; globalThis.requirement=humanRequirement; globalThis.amount=researchSourceAmount;", context);
+  for (const locale of ["ru", "en"]) {
+    ui.setLocale(locale);
+    const ladder = context.selection(serverContracts.research_ladder_result.selection);
+    assert.equal((ladder.match(/data-ladder-rung="/g) || []).length, 5);
+    assert.ok(ladder.includes(ui.escape(i18n.t("research.ladder.rung_unfilled", {rung: 3}))));
+    assert.ok(ladder.includes(ui.escape(ui.percent("60"))), "Missing years retain their actual cash allocation");
+    const dividends = context.selection(serverContracts.research_dividend_result.selection);
+    assert.ok(dividends.includes("data-dividend-coverage") && dividends.includes("600 USD"));
+    assert.ok(dividends.includes(ui.escape(i18n.t("research.dividend.scope"))));
+    assert.ok(!dividends.includes("[object Object]") && !dividends.includes("undefined") && !dividends.includes("NaN"));
+    assert.equal(context.requirement("missing:cashflow_coverage_incomplete"), i18n.t("research.cashflow.coverage_incomplete"));
+    assert.ok(context.requirement("missing:dividend_cashflow_coverage").includes(i18n.t("research.dividend.coverage_fact")));
+  }
+  assert.equal(context.amount("1000.0000000001", "USD"), "1000.0000000001 USD", "Coverage amounts retain source decimal precision");
+  assert.equal(context.amount("600.000", "USD"), "600 USD");
+  assert.equal(context.amount("NaN", "USD"), "—");
+  console.log("PASS preset mathematics: actual calendar rungs, exact issuer cashflows, provenance and translated missing evidence");
+}
+function researchMathContracts(ui, i18n) {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const helpers = app.slice(app.indexOf("  const researchCashProjectionHTML ="), app.indexOf("  const researchWindowHTML ="));
+  const freshnessCheck = app.slice(app.indexOf("  const assessmentIsCurrent ="), app.indexOf("  const renderAssessment ="));
+  const context = vm.createContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
+    infoRows: ui.infoRows, format: ui.format, percent: ui.percent, money: ui.money, date: ui.date,
+    renderFundamentalMetricsHTMLLi2: value => `<li>${ui.escape(value)}</li>`, Date, Number});
+  vm.runInContext(helpers + freshnessCheck + "\nglobalThis.renderOutcomes=researchOutcomesHTML; globalThis.renderCash=researchCashProjectionHTML; globalThis.renderWindow=researchOutcomeWindowHTML; globalThis.current=assessmentIsCurrent;", context);
+  const result = serverContracts.research_outcomes_result;
+  assert.equal(result.historical_outcomes.horizons[0].profit_frequency_percent, "50");
+  for (const locale of ["ru", "en"]) {
+    ui.setLocale(locale);
+    const html = context.renderOutcomes(result);
+    assert.ok(html.includes(ui.escape(i18n.t("research.outcomes.title"))));
+    assert.ok(html.includes(ui.escape(i18n.t("research.outcomes.scope"))), "Observed frequency retains its non-forecast scope in both languages");
+    assert.ok(html.includes(ui.escape(ui.percent("50"))));
+    assert.ok(html.includes(ui.escape(i18n.t("research.outcomes.too_few"))), "Insufficient longer horizons retain their actual counts and reason");
+    assert.ok(html.includes(ui.escape(i18n.t("research.outcomes.interval"))));
+    assert.ok(!html.includes("undefined") && !html.includes("NaN"));
+    const weekly = result.historical_outcomes.horizons[1];
+    const unavailable = context.renderWindow({...weekly, profit_frequency_percent: "99.999"});
+    assert.ok(!unavailable.includes("99.999"), "An unavailable estimate cannot become a displayed percentage even if a stale value is present");
+    const cash = context.renderCash(serverContracts.research_cash_result);
+    assert.ok(cash.includes(ui.escape(i18n.t("research.cash.no_observations"))));
+    assert.ok(!cash.includes("chart-path") && !cash.includes("data-research-outcome-sessions"));
+    const incomplete = context.renderCash(serverContracts.research_cash_incomplete_result);
+    assert.ok(incomplete.includes(ui.escape(i18n.t("research.cash.conditions_missing"))));
+  }
+  const observed = Date.now();
+  const assessment = {strategy_version: 7, captured_at: new Date(observed).toISOString(), valid_until: new Date(observed + 300000).toISOString(), checks: []};
+  assert.equal(context.current(assessment, 7), true);
+  assert.equal(context.current(assessment, 8), false, "A newer remote strategy version cannot inherit a still-recent old assessment");
+  assert.equal(context.current({...assessment, captured_at: new Date(observed - 600000).toISOString(), valid_until: new Date(observed - 300000).toISOString()}, 7), false);
+  assert.equal(context.current({...assessment, valid_until: undefined}, 7), false);
+  assert.equal(context.current({...assessment, captured_at: new Date(observed + 60000).toISOString(), valid_until: new Date(observed + 360000).toISOString()}, 7), false);
+  let clock = observed, expire;
+  const panel = {innerHTML: ""};
+  Object.assign(context, {state: {generation: 1, loading: new Set(), errors: {}, strategy: {assessment, server: {version: 7}}},
+    Date: class extends Date { static now() { return clock; } }, setTimeout: callback => { expire = callback; return 1; }, clearTimeout() {},
+    $: () => panel, freshness: ui.freshness, selectionHTML: () => "", renderAssessmentDetailsSummary: () => ""});
+  const render = app.slice(app.indexOf("  const renderAssessment ="), app.indexOf("  const assessStrategy ="));
+  vm.runInContext(render + "\nglobalThis.renderAssessmentNow=renderAssessment;", context);
+  assert.ok(!context.renderAssessmentNow().includes("data-assessment-expired"));
+  assert.equal(typeof expire, "function");
+  clock += 300001;
+  expire();
+  assert.ok(panel.innerHTML.includes("data-assessment-expired"), "The assessment expires locally without a network refresh or form rerender");
+  console.log("PASS research contracts: real calculator results, historical frequency limits, explicit cash model and expiring account assessment");
+}
+async function ledgerPaginationContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  async function loadLedgerPage()"), app.indexOf("  function supportAddress("));
+  const state = {generation: 1, view: "portfolio", data: {ledger: {items: [{id: "old"}], next_cursor: "cursor-old"}}, errors: {}, loading: new Set(), resourceVersions: new Map([["ledger", 1]])};
+  let resolveRead, requests = 0, merges = 0;
+  const context = vm.createContext({state, encodeURIComponent, isCancelled: () => false, renderPortfolio() {},
+    api: () => { requests += 1; return new Promise(resolve => { resolveRead = resolve; }); },
+    mergePage: (before, after) => { merges += 1; return {...after, items: [...before.items, ...after.items]}; }});
+  vm.runInContext(source + "\nglobalThis.load=loadLedgerPage;", context);
+  const pending = context.load();
+  const corrected = {items: [{id: "corrected"}], next_cursor: "cursor-new"};
+  state.data.ledger = corrected;
+  resolveRead({items: [{id: "stale-page"}], next_cursor: null});
+  await pending;
+  assert.equal(state.data.ledger, corrected, "A late page from the prior snapshot cannot replace a corrected first page");
+  assert.equal(merges, 0);
+  const oldMore = context.load();
+  state.resourceVersions.set("ledger", 2);
+  const newError = Object.assign(new Error("Newer first-page reload failed"), {code: "request_timeout"});
+  state.errors.ledger = newError;
+  resolveRead({items: [{id: "old-more"}], next_cursor: null});
+  await oldMore;
+  assert.equal(state.errors.ledger, newError, "An older page cannot erase a failed newer refresh and its recovery action");
+  assert.equal(merges, 0);
+  context.api = async () => { requests += 1; throw Object.assign(new Error("history changed"), {code: "workspace_operation_history_changed"}); };
+  await context.load();
+  assert.equal(state.errors.ledger.code, "workspace_operation_history_changed");
+  await context.load();
+  assert.equal(requests, 3, "A rejected frozen cursor requires a first-page reload instead of repeating it");
+  assert.equal(state.loading.has("ledger-more"), false);
+  console.log("PASS ledger pagination contracts: corrected snapshots and explicit cursor restart");
+}
+async function strategyInputContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const between = (from, to) => {
+    const start = app.indexOf(from);
+    const end = app.indexOf(to, start + from.length);
+    assert.ok(start >= 0 && end > start, from);
+    return app.slice(start, end);
+  };
+  const source = [
+    between("  const writePayload = ", "  const editPreferences = "),
+    between("  const documentChanged = ", "  const redistribute = "),
+    between("  const updateStrategyField = ", "  const stepField = "),
+    between("  function renderUpdateStrategyFieldValue(", "  function renderStepFieldValue("),
+    between("  const strategySaveUnavailable = ", "  const updateStrategySaveControls = "),
+    between("  const reloadVersioned = ", "  const saveErrorHTML = "),
+    between("  function adoptStrategy(", "  const strategySaveUnavailable = "),
+    between("  function renderUpdateSaveStatusValue(", "  function renderUpdateSaveStatusValue5(")
+  ].join("\n");
+
+  function numericInput(name, value, valid = true, badInput = false) {
+    const attributes = new Map();
+    return {
+      name, value, type: "number", nativeValid: valid, badInput, customError: "",
+      get validity() { return {valid: this.nativeValid && !this.customError, badInput: this.badInput}; },
+      setAttribute(name, value) { attributes.set(name, value); },
+      removeAttribute(name) { attributes.delete(name); },
+      setCustomValidity(value) { this.customError = value; },
+      getAttribute(name) { return attributes.get(name); }
+    };
+  }
+
+  function fixture() {
+    const document = {
+      profile: {reserve_rub: "5000", horizon_months: "24", max_drawdown_percent: "20"},
+      policy: {turnover_budget_percent: "20"},
+      rules: {rating_caps: {AAA: "0.1234"}}, customized: false
+    };
+    const state = {generation: 1, user: {public_id: "123456789"}, locked: false, data: {},
+      strategy: {server: {version: 1, document: structuredClone(document)}, draft: structuredClone(document),
+        invalidInputs: {}, revision: 0, dirty: false, busy: false, error: null}};
+    let present = true, hold = false, release;
+    let remote = structuredClone(state.strategy.server);
+    const writes = [], controls = [], statuses = [];
+    const form = {elements: controls, checkValidity: () => controls.every(input => input.validity.valid)};
+    const context = vm.createContext({
+      state, structuredClone, clone: structuredClone, same: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+      $: () => present ? form : null, window: {setTimeout: () => 1}, clearTimeout() {},
+      updateSaveStatus() { statuses.push({dirty: state.strategy.dirty, error: state.strategy.error?.message || null}); },
+      applySavedEffects() { statuses.push({dirty: state.strategy.dirty, error: state.strategy.error?.message || null}); },
+      validRecord: record => Number.isInteger(record?.version) && !!record.document,
+      isCancelled: () => false, renderCurrent() {}, toast() {}, T: value => value, humanError: error => error.message,
+      api: async (_url, options) => {
+        if (!options) return {selection: structuredClone(remote)};
+        writes.push(structuredClone(options.body));
+        if (hold) await new Promise(resolve => { release = resolve; });
+        remote = {version: options.body.expected_version + 1, document: structuredClone(options.body.document)};
+        return {selection: structuredClone(remote)};
+      }
+    });
+    vm.runInContext(source + `
+      globalThis.edit = updateStrategyField;
+      globalThis.save = () => saveVersioned("strategy");
+      globalThis.retry = () => retryVersioned("strategy");
+      globalThis.reload = () => reloadVersioned("strategy", true);
+      globalThis.blocked = () => strategySaveUnavailable(state.strategy);
+      globalThis.status = () => state.strategy.error ? renderUpdateSaveStatusValue(state.strategy) : renderUpdateSaveStatusValue4(state.strategy);
+    `, context);
+    return {state, context, writes, controls, statuses,
+      add(name, value, valid = true, badInput = false) {
+        const input = numericInput(name, value, valid, badInput);
+        controls.push(input);
+        return input;
+      },
+      removeForm() { present = false; },
+      restoreForm() { present = true; },
+      holdNextWrite() { hold = true; },
+      releaseWrite() { hold = false; release(); },
+      remote(record) { remote = structuredClone(record); }
+    };
+  }
+
+  async function exercise() {
+    const active = fixture();
+    const amount = active.add("strategy.profile.reserve_rub", "6000");
+    active.context.edit(amount);
+    active.holdNextWrite();
+    const pending = active.context.save();
+    assert.equal(active.writes.length, 1);
+    amount.value = "";
+    amount.nativeValid = false;
+    amount.badInput = true;
+    active.context.edit(amount);
+    active.removeForm();
+    active.releaseWrite();
+    await pending;
+
+    assert.equal(active.writes.length, 1, "No subsequent PUT after an invalid edit and route change");
+    assert.equal(active.state.strategy.draft.profile.reserve_rub, "6000", "Incomplete input cannot change the numeric draft");
+    assert.equal(active.state.strategy.server.document.profile.reserve_rub, "6000");
+    assert.equal(active.state.strategy.invalidInputs[amount.name], "");
+    assert.equal(active.context.status(), "error", "Late ACK cannot claim saved while input is invalid");
+    assert.equal(active.context.blocked(), true, "Research and execution remain blocked");
+    assert.equal(active.state.strategy.dirty, true);
+
+    active.restoreForm();
+    amount.value = "6000";
+    amount.nativeValid = true;
+    amount.badInput = false;
+    active.context.edit(amount);
+    assert.equal(active.context.status(), "saved", "Correction to the last actual value recovers without a duplicate write");
+    assert.equal(active.writes.length, 1);
+    amount.value = "";
+    active.context.edit(amount);
+    await active.context.save();
+    assert.equal(active.writes.at(-1).document.profile.reserve_rub, null, "Intentional valid clearing still saves unknown");
+    assert.equal(active.context.status(), "saved");
+    assert.equal(Object.hasOwn(active.writes.at(-1).document, "invalidInputs"), false, "Browser validation metadata is never part of the wire document");
+
+    const multiple = fixture();
+    const invalidAmount = multiple.add("strategy.profile.reserve_rub", "", false, true);
+    const fractionalMonths = multiple.add("strategy.profile.horizon_months", "6.5", false);
+    multiple.context.edit(invalidAmount);
+    multiple.context.edit(fractionalMonths);
+    assert.equal(multiple.state.strategy.draft.profile.horizon_months, "24", "Integer-only terms are never silently floored");
+    invalidAmount.value = "5000";
+    invalidAmount.nativeValid = true;
+    invalidAmount.badInput = false;
+    multiple.context.edit(invalidAmount);
+    multiple.removeForm();
+    await multiple.context.save();
+    assert.equal(multiple.writes.length, 0);
+    assert.equal(multiple.state.strategy.dirty, true, "Recovering one field cannot hide another invalid field");
+    assert.equal(multiple.context.status(), "error");
+    multiple.remote({version: 2, document: structuredClone(multiple.state.strategy.draft)});
+    await multiple.context.retry();
+    assert.equal(multiple.context.status(), "error", "Successful reconciliation cannot clear validation metadata");
+    assert.equal(multiple.context.blocked(), true);
+    assert.equal(multiple.state.strategy.invalidInputs[fractionalMonths.name], "6.5");
+    multiple.remote({version: 3});
+    await multiple.context.reload();
+    assert.equal(multiple.state.strategy.invalidInputs[fractionalMonths.name], "6.5", "An incomplete read response cannot discard pending input");
+    multiple.remote({version: 2, document: structuredClone(multiple.state.strategy.draft)});
+    await multiple.context.reload();
+    assert.equal(Object.keys(multiple.state.strategy.invalidInputs).length, 0, "Explicit server reload discards invalid input");
+    assert.equal(multiple.context.status(), "saved");
+
+    const exact = fixture();
+    for (const [name, value] of [["strategy.profile.reserve_rub", "123456789.12345678"], ["strategy.policy.turnover_budget_percent", "20.375"], ["strategy.profile.max_drawdown_percent", "0.1234"]]) {
+      exact.context.edit(exact.add(name, value));
+    }
+    await exact.context.save();
+    assert.equal(exact.writes.length, 1);
+    assert.equal(exact.writes[0].document.profile.reserve_rub, "123456789.12345678");
+    assert.equal(exact.writes[0].document.profile.max_drawdown_percent, "0.1234");
+    assert.equal(exact.writes[0].document.policy.turnover_budget_percent, "20.375");
+    const rating = exact.add("strategy.rules.rating_caps.AAA", "", false);
+    exact.context.edit(rating);
+    await exact.context.save();
+    assert.equal(exact.writes.length, 1, "Clearing a required numeric rule cannot save null");
+    assert.equal(exact.state.strategy.draft.rules.rating_caps.AAA, "0.1234");
+    console.log("PASS actual-source strategy numeric input: held ACK, removed DOM, valid null, exact decimals, integer rejection, multiple invalid fields, reconciliation and explicit reload.");
+  }
+  await exercise();
+}
+function startupBuildContracts() {
+  for (const [bundleBuild, releaseBuild] of [["__OMNICIO_BUILD__", undefined], [build, undefined], [build, build]]) {
+    const reachedApplication = new Error("compatible modules reached document initialization");
+    const document = {currentScript: {src: `http://127.0.0.1/assets/app.js?build=${bundleBuild}`}, documentElement: {dataset: {}}, querySelector: selector => selector === "#startup-state" ? {} : null};
+    const context = vm.createContext({window: {}, document, URL});
+    if (releaseBuild) context.window.OMNICIO_RELEASE = {build: releaseBuild};
+    for (const name of ["i18n", "workspace"]) vm.runInContext(readFileSync(join(root, "web", `${name}.js`), "utf8").replaceAll("__OMNICIO_BUILD__", bundleBuild), context);
+    context.window.OMNICIO_I18N = {...context.window.OMNICIO_I18N, apply() { throw reachedApplication; }};
+    const app = readFileSync(join(root, "web", "app.js"), "utf8").replaceAll("__OMNICIO_BUILD__", bundleBuild);
+    assert.throws(() => vm.runInContext(app, context), error => error === reachedApplication, "A coherent raw/dev or stamped bundle starts without relying on optional version.js metadata");
+  }
+  console.log("PASS startup build contracts: coherent dev and stamped bundles reach initialization even without release metadata");
+}
+function goalRouteContracts(ui) {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const opener = app.slice(app.indexOf("  const openGoal ="), app.indexOf("  const updateGoalFields ="));
+  const entry = app.slice(app.indexOf("  function enterRouteScreen("), app.indexOf("  async function restoreRouteOverlay("));
+  const state = {view: "goals", route: ui.parseRoute("#account/goals/create"), data: {goals: {items: [{id: "goal-a", title: "A"}, {id: "goal-b", title: "B"}]}}};
+  const navigations = [], opened = [];
+  const context = vm.createContext({state, navigate: (...args) => navigations.push(args), requireUser: () => true, goalDocument: goal => goal || {}, T: value => value, H: value => value, esc: String, field: () => "", select: () => "", openDialog: (...args) => opened.push(args), updateGoalFields() {}});
+  vm.runInContext(entry + opener + "\nglobalThis.open=openGoal;", context);
+  context.open();
+  assert.equal(opened.length, 1, "A parsed create route opens its form without a second navigation that would reset restored scroll");
+  assert.equal(navigations.length, 0, "An absent goal ID remains absent for the addressable creation screen");
+  state.route = ui.parseRoute("#account/goals/edit?goal=goal-a");
+  context.open("goal-a");
+  assert.equal(opened.length, 2, "An addressed edit route opens the selected goal directly");
+  context.open("goal-b");
+  assert.equal(navigations.length, 1, "Selecting a different goal still changes the route");
+  assert.equal(navigations[0][1].goal_id, "goal-b");
+  assert.equal(opened.length, 2, "The different goal is not rendered before its navigation");
+  state.route = ui.parseRoute("#account/goals");
+  context.open();
+  assert.equal(navigations.length, 2, "Opening a new goal from the list still enters its own screen");
+  assert.equal(navigations[1][1].screen, "create");
+  console.log("PASS goal route entry: parsed creation and edit screens preserve history restoration; another goal or screen still navigates");
+}
+function quotePrecisionContracts(ui) {
+  const clean = text => text.replaceAll("\u00a0", " ").replaceAll("\u202f", " ");
+  const cases = [
+    ["0.00345", "currency", "0,00345 ₽", "RUB 0.00345"],
+    ["0.000000001", "currency", "0,000000001 ₽", "RUB 0.000000001"],
+    ["99.999", "percent_nominal", "99,999 % номинала", "99.999 % of face value"],
+    ["123456.000000001", "points", "123 456,000000001 пунктов", "123,456.000000001 points"],
+    ["10000000.000000001", "currency", "10 000 000,000000001 ₽", "RUB 10,000,000.000000001"],
+    ["9223372036854775807.999999999", "currency", "9 223 372 036 854 775 807,999999999 ₽", "RUB 9,223,372,036,854,775,807.999999999"]
+  ];
+  for (const [locale, column] of [["ru", 2], ["en", 3]]) {
+    ui.setLocale(locale);
+    for (const item of cases) assert.equal(clean(ui.marketPrice(item[0], item[1], "RUB")), item[column], "Quotation precision is visible in " + locale);
+  }
+  ui.setLocale("en");
+  assert.equal(ui.format("9007199254740993.123456789", 9), "9,007,199,254,740,993.123456789", "Validated decimal strings cannot be rounded through Number before formatting");
+  assert.equal(clean(ui.money("9007199254740993.123456789", 9, "RUB", false)), "RUB 9,007,199,254,740,993.123456789");
+  assert.equal(ui.money("10000000.000000001", 9, "", false), "10,000,000.000000001", "Unknown currency keeps the source digits without inventing a currency");
+  assert.equal(ui.marketPrice(1e-9, "points"), "0.000000001 points", "Already numeric nano values remain supported");
+  ui.setPrivacy(true);
+  for (const unit of ["currency", "percent_nominal", "points", "per_nominal", "unknown"]) {
+    assert.equal(ui.marketPrice("0.00345", unit, "RUB", true), "••••••", "Personal values respect privacy for every unit");
+    assert.equal(ui.marketPrice("not-a-price", unit, "RUB", true), "—", "Privacy cannot turn an unknown price into an implied known value");
+  }
+  assert.equal(clean(ui.marketPrice("0.00345", "currency", "RUB", false)), "RUB 0.00345", "Public market prices remain visible when personal balances are masked");
+  ui.setPrivacy(false);
+  ui.setLocale("ru");
+  console.log("PASS quote precision: nano, currency, nominal percent, points, exact decimal strings, locales and privacy");
+}
+function assetQuotePrecisionContracts(ui) {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const start = app.indexOf("  const quotationNanos =");
+  assert.ok(start >= 0, "Asset extrema use the source decimal contract");
+  const source = app.slice(start, app.indexOf("  const assetChartMarkup =", start));
+  const context = vm.createContext({number: ui.number, marketPrice: ui.marketPrice, money: ui.money, percent: ui.percent, esc: ui.escape, T: value => value, H: value => value, renderAssetValue: () => ""});
+  vm.runInContext(source + "\nglobalThis.pricing=assetPricing;globalThis.quote=assetQuoteHTML;globalThis.extreme=assetPriceExtreme;", context);
+  const smaller = "10000000.000000001", larger = "10000000.000000002";
+  assert.equal(Number(smaller), Number(larger), "The fixture exposes two source prices that Number cannot distinguish");
+  for (const values of [[smaller, larger], [larger, smaller]]) {
+    const candles = values.map(value => ({open: value, close: value, high: value, low: value}));
+    const price = context.pricing({market: {last_price: smaller, price_unit: "currency", price_currency: "RUB", candles}});
+    assert.equal(price.current, smaller, "The asset header and Last price retain the source string");
+    assert.equal(price.high, larger, "High selects the exact source decimal in either candle order");
+    assert.equal(price.low, smaller, "Low selects the exact source decimal in either candle order");
+    assert.ok(context.quote(price).includes("10\u00a0000\u00a0000,000000001"));
+  }
+  for (const value of [null, undefined, false, "0", "-1", "NaN", "Infinity", "1e-9", "0.0000000001", "12345678901234567890"]) assert.equal(context.extreme([{high: value}], "high"), null, "Out-of-contract OHLC remains unknown");
+  assert.equal(context.extreme([{low: "0.000000001"}], "low"), "0.000000001");
+  assert.equal(context.extreme([{high: "9223372036854775807.999999999"}], "high"), "9223372036854775807.999999999", "The full positive int64/nano source range is comparable without Number");
+  for (const [open, last, expected] of [[larger, smaller, "-0.000000001"], [smaller, larger, "0.000000001"], [smaller, smaller, "0"], ["1.000000001", "0.999999999", "-0.000000002"], ["250", "251.75", "1.75"]]) {
+    const price = context.pricing({market: {last_price: last, price_unit: "currency", price_currency: "RUB", candles: [{open}]}});
+    assert.equal(price.change, expected, "Visible absolute change preserves the exact source difference");
+    assert.ok(context.quote(price).includes(ui.marketPrice(expected, "currency", "RUB")), "The exact delta reaches the asset quote consumer");
+  }
+  for (const open of [null, undefined, "0", "-1", "NaN", "1e-9"]) assert.equal(context.pricing({market: {last_price: smaller, candles: [{open}]}}).change, null, "Missing or invalid opening price cannot produce a delta");
+  const cash = context.quote({market: {cash_price: "0.000000001", cash_price_currency: "RUB"}, current: "1", change: null, changePercent: null, priceUnit: "points", currency: "RUB"});
+  assert.ok(cash.includes("0,000000001"), "The displayed cash price does not round a positive source price to zero");
+  console.log("PASS asset source prices: raw current, exact high/low and absolute change, cash price");
+}
+function quoteChartPrecisionContracts(ui) {
+  const first = "10000000.000000001", last = "10000000.000000002";
+  const markup = ui.chart([{time: "2026-01-01T00:00:00Z", close: first}, {time: "2026-01-02T00:00:00Z", close: last}], {timeKey: "time", valueKey: "close", currency: "RUB", personal: false});
+  assert.ok(markup.includes("10\u00a0000\u00a0000,000000002"), "Initial chart readout uses the last raw observation");
+  const listeners = new Map(), attributes = new Map();
+  const readout = {firstElementChild: {}, lastElementChild: {}};
+  const element = {setAttribute() {}};
+  const hover = {setAttribute() {}, querySelector: () => element};
+  const block = {querySelector: () => readout, querySelectorAll: () => []};
+  const svg = {dataset: {chart: /data-chart="([^"]+)"/.exec(markup)[1]}, querySelector: () => hover, closest: () => block, addEventListener: (name, handler) => listeners.set(name, handler), setAttribute: (name, value) => attributes.set(name, value), getBoundingClientRect: () => ({left: 0, width: 480})};
+  ui.bindCharts({querySelectorAll: () => [svg]});
+  listeners.get("keydown")({key: "Home", preventDefault() {}});
+  assert.ok(readout.lastElementChild.textContent.includes("10\u00a0000\u00a0000,000000001"), "Keyboard selection preserves the first source decimal");
+  assert.ok(attributes.get("aria-label").includes("10\u00a0000\u00a0000,000000001"), "Accessible readout uses the same source observation");
+  listeners.get("pointermove")({clientX: 480});
+  assert.ok(readout.lastElementChild.textContent.includes("10\u00a0000\u00a0000,000000002"), "Pointer selection preserves the last source decimal");
+  assert.ok(attributes.get("aria-label").includes("10\u00a0000\u00a0000,000000002"));
+  console.log("PASS source chart readouts: initial, keyboard, pointer and accessibility retain exact decimal strings");
+}
+function eventReadReceiptContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const start = app.indexOf("  const eventIsRead =");
+  const end = app.indexOf("  const paintEventRow =", start);
+  assert.ok(start >= 0 && end > start, "Read receipt contracts exercise the actual application reconciliation");
+  const context = vm.createContext({});
+  vm.runInContext(app.slice(start, end) + "\nglobalThis.reconcile = confirmEventItems;", context);
+  const row = {id: "source-event", revision: 10, read_at: null, title: "Earlier fact"};
+  const [changed] = context.reconcile([row], item => item.revision <= 10, new Map([[row.id, {...row, revision: 11, title: "New source fact"}]]));
+  assert.equal(changed.revision, 11);
+  assert.equal(changed.read_at, null);
+  assert.equal(changed.read_confirmed, undefined, "A source revision newer than the read-all boundary stays unread");
+  const [omitted] = context.reconcile([row], () => true, new Map());
+  assert.equal(omitted.read_confirmed, true, "A successful receipt confirms an affected archived row beyond its bounded response");
+  assert.equal(omitted.read_at, null, "Confirmation cannot fabricate a server timestamp");
+  const [delayed] = context.reconcile([omitted], () => true, new Map([[row.id, row]]));
+  assert.equal(delayed.read_confirmed, true, "A delayed overlapping receipt cannot undo a confirmed read of the same source revision");
+  const [observed] = context.reconcile([omitted], () => true, new Map([[row.id, {...row, read_at: "2026-10-07T12:00:00Z"}]]));
+  assert.equal(observed.read_at, "2026-10-07T12:00:00Z", "A real returned read timestamp replaces the local confirmation");
+  const [newer] = context.reconcile([changed], () => true, new Map([[row.id, {...row, read_at: "2026-10-07T12:00:00Z"}]]));
+  assert.equal(newer.revision, 11);
+  assert.equal(newer.read_at, null, "An older acknowledged source cannot replace the displayed newer unread fact");
+  const counters = app.slice(app.indexOf("  const eventUnreadCount ="), app.indexOf("  const eventUnreadLabel ="));
+  const state = {tour: false, data: {events: {unread_count: 2, read_all_before: 10}}};
+  const counts = vm.createContext({state, number: value => value == null ? null : Number(value)});
+  vm.runInContext(counters + "\nglobalThis.count = eventUnreadCount;globalThis.boundary = eventReadBoundary;", counts);
+  assert.equal(counts.count(), null, "A category-filtered page cannot establish the global unread count");
+  state.data.eventSummary = {unread_total: 8, max_revision: 11};
+  assert.equal(counts.count(), 8);
+  assert.equal(counts.boundary(), 11, "The next explicit read-all uses the last trusted global observation without altering pagination");
+  assert.equal(state.data.events.read_all_before, 10);
+  console.log("PASS event receipts: source revisions, archived confirmations, global counters and independent pagination");
+}
+function deletionDraftFixture(app, kind, outcome) {
+  const id = "deleted-record";
+  const owned = kind === "goal" ? [`goal-form:${id}`, `goal-plan-form:${id}`] : [`assistant-memory-form:${id}`];
+  const formId = kind === "goal" ? "goal-form" : "assistant-memory-form";
+  const newId = kind === "goal" ? "" : "new-note";
+  const unrelated = [`${formId}:another-record`, `${formId}:${newId}`];
+  const state = {generation: 1, eventRequest: 1, view: kind === "goal" ? "goals" : "assistant", deletedGoalIds: new Set(), data: {goals: {items: [{id, version: 3}]}, assistantMemory: {items: [{id, version: 2}]}}, screenDrafts: {}, screenBaselines: {}, assistantDraft: {message: ""}, assistantMemorySelected: new Set([id])};
+  for (const key of [...owned, ...unrelated]) { state.screenDrafts[key] = {title: "Unsubmitted " + key}; state.screenBaselines[key] = "{}"; }
+  const editorId = outcome === "other-editor" ? "another-record" : outcome === "new-editor" ? newId : id;
+  const dialog = {open: true, close() { this.open = false; }};
+  let editor = {id: kind === "goal" && outcome === "plan-editor" ? "goal-plan-form" : formId, dataset: kind === "goal" ? {goalId: editorId} : {id: editorId}, closest: () => kind === "goal" ? dialog : null, remove() { editor = null; }};
+  const hooks = new Map();
+  const capture = () => {
+    if (!editor) return;
+    const key = `${editor.id}:${editor.dataset.goalId || editor.dataset.id || ""}`;
+    state.screenBaselines[key] ||= "{}";
+    state.screenDrafts[key] = {content: "Editing this note"};
+  };
+  const context = vm.createContext({
+    state, acceptingUpdate: false, requireUser: () => true, safeSegment: value => value, T: value => value,
+    api: async () => {
+      if (outcome === "unknown") throw Object.assign(new Error("lost_ack"), {status: 503});
+      if (outcome === "changed-profile") state.generation += 1;
+      if (["other-editor", "new-editor"].includes(outcome)) state.eventRequest += 1;
+      if (outcome === "invalid") return {deleted: false};
+      return outcome === "no-content" ? null : {deleted: true};
+    },
+    $: selector => selector === "#workspace-dialog" ? dialog : selector === "#" + editor?.id ? editor : null,
+    window: {addEventListener: (type, handler) => hooks.set(type, handler)},
+    captureScreenDrafts: capture, saveNavigationPosition() {}, hasPending: () => false,
+    clearScreenDraft() { throw new Error("An older goal acknowledgment cannot accept its form as the current saved version"); },
+    replaceGoalList: items => { state.data.goals = {items}; },
+    renderGoalConsumers: capture, refreshGoalList: async () => {}, toast() {}, reportGoalDeleteError() {},
+    loadResource: async () => { capture(); state.data.assistantMemory.items = []; }, renderAssistant: capture
+  });
+  const parts = [
+    ["  function draftKey(", "  function draftForms("],
+    ["  function discardScreenDraft(", "  function screenLink("],
+    ["  const acceptSavedGoal =", "  const renderGoalConsumers ="],
+    ["  async function handleClickGoalDeleteConfirm(", "  async function handleClickStrategy("],
+    ["  async function deleteAssistantMemory(", "  function assistantSourcesHTML("],
+    ['  window.addEventListener("beforeunload",', '  window.addEventListener("pagehide",']
+  ].map(([start, end]) => {
+    const from = app.indexOf(start), to = app.indexOf(end, from);
+    assert.ok(from >= 0 && to > from, "Deletion contracts use the current application lifecycle: " + start);
+    return app.slice(from, to);
+  });
+  vm.runInContext(parts.join("\n") + "\nglobalThis.acceptGoal=acceptSavedGoal;globalThis.deleteGoal=handleClickGoalDeleteConfirm;globalThis.deleteMemory=deleteAssistantMemory;", context);
+  return {id, owned, unrelated, state, hooks, context, dialog, editorPresent: () => Boolean(editor), resolveUnrelatedInput: () => { if (editorId !== id) editor = null; }};
+}
+async function deletedDraftContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  for (const kind of ["goal", "memory"]) for (const outcome of ["success", "no-content", "unknown", "invalid", "changed-profile", "other-editor", "new-editor", "plan-editor"]) {
+    const fixture = deletionDraftFixture(app, kind, outcome);
+    const {id, owned, unrelated, state, hooks, context} = fixture;
+    if (kind === "goal") assert.equal(context.acceptGoal({id, version: 2}, {dataset: {goalId: id, goalVersion: "1"}}), false);
+    const confirmed = ["success", "other-editor", "new-editor", "plan-editor"].includes(outcome) || kind === "goal" && outcome === "no-content";
+    const remove = kind === "goal" ? () => context.deleteGoal({event: {preventDefault() {}}, control: {dataset: {goalDeleteConfirm: id, version: "3"}, isConnected: false}}) : () => context.deleteMemory(id);
+    if (kind === "memory" && !confirmed && outcome !== "changed-profile") await assert.rejects(remove());
+    else await remove();
+    for (const key of owned) {
+      assert.equal(Object.hasOwn(state.screenDrafts, key), !confirmed, `${kind}/${outcome}: only confirmed deletion discards that record's draft`);
+      assert.equal(Object.hasOwn(state.screenBaselines, key), !confirmed, `${kind}/${outcome}: a deleted editor cannot recapture its baseline`);
+    }
+    for (const key of unrelated) assert.ok(state.screenDrafts[key] && state.screenBaselines[key], "Unrelated and new-record drafts remain protected");
+    if (["other-editor", "new-editor"].includes(outcome)) {
+      assert.equal(fixture.editorPresent(), true, "A different or new editor opened during deletion stays present");
+      assert.equal(fixture.dialog.open, true, "A late deletion cannot close the newer dialog");
+    } else if (confirmed) assert.equal(fixture.editorPresent(), false, "A reopened editor for the deleted record cannot recreate its draft");
+    let prevented = false;
+    hooks.get("beforeunload")({preventDefault() { prevented = true; }});
+    assert.equal(prevented, true, "Leaving still protects unrelated unsaved input");
+    for (const key of unrelated) { delete state.screenDrafts[key]; delete state.screenBaselines[key]; }
+    fixture.resolveUnrelatedInput();
+    prevented = false;
+    hooks.get("beforeunload")({preventDefault() { prevented = true; }});
+    assert.equal(prevented, !confirmed, "A confirmed deletion leaves no orphan warning; an unconfirmed outcome remains protected");
+  }
+  console.log("PASS deleted drafts: delayed goal ACK, goal/plan and memory ownership, confirmed responses, generation changes and preserved unrelated input");
+}
+async function nativeDialogProtocolContracts() {
+  const source = readFileSync(join(root, "tests", "frontend-smoke.cjs"), "utf8");
+  const from = source.indexOf("\nconst protocolClient = async url => {") + 1;
+  const to = source.indexOf("\nconst runBrowser =", from);
+  let socket;
+  class SyntheticSocket {
+    constructor() { socket = this; this.listeners = new Map(); this.sent = []; queueMicrotask(() => this.emit("open", {})); }
+    addEventListener(type, handler) { if (!this.listeners.has(type)) this.listeners.set(type, []); this.listeners.get(type).push(handler); }
+    emit(type, value) { for (const handler of this.listeners.get(type) || []) handler(value); }
+    send(value) { this.sent.push(JSON.parse(value)); }
+    close() {}
+  }
+  const context = vm.createContext({WebSocket: SyntheticSocket, setTimeout, clearTimeout});
+  vm.runInContext(source.slice(from, to) + "\nglobalThis.connect=protocolClient;", context);
+  const client = await context.connect("ws://synthetic.invalid");
+  const navigate = client.send("Page.navigate", {url: "http://127.0.0.1/?case=next"}, "target");
+  const stopped = assert.rejects(navigate, error => error.code === "unexpected_native_dialog" && error.dialog.type === "beforeunload" && error.message.includes("Page.navigate"));
+  socket.emit("message", {data: JSON.stringify({method: "Page.javascriptDialogOpening", sessionId: "target", params: {type: "beforeunload", url: "http://127.0.0.1/?case=current", message: "Unsaved input", hasBrowserHandler: true}})});
+  await stopped;
+  await assert.rejects(client.send("Runtime.evaluate", {expression: "document.body.innerText"}, "target"), error => error.code === "unexpected_native_dialog");
+  assert.equal(client.nativeDialog.type, "beforeunload", "Failure evidence retains the blocking browser event");
+  const close = client.send("Browser.close");
+  socket.emit("message", {data: JSON.stringify({id: socket.sent.at(-1).id, result: {}})});
+  await close;
+  assert.deepEqual(socket.sent.map(item => item.method), ["Page.navigate", "Browser.close"], "Diagnostics neither evaluate a blocked renderer nor accept or dismiss native dialogs");
+  client.close();
+  console.log("PASS native dialog diagnostics: exact event metadata, immediate target failure and safe browser cleanup without acceptance");
+}
 function goalVersionContracts(ui) {
   const known = [{
     id: "goal-a",
@@ -748,12 +1338,47 @@ const styleContracts = () => {
   for (const background of avatar.background.match(/#[a-f0-9]{6}\b/gi)) assertTextContrast(avatar.color, background, "Profile avatar text");
   console.log("PASS style contracts: declared tokens and normal-text contrast in both themes");
 };
+function workerBindingDatabase() {
+  const values = new Map(), stores = new Set();
+  const database = {
+    objectStoreNames: {contains: name => stores.has(name)},
+    createObjectStore: name => { stores.add(name); },
+    close() {},
+    transaction() {
+      const transaction = {};
+      let pending = 0, completed = false;
+      const request = operation => {
+        const result = {};
+        pending += 1;
+        queueMicrotask(() => {
+          result.result = operation();
+          result.onsuccess?.({target: result});
+          pending -= 1;
+          queueMicrotask(() => { if (!pending && !completed) { completed = true; transaction.oncomplete?.(); } });
+        });
+        return result;
+      };
+      transaction.objectStore = () => ({get: key => request(() => values.get(key)), put: (value, key) => request(() => values.set(key, structuredClone(value))), delete: key => request(() => values.delete(key))});
+      return transaction;
+    }
+  };
+  return {values, indexedDB: {open() {
+    const request = {};
+    queueMicrotask(() => {
+      request.result = database;
+      if (!stores.size) request.onupgradeneeded?.({target: request});
+      request.onsuccess?.({target: request});
+    });
+    return request;
+  }}};
+}
 const workerContract = async () => {
   const handlers = new Map();
   const tasks = [];
   const cached = [];
   const notifications = [];
   const opened = [];
+  const bindings = workerBindingDatabase();
   let activated = 0;
   const origin = "https://example.test";
   globalThis.self = {
@@ -772,6 +1397,7 @@ const workerContract = async () => {
       addAll: async paths => cached.push(...paths)
     })
   };
+  globalThis.indexedDB = bindings.indexedDB;
   try {
     require("../web/sw.js");
     handlers.get("install")({
@@ -779,7 +1405,7 @@ const workerContract = async () => {
     });
     await Promise.all(tasks);
     assert.ok(cached.includes("/offline.html?build=__OMNICIO_BUILD__"));
-    assert.ok(cached.every(path => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js|i18n\.js))\?build=__OMNICIO_BUILD__$/.test(path)), "Private content never enters the cache allowlist");
+    assert.ok(cached.every(path => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js|i18n\.js|brand\/omnicio-logo\.png))\?build=__OMNICIO_BUILD__$/.test(path)), "Private content never enters the cache allowlist");
     let intercepted = 0;
     for (const path of ["/api/me", "/api/workspace", "/api/preferences", "/api/goals", "/api/assistant/messages", "/api/broker/tbank/portfolio", "/health/ready"]) {
       for (const method of ["GET", "POST"]) handlers.get("fetch")({
@@ -811,25 +1437,81 @@ const workerContract = async () => {
     });
     await Promise.all(tasks);
     assert.equal(activated, 1);
+    const workerMessage = async (data, messageOrigin = origin) => {
+      let receipt;
+      const pending = [];
+      handlers.get("message")({origin: messageOrigin, data, ports: [{postMessage: value => { receipt = value; }}], waitUntil: task => pending.push(task)});
+      await Promise.all(pending);
+      return receipt;
+    };
+    const bindingA = "00000000-0000-4000-9000-000000000001";
+    const bindingB = "00000000-0000-4000-9000-000000000002";
+    assert.deepEqual(await workerMessage({type: "PUSH_BINDING", binding_id: bindingA, locale: "ru"}), {handled: true, ok: true, binding_id: bindingA});
+    assert.deepEqual([...bindings.values.values()], [{binding_id: bindingA, locale: "ru"}], "The worker stores only an opaque delivery binding and the interface language");
+    assert.deepEqual(await workerMessage({type: "PUSH_BINDING", binding_id: "not-a-binding"}), {handled: true, ok: false});
+    assert.equal([...bindings.values.values()][0].binding_id, bindingA, "Invalid messages fail without changing the existing binding");
+    assert.equal(await workerMessage({type: "PUSH_BINDING", binding_id: bindingB}, "https://untrusted.invalid"), undefined);
+    assert.equal([...bindings.values.values()][0].binding_id, bindingA, "A foreign-origin message cannot change the installation owner");
     for (const url of ["https://untrusted.invalid/#events", "/#events?event=" + "a".repeat(64), "/?credential=secret#events", "/#settings"]) {
-      handlers.get("push")({data: {json: () => ({title: "PRIVATE GOAL", body: "PRIVATE AMOUNT", url, tag: "a".repeat(64)})}, waitUntil: task => tasks.push(task)});
+      handlers.get("push")({data: {json: () => ({title: "PRIVATE GOAL", body: "PRIVATE AMOUNT", url, tag: "a".repeat(64), binding_id: bindingA})}, waitUntil: task => tasks.push(task)});
     }
     await Promise.all(tasks);
-    assert.deepEqual(notifications.map(item => item.options.data.url), ["/#events", "/#events?event=" + "a".repeat(64), "/#events", "/#settings"]);
+    assert.deepEqual(notifications.map(item => item.options.data.url), ["/#account/events", "/#account/events/detail?event=" + "a".repeat(64), "/#account/events", "/#account/settings/notifications"]);
     assert.ok(notifications.every(item => item.title === "OMNICIO" && !item.options.body.includes("PRIVATE")), "Lock-screen push never shows private source content");
     let closed = false;
     handlers.get("notificationclick")({notification: {data: {url: "https://untrusted.invalid/"}, close: () => {closed = true;}}, waitUntil: task => tasks.push(task)});
     await Promise.all(tasks);
     assert.equal(closed, true);
-    assert.deepEqual(opened, ["/#events"]);
+    assert.deepEqual(opened, ["/#account/events"]);
+    await workerMessage({type: "PUSH_BINDING", binding_id: bindingB, locale: "en"});
+    assert.deepEqual(await workerMessage({type: "CLEAR_PUSH_BINDING", binding_id: bindingA}), {handled: true, ok: true, cleared: false}, "A delayed old-account cleanup cannot erase the new binding");
+    assert.equal([...bindings.values.values()][0].binding_id, bindingB);
+    handlers.get("push")({data: {json: () => ({url: "/#account/events/detail?event=" + "b".repeat(64), binding_id: bindingA, body: "PRIVATE OLD ACCOUNT"})}, waitUntil: task => tasks.push(task)});
+    await Promise.all(tasks);
+    assert.equal(notifications.at(-1).options.data.url, "/#account/events", "An old account's notification never carries its detail into the current installation");
+    assert.equal(notifications.at(-1).options.data.binding_id, null);
+    assert.ok(notifications.at(-1).options.body.startsWith("New information"));
+    const messages = [], navigated = [];
+    let focused = 0;
+    self.clients.matchAll = async () => [{url: origin + "/legal/privacy.html", focused: true}, {url: "https://untrusted.invalid/", focused: true}, {
+      url: origin + "/?case=draft#account/goals/create", focused: false, visibilityState: "visible",
+      postMessage: (data, ports) => { messages.push(data); ports[0].postMessage({handled: true, navigated: false}); ports[0].close(); },
+      navigate: async path => navigated.push(path), focus: async () => { focused += 1; }
+    }];
+    handlers.get("notificationclick")({notification: {data: {url: "/#account/events/detail?event=" + "c".repeat(64), binding_id: bindingB}, close() {}}, waitUntil: task => tasks.push(task)});
+    await Promise.all(tasks);
+    assert.equal(messages.at(-1).type, "OPEN_NOTIFICATION");
+    assert.equal(messages.at(-1).binding_id, bindingB);
+    assert.equal(messages.at(-1).url, "/#account/events/detail?event=" + "c".repeat(64));
+    assert.equal(focused, 1);
+    assert.deepEqual(navigated, [], "A ready app's deliberate refusal preserves its unsaved draft; the worker does not override it");
+    assert.deepEqual(opened, ["/#account/events"], "An existing app that handled the click cannot spawn a duplicate tab");
+    const stalled = {
+      url: origin + "/#account/goals/create", draft: "A preserved local draft", focused: true,
+      postMessage: (_data, ports) => { ports[0].close(); },
+      navigate: async path => { navigated.push(path); stalled.url = path; stalled.draft = ""; },
+      focus: async () => { focused += 1; }
+    };
+    self.clients.matchAll = async () => [stalled];
+    handlers.get("notificationclick")({notification: {data: {url: "/#account/events", binding_id: bindingB}, close() {}}, waitUntil: task => tasks.push(task)});
+    await Promise.all(tasks);
+    assert.equal(focused, 2, "An unresponsive or older app still receives focus");
+    assert.deepEqual(navigated, [], "No acknowledgement is not permission to replace an existing document");
+    assert.equal(stalled.url, origin + "/#account/goals/create");
+    assert.equal(stalled.draft, "A preserved local draft");
+    assert.deepEqual(opened, ["/#account/events"], "The worker cannot open another tab when an existing app does not acknowledge");
+    assert.deepEqual(await workerMessage({type: "CLEAR_PUSH_BINDING", binding_id: bindingB}), {handled: true, ok: true, cleared: true});
+    assert.equal(bindings.values.size, 0, "Only the matching binding is cleared after a logout or explicit revocation");
     console.log("PASS service worker: private-cache isolation, origin checks, private push redaction and safe notification navigation");
   } finally {
     delete globalThis.self;
     delete globalThis.caches;
+    delete globalThis.indexedDB;
   }
 };
 function captureBrowserLayout() {
-  const readableElements = selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length && getComputedStyle(element).visibility !== "hidden").map(element => ({
+  const visible = element => element.getClientRects().length && getComputedStyle(element).visibility !== "hidden";
+  const readableElements = selector => [...document.querySelectorAll(selector)].filter(visible).map(element => ({
     label: element.getAttribute("aria-label") || element.name || element.textContent.trim().slice(0, 70),
     fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
     compactAction: element.classList.contains("small-button"),
@@ -848,8 +1530,10 @@ function captureBrowserLayout() {
     };
   };
   const visibleApp = !document.querySelector("#app-shell").hidden;
+  const visiblePublic = !document.querySelector("#public-site").hidden;
   const modal = Boolean(document.querySelector("dialog[open]"));
-  const hero = !visibleApp && !modal && innerWidth <= 680 ? {
+  const heroVisible = visible(document.querySelector(".hero"));
+  const hero = !visibleApp && !modal && heroVisible && innerWidth <= 680 ? {
     required: true,
     rect: document.querySelector(".hero").getBoundingClientRect().toJSON(),
     regions: [
@@ -872,7 +1556,7 @@ function captureBrowserLayout() {
       };
     })
   } : {required: false};
-  const heroDecorations = !visibleApp && !modal && innerWidth > 680 && innerWidth <= 960 ? {
+  const heroDecorations = !visibleApp && !modal && heroVisible && innerWidth > 680 && innerWidth <= 960 ? {
     required: true,
     rect: document.querySelector(".hero").getBoundingClientRect().toJSON(),
     labels: [...document.querySelectorAll(".hero .orbit-node")].map(element => ({text:element.textContent.trim(),rect:element.getBoundingClientRect().toJSON(),visible:Boolean(element.getClientRects().length)})),
@@ -910,7 +1594,7 @@ function captureBrowserLayout() {
   });
   const navStyle = getComputedStyle(nav);
   const navigation = {
-    required: innerWidth <= 960 && !modal && !drawer,
+    required: (visibleApp || visiblePublic) && innerWidth <= 960 && !modal && !drawer,
     modal,
     drawer,
     rect: nav.getBoundingClientRect().toJSON(),
@@ -924,7 +1608,8 @@ function captureBrowserLayout() {
     inert: nav.inert,
     links
   };
-  const charts = [...document.querySelectorAll('.view:not([hidden]) .chart-plot')].map(plot => {
+  const surface = document.querySelector("dialog[open]") || document;
+  const charts = [...surface.querySelectorAll('.chart-plot')].filter(visible).map(plot => {
     const svg = plot.querySelector("svg");
     const axes = [...plot.querySelectorAll(".chart-axis")].map(axis => {
       const style = getComputedStyle(axis);
@@ -944,7 +1629,7 @@ function captureBrowserLayout() {
       axes
     };
   });
-  const tables = [...document.querySelectorAll('.view:not([hidden]) .table-scroll')].map(container => {
+  const tables = [...surface.querySelectorAll('.table-scroll')].filter(visible).map(container => {
     const style = getComputedStyle(container);
     const table = container.querySelector("table");
     const hiddenHeaders = [...container.querySelectorAll("th .sr-only")].map(header => {
@@ -977,7 +1662,7 @@ function captureBrowserLayout() {
       menu: readableElements("#sidebar-nav .nav-link"),
       fields: readableElements('.field input:not([type=checkbox]):not([type=range]), .field select, .field textarea, .global-search input, .chat-compose textarea'),
       captions: readableElements(".card-label, .data-footnote, .source-line, .event-meta"),
-      actions: readableElements(".button, .icon-button")
+      actions: readableElements(".button, .icon-button, .screen-menu-item")
     },
     hero,
     heroDecorations,
@@ -1198,6 +1883,8 @@ const protocolClient = async url => {
   const socket = new WebSocket(url);
   const pending = new Map();
   let sequence = 0;
+  let nativeDialog = null;
+  const dialogError = method => Object.assign(new Error(`Unexpected native ${nativeDialog.type} dialog during ${method} at ${nativeDialog.url}`), {code: "unexpected_native_dialog", dialog: {...nativeDialog}});
   await new Promise((done, reject) => {
     socket.addEventListener("open", done, {
       once: true
@@ -1210,6 +1897,17 @@ const protocolClient = async url => {
     data
   }) => {
     const message = JSON.parse(data);
+    if (message.method === "Page.javascriptDialogOpening") {
+      nativeDialog = {...message.params, sessionId: message.sessionId};
+      for (const [id, waiter] of pending) {
+        if (waiter.sessionId !== message.sessionId) continue;
+        clearTimeout(waiter.timer);
+        pending.delete(id);
+        waiter.reject(dialogError(waiter.method));
+      }
+      return;
+    }
+    if (message.method === "Page.javascriptDialogClosed" && nativeDialog?.sessionId === message.sessionId) nativeDialog = null;
     const waiter = pending.get(message.id);
     if (!waiter) return;
     pending.delete(message.id);
@@ -1217,7 +1915,9 @@ const protocolClient = async url => {
     if (message.error) waiter.reject(new Error(JSON.stringify(message.error)));else waiter.done(message.result);
   });
   return {
+    get nativeDialog() { return nativeDialog; },
     send(method, params = {}, sessionId) {
+      if (nativeDialog && nativeDialog.sessionId === sessionId && method !== "Browser.close") return Promise.reject(dialogError(method));
       return new Promise((done, reject) => {
         const id = ++sequence;
         const timer = setTimeout(() => {
@@ -1225,6 +1925,8 @@ const protocolClient = async url => {
           reject(new Error("CDP timeout: " + method));
         }, 15000);
         pending.set(id, {
+          method,
+          sessionId,
           done,
           reject,
           timer
@@ -1294,6 +1996,8 @@ const runBrowser = async base => {
     await send("Page.addScriptToEvaluateOnNewDocument", {
       source: 'window.__browserErrors=[];window.__cspViolations=[];addEventListener("error",e=>window.__browserErrors.push(e.error?.stack||e.message));addEventListener("unhandledrejection",e=>window.__browserErrors.push(e.reason?.stack||String(e.reason)));addEventListener("securitypolicyviolation",e=>window.__cspViolations.push(e.effectiveDirective));'
     });
+    await send("Page.addScriptToEvaluateOnNewDocument", {source: `(${installPushBrowserFixture.toString()})(${JSON.stringify(pushFixtureKey)})`});
+    await send("Page.addScriptToEvaluateOnNewDocument", {source: `(${installPromptBrowserFixture.toString()})()`});
     const evaluate = async expression => {
       const result = await send("Runtime.evaluate", {
         expression,
@@ -1303,19 +2007,40 @@ const runBrowser = async base => {
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.text + ": " + (result.exceptionDetails.exception?.description || ""));
       return result.result.value;
     };
-    const click = selector => evaluate(`(() => {
+    const revealScreenMenu = async selector => evaluate(`(() => {
       const element=document.querySelector(${JSON.stringify(selector)});
+      const picker=element?.closest('.screen-menu')?.closest('.screen-menu-picker:not([open])');
+      if (!picker) return;
+      const summary=picker.querySelector(':scope > summary');
+      if (!summary?.getClientRects().length) throw new Error('Section menu has no visible summary');
+      summary.click();
+      if (!picker.open || !element.getClientRects().length) throw new Error('Section menu did not reveal its links');
+    })()`);
+    const revealControl = async selector => {
+      await revealScreenMenu(selector);
+      const section = await evaluate(`(() => { const matches=[...document.querySelectorAll(${JSON.stringify(selector)})]; const element=matches.find(item=>item.getClientRects().length) || matches[0]; if (!element || element.getClientRects().length) return null; return element.closest("[data-screen-content]")?.dataset.screenContent || null; })()`);
+      if (!section) return;
+      const menuSelector = `.view:not([hidden]) .screen-menu [data-route][data-screen="${section}"]`;
+      await revealScreenMenu(menuSelector);
+      await evaluate(`(() => { const menu=document.querySelector(${JSON.stringify(menuSelector)}); if(!menu?.getClientRects().length) throw new Error("No visible section menu for requested control"); menu.click(); })()`);
+      await wait(`document.querySelector(${JSON.stringify(selector)})?.getClientRects().length > 0`, "Control is visible in its own section: " + selector);
+    };
+    const click = async selector => { await revealControl(selector); return evaluate(`(() => {
+      const matches=[...document.querySelectorAll(${JSON.stringify(selector)})];
+      const element=matches.find(item=>item.getClientRects().length) || matches[0];
       if(!element || element.disabled)throw new Error('Control unavailable: '+${JSON.stringify(selector)});
       if(element.closest('#app-sidebar')?.inert)document.querySelector('#app-menu-toggle').click();
+      if(element.closest('.public-nav') && !element.getClientRects().length)document.querySelector('#public-menu-toggle').click();
+      if(!element.getClientRects().length)throw new Error("Control has no visible user path: "+${JSON.stringify(selector)});
       element.click();
-    })()`);
+    })()`); };
     const wait = (expression, label) => until(async () => {
       const result = await evaluate(`({ready:Boolean(${expression}),errors:window.__browserErrors||[],csp:window.__cspViolations||[]})`);
       assert.deepEqual(result.errors, [], `${label}: runtime errors before state acknowledgement`);
       assert.deepEqual(result.csp, [], `${label}: CSP violations before state acknowledgement`);
       return result.ready;
     }, label || expression);
-    const fieldValue = (form, name, value) => evaluate(`(() => {const input=document.querySelector(${JSON.stringify(form)}).elements[${JSON.stringify(name)}];input.value=${JSON.stringify(value)};input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    const fieldValue = async (form, name, value) => { await revealControl(`${form} [name="${name}"]`); return evaluate(`(() => {const input=document.querySelector(${JSON.stringify(form)}).elements[${JSON.stringify(name)}];input.value=${JSON.stringify(value)};input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));})()`); };
     const layoutMetrics = [];
     const recordLayout = async label => {
       const data = await evaluate(`(${captureBrowserLayout.toString()})()`);
@@ -1334,7 +2059,7 @@ const runBrowser = async base => {
       await Promise.allSettled(finite.map(animation => animation.finished));
       await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
     })()`);
-    const checkLayout = async label => {
+    const checkLayout = async (label, {minCharts = 0, minTables = 0} = {}) => {
       await settleLayout();
       const data = await recordLayout(label);
       assertViewportSize(data, label);
@@ -1344,8 +2069,11 @@ const runBrowser = async base => {
       assertReadability(data, label);
       assertMobileHero(data, label);
       assertHeroDecorations(data, label);
+      assert.ok(data.charts.length >= minCharts, label + ": the requested chart is visible on its page");
+      assert.ok(data.tables.length >= minTables, label + ": the requested table is visible on its page");
       assertChartLayout(data.charts, label);
       assertTableClipping(data.tables, label);
+      return data;
     };
     const screenshot = async (name, {
       validate = true
@@ -1370,13 +2098,16 @@ const runBrowser = async base => {
       logScreenshotEvidence(name, png);
     };
     captureFailure = async error => {
-      const documentState = await evaluate('({url:location.href,ready:document.readyState,errors:window.__browserErrors,csp:window.__cspViolations,bodyText:document.body?.innerText,bodyHTML:document.body?.innerHTML})');
       const requests = Object.fromEntries([...fixtures].map(([key, fixture]) => [key, fixture.requests.slice(-30)]));
       const debug = {
         failure: error.stack || String(error),
-        document: documentState,
+        nativeDialog: client.nativeDialog || error.dialog || null,
         requests
       };
+      writeFileSync(join(artifacts, "failure-state.json"), JSON.stringify(debug, null, 2));
+      if (client.nativeDialog) { console.error(JSON.stringify(debug, null, 2)); return; }
+      const documentState = await evaluate('({url:location.href,ready:document.readyState,errors:window.__browserErrors,csp:window.__cspViolations,bodyText:document.body?.innerText,bodyHTML:document.body?.innerHTML})');
+      debug.document = documentState;
       writeFileSync(join(artifacts, "failure-state.json"), JSON.stringify(debug, null, 2));
       await screenshot("failure-state.png", {
         validate: false
@@ -1390,6 +2121,10 @@ const runBrowser = async base => {
         requests
       }, null, 2));
     };
+    await exerciseStartupRecovery({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot});
+    await exerciseInstallability({send, configureViewport, base, wait, evaluate});
+    await exerciseInstallation({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot});
+    await exercisePushLifecycle({send, configureViewport, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
     const widths = [1440, 1366, 768, 390, 320];
     for (const round of [1, 2]) {
       for (const width of widths) {
@@ -1407,6 +2142,11 @@ const runBrowser = async base => {
           fieldValue
         });
       }
+      await exerciseCanonicalNavigation({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
+      await exerciseIndependentPageLoads({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
+      await exerciseAssetEnrichment({send, round, base, wait, evaluate, checkLayout});
+      await exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
+      await exerciseQuotePrecision({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
       await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseEnglishLocale({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseReadConsistency({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
@@ -1457,6 +2197,16 @@ const runBrowser = async base => {
 (async () => {
   try {
     displayContracts();
+    await ledgerPaginationContracts();
+    await strategyInputContracts();
+    await installLifecycleContracts();
+    await installPromptInterleavingContracts();
+    await pushEndpointContracts();
+    await pushContextContracts();
+    await pushBindingReceiptContracts();
+    await pushPermissionReadFailureContracts();
+    await deletedDraftContracts();
+    await nativeDialogProtocolContracts();
     styleContracts();
     await workerContract();
     await new Promise(done => server.listen(0, "127.0.0.1", done));
@@ -1542,6 +2292,9 @@ async function serveTestMe({
   response,
   fixture
 }) {
+  if (fixture.holdMe) await new Promise(resolve => { fixture.releaseMe = resolve; });
+  if (fixture.failMe) return sendJSON(response, {detail: "synthetic_session_unavailable"}, 503);
+  if (fixture.mode === "guest") return sendJSON(response, {detail: "authentication required"}, 401);
   return sendJSON(response, {
     public_id: fixture.user,
     status: "active",
@@ -1791,7 +2544,8 @@ async function serveTestProfileStrategyAccountAssessment({
     strategy_version: fixture.selection.version,
     status: "assessed",
     nav_rub: "150000.25",
-    captured_at: stamp,
+    captured_at: new Date().toISOString(),
+    valid_until: new Date(Date.now() + 300000).toISOString(),
     checks: [{
       title: "Проверка доли",
       state: "pass",
@@ -1864,10 +2618,13 @@ async function serveTestPortfolioVisualization({
   });
 }
 async function serveTestPortfolioInstruments({
-  response
+  response,
+  fixture
 }) {
+  await holdAssetEnrichment(fixture, "details");
   return sendJSON(response, {
     status: "observed",
+    current_holding: {status: fixture.closedPosition ? "not_held" : "held", quantity: fixture.closedPosition ? "0" : positions[0].quantity, observed_at: stamp},
     latest: {
       ...positions[0],
       captured_at: stamp
@@ -1878,13 +2635,15 @@ async function serveTestPortfolioInstruments({
   });
 }
 async function serveTestMarketInstruments({
-  response
+  response,
+  fixture
 }) {
+  await holdAssetEnrichment(fixture, "facts");
   return sendJSON(response, {
     instrument_uid: "synthetic-a",
     currency: "rub",
-    name: "Тестовая компания A",
-    ticker: "SYNA",
+    name: fixture.enrichmentName || (fixture.precisionCase ? "Synthetic precision contract" : "Тестовая компания A"),
+    ticker: fixture.enrichmentTicker || "SYNA",
     instrument_type: "share",
     observed_at: stamp,
     status: "partial",
@@ -1911,9 +2670,10 @@ async function serveTestMarketInstruments2({
     fixture.marketStreams ||= new Set();
     fixture.marketStreams.add(response);
     response.once("close", () => fixture.marketStreams.delete(response));
-    if (!fixture.holdMarketStream) response.write(serverContracts.instrument_market_event);
+    if (!fixture.holdMarketStream) response.write(fixture.precisionCase?.market_event || serverContracts.instrument_market_event);
     return;
   }
+  if (fixture.precisionCase) return sendJSON(response, fixture.precisionCase.market);
   return sendJSON(response, {
     instrument_uid: "synthetic-a",
     period: url.searchParams.get("period"),
@@ -2075,6 +2835,11 @@ async function serveTestEvents({
   path,
   url
 }) {
+  if (path === "/api/events/summary") {
+    const summary = {unread_total: fixture.events.filter(item => !item.read_at).length, max_revision: Math.max(0, ...fixture.events.map(item => item.revision)), categories: {}, observed_at: stamp, alerts_suppressed: false};
+    if (fixture.holdEventSummary) await new Promise(release => fixture.heldEventSummaries.push({release, summary}));
+    return sendJSON(response, summary);
+  }
   if (method === "GET" && path.startsWith("/api/events/")) {
     const item = fixture.events.find(event => event.id === path.split("/").at(-1));
     return sendJSON(response, item || {detail: "event_not_found"}, item ? 200 : 404);
@@ -2086,35 +2851,63 @@ async function serveTestEvents({
     }
     fixture.events.filter(item => path === "/api/events/read-all" ? item.revision <= body.through_revision : body.ids.includes(item.id)).forEach(item => { item.read_at = body.read === false ? null : stamp; });
   }
-  return sendJSON(response, eventDTO(fixture, url));
+  const result = eventDTO(fixture, url);
+  if (method === "GET" && fixture.holdEventReads) await new Promise(release => fixture.heldEventReads.push({release, result}));
+  return sendJSON(response, result);
 }
 async function serveTestNews({fixture, url, response}) {
+  if (url.pathname !== "/api/news") { const item=fixture.news.find(row=>row.id===url.pathname.split("/").at(-1)); return sendJSON(response,item || {detail:"news_not_found"},item?200:404); }
   const query = (url.searchParams.get("query") || "").toLowerCase();
   const uid = url.searchParams.get("instrument_uid");
+  if (uid) await holdAssetEnrichment(fixture, "news");
   const items = fixture.news.filter(item => (!uid || item.instrument_uids.includes(uid)) && JSON.stringify(item).toLowerCase().includes(query));
   const offset = Number(url.searchParams.get("cursor") || 0);
   const limit = Number(url.searchParams.get("limit") || 50);
   return sendJSON(response, {items: clone(items.slice(offset, offset + limit)), next_cursor: offset + limit < items.length ? String(offset + limit) : null, scanned_items: Math.min(limit, items.length - offset), instrument_uid: uid, source: "Изолированный источник", observed_at: stamp, status: items.length ? "received" : "empty"});
 }
+async function holdAssetEnrichment(fixture, kind) {
+  if (fixture.holdAssetParts?.has(kind)) await new Promise(release => fixture.heldAssetParts.set(kind, release));
+}
 async function serveTestNotifications({fixture, path, body, method, response}) {
+  if (path === "/api/notifications" && fixture.holdNotifications) await new Promise(release => fixture.heldNotifications.push(release));
   if (path === "/api/notifications" && fixture.failNotifications) return sendJSON(response, {detail: "synthetic_notification_read_failure"}, 503);
-  if (path === "/api/notifications/email/request") {
-    const channel = {id: "00000000-0000-4000-8000-000000000801", kind: "email", label: "t***@example.test", status: "pending", verification_expires_at: new Date(Date.now() + 900000).toISOString(), verification_attempts_remaining: 5};
-    fixture.notificationChannels = [channel];
-    return sendJSON(response, channel);
-  }
-  if (path === "/api/notifications/email/verify") {
-    const channel = fixture.notificationChannels.find(item => item.id === body.channel_id);
-    if (!channel || body.code !== "123456") return sendJSON(response, {detail: "notification_verification_invalid"}, 400);
-    channel.status = "active";
-    channel.verified_at = stamp;
-    return sendJSON(response, {id: channel.id, status: "active"});
+  if (path === "/api/notifications/push") return serveTestPush({fixture, body, response});
+  if (path === "/api/notifications/push/test") {
+    const channel = fixture.notificationChannels.find(item => item.id === body.channel_id && item.current_session);
+    if (!channel) return sendJSON(response, {detail: "notification_channel_not_found"}, 404);
+    if (channel.status !== "active") return sendJSON(response, {detail: "notification_channel_inactive"}, 409);
+    const delivery = {id: `fixture-push-test-${fixture.notificationDeliveries.length + 1}`, kind: "test", status: "queued", attempts: 0, created_at: stamp, next_attempt_at: stamp, channel: {kind: "push", label: channel.label}};
+    fixture.notificationDeliveries.push(delivery);
+    return sendJSON(response, {id: delivery.id, status: "queued"});
   }
   if (method === "DELETE") {
-    fixture.notificationChannels = fixture.notificationChannels.filter(item => item.id !== path.split("/").at(-1));
+    const channel = fixture.notificationChannels.find(item => item.id === path.split("/").at(-1));
+    if (channel) { channel.status = "revoked"; channel.current_session = false; channel.binding_id = null; }
     return sendJSON(response, {revoked: true});
   }
-  return sendJSON(response, {enabled: true, push_configured: false, email_configured: true, vapid_public_key: null, channels: clone(fixture.notificationChannels), deliveries: [], receipt_scope: "provider_acceptance_only"});
+  if (path === "/api/notifications" && method === "GET") return sendJSON(response, {enabled: true, push_configured: fixture.pushConfigured, email_configured: false, vapid_public_key: fixture.pushConfigured ? pushFixtureKey : null, channels: clone(fixture.notificationChannels.filter(item => !fixture.hideRevokedChannels || item.status !== "revoked")), deliveries: clone(fixture.notificationDeliveries), receipt_scope: "provider_acceptance_only"});
+  return sendJSON(response, {detail: "synthetic_notification_route_missing"}, 404);
+}
+async function serveTestPush({fixture, body, response}) {
+  const owner = fixture.user;
+  if (fixture.holdPush) await new Promise(release => fixture.heldPush.push(release));
+  if (owner !== fixture.user || fixture.mode === "guest") return sendJSON(response, {detail: "profile_context_changed"}, 409);
+  if (fixture.failPush) return sendJSON(response, {detail: "notification_push_unavailable"}, 503);
+  if (fixture.pushConflict) return sendJSON(response, {detail: "notification_device_conflict"}, 409);
+  assert.ok(["enable", "sync"].includes(body.intent), "The UI makes explicit activation distinguishable from passive synchronization");
+  const fingerprint = createHash("sha256").update(body.subscription.endpoint).digest("hex");
+  let channel = fixture.notificationChannels.find(item => item.endpoint_fingerprint === fingerprint);
+  if (channel?.status === "revoked" && body.intent === "sync") return sendJSON(response, {id: channel.id, status: "revoked", binding_id: null, current_session: false});
+  if (!channel) {
+    fixture.pushSequence += 1;
+    channel = {id: `00000000-0000-4000-8000-${String(800 + fixture.pushSequence).padStart(12, "0")}`, kind: "push", label: body.label, endpoint_fingerprint: fingerprint};
+    fixture.notificationChannels.push(channel);
+  }
+  channel.status = "active";
+  channel.current_session = true;
+  channel.binding_id ||= randomUUID();
+  channel.verified_at = stamp;
+  return sendJSON(response, {id: channel.id, status: channel.status, binding_id: channel.binding_id, current_session: true});
 }
 async function exerciseEventArchive({fixture, click, fieldValue, wait, evaluate}) {
   const baseEvent = clone(fixture.events[0]);
@@ -2125,6 +2918,7 @@ async function exerciseEventArchive({fixture, click, fieldValue, wait, evaluate}
   await wait('document.querySelectorAll("#view-events [data-event-open]").length===100', "Second event page");
   await click('#view-events [data-action="events-more"]');
   await wait('document.querySelectorAll("#view-events [data-event-open]").length===115', "Full event archive beyond fifty");
+  await exerciseDelayedEventList({fixture, click, wait, evaluate});
   await click(`#view-events [data-event-open="${fixture.events[114].id}"]`);
   await wait('document.querySelector("#dialog-content").textContent.includes("Сумма операции")', "Structured event source details");
   assert.ok(await evaluate('document.querySelector("#dialog-content").textContent.includes("125,50")'));
@@ -2134,34 +2928,63 @@ async function exerciseEventArchive({fixture, click, fieldValue, wait, evaluate}
   await evaluate('document.querySelector("#global-search-form").requestSubmit()');
   await wait('document.querySelector("#view-search [data-event-open]")', "Server search finds an older archived event");
   assert.ok(fixture.requests.some(item => item.path === "/api/events" && new URLSearchParams(item.query).get("query") === "Архивный контрольный"), "Search reads the server archive with the submitted query");
+  await until(() => fixture.events[114].read_at, "The old event's explicit opening is acknowledged outside the receipt's first fifty rows");
+  fixture.holdEventSummary = true;
   await click('#sidebar-nav [data-route="events"]');
-  await wait('document.querySelector("#view-events [data-action=events-read-all]")', "Read all is available");
+  await wait('document.querySelector("#view-events [data-action=events-read-all]")?.hidden===false && !document.querySelector("#view-events [data-action=events-read-all]").disabled', "Read all is available");
+  await until(() => fixture.heldEventSummaries.length === 1, "An older global summary is held before the read mutation");
+  assert.equal(fixture.heldEventSummaries[0].summary.unread_total, 113, "Held summary is a real earlier observation, not a new event revision");
+  await wait('document.querySelectorAll("#view-events [data-event-open]").length===115', "Opening an archived event preserves all loaded pages");
+  await evaluate('window.__eventListBeforeRead=document.querySelector("#view-events .event-list");window.scrollTo({top:180,behavior:"instant"});void 0');
+  await wait('window.scrollY===180', "Event archive has a saved nonzero scroll position");
   fixture.arrivingEvent = {...clone(baseEvent), id: "e".repeat(64), revision: 116, title: "Поступившее во время чтения", read_at: null, occurred_at: new Date().toISOString()};
   await click('#view-events [data-action="events-read-all"]');
   await until(() => fixture.events.length === 116 && fixture.events.filter(item => !item.read_at).length === 1, "Read-all cutoff preserves a concurrent new event");
   await wait('document.querySelector("#view-events .chip").textContent.includes("1 непрочитанных")', "New event remains unread");
+  await assertEventCounterArchive({evaluate, expected: 1});
+  fixture.heldEventSummaries.shift().release();
+  await until(() => fixture.heldEventSummaries.length === 1, "Discarding the pre-mutation summary immediately requests the actual global count");
+  assert.equal(fixture.heldEventSummaries[0].summary.unread_total, 1);
+  await assertEventCounterArchive({evaluate, expected: 1});
+  fixture.holdEventSummary = false;
+  fixture.heldEventSummaries.shift().release();
+  await wait('document.querySelector("#notifications-button").getAttribute("aria-label").includes("1 непрочитанных")', "The bell and open page share the same global unread count");
   await click('#view-events [data-news-open]');
   await wait('document.querySelector("#dialog-content").textContent.includes("Полный текст публикации")', "News article opens full source text");
   await click('#workspace-dialog [data-close-dialog]');
 }
-async function exerciseNotificationChannels({fixture, click, fieldValue, wait, evaluate}) {
-  await wait('document.querySelector("#notification-email-form [type=submit]") && !document.querySelector("#notification-email-form [type=submit]").disabled', "Configured email delivery form");
-  await fieldValue("#notification-email-form", "email", "test@example.test");
-  await click('#notification-email-form [type="submit"]');
-  const formId = "notification-verify-00000000-0000-4000-8000-000000000801";
-  await wait(`document.querySelector("#${formId} [type=submit]") && !document.querySelector("#${formId} [type=submit]").disabled`, "Pending verified-email channel");
-  assert.equal(fixture.notificationChannels[0].status, "pending", "Request alone cannot opt an unverified address into delivery");
-  await fieldValue(`#${formId}`, "code", "000000");
-  await click(`#${formId} [type="submit"]`);
-  await wait('document.querySelector("#notification-message").textContent.length>0', "Wrong verification code is visible");
-  await fieldValue(`#${formId}`, "code", "123456");
-  await click(`#${formId} [type="submit"]`);
-  await until(() => fixture.notificationChannels[0].status === "active", "Verified channel activation");
-  await wait('!document.querySelector("#notification-settings form[id^=notification-verify]")', "Verified channel state is rendered");
-  await click('#notification-settings [data-action="notification-revoke"]');
-  await until(() => fixture.notificationChannels.length === 0, "Explicit channel opt-out");
-  await wait('document.querySelector("#notification-settings").textContent.includes("Устройства и адреса пока не подключены")', "Revoked channel removed from UI");
-  assert.ok(!await evaluate('document.querySelector("#notification-settings").textContent.includes("test@example.test")'), "Full address is never retained in channel display");
+async function exerciseDelayedEventList({fixture, click, wait, evaluate}) {
+  const id = fixture.events[0].id;
+  fixture.holdEventReads = true;
+  await click('#view-events [data-action="refresh"]');
+  await until(() => fixture.heldEventReads.length === 1, "An older event page is held before a read receipt");
+  assert.equal(fixture.heldEventReads[0].result.items.find(item => item.id === id).read_at, null);
+  await click(`#view-events [data-event-read="${id}"]`);
+  await until(() => fixture.events[0].read_at, "The explicit read commits while the earlier GET remains pending");
+  await wait(`!document.querySelector('#view-events [data-event-id="${id}"]').classList.contains('unread')`, "The confirmed row changes in place before the older GET returns");
+  assert.equal(await evaluate('document.querySelectorAll("#view-events [data-event-open]").length'), 115, "A fifty-row read receipt cannot replace the full archive");
+  fixture.holdEventReads = false;
+  fixture.heldEventReads.shift().release();
+  // Wait for the explicitly requested refresh's completion, then inspect the
+  // still-confirmed row. The controlled response contains its old unread value.
+  await delay(300);
+  await wait(`!document.querySelector('#view-events [data-event-id="${id}"]').classList.contains('unread') && document.querySelectorAll('#view-events [data-event-open]').length===115`, "A delayed event GET cannot undo a later read or truncate loaded pages");
+}
+async function assertEventCounterArchive({evaluate, expected}) {
+  const visible = await evaluate('({text:document.querySelector("#view-events [data-event-unread]").textContent,bell:document.querySelector("#notifications-button").getAttribute("aria-label"),sameList:window.__eventListBeforeRead===document.querySelector("#view-events .event-list"),rows:document.querySelectorAll("#view-events [data-event-open]").length,unreadRows:document.querySelectorAll("#view-events [data-event-id].unread [data-event-open]").length,filter:document.querySelector("#view-events [data-event-filter][aria-pressed=true]").dataset.eventFilter,scroll:window.scrollY})');
+  assert.equal(visible.text, `${expected} непрочитанных`);
+  assert.ok(visible.bell.includes(`${expected} непрочитанных`), "The bell uses the same confirmed global count");
+  assert.equal(visible.sameList, true, "A summary/read receipt updates counters and read marks without recreating the list");
+  assert.equal(visible.rows, 115);
+  assert.equal(visible.unreadRows, 0, "All rows covered by the read-all boundary are confirmed, including rows omitted from its response");
+  assert.equal(visible.filter, "all");
+  assert.equal(visible.scroll, 180, "Read receipts and counter polls preserve the inspected archive position");
+}
+async function exerciseNotificationChannels({fixture, click, wait, evaluate}) {
+  await click('#view-settings .screen-menu [data-screen="notifications"]');
+  await wait('document.querySelector("#notification-settings [data-device-push-state]")', "The notification page exposes this device's actual delivery state");
+  assert.equal(await evaluate('document.querySelectorAll("#notification-email-form, form[id^=notification-verify]").length'), 0, "Push setup does not ask the user for email, SMS or external credentials");
+  assert.equal(fixture.requests.filter(item => item.path.startsWith("/api/notifications/email/")).length, 0);
 }
 async function exerciseNotificationRetry({fixture, click, fieldValue, wait, evaluate}) {
   const retry = '#notification-settings [data-action="resource-retry"][data-resource="notifications"]';
@@ -2173,7 +2996,7 @@ async function exerciseNotificationRetry({fixture, click, fieldValue, wait, eval
   fixture.failNotifications = false;
   const before = fixture.requests.length;
   await click(retry);
-  await wait('document.querySelector("#notification-email-form") && !document.querySelector("#notification-settings .notice.error")', "The retry restores the failed notification resource");
+  await wait('document.querySelector("#notification-settings [data-device-push-state]") && !document.querySelector("#notification-settings .notice.error")', "The retry restores the failed notification resource");
   const retried = fixture.requests.slice(before);
   assert.equal(retried.filter(item => item.path === "/api/notifications" && item.method === "GET").length, 1);
   assert.equal(retried.filter(item => item.path === "/api/workspace/refresh" && item.method === "POST").length, 0, "A notification read must not start portfolio collection");
@@ -2181,7 +3004,7 @@ async function exerciseNotificationRetry({fixture, click, fieldValue, wait, eval
   await fieldValue("#preferences-form", "quiet_start", previousTime);
   fixture.failNotifications = true;
   await click('#notification-settings [data-action="notifications-reload"]');
-  await wait(`document.querySelector(${JSON.stringify(retry)}) && document.querySelector("#notification-email-form")`, "A failed later read reports its error alongside the last known channels");
+  await wait(`document.querySelector(${JSON.stringify(retry)}) && document.querySelector("#notification-settings [data-device-push-state]")`, "A failed later read reports its error alongside the last known channels");
   fixture.failNotifications = false;
   await click(retry);
   await wait('!document.querySelector("#notification-settings .notice.error")', "A second successful read removes the actual error");
@@ -2189,6 +3012,7 @@ async function exerciseNotificationRetry({fixture, click, fieldValue, wait, eval
 async function exerciseAnalyticsReadConsistency({fixture, click, wait, evaluate, checkLayout, screenshot, round}) {
   fixture.periodResults = {"1y": "123456", "1w": "7654"};
   await click('#sidebar-nav [data-route="analytics"]');
+  await click('#view-analytics .screen-menu [data-screen="history"]');
   const metricValues = '[...document.querySelectorAll("#view-analytics .metric-grid .main-value")].map(item=>item.textContent)';
   await wait('document.querySelector("#view-analytics [data-history-period=\\"1y\\"]") && document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("123456")', "The initial year has its own financial result");
   fixture.holdWorkspace = true;
@@ -2209,26 +3033,29 @@ async function exerciseAnalyticsReadConsistency({fixture, click, wait, evaluate,
   await wait('document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("7654") && document.querySelector("#view-analytics [data-history-period=\\"1w\\"]")', "The successful retry displays only the selected week's snapshot");
   assert.ok(fixture.requests.slice(before).some(item => item.path === "/api/workspace" && new URLSearchParams(item.query).get("history_period") === "1w"));
   assert.equal(fixture.requests.slice(before).some(item => item.path === "/api/workspace/refresh" && item.method === "POST"), false);
-  await checkLayout(`analytics-period-recovered-${round}-390`);
+  await checkLayout(`analytics-period-recovered-${round}-390`, {minCharts: 1});
 }
 async function exerciseSearchReadConsistency({fixture, click, fieldValue, wait, evaluate}) {
   fixture.holdPublicNews = true;
   await fieldValue("#global-search-form", "q", "older-query");
   await evaluate('document.querySelector("#global-search-form").requestSubmit()');
-  await until(() => fixture.heldPublicNews.length === 1, "The earlier search is waiting for a shared resource");
+  await until(() => fixture.heldPublicNews.length === 1, "The general news feed is deliberately waiting");
+  await until(() => fixture.requests.some(item => item.path === "/api/broker/tbank/instruments/search" && new URLSearchParams(item.query).get("q") === "older-query"), "The first query starts independently of that shared feed");
   await fieldValue("#global-search-form", "q", "newer-query");
   await evaluate('document.querySelector("#global-search-form").requestSubmit()');
   await wait('document.querySelector("#view-search .view-header").textContent.includes("newer-query")', "The current route query is visible during loading");
+  await wait('document.querySelector("#view-search .search-result") && !document.querySelector("#view-search .loading-panel")', "The newer query finishes while the unrelated feed is still pending");
+  const searches = fixture.requests.filter(item => item.path === "/api/broker/tbank/instruments/search");
+  assert.deepEqual(searches.map(item => new URLSearchParams(item.query).get("q")), ["older-query", "newer-query"], "Each explicit route starts its own search without a shared-data gate");
   fixture.holdPublicNews = false;
   fixture.heldPublicNews.splice(0).forEach(release => release());
-  await wait('document.querySelector("#view-search .search-result") && !document.querySelector("#view-search .loading-panel")', "The newer query finishes after the shared response");
-  const searches = fixture.requests.filter(item => item.path === "/api/broker/tbank/instruments/search");
-  assert.deepEqual(searches.map(item => new URLSearchParams(item.query).get("q")), ["newer-query"], "An older route cannot start a new search after its dependency resolves");
+  await wait(`${completedResourceCount("/api/public/news")} > 0`, "The shared feed finally completes");
+  assert.equal(fixture.requests.filter(item => item.path === "/api/broker/tbank/instruments/search").length, 2, "A late shared read cannot launch the old query again");
   assert.equal(await evaluate('document.querySelector("#global-search").value'), "newer-query");
   assert.ok(await evaluate('document.querySelector("#view-search .view-header").textContent.includes("newer-query")'));
   await click('#sidebar-nav [data-route="goals"]');
 }
-async function exerciseGoalSourceContract({fixture, click, wait, evaluate, screenshot, round}) {
+async function exerciseGoalSourceContract({fixture, click, wait, evaluate, screenshot, checkLayout, round}) {
   const goal = clone(serverContracts.goal_available);
   fixture.goals = [goal];
   fixture.goalPlans = {[goal.id]: {version: 1, document: clone(serverContracts.goal_plan_document), forecast: clone(serverContracts.goal_forecast_available)}};
@@ -2239,6 +3066,9 @@ async function exerciseGoalSourceContract({fixture, click, wait, evaluate, scree
   assert.ok(await evaluate('document.querySelector("#goal-plan-result").textContent.includes("Сумма в заданном сценарии")'));
   const sourceDate = await evaluate(`window.OmniUI.date(${JSON.stringify(serverContracts.goal_forecast_available.source_as_of)}, true)`);
   assert.ok((await evaluate('document.querySelector("#goal-plan-result .goal-forecast-source").textContent')).includes(sourceDate));
+  await wait('document.querySelector("#goal-plan-result .chart-plot")?.getClientRects().length', "The model scenario has its own visible numerical chart");
+  await checkLayout(`goal-scenario-${round}-390`, {minCharts: 1});
+  await screenshot(`goal-scenario-${round}-390.png`);
   await click('#workspace-dialog [data-close-dialog]');
   fixture.goals[0] = clone(serverContracts.goal_stale);
   fixture.goalPlans[goal.id].forecast = clone(serverContracts.goal_forecast_stale);
@@ -2284,6 +3114,95 @@ async function exerciseResearchSubmission({fixture,click,fieldValue,wait,evaluat
   const coverage=await evaluate('document.querySelector("[data-research-coverage]").textContent');
   assert.ok(coverage.includes("Выплаты из API источника") && coverage.includes("история размеров лота") && coverage.includes("НКД на открытие"));
   assert.ok(!coverage.includes("bond_nkd_open_close_timing"),"Missing evidence is explained in user language");
+}
+async function exerciseResearchMathematics({fixture,click,wait,evaluate,configureViewport,checkLayout,screenshot,round}) {
+  const run = fixture.researchRuns[0];
+  const original = clone(run);
+  const open = async () => {
+    await click('#strategy-research [data-research-operation="open"]');
+    await wait('document.querySelector("#workspace-dialog").open && location.hash.includes("/strategies/result")', "The saved research has its own addressable result screen");
+  };
+  const close = async () => {
+    await click('#workspace-dialog [data-close-dialog]');
+    await wait('!document.querySelector("#workspace-dialog").open && !location.hash.includes("/strategies/result")', "Back navigation finishes before the next research result opens");
+  };
+  const revealSection = async marker => {
+    await evaluate('new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))');
+    const selector = "#dialog-content [" + marker + "]";
+    const visible = await evaluate(`(() => {
+      const section = document.querySelector(${JSON.stringify(selector)});
+      section.scrollIntoView({behavior:'instant',block:'start'});
+      const heading = section.querySelector(':scope > summary, :scope > h3');
+      const rect = heading.getBoundingClientRect();
+      const dialog = document.querySelector('#workspace-dialog');
+      const header = dialog.querySelector('.dialog-header').getBoundingClientRect();
+      return {width:innerWidth,height:innerHeight,top:rect.top,bottom:rect.bottom,headerBottom:header.bottom,headerTop:header.top,
+        scrollportTop:dialog.getBoundingClientRect().top+dialog.clientTop,
+        hittable:heading.contains(document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2))};
+    })()`);
+    assert.ok(visible.headerTop <= visible.scrollportTop + 1, 'The sticky header covers the top of the scrollport: ' + marker);
+    assert.ok(visible.top >= visible.headerBottom, 'The research heading is below the sticky header: ' + marker);
+    assert.ok(visible.bottom <= visible.height, 'The complete research heading fits the viewport: ' + marker);
+    assert.equal(visible.hittable, true, 'The research heading is not covered by another element: ' + marker);
+    console.log(`PASS research heading ${round}/${marker}: ${JSON.stringify(visible)}`);
+  };
+  Object.assign(run, {result: {...clone(serverContracts.research_outcomes_result), strategy_version: run.strategy_version}, status: "computed", metrics: clone(serverContracts.research_outcomes_result.metrics)});
+  await open();
+  await wait('document.querySelector("#dialog-content [data-research-outcomes]")', "The UI receives the actual calculator's historical-outcome schema");
+  await click('#dialog-content [data-research-outcome-sessions="1"] summary');
+  const actual = await evaluate(`document.querySelector('#dialog-content [data-research-outcome-sessions="1"]').textContent`);
+  assert.ok(actual.includes("Историческая частота прибыли") && actual.includes("50") && actual.includes("95% интервал исторической частоты"));
+  await click('#dialog-content [data-research-outcome-sessions="5"] summary');
+  const insufficient = await evaluate(`document.querySelector('#dialog-content [data-research-outcome-sessions="5"]').textContent`);
+  assert.ok(insufficient.includes("12") && insufficient.includes("Полных непересекающихся окон недостаточно"), "The longer horizon shows real window counts without inventing a percentage");
+  for (const width of [390, 320, 1366]) {
+    await configureViewport(width);
+    await revealSection("data-research-outcomes");
+    await checkLayout(`research-math-${round}-${width}`, {minCharts: 1});
+    await screenshot(`research-math-${round}-${width}.png`);
+  }
+  await configureViewport(390);
+  await close();
+  for (const [key, incomplete] of [["research_cash_result", false], ["research_cash_incomplete_result", true]]) {
+    const result = clone(serverContracts[key]);
+    Object.assign(run, {result: {...result, strategy_version: run.strategy_version}, status: result.status, metrics: result.metrics});
+    await open();
+    await wait('document.querySelector("#dialog-content [data-research-cash-model]")', "A cash-only result uses the separate real model contract");
+    const text = await evaluate('document.querySelector("#dialog-content").textContent');
+    assert.ok(text.includes("Денежная модель не содержит рыночных наблюдений"));
+    assert.equal(await evaluate('Boolean(document.querySelector("#dialog-content .chart-path"))'), false, "A cash model cannot fabricate a market chart");
+    if (incomplete) assert.ok(text.includes("Резерв вне инвестиций") && text.includes("готовность стратегии не подтверждена"));
+    for (const width of [390, 320]) {
+      await configureViewport(width);
+      await checkLayout(`research-cash-${incomplete}-${round}-${width}`);
+      await screenshot(`research-cash-${incomplete}-${round}-${width}.png`);
+    }
+    await configureViewport(390);
+    await close();
+  }
+  for (const [key, marker, label] of [["research_ladder_result", "data-ladder-rungs", "ladder"], ["research_dividend_result", "data-dividend-coverage", "dividends"]]) {
+    const result = clone(serverContracts[key]);
+    Object.assign(run, {result: {...result, strategy_version: run.strategy_version}, status: result.status, metrics: result.metrics});
+    await open();
+    await wait(`document.querySelector('#dialog-content [${marker}]')`, "The real preset calculator has its own detailed output");
+    await click(`#dialog-content details:has([${marker}]) > summary`);
+    await click(`#dialog-content [${marker}] > summary`);
+    const details = await evaluate(`document.querySelector('#dialog-content [${marker}]').textContent`);
+    if (label === "ladder") assert.ok(details.includes("Ступень 5") && details.includes("Заполненная доля"));
+    else assert.ok(details.includes("600 USD") && details.includes("не гарантирует будущие выплаты"));
+    for (const width of [390, 320, 1366]) {
+      await configureViewport(width);
+      await revealSection(marker);
+      await checkLayout(`research-${label}-${round}-${width}`);
+      await screenshot(`research-${label}-${round}-${width}.png`);
+    }
+    await configureViewport(390);
+    await close();
+  }
+  Object.assign(run, original);
+  await open();
+  await wait('document.querySelector("#dialog-content").textContent.includes("Нет достаточной истории")', "The original isolated request remains intact after result-display contracts");
+  await close();
 }
 async function exerciseResearchEvidence({fixture,click,wait,evaluate}) {
   await click('[data-research-action="evidence"]');
@@ -2347,7 +3266,10 @@ async function exerciseResearchLateResult({fixture,click,fieldValue,wait,evaluat
   fixture.researchHoldAcknowledgment=false;
   fixture.researchHeldAcknowledgments.splice(0).forEach(release=>release());
   await wait('document.querySelector("[data-research-state=completed]")?.textContent.includes("ранее выбранным условиям")',"A late old-version result stays in the archive");
+  assert.equal(await evaluate('location.hash'), '#account/strategies/editor', "A late research result cannot replace the page being edited");
   assert.equal(await evaluate('document.querySelector("#strategy-research").textContent.includes("Нет достаточной истории")'),false,"The old calculation cannot replace the current editor's result");
+  await click('#view-strategies .screen-menu [data-screen="research"]');
+  await wait('document.querySelector("#strategy-research")?.getClientRects().length', "Research status remains reachable on its own page");
 }
 async function exerciseResearchPagination({fixture,click,wait,evaluate,screenshot,checkLayout,round}) {
   fixture.billing=clone(serverContracts.billing_disabled);
@@ -2377,14 +3299,18 @@ async function exerciseResearchPagination({fixture,click,wait,evaluate,screensho
   await checkLayout(`research-archive-${round}-390`);
   const oldest=fixture.researchRuns.at(-1);
   await click(`[data-research-run="${oldest.id}"][data-research-operation="open"]`);
-  await wait('!document.querySelector("#workspace-dialog").open && document.querySelector("#strategy-research").textContent.includes("Архивная контрольная запись")',"The oldest retained record opens across the former 200-record boundary");
-  assert.ok(await evaluate('document.querySelector("#strategy-research").textContent.includes("Архивная версия")'));
+  await wait(`document.querySelector("#workspace-dialog").open && location.hash.includes("/strategies/result?run=${oldest.id}") && document.querySelector("#dialog-content").textContent.includes("Архивная контрольная запись")`,"The oldest retained record opens on its own route across the former 200-record boundary");
+  assert.ok(await evaluate('document.querySelector("#dialog-content").textContent.includes("Архивная версия")'));
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('location.hash === "#account/strategies/archive" && document.querySelector("#research-archive")?.getClientRects().length', "Back returns from a research result to its archive");
 }
 async function exerciseOperatorCapability({fixture,send,base,round,wait,click,evaluate,screenshot,checkLayout}) {
   assert.equal(fixture.requests.some(item=>item.path==="/api/system/metrics"),false,"Ordinary signed-in users never request operator aggregates");
   fixture.canViewOperationalMetrics=true;
   await send("Page.navigate",{url:`${base}?case=signed-read-contracts-${round}&operator=1#settings`});
   await wait('document.querySelector("#operations-settings")?.textContent.includes("Требует внимания оператора")',"The explicit server capability enables the operator panel");
+  await click('#view-settings .screen-menu [data-screen="operations"]');
+  await wait('document.querySelector("#operations-settings")?.getClientRects().length', "Operator evidence is opened through its actual settings menu");
   const text=await evaluate('document.querySelector("#operations-settings").textContent');
   assert.ok(text.includes("Счета без своевременного обновления") && text.includes("Неопределённый результат отправки") && text.includes("Подтверждение запуска не получено"));
   assert.ok(!text.includes("worker_not_reported") && !text.includes("stale_success_accounts"),"Operator codes are translated into meaningful statuses");
@@ -2440,6 +3366,7 @@ async function exerciseReadConsistency(options) {
   await exerciseSearchReadConsistency(context);
   await exerciseGoalSourceContract(context);
   await exerciseResearchSubmission(context);
+  await exerciseResearchMathematics(context);
   await exerciseResearchEvidence(context);
   await exerciseResearchReload(context);
   await exerciseResearchLateResult(context);
@@ -2466,7 +3393,7 @@ async function serveTestGoalPlan({fixture,path,method,body,response}) {
     plan={version:plan.version+1,document:clone(body.document),forecast:clone(serverContracts.goal_forecast_available)};
     fixture.goalPlans[id]=plan;
   }
-  return sendJSON(response,{...clone(plan),goal_id:id,goal_version:goal.version});
+  return sendJSON(response,{...clone(plan),goal_id:id,goal_version:goal.version,goal_kind:goal.kind,applicable_fields:goal.kind === "income" ? ["monthly_income_rub","target_in_today_money","annual_inflation_percent"] : ["monthly_contribution_rub","annual_return_percent","annual_volatility_percent","target_in_today_money","annual_inflation_percent"]});
 }
 async function serveTestResearchArchive({fixture,path,method,body,url,response}) {
   fixture.researchEvidence ||= {version:0,document:{assets:[]}};
@@ -2576,13 +3503,65 @@ async function serveTestAssistantStatus({fixture,path,method,body,url,response})
     if(method==="POST"){const item={id:require("node:crypto").randomUUID(),title:body.title,version:0,messages:[],created_at:stamp,updated_at:stamp};fixture.conversations.push(item);return sendJSON(response,item,201);}
     return sendJSON(response,{items:fixture.conversations.map(({messages,...item})=>item),total:fixture.conversations.length,truncated:false});
   }
-  if(path==="/api/assistant/messages"){
+  fixture.assistantMemory ||= [];
+  if (path === "/api/assistant/memory" || path.startsWith("/api/assistant/memory/")) {
+    const id = path === "/api/assistant/memory" ? body?.id : path.split("/").at(-1);
+    const item = fixture.assistantMemory.find(row => row.id === id);
+    if (method === "GET") return sendJSON(response,{items:clone(fixture.assistantMemory),total:fixture.assistantMemory.length});
+    if (method === "DELETE") { if (!item || item.version !== body.expected_version) return sendJSON(response,{detail:"settings_version_conflict"},409); fixture.assistantMemory = fixture.assistantMemory.filter(row=>row.id!==id); return sendJSON(response,{deleted:true}); }
+    if (body.confirmed !== true || body.expected_version !== (item?.version || 0)) return sendJSON(response,{detail:"settings_version_conflict"},409);
+    const saved = {id,content:body.content,category:body.category,version:(item?.version || 0)+1,created_at:item?.created_at || stamp,updated_at:stamp};
+    fixture.assistantMemory = [...fixture.assistantMemory.filter(row=>row.id!==id),saved];
+    return sendJSON(response,saved);
+  }
+  if (path === "/api/assistant/sources/search") return sendJSON(response,{items:body.context === "investment" ? [{id:"fixture-source",kind:"portfolio",label:"Fixture portfolio source",sha256:"a".repeat(64),scope:"selected_sources",observed_at:stamp,excerpt:"Recorded source amount 150000.5"}] : [],total:body.context === "investment" ? 1 : 0,scope:"selected_sources",web_search:false,truncated:false});
+  if (path === "/api/assistant/sources/read") {
+    if (body.request_id) {
+      const message = fixture.conversations.flatMap(item=>item.messages).find(item=>item.request_id===body.request_id && item.role==="assistant");
+      const source = message?.sources.find(item=>item.id===body.source_id);
+      return sendJSON(response, source ? {...clone(source),immutable:true,web_search:false} : {detail:"assistant_source_not_found"}, source ? 200 : 404);
+    }
+    return sendJSON(response,{id:body.source_id,kind:"portfolio",label:"Fixture portfolio source",sha256:"a".repeat(64),scope:"selected_sources",content:{nav_rub:fixture.currentSourceValue || "150000.5",observed_at:stamp},web_search:false});
+  }
+  if (path.startsWith("/api/assistant/requests/")) {
+    const id = path.split("/")[4], record = fixture.assistantRequests?.get(id);
+    if (!record) return sendJSON(response,{detail:"assistant_request_not_found"},404);
+    if (path.endsWith("/cancel")) {
+      record.saved.status = "cancelled";
+      const conversation = fixture.conversations.find(item=>item.id===record.saved.conversation_id);
+      if (conversation) { conversation.latest_request = clone(record.saved); for (const message of conversation.messages) if (message.request_id === id) message.request_status = "cancelled"; }
+      record.response.end(`event: cancelled\ndata: ${JSON.stringify({request_id:id,code:"assistant_request_cancelled"})}\n\n`);
+    }
+    return sendJSON(response,record.saved);
+  }
+  if(path==="/api/assistant/messages" || path==="/api/assistant/messages/stream"){
     assert.equal(Object.hasOwn(body,"history"),false,"Conversation history is loaded server-side");
     const conversation=fixture.conversations.find(item=>item.id===body.conversation_id);
     if(!conversation || conversation.version!==body.expected_version)return sendJSON(response,{detail:"settings_version_conflict"},409);
     assert.match(body.request_id,/^[a-f0-9-]{36}$/);
-    conversation.messages.push({position:++conversation.version,role:"user",content:body.message,created_at:stamp,sources:[],request_status:"completed"},{position:++conversation.version,role:"assistant",content:"Synthetic isolated model response",created_at:stamp,sources:[{label:"Synthetic source receipt"}],request_status:"completed"});
-    fixture.ai.quota.used++;return sendJSON(response,{reply:"Synthetic isolated model response",conversation_id:conversation.id,version:conversation.version,created_at:stamp,sources:[]});
+    if (path.endsWith("/stream") && fixture.holdAssistantStream) {
+      const saved = {request_id:body.request_id,conversation_id:conversation.id,status:"running",reply_prefix:"Synthetic partial prefix",stream_sequence:1,sources:[],incomplete:true};
+      conversation.messages.push({position:++conversation.version,role:"user",content:body.message,created_at:stamp,sources:[],request_status:"running",request_id:body.request_id});
+      conversation.latest_request = clone(saved);
+      fixture.assistantRequests ||= new Map(); fixture.assistantRequests.set(body.request_id,{saved,response});
+      fixture.ai.quota.used++;
+      response.setHeader("Content-Type","text/event-stream");
+      response.write(`event: accepted\ndata: ${JSON.stringify({request_id:body.request_id,conversation_id:conversation.id})}\n\n`);
+      response.write(`event: delta\ndata: ${JSON.stringify({request_id:body.request_id,reply_prefix:saved.reply_prefix,sequence:1,provisional:true})}\n\n`);
+      return;
+    }
+    const sources = [{id:"fixture-answer-source",kind:"portfolio",label:"Synthetic saved source receipt",sha256:"b".repeat(64),content:{nav_rub:fixture.currentSourceValue || "150000.5",observed_at:stamp},scope:"selected_sources"},{label:"Legacy source receipt"}];
+    conversation.messages.push({position:++conversation.version,role:"user",content:body.message,created_at:stamp,sources:[],request_status:"completed",request_id:body.request_id},{position:++conversation.version,role:"assistant",content:"Synthetic isolated model response",created_at:stamp,sources,request_status:"completed",request_id:body.request_id});
+    fixture.ai.quota.used++;
+    const result={reply:"Synthetic isolated model response",conversation_id:conversation.id,version:conversation.version,created_at:stamp,sources};
+    if (path.endsWith("/stream")) {
+      response.setHeader("Content-Type","text/event-stream");
+      response.write(`event: accepted\ndata: ${JSON.stringify({request_id:body.request_id,conversation_id:conversation.id})}\n\n`);
+      response.write(`event: delta\ndata: ${JSON.stringify({request_id:body.request_id,reply_prefix:"Synthetic isolated",sequence:1,provisional:true})}\n\n`);
+      response.end(`event: complete\ndata: ${JSON.stringify({request_id:body.request_id,result})}\n\n`);
+      return;
+    }
+    return sendJSON(response,result);
   }
   const id=path.split("/").at(-1),item=fixture.conversations.find(row=>row.id===id);
   if(!item)return sendJSON(response,{detail:"workspace_item_not_found"},404);
@@ -2596,6 +3575,39 @@ async function serveTestAssistantStatus({fixture,path,method,body,url,response})
 }
 
 async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evaluate,checkLayout}) {
+  await click('#view-assistant [data-screen="conversation"]');
+  assert.equal(await evaluate('document.querySelector("#assistant-history-context").textContent === window.OMNICIO_I18N.t("assistant.history_context_help")'), true, "The context selector explains the history scope enforced by the server");
+  await click('#view-assistant [data-screen="memory"]');
+  await wait('document.querySelector("#assistant-memory-form")', "Explicit memory editor is available with AI disabled");
+  await fieldValue("#assistant-memory-form", "content", "Prefer explanations with source timestamps");
+  const writesBeforeMemory = fixture.requests.filter(item => item.method === "POST" && item.path === "/api/assistant/memory").length;
+  await click('#assistant-memory-form [type="submit"]');
+  assert.equal(fixture.requests.filter(item => item.method === "POST" && item.path === "/api/assistant/memory").length, writesBeforeMemory, "Memory requires explicit checkbox confirmation");
+  await click('#assistant-memory-form [name="confirmed"]');
+  await click('#assistant-memory-form [type="submit"]');
+  await until(()=>fixture.assistantMemory?.length === 1, "Confirmed memory is saved independently of model activation");
+  await wait('document.querySelector("[data-memory-edit]")', "Saved memory has an edit consumer");
+  await click('[data-memory-edit]');
+  await fieldValue("#assistant-memory-form", "content", "Keep source timestamps in explanations");
+  await click('#assistant-memory-form [name="confirmed"]');
+  await click('#assistant-memory-form [type="submit"]');
+  await until(()=>fixture.assistantMemory[0]?.version === 2, "Memory edits use version preconditions");
+  await click('#view-assistant [data-screen="sources"]');
+  await wait('document.querySelector("#assistant-sources-form")', "Selected-source search has its own screen");
+  await fieldValue("#assistant-sources-form", "context", "investment");
+  await fieldValue("#assistant-sources-form", "query", "source");
+  await click('#assistant-sources-form [type="submit"]');
+  await wait('document.querySelector("[data-assistant-source]")', "Source search returns actual selected-source metadata");
+  assert.equal(fixture.requests.filter(item=>item.path === "/api/assistant/messages/stream").length, 0, "Memory and source review never activate or call the external model");
+  await click('[data-assistant-source]');
+  await wait('document.querySelector(".source-document")?.textContent.includes("150000.5")', "Reading a selected source displays server-returned data");
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "Back closes source detail");
+  await click('#view-assistant [data-screen="memory"]');
+  await click('[data-memory-delete]');
+  await click('[data-memory-delete-confirm]');
+  await until(()=>fixture.assistantMemory.length === 0, "Confirmed deletion removes owned memory");
+  await wait('!document.querySelector("#workspace-dialog").open', "Memory confirmation closes after the server result");
   await click('#view-assistant [data-action="assistant-connect"]');
   await wait('document.querySelector("#assistant-connection-form")',"Personal AI connection editor");
   await fieldValue("#assistant-connection-form","model","synthetic-model");
@@ -2616,15 +3628,36 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   await click('#assistant-form [type="submit"]');
   await wait('document.querySelector("#chat-messages").textContent.includes("Synthetic isolated model response")',"Durable assistant result");
   assert.equal(fixture.ai.quota.used,1);
-  const last=fixture.requests.findLast(item=>item.path==="/api/assistant/messages");
+  const last=fixture.requests.findLast(item=>item.path==="/api/assistant/messages/stream");
   assert.equal(last.body.context,"general");assert.equal(last.body.include_news,false);
+  fixture.currentSourceValue = "999999999";
+  await click('#chat-messages [data-assistant-source-request]');
+  await wait('document.querySelector("#dialog-content .source-document")?.textContent.includes("150000.5")', "Saved answers open their original source facts");
+  assert.equal(await evaluate('document.querySelector("#dialog-content .source-document").textContent.includes("999999999")'), false, "A newer portfolio value cannot replace the source of an older answer");
+  const sourceRead = fixture.requests.findLast(item=>item.path === "/api/assistant/sources/read");
+  assert.deepEqual(sourceRead.body, {source_id:"fixture-answer-source",request_id:last.body.request_id}, "Immutable source read carries its owning response ID");
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "Back restores the original conversation after source reading");
+  fixture.holdAssistantStream = true;
+  await fieldValue("#assistant-form", "message", "Exercise cancellation without a second send");
+  await click('#assistant-form [type="submit"]');
+  await wait('document.querySelector(".assistant-prefix")?.textContent === "Synthetic partial prefix"', "Incremental prefix is rendered from the SSE payload");
+  assert.ok(await evaluate('document.querySelector(".assistant-stream").textContent.includes("Предварительный текст")'), "Unfinished text cannot appear as a confirmed answer");
+  const cancelRequest = fixture.requests.findLast(item=>item.path === "/api/assistant/messages/stream").body.request_id;
+  await click('[data-action="assistant-cancel"]');
+  await until(()=>fixture.assistantRequests.get(cancelRequest)?.saved.status === "cancelled", "Stop calls the explicit server cancellation endpoint");
+  await wait('document.querySelector(".assistant-stream")?.textContent.includes("Запрос остановлен") && !document.querySelector("#assistant-form textarea").disabled', "Cancellation state is read back and the editor is released");
+  await click('[data-action="assistant-request-read"]');
+  assert.equal(fixture.requests.filter(item=>item.path === "/api/assistant/messages/stream").length, 2, "Readback and cancellation cannot silently resend the question");
+  await fieldValue("#assistant-form", "message", "");
+  fixture.holdAssistantStream = false;
   await click('#sidebar-nav [data-route="home"]');
   await click('#sidebar-nav [data-route="assistant"]');
   await wait('document.querySelector("#chat-messages").textContent.includes("Synthetic isolated model response")',"History returns after navigation");
   await click('#view-assistant [data-action="chat-clear"]');
   await click('#workspace-dialog [data-action="assistant-delete-confirm"]');
   await until(()=>fixture.conversations.length===0,"Delete owned conversation");
-  assert.equal(fixture.ai.quota.used,1,"Deleting conversation does not reset request quota");
+  assert.equal(fixture.ai.quota.used,2,"Deleting conversation does not reset accepted request quota");
   await wait('!document.querySelector("#workspace-dialog").open && document.querySelector("[data-action=assistant-new]")?.disabled===false',"Deletion finishes in the original dialog");
   await click('#view-assistant [data-action="assistant-new"]');
   await until(()=>fixture.conversations.length===1,"Create conversation for deletion race");
@@ -2648,7 +3681,7 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
   await click(`#view-profile [data-session-revoke="${other.id}"]`);
   await until(()=>fixture.sessions.length===1,"Revoke another session");
   fixture.billing.configured=true;fixture.billing.offer=clone(serverContracts.billing_enabled.offer);
-  await click('#view-profile [data-action="premium"]');
+  await click('#view-profile .screen-menu [data-screen="plan"]');
   await wait('document.querySelector("#billing-checkout-form")',"Configured hosted checkout");
   const comparison=await evaluate('[...document.querySelectorAll(".plan-comparison tbody tr")].map(row=>[...row.querySelectorAll("td")].map(cell=>cell.textContent))');
   assert.deepEqual(comparison[0],[String(serverContracts.billing_enabled.plans.personal.research_runs),String(serverContracts.billing_enabled.plans.premium.research_runs)],"The two archive limits come from the actual billing contract");
@@ -2669,7 +3702,7 @@ async function exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evalua
 async function exercisePendingBillingCancellation({fixture, click, wait, evaluate}) {
   const pending = ["pending", "uncertain"].map(status => ({...clone(fixture.billing.payments[0]), id: require("node:crypto").randomUUID(), status, cancel_attempted_at: stamp, entitlement_from: null, entitlement_until: null}));
   fixture.billing.payments.push(...pending);
-  await click('#view-profile [data-action="premium"]');
+  await click('#view-profile .screen-menu [data-screen="plan"]');
   for (const payment of pending) {
     const selector = `#dialog-content [data-billing-id="${payment.id}"]`;
     await wait(`document.querySelector(${JSON.stringify(selector)})`, "Cancellation awaiting bank confirmation is visible: " + payment.status);
@@ -2689,7 +3722,7 @@ async function exerciseBillingInitializationRecovery({fixture,click,wait,evaluat
   const resolved={...clone(unsent),id:require("node:crypto").randomUUID(),resolution:"provider_order_absent"};
   fixture.billing.payments.push(absent,unsent,resolved);
   const before=fixture.requests.length;
-  await click('#view-profile [data-action="premium"]');
+  await click('#view-profile .screen-menu [data-screen="plan"]');
   await wait('document.querySelector("#dialog-content").textContent.includes("отправка запроса на оплату в банк не начиналась")',"An unsent initialization has its actual local resolution");
   const text=await evaluate('document.querySelector("#dialog-content").textContent');
   assert.ok(text.includes("Результат начала оплаты не подтверждён") && text.includes("подтверждающих проверок банка"),"Ambiguous and resolved initialization have distinct explanations");
@@ -2708,7 +3741,7 @@ async function exerciseExecutionPlanner({fixture,click,fieldValue,wait,evaluate,
   await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved" && document.querySelector("#view-strategies [data-action=execution-plan]")?.disabled===false',"Planner becomes available after the same strategy version is acknowledged");
   fixture.researchRuns=[{id:require("node:crypto").randomUUID(),strategy_version:fixture.selection.version,status:"computed",created_at:new Date().toISOString(),metrics:{net_return_percent:"1.25"},inputs:{commission_bps:"10",slippage_bps:"20"}}];
   const prepare = async () => {
-    await click('#view-strategies [data-action="execution-plan"]');
+    await click('#view-strategies .screen-menu [data-screen="plan"]');
     await wait('document.querySelector("#execution-plan-form")', "Saved research and current account planning inputs");
     await click('#execution-plan-form [type="submit"]');
     await wait('document.querySelector("#execution-review-consent")', "Review exact plan before confirmation");
@@ -2751,11 +3784,11 @@ async function exerciseExecutionPlanner({fixture,click,fieldValue,wait,evaluate,
   assert.equal(fixture.executions[1].legs[0].lots_executed,0);
   assert.equal(fixture.requests.filter(item=>item.path.endsWith("/dispatch")).length,1,"Cancelling a pending shadow plan cannot execute it");
   await click('#workspace-dialog [data-close-dialog]');
-  await click('#view-strategies [data-action="execution-history"]');
+  await click('#view-strategies .screen-menu [data-screen="executions"]');
   await wait('document.querySelectorAll("#dialog-content [data-recovery-id]").length===2',"Both terminal plans remain in execution history");
   await click('#workspace-dialog [data-close-dialog]');
   fixture.holdResearchReads=true;
-  await click('#view-strategies [data-action="execution-plan"]');
+  await click('#view-strategies .screen-menu [data-screen="plan"]');
   await until(()=>fixture.heldResearchReads.length>0,"Delayed planner prerequisites are in flight");
   await click('#workspace-dialog [data-close-dialog]');
   fixture.holdResearchReads=false;
@@ -2787,10 +3820,12 @@ async function exerciseEnglishLocale({send,configureViewport,round,base,wait,cli
       assert.ok(await evaluate('document.querySelector("#view-home").textContent.includes("Тестовая компания")'),"Issuer names remain in their original language");
     }
     if(view==="strategies") {
+      await click('#view-strategies .screen-menu [data-screen="catalog"]');
       await wait('document.querySelector("[data-select-strategy=balanced] strong").textContent==="Balanced"',"Canonical preset title is translated by ID");
       assert.equal(await evaluate('document.querySelector("#view-strategies .strategy-note").textContent'),"Allocation across asset classes with a preference for lower historical volatility.","The visible canonical preset description is translated exactly");
     }
     await checkLayout(`english-${view}-${round}-390`);
+    await exerciseScreenPages({view, label: `english-${view}-${round}-390`, click, wait, evaluate, checkLayout, screenshot, width: 390});
   }
   const origin=await evaluate("performance.timeOrigin");
   await send("Page.reload");
@@ -2807,7 +3842,7 @@ async function exerciseEnglishLocale({send,configureViewport,round,base,wait,cli
 async function exerciseGoalPlan({fixture,click,fieldValue,wait}) {
   await click('#view-goals [data-goal-plan]');
   await wait('document.querySelector("#goal-plan-form")',"Saved goal assumptions editor");
-  for(const [name,value] of Object.entries({monthly_contribution_rub:"100",monthly_income_rub:"0",annual_return_percent:"0",annual_volatility_percent:"0",annual_inflation_percent:"0"}))await fieldValue("#goal-plan-form",name,value);
+  for(const [name,value] of Object.entries({monthly_contribution_rub:"100",annual_return_percent:"0",annual_volatility_percent:"0",annual_inflation_percent:"0"}))await fieldValue("#goal-plan-form",name,value);
   fixture.holdGoalPlanSave=true;
   await click('#goal-plan-form [type="submit"]');
   await until(()=>typeof fixture.releaseGoalPlanSave==="function","Goal plan save is pending");
@@ -2826,9 +3861,790 @@ async function serveTestAuthLogout({
   fixture,
   response
 }) {
+  for (const channel of fixture.notificationChannels) {
+    if (channel.kind === "push" && channel.current_session) Object.assign(channel, {status: "revoked", binding_id: null, current_session: false});
+  }
   fixture.mode = "guest";
   response.statusCode = 204;
   return response.end();
+}
+async function exerciseCanonicalNavigation({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
+  await configureViewport(390);
+  const guestKey = `guest-canonical-${round}`;
+  fixtures.set(guestKey, makeFixture("guest"));
+  await send("Page.navigate", {url: `${base}?case=${guestKey}#demo/market/reference?currency=CNY&reference_period=1y`});
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await wait('!document.querySelector("#view-market").hidden && !document.querySelector("#app-shell").hidden && document.querySelector("[name=cbr_currency]")?.value === "CNY"', "Demo deep link survives repeated reload");
+    assert.equal(await evaluate('document.querySelector("#public-site").hidden'), true);
+    assert.equal(await evaluate('document.querySelector("[name=cbr_period]").value'), "1y");
+    assert.equal(await evaluate('location.hash'), "#demo/market/reference?currency=CNY&reference_period=1y");
+    if (attempt < 2) { const origin = await evaluate("performance.timeOrigin"); await send("Page.reload"); await wait(`performance.timeOrigin !== ${origin}`, "A new demo document loaded"); }
+  }
+  await checkLayout(`canonical-demo-${round}`);
+  await click('#view-market [data-screen="news"]');
+  await wait('location.hash === "#demo/market/news" && document.querySelector("#view-market [data-screen-content=news]")?.getClientRects().length', "Market news is a standalone screen");
+  assert.equal(await evaluate('document.querySelector("#view-market [data-screen-content=reference]").getClientRects().length'), 0, "Unselected data panels are not visible");
+  await evaluate("history.back()");
+  await wait('location.hash.includes("reference") && document.querySelector("[name=cbr_currency]").value === "CNY" && document.querySelector("[name=cbr_period]").value === "1y"', "Back restores currency and period");
+  await click('[data-action="leave-tour"]');
+  await wait('!document.querySelector("#public-site").hidden', "Leaving demo returns to the public root");
+  await click('.public-nav [data-public-page="features"]');
+  await wait('location.hash === "#public/features"', "Public menu is a page route");
+  assert.deepEqual(await evaluate('[...document.querySelectorAll("#public-content > section")].filter(element=>element.getClientRects().length).map(element=>element.id)'), ["features"]);
+  assert.equal(await evaluate("document.querySelectorAll('a[href^=\"/legal/\"][target=\"_blank\"]').length"), 0, "Internal legal pages keep browser Back available");
+  await evaluate("history.back()");
+  await wait('location.hash === "#public/welcome"', "Public page Back restores the welcome screen");
+  const lateKey = `signed-late-session-${round}`;
+  const late = makeFixture("signed"); late.holdMe = true; fixtures.set(lateKey, late);
+  await send("Page.navigate", {url: `${base}?case=${lateKey}#public/welcome`});
+  await until(()=>typeof late.releaseMe === "function", "Session verification is deliberately pending");
+  await click('[data-action="tour"]');
+  await click('#sidebar-nav [data-route="market"]');
+  await click('#view-market [data-screen="reference"]');
+  late.holdMe = false; late.releaseMe();
+  await delay(250);
+  assert.equal(await evaluate("location.hash"), "#demo/market/reference", "A late successful session response cannot override an explicit demo route");
+  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Знакомство", "Demo does not display the authenticated account's name");
+  const failureKey = `signed-session-retry-${round}`;
+  const failure = makeFixture("signed"); failure.failMe = true; fixtures.set(failureKey, failure);
+  await send("Page.navigate", {url: `${base}?case=${failureKey}#account/settings/broker`});
+  await wait('document.querySelector("#startup-state [data-action=session-retry]")', "Temporary session failure has an explicit retry");
+  assert.equal(await evaluate('document.querySelector("#public-site").hidden'), true, "A network error must not show an unauthenticated landing page");
+  assert.equal(await evaluate("location.hash"), "#account/settings/broker");
+  failure.failMe = false;
+  await click('[data-action="session-retry"]');
+  await wait('!document.querySelector("#app-shell").hidden && document.querySelector("#broker-settings")?.getClientRects().length', "Retry restores the requested settings screen");
+  assert.equal(await evaluate('document.querySelector("#preferences-form")?.getClientRects().length || 0'), 0, "Broker settings do not expose the unrelated preference form");
+  await click('#sidebar-nav [data-route="goals"]');
+  await wait('document.querySelector("#view-goals [data-action=goal-create]")', "Goal list is ready");
+  await click('#view-goals [data-action="goal-create"]');
+  await wait('document.querySelector("#goal-form") && document.querySelector("#workspace-dialog").open', "Goal creation is an addressable screen");
+  await fieldValue("#goal-form", "title", "Unsubmitted navigation draft");
+  await fieldValue("#goal-form", "kind", "income");
+  assert.ok((await evaluate("location.hash")).startsWith("#account/goals/create"));
+  await evaluate('document.querySelector("#workspace-dialog").scrollTop = 180');
+  await wait('history.state.dialogScroll > 100', "The routed form records its own scroll position");
+  const dialogScroll = await evaluate('document.querySelector("#workspace-dialog").scrollTop');
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open && location.hash === "#account/goals"', "Back closes the form and restores the list");
+  await evaluate("history.forward()");
+  await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#goal-form")?.elements.title.value === "Unsubmitted navigation draft"', "Forward restores the unsaved draft");
+  assert.equal(await evaluate('document.querySelector("#goal-form").elements.progress_source.value'), "income", "Draft restoration rebuilds the source options for the restored goal kind");
+  await wait(`Math.abs(document.querySelector("#workspace-dialog").scrollTop - ${dialogScroll}) < 2`, "Forward restores the long form's own scroll position");
+  await fieldValue("#goal-form", "title", "");
+  await fieldValue("#goal-form", "kind", "capital");
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "Draft was returned to its initial state");
+  assert.equal(failure.requests.filter(item=>item.method === "POST" && item.path === "/api/goals").length, 0, "Navigating and restoring a draft cannot create a goal");
+  console.log(`PASS canonical navigation round ${round}: repeated demo reload, public screens, Back, control restoration, late bootstrap, retry and draft history`);
+}
+async function exerciseIndependentPageLoads({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
+  await configureViewport(390);
+  const key = `signed-independent-reads-${round}`;
+  const fixture = makeFixture("signed");
+  fixture.holdPublicNews = true;
+  fixture.holdNotifications = true;
+  fixtures.set(key, fixture);
+  await send("Page.navigate", {url: `${base}?case=${key}#account/asset?uid=synthetic-a`});
+  await until(() => fixture.heldPublicNews.length === 1, "The asset page's unrelated general news request is held");
+  await wait('document.querySelector("#view-asset .chart-plot")?.getClientRects().length && document.querySelector("#view-asset [data-market-quote] .main-value")?.textContent.includes("251,75")', "Quotes and the chart arrive before the general news feed");
+  assert.equal(fixture.heldPublicNews.length, 1, "The unrelated response has not been released to make the chart pass");
+  await checkLayout(`independent-asset-${round}`, {minCharts: 1});
+  await fieldValue("#global-search-form", "q", "SYNA");
+  await evaluate('document.querySelector("#global-search-form").requestSubmit()');
+  await wait('document.querySelector("#view-search .search-result")?.getClientRects().length && !document.querySelector("#view-search .loading-panel")', "Instrument search also finishes independently of the general feed");
+  assert.equal(fixture.heldPublicNews.length, 1);
+  const newsId = "a".repeat(64);
+  await evaluate(`location.hash = ${JSON.stringify("#account/events/news?news=" + newsId + "&news_source=public")}`);
+  await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#dialog-content").textContent.includes("Подтверждённый текст")', "A news deep link reads its own article without waiting for the general feed");
+  assert.equal(fixture.heldPublicNews.length, 1);
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "The independent article returns through Back");
+  fixture.holdPublicNews = false;
+  fixture.heldPublicNews.splice(0).forEach(release => release());
+  await click('#sidebar-nav [data-route="settings"]');
+  await until(() => fixture.heldNotifications.length === 1, "Notification delivery is deliberately pending");
+  await click('#view-settings .screen-menu [data-screen="support"]');
+  await wait("document.querySelector('#workspace-support a[href^=\"mailto:\"]')?.getClientRects().length && !document.querySelector('#workspace-support .loading-panel')", "Support arrives before unrelated notification delivery");
+  assert.equal(fixture.heldNotifications.length, 1);
+  const completed = await evaluate(completedResourceCount("/api/notifications"));
+  fixture.holdNotifications = false;
+  fixture.heldNotifications.splice(0).forEach(release => release());
+  await wait(`${completedResourceCount("/api/notifications")} > ${completed}`, "The delayed notification read completes after support");
+  await wait("document.querySelector('#workspace-support a[href^=\"mailto:\"]')?.getClientRects().length && !document.querySelector('#workspace-support .loading-panel')", "A late background repaint preserves the loaded contact");
+  assert.equal(await evaluate("location.hash"), "#account/settings/support");
+  await checkLayout(`independent-support-${round}`);
+  console.log(`PASS independent reads round ${round}: asset, search, article and support become usable before unrelated responses`);
+}
+async function exerciseAssetEnrichment({send, round, base, wait, evaluate, checkLayout}) {
+  const key = `signed-late-asset-${round}`;
+  const fixture = makeFixture("signed");
+  fixture.holdAssetParts = new Set(["details", "facts", "news"]);
+  fixture.heldAssetParts = new Map();
+  fixture.closedPosition = true;
+  fixture.enrichmentName = "Late source company";
+  fixture.enrichmentTicker = "LATE";
+  fixtures.set(key, fixture);
+  await send("Page.navigate", {url: `${base}?case=${key}#account/asset?uid=synthetic-a`});
+  await until(() => fixture.heldAssetParts.size === 3, "All auxiliary asset responses are deliberately held");
+  await wait('document.querySelector("#view-asset .chart-svg") && document.querySelector("#view-asset [data-market-quote] .main-value")?.textContent.includes("251,75")', "The chart is usable while details, facts and news are still pending");
+  await evaluate('window.__enrichmentChart = document.querySelector("#view-asset .chart-svg"); window.__enrichmentChart.focus()');
+  await send("Input.dispatchKeyEvent", {type: "keyDown", key: "Home", code: "Home", windowsVirtualKeyCode: 36});
+  const selected = await evaluate('document.querySelector("#view-asset .chart-readout").textContent');
+  const aria = await evaluate('window.__enrichmentChart.getAttribute("aria-label")');
+  const ready = {
+    details: `Object.fromEntries([...document.querySelectorAll('#view-asset [data-asset-sidebar] .info-row')].map(row=>[row.querySelector('dt').textContent,row.querySelector('dd').textContent]))['Стоимость в портфеле'] === window.OmniUI.money('0')`,
+    facts: `document.querySelector('#view-asset [data-asset-sidebar]').textContent.includes('11,25')`,
+    news: `document.querySelector('#view-asset h1').textContent === 'Late source company' && document.querySelector('#view-asset .asset-detail-header p').textContent === 'LATE'`
+  };
+  for (const kind of ["details", "facts", "news"]) {
+    fixture.holdAssetParts.delete(kind);
+    fixture.heldAssetParts.get(kind)();
+    fixture.heldAssetParts.delete(kind);
+    await wait(ready[kind], "The late " + kind + " response updates its actual consumer");
+    assert.equal(await evaluate('document.querySelector("#view-asset .chart-svg") === window.__enrichmentChart && document.activeElement === window.__enrichmentChart'), true, "Auxiliary asset data cannot replace the chart or its focus");
+    assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout").textContent'), selected, "The inspected first candle remains selected after " + kind);
+    assert.equal(await evaluate('window.__enrichmentChart.getAttribute("aria-label")'), aria, "The selected accessible observation remains intact");
+  }
+  assert.equal(await evaluate('document.querySelector("#view-asset .asset-detail-header .asset-logo").textContent'), "L");
+  assert.deepEqual(await evaluate('(() => { const watch=document.querySelector("#view-asset .asset-detail-header [data-watch]"); return [watch.dataset.watchName,watch.dataset.watchTicker]; })()'), ["Late source company", "LATE"], "The existing watch control receives the same final source metadata");
+  await checkLayout(`asset-enrichment-${round}`, {minCharts: 1});
+  await evaluate('delete window.__enrichmentChart');
+  console.log(`PASS asset enrichment round ${round}: held details/facts/news update their panels while preserving the chosen candle, SVG and focus`);
+}
+function installPromptBrowserFixture() {
+  if (new URLSearchParams(location.search).get("case") !== "guest-installation") return;
+  // Only the controlled prompt scenario replaces the native dialog. The
+  // separate manifest/installability scenario keeps the real browser event.
+  window.addEventListener("beforeinstallprompt", event => {
+    if (!event.isTrusted) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+}
+function installPushBrowserFixture(publicKey) {
+  const params = new URLSearchParams(location.search);
+  if (!(params.get("case") || "").startsWith("push-")) return;
+  const bytes = Uint8Array.from(atob(publicKey.replaceAll("-", "+").replaceAll("_", "/")), char => char.charCodeAt(0));
+  const fixture = {permission: params.get("push_permission") || "default", permissionCalls: 0, subscribeCalls: 0, unsubscribeCalls: 0, holdPermission: false, subscription: null};
+  const subscription = (endpoint, key = bytes) => ({
+    endpoint,
+    options: {applicationServerKey: key.buffer.slice(0)},
+    toJSON: () => ({endpoint, expirationTime: null, keys: {p256dh: publicKey, auth: "AQEBAQEBAQEBAQEBAQEBAQ"}}),
+    async unsubscribe() { fixture.unsubscribeCalls += 1; if (fixture.subscription?.endpoint === endpoint) fixture.subscription = null; return true; }
+  });
+  fixture.setSubscription = (endpoint, oldKey = false) => { fixture.subscription = subscription(endpoint, oldKey ? Uint8Array.from(bytes, value => value ^ 1) : bytes); };
+  if (params.has("push_existing")) fixture.setSubscription("https://fcm.googleapis.com/fcm/send/fixture-existing", params.get("push_existing") === "old-key");
+  const manager = {
+    async getSubscription() {
+      return fixture.subscription;
+    },
+    async subscribe(options) {
+      fixture.subscribeCalls += 1;
+      fixture.lastSubscribeOptions = {userVisibleOnly: options.userVisibleOnly, key: Array.from(options.applicationServerKey)};
+      fixture.subscription = subscription(`https://fcm.googleapis.com/fcm/send/fixture-new-${fixture.subscribeCalls}`);
+      return fixture.subscription;
+    }
+  };
+  class TestNotification {
+    static get permission() { return fixture.permission; }
+    static async requestPermission() {
+      fixture.permissionCalls += 1;
+      if (fixture.holdPermission) await new Promise(resolve => { fixture.releasePermission = resolve; });
+      fixture.permission = fixture.permissionResult || "granted";
+      return fixture.permission;
+    }
+  }
+  Object.defineProperty(window, "Notification", {configurable: true, value: TestNotification});
+  Object.defineProperty(ServiceWorkerRegistration.prototype, "pushManager", {configurable: true, get: () => manager});
+  window.__pushFixture = fixture;
+}
+async function installLifecycleContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const status = app.slice(app.indexOf("  const installStatus ="), app.indexOf("  const installContentsHTML ="));
+  const actions = app.slice(app.indexOf("  const dismissInstall ="), app.indexOf("  const deliveryStateLabels ="));
+  const installState = {prompt: null, installed: false, dismissed: false, busy: false, result: ""};
+  const stored = new Map();
+  let opens = 0, prompts = 0, installed = false;
+  const navigator = {userAgent: "Chrome", platform: "Win32", maxTouchPoints: 0};
+  const context = vm.createContext({installState, navigator, installedDisplay: () => installed, H: value => value, localStorage: {setItem: (key, value) => stored.set(key, value)}, renderInstallState() {}, openInstall: () => { opens += 1; }});
+  vm.runInContext(status + actions + "\nglobalThis.installActions={installStatus,installInstructionsHTML,dismissInstall,promptInstall};", context);
+  const api = context.installActions;
+  assert.equal(api.installStatus(), "manual", "No retained browser event means instructions, not a fake installation button");
+  await api.promptInstall();
+  assert.equal(opens, 1);
+  let complete;
+  installState.prompt = {prompt: async () => { prompts += 1; }, userChoice: new Promise(resolve => { complete = resolve; })};
+  const pending = api.promptInstall();
+  assert.equal(installState.prompt, null, "The native event is consumed before awaiting the user's choice");
+  assert.equal(api.installStatus(), "pending");
+  await api.promptInstall();
+  assert.equal(prompts, 1, "Repeated clicks cannot invoke a single-use native prompt twice");
+  complete({outcome: "dismissed"});
+  await pending;
+  assert.equal(installState.dismissed, true);
+  assert.equal(stored.get("omnicio-install-dismissed"), "true");
+  assert.equal(installState.result, "dismissed");
+  await api.promptInstall();
+  assert.equal(opens, 2, "Dismissing the promotion still leaves the permanent instruction path usable");
+  assert.equal(prompts, 1);
+  installState.prompt = {prompt: async () => { throw new Error("Browser no longer permits the prompt"); }};
+  await api.promptInstall();
+  assert.equal(installState.result, "unavailable");
+  assert.equal(installState.busy, false);
+  installed = true;
+  assert.equal(api.installStatus(), "installed", "Standalone/fullscreen detection suppresses another installation offer");
+  for (const [agent, platform, touches, expected] of [["iPhone", "iPhone", 5, "ios"], ["Safari", "MacIntel", 5, "ios"], ["Android", "Linux", 5, "android"], ["Chrome", "Win32", 0, "desktop"]]) {
+    Object.assign(navigator, {userAgent: agent, platform, maxTouchPoints: touches});
+    assert.ok(api.installInstructionsHTML().includes(`data-install-platform="${expected}"`), "Manual installation steps match the actual device capability, including iPad desktop user agents");
+  }
+  console.log("PASS actual installation lifecycle: single-use prompt, dismissal, persistent entry, installed display and platform instructions");
+}
+async function installPromptInterleavingContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const actions = app.slice(app.indexOf("  const dismissInstall ="), app.indexOf("  const deliveryStateLabels ="));
+  const listener = app.slice(app.indexOf('  window.addEventListener("beforeinstallprompt"'), app.indexOf('  window.addEventListener("appinstalled"'));
+  for (const isolated of [false, true]) {
+    const handlers = [];
+    const installState = {prompt: null, installed: false, dismissed: false, busy: false, result: ""};
+    const context = vm.createContext({installState, URLSearchParams, location: {search: `?case=${isolated ? "guest-installation" : "guest-installability"}`}, window: {addEventListener: (_name, callback) => handlers.push(callback)}, renderInstallState() {}, openInstall() {}, localStorage: {setItem() {}}});
+    vm.runInContext(`(${installPromptBrowserFixture.toString()})();` + actions + listener + "\nglobalThis.promptInstall=promptInstall;", context);
+    const dispatch = event => {
+      event.preventDefault = () => { event.defaultPrevented = true; };
+      event.stopImmediatePropagation = () => { event.stopped = true; };
+      for (const handle of handlers) {
+        handle(event);
+        if (event.stopped) break;
+      }
+    };
+    let prompts = 0, nativePrompts = 0, complete;
+    const controlled = {isTrusted: false, prompt: async () => { prompts += 1; }, userChoice: new Promise(resolve => { complete = resolve; })};
+    dispatch(controlled);
+    assert.equal(controlled.defaultPrevented, true, "The actual application consumes the controlled event");
+    const native = {isTrusted: true, prompt: async () => { nativePrompts += 1; throw new Error("Native prompt requires browser user activation"); }};
+    dispatch(native);
+    const pending = context.promptInstall();
+    if (isolated) {
+      assert.equal(installState.busy, true, "A late native event cannot replace the controlled pending choice");
+      assert.equal(prompts, 1);
+      assert.equal(nativePrompts, 0);
+      complete({outcome: "accepted"});
+      await pending;
+      assert.equal(installState.result, "accepted");
+    } else {
+      await pending;
+      assert.equal(installState.result, "unavailable", "Without fixture isolation the late native event reproduces the observed failure");
+      assert.equal(prompts, 0);
+      assert.equal(nativePrompts, 1, "The real installability scenario does not intercept native events");
+    }
+    assert.equal(installState.busy, false);
+  }
+  console.log("PASS actual install prompt interleaving: only the controlled fixture isolates late native events");
+}
+async function pushEndpointContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const pushFingerprint ="), app.indexOf("  const withPushDeviceLock ="));
+  const context = vm.createContext({URL, crypto: require("node:crypto").webcrypto, TextEncoder});
+  vm.runInContext(source + "\nglobalThis.fingerprint=pushFingerprint;", context);
+  const endpoint = "https://fcm.googleapis.com/fcm/send/fixture-device?token=one";
+  const expected = createHash("sha256").update(endpoint).digest("hex");
+  assert.equal(await context.fingerprint({endpoint}), expected);
+  assert.equal(await context.fingerprint({endpoint: "https://FCM.GoogleApis.com:443/fcm/send/fixture-device?token=one"}), expected, "Default ports and host casing share the server's canonical endpoint identity");
+  assert.notEqual(await context.fingerprint({endpoint: endpoint.replace("token=one", "token=two")}), expected, "Distinct endpoint query tokens must remain different devices");
+  console.log("PASS actual push endpoint identity: canonical origin, default port and significant provider query");
+}
+async function pushContextContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const pushContext ="), app.indexOf("  const inspectPushDevice ="));
+  const bytes = Uint8Array.from(Buffer.from(pushFixtureKey, "base64url"));
+  const subscription = {endpoint: "https://fcm.googleapis.com/fcm/send/fixture-owner-a", options: {applicationServerKey: bytes.buffer}, toJSON: () => ({endpoint: "https://fcm.googleapis.com/fcm/send/fixture-owner-a"})};
+  const data = {vapid_public_key: pushFixtureKey, channels: []};
+  for (const [boundary, changed] of ["subscription", "receipt"].flatMap(boundary => ["generation", "identity"].map(changed => [boundary, changed]))) {
+    const state = {generation: 1, user: {public_id: "000000123"}, locked: false, tour: false, devicePush: {status: "checking", channel: null, bindingId: null}};
+    const writes = [], bindings = [];
+    let releaseSubscription, releaseReceipt;
+    const registration = {pushManager: {getSubscription: () => boundary === "subscription" ? new Promise(resolve => { releaseSubscription = resolve; }) : Promise.resolve(subscription)}, active: {postMessage: (...args) => bindings.push(args)}};
+    const api = async (path, options) => { writes.push({path, options, publicId: state.user.public_id}); return new Promise(resolve => { releaseReceipt = resolve; }); };
+    const context = vm.createContext({state, navigator: {serviceWorker: {ready: Promise.resolve(registration)}}, window: {}, Uint8Array, URL, atob, crypto: require("node:crypto").webcrypto, TextEncoder, setTimeout, clearTimeout, api, T: value => value});
+    vm.runInContext(source + "\nglobalThis.pushTest={pushContext,readPushSubscription};", context);
+    const pending = context.pushTest.readPushSubscription(data, context.pushTest.pushContext(), true);
+    await until(() => boundary === "subscription" ? releaseSubscription : releaseReceipt, "The actual push helper reaches its controlled " + boundary + " boundary");
+    if (changed === "generation") state.generation += 1;
+    else state.user = {public_id: "000000124"};
+    state.devicePush = {status: "checking", channel: null, bindingId: null};
+    if (boundary === "subscription") releaseSubscription(subscription);
+    else releaseReceipt({id: "channel-a", status: "active", current_session: true, binding_id: "00000000-0000-4000-9000-000000000001"});
+    await pending;
+    assert.deepEqual(state.devicePush, {status: "checking", channel: null, bindingId: null}, "A late " + boundary + " result cannot mutate the next account's device state");
+    assert.equal(bindings.length, 0, "An obsolete account cannot install its worker binding after a context switch");
+    assert.equal(writes.length, boundary === "subscription" ? 0 : 1);
+    if (writes.length) assert.equal(writes[0].publicId, "000000123", "An already sent request retains the old verified owner and is never replayed for the new one");
+  }
+  console.log("PASS actual push owner context: delayed subscription and server receipt cannot cross account generations");
+}
+async function pushBindingReceiptContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const pushContext ="), app.indexOf("  const readPushSubscription ="));
+  const channelId = "00000000-0000-4000-8000-000000000801";
+  const bindingId = "00000000-0000-4000-9000-000000000001";
+  const cases = [
+    {status: "active", messages: 1},
+    {workerAccepted: false, error: "service_worker_unavailable", status: "granted-pending", messages: 1},
+    {currentSession: false, status: "granted-pending", messages: 0},
+    {matchingBinding: false, error: "service_worker_unavailable", status: "granted-pending", messages: 1},
+    {id: "invalid-channel", error: "notification_channel_invalid", status: "checking", messages: 0},
+    {bindingId: "invalid-binding", error: "notification_channel_invalid", status: "checking", messages: 0}
+  ];
+  for (const scenario of cases) {
+    const state = {generation: 1, user: {public_id: "000000123"}, locked: false, tour: false, devicePush: {status: "checking", channel: null, bindingId: null}};
+    const messages = [];
+    const registration = {active: {postMessage(message, ports) { messages.push(message); ports[0].postMessage({handled: true, ok: scenario.workerAccepted !== false, binding_id: scenario.matchingBinding === false ? "00000000-0000-4000-9000-000000000099" : message.binding_id}); ports[0].close(); }}};
+    const context = vm.createContext({state, I: {getLocale: () => "en"}, MessageChannel, setTimeout, clearTimeout, crypto: require("node:crypto").webcrypto, TextEncoder, URL});
+    vm.runInContext(source + "\nglobalThis.pushTest={pushContext,adoptPushReceipt};", context);
+    const receipt = {id: scenario.id || channelId, status: "active", current_session: scenario.currentSession !== false, binding_id: scenario.bindingId || bindingId};
+    const pending = context.pushTest.adoptPushReceipt(receipt, {endpoint: "https://fcm.googleapis.com/fcm/send/fixture-receipt"}, registration, context.pushTest.pushContext());
+    if (scenario.error) await assert.rejects(pending, {message: scenario.error});
+    else await pending;
+    assert.equal(state.devicePush.status, scenario.status, "The active state requires valid channel IDs, the current server session and a durable worker acknowledgement for the same binding");
+    assert.equal(messages.length, scenario.messages);
+    if (messages.length) assert.deepEqual(Object.keys(messages[0]).sort(), ["binding_id", "locale", "type"], "The worker receives no profile ID, source values or account content");
+  }
+  console.log("PASS actual push acknowledgement: current-session receipt and positive worker persistence are both required");
+}
+async function pushPermissionReadFailureContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const inspectPushDevice ="), app.indexOf("  const removeCurrentSubscription ="));
+  for (const [permission, previousStatus, expected] of [["denied", "active", "denied"], ["default", "active", "default"], ["granted", "active", "active"], ["granted", "revoked", "revoked"], ["granted", "checking", "error"]]) {
+    const failure = Object.assign(new Error("Server read failed"), {status: 503});
+    const saved = {push_configured: true, channels: [{id: "00000000-0000-4000-8000-000000000801", status: "active"}]};
+    const state = {user: {public_id: "000000123"}, devicePush: {status: previousStatus, pending: null}, data: {notifications: saved}, errors: {notifications: failure}, resourceRequests: new Map()};
+    const reads = [];
+    const context = vm.createContext({state, Notification: {permission}, pushSupported: () => true, pushContext: () => ({}), currentPushContext: () => true, isCancelled: () => false, renderNotificationPanel() {}, loadResource: async (...args) => { reads.push(args); return saved; }});
+    vm.runInContext(source + "\nglobalThis.refresh=refreshPushDevice;", context);
+    await context.refresh();
+    assert.equal(state.devicePush.status, expected, `Observed ${permission} browser permission and previous ${previousStatus} state remain truthful after a failed server read`);
+    assert.equal(state.devicePush.error, failure, "The actual server error remains visible alongside the observed permission");
+    assert.equal(state.devicePush.pending, null);
+    assert.equal(state.data.notifications, saved, "A failed read does not fabricate a different set of server channels");
+    assert.equal(reads.length, 1);
+    assert.equal(reads[0][1], "/api/notifications");
+  }
+  console.log("PASS actual push permission failure: denied/default override cached active; granted preserves known state and the server error");
+}
+async function exerciseInstallability({send, configureViewport, base, wait, evaluate}) {
+  const key = "guest-installability";
+  fixtures.set(key, makeFixture("guest"));
+  await configureViewport(390);
+  await send("Page.navigate", {url: `${base}?case=${key}#public/welcome`});
+  await wait('document.querySelector("#public-site")?.hidden===false && document.readyState==="complete"', "The real public application is ready for the browser installability check");
+  await evaluate('navigator.serviceWorker.ready.then(() => true)');
+  const manifest = await send("Page.getAppManifest");
+  const installability = await send("Page.getInstallabilityErrors");
+  const logo = readFileSync(join(root, "assets", "brand", "omnicio-logo.png"));
+  const evidence = {manifest, installability, canonical_logo_sha256: createHash("sha256").update(logo).digest("hex")};
+  writeFileSync(join(artifacts, "installability.json"), JSON.stringify(evidence, null, 2));
+  console.log("INSTALLABILITY " + JSON.stringify(evidence));
+  assert.deepEqual(manifest.errors, [], "Chromium parses the actual deployed manifest without errors");
+  assert.equal(new URL(manifest.url).pathname, "/manifest.webmanifest");
+  assert.deepEqual(JSON.parse(manifest.data), JSON.parse(readFileSync(join(root, "web", "manifest.webmanifest"), "utf8")), "Installability uses the repository manifest, not a test substitute");
+  assert.equal(evidence.canonical_logo_sha256, "d9c44905a77858882d99e948a647705afa853fd11cfd01efd37528645b8ca12f", "The installation check retains the approved original logo");
+  assert.deepEqual(installability.installabilityErrors, [], "Chromium accepts the actual manifest and its declared original icon");
+  console.log("PASS actual manifest and original brand installability");
+}
+async function exerciseInstallation({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot}) {
+  const key = "guest-installation";
+  fixtures.set(key, makeFixture("guest"));
+  await evaluate('localStorage.removeItem("omnicio-install-dismissed")');
+  await configureViewport(320);
+  await send("Page.navigate", {url: `${base}?case=${key}#public/welcome`});
+  await wait('document.querySelector("#public-site [data-install-promotion]")?.hidden===false', "A first visit offers installation through an explicit user control");
+  await click('#public-site [data-action="pwa-install-later"]');
+  await wait('[...document.querySelectorAll("[data-install-promotion]")].every(item=>item.hidden)', "Dismissal hides the optional promotion");
+  await click('.public-nav [data-public-page="install"]');
+  await wait('location.hash==="#public/install" && document.querySelector("#install [data-install-state]")', "The permanent installation entry remains reachable after dismissal");
+  await checkLayout("installation manual 320");
+  await screenshot("installation-manual-320.png");
+  const origin = await evaluate("performance.timeOrigin");
+  await send("Page.reload");
+  await wait(`performance.timeOrigin!==${origin} && document.querySelector('#install [data-install-state]')`, "The install page is an independently reloadable route");
+  assert.equal(await evaluate('localStorage.getItem("omnicio-install-dismissed")'), "true");
+  await evaluate('(() => {const event=new Event("beforeinstallprompt",{cancelable:true});window.__installCalls=0;event.prompt=async()=>{window.__installCalls+=1;};event.userChoice=new Promise(resolve=>{window.__resolveInstall=resolve;});dispatchEvent(event);window.__installPrevented=event.defaultPrevented;})()');
+  await wait('document.querySelector("#install [data-install-state=available]")', "A real retained-event consumer offers the browser installation prompt");
+  assert.equal(await evaluate("window.__installPrevented"), true);
+  await click('#install [data-action="pwa-install"]');
+  await wait('document.querySelector("#install [data-install-state=pending]")', "The pending native prompt cannot be invoked twice");
+  assert.equal(await evaluate("window.__installCalls"), 1);
+  await evaluate('window.__resolveInstall({outcome:"accepted"});void 0');
+  await wait('document.querySelector("#install [data-install-state=manual]")', "A browser acceptance is not invented proof of installation");
+  await evaluate('dispatchEvent(new Event("appinstalled"));void 0');
+  await wait('document.querySelector("#install [data-install-state=installed]")', "The browser installation event confirms the installed state");
+  assert.equal(await evaluate('document.querySelectorAll("#install [data-action=pwa-install]").length'), 0);
+  await configureViewport(390);
+  await screenshot("installation-confirmed-390.png");
+  console.log("PASS browser installation: dismiss, permanent link, reload, native single-use prompt and installed acknowledgement");
+}
+const pushPanel = "#notification-settings [data-device-push-state]";
+async function openPushFixture({send, configureViewport, base, wait}, suffix, {permission = "default", existing = "", configure = () => {}} = {}) {
+  const key = `push-${suffix}`, fixture = makeFixture("signed");
+  configure(fixture);
+  fixtures.set(key, fixture);
+  await configureViewport(390);
+  const query = new URLSearchParams({case: key, push_permission: permission});
+  if (existing) query.set("push_existing", existing);
+  await send("Page.navigate", {url: `${base}?${query}#account/settings/notifications`});
+  await wait(`document.querySelector(${JSON.stringify(pushPanel)})`, "Current-device push panel: " + suffix);
+  return fixture;
+}
+const pushWrites = fixture => fixture.requests.filter(item => item.path === "/api/notifications/push" && item.method === "POST");
+const waitPushState = (wait, status) => wait(`document.querySelector(${JSON.stringify(pushPanel)})?.dataset.devicePushState===${JSON.stringify(status)}`, "Current-device state: " + status);
+async function exercisePushLifecycle(context) {
+  const {wait, click, evaluate, screenshot} = context;
+  const fixture = await openPushFixture(context, "default");
+  await waitPushState(wait, "default");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0, "Opening the page cannot ask for OS permission");
+  assert.equal(pushWrites(fixture).length, 0);
+  fixture.holdPush = true;
+  await click('#notification-settings [data-action="notification-push"]');
+  await until(() => fixture.heldPush.length === 1, "Browser permission and subscription exist while server activation is held");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 1);
+  assert.equal(await evaluate("window.__pushFixture.subscribeCalls"), 1);
+  assert.equal(await evaluate(`document.querySelector(${JSON.stringify(pushPanel)}).dataset.devicePushState==="active"`), false, "A granted browser permission is not proof of an active account channel");
+  fixture.holdPush = false;
+  fixture.heldPush.shift()();
+  await waitPushState(wait, "active");
+  assert.equal(pushWrites(fixture)[0].body.intent, "enable");
+  assert.equal(pushWrites(fixture)[0].profile, fixture.user);
+  assert.equal(await evaluate("window.__pushFixture.lastSubscribeOptions.userVisibleOnly"), true);
+  await click('#notification-settings [data-action="notification-push-test"]');
+  await wait('document.querySelector("[data-push-test-status=queued]")', "A test message acknowledges only its server queue receipt");
+  assert.equal(fixture.notificationDeliveries[0].status, "queued");
+  assert.equal(fixture.notificationDeliveries[0].attempts, 0);
+  await evaluate('document.querySelector("#notification-settings").scrollIntoView({block:"center",behavior:"instant"});void 0');
+  await screenshot("push-test-queued-390.png");
+  await click('#notification-settings [data-action="notification-revoke"]');
+  await until(() => fixture.notificationChannels[0].status === "revoked", "Explicit opt-out reaches the server");
+  await wait('window.__pushFixture.unsubscribeCalls===1 && document.querySelector("#notification-settings [data-device-push-state]")?.dataset.devicePushState!=="active"', "Opt-out removes this browser subscription and its active indication");
+  await exerciseExistingPush(context);
+  await exercisePushFailures(context);
+  await exercisePushNotificationNavigation(context);
+  await exerciseLatePushPermission(context);
+  console.log("PASS push browser lifecycle: explicit permission, server receipt, queued test, opt-out, passive sync, rotation, errors and logout isolation");
+}
+async function exerciseExistingPush(context) {
+  const {wait, click, evaluate} = context;
+  const existing = await openPushFixture(context, "existing", {permission: "granted", existing: "current"});
+  await waitPushState(wait, "active");
+  assert.ok(pushWrites(existing).length > 0);
+  assert.ok(pushWrites(existing).every(item => item.body.intent === "sync"), "An already granted subscription is silently reconciled without a new opt-in");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0);
+  assert.equal(await evaluate("window.__pushFixture.subscribeCalls"), 0);
+  const revoked = await openPushFixture(context, "revoked", {permission: "granted", existing: "current", configure: fixture => {
+    fixture.pushSequence = 1;
+    fixture.hideRevokedChannels = true;
+    fixture.notificationChannels.push({id: "00000000-0000-4000-8000-000000000801", kind: "push", label: "This device", status: "revoked", current_session: false, binding_id: null, endpoint_fingerprint: createHash("sha256").update("https://fcm.googleapis.com/fcm/send/fixture-existing").digest("hex")});
+  }});
+  await waitPushState(wait, "revoked");
+  assert.equal(revoked.notificationChannels[0].status, "revoked", "Passive sync cannot reverse explicit opt-out");
+  assert.ok(pushWrites(revoked).length > 0, "The exact sync receipt remains authoritative when the revoked channel is outside the bounded GET list");
+  assert.ok(pushWrites(revoked).every(item => item.body.intent === "sync"));
+  await click('#notification-settings [data-action="notification-push"]');
+  await waitPushState(wait, "active");
+  assert.equal(pushWrites(revoked).at(-1).body.intent, "enable");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0, "Re-enabling a channel with granted OS permission does not ask for it again");
+  const rotated = await openPushFixture(context, "rotation", {permission: "granted", existing: "old-key"});
+  await waitPushState(wait, "granted-pending");
+  assert.equal(await evaluate("window.__pushFixture.unsubscribeCalls"), 0, "A passive read cannot replace an incompatible VAPID subscription");
+  assert.equal(pushWrites(rotated).length, 0);
+  await click('#notification-settings [data-action="notification-push"]');
+  await waitPushState(wait, "active");
+  assert.equal(await evaluate("window.__pushFixture.unsubscribeCalls"), 1);
+  assert.equal(await evaluate("window.__pushFixture.subscribeCalls"), 1);
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0);
+  assert.equal(pushWrites(rotated).at(-1).body.intent, "enable");
+}
+async function exercisePushFailures(context) {
+  const {wait, click, evaluate} = context;
+  const denied = await openPushFixture(context, "denied", {permission: "denied"});
+  await waitPushState(wait, "denied");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0, "A denied permission is explained without repeated browser prompts");
+  assert.equal(pushWrites(denied).length, 0);
+  assert.equal(await evaluate('Boolean(document.querySelector("#notification-settings [data-action=notification-push]:not(:disabled)"))'), false);
+  const refusal = await openPushFixture(context, "permission-refusal");
+  await waitPushState(wait, "default");
+  await evaluate('window.__pushFixture.permissionResult="denied";void 0');
+  await click('#notification-settings [data-action="notification-push"]');
+  await waitPushState(wait, "denied");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 1, "The user's explicit refusal ends this permission attempt");
+  assert.equal(await evaluate("window.__pushFixture.subscribeCalls"), 0);
+  assert.equal(pushWrites(refusal).length, 0);
+  const failed = await openPushFixture(context, "server-error", {permission: "granted", existing: "current", configure: fixture => { fixture.failPush = true; }});
+  await waitPushState(wait, "error");
+  assert.equal(failed.notificationChannels.length, 0);
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0);
+  failed.failPush = false;
+  await click('#notification-settings [data-action="push-retry"]');
+  await waitPushState(wait, "active");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0);
+  await openPushFixture(context, "device-conflict", {permission: "granted", existing: "current", configure: fixture => { fixture.pushConflict = true; }});
+  await waitPushState(wait, "error");
+  assert.equal(await evaluate('document.querySelector("#app-shell").hidden'), false, "A device binding conflict is not an invalid authentication session");
+  assert.equal(await evaluate("window.__pushFixture.permissionCalls"), 0);
+}
+async function exerciseLatePushPermission(context) {
+  const {wait, click, evaluate} = context;
+  const fixture = await openPushFixture(context, "late-permission");
+  await waitPushState(wait, "default");
+  await evaluate("window.__pushFixture.holdPermission=true;void 0");
+  await click('#notification-settings [data-action="notification-push"]');
+  await wait('typeof window.__pushFixture.releasePermission==="function"', "The user's permission choice is still pending");
+  await click("#profile-button");
+  await click('#profile-menu [data-action="logout"]');
+  await wait('document.querySelector("#public-site").hidden===false', "Logout clears the pending action's account context");
+  await evaluate('window.__pushFixture.releasePermission();void 0');
+  await wait('window.__pushFixture.permission==="granted"', "The old browser permission result arrives after logout");
+  assert.equal(pushWrites(fixture).length, 0, "A late permission result cannot attach a device after its owner session ended");
+  assert.equal(await evaluate("window.__pushFixture.subscribeCalls"), 0);
+}
+async function sendNotificationToPage(evaluate, data) {
+  return evaluate(`(async () => {const registration=await navigator.serviceWorker.ready;const channel=new MessageChannel();const reply=new Promise(resolve=>{channel.port1.onmessage=event=>{channel.port1.close();resolve(event.data);};});navigator.serviceWorker.dispatchEvent(new MessageEvent("message",{origin:location.origin,source:registration.active,data:${JSON.stringify({type: "OPEN_NOTIFICATION", ...data})},ports:[channel.port2]}));return reply;})()`);
+}
+async function exercisePushNotificationNavigation(context) {
+  const {wait, click, evaluate, fieldValue, screenshot} = context;
+  const fixture = await openPushFixture(context, "notification-navigation", {permission: "granted", existing: "current"});
+  await waitPushState(wait, "active");
+  const bindingId = fixture.notificationChannels[0].binding_id;
+  const url = "/#account/events/detail?event=" + fixture.events[0].id;
+  await click('#sidebar-nav [data-route="goals"]');
+  await wait('document.querySelector("#view-goals [data-action=goal-create]")', "The notification destination test starts from a real editable page");
+  await click('#view-goals [data-action="goal-create"]');
+  await fieldValue("#goal-form", "title", "Unsaved notification draft");
+  await evaluate('window.__notificationDraftForm=document.querySelector("#goal-form");window.__notificationDraftForm.elements.title.focus();void 0');
+  const reply = await sendNotificationToPage(evaluate, {url, binding_id: bindingId});
+  assert.equal(reply.handled, true, "The app acknowledges a deliberate refusal so the worker cannot navigate over it");
+  assert.equal(reply.navigated, false);
+  assert.equal(await evaluate("location.hash"), "#account/goals/create");
+  assert.equal(await evaluate('document.querySelector("#goal-form")===window.__notificationDraftForm'), true);
+  assert.equal(await evaluate('document.querySelector("#goal-form").elements.title.value'), "Unsaved notification draft");
+  assert.equal(await evaluate('document.activeElement===document.querySelector("#goal-form").elements.title'), true);
+  await screenshot("push-preserved-draft-390.png");
+  await fieldValue("#goal-form", "title", "");
+  await click('#goal-form [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "Only the user's own action leaves the draft page");
+  const stale = await sendNotificationToPage(evaluate, {url, binding_id: randomUUID()});
+  assert.equal(stale.handled, true);
+  await wait('location.hash==="#account/events"', "An obsolete device binding opens only the current account's generic event page");
+  assert.equal(await evaluate('document.querySelector("#workspace-dialog").open'), false, "A stale binding cannot open its personal event detail");
+  await evaluate("delete window.__notificationDraftForm;void 0");
+}
+async function exerciseStartupRecovery({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot}) {
+  await configureViewport(390);
+  const destination = "#account/settings/appearance";
+  const missingKey = "signed-startup-missing";
+  const missing = makeFixture("signed");
+  missing.missingBundle = "/assets/i18n.js";
+  fixtures.set(missingKey, missing);
+  await send("Page.navigate", {url: `${base}?case=${missingKey}${destination}`});
+  await wait('document.querySelector("#startup-state")?.dataset.status === "unavailable" && document.querySelector("[data-startup-reload]")?.getClientRects().length', "A missing translation bundle has an independent recovery screen");
+  assert.equal(await evaluate("window.OMNICIO_I18N === undefined"), true, "The missing bundle is not replaced with a permissive mock translator");
+  assert.equal(await evaluate("location.hash"), destination);
+  assert.equal(missing.requests.length, 0, "Incompatible startup cannot read or mutate the account");
+  await checkLayout("startup-missing-390");
+  missing.missingBundle = "";
+  const firstOrigin = await evaluate("performance.timeOrigin");
+  await click("[data-startup-reload]");
+  await wait(`performance.timeOrigin !== ${firstOrigin} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "An explicit startup retry reopens the requested personal page");
+  assert.equal(await evaluate("location.hash"), destination);
+  await wait("Boolean(navigator.serviceWorker.controller)", "The cache regression uses the actual installed service worker");
+  await evaluate(`(async () => {
+    const resource = "/assets/workspace.js?build=" + ${JSON.stringify(build)};
+    const source = await (await fetch(resource)).text();
+    const legacy = source + "\\n{const {compiledBuild, ...legacy} = window.OmniUI; window.OmniUI = Object.freeze(legacy);}";
+    const cache = await caches.open("omnicio-public-" + ${JSON.stringify(build)});
+    await cache.put(resource, new Response(legacy, {headers: {"Content-Type": "text/javascript"}}));
+    await caches.open("synthetic-startup-preserved");
+    sessionStorage.setItem("synthetic-startup-preserved", "retained");
+  })()`);
+  const cachedKey = "signed-startup-cached";
+  const cached = makeFixture("signed");
+  fixtures.set(cachedKey, cached);
+  await send("Page.navigate", {url: `${base}?case=${cachedKey}${destination}`});
+  await wait('document.querySelector("#startup-state")?.dataset.status === "unavailable"', "A cached workspace without a build marker is rejected before routing");
+  assert.equal(await evaluate("window.OmniUI.compiledBuild === undefined && typeof window.OmniUI.parseRoute === 'function'"), true, "The marker itself is mandatory even when old exports happen to be callable");
+  assert.equal(cached.requests.length, 0);
+  const cachedOrigin = await evaluate("performance.timeOrigin");
+  await screenshot("startup-cache-recovery-390.png");
+  assert.equal(await evaluate("performance.timeOrigin"), cachedOrigin, "Startup recovery never starts an automatic reload cycle");
+  await click("[data-startup-reload]");
+  await wait(`performance.timeOrigin !== ${cachedOrigin} && window.OmniUI?.compiledBuild === ${JSON.stringify(build)} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "Manual recovery evicts the corrupted public cache and starts compatible modules");
+  assert.equal(await evaluate("location.hash"), destination);
+  assert.equal(await evaluate('sessionStorage.getItem("synthetic-startup-preserved")'), "retained", "Recovery does not clear session state");
+  assert.equal(await evaluate('(async () => (await caches.keys()).includes("synthetic-startup-preserved"))()'), true, "Only OMNICIO public asset caches may be removed");
+  await evaluate('(async () => {sessionStorage.removeItem("synthetic-startup-preserved");await caches.delete("synthetic-startup-preserved");})()');
+  const htmlKey = "signed-startup-old-html";
+  const html = makeFixture("signed");
+  html.legacyHtml = true;
+  html.missingBundle = "/version.js";
+  fixtures.set(htmlKey, html);
+  await send("Page.navigate", {url: `${base}?case=${htmlKey}${destination}`});
+  await wait('document.querySelector("#startup-state")?.dataset.status === "unavailable" && document.querySelector("#public-site").hidden && document.querySelector("#app-shell").hidden', "Old HTML receives a newly created recovery surface and cannot show the obsolete homepage");
+  assert.equal(html.requests.length, 0);
+  assert.equal(await evaluate('document.querySelector("#startup-state img").getAttribute("src")'), "/assets/brand/omnicio-logo.png");
+  assert.equal(await evaluate("window.OMNICIO_RELEASE === undefined"), true);
+  html.legacyHtml = false;
+  const htmlOrigin = await evaluate("performance.timeOrigin");
+  await evaluate('void Object.defineProperty(window, "caches", {get() {throw new DOMException("Storage is unavailable", "SecurityError");}})');
+  await click("[data-startup-reload]");
+  await wait(`performance.timeOrigin !== ${htmlOrigin} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "Recovery still reloads if the public cache API is unavailable");
+  assert.equal(await evaluate("location.hash"), destination);
+  assert.equal(await evaluate("window.OMNICIO_RELEASE === undefined"), true, "Stamped script URLs and matching modules remain sufficient when version.js is unavailable");
+  assert.ok(html.requests.length > 0 && html.requests.every(item => item.clientBuild === build), "The compiled build identifies API requests without optional release metadata");
+  console.log("PASS startup recovery: missing bundle, legacy public cache, old HTML, unavailable cache API and preserved deep links");
+}
+async function exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
+  await configureViewport(390);
+  const key = `signed-update-${round}`;
+  const fixture = makeFixture("signed");
+  fixture.serverBuild = `${build}-new-server`;
+  fixtures.set(key, fixture);
+  await send("Page.navigate", {url: `${base}?case=${key}#account/goals/create`});
+  await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#goal-form") && !document.querySelector("#dialog-update-banner").hidden', "A changed server build is visible inside a routed form");
+  await fieldValue("#goal-form", "title", "Typed update draft");
+  await fieldValue("#goal-form", "kind", "income");
+  await fieldValue("#goal-form", "target_amount_rub", "123456.789");
+  await fieldValue("#goal-form", "allocation_percent", "10");
+  await click('#goal-form [type="submit"]');
+  await wait('document.querySelector("#goal-message").classList.contains("error")', "A stale client explains the blocked mutation");
+  assert.equal(fixture.requests.filter(item=>item.path === "/api/goals" && item.method === "POST").length, 0, "A stale build cannot send a new goal write");
+  assert.ok(fixture.requests.every(item=>item.clientBuild === build), "Every API request identifies the actual browser build");
+  await checkLayout(`update-review-${round}`);
+  fixture.holdMe = true;
+  const firstOrigin = await evaluate("performance.timeOrigin");
+  await click('#dialog-update-banner [data-action="pwa-update"]');
+  await until(()=>typeof fixture.releaseMe === "function", "The updated document verifies its profile before draft restoration");
+  await wait(`performance.timeOrigin !== ${firstOrigin} && !document.querySelector("#startup-state").hidden`, "Explicit application update reloads the same route");
+  const saved = await evaluate('JSON.parse(sessionStorage.getItem("omnicio-update-drafts"))');
+  assert.equal(saved.public_id, fixture.user);
+  assert.ok(saved.expires_at > Date.now() && saved.expires_at <= Date.now() + 1800000);
+  assert.deepEqual(saved.drafts, {"goal-form:":{title:"Typed update draft",kind:"income",target_amount_rub:"123456.789",progress_source:"income",allocation_percent:"10"}}, "Only changed whitelisted inputs are stored; no saved snapshot or untouched API-backed field is included");
+  assert.equal(await evaluate('Boolean(document.querySelector("#goal-form"))'), false, "Private forms are not restored before /api/me confirms the same profile");
+  fixture.holdMe = false; fixture.releaseMe(); delete fixture.releaseMe;
+  await wait('document.querySelector("#goal-form")?.elements.title.value === "Typed update draft"', "The verified profile receives its typed draft after update");
+  assert.equal(await evaluate('document.querySelector("#goal-form").elements.target_amount_rub.value'), "123456.789");
+  assert.equal(await evaluate('document.querySelector("#goal-form").elements.progress_source.value'), "income", "Updated goal forms restore a valid type-specific source");
+  assert.equal(await evaluate('location.hash'), "#account/goals/create");
+  assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null, "The temporary stored copy is consumed once");
+  assert.equal(fixture.goals.length, 0, "Restoring fields never saves a goal automatically");
+  const previousUser = fixture.user;
+  fixture.holdMe = true;
+  const secondOrigin = await evaluate("performance.timeOrigin");
+  await click('#dialog-update-banner [data-action="pwa-update"]');
+  await until(()=>typeof fixture.releaseMe === "function", "A changed session is deliberately awaiting verification");
+  await wait(`performance.timeOrigin !== ${secondOrigin}`, "The second explicit update creates a new document");
+  assert.equal(await evaluate('JSON.parse(sessionStorage.getItem("omnicio-update-drafts")).public_id'), previousUser);
+  // Switch identity after the old document leaves, before the held verification replies.
+  fixture.user = "000000124";
+  fixture.holdMe = false; fixture.releaseMe(); delete fixture.releaseMe;
+  await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#goal-form")?.elements.title.value === ""', "A different verified profile cannot receive the previous draft");
+  assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null);
+  const expired = {version:1,public_id:fixture.user,expires_at:Date.now()-1,drafts:{"goal-form:":{title:"Expired draft"}}};
+  await evaluate(`sessionStorage.setItem("omnicio-update-drafts", ${JSON.stringify(JSON.stringify(expired))})`);
+  const thirdOrigin = await evaluate("performance.timeOrigin");
+  await send("Page.reload");
+  await wait(`performance.timeOrigin !== ${thirdOrigin} && document.querySelector("#goal-form")?.elements.title.value === ""`, "Expired drafts are discarded");
+  const filtered = {version:1,public_id:fixture.user,expires_at:Date.now()+60000,drafts:{"goal-form:":{title:"Allowed field",credential:"NEVER_RESTORE",nav_rub:"999999999"},"assistant-form:":{context:"investment",include_news:true},"research-evidence-form:":{document:"NEVER_RESTORE"}}};
+  await evaluate(`sessionStorage.setItem("omnicio-update-drafts", ${JSON.stringify(JSON.stringify(filtered))})`);
+  const fourthOrigin = await evaluate("performance.timeOrigin");
+  await send("Page.reload");
+  await wait(`performance.timeOrigin !== ${fourthOrigin} && document.querySelector("#goal-form")?.elements.title.value === "Allowed field"`, "Restoration validates the field allowlist again");
+  assert.equal(await evaluate('document.body.textContent.includes("NEVER_RESTORE")'), false);
+  assert.equal(fixture.requests.filter(item=>!["GET","HEAD"].includes(item.method)).length, 0, "Build checks and draft restoration never replay a mutation");
+  await fieldValue("#goal-form", "title", "");
+  await click('#workspace-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#workspace-dialog").open', "The restored form can return through the normal Back control");
+  await click('#sidebar-nav [data-route="assistant"]');
+  await click('#view-assistant [data-screen="conversation"]');
+  await wait('document.querySelector("#assistant-form")?.elements.context.value === "investment"', "The verified profile also restores the chosen assistant context");
+  assert.equal(await evaluate('document.querySelector("#assistant-form").elements.include_news.disabled'), false, "Related assistant controls follow the restored context without a change event");
+  assert.equal(await evaluate('document.querySelector("#assistant-form").elements.include_news.checked'), true);
+  assert.equal(await evaluate('document.querySelector("#assistant-form").elements.research_run_id.disabled'), false);
+  assert.equal(fixture.requests.filter(item=>!["GET","HEAD"].includes(item.method)).length, 0, "Restoring dependent controls cannot save preferences or send a question");
+  await click('#assistant-form [name="include_news"]');
+  await fieldValue("#assistant-form", "context", "general");
+  await evaluate(`sessionStorage.setItem("omnicio-update-drafts", ${JSON.stringify(JSON.stringify(filtered))})`);
+  await click('#profile-button');
+  await click('#profile-menu [data-action="logout"]');
+  await wait('!document.querySelector("#public-site").hidden && !document.querySelector("#workspace-dialog").open', "Logout finishes after the update tests");
+  assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null, "Logout removes every stored update draft");
+  console.log(`PASS safe update round ${round}: build guard, same-profile restoration, different-profile isolation, TTL, field allowlist and logout cleanup`);
+}
+function expectedQuoteText(value, unit, currency, locale) {
+  const options = {maximumFractionDigits: 9};
+  if (unit === "currency") Object.assign(options, {style: "currency", currency});
+  const amount = new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US", options).format(value);
+  const suffixes = locale === "ru" ? {percent_nominal: "% номинала", points: "пунктов"} : {percent_nominal: "% of face value", points: "points"};
+  return unit === "currency" ? amount : amount + " " + suffixes[unit];
+}
+async function exerciseQuotePrecision({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot}) {
+  const locale = round === 1 ? "ru" : "en";
+  await configureViewport(round === 1 ? 320 : 390);
+  assert.deepEqual(serverContracts.market_precision_cases.map(item => item.key), ["tiny", "nano", "percent", "points", "large", "int64"], "Precision cases are generated by the real market REST and SSE endpoints");
+  for (const precision of serverContracts.market_precision_cases) {
+    await exerciseQuotePrecisionCase({send, round, base, wait, click, evaluate, checkLayout, screenshot, locale, precision});
+  }
+  console.log(`PASS market precision round ${round}: actual REST and SSE, batch table, nano and exact extrema, chart keyboard and narrow layout in ${locale}`);
+}
+async function exerciseQuotePrecisionCase({send, round, base, wait, click, evaluate, checkLayout, screenshot, locale, precision}) {
+  const key = `signed-precision-${round}-${precision.key}`;
+  const fixture = makeFixture("signed");
+  fixture.precisionCase = precision;
+  fixture.holdMarketStream = true;
+  fixture.holdAssetParts = new Set(["facts"]);
+  fixture.heldAssetParts = new Map();
+  fixture.prefs.document.locale = locale;
+  fixtures.set(key, fixture);
+  const {price_unit: unit, price_currency: currency} = precision.expected;
+  const text = value => expectedQuoteText(value, unit, currency, locale);
+  const expected = text(precision.expected.last_price);
+  await send("Page.navigate", {url: `${base}?case=${key}#account/market/positions`});
+  await wait(`document.documentElement.lang === ${JSON.stringify(locale)} && document.querySelector('#view-market [data-table-quote="synthetic-a"] strong')?.textContent === ${JSON.stringify(expected)}`, "Batch quote preserves exact source digits: " + precision.key);
+  await checkLayout(`precision-table-${precision.key}-${locale}`, {minTables: 1});
+  await click('#view-market [data-asset="synthetic-a"]');
+  await wait(`document.querySelector('#view-asset [data-market-quote] .main-value')?.textContent === ${JSON.stringify(text(precision.market.last_price))} && document.querySelector('#view-asset .chart-svg')`, "Actual REST quote and candles retain their precision: " + precision.key);
+  await until(() => fixture.marketStreams?.size === 1 && fixture.heldAssetParts.has("facts"), "The initial precision stream is open while auxiliary facts remain held");
+  const initialStream = [...fixture.marketStreams][0];
+  fixture.holdAssetParts.delete("facts");
+  fixture.heldAssetParts.get("facts")();
+  fixture.heldAssetParts.delete("facts");
+  await wait('document.querySelector("#view-asset h1")?.textContent === "Synthetic precision contract" && !document.querySelector("#view-asset .loading-panel")', "The precision asset has completed its auxiliary reads");
+  await until(() => fixture.marketStreams.size === 1 && !fixture.marketStreams.has(initialStream), "The final active stream has replaced the closed initial response");
+  assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout strong").textContent'), text(precision.expected.last_close), "Initial chart readout shows the exact last source observation");
+  if (unit !== "currency" && precision.market.cash_price !== null) assert.ok((await evaluate('document.querySelector("#view-asset [data-market-quote] .fine-print").textContent')).includes(expectedQuoteText(precision.market.cash_price, "currency", precision.market.cash_price_currency, locale)), "The REST cash price preserves its displayed source digits");
+  await evaluate('document.querySelector("#view-asset .chart-svg").focus()');
+  const focused = await evaluate('document.activeElement.dataset.chart');
+  fixture.holdMarketStream = false;
+  for (const response of fixture.marketStreams) response.write(precision.market_event);
+  await wait(`document.querySelector('#view-asset [data-market-quote] .main-value')?.textContent === ${JSON.stringify(expected)}`, "Actual SSE replaces the previous REST price without rounding: " + precision.key);
+  assert.equal(await evaluate('document.activeElement.dataset.chart'), focused, "Exact quote updates preserve the chart being inspected");
+  assert.equal((await evaluate('document.querySelector("#view-asset [data-market-quote] .value-change").textContent')).split(" · ")[0], text(precision.expected.absolute_change), "The displayed absolute change matches the independent Decimal source difference");
+  if (unit !== "currency" && precision.expected.cash_price !== null) assert.ok((await evaluate('document.querySelector("#view-asset [data-market-quote] .fine-print").textContent')).includes(expectedQuoteText(precision.expected.cash_price, "currency", precision.market.cash_price_currency, locale)), "The SSE cash price preserves its displayed source digits");
+  for (const [keyName, keyCode, price] of [["Home", 36, precision.expected.first_close], ["End", 35, precision.expected.last_close]]) {
+    await send("Input.dispatchKeyEvent", {type: "keyDown", key: keyName, code: keyName, windowsVirtualKeyCode: keyCode});
+    assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout strong").textContent'), text(price), "Keyboard selection keeps each exact source observation");
+    assert.ok((await evaluate('document.querySelector("#view-asset .chart-svg").getAttribute("aria-label")')).includes(text(price)), "Accessible chart values match the selected source observation");
+  }
+  await checkLayout(`precision-asset-${precision.key}-${locale}`, {minCharts: 1});
+  const bounds = await evaluate(`(() => {
+    const card=document.querySelector("#view-asset .asset-chart-card").getBoundingClientRect();
+    return [...document.querySelectorAll("#view-asset [data-market-quote] .main-value,#view-asset .chart-readout,#view-asset .chart-readout strong")].map(element=>{const rect=element.getBoundingClientRect();return {text:element.textContent,inside:rect.left>=card.left-1 && rect.right<=card.right+1,unclipped:element.scrollWidth<=element.clientWidth+1};});
+  })()`);
+  assert.ok(bounds.every(item => item.inside && item.unclipped), "The full source price and chart readout remain visible inside the narrow card: " + JSON.stringify(bounds));
+  if (["large", "int64"].includes(precision.key)) await screenshot(`precision-${precision.key}-${round}-${locale}.png`);
+  await click('#view-asset [data-asset-tab="metrics"]');
+  const labels = locale === "ru" ? ["Последняя цена", "Максимум периода", "Минимум периода"] : ["Last price", "Period high", "Period low"];
+  await wait(`document.querySelector('#view-asset .asset-tab-content')?.textContent.includes(${JSON.stringify(labels[0])}) && !document.querySelector('#view-asset .asset-tab-content .loading-panel')`, "The metrics screen is ready for exact source values");
+  const metrics = await evaluate('Object.fromEntries([...document.querySelectorAll("#view-asset .asset-tab-content .info-row")].map(row=>[row.querySelector("dt")?.textContent,row.querySelector("dd")?.textContent]))');
+  for (const [index, value] of [precision.expected.last_price, precision.expected.high, precision.expected.low].entries()) assert.equal(metrics[labels[index]], text(value), "Asset metrics preserve the source price for " + labels[index]);
+  assert.equal(fixture.requests.filter(item => !["GET", "HEAD"].includes(item.method)).length, 0, "Reading precise market prices cannot write personal data");
 }
 async function exerciseGuestViewport({
   send,
@@ -2963,6 +4779,68 @@ async function exerciseShortDrawer({configureViewport, round, click, wait, evalu
   await click('#sidebar-nav [data-route="settings"]');
   await wait('document.querySelector("#app-sidebar").dataset.open!=="true" && document.querySelector("#preferences-form")', "Final drawer item opens its page");
 }
+const screenPages = {
+  portfolio: [["history", 1, 0], ["structure", 0, 0], ["positions", 0, 1], ["income", 0, 0], ["operations", 0, 1]],
+  market: [["reference", 1, 0], ["watchlist", 0, 0], ["positions", 0, 1], ["news", 0, 0]],
+  strategies: [["catalog", 0, 0], ["editor", 0, 0], ["assessment", 0, 0], ["research", 0, 0]],
+  analytics: [["history", 1, 0], ["performance", 0, 0], ["income", 0, 0], ["risk", 0, 0]],
+  profile: [["personal", 0, 0], ["identities", 0, 0], ["sessions", 0, 0], ["delete", 0, 0]],
+  settings: [["appearance", 0, 0], ["notifications", 0, 0], ["broker", 0, 0], ["recovery", 0, 0], ["about", 0, 0], ["support", 0, 0]],
+  assistant: [["conversation", 0, 0], ["history", 0, 0], ["memory", 0, 0], ["sources", 0, 0]]
+};
+async function exerciseCompactScreenMenu({send, configureViewport, round, click, wait, evaluate, checkLayout, screenshot, fixture}) {
+  await click('#view-strategies .screen-menu [data-screen="editor"]');
+  await wait('location.hash.endsWith("/strategies/editor") && document.querySelector("#strategy-form")?.getClientRects().length', "Compact navigation opens the existing strategy editor route");
+  const before = await evaluate('({hash:location.hash,history:history.length,value:document.querySelector("#allocation-shares").value})');
+  const saved = clone(fixture.strategy);
+  assert.equal(await evaluate('document.querySelector("#view-strategies .screen-menu-picker").open'), false);
+  assert.ok(await evaluate('document.querySelector("#view-strategies .screen-menu-toggle").textContent.includes("Моя настройка")'));
+  await evaluate('document.querySelector("#view-strategies .screen-menu-toggle").focus()');
+  assert.equal(await evaluate('document.activeElement.matches("#view-strategies .screen-menu-toggle")'), true);
+  for (const [key, code, virtualKey, expected] of [["Enter", "Enter", 13, true], [" ", "Space", 32, false]]) {
+    const nativeKey = {key, code, windowsVirtualKeyCode: virtualKey};
+    // Chromium creates the native Enter keypress only when keyDown carries text.
+    const text = key === "Enter" ? "\r" : key;
+    await send("Input.dispatchKeyEvent", {...nativeKey, type: "keyDown", text, unmodifiedText: text});
+    await send("Input.dispatchKeyEvent", {...nativeKey, type: "keyUp"});
+    await wait(`document.querySelector('#view-strategies .screen-menu-picker').open===${expected}`, "Native keyboard activation toggles the section summary: " + code);
+  }
+  assert.deepEqual(await evaluate('({hash:location.hash,history:history.length,value:document.querySelector("#allocation-shares").value})'), before, "Opening a menu cannot navigate or change a draft");
+  for (const width of [1366, 390, 320]) {
+    await configureViewport(width);
+    await wait(`document.querySelector('#view-strategies .screen-menu-picker').open===${width > 960}`, "The menu matches its breakpoint without a page reload");
+    assert.equal(await evaluate(`document.activeElement.matches(${JSON.stringify(width > 960 ? '.screen-menu [aria-current="page"]' : '.screen-menu-toggle')})`), true, "Responsive changes keep keyboard focus on a visible navigation control");
+    assert.deepEqual(await evaluate('({hash:location.hash,history:history.length,value:document.querySelector("#allocation-shares").value})'), before);
+    await evaluate('window.scrollTo({top:0,behavior:"instant"})');
+    if (width <= 390) {
+      const placement = await evaluate('(() => {const field=document.querySelector("#allocation-shares").getBoundingClientRect();const nav=document.querySelector("#mobile-nav").getBoundingClientRect();return {top:field.top,bottom:field.bottom,navTop:nav.top};})()');
+      assert.ok(placement.top >= 0 && placement.bottom <= placement.navTop, "The first allocation control is visible above mobile navigation with the menu closed");
+    }
+    await checkLayout(`compact-strategy-${round}/${width}`);
+    await screenshot(`strategy-compact-${round}-${width}.png`);
+  }
+  assert.deepEqual(fixture.strategy, saved, "Changing screen density does not save or replace the strategy");
+  console.log(`PASS compact section menu round ${round}: native keyboard, responsive focus, stable route/draft and visible mobile fields`);
+}
+async function exerciseScreenPages({view, label, click, wait, evaluate, checkLayout, screenshot, width}) {
+  for (const [screen, minCharts, minTables] of screenPages[view] || []) {
+    await click(`#view-${view} .screen-menu [data-screen="${screen}"]`);
+    const selector = `#view-${view} [data-screen-content="${screen}"]`;
+    await wait(`location.hash.startsWith(${JSON.stringify(`#account/${view}/${screen}`)}) && document.querySelector(${JSON.stringify(selector)})?.getClientRects().length`, `${label}: open ${screen} through its menu`);
+    if (minCharts) await wait(`document.querySelector(${JSON.stringify(selector + " .chart-plot")})?.getClientRects().length`, `${label}/${screen}: confirmed observations render a chart`);
+    if (minTables) await wait(`document.querySelector(${JSON.stringify(selector + " .table-scroll tbody tr")})?.getClientRects().length`, `${label}/${screen}: real rows render a table`);
+    const visible = await evaluate(`[...document.querySelectorAll(${JSON.stringify(`#view-${view} [data-screen-content]`)})].filter(element=>element.getClientRects().length).map(element=>element.dataset.screenContent)`);
+    assert.ok(visible.length > 0 && visible.every(value => value === screen), `${label}/${screen}: only the selected information page is visible`);
+    if (view === "strategies" && screen === "editor") assert.equal(await evaluate('Boolean(document.querySelector("#strategy-form")?.getClientRects().length)'), true, "The strategy editor has its own reachable page");
+    if (view === "settings" && screen === "support") await wait("document.querySelector('#workspace-support a[href^=\"mailto:\"]')", "Support displays the configured user-initiated contact");
+    await checkLayout(`${label}/${screen}`, {minCharts, minTables});
+    if (width === 390 && (minCharts || minTables)) await screenshot(`${view}-${screen}-${label.replaceAll(/[^a-z0-9-]/gi, "-")}.png`);
+  }
+  if (screenPages[view]) {
+    await click(`#sidebar-nav [data-route="${view}"]`);
+    await wait(`location.hash === ${JSON.stringify(`#account/${view}`)}`, `${label}: return to section overview`);
+  }
+}
 async function exerciseViewport({
   send,
   configureViewport,
@@ -3021,9 +4899,11 @@ async function exerciseViewport({
     await wait(`!document.querySelector('#view-${view}').hidden && document.querySelector('#view-${view}').textContent.length>20`, view);
     if (view === "strategies") await wait('document.querySelector("#strategy-form") && !document.querySelector("#view-strategies .loading-panel")', "Strategy loaded");
     if (view === "settings") await wait('document.querySelector("#preferences-form")', "Server preferences loaded");
+    if (view === "strategies" && width === 320) await exerciseCompactScreenMenu({send, configureViewport, round, click, wait, evaluate, checkLayout, screenshot, fixture});
     await delay(80);
     await checkLayout(`${view} ${round}/${width}`);
     if (width <= 390) await screenshot(`${view}-${round}-${width}.png`);
+    await exerciseScreenPages({view, label: `${view} ${round}/${width}`, click, wait, evaluate, checkLayout, screenshot, width});
   }
   assert.equal(await evaluate('document.querySelector("#assistant-form textarea").disabled'), true, "Disconnected AI cannot fabricate answers");
   if (width === 390) await exerciseAssistantAndBilling({fixture,click,fieldValue,wait,evaluate,checkLayout});
@@ -3069,7 +4949,7 @@ async function exerciseViewport({
     await until(() => fixture.marketStreams?.size === 1, "Only the current instrument stream remains open");
     for (const response of fixture.marketStreams) response.write(serverContracts.instrument_status_event);
     await until(() => fixture.marketStreams.size === 0, "The server's terminal status closes the browser stream");
-    await wait('document.querySelector("#view-asset [data-market-source]").textContent.includes("Недоступно")', "The terminal source state remains visible while the chart has focus");
+    await wait('document.querySelector("#view-asset [data-market-source]").textContent.includes("Восстанавливаем поток")', "The terminal source state remains visible while the chart has focus");
   }
   await click('#view-asset [data-watch]');
   await until(() => fixture.prefs.document.watchlist.length === 1, "Persistent watchlist");
@@ -3093,6 +4973,7 @@ async function exerciseViewport({
   await until(() => fixture.selection.document.profile.reserve_rub === "123457789.12345678", "Exact decimal step");
   await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Saved custom parameters");
   assert.equal(fixture.selection.document.customized, true);
+  if (width === 390) await exerciseStrategyNumericFields({fixture, click, fieldValue, wait, evaluate});
   await screenshot(`strategies-${round}-${width}.png`);
   await exerciseCustomStrategyRestore({
     fixture,
@@ -3177,9 +5058,15 @@ async function exerciseViewport({
     assert.equal(await evaluate('document.querySelector("#main-content").textContent.includes("Тестовая компания")'), false, "Late old-profile response cannot restore data");
     assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Мой профиль");
   }
-  const browserStorage = await evaluate('({local:Object.keys(localStorage),session:Object.keys(sessionStorage)})');
+  const browserStorage = await evaluate('({local:Object.keys(localStorage),session:Object.keys(sessionStorage),lastRoute:localStorage.getItem("omnicio-last-route"),installDismissed:localStorage.getItem("omnicio-install-dismissed")})');
   assert.deepEqual(browserStorage.session, [], "Private session data never enters sessionStorage");
-  assert.ok(browserStorage.local.every(key => key === "omnicio-theme"), "Only a display theme may enter localStorage");
+  const unexpectedStorageKeys = browserStorage.local.filter(key => !["omnicio-theme", "omnicio-last-route", "omnicio-install-dismissed"].includes(key));
+  assert.deepEqual(unexpectedStorageKeys, [], "Only display preferences, the installation dismissal and a sanitized page route may enter localStorage");
+  if (browserStorage.local.includes("omnicio-install-dismissed")) assert.equal(browserStorage.installDismissed, "true", "The installation preference stores only the dismissal flag, without identifiers or content");
+  if (browserStorage.lastRoute) {
+    assert.equal(browserStorage.lastRoute.includes("?"), false, "The persistent last page cannot include personal IDs or search values");
+    assert.equal(await evaluate('localStorage.getItem("omnicio-last-route") === window.OmniUI.routeHash(window.OmniUI.resumeRoute(window.OmniUI.parseRoute(localStorage.getItem("omnicio-last-route"))))'), true, "The persistent page passes the same resume allowlist as startup");
+  }
   assert.deepEqual(await evaluate("window.__browserErrors"), [], "No browser errors after workflows");
   console.log(`PASS round ${round}, ${width}px: layout, navigation, search, real charts, strategies, goals, events, settings, session isolation`);
 }
@@ -3193,7 +5080,8 @@ async function assertStrategyPane(evaluate, pane, focused = false) {
       return {id:tab.id,selected:tab.getAttribute('aria-selected')==='true',tabIndex:tab.tabIndex,panel:panel?.id,role:panel?.getAttribute('role'),labelledBy:panel?.getAttribute('aria-labelledby'),hidden:panel?.hidden};
     }),
     visibleOptions:[...document.querySelectorAll('.strategy-option')].filter(option=>option.getClientRects().length).length,
-    editor:Boolean(document.querySelector('#strategy-form')?.getClientRects().length)
+    editorPresent:Boolean(document.querySelector('#strategy-form')),
+    editorVisible:Boolean(document.querySelector('#strategy-form')?.getClientRects().length)
   }))()`);
   assert.equal(state.tabs.length, 2, "The strategy source control exposes two tabs");
   for (const tab of state.tabs) {
@@ -3205,7 +5093,8 @@ async function assertStrategyPane(evaluate, pane, focused = false) {
     assert.equal(tab.hidden, !selected, "Inactive source panels are hidden");
   }
   assert.equal(state.visibleOptions, pane === "catalog" ? 10 : 0, "The ten preset choices belong only to the catalog panel");
-  assert.equal(state.editor, true, "Browsing sources preserves the current strategy editor");
+  assert.equal(state.editorPresent, true, "Browsing sources preserves the current strategy form");
+  assert.equal(state.editorVisible, false, "The current strategy editor has a separate page from its source catalogue");
   if (focused) assert.equal(state.focused, "strategy-tab-" + pane, "Keyboard tab selection preserves focus on the selected tab");
 }
 async function exerciseStrategyTabs({
@@ -3215,6 +5104,7 @@ async function exerciseStrategyTabs({
   send,
   wait
 }) {
+  await click('#view-strategies .screen-menu [data-screen="catalog"]');
   await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved" && !document.querySelector("[data-action=strategy-apply-custom]").disabled', "Saved strategy and personal conditions before tab navigation");
   const version = fixture.selection.version;
   const document = clone(fixture.selection.document);
@@ -3267,6 +5157,31 @@ async function exerciseStrategyTabs({
   assert.equal(strategyWrites(fixture), writes + 1, "Only the explicit Create action writes");
   await assertStrategyPane(evaluate, "custom");
   await click('#strategy-tab-catalog');
+}
+async function exerciseStrategyNumericFields({fixture, click, fieldValue, wait, evaluate}) {
+  const saved = clone(fixture.selection.document);
+  const writes = strategyWrites(fixture);
+  const keys = ["yield_margin_pp", "fund_wrapper_cap_percent"];
+  for (const key of keys) {
+    await fieldValue("#strategy-form", `strategy.rules.${key}`, "");
+    assert.equal(await evaluate(`document.querySelector('[name="strategy.rules.${key}"]').validity.valueMissing`), true, "Required rules are validated by the real rendered input");
+  }
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="error"', "Invalid rule input blocks autosave visibly");
+  await click('#sidebar-nav [data-route="portfolio"]');
+  await wait('!document.querySelector("#view-portfolio").hidden', "Leaving the strategy editor finishes before returning");
+  await click('#sidebar-nav [data-route="strategies"]');
+  await wait('!document.querySelector("#view-strategies").hidden && document.querySelector("#strategy-form")', "The editor is rebuilt after navigation");
+  await delay(700);
+  assert.equal(strategyWrites(fixture), writes, "Removing and rebuilding the form cannot save invalid rules as null");
+  assert.deepEqual(fixture.selection.document, saved, "Invalid input preserves all previously saved parameters");
+  for (const [index, key] of keys.entries()) {
+    assert.equal(await evaluate(`document.querySelector('[name="strategy.rules.${key}"]').getAttribute('aria-invalid')`), "true", "Validation survives the rebuilt editor");
+    await fieldValue("#strategy-form", `strategy.rules.${key}`, saved.rules[key]);
+    if (index === 0) assert.equal(await evaluate('document.querySelector("[data-save-status=strategy]").dataset.state'), "error", "Repairing one rule cannot hide the other invalid rule");
+  }
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Restoring the original valid rules clears the local error");
+  await delay(700);
+  assert.equal(strategyWrites(fixture), writes, "Repairing back to saved values requires no duplicate write");
 }
 async function exerciseCustomStrategyRestore({
   fixture,
@@ -3586,7 +5501,10 @@ async function exerciseInterruptedRecoveryRead({fixture, click, wait, evaluate})
     fixture.holdExecutionReads = false;
     fixture.heldExecutionReads.splice(0).forEach(release => release());
   }
+  const historyReadsBeforeResume = fixture.requests.filter(item => item.method === "GET" && item.path === "/api/portfolio/executions").length;
   await evaluate('window.dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}))');
+  await until(() => fixture.requests.filter(item => item.method === "GET" && item.path === "/api/portfolio/executions").length > historyReadsBeforeResume, "Restored page starts a new execution readback");
+  await wait('document.querySelector("#recovery-settings [data-action=recovery-reload]")?.disabled===false && !document.querySelector("#recovery-settings .loading-panel")', "Automatic page restoration finishes before a manual history retry");
   await click('[data-action="recovery-reload"]');
   await wait('document.querySelector(\'#recovery-settings [data-recovery-id="synthetic-run"] strong\')?.textContent==="Отменено" && document.querySelector("[data-action=disconnect-start]").disabled===false', "Only a new successful terminal readback restores disconnect after cancellation");
 }

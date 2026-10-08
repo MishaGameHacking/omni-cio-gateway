@@ -24,7 +24,7 @@ from omnicio.observer import (
     _scheduled_day,
     provider_read,
 )
-from omnicio.portfolio import PortfolioAnalysis
+from omnicio.portfolio import PortfolioAnalysis, analyze_portfolio
 from omnicio.portfolio_store import (
     BrokerSyncState,
     JobRunRecord,
@@ -33,9 +33,11 @@ from omnicio.portfolio_store import (
 )
 from omnicio.tbank import (
     TBankAccount,
+    TBankInstrumentMetadata,
     TBankMoney,
     TBankOperationsPage,
     TBankPortfolio,
+    TBankPortfolioPosition,
     TBankPositions,
     TBankUnavailable,
     TBankUserInfo,
@@ -63,6 +65,7 @@ def analysis(status: str = "observed") -> PortfolioAnalysis:
         sectors=(),
         securities=(),
         observations=(),
+        valuation_status="complete" if status == "observed" else "unknown",
     )
 
 
@@ -115,7 +118,7 @@ class FakeStore:
         self.database = Mock(spec=Database)
         self.scheduled: list[date] = []
 
-    def observer_lock(self):
+    def observer_lock(self, user_id=None):
         return nullcontext(self.lock_available)
 
     def observer_user_ids(self) -> tuple[UUID, ...]:
@@ -173,6 +176,11 @@ class FakeStore:
     def current_profile(self, user_id: UUID):
         assert user_id == USER_ID
         return None
+
+    def reuse_snapshot_metadata(self, user_id: UUID, *, job_run_id: UUID, bundle):
+        assert user_id == USER_ID
+        assert job_run_id
+        return bundle
 
     def save_snapshot(
         self,
@@ -932,3 +940,88 @@ def test_observer_does_not_log_provider_or_sql_exception_text(caplog, failure_in
     assert "sensitive-provider-value" not in caplog.text
     assert "sensitive-sql-value" not in caplog.text
     assert all(record.exc_info is None for record in caplog.records)
+
+
+def test_native_observer_owner_locks_allow_parallel_accounts_and_exclude_legacy_worker(
+    connected_database,
+):
+    database, store, _ = connected_database
+    another = uuid4()
+    with store.observer_lock(USER_ID) as first:
+        assert first
+        with PortfolioStore(database).observer_lock(USER_ID) as same:
+            assert not same
+        with PortfolioStore(database).observer_lock(another) as independent:
+            assert independent
+        with PortfolioStore(database).observer_lock() as legacy:
+            assert not legacy
+    with store.observer_lock() as legacy:
+        assert legacy
+        with PortfolioStore(database).observer_lock(USER_ID) as blocked:
+            assert not blocked
+    with store.observer_lock(USER_ID) as released:
+        assert released
+
+
+def test_native_quick_refresh_restores_persisted_metadata_and_original_user_info_time(
+    connected_database,
+):
+    database, store, admin = connected_database
+    connect_user(database)
+    job = claim_job(store)
+    now, original = datetime.now(UTC), datetime.now(UTC) - timedelta(days=3)
+    metadata = tuple(TBankInstrumentMetadata(
+        uid=uid, name=f"Verified {uid}", ticker=uid.upper(), isin="", instrument_type=kind,
+        sector="financial", country_of_risk="RU", for_qual_investor=False,
+    ) for uid, kind in (("share", "share"), ("fund", "etf")))
+    positions = tuple(TBankPortfolioPosition(
+        ticker=item.ticker, figi="", instrument_uid=item.uid, instrument_type=item.instrument_type,
+        quantity="1", current_price=TBankMoney("RUB", "100"), average_price=None,
+        expected_yield_amount=None, daily_yield=None, blocked=False,
+    ) for item in metadata)
+    base = bundle()
+    portfolio = replace(base.portfolio, positions=positions)
+    observed = replace(
+        base, refreshed_at=original, portfolio=portfolio, metadata=metadata,
+        analysis=analyze_portfolio(portfolio, base.positions, metadata),
+        sources=tuple(replace(source, retrieved_at=original) for source in base.sources),
+    )
+    info = TBankUserInfo(False, False, ("russian_shares",), "Investor", "CONSERVATIVE")
+    store.save_snapshot(USER_ID, job_run_id=job.id, bundle=observed, user_info=info)
+    store.finish_job(USER_ID, job.id, status="succeeded", details={})
+    store.request_refresh(USER_ID, LEGAL_VERSIONS, scope="quick")
+    quick_job = store.claim_refresh_job(USER_ID, LEGAL_VERSIONS)
+    assert quick_job is not None
+    quick = replace(
+        observed, refreshed_at=now, metadata=(),
+        analysis=analyze_portfolio(portfolio, base.positions, ()),
+        sources=tuple(replace(source, retrieved_at=now, status="not_requested")
+                      for source in observed.sources),
+    )
+    restored = PortfolioStore(database).reuse_snapshot_metadata(
+        USER_ID, job_run_id=quick_job.id, bundle=quick,
+    )
+    assert {item.name for item in restored.analysis.securities} == {
+        "Verified share", "Verified fund",
+    }
+    assert {item.uid: item.sector for item in restored.analysis.securities} == {
+        "share": "financial", "fund": "",
+    }
+    assert restored.sources[0].retrieved_at == original
+    assert restored.sources[0].status == "cached"
+    store.save_snapshot(USER_ID, job_run_id=quick_job.id, bundle=restored)
+    context = store.latest_balancing_context(USER_ID)
+    assert context["broker_user"]["qualified"] is False
+    assert context["broker_user"]["tariff"] == "Investor"
+    assert context["broker_user_as_of"] == original
+    assert context["broker_user_freshness"] == "stale"
+    rows = store.portfolio_visualization(USER_ID, now=now)["latest"]["positions"]
+    assert {row["instrument_uid"]: row["sector"] for row in rows} == {
+        "share": "financial", "fund": "",
+    }
+    catalog_times = admin.execute(
+        "SELECT provider_retrieved_at FROM instrument_catalog WHERE provider='tbank'"
+    ).fetchall()
+    assert all(row[0] == original for row in catalog_times)
+    with pytest.raises(ObservationCancelled):
+        store.reuse_snapshot_metadata(UUID(int=2), job_run_id=quick_job.id, bundle=quick)

@@ -7,8 +7,9 @@ import hmac
 import ipaddress
 import json
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+import re
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import ExitStack, asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime
 from decimal import Decimal
@@ -18,7 +19,9 @@ from uuid import UUID, uuid4
 from fastapi import Cookie, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.types import Receive, Scope, Send
 
+from . import __version__
 from .assistant import (
     AssistantBusy,
     AssistantClient,
@@ -27,6 +30,8 @@ from .assistant import (
     AssistantUnavailable,
     investment_context,
     portfolio_context,
+    source_read,
+    source_search,
 )
 from .assistant_store import AssistantQuotaExceeded, AssistantRequestConflict
 from .billing import BillingConfig, BillingService, BillingUnavailable
@@ -51,9 +56,15 @@ from .execution_store import (
 )
 from .freshness import PORTFOLIO_MAX_AGE, describe_freshness
 from .instrument_facts import instrument_facts
-from .market import MarketService
-from .news import NewsClient, NewsUnavailable
-from .notifications import NotificationConfig, NotificationService, NotificationUnavailable
+from .market import MarketService, MarketStreamLimit
+from .news import NewsClient, NewsNotFound, NewsUnavailable
+from .notifications import (
+    NotificationConfig,
+    NotificationConflict,
+    NotificationRateLimited,
+    NotificationService,
+    NotificationUnavailable,
+)
 from .observer import PortfolioRefreshBusy, PortfolioRefreshCoordinator
 from .portfolio import PortfolioAnalysisError
 from .portfolio_store import (
@@ -77,6 +88,7 @@ from .security import (
     pkce_challenge,
     seal_oauth_flow,
     session_digest,
+    validate_auth_return_to,
 )
 from .service import (
     AccountDeletionRejected,
@@ -88,6 +100,7 @@ from .service import (
 )
 from .strategy import strategy_catalog, validate_selection
 from .strategy_service import current_account_assessment, replay_research_inputs, strategy_research
+from .support import public_support_contact
 from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
 from .tid import TIDClient, TIDRejected, TIDUnavailable
 from .vkid import VKIDClient, VKIDRejected, VKIDUnavailable
@@ -136,6 +149,7 @@ class StartOAuthBody(StrictRequestBody):
     accept_terms: bool
     confirm_age_18: bool
     link_current_account: bool = False
+    return_to: str = Field(default="/#account/home", max_length=2048)
 
 
 class TBankCredentialBody(StrictRequestBody):
@@ -209,6 +223,7 @@ class ExecutionMandateBody(StrictRequestBody):
 
 class WorkspaceRefreshBody(StrictRequestBody):
     expected_public_id: str = Field(pattern=_PUBLIC_ID_PATTERN)
+    scope: Literal["quick", "full"] = "quick"
 
 
 class WorkspaceDocumentBody(StrictRequestBody):
@@ -234,12 +249,17 @@ class EventsReadBody(StrictRequestBody):
 
 class EventsReadAllBody(StrictRequestBody):
     through_revision: int = Field(ge=0, le=9_223_372_036_854_775_807, strict=True)
-    category: Literal["all", "portfolio", "payments", "goals", "system"] = "all"
+    category: Literal["all", "assets", "portfolio", "payments", "goals", "system"] = "all"
 
 
 class PushSubscriptionBody(StrictRequestBody):
     subscription: dict[str, Any]
     label: str = Field(default="Это устройство", min_length=1, max_length=80)
+    intent: Literal["enable", "sync"] = "enable"
+
+
+class PushTestBody(StrictRequestBody):
+    channel_id: UUID
 
 
 class EmailVerificationRequestBody(StrictRequestBody):
@@ -265,14 +285,38 @@ class AssistantConversationBody(StrictRequestBody):
     title: str = Field(default="Новый разговор", min_length=1, max_length=120)
 
 
-class AssistantMessageBody(StrictRequestBody):
+class AssistantContextBody(StrictRequestBody):
+    context: Literal["general", "portfolio", "investment"] = "general"
+    include_news: bool = Field(default=False, strict=True)
+    research_run_id: UUID | None = None
+
+
+class AssistantMessageBody(AssistantContextBody):
     conversation_id: UUID
     request_id: UUID
     expected_version: int = Field(ge=0, strict=True)
     message: str = Field(min_length=1, max_length=4000)
-    context: Literal["general", "portfolio", "investment"] = "general"
-    include_news: bool = Field(default=False, strict=True)
-    research_run_id: UUID | None = None
+    memory_ids: list[UUID] = Field(default_factory=list, max_length=20)
+
+
+class AssistantSourceSearchBody(AssistantContextBody):
+    query: str = Field(min_length=1, max_length=200)
+    limit: int = Field(default=10, ge=1, le=20, strict=True)
+
+
+class AssistantSourceReadBody(AssistantContextBody):
+    source_id: str = Field(min_length=1, max_length=100)
+    request_id: UUID | None = None
+
+
+class AssistantMemoryBody(WorkspaceVersionBody):
+    content: str = Field(min_length=1, max_length=1000)
+    category: Literal["preference", "context"]
+    confirmed: bool = Field(strict=True)
+
+
+class AssistantMemoryCreateBody(AssistantMemoryBody):
+    id: UUID
 
 
 def client_ip(request: Request) -> str:
@@ -481,6 +525,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         operator_user_id=cfg.operator_user_id,
         crypto_key=cfg.notification_crypto_key or cfg.broker_token_crypto_key,
         enabled=cfg.notifications_enabled,
+        email_enabled=cfg.notification_email_enabled,
         vapid_private_key=cfg.notification_vapid_private_key,
         vapid_subject=cfg.notification_vapid_subject,
         smtp_host=cfg.notification_smtp_host,
@@ -496,11 +541,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         notifications.start()
         yield
     finally:
-        try:
-            notifications.close()
-            refresh.close()
-        finally:
-            database.close()
+        # Close every owner of background work even if another shutdown fails.
+        with ExitStack() as shutdown:
+            shutdown.callback(database.close)
+            shutdown.callback(app.state.assistant_service.close)
+            shutdown.callback(app.state.market_service.close)
+            shutdown.callback(refresh.close)
+            shutdown.callback(notifications.close)
 
 
 app = FastAPI(
@@ -536,8 +583,17 @@ async def private_request_boundary(
     request_id = uuid4().hex
     request.state.request_id = request_id
     error_type = ""
+    configured_build = getattr(getattr(request.app.state, "settings", None), "release_build", "")
+    build = (configured_build if isinstance(configured_build, str)
+             and re.fullmatch(r"[0-9a-f]{12}", configured_build) else "")
+    response: Response
     try:
-        response = await call_next(request)
+        if _stale_client_write(request, build):
+            response = JSONResponse(
+                status_code=409, content={"detail": "client_build_changed", "build": build},
+            )
+        else:
+            response = await call_next(request)
     except Exception as exc:
         # Exception text/tracebacks may contain provider credentials or SQL data.
         # Record only a safe class and a generated reference; never request input.
@@ -550,6 +606,9 @@ async def private_request_boundary(
             },
         )
     response.headers["X-Request-ID"] = request_id
+    response.headers["X-Omnicio-Version"] = __version__
+    if build:
+        response.headers["X-Omnicio-Build"] = build
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = _PRIVATE_NO_STORE
     if response.status_code >= 400:
@@ -559,6 +618,20 @@ async def private_request_boundary(
             request_id, route, response.status_code, error_type,
         )
     return response
+
+
+def _stale_client_write(request: Request, build: str) -> bool:
+    """Finish/revoke old work safely, but do not create writes from obsolete bundles."""
+    if (not build or request.method in {"GET", "HEAD", "OPTIONS"}
+            or not request.url.path.startswith("/api/")):
+        return False
+    path = request.url.path
+    if (path.startswith("/api/auth/") or path == "/api/billing/notification"
+            or path in {"/api/me/sessions/revoke", "/api/me/sessions/revoke-others"}
+            or path.endswith("/cancel")
+            or request.method == "DELETE" and path == "/api/portfolio/live-execution/mandate"):
+        return False
+    return request.headers.get("X-Omnicio-Client-Build") != build
 
 
 @app.get("/health/live")
@@ -578,6 +651,7 @@ def ready(request: Request) -> dict[str, str]:
 def auth_config(request: Request) -> dict[str, object]:
     cfg = settings(request)
     return {
+        "release": {"version": __version__, "build": cfg.release_build},
         "mode": cfg.access_mode,
         "auth_provider": "vkid",
         "auth_providers": ["tid", "vkid"],
@@ -589,6 +663,12 @@ def auth_config(request: Request) -> dict[str, object]:
         "tid_configured": bool(cfg.tid_client_id and cfg.tid_client_secret),
         "legal_versions": service(request).legal_versions(),
     }
+
+
+@app.get("/api/public/support")
+def public_support(request: Request) -> dict[str, object]:
+    cfg = settings(request)
+    return public_support_contact(cfg.legal_operator_name, cfg.legal_operator_email)
 
 
 def _start_oauth(
@@ -605,6 +685,10 @@ def _start_oauth(
     if not body.confirm_age_18:
         raise HTTPException(status_code=400, detail="user must confirm age 18+")
     user = authenticated_user(request, session_token) if body.link_current_account else None
+    try:
+        return_to = validate_auth_return_to(body.return_to)
+    except SecurityValueError as exc:
+        raise HTTPException(status_code=422, detail="oauth_return_to_invalid") from exc
     state_value, verifier = generate_oauth_state(), generate_pkce_verifier()
     flow = seal_oauth_flow(
         state=state_value, code_verifier=verifier,
@@ -612,7 +696,12 @@ def _start_oauth(
         crypto_key=cfg.vkid_flow_crypto_key, provider=provider,
         link_user_id=str(user.id) if user else None,
         link_session_digest=session_digest(session_token or "").hex() if user else None,
+        return_to=return_to,
     )
+    # Reserve space for the name and attributes within RFC 6265's 4 KiB baseline.
+    # The encrypted, escaped payload can be much larger than the input route.
+    if len(flow) > 3600:
+        raise HTTPException(status_code=422, detail="oauth_return_to_invalid")
     response.set_cookie(
         VKID_FLOW_COOKIE if provider == "vkid" else TID_FLOW_COOKIE,
         flow, max_age=cfg.vkid_flow_ttl_seconds, httponly=True, secure=True,
@@ -632,6 +721,7 @@ def _start_oauth(
         401: _API_FAILURES[401],
         403: _API_FAILURES[403],
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: _API_FAILURES[422],
         503: {"description": "VK ID login is not configured"},
     },
 )
@@ -649,6 +739,7 @@ def start_vkid(
         401: _API_FAILURES[401],
         403: _API_FAILURES[403],
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: _API_FAILURES[422],
         503: {"description": "T-ID login is not configured"},
     },
 )
@@ -746,7 +837,7 @@ def _oauth_callback(
         return auth_redirect("/?auth_error=provider", provider)
     except (PermissionError, HTTPException):
         return auth_redirect("/?auth_error=account", provider)
-    response = auth_redirect("/?auth=success", provider)
+    response = auth_redirect("/?auth=success" + flow.return_to.removeprefix("/"), provider)
     response.set_cookie(
         SESSION_COOKIE, result.session_token, max_age=result.expires_in_seconds,
         httponly=True, secure=True, samesite="lax", path="/",
@@ -839,14 +930,16 @@ def auth_identities(
     }
 
 
-def _assistant_action(
+def _assistant_action[ActionResult](
     request: Request, token: str | None, user: UserRecord,
-    action: Callable[[], dict[str, Any]], *, write: bool = True,
-) -> dict[str, Any]:
+    action: Callable[[], ActionResult], *, write: bool = True,
+) -> ActionResult:
     try:
         payload = action()
     except SettingsVersionConflict:
         raise
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="authentication required") from exc
     except AssistantNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (AssistantBusy, AssistantQuotaExceeded) as exc:
@@ -858,7 +951,8 @@ def _assistant_action(
         raise HTTPException(status_code=502, detail="assistant_unavailable") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _workspace_result(request, token, user, payload, write=write)
+    _workspace_result(request, token, user, {}, write=write)
+    return payload
 
 
 @app.get(
@@ -1092,7 +1186,7 @@ def _assistant_position_context(
 
 
 def _assistant_investment_context(
-    request: Request, user: UserRecord, body: AssistantMessageBody, snapshot: dict[str, Any],
+    request: Request, user: UserRecord, body: AssistantContextBody, snapshot: dict[str, Any],
 ) -> dict[str, Any]:
     visualization = portfolio_store(request).portfolio_visualization(user.id, history_limit=2)
     strategy = portfolio_store(request).current_strategy_draft(user.id)
@@ -1113,7 +1207,7 @@ def _assistant_investment_context(
 
 
 def _selected_assistant_context(
-    request: Request, user: UserRecord, body: AssistantMessageBody,
+    request: Request, user: UserRecord, body: AssistantContextBody,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if body.context != "investment" and (body.include_news or body.research_run_id is not None):
         raise HTTPException(status_code=422, detail="assistant_context_selection_invalid")
@@ -1129,6 +1223,37 @@ def _selected_assistant_context(
         "research_run_id": str(body.research_run_id) if body.research_run_id else None,
     }
     return context, snapshot.get("connection")
+
+
+def _assistant_context_validator(
+    request: Request, session_token: str | None, user: UserRecord,
+    connection: dict[str, Any] | None,
+) -> Callable[[], None]:
+    def validate() -> None:
+        current = _workspace_editor(request, session_token)
+        if current.id != user.id:
+            raise HTTPException(status_code=409, detail="profile_context_changed")
+        if connection is not None:
+            latest = asdict(broker_service(request).status(user.id))
+            if any(str(latest.get(key)) != str(connection.get(key))
+                   for key in ("connected", "account_id", "environment", "verified_at")):
+                raise HTTPException(status_code=409, detail="assistant_context_changed")
+    return validate
+
+
+def _prepare_assistant_message(
+    request: Request, session_token: str | None, user: UserRecord, body: AssistantContextBody,
+) -> tuple[AssistantService, dict[str, Any] | None, Callable[[], None]]:
+    assistant = cast(AssistantService, request.app.state.assistant_service)
+    activation = assistant.status(user.id)
+    if not activation.get("enabled"):
+        raise AssistantNotConfigured("assistant_activation_disabled")
+    if not activation.get("configured"):
+        raise AssistantNotConfigured("assistant_not_configured")
+    evidence, connection = _selected_assistant_context(request, user, body)
+    validate = _assistant_context_validator(request, session_token, user, connection)
+    validate()
+    return assistant, evidence, validate
 
 @app.post(
     "/api/assistant/messages",
@@ -1148,34 +1273,181 @@ def assistant_message(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, Any]:
     user = _workspace_editor(request, session_token)
-    assistant = cast(AssistantService, request.app.state.assistant_service)
-
     def send() -> dict[str, Any]:
-        status = assistant.status(user.id)
-        if not status.get("enabled"):
-            raise AssistantNotConfigured("assistant_activation_disabled")
-        if not status.get("configured"):
-            raise AssistantNotConfigured("assistant_not_configured")
-        evidence, connection = _selected_assistant_context(request, user, body)
-
-        def validate_context() -> None:
-            current = _workspace_editor(request, session_token)
-            if current.id != user.id:
-                raise HTTPException(status_code=409, detail="profile_context_changed")
-            if connection is not None:
-                latest = asdict(broker_service(request).status(user.id))
-                if any(str(latest.get(key)) != str(connection.get(key))
-                       for key in ("connected", "account_id", "environment", "verified_at")):
-                    raise HTTPException(status_code=409, detail="assistant_context_changed")
-
-        validate_context()
+        assistant, evidence, validate_context = _prepare_assistant_message(
+            request, session_token, user, body,
+        )
         return assistant.chat(
             user.id, body.conversation_id, message=body.message, context=evidence,
             request_id=body.request_id, expected_version=body.expected_version,
-            validate_context=validate_context,
+            validate_context=validate_context, memory_ids=body.memory_ids,
         )
 
     return _assistant_action(request, session_token, user, send)
+
+
+def _assistant_sse_events(
+    request: Request, session_token: str | None, user: UserRecord,
+    events: Iterator[dict[str, Any]],
+) -> Iterator[str]:
+    for item in events:
+        try:
+            _workspace_result(request, session_token, user, {}, write=True)
+        except HTTPException:
+            yield _PROFILE_CHANGED_EVENT
+            return
+        event = item["event"]
+        if event not in {"accepted", "status", "delta", "complete", "cancelled", "error"}:
+            raise ValueError("assistant_stream_event_invalid")
+        encoded = json.dumps(item["data"], ensure_ascii=False, default=str, separators=(",", ":"))
+        yield f"event: {event}\ndata: {encoded}\n\n"
+
+
+@app.post("/api/assistant/messages/stream", responses=_API_FAILURES)
+def assistant_message_stream(
+    body: AssistantMessageBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> StreamingResponse:
+    user = _workspace_editor(request, session_token)
+
+    def start() -> Iterator[dict[str, Any]]:
+        assistant, evidence, validate = _prepare_assistant_message(
+            request, session_token, user, body,
+        )
+        return assistant.stream(
+            user.id, body.conversation_id, message=body.message, context=evidence,
+            request_id=body.request_id, expected_version=body.expected_version,
+            validate_context=validate, memory_ids=body.memory_ids,
+        )
+
+    events = _assistant_action(request, session_token, user, start)
+    return StreamingResponse(
+        _assistant_sse_events(request, session_token, user, events),
+        media_type="text/event-stream",
+        headers={"Cache-Control": _PRIVATE_NO_STORE, "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/assistant/requests/{request_id}", responses=_API_FAILURES)
+def assistant_request_state(
+    request_id: UUID, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    assistant = cast(AssistantService, request.app.state.assistant_service)
+    return _assistant_action(request, session_token, user,
+                             lambda: assistant.stream_request(user.id, request_id), write=False)
+
+
+@app.post("/api/assistant/requests/{request_id}/cancel", responses=_API_FAILURES)
+def assistant_request_cancel(
+    request_id: UUID, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    require_same_origin(request)
+    user = authenticated_user(request, session_token)
+    assistant = cast(AssistantService, request.app.state.assistant_service)
+    return _assistant_action(request, session_token, user,
+                             lambda: assistant.cancel_request(user.id, request_id), write=False)
+
+
+@app.get("/api/assistant/memory", responses=_API_FAILURES)
+def assistant_memory(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    assistant = cast(AssistantService, request.app.state.assistant_service)
+    return _assistant_action(request, session_token, user,
+                             lambda: assistant.list_memory(user.id), write=False)
+
+
+def _save_assistant_memory(
+    memory_id: UUID, body: AssistantMemoryBody, request: Request, session_token: str | None,
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    assistant = cast(AssistantService, request.app.state.assistant_service)
+    return _assistant_action(request, session_token, user, lambda: assistant.save_memory(
+        user.id, memory_id, body.content, body.category,
+        expected_version=body.expected_version, confirmed=body.confirmed,
+    ))
+
+
+@app.post("/api/assistant/memory", responses=_API_FAILURES)
+def assistant_memory_create(
+    body: AssistantMemoryCreateBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    if body.expected_version != 0:
+        raise HTTPException(status_code=422, detail="assistant_memory_version_invalid")
+    return _save_assistant_memory(body.id, body, request, session_token)
+
+
+@app.put("/api/assistant/memory/{memory_id}", responses=_API_FAILURES)
+def assistant_memory_update(
+    memory_id: UUID, body: AssistantMemoryBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    if body.expected_version < 1:
+        raise HTTPException(status_code=422, detail="assistant_memory_version_invalid")
+    return _save_assistant_memory(memory_id, body, request, session_token)
+
+
+@app.delete("/api/assistant/memory/{memory_id}", responses=_API_FAILURES)
+def assistant_memory_delete(
+    memory_id: UUID, body: WorkspaceVersionBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    assistant = cast(AssistantService, request.app.state.assistant_service)
+    return _assistant_action(request, session_token, user, lambda: {
+        "deleted": assistant.delete_memory(user.id, memory_id,
+                                            expected_version=body.expected_version),
+    })
+
+
+def _assistant_source_action(
+    body: AssistantContextBody, request: Request, session_token: str | None,
+    action: Callable[[dict[str, Any] | None], dict[str, Any]],
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+
+    def read() -> dict[str, Any]:
+        context, connection = _selected_assistant_context(request, user, body)
+        payload = action(context)
+        _assistant_context_validator(request, session_token, user, connection)()
+        return payload
+
+    return _assistant_action(request, session_token, user, read, write=False)
+
+
+@app.post("/api/assistant/sources/search", responses=_API_FAILURES)
+def assistant_sources_search(
+    body: AssistantSourceSearchBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    return _assistant_source_action(body, request, session_token,
+                                    lambda context: source_search(context, body.query,
+                                                                   limit=body.limit))
+
+
+@app.post("/api/assistant/sources/read", responses=_API_FAILURES)
+def assistant_sources_read(
+    body: AssistantSourceReadBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    request_id = body.request_id
+    if request_id is not None:
+        require_same_origin(request)
+        user = authenticated_user(request, session_token)
+        assistant = cast(AssistantService, request.app.state.assistant_service)
+        return _assistant_action(
+            request, session_token, user,
+            lambda: assistant.read_request_source(user.id, request_id, body.source_id),
+            write=False,
+        )
+    return _assistant_source_action(body, request, session_token,
+                                    lambda context: source_read(context, body.source_id))
 
 
 @app.get(
@@ -1216,6 +1488,25 @@ def get_workspace_refresh(
     return {**payload, "public_id": format_public_id(user.public_id)}
 
 
+@app.get("/api/workspace/operations", responses=_API_FAILURES)
+def get_workspace_operations(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    cursor: str | None = Query(default=None, max_length=2048),
+    from_at: datetime | None = None,
+    to_at: datetime | None = None,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    try:
+        payload = workspace_store(request).operations(
+            user.id, limit=limit, cursor=cursor, from_at=from_at, to_at=to_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _workspace_result(request, session_token, user, payload)
+
+
 @app.post(
     "/api/workspace/refresh",
     responses={
@@ -1231,7 +1522,7 @@ def request_workspace_refresh(
 ) -> dict[str, object]:
     user = _settings_editor_user(request, session_token, body.expected_public_id)
     try:
-        payload = portfolio_refresh(request).request(user.id)
+        payload = portfolio_refresh(request).request(user.id, scope=body.scope)
     except PortfolioRefreshBusy as exc:
         raise HTTPException(
             status_code=429, detail="portfolio_refresh_busy", headers={"Retry-After": "2"},
@@ -1447,7 +1738,8 @@ def get_events(
     request: Request,
     limit: int = Query(default=50, ge=1, le=100),
     unread_only: bool = Query(default=False),
-    category: Literal["all", "portfolio", "payments", "goals", "system"] = "all",
+    important_only: bool = Query(default=False),
+    category: Literal["all", "assets", "portfolio", "payments", "goals", "system"] = "all",
     cursor: str | None = Query(default=None, max_length=1000),
     query: str = Query(default="", max_length=200),
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -1456,11 +1748,22 @@ def get_events(
     try:
         payload = workspace_store(request).events(
             user.id, limit=limit, unread_only=unread_only, category=category,
-            cursor=cursor, query=query,
+            cursor=cursor, query=query, important_only=important_only,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _workspace_result(request, session_token, user, payload)
+
+
+@app.get("/api/events/summary", responses=_API_FAILURES)
+def get_events_summary(
+    request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    return _workspace_result(
+        request, session_token, user, workspace_store(request).events_summary(user.id),
+    )
 
 
 @app.get(
@@ -1678,6 +1981,14 @@ def _notification_write(
         payload = action()
     except NotificationUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except NotificationConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except NotificationRateLimited as exc:
+        raise HTTPException(
+            status_code=429, detail=str(exc), headers={"Retry-After": "60"},
+        ) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="session_expired") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _workspace_result(request, token, user, payload, write=True)
@@ -1697,7 +2008,11 @@ def notification_status(
 ) -> dict[str, Any]:
     user = authenticated_user(request, session_token)
     notification = cast(NotificationService, request.app.state.notification_service)
-    return _workspace_result(request, session_token, user, notification.status(user.id))
+    try:
+        payload = notification.status(user.id, session_digest=session_digest(session_token or ""))
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="session_expired") from exc
+    return _workspace_result(request, session_token, user, payload)
 
 
 @app.post(
@@ -1707,6 +2022,7 @@ def notification_status(
         403: _API_FAILURES[403],
         409: _API_FAILURES[409],
         422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
         503: _API_FAILURES[503],
     },
 )
@@ -1717,7 +2033,31 @@ def notification_subscribe_push(
     user = _workspace_editor(request, session_token)
     notification = cast(NotificationService, request.app.state.notification_service)
     return _notification_write(request, session_token, user, lambda: notification.subscribe_push(
-        user.id, body.subscription, label=body.label,
+        user.id, body.subscription, label=body.label, intent=body.intent,
+        session_digest=session_digest(session_token or ""),
+    ))
+
+
+@app.post(
+    "/api/notifications/push/test",
+    responses={
+        401: _API_FAILURES[401],
+        403: _API_FAILURES[403],
+        404: _API_FAILURES[404],
+        409: _API_FAILURES[409],
+        422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
+        503: _API_FAILURES[503],
+    },
+)
+def notification_test_push(
+    body: PushTestBody, request: Request,
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = _workspace_editor(request, session_token)
+    notification = cast(NotificationService, request.app.state.notification_service)
+    return _notification_write(request, session_token, user, lambda: notification.test_push(
+        user.id, body.channel_id, session_digest=session_digest(session_token or ""),
     ))
 
 
@@ -1728,6 +2068,7 @@ def notification_subscribe_push(
         403: _API_FAILURES[403],
         409: _API_FAILURES[409],
         422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
         503: _API_FAILURES[503],
     },
 )
@@ -1750,6 +2091,7 @@ def notification_request_email(
         403: _API_FAILURES[403],
         409: _API_FAILURES[409],
         422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
         503: _API_FAILURES[503],
     },
 )
@@ -1771,6 +2113,7 @@ def notification_verify_email(
         403: _API_FAILURES[403],
         409: _API_FAILURES[409],
         422: _API_FAILURES[422],
+        429: _API_FAILURES[429],
         503: _API_FAILURES[503],
     },
 )
@@ -1921,16 +2264,35 @@ def system_recovery(
 
 
 @app.get("/api/public/news", responses={
+    422: _API_FAILURES[422],
     503: {"description": "Public news sources are temporarily unavailable"},
 })
-def public_news(request: Request) -> dict[str, Any]:
+def public_news(
+    request: Request, query: str = Query(default="", max_length=200),
+    limit: int = Query(default=10, ge=1, le=20),
+) -> dict[str, Any]:
     client: NewsClient = request.app.state.news_client
     try:
-        return client.headlines()
+        return client.search(query, limit=limit) if query.strip() else client.headlines()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="news_query_invalid") from exc
     except NewsUnavailable as exc:
         raise HTTPException(
             status_code=503, detail="news_source_unavailable", headers={"Retry-After": "60"},
         ) from exc
+
+
+@app.get("/api/public/news/{source_id}", responses=_API_FAILURES)
+def public_news_article(source_id: str, request: Request) -> dict[str, Any]:
+    client: NewsClient = request.app.state.news_client
+    try:
+        return client.read_source(source_id)
+    except NewsNotFound as exc:
+        raise HTTPException(status_code=404, detail="news_source_not_found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="news_source_id_invalid") from exc
+    except NewsUnavailable as exc:
+        raise HTTPException(status_code=503, detail="news_source_unavailable") from exc
 
 
 @app.get(
@@ -2005,7 +2367,7 @@ def cbr_market_indicators(
     response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
-    authenticated_user(request, session_token)
+    user = authenticated_user(request, session_token)
     try:
         snapshot = market_service(request).cbr_indicators()
     except CBRUnavailable as exc:
@@ -2014,7 +2376,7 @@ def cbr_market_indicators(
             detail="Bank of Russia indicators unavailable",
         ) from exc
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return asdict(snapshot)
+    return _workspace_result(request, session_token, user, asdict(snapshot))
 
 
 @app.get(
@@ -2044,7 +2406,7 @@ def usd_rub_market_snapshot(
             status_code=503,
             detail="USD/RUB market quote unavailable",
         ) from exc
-    return asdict(snapshot)
+    return _workspace_result(request, session_token, user, asdict(snapshot))
 
 
 async def _stream_session_current(
@@ -2099,9 +2461,41 @@ async def _usd_rub_market_events(
         await asyncio.sleep(delay)
 
 
+class _MarketStreamingResponse(StreamingResponse):
+    def __init__(
+        self, events: AsyncIterator[str], market: MarketService, user_id: UUID, lease: str,
+    ) -> None:
+        super().__init__(events, media_type="text/event-stream", headers={
+            "Cache-Control": _PRIVATE_NO_STORE, "X-Accel-Buffering": "no",
+        })
+        self.market = market
+        self.user_id = user_id
+        self.lease = lease
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # A disconnect may happen while sending response.start, before the
+        # body iterator or a Starlette background task can perform cleanup.
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self.market.release_stream(self.user_id, self.lease)
+
+
+def _market_stream_response(
+    market: MarketService, user_id: UUID, events: AsyncIterator[str],
+) -> StreamingResponse:
+    try:
+        lease = market.acquire_stream(user_id)
+    except MarketStreamLimit as exc:
+        raise HTTPException(status_code=429, detail="market_stream_limit",
+                            headers={"Retry-After": "5"}) from exc
+    return _MarketStreamingResponse(events, market, user_id, lease)
+
+
 @app.get(
     "/api/market/usd-rub/stream",
     responses={
+        429: _API_FAILURES[429],
         401: _API_FAILURES[401],
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
     },
@@ -2113,13 +2507,42 @@ async def usd_rub_market_stream(
     user = authenticated_user(request, session_token)
     _require_profile_context(user, request.query_params.get("profile_context"))
     market = market_service(request)
-    return StreamingResponse(
-        _usd_rub_market_events(request, market, user.id, session_token),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-store",
-            "X-Accel-Buffering": "no",
-        },
+    return _market_stream_response(
+        market, user.id, _usd_rub_market_events(request, market, user.id, session_token),
+    )
+
+
+def _market_read(
+    request: Request, session_token: str | None, user: UserRecord,
+    action: Callable[[], dict[str, Any]], *, unavailable: str,
+    invalid: str = "",
+) -> dict[str, Any]:
+    try:
+        payload = action()
+    except BrokerNotConnected as exc:
+        raise HTTPException(status_code=409, detail=_TBANK_NOT_CONNECTED_DETAIL) from exc
+    except TBankTokenRejected as exc:
+        raise HTTPException(status_code=409, detail=_TBANK_CREDENTIAL_REJECTED_DETAIL) from exc
+    except SecurityValueError as exc:
+        raise HTTPException(status_code=503, detail=unavailable) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=invalid or str(exc)) from exc
+    except (TBankUnavailable, BrokerConnectionError) as exc:
+        raise HTTPException(status_code=503, detail=unavailable) from exc
+    return _workspace_result(request, session_token, user, payload)
+
+
+@app.get("/api/market/quotes", responses=_API_FAILURES)
+def market_quotes(
+    request: Request,
+    instrument_uids: str = Query(min_length=1, max_length=6400),
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+) -> dict[str, Any]:
+    user = authenticated_user(request, session_token)
+    return _market_read(
+        request, session_token, user,
+        lambda: market_service(request).batch_quotes(user.id, tuple(instrument_uids.split(","))),
+        unavailable="instrument market data unavailable",
     )
 
 
@@ -2140,39 +2563,13 @@ def instrument_market_snapshot(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
     user = authenticated_user(request, session_token)
-    try:
-        snapshot = market_service(request).instrument_snapshot(
-            user.id,
-            instrument_uid,
-            period=period,
-        )
-    except BrokerNotConnected as exc:
-        raise HTTPException(status_code=409, detail="T-Invest is not connected") from exc
-    except TBankTokenRejected as exc:
-        raise HTTPException(
-            status_code=409,
-            detail="stored T-Invest credential was rejected",
-        ) from exc
-    except SecurityValueError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="instrument market data unavailable",
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
-    except (TBankUnavailable, BrokerConnectionError) as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="instrument market data unavailable",
-        ) from exc
-    current = authenticated_user(request, session_token)
-    if current.id != user.id:
-        raise HTTPException(status_code=409, detail="profile_context_changed")
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return asdict(snapshot)
+    return _market_read(
+        request, session_token, user,
+        lambda: asdict(market_service(request).instrument_snapshot(
+            user.id, instrument_uid, period=period,
+        )), unavailable="instrument market data unavailable",
+    )
 
 
 @app.get(
@@ -2189,25 +2586,13 @@ def get_instrument_facts(
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, Any]:
     user = authenticated_user(request, session_token)
-    try:
-        payload = instrument_facts(
-            user_id=user.id, instrument_uid=instrument_uid, broker=broker_service(request),
-        )
-    except BrokerNotConnected as exc:
-        raise HTTPException(status_code=409, detail=_TBANK_NOT_CONNECTED_DETAIL) from exc
-    except TBankTokenRejected as exc:
-        raise HTTPException(status_code=409, detail=_TBANK_CREDENTIAL_REJECTED_DETAIL) from exc
-    except SecurityValueError as exc:
-        raise HTTPException(status_code=503, detail="instrument_facts_unavailable") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="instrument_uid_invalid") from exc
-    except (TBankUnavailable, BrokerConnectionError) as exc:
-        raise HTTPException(status_code=503, detail="instrument_facts_unavailable") from exc
-    current = authenticated_user(request, session_token)
-    if current.id != user.id:
-        raise HTTPException(status_code=409, detail="profile_context_changed")
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return payload
+    return _market_read(
+        request, session_token, user,
+        lambda: instrument_facts(user_id=user.id, instrument_uid=instrument_uid,
+                                 broker=broker_service(request)),
+        unavailable="instrument_facts_unavailable", invalid="instrument_uid_invalid",
+    )
 
 
 def _terminal_instrument_market_stream_state(error: Exception) -> str | None:
@@ -2317,6 +2702,7 @@ async def _instrument_market_events(
 @app.get(
     "/api/market/instruments/{instrument_uid}/stream",
     responses={
+        429: _API_FAILURES[429],
         401: {"description": "Authenticated session required"},
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
     },
@@ -2329,13 +2715,9 @@ async def instrument_market_stream(
     user = authenticated_user(request, session_token)
     _require_profile_context(user, request.query_params.get("profile_context"))
     market = market_service(request)
-    return StreamingResponse(
+    return _market_stream_response(
+        market, user.id,
         _instrument_market_events(request, market, user.id, instrument_uid, session_token),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": _PRIVATE_NO_STORE,
-            "X-Accel-Buffering": "no",
-        },
     )
 
 

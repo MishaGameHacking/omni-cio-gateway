@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import hashlib
 import importlib.util
 import io
 import json
@@ -177,6 +178,68 @@ class AuthAppDeployTests(unittest.TestCase):
         ssh = OccupancySsh()
         with self.assertRaises(MODULE.InfraError):
             MODULE.registration_occupancy(ssh)
+
+    def test_final_occupancy_check_preserves_environment_until_acceptance(self) -> None:
+        from contextlib import ExitStack, nullcontext
+        from unittest.mock import MagicMock, call
+
+        sha = "a" * 40
+        for fails in (True, False):
+            with self.subTest(occupancy_fails=fails), ExitStack() as stack:
+                stack.enter_context(patch.dict(os.environ, {
+                    "VKID_APP_ID": "123456", "REGISTRATION_ENABLED": "false",
+                    "REGISTRATION_MAX_USERS": "2",
+                }, clear=True))
+                ssh = FakeSsh(True)
+                client = MagicMock()
+                client.get_vpc_services.return_value = [{"name": "database"}]
+                for name, result in {
+                    "validate_product_environment": None,
+                    "validate_legal_documents": None,
+                    "find_managed_server": {"id": 1},
+                    "find_vpc": {"id": "test-vpc"},
+                    "public_ipv4": "192.0.2.1",
+                    "build_release_archive": "test-archive",
+                    "EphemeralSsh": nullcontext(ssh),
+                    "upload_release": None,
+                    "write_product_environment": None,
+                    "deploy_remote": None,
+                    "verify_public": None,
+                    "retire_legacy_profile": None,
+                    "add_summary": None,
+                }.items():
+                    stack.enter_context(patch.object(MODULE, name, return_value=result))
+                boundary = MagicMock()
+                for name in (
+                    "registration_occupancy", "commit_product_environment",
+                    "rollback_remote", "set_output",
+                ):
+                    mocked = stack.enter_context(patch.object(MODULE, name))
+                    boundary.attach_mock(mocked, name)
+                boundary.registration_occupancy.return_value = (1, 1)
+                if fails:
+                    boundary.registration_occupancy.side_effect = MODULE.InfraError(
+                        "occupancy unavailable",
+                    )
+                arguments = {
+                    "server_name": "test-server", "server_comment": "test-only",
+                    "release_sha": sha, "repository_root": SCRIPT_DIR.parent.parent,
+                    "cluster_name": "database", "vpc_name": "test-vpc",
+                    "location": "test", "availability_zone": "test",
+                }
+                if fails:
+                    with self.assertRaisesRegex(MODULE.InfraError, "occupancy unavailable"):
+                        MODULE.reconcile(client, **arguments)
+                    boundary.commit_product_environment.assert_not_called()
+                    expected = [call.registration_occupancy(ssh),
+                                call.rollback_remote(ssh, release_sha=sha)]
+                else:
+                    self.assertEqual(MODULE.reconcile(client, **arguments), 0)
+                    boundary.rollback_remote.assert_not_called()
+                    expected = [call.registration_occupancy(ssh),
+                                call.commit_product_environment(ssh, release_sha=sha),
+                                call.set_output("status", "app_ready")]
+                self.assertEqual(boundary.mock_calls, expected)
 
     def test_release_archive_contains_only_runtime_project_files(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -355,7 +418,21 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.update(old)
 
     def test_legal_templates_require_operator_placeholders(self) -> None:
-        MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
+        versions = {
+            f"LEGAL_{name}_VERSION": "2026-10-07-v1.3.0"
+            for name in ("PRIVACY", "CONSENT", "TERMS")
+        }
+        with patch.dict(os.environ, versions):
+            MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
+
+    def test_legal_templates_reject_stale_or_missing_deployment_version(self) -> None:
+        for value in ("2026-10-06-v1.0.0", ""):
+            with (
+                self.subTest(value=value),
+                patch.dict(os.environ, {"LEGAL_PRIVACY_VERSION": value}),
+                self.assertRaisesRegex(MODULE.InfraError, "Legal document version"),
+            ):
+                MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
 
     def test_legacy_reset_is_disabled_without_regulatory_or_live_test_gate(self) -> None:
         old = dict(os.environ)
@@ -693,9 +770,9 @@ class AuthAppDeployTests(unittest.TestCase):
         terms = (root / "web" / "legal" / "terms.html").read_text(encoding="utf-8")
 
         for document, version in (
-            (privacy, "2026-10-06-v1.0.0"),
-            (consent, "2026-10-06-v1.0.0"),
-            (terms, "2026-10-06-v1.0.0"),
+            (privacy, "2026-10-07-v1.3.0"),
+            (consent, "2026-10-07-v1.3.0"),
+            (terms, "2026-10-07-v1.3.0"),
         ):
             self.assertIn('content="noindex,nofollow"', document)
             self.assertIn(version, document)
@@ -736,6 +813,10 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_reference_assets_are_shipped_without_legacy_brand(self) -> None:
         root = SCRIPT_DIR.parent.parent
+        self.assertEqual(
+            hashlib.sha256((root / MODULE.BRAND_SOURCE).read_bytes()).hexdigest(),
+            "d9c44905a77858882d99e948a647705afa853fd11cfd01efd37528645b8ca12f",
+        )
         encoded = MODULE.build_release_archive(root)
         with tarfile.open(fileobj=io.BytesIO(base64.b64decode(encoded)), mode="r:gz") as archive:
             shipped = set(archive.getnames())
@@ -753,7 +834,19 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertEqual(manifest["name"], "OMNICIO")
         for icon in manifest["icons"]:
             name = icon["src"].rsplit("/", 1)[-1]
-            self.assertTrue((root / "assets" / "brand" / "web" / name).is_file())
+            self.assertEqual(name, "omnicio-logo.png")
+            self.assertTrue((root / MODULE.BRAND_SOURCE).is_file())
+
+    def test_release_archive_rejects_an_oversized_runtime_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            asset = root / "large.png"
+            asset.write_bytes(os.urandom(MODULE.MAX_RELEASE_ARCHIVE_BYTES + 1))
+            with (
+                patch.object(MODULE, "iter_release_files", return_value=iter([asset])),
+                self.assertRaisesRegex(MODULE.InfraError, "archive unexpectedly exceeds"),
+            ):
+                MODULE.build_release_archive(root)
 
     def test_personal_dashboard_exposes_release_version(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -768,7 +861,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("/version.js?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.css?build=__OMNICIO_BUILD__", page)
         self.assertIn("/assets/app.js?build=__OMNICIO_BUILD__", page)
-        self.assertIn('version = "1.2.0"', project)
+        self.assertIn('version = "1.3.0"', project)
         self.assertIn("window.OMNICIO_RELEASE", deploy_script)
         self.assertIn('replace("__OMNICIO_VERSION__", version)', deploy_script)
         self.assertIn('replace("__OMNICIO_BUILD__", build)', deploy_script)
@@ -797,6 +890,9 @@ class AuthAppDeployTests(unittest.TestCase):
         build = "b" * 40
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory)
+            (output / "assets").mkdir()
+            for name in ("app.js", "workspace.js", "i18n.js"):
+                (output / "assets" / name).write_bytes((root / "web" / name).read_bytes())
             subprocess.run([
                 sys.executable, "-c", program, str(root / "pyproject.toml"), build,
                 str(root / "web" / "index.html"), str(output / "index.html"),
@@ -810,6 +906,10 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(f'const build = "{build[:12]}"', worker)
             self.assertNotIn("__OMNICIO_BUILD__", offline)
             self.assertNotIn("__OMNICIO_BUILD__", worker)
+            for name in ("app.js", "workspace.js", "i18n.js"):
+                script = (output / "assets" / name).read_text(encoding="utf-8")
+                self.assertIn(build[:12], script)
+                self.assertNotIn("__OMNICIO_BUILD__", script)
 
     def test_remote_release_publishes_all_legal_pages(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
@@ -841,11 +941,19 @@ class PublicResponse(io.BytesIO):
 class PublicReleaseVerificationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.sha = "a" * 40
+        self.legal_version = "2026-10-07-v1.3.0"
+        environment = patch.dict(os.environ, {
+            f"LEGAL_{name}_VERSION": self.legal_version
+            for name in ("PRIVACY", "CONSENT", "TERMS")
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
         root = " ".join((
             MODULE.SITE_MARKER, MODULE.BRAND_PUBLIC_MARK, MODULE.WEB_MANIFEST_PATH,
             self.sha[:12],
         )).encode()
         config = json.dumps({
+            "release": {"version": "1.3.0", "build": self.sha[:12]},
             "mode": "closed",
             "registration_enabled": False,
             "registration_max_users": 1,
@@ -854,10 +962,17 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             "login_enabled": False,
             "vkid_enabled": False,
             "tid_enabled": False,
+            "legal_versions": {
+                "privacy_policy": self.legal_version,
+                "personal_data_consent": self.legal_version,
+                "terms": self.legal_version,
+            },
         }).encode()
         self.responses = {
             "/": (root, "text/html", 200),
-            MODULE.BRAND_PUBLIC_MARK: (b"png", "image/png", 200),
+            MODULE.BRAND_PUBLIC_MARK: (
+                (SCRIPT_DIR.parent.parent / MODULE.BRAND_SOURCE).read_bytes(), "image/png", 200,
+            ),
             MODULE.WEB_MANIFEST_PATH: (b'{"icons": []}', "application/json", 200),
             MODULE.VERSION_PUBLIC_PATH: (
                 f'window.OMNICIO_RELEASE = {{"build": "{self.sha[:12]}"}}'.encode(),
@@ -866,9 +981,10 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             "/api/auth/config": (config, "application/json", 200),
         }
         for path, body, content_type in (
-            ("/assets/app.js", b"window.OmniUI", "text/javascript"),
-            ("/assets/workspace.js", b"window.OmniUI", "application/javascript"),
-            ("/assets/i18n.js", b"OMNICIO_I18N", "text/javascript"),
+            ("/assets/app.js", b"window.OmniUI " + self.sha[:12].encode(), "text/javascript"),
+            ("/assets/workspace.js", b"window.OmniUI " + self.sha[:12].encode(),
+             "application/javascript"),
+            ("/assets/i18n.js", b"OMNICIO_I18N " + self.sha[:12].encode(), "text/javascript"),
             ("/assets/app.css", b"--sidebar:240px", "text/css"),
             ("/assets/brand/earth-hero.png", b"\x89PNG\r\n\x1a\n", "image/png"),
             ("/assets/brand/auth-mountains.png", b"\x89PNG\r\n\x1a\n", "image/png"),
@@ -881,7 +997,9 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             self.responses[f"{path}?build={self.sha[:12]}"] = (body, content_type, 200)
         for path, marker in MODULE.LEGAL_PAGES.items():
             self.responses[path] = (
-                f"{marker} Test Operator operator@example.com".encode(),
+                (f"{marker} Test Operator operator@example.com"
+                 f'<p class="legal-meta">OMNICIO · omnicio.ru · версия {self.legal_version}</p>'
+                 ).encode(),
                 "text/html",
                 200,
             )
@@ -985,6 +1103,35 @@ class PublicReleaseVerificationTests(unittest.TestCase):
                         self.verify()
                 finally:
                     self.responses[path] = previous
+
+    def test_stale_or_ambiguous_public_legal_document_is_rejected(self) -> None:
+        for path in MODULE.LEGAL_PAGES:
+            original = self.responses[path]
+            body = original[0]
+            for changed in (
+                body.replace(self.legal_version.encode(), b"2026-10-06-v1.0.0"),
+                body.replace(self.legal_version.encode(), b""),
+                body + body,
+            ):
+                with self.subTest(path=path, content=changed[:80]):
+                    self.responses[path] = (changed, "text/html", 200)
+                    try:
+                        with self.assertRaisesRegex(MODULE.InfraError, "Legal document version"):
+                            self.verify()
+                    finally:
+                        self.responses[path] = original
+
+    def test_public_api_legal_versions_must_match_the_deployed_documents(self) -> None:
+        config = json.loads(self.responses["/api/auth/config"][0])
+        current = config["legal_versions"]
+        invalid = [None, {}, dict(current, terms="2026-10-06-v1.0.0")]
+        for legal_versions in invalid:
+            encoded = json.dumps(dict(config, legal_versions=legal_versions)).encode()
+            with (
+                self.subTest(legal_versions=legal_versions),
+                self.assertRaisesRegex(MODULE.InfraError, "Public legal versions"),
+            ):
+                MODULE.verify_public_config(encoded)
 
     def test_excessive_public_response_is_rejected(self) -> None:
         self.responses["/"] = (b"x" * (4 * 1024 * 1024 + 1), "text/html", 200)

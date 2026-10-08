@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 import pathlib
 import subprocess
 import sys
@@ -12,7 +13,7 @@ import tempfile
 import traceback
 import unittest
 from contextlib import ExitStack
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -179,20 +180,25 @@ class PostgresTests(unittest.TestCase):
             MODULE.REMOTE_SECRET_BOOTSTRAP,
         )
 
-    def test_workflow_passes_every_migration_in_one_ordered_command(self) -> None:
+    def test_workflow_passes_only_reviewed_upgrade_migrations_in_order(self) -> None:
         root = MODULE_PATH.parents[2]
         workflow = (root / ".github/workflows/auth-postgres.yml").read_text(encoding="utf-8")
         migrations = [
             path.relative_to(root).as_posix()
-            for path in sorted((root / "migrations").glob("*.sql"))
+            for path in sorted((root / "migrations").glob("*.sql"))[-2:]
         ]
-        self.assertTrue(migrations)
+        self.assertEqual(len(migrations), 2)
+        self.assertEqual([path.split("/")[-1][:4] for path in migrations], ["0027", "0028"])
+        MODULE.migration_bodies(MODULE.load_plan(), [
+            (root / path).read_text(encoding="utf-8") for path in migrations
+        ])
         lines = [line.strip() for line in workflow.splitlines()]
         first = lines.index(f"--migration {migrations[0]} ^")
         expected = [f"--migration {path} ^" for path in migrations[:-1]]
         expected.append(f"--migration {migrations[-1]}")
         self.assertEqual(lines[first:first + len(migrations)], expected)
         self.assertTrue(lines[first - 1].endswith(" ^"))
+        self.assertEqual(workflow.count("--migration "), 2)
         for path in migrations:
             with self.subTest(migration=path):
                 self.assertEqual(workflow.count(f"--migration {path}"), 1)
@@ -227,6 +233,42 @@ class PostgresTests(unittest.TestCase):
             ["migrations/0001.sql", "migrations/0002.sql"],
         )
 
+    def reviewed_upgrade_sql(self) -> list[str]:
+        return [path.read_text(encoding="utf-8") for path in
+                sorted((MODULE_PATH.parents[2] / "migrations").glob("*.sql"))[-2:]]
+
+    def test_inplace_rejects_changed_or_reordered_sql_before_provider_access(self) -> None:
+        reviewed = self.reviewed_upgrade_sql()
+        for statements in (reviewed[:1], reviewed[::-1], [reviewed[0] + "SELECT 1;", reviewed[1]]):
+            client = Mock()
+            with self.subTest(count=len(statements)), self.assertRaises(MODULE.UpgradeBlocked):
+                MODULE.reconcile(
+                    client, desired=self.desired, server_name="server", server_comment="managed",
+                    vpc_name="private", migration_sqls=statements, release_sha="a" * 40,
+                )
+            self.assertEqual(client.mock_calls, [])
+
+    def test_inplace_uses_existing_python_and_requires_exact_remote_confirmation(self) -> None:
+        valid = {"status": "applied", "cluster_id": MODULE.load_policy().cluster_id,
+                 "release_sha": "a" * 40, "new_database_copies": 0}
+        ssh = Mock()
+        ssh.run.return_value = json.dumps(valid)
+        arguments = dict(migration_sqls=self.reviewed_upgrade_sql(), release_sha="a" * 40,
+                         endpoint=MODULE.DatabaseEndpoint("10.0.0.5", 5432), desired=self.desired)
+        MODULE.run_inplace_upgrade(ssh, **arguments)
+        self.assertEqual(ssh.run.call_args.args, ("/opt/omnicio/current/.venv/bin/python -I -",))
+        self.assertEqual(ssh.run.call_args.kwargs["stage"], MODULE.STAGE_SCHEMA_MIGRATION)
+        compile(ssh.run.call_args.kwargs["input_text"], "reviewed-remote-program", "exec")
+        for response in ("private-canary", json.dumps(None), json.dumps(valid | {"status": []}),
+                         json.dumps(valid | {"cluster_id": 42}),
+                         json.dumps(valid | {"release_sha": "b" * 40}),
+                         json.dumps(valid | {"new_database_copies": False})):
+            ssh.run.return_value = response
+            with self.subTest(response=response), self.assertRaisesRegex(
+                MODULE.InfraError, "^In-place upgrade result was not confirmed$",
+            ):
+                MODULE.run_inplace_upgrade(ssh, **arguments)
+
     def controller_arguments(self, *, backup_only: bool = False) -> SimpleNamespace:
         return SimpleNamespace(
             **asdict(self.desired),
@@ -243,15 +285,17 @@ class PostgresTests(unittest.TestCase):
                     backup_only=backup_only,
                 )),
                 patch.object(MODULE, "load_migrations", return_value=["SELECT 1;"]),
-                patch.object(MODULE, "release_context", return_value=(sha, "test-token")) as context,
+                patch.object(MODULE, "release_context",
+                             return_value=(sha, "test-token")) as context,
                 patch.object(MODULE, "require_checkout") as checkout,
                 patch.object(MODULE, "TimewebClient") as provider,
                 patch.object(MODULE, "reconcile", return_value=0) as reconcile,
             ):
                 calls = []
-                context.side_effect = lambda: (calls.append("context") or (sha, "test-token"))
-                checkout.side_effect = lambda _: calls.append("checkout")
-                provider.side_effect = lambda _: calls.append("provider")
+                context.side_effect = lambda events=calls: (
+                    events.append("context") or (sha, "test-token"))
+                checkout.side_effect = lambda _, events=calls: events.append("checkout")
+                provider.side_effect = lambda _, events=calls: events.append("provider")
                 self.assertEqual(MODULE.main(), 0)
                 self.assertEqual(calls, ["provider"] if backup_only else [
                     "context", "checkout", "provider",
@@ -272,7 +316,8 @@ class PostgresTests(unittest.TestCase):
                 patch.object(MODULE, "load_migrations", return_value=["SELECT 1;"]),
                 patch.object(MODULE, "release_context", return_value=("a" * 40, "test-token")),
                 patch.object(MODULE, "require_checkout"),
-                patch.object(MODULE, boundary, side_effect=MODULE.ReleaseBlocked("source rejected")),
+                patch.object(MODULE, boundary,
+                             side_effect=MODULE.ReleaseBlocked("source rejected")),
                 patch.object(MODULE, "TimewebClient") as provider,
                 patch.object(MODULE, "reconcile") as reconcile,
                 patch("sys.stderr"),
@@ -315,6 +360,7 @@ class PostgresTests(unittest.TestCase):
     def test_failed_migration_stops_sequence_and_never_reports_readiness(self) -> None:
         cluster_id = MODULE.load_policy().cluster_id
         values = {
+            "load_policy": replace(MODULE.load_policy(), mode="managed_backups"),
             "find_managed_server": {"id": 1}, "find_vpc": {"id": "private"},
             "find_vpc_service": {}, "private_server_cidr": "10.0.0.4/24",
             "select_postgres_type": "postgres18", "select_database_preset": {"id": 1},

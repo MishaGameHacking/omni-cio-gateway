@@ -24,6 +24,7 @@ from omnicio.execution_store import ExecutionLedgerError, ExecutionStore
 from omnicio.portfolio_store import PortfolioStore
 from omnicio.research_store import ResearchStore
 from omnicio.strategy import document_hash
+from omnicio.strategy_assessment import StrategyFact, select_strategy_candidates
 from omnicio.strategy_service import research_inputs
 from omnicio.tbank import (
     TBankInstrumentMetadata,
@@ -155,6 +156,241 @@ def test_integer_sizing_respects_cash_fees_caps_and_post_trade_exposure():
     assert payload["initial_lots"] == {}
 
 
+@pytest.mark.parametrize("kind", ["share", "bond"])
+def test_coarse_price_tick_cannot_widen_the_selected_slippage_bound(kind):
+    now = datetime.now(UTC)
+    metadata = instrument(instrument_type=kind, min_price_increment="1")
+    if kind == "bond":
+        metadata = replace(
+            metadata,
+            nominal=TBankMoney("RUB", "1000"),
+            accrued_interest=TBankMoney("RUB", "15"),
+        )
+    quote = execution_quote(metadata, book(now), slippage_bps=Decimal(10), now=now)
+    factor = Decimal(10) if kind == "bond" else Decimal(1)
+    assert quote["buy_limit"] == quote["sell_limit"] == Decimal(100) * factor
+    assert quote["buy_limit"] <= Decimal("100.1") * factor
+    assert quote["sell_limit"] >= Decimal("99.9") * factor
+
+
+def observed_position(*, quantity="100", blocked="0"):
+    """Use the real provider parser; deprecated quantityLots is intentionally absent."""
+    response = {
+        "totalAmountPortfolio": {"currency": "rub", "units": "10000", "nano": 0},
+        "positions": [{
+            "instrumentUid": "a", "instrumentType": "share",
+            "quantity": {"units": quantity, "nano": 0},
+            "blockedLots": {"units": str(int(Decimal(blocked))),
+                            "nano": int(Decimal(blocked) % 1 * 10**9)},
+            "currentPrice": {"currency": "rub", "units": "100", "nano": 0},
+        }],
+    }
+    client = TBankInvestClient()
+    with patch.object(TBankInvestClient, "_post", return_value=response):
+        return client.get_portfolio("fixture", "sandbox", "account").positions[0]
+
+
+def sized_plan(document, *, candidates=None, positions=(), cash="10000", blocked="0",
+               weights=None, fee="0", price="100", lot=1, slippage="0", ask=None):
+    now = datetime.now(UTC)
+    rows = candidates or [history_candidate(prices(lot=lot).candidate, prices().candles, as_of=now)]
+    quotes = {
+        row.instrument_uid: execution_quote(
+            instrument(uid=row.instrument_uid, lot=lot),
+            TBankOrderBook(
+                row.instrument_uid,
+                (TBankOrderLevel(price, 10**12),),
+                (TBankOrderLevel(ask or price, 10**12),), now, True,
+            ),
+            slippage_bps=Decimal(slippage), now=now,
+        )
+        for row in rows
+    }
+    selected = weights if weights is not None else [("a", "100")]
+    return strategy_order_plan(
+        document, rows,
+        [{"instrument_uid": uid, "target_weight_percent": weight} for uid, weight in selected],
+        positions, quotes, cash=Decimal(cash), blocked_cash=Decimal(blocked),
+        commission_bps=Decimal(fee), now=now,
+        max_order=Decimal("1e12"), max_daily=Decimal("1e12"),
+    )
+
+
+@pytest.mark.parametrize("blocked,expected_reserve", [("0", "5000"), ("700", "5000"),
+                                                    ("4000", "7000")])
+def test_cash_target_reserve_and_withdrawal_have_the_same_meaning_in_order_sizing(
+    blocked, expected_reserve
+):
+    document = research_document()
+    document["allocation"] = {"shares": 70, "bonds": 0, "funds": 0, "cash": 30}
+    document["profile"].update(reserve_rub="1000", planned_withdrawal_rub="2000")
+    document["policy"]["securities_tax_rate_percent"] = "0"
+    result = sized_plan(document, weights=[("a", "70")], blocked=blocked)
+    assert result["blockers"] == []
+    assert Decimal(result["reserve_rub"]) == Decimal(expected_reserve)
+    assert Decimal(result["cash_after_rub"]) == Decimal(expected_reserve)
+
+
+def test_current_broker_cash_blocks_recompute_the_same_cash_constraint_before_dispatch():
+    from test_execution_service import _leg
+
+    now = datetime.now(UTC)
+    owner = UUID(int=42)
+    document = research_document()
+    document["allocation"] = {"shares": 70, "bonds": 0, "funds": 0, "cash": 30}
+    document["profile"].update(reserve_rub="1000", planned_withdrawal_rub="2000")
+    document["policy"]["securities_tax_rate_percent"] = "0"
+    payload = sized_plan(document, weights=[("a", "70")], blocked="700")
+    payload.update(document=document, account_id="account")
+    broker = broker_fixture("account", now)
+    broker.portfolio.return_value.positions = TBankPositions(
+        (TBankMoney("RUB", "10000"),), (TBankMoney("RUB", "2000"),), False,
+    )
+    broker.estimate_limit_order.side_effect = None
+    broker.estimate_limit_order.return_value = TBankOrderEstimate(
+        50, TBankMoney("RUB", "5000"), TBankMoney("RUB", "5000"), TBankMoney("RUB", "0"),
+    )
+    details = payload["legs"][0]
+    leg = replace(
+        _leg(), instrument_uid="a", lots_requested=50, limit_price=Decimal(100),
+        limit_price_type="currency", max_spend_rub=Decimal(5000),
+    )
+    service = PortfolioExecutionService(store=Mock(), broker=broker)
+    service._dispatch_preflight(owner, leg, details, payload, (leg,), "shadow")
+    broker.portfolio.return_value.positions = replace(
+        broker.portfolio.return_value.positions, blocked_money=(TBankMoney("RUB", "4000"),),
+    )
+    with pytest.raises(ExecutionServiceError, match="execution_free_cash_changed"):
+        service._dispatch_preflight(owner, leg, details, payload, (leg,), "shadow")
+    broker.portfolio.return_value.positions = replace(
+        broker.portfolio.return_value.positions, blocked_money=(TBankMoney("RUB", "-1"),),
+    )
+    with pytest.raises(ExecutionServiceError, match="execution_cash_inconsistent"):
+        service._dispatch_preflight(owner, leg, details, payload, (leg,), "shadow")
+    broker.submit_limit_order.assert_not_called()
+
+
+@pytest.mark.parametrize("blocked,free_lots", [("0", 10), ("10", 9), ("10.5", 8)])
+def test_position_pieces_and_blocked_pieces_are_converted_to_whole_order_lots(blocked, free_lots):
+    document = research_document()
+    document["policy"]["securities_tax_rate_percent"] = "0"
+    result = sized_plan(
+        document, positions=(observed_position(blocked=blocked),),
+        weights=[], cash="0", lot=10,
+    )
+    assert result["initial_lots"] == {"a": 10}
+    assert result["lot_sizes"] == {"a": 10}
+    assert result["legs"][0]["action"] == "sell"
+    assert result["legs"][0]["lots"] == free_lots
+
+
+def test_preflight_rechecks_piece_units_and_a_new_partial_lot_block_without_deprecated_quantity():
+    from test_execution_service import _leg
+
+    now = datetime.now(UTC)
+    owner = UUID(int=42)
+    document = research_document()
+    document["policy"]["securities_tax_rate_percent"] = "0"
+    position = observed_position(blocked="10")
+    payload = sized_plan(document, positions=(position,), weights=[], cash="0", lot=10)
+    payload["account_id"] = "account"
+    broker = broker_fixture("account", now)
+    broker.execution_instrument.return_value = instrument(lot=10)
+    broker.portfolio.return_value.portfolio = replace(
+        broker.portfolio.return_value.portfolio, positions=(position,),
+    )
+    broker.portfolio.return_value.positions = TBankPositions((TBankMoney("RUB", "0"),), (), False)
+    broker.estimate_limit_order.side_effect = None
+    broker.estimate_limit_order.return_value = TBankOrderEstimate(
+        9, TBankMoney("RUB", "9000"), TBankMoney("RUB", "9000"), TBankMoney("RUB", "0"),
+    )
+    details = payload["legs"][0]
+    leg = replace(
+        _leg(action="sell"), instrument_uid="a", lots_requested=9,
+        limit_price=Decimal(100), limit_price_type="currency", min_proceeds_rub=Decimal(9000),
+    )
+    service = PortfolioExecutionService(store=Mock(), broker=broker)
+    service._dispatch_preflight(owner, leg, details, payload, (leg,), "shadow")
+    broker.portfolio.return_value.portfolio = replace(
+        broker.portfolio.return_value.portfolio,
+        positions=(observed_position(blocked="10.5"),),
+    )
+    with pytest.raises(ExecutionServiceError, match="execution_free_inventory_changed"):
+        service._dispatch_preflight(owner, leg, details, payload, (leg,), "shadow")
+    broker.submit_limit_order.assert_not_called()
+
+
+@pytest.mark.parametrize("price,cash", [("100", "10000"), ("0.01", "1000000")])
+def test_feasible_equal_weight_plan_reserves_later_fees_before_sizing_the_first_buy(price, cash):
+    now = datetime.now(UTC)
+    document = research_document()
+    document["policy"].update(max_instrument_percent="50", securities_tax_rate_percent="0")
+    candidates = []
+    for uid in ("a", "b"):
+        row = history_candidate(prices(uid).candidate, prices(uid).candles, as_of=now)
+        candidates.append(replace(row, facts={
+            **row.facts,
+            "daily_volume_lots": StrategyFact(Decimal("1e12"), now, "https://synthetic.example"),
+        }))
+    result = sized_plan(
+        document, candidates=candidates, weights=[("a", "50"), ("b", "50")],
+        price=price, cash=cash, fee="10",
+    )
+    assert result["blockers"] == []
+    assert len(result["legs"]) == 2
+    assert all(Decimal(value) <= 50 for value in result["projected_weights"].values())
+    total_mark = sum(Decimal(leg["gross_amount_rub"]) for leg in result["legs"])
+    assert total_mark >= Decimal(cash) * Decimal("0.98")
+    after_nav = Decimal(result["cash_after_rub"]) + total_mark
+    assert after_nav >= Decimal(result["allocation_nav_floor_rub"])
+
+
+@pytest.mark.parametrize("action,minimum,lots", [
+    ("buy", "8500", None), ("buy", "8100", 90),
+    ("sell", "9500", None), ("sell", "9000", 100),
+])
+def test_minimum_effect_deducts_actual_adverse_price_cost_after_order_quantity_limits(
+    action, minimum, lots
+):
+    document = research_document()
+    document["policy"].update(securities_tax_rate_percent="0", min_replace_benefit_rub=minimum)
+    result = sized_plan(
+        document, slippage="1000", cash="10000" if action == "buy" else "0",
+        positions=() if action == "buy" else (observed_position(),),
+        weights=[("a", "100")] if action == "buy" else [],
+    )
+    assert result["blockers"] == []
+    assert [leg["lots"] for leg in result["legs"]] == ([] if lots is None else [lots])
+
+
+def test_zero_selected_slippage_does_not_hide_the_observed_bid_ask_spread_from_minimum_effect():
+    document = research_document()
+    document["policy"].update(securities_tax_rate_percent="0", min_replace_benefit_rub="8500")
+    result = sized_plan(document, ask="110")
+    assert result["legs"] == []
+
+
+@pytest.mark.parametrize("days,expected_legs", [("2", []), ("1", [("sell", 10)])])
+def test_liquidity_horizon_limits_the_whole_position_not_only_the_next_order(days, expected_legs):
+    now = datetime.now(UTC)
+    document = research_document()
+    document["profile"]["liquidity_horizon_days"] = days
+    document["policy"].update(securities_tax_rate_percent="0", min_replace_benefit_rub="0")
+    row = history_candidate(prices().candidate, prices().candles, as_of=now)
+    row = replace(row, facts={
+        **row.facts,
+        "daily_volume_lots": StrategyFact(Decimal(10), now, "https://synthetic.example"),
+    })
+    result = sized_plan(
+        document, candidates=[row], positions=(observed_position(quantity="20"),), cash="8000",
+    )
+    assert result["blockers"] == []
+    assert [(leg["action"], leg["lots"]) for leg in result["legs"]] == expected_legs
+    document["profile"]["liquidity_horizon_days"] = "0"
+    no_holdings = sized_plan(document, candidates=[row])
+    assert no_holdings["legs"] == []
+
+
 def shadow_planning_runtime():
     now = datetime.now(UTC)
     owner, archive_id = UUID(int=1), UUID(int=2)
@@ -194,6 +430,11 @@ def shadow_planning_runtime():
             now=now,
         ),
     }
+    archive.run.return_value["result"]["current_selection"] = select_strategy_candidates(
+        payload["document"],
+        [history_candidate(asset.candidate, asset.candles, as_of=now)],
+        as_of=now,
+    )
     archive.evidence.return_value = {"version": 0}
     portfolio = Mock(spec=PortfolioStore)
     portfolio.current_strategy_draft.return_value = {"version": 1, "document": payload["document"]}
@@ -247,12 +488,16 @@ def test_shadow_plan_uses_real_cash_and_works_with_deployment_caps_zero():
     assert store.save_strategy_proposal.call_args.args[0] == owner
 
 
-@pytest.mark.parametrize("invalid", ["insufficient_data", "missing_metrics", "old_engine"])
+@pytest.mark.parametrize(
+    "invalid", ["insufficient_data", "missing_metrics", "old_engine", "previous_candidate_engine"]
+)
 def test_server_refuses_noncomputed_or_obsolete_research_before_account_and_quote_reads(invalid):
     service, owner, archive_id, store, broker, archive = shadow_planning_runtime()
     saved = archive.run.return_value
     if invalid == "old_engine":
         saved["inputs"]["engine_version"] = "1.1.0"
+    elif invalid == "previous_candidate_engine":
+        saved["inputs"]["engine_version"] = "1.3.0"
     elif invalid == "missing_metrics":
         saved["result"]["metrics"] = None
     else:
@@ -266,6 +511,82 @@ def test_server_refuses_noncomputed_or_obsolete_research_before_account_and_quot
             session_digest=DIGEST,
             commission_bps=commission,
             slippage_bps=slippage,
+        )
+    broker.observation_bundle.assert_not_called()
+    broker.candidate_order_book.assert_not_called()
+    broker.submit_limit_order.assert_not_called()
+    store.save_strategy_proposal.assert_not_called()
+
+
+@pytest.mark.parametrize("current", ["missing", "unavailable", "stale", "future"])
+def test_historical_result_cannot_override_an_unavailable_or_expired_current_selection(current):
+    service, owner, archive_id, store, broker, archive = shadow_planning_runtime()
+    result = archive.run.return_value["result"]
+    if current == "missing":
+        del result["current_selection"]
+    elif current == "unavailable":
+        result["current_selection"].update(
+            status="insufficient_data", candidate_selection_ready=False, selected=[],
+            missing_requirements=["fresh_account_instrument_catalog"],
+        )
+    else:
+        offset = timedelta(days=-2) if current == "stale" else timedelta(hours=1)
+        result["current_selection"]["as_of"] = (datetime.now(UTC) + offset).isoformat()
+    commission, slippage = Decimal(10), Decimal(0)
+    with pytest.raises(ExecutionServiceError, match="execution_current_research_required"):
+        service.plan(
+            owner, expected_version=1, research_run_id=archive_id, session_digest=DIGEST,
+            commission_bps=commission, slippage_bps=slippage,
+        )
+    broker.observation_bundle.assert_not_called()
+    broker.candidate_order_book.assert_not_called()
+    broker.submit_limit_order.assert_not_called()
+    store.save_strategy_proposal.assert_not_called()
+
+
+@pytest.mark.parametrize("invalid", ["nonfinite_price", "zero_split"])
+def test_execution_revalidates_archived_evidence_before_current_candidate_arithmetic(invalid):
+    service, owner, archive_id, store, broker, archive = shadow_planning_runtime()
+    asset = archive.run.return_value["inputs"]["assets"][0]
+    if invalid == "nonfinite_price":
+        asset["candles"][0]["close"] = "NaN"
+    else:
+        asset["splits"] = [{
+            "time": asset["candles"][1]["time"], "ratio": "0",
+            "source_url": "https://synthetic.example",
+        }]
+    commission, slippage = Decimal(10), Decimal(0)
+    with pytest.raises(ExecutionServiceError, match="execution_current_research_required"):
+        service.plan(
+            owner, expected_version=1, research_run_id=archive_id, session_digest=DIGEST,
+            commission_bps=commission, slippage_bps=slippage,
+        )
+    broker.observation_bundle.assert_not_called()
+    broker.candidate_order_book.assert_not_called()
+    broker.submit_limit_order.assert_not_called()
+    store.save_strategy_proposal.assert_not_called()
+
+
+@pytest.mark.parametrize("unclosed_today", [False, True])
+def test_fresh_archive_timestamps_cannot_make_stale_provider_candles_current_for_execution(
+    unclosed_today
+):
+    service, owner, archive_id, store, broker, archive = shadow_planning_runtime()
+    # A provider can return an old but internally valid series for a request ending
+    # today. Request/collection timestamps do not make its last observation fresh.
+    candles = archive.run.return_value["inputs"]["assets"][0]["candles"]
+    for bar in candles:
+        bar["time"] = (datetime.fromisoformat(bar["time"]) - timedelta(days=30)).isoformat()
+    if unclosed_today:
+        # Even a provider's premature complete flag cannot refresh observations
+        # which the daily-history arithmetic correctly excludes until day end.
+        opening = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        candles.append({**candles[-1], "time": opening.isoformat(), "is_complete": True})
+    commission, slippage = Decimal(10), Decimal(0)
+    with pytest.raises(ExecutionServiceError, match="execution_current_research_required"):
+        service.plan(
+            owner, expected_version=1, research_run_id=archive_id, session_digest=DIGEST,
+            commission_bps=commission, slippage_bps=slippage,
         )
     broker.observation_bundle.assert_not_called()
     broker.candidate_order_book.assert_not_called()

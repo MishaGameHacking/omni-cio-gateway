@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import copy
 import hashlib
+import importlib
 import os
 import re
 import secrets
 import subprocess
 from decimal import Decimal
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import psycopg
 import pytest
@@ -17,6 +19,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from omnicio.db import ActiveLiveExecutionError, Database
 from omnicio.execution_store import ExecutionLedgerError, ExecutionLegObservation, ExecutionStore
 from omnicio.portfolio_store import PortfolioStore
+from omnicio.schema import READINESS_QUERY
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
 
@@ -82,6 +85,15 @@ ACCEPTED_MIGRATION_SHA256 = {
     "0023_strategy_execution_guards.sql": (
         "0c4a3f29bc370d424aef7959cbee569f10adc0ad836572d7dc6428071a4e0efb"
     ),
+    "0024_background_reliability.sql": (
+        "24ab7ef2a42b928d13e445517e6961293272a67b6557b4aa865a8158825867a9"
+    ),
+    "0025_billing_recovery.sql": (
+        "5d6ac08ba7312d09aa85ee895f4d66b8bef7b08c1b8af3ce1d52e0457552d3b1"
+    ),
+    "0026_strategy_research_capacity.sql": (
+        "1cce5a0967c32a6ddd70c48986dd7dcf5074d23a1e8dfe60c7c5abbc72752288"
+    ),
 }
 USER_ONE = UUID("00000000-0000-0000-0000-000000000101")
 USER_TWO = UUID("00000000-0000-0000-0000-000000000102")
@@ -93,6 +105,305 @@ def test_accepted_production_migrations_are_content_immutable() -> None:
         content = (ROOT / "migrations" / name).read_text(encoding="utf-8")
         normalized = content.replace("\r\n", "\n").encode()
         assert hashlib.sha256(normalized).hexdigest() == expected_digest
+
+
+@pytest.fixture
+def inplace_database(monkeypatch):
+    if not DATABASE_URL or not os.environ.get("OMNICIO_TEST_POSTGRES_BIN"):
+        pytest.skip("disposable PostgreSQL CI launcher is required")
+    options = conninfo_to_dict(DATABASE_URL)
+    assert options["host"] == "127.0.0.1"
+    assert options["dbname"] == "omnicio_test"
+    monkeypatch.syspath_prepend(str(ROOT / ".github/scripts"))
+    upgrade = importlib.import_module("inplace_upgrade")
+    plan = upgrade.load_plan()
+    source = subprocess.run(
+        ["git", "show", f"{plan['source_release']}:src/omnicio/schema.py"],
+        cwd=ROOT, capture_output=True, text=True, check=True, timeout=15,
+    ).stdout
+    source_query = upgrade.schema_query(source, plan["source_schema_sha256"])
+    assert [path.name for path in MIGRATIONS[-2:]] == [
+        "0027_assistant_stream_memory.sql", "0028_notification_device_binding.sql",
+    ]
+    name = "omnicio_upgrade_" + secrets.token_hex(8)
+    dsn = make_conninfo(DATABASE_URL, dbname=name)
+    with psycopg.connect(DATABASE_URL, autocommit=True) as control:
+        control.execute(sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(
+            sql.Identifier(name),
+        ))
+        try:
+            with psycopg.connect(dsn, autocommit=True) as connection:
+                for path in MIGRATIONS[:-2]:
+                    connection.execute(path.read_text(encoding="utf-8"))
+                assert connection.execute(source_query).fetchone() == (True,)
+                assert connection.execute(READINESS_QUERY).fetchone() == (False,)
+                _seed_inplace_rows(connection)
+                arguments = dict(
+                    plan=plan,
+                    statements=[path.read_text(encoding="utf-8") for path in MIGRATIONS[-2:]],
+                    source_query=source_query, target_query=READINESS_QUERY,
+                    identity=upgrade.operation_identity(plan, {"database": name}),
+                    release_sha="a" * 40, installed_release=plan["source_release"],
+                )
+                yield upgrade, connection, dsn, arguments
+        finally:
+            control.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
+def _seed_inplace_rows(connection):
+    for owner in (USER_ONE, USER_TWO):
+        connection.execute("INSERT INTO users (id) VALUES (%s)", (owner,))
+        connection.execute(
+            "INSERT INTO sessions (user_id, token_digest, client_ip_hash, expires_at) "
+            "VALUES (%s, %s, %s, now() + interval '1 day')", (owner, owner.bytes, b"synthetic-ip"),
+        )
+        connection.execute(
+            "INSERT INTO workspace_preferences (user_id, version, document) "
+            "VALUES (%s, 7, '{\"selected_strategy\":\"custom\"}')", (owner,),
+        )
+        connection.execute(
+            "INSERT INTO investment_goals (user_id, version, title, kind, target_amount_rub, "
+            "start_date, progress_source, manual_amount_rub, status) "
+            "VALUES (%s, 3, 'Synthetic goal', 'capital', 1000000.00000001, "
+            "current_date, 'manual', 1234.56789012, 'active')", (owner,),
+        )
+        conversation, request = uuid4(), uuid4()
+        connection.execute(
+            "INSERT INTO assistant_conversations (user_id, id, title) VALUES (%s, %s, 'Synthetic')",
+            (owner, conversation),
+        )
+        connection.execute(
+            "INSERT INTO assistant_requests (user_id, id, conversation_id, input_hash, "
+            "connection_version, conversation_version, status, context_used, model) "
+            "VALUES (%s, %s, %s, %s, 1, 1, 'completed', false, 'synthetic-model')",
+            (owner, request, conversation, "a" * 64),
+        )
+        connection.execute(
+            "INSERT INTO assistant_messages (user_id, conversation_id, position, request_id, "
+            "role, content) VALUES (%s, %s, 1, %s, 'user', 'Preserved synthetic message')",
+            (owner, conversation, request),
+        )
+        channel = connection.execute(
+            "INSERT INTO notification_channels (user_id, kind, destination_hash, "
+            "destination_ciphertext, label, status) "
+            "VALUES (%s, 'push', %s, %s, 'Legacy device', 'active') RETURNING id",
+            (owner, "b" * 64, b"encrypted-synthetic-subscription"),
+        ).fetchone()[0]
+        for status in ("queued", "accepted"):
+            connection.execute(
+                "INSERT INTO notification_outbox (user_id, channel_id, message_key, "
+                "kind, payload_ciphertext, status) VALUES (%s, %s, %s, 'event', %s, %s)",
+                (owner, channel, status, b"encrypted-synthetic-payload", status),
+            )
+
+
+def _inplace_rows(connection, *, exclude_changes=False):
+    exclusions = {
+        "users": [], "sessions": [], "workspace_preferences": [], "investment_goals": [],
+        "assistant_conversations": [], "assistant_messages": [],
+        "assistant_requests": ["reply_prefix", "stream_sequence", "source_refs", "updated_at"],
+        "notification_channels": ["session_id", "binding_id", "status", "updated_at"],
+        "notification_outbox": ["binding_id", "status", "last_error", "updated_at"],
+    }
+    return {table: connection.execute(sql.SQL(
+        "SELECT (to_jsonb(record) - %s::text[])::text AS document "
+        "FROM {} AS record ORDER BY document",
+    ).format(sql.Identifier(table)), (columns if exclude_changes else [],)).fetchall()
+        for table, columns in exclusions.items()}
+
+
+def test_inplace_transaction_preserves_tenants_and_expires_only_unbound_delivery(inplace_database):
+    upgrade, connection, _dsn, arguments = inplace_database
+    before = _inplace_rows(connection, exclude_changes=True)
+    accepted_query = ("SELECT (to_jsonb(record) - 'binding_id')::text AS document "
+                      "FROM notification_outbox AS record "
+                      "WHERE status = 'accepted' ORDER BY document")
+    accepted = connection.execute(accepted_query).fetchall()
+    receipts = []
+    assert upgrade.apply_upgrade(connection, **arguments, receipt=None,
+                                 save_receipt=receipts.append) == "applied"
+    assert [item["phase"] for item in receipts] == ["pending", "completed"]
+    assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+    assert _inplace_rows(connection, exclude_changes=True) == before
+    assert connection.execute(accepted_query).fetchall() == accepted
+    for owner in (USER_ONE, USER_TWO):
+        assert connection.execute(
+            "SELECT status FROM notification_channels WHERE user_id = %s", (owner,),
+        ).fetchall() == [("expired",)]
+        assert connection.execute(
+            "SELECT status, last_error FROM notification_outbox WHERE user_id = %s ORDER BY status",
+            (owner,),
+        ).fetchall() == [("accepted", None), ("cancelled", "push_binding_expired")]
+        assert connection.execute(
+            "SELECT reply_prefix, stream_sequence, source_refs, updated_at IS NOT NULL "
+            "FROM assistant_requests WHERE user_id = %s", (owner,),
+        ).fetchone() == ("", 0, [], True)
+
+
+def test_inplace_failure_in_second_migration_rolls_back_both_and_can_resume(inplace_database):
+    upgrade, connection, _dsn, arguments = inplace_database
+    before = _inplace_rows(connection)
+    connection.execute("""
+        CREATE FUNCTION synthetic_upgrade28_fault() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            IF to_regclass('public.assistant_memory') IS NULL THEN
+                RAISE EXCEPTION 'synthetic_migration27_was_not_applied';
+            END IF;
+            RAISE EXCEPTION 'synthetic_upgrade28_failure';
+        END;
+        $$;
+        CREATE TRIGGER synthetic_upgrade28_fault BEFORE UPDATE ON notification_channels
+            FOR EACH ROW EXECUTE FUNCTION synthetic_upgrade28_fault();
+    """)
+    receipts = []
+    with pytest.raises(psycopg.errors.RaiseException, match="synthetic_upgrade28_failure"):
+        upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=receipts.append)
+    assert [item["phase"] for item in receipts] == ["pending"]
+    assert connection.execute(arguments["source_query"]).fetchone() == (True,)
+    assert connection.execute(upgrade.NEW_SCHEMA_ABSENT).fetchone() == (True,)
+    assert _inplace_rows(connection) == before
+    connection.execute("DROP TRIGGER synthetic_upgrade28_fault ON notification_channels")
+    connection.execute("DROP FUNCTION synthetic_upgrade28_fault()")
+    with pytest.raises(upgrade.UpgradeBlocked, match="completed_upgrade_schema_changed"):
+        upgrade.apply_upgrade(connection, **arguments,
+                              receipt=receipts[-1] | {"phase": "completed"},
+                              save_receipt=receipts.append)
+    with pytest.raises(upgrade.UpgradeBlocked, match="target_schema_not_ready"):
+        upgrade.apply_upgrade(connection, **dict(arguments, target_query="SELECT false"),
+                              receipt=receipts[-1], save_receipt=receipts.append)
+    assert connection.execute(upgrade.NEW_SCHEMA_ABSENT).fetchone() == (True,)
+    assert _inplace_rows(connection) == before
+    assert upgrade.apply_upgrade(connection, **arguments, receipt=receipts[-1],
+                                 save_receipt=receipts.append) == "applied"
+    assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+
+
+def test_inplace_lost_commit_confirmation_never_repeats_migration_sql(inplace_database):
+    upgrade, connection, _dsn, arguments = inplace_database
+    receipts = []
+
+    def interrupted_write(value):
+        if value["phase"] == "completed":
+            raise OSError("synthetic receipt write failed after commit")
+        receipts.append(copy.deepcopy(value))
+
+    with pytest.raises(OSError, match="after commit"):
+        upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=interrupted_write)
+    assert [item["phase"] for item in receipts] == ["pending"]
+    assert connection.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
+    assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+    with pytest.raises(upgrade.UpgradeBlocked, match="target_schema_has_no_operation_receipt"):
+        upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=receipts.append)
+    connection.execute("""
+        CREATE FUNCTION synthetic_repeated_ddl() RETURNS event_trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION 'synthetic_migration_was_repeated'; END; $$;
+        CREATE EVENT TRIGGER synthetic_repeated_ddl ON ddl_command_start
+            EXECUTE FUNCTION synthetic_repeated_ddl();
+    """)
+    assert upgrade.apply_upgrade(connection, **arguments, receipt=receipts[-1],
+                                 save_receipt=receipts.append) == "already_applied"
+    assert receipts[-1]["phase"] == "completed"
+    # Keep the actually running A installation trusted if B deployment fails.
+    next_release = dict(arguments, release_sha="b" * 40, installed_release="a" * 40)
+    for _ in range(2):
+        assert upgrade.apply_upgrade(connection, **next_release, receipt=receipts[-1],
+                                     save_receipt=receipts.append) == "already_applied"
+        assert receipts[-1]["installed_release"] == "a" * 40
+
+
+def test_inplace_requires_top_level_transaction_and_exclusive_operation(inplace_database):
+    upgrade, connection, dsn, arguments = inplace_database
+    receipts = []
+    with pytest.raises(upgrade.UpgradeBlocked, match="initial_upgrade_requires_source_"):
+        upgrade.apply_upgrade(connection, **dict(arguments, installed_release="a" * 40),
+                              receipt=None, save_receipt=receipts.append)
+    connection.autocommit = False
+    with pytest.raises(upgrade.UpgradeBlocked, match="idle_autocommit"):
+        upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=receipts.append)
+    assert connection.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
+    connection.autocommit = True
+    connection.execute("BEGIN")
+    try:
+        with pytest.raises(upgrade.UpgradeBlocked, match="idle_autocommit"):
+            upgrade.apply_upgrade(connection, **arguments, receipt=None,
+                                  save_receipt=receipts.append)
+        assert connection.info.transaction_status == psycopg.pq.TransactionStatus.INTRANS
+    finally:
+        connection.rollback()
+    with psycopg.connect(dsn) as other:
+        other.execute("SELECT pg_advisory_xact_lock(4215095001300)")
+        with pytest.raises(upgrade.UpgradeBlocked, match="another_upgrade_is_running"):
+            upgrade.apply_upgrade(connection, **arguments, receipt=None,
+                                  save_receipt=receipts.append)
+    assert receipts == []
+    assert connection.execute(arguments["source_query"]).fetchone() == (True,)
+    assert connection.execute(upgrade.NEW_SCHEMA_ABSENT).fetchone() == (True,)
+
+
+def test_inplace_table_lock_timeout_keeps_the_old_schema_and_rows(inplace_database):
+    upgrade, connection, dsn, arguments = inplace_database
+    before, receipts = _inplace_rows(connection), []
+    with psycopg.connect(dsn) as other:
+        other.execute("LOCK TABLE notification_channels IN ACCESS EXCLUSIVE MODE")
+        with pytest.raises(psycopg.errors.LockNotAvailable):
+            upgrade.apply_upgrade(connection, **arguments, receipt=None,
+                                  save_receipt=receipts.append)
+    assert [item["phase"] for item in receipts] == ["pending"]
+    assert connection.execute(arguments["source_query"]).fetchone() == (True,)
+    assert connection.execute(upgrade.NEW_SCHEMA_ABSENT).fetchone() == (True,)
+    assert _inplace_rows(connection) == before
+
+
+@pytest.mark.skipif(not DATABASE_URL, reason="ephemeral PostgreSQL is required")
+def test_device_binding_migration_expires_all_legacy_owners_without_erasing_receipts() -> None:
+    name = "push_migration_" + secrets.token_hex(6)
+    owners = [uuid4(), uuid4()]
+    migration = ROOT / "migrations" / "0028_notification_device_binding.sql"
+    with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
+        admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name)))
+        try:
+            admin.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(name)))
+            for path in MIGRATIONS:
+                if path != migration:
+                    admin.execute(path.read_text(encoding="utf-8"))
+            for owner in owners:
+                admin.execute("INSERT INTO users (id) VALUES (%s)", (owner,))
+                admin.execute("SELECT set_config('omnicio.user_id', %s, false)", (str(owner),))
+                channel = admin.execute(
+                    "INSERT INTO notification_channels (user_id, kind, destination_hash, "
+                    "destination_ciphertext, label, status) "
+                    "VALUES (%s, 'push', %s, %s, 'Legacy device', 'active') RETURNING id",
+                    (owner, "b" * 64, b"encrypted-synthetic-subscription"),
+                ).fetchone()[0]
+                for status in ("queued", "accepted"):
+                    admin.execute(
+                        "INSERT INTO notification_outbox (user_id, channel_id, message_key, "
+                        "kind, payload_ciphertext, status) VALUES (%s, %s, %s, 'event', %s, %s)",
+                        (owner, channel, status, b"encrypted-synthetic-payload", status),
+                    )
+            content = migration.read_text(encoding="utf-8")
+            admin.execute(content)
+            admin.execute(content)
+            for owner in owners:
+                admin.execute("SELECT set_config('omnicio.user_id', %s, false)", (str(owner),))
+                assert admin.execute(
+                    "SELECT status FROM notification_channels WHERE user_id = %s", (owner,),
+                ).fetchone()[0] == "expired"
+                assert admin.execute(
+                    "SELECT status, last_error FROM notification_outbox WHERE user_id = %s "
+                    "ORDER BY status", (owner,),
+                ).fetchall() == [("accepted", None), ("cancelled", "push_binding_expired")]
+            index = admin.execute(
+                "SELECT indisunique, indisvalid FROM pg_index "
+                "WHERE indexrelid = 'notification_push_active_destination_key'::regclass",
+            ).fetchone()
+            assert index == (True, True)
+            assert admin.execute(
+                "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+                "WHERE oid = 'notification_channels'::regclass",
+            ).fetchone() == (True, True)
+        finally:
+            admin.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(name)))
 
 
 @pytest.mark.skipif(
@@ -396,7 +707,7 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     reason="ephemeral PostgreSQL is required for migration integration coverage",
 )
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0026_strategy_research_capacity.sql"
+    assert [item.name for item in MIGRATIONS][-1] == "0028_notification_device_binding.sql"
     _apply_all_migrations()
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import http.client
 import json
+import socket
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Lock
 from typing import Any
@@ -16,10 +18,12 @@ from test_workspace_api import workspace_http as workspace_http
 
 from omnicio.assistant import (
     AssistantBusy,
+    AssistantCancelled,
     AssistantClient,
     AssistantNotConfigured,
     AssistantService,
     AssistantUnavailable,
+    _Cancellation,
     portfolio_context,
 )
 from omnicio.broker import BrokerConnectionStatus, BrokerService
@@ -227,6 +231,182 @@ def test_assistant_parallel_limit_is_released_on_failure() -> None:
                 result.result(timeout=5)
     with patch.object(client, "_chat", return_value={"reply": "Доступ восстановлен"}):
         assert client.chat(message="Новый", history=[])["reply"] == "Доступ восстановлен"
+
+
+@pytest.mark.parametrize("late_at", ("headers", "line", "completion"))
+def test_stream_never_accepts_completion_crossing_the_absolute_deadline(late_at: str) -> None:
+    client, clock = configured(), [0.0]
+    response = Mock(status=200)
+
+    def headers():
+        clock[0] = 121.0 if late_at == "headers" else 119.0
+        return response
+
+    def line(limit):
+        clock[0] = 143.0 if late_at == "line" else 119.0
+        return json.dumps({"message": {"role": "assistant", "content": "Late result"},
+                           "done": True, "done_reason": "stop"}).encode() + b"\n"
+
+    original = client._stream_values
+
+    def parsed(payload):
+        result = original(payload)
+        if late_at == "completion":
+            clock[0] = 121.0
+        return result
+
+    response.readline.side_effect = line
+    connection = Mock(getresponse=Mock(side_effect=headers))
+    events = client.stream(message="Вопрос", history=[])
+    with (
+        patch.object(client, "_connection", return_value=(connection, "/api/chat")),
+        patch.object(client, "_stream_values", side_effect=parsed),
+        patch("omnicio.assistant.time.monotonic", side_effect=lambda: clock[0]),
+        pytest.raises(AssistantUnavailable, match="assistant_stream_timeout"),
+    ):
+        list(events)
+    response.close.assert_called_once()
+    connection.close.assert_called_once()
+    if late_at == "headers":
+        response.readline.assert_not_called()
+
+
+@pytest.mark.parametrize(("operation", "cancelled"), (
+    ("stream", True), ("stream", False), ("chat", False), ("health", False),
+))
+def test_stop_or_deadline_unblocks_detached_http_response_and_releases_resources(
+    operation: str, cancelled: bool,
+) -> None:
+    client, stop, reading = configured(), _Cancellation(), Event()
+    transport, provider = socket.socketpair()
+    connection = http.client.HTTPConnection("model.example.invalid", timeout=24)
+    connection.sock = transport
+    responses: list[http.client.HTTPResponse] = []
+    original_read = http.client.HTTPResponse.read
+    original_readline = http.client.HTTPResponse.readline
+    release_peer = provider.shutdown
+
+    def read(response, amt=None):
+        reading.set()
+        return original_read(response, amt)
+
+    def readline(response, limit=-1):
+        reading.set()
+        return original_readline(response, limit)
+
+    original = connection.getresponse
+
+    def headers():
+        response = original()
+        responses.append(response)
+        return response
+
+    call = {
+        "stream": lambda: list(client.stream(message="Вопрос", history=[], cancellation=stop)),
+        "chat": lambda: client.chat(message="Вопрос", history=[]),
+        "health": client.health,
+    }[operation]
+    # The response deliberately never finishes its body or line. Its file keeps
+    # the descriptor after HTTPConnection detaches a Connection: close socket.
+    provider.sendall(b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 100\r\n\r\n{")
+    try:
+        with (
+            patch.object(client, "_connection", return_value=(connection, "/api/chat")),
+            patch.object(connection, "getresponse", side_effect=headers),
+            patch.object(http.client.HTTPResponse, "read", read),
+            patch.object(http.client.HTTPResponse, "readline", readline),
+            patch.object(socket.socket, "shutdown") as shutdown,
+            patch("omnicio.assistant.threading.Timer") as timer,
+            ThreadPoolExecutor(max_workers=1) as workers,
+        ):
+            pending = workers.submit(call)
+            try:
+                assert reading.wait(timeout=3)
+                assert responses[0].will_close
+                assert connection.sock is None
+                assert not responses[0].isclosed()
+                budget, expire = timer.call_args.args
+                assert budget == (120 if operation == "stream" else 24)
+                timer.return_value.start.assert_called_once()
+                if cancelled:
+                    stop.cancel()
+                else:
+                    expire()  # Fire the installed watchdog while the real socket read is blocked.
+                if operation == "health":
+                    assert pending.result(timeout=3)["status"] == "unavailable"
+                else:
+                    error = AssistantCancelled if cancelled else AssistantUnavailable
+                    code = "cancelled" if cancelled else "assistant_stream_timeout"
+                    if operation == "chat":
+                        code = "assistant_unavailable"
+                    with pytest.raises(error, match=code):
+                        pending.result(timeout=3)
+                timer.return_value.cancel.assert_called_once()
+                shutdown.assert_not_called()
+            finally:
+                # Release a failed regression's reader before joining its worker.
+                release_peer(socket.SHUT_RDWR)
+    finally:
+        provider.close()
+        transport.close()
+    assert responses[0].isclosed()
+    assert transport.fileno() == -1
+    if operation == "stream":
+        assert stop.event.is_set() is cancelled
+    admitted = [client._slots.acquire(blocking=False) for _ in range(2)]
+    assert all(admitted)
+    for _ in admitted:
+        client._slots.release()
+
+
+@pytest.mark.parametrize("complete", (True, False))
+def test_polling_preserves_slow_valid_response_and_original_idle_timeout(complete: bool) -> None:
+    client, timed_out = configured(), Event()
+    transport, provider = socket.socketpair()
+    transport.settimeout(1)
+    connection = http.client.HTTPConnection("model.example.invalid", timeout=24)
+    connection.sock = transport
+    original_recv, timeout_count = socket.socket.recv_into, 0
+    body = json.dumps({"message": {"role": "assistant", "content": "Slow valid answer"},
+                       "done": True, "done_reason": "stop"}).encode() + b"\n"
+    provider.sendall(b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: "
+                     + str(len(body)).encode() + b"\r\n\r\n")
+
+    def receive(sock, buffer, *args):
+        nonlocal timeout_count
+        try:
+            return original_recv(sock, buffer, *args)
+        except TimeoutError:
+            timeout_count += 1
+            if timeout_count >= 2:
+                timed_out.set()
+            raise
+
+    def call():
+        return list(client.stream(message="Вопрос", history=[]))
+
+    try:
+        with (
+            patch.object(client, "_connection", return_value=(connection, "/api/chat")),
+            patch.object(socket.socket, "recv_into", receive),
+            patch("omnicio.assistant._READ_POLL_SECONDS", 0.05),
+            ThreadPoolExecutor(max_workers=1) as workers,
+        ):
+            pending = workers.submit(call)
+            try:
+                assert timed_out.wait(timeout=3)
+                if complete:
+                    provider.sendall(body)
+                    assert pending.result(timeout=3)[-1]["result"]["reply"] == "Slow valid answer"
+                else:
+                    with pytest.raises(AssistantUnavailable, match="assistant_unavailable"):
+                        pending.result(timeout=3)
+            finally:
+                provider.shutdown(socket.SHUT_RDWR)
+    finally:
+        provider.close()
+        transport.close()
+    assert transport.fileno() == -1
 
 
 def test_portfolio_context_is_an_allowlist_and_preserves_missing_values() -> None:

@@ -13,12 +13,14 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from .db import Database, live_execution_lock_key
-from .goal_planning import goal_forecast, normalize_goal_plan
+from .freshness import PORTFOLIO_MAX_AGE
+from .goal_planning import goal_forecast, goal_plan_fields, normalize_goal_plan
 from .portfolio_store import SettingsVersionConflict
 from .workspace import (
     CATEGORIES,
@@ -30,10 +32,13 @@ from .workspace import (
     event_digest,
     event_id,
     goal_progress,
+    income_goal_start,
     normalize_goal,
     normalize_preferences,
+    operation_category,
     portfolio_performance,
     quiet_now,
+    snapshot_valuation_complete,
     timestamp,
 )
 
@@ -41,8 +46,14 @@ _MAX_GOALS = 50
 _MAX_OPERATIONS = 50_000
 _MAX_HISTORY_POINTS = 366
 _HISTORY_PERIOD_DAYS = {"1d": 1, "1w": 7, "1m": 31, "3m": 93, "1y": 365}
-_FINANCIAL_AGE = timedelta(hours=36)
 _EVENT_ID_PATTERN = r"[0-9a-f]{64}"
+# Broker commission IDs may equal their parent trade ID. Corrections are
+# selected within an operation type, and ID-less facts have a separate namespace.
+# https://developer.tbank.ru/invest/services/operations/operations_problems
+_OPERATION_IDENTITY_SQL = (
+    "operation_type, CASE WHEN provider_operation_id <> '' "
+    "THEN 'id:' || provider_operation_id ELSE 'hash:' || encode(semantic_hash, 'hex') END"
+)
 _ACTIVITY = {
     "account_created": "Аккаунт создан",
     "login_succeeded": "Выполнен вход в аккаунт",
@@ -96,24 +107,63 @@ def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
-def _event_cursor(value: str | None) -> tuple[datetime | None, str | None, int | None]:
+def _event_cursor(
+    value: str | None, *, filter_key: str | None = None,
+) -> tuple[datetime | None, str | None, int | None]:
     if value is None:
         return None, None, None
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,512}", value):
         raise ValueError("workspace_event_cursor_invalid")
     try:
         decoded = json.loads(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
-        if not isinstance(decoded, list) or len(decoded) != 3:
+        if not isinstance(decoded, list) or len(decoded) not in {3, 4}:
             raise ValueError("workspace_event_cursor_invalid")
-        at, ident, ceiling = decoded
+        at, ident, ceiling = decoded[:3]
         parsed = timestamp(at)
         if (parsed is None or not isinstance(ident, str)
                 or re.fullmatch(_EVENT_ID_PATTERN, ident) is None
                 or type(ceiling) is not int or not 0 <= ceiling < 2**63):
             raise ValueError("workspace_event_cursor_invalid")
-        return parsed, ident, ceiling
     except (ValueError, TypeError) as exc:
         raise ValueError("workspace_event_cursor_invalid") from exc
+    if len(decoded) == 4 and decoded[3] != filter_key:
+        raise ValueError("workspace_event_cursor_filter_changed")
+    return parsed, ident, ceiling
+
+
+def _operation_cursor(
+    value: str, context: str, now: datetime,
+) -> tuple[datetime, datetime, int, int]:
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,1024}", value):
+        raise ValueError("workspace_operation_cursor_invalid")
+    try:
+        decoded = json.loads(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
+        if not isinstance(decoded, list) or len(decoded) != 5 or decoded[3] != context:
+            raise ValueError("workspace_operation_cursor_invalid")
+        observed, before = timestamp(decoded[0]), timestamp(decoded[1])
+        ident = decoded[2]
+        ceiling = decoded[4]
+        if (type(ident) is not int or type(ceiling) is not int or not 1 <= ident <= ceiling < 2**63
+                or observed is None or before is None
+                or observed > now or before > observed):
+            raise ValueError("workspace_operation_cursor_invalid")
+        return observed, before, ident, ceiling
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ValueError("workspace_operation_cursor_invalid") from exc
+
+
+def _validate_operation_page(
+    limit: int, from_at: datetime | None, to_at: datetime | None, now: datetime,
+) -> None:
+    if type(limit) is not int or not 1 <= limit <= 200:
+        raise ValueError("workspace_operation_limit")
+    if any(value is not None and (not isinstance(value, datetime) or value.tzinfo is None)
+           for value in (from_at, to_at)):
+        raise ValueError("workspace_operation_period_invalid")
+    if (to_at is not None and to_at > now) or (
+        from_at is not None and to_at is not None and from_at > to_at
+    ):
+        raise ValueError("workspace_operation_period_invalid")
 
 
 def _event_record(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -135,6 +185,15 @@ def _event_record(row: Mapping[str, Any]) -> dict[str, Any]:
             pass
     result["destination"] = destination
     return result
+
+
+def _event_categories(preferences: Mapping[str, Any], category: str) -> list[str]:
+    selected = {category}
+    if category == "all":
+        selected = set(CATEGORIES)
+    elif category == "assets":
+        selected = {"portfolio", "payments"}
+    return [key for key in CATEGORIES if key in selected and preferences["notifications"][key]]
 
 
 class WorkspaceStore:
@@ -204,7 +263,10 @@ class WorkspaceStore:
         row = cur.fetchone()
         return dict(row) if row is not None else None
 
-    def _basis(self, cur: Any, user_id: UUID) -> _Basis:
+    def _basis(
+        self, cur: Any, user_id: UUID, *, operations_from: datetime | None = None,
+        operations_to: datetime | None = None, include_operations: bool = True,
+    ) -> _Basis:
         connection = self._connection(cur, user_id)
         if connection is None:
             return _Basis(None, None, [], None, False)
@@ -224,26 +286,44 @@ class WorkspaceStore:
         )
         state = cur.fetchone()
         watermark = timestamp(state["last_complete_watermark"]) if state is not None else None
+        basis = _Basis(connection, dict(snapshot) if snapshot is not None else None,
+                       [], watermark, watermark is not None)
+        if not include_operations:
+            return basis
+        return self._with_operations(
+            cur, user_id, basis, from_at=operations_from, to_at=operations_to,
+        )
+
+    @staticmethod
+    def _with_operations(
+        cur: Any, user_id: UUID, basis: _Basis, *,
+        from_at: datetime | None = None, to_at: datetime | None = None,
+    ) -> _Basis:
+        if basis.connection is None:
+            return basis
         cur.execute(
-            "SELECT * FROM (SELECT DISTINCT ON (CASE WHEN provider_operation_id <> '' "
-            "THEN provider_operation_id ELSE encode(semantic_hash, 'hex') END) "
+            "SELECT * FROM (SELECT DISTINCT ON (" + _OPERATION_IDENTITY_SQL + ") "
             "id, provider_operation_id, operation_date, operation_type, operation_state, "
             "instrument_uid, payment_value, payment_currency, observed_at "
             "FROM operation_observations WHERE user_id = %s AND account_id = %s "
-            "ORDER BY CASE WHEN provider_operation_id <> '' THEN provider_operation_id "
-            "ELSE encode(semantic_hash, 'hex') END, observed_at DESC, id DESC) AS latest "
+            "ORDER BY " + _OPERATION_IDENTITY_SQL + ", observed_at DESC, id DESC) AS latest "
+            "WHERE (%s::timestamptz IS NULL OR operation_date >= %s) "
+            "AND (%s::timestamptz IS NULL OR operation_date <= %s) "
             "ORDER BY operation_date DESC, id DESC LIMIT %s",
-            (user_id, account_id, _MAX_OPERATIONS + 1),
+            # Apply the time window after resolving corrections. Otherwise a
+            # corrected operation moved outside the window reappears as its old version.
+            (user_id, basis.connection["account_id"], from_at, from_at,
+             to_at, to_at, _MAX_OPERATIONS + 1),
         )
         operations = [dict(row) for row in cur.fetchall()]
         complete = bool(
-            state is not None
-            and watermark is not None
-            and not state["pending_cursor"]
+            basis.watermark is not None
             and len(operations) <= _MAX_OPERATIONS
         )
-        return _Basis(connection, dict(snapshot) if snapshot is not None else None,
-                      operations[:_MAX_OPERATIONS], watermark, complete)
+        return _Basis(
+            connection=basis.connection, latest=basis.latest,
+            operations=operations[:_MAX_OPERATIONS], watermark=basis.watermark, complete=complete,
+        )
 
     @staticmethod
     def _history(
@@ -266,7 +346,10 @@ class WorkspaceStore:
         # PostgreSQL; a long account history never loads full evidence documents.
         cur.execute(
             "WITH source AS MATERIALIZED ("
-            "SELECT id, captured_at, created_at, analysis_status, nav_rub::text AS nav_rub "
+            "SELECT id, captured_at, created_at, analysis_status, nav_rub::text AS nav_rub, "
+            "COALESCE(evidence->'analysis'->>'valuation_status', "
+            "CASE WHEN analysis_status = 'observed' THEN 'complete' ELSE 'unknown' END) "
+            "AS valuation_status "
             "FROM portfolio_snapshots "
             "WHERE user_id = %(user)s AND account_id = %(account)s "
             "AND environment = %(environment)s), "
@@ -280,12 +363,14 @@ class WorkspaceStore:
             "ELSE COALESCE(floor(extract(epoch FROM (captured_at - first_at)) / "
             "NULLIF(extract(epoch FROM (last_at - first_at)), 0) * (%(limit)s - 2))::bigint, 0) "
             "END AS bucket FROM ranked), "
-            "sample AS ((SELECT id, captured_at, created_at, analysis_status, nav_rub "
+            "sample AS ((SELECT id, captured_at, created_at, analysis_status, nav_rub, "
+            "valuation_status "
             "FROM bucketed WHERE ordinal = 1) UNION "
-            "(SELECT DISTINCT ON (bucket) id, captured_at, created_at, analysis_status, nav_rub "
+            "(SELECT DISTINCT ON (bucket) id, captured_at, created_at, analysis_status, nav_rub, "
+            "valuation_status "
             "FROM bucketed ORDER BY bucket, captured_at DESC, created_at DESC, id DESC)), "
             "covered AS MATERIALIZED (SELECT * FROM selected "
-            "WHERE analysis_status = 'observed' AND captured_at <= %(watermark)s), "
+            "WHERE valuation_status = 'complete' AND captured_at <= %(watermark)s), "
             "endpoints AS ((SELECT * FROM covered ORDER BY captured_at, created_at, id LIMIT 1) "
             "UNION (SELECT * FROM covered "
             "ORDER BY captured_at DESC, created_at DESC, id DESC LIMIT 1)) "
@@ -354,8 +439,115 @@ class WorkspaceStore:
     def goals(self, user_id: UUID) -> dict[str, Any]:
         now = datetime.now(UTC)
         with self._transaction(user_id) as cur:
-            basis = self._basis(cur, user_id)
-            return {"items": [self._goal(row, basis, now) for row in self._goal_rows(cur, user_id)]}
+            basis = self._basis(cur, user_id, include_operations=False)
+            return {"items": self._goals_with_progress(
+                cur, user_id, self._goal_rows(cur, user_id), basis, now,
+            )}
+
+    def _goals_with_progress(
+        self, cur: Any, user_id: UUID, rows: Sequence[Mapping[str, Any]],
+        basis: _Basis, now: datetime,
+    ) -> list[dict[str, Any]]:
+        # Each goal owns its own period and coverage. An older goal with more
+        # than the bounded ledger limit cannot disable a newer goal's progress.
+        periods: dict[datetime, _Basis] = {}
+        goals = []
+        for row in rows:
+            goal_basis = basis
+            if (row["progress_source"] == "income" and basis.connection is not None
+                    and row["account_id"] == basis.connection["account_id"]
+                    and row["environment"] == basis.connection["environment"]):
+                begin = income_goal_start(row)
+                if begin not in periods:
+                    periods[begin] = self._with_operations(
+                        cur, user_id, basis, from_at=begin,
+                        to_at=min(basis.watermark, now) if basis.watermark is not None else now,
+                    )
+                goal_basis = periods[begin]
+            goals.append(self._goal(row, goal_basis, now))
+        return goals
+
+    def operations(
+        self, user_id: UUID, *, limit: int = 50, cursor: str | None = None,
+        from_at: datetime | None = None, to_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Page the actual corrected broker ledger under the current account authority.
+
+        New facts are frozen at the first page time. Reconfirming an older
+        correction invalidates that snapshot instead of omitting a row silently.
+        """
+        now = datetime.now(UTC)
+        _validate_operation_page(limit, from_at, to_at, now)
+        with self._transaction(user_id) as cur:
+            basis = self._basis(cur, user_id, include_operations=False)
+            connection = basis.connection
+            if connection is None:
+                return {"status": "not_connected", "items": [], "next_cursor": None,
+                        "source": "T-Invest", "coverage": "unavailable"}
+            context = event_id("operation_cursor", [user_id, connection, from_at, to_at])
+            observed_at, before, before_id = now, None, None
+            if cursor is not None:
+                observed_at, before, before_id, ceiling = _operation_cursor(cursor, context, now)
+                cur.execute(
+                    "SELECT EXISTS (SELECT 1 FROM operation_observations "
+                    "WHERE user_id = %s AND account_id = %s AND id <= %s "
+                    "AND observed_at > %s) AS changed",
+                    (user_id, connection["account_id"], ceiling, observed_at),
+                )
+                if cur.fetchone()["changed"]:
+                    raise ValueError("workspace_operation_history_changed")
+            else:
+                # Ledger ingestion uses the same owner transaction lock, so its
+                # next committed ID cannot appear below this snapshot ceiling.
+                cur.execute(
+                    "SELECT COALESCE(max(id), 0) AS ceiling FROM operation_observations "
+                    "WHERE user_id = %s AND account_id = %s",
+                    (user_id, connection["account_id"]),
+                )
+                ceiling = int(cur.fetchone()["ceiling"])
+            cur.execute(
+                "WITH latest AS (SELECT DISTINCT ON (" + _OPERATION_IDENTITY_SQL + ") "
+                "id, operation_date, observed_at, normalized FROM operation_observations "
+                "WHERE user_id = %s AND account_id = %s AND observed_at <= %s AND id <= %s "
+                "ORDER BY " + _OPERATION_IDENTITY_SQL + ", observed_at DESC, id DESC) "
+                "SELECT * FROM latest WHERE (%s::timestamptz IS NULL OR operation_date >= %s) "
+                "AND operation_date <= %s "
+                "AND (%s::timestamptz IS NULL OR (operation_date, id) < (%s, %s::bigint)) "
+                "ORDER BY operation_date DESC, id DESC LIMIT %s",
+                (user_id, connection["account_id"], observed_at, ceiling, from_at, from_at,
+                 to_at or observed_at, before, before, before_id, limit + 1),
+            )
+            rows = cur.fetchall()
+            items = []
+            for row in rows[:limit]:
+                data = row["normalized"]
+                item = {key: data.get(key) for key in (
+                    "provider_operation_id", "parent_operation_id", "name", "description",
+                    "operation_type", "state", "instrument_uid", "figi", "instrument_type",
+                    "ticker", "payment", "price", "commission", "accrued_int", "quantity",
+                    "quantity_done", "quantity_rest", "trades",
+                )}
+                items.append({**item, "id": str(row["id"]),
+                              "operation_date": row["operation_date"].isoformat(),
+                              "observed_at": row["observed_at"].isoformat(),
+                              "category": operation_category(data.get("operation_type"))})
+            next_cursor = None
+            if len(rows) > limit:
+                last = rows[limit - 1]
+                next_cursor = base64.urlsafe_b64encode(_json([
+                    observed_at, last["operation_date"], last["id"], context, ceiling,
+                ]).encode()).decode().rstrip("=")
+            return {"status": "available", "source": "T-Invest",
+                    "source_url": "https://developer.tbank.ru/invest/services/operations/methods",
+                    "account_id": connection["account_id"],
+                    "environment": connection["environment"],
+                    "observed_at": observed_at.isoformat(), "items": items,
+                    "from_at": from_at.isoformat() if from_at is not None else None,
+                    "to_at": (to_at or observed_at).isoformat(), "next_cursor": next_cursor,
+                    "coverage": "complete" if basis.watermark is not None
+                    and basis.watermark >= (to_at or observed_at) else "partial",
+                    "complete_through": basis.watermark.isoformat() if basis.watermark else None,
+                    "commission_basis": "metadata_not_a_second_ledger_charge"}
 
     def goal_plan(self, user_id: UUID, goal_id: UUID) -> dict[str, Any]:
         now = datetime.now(UTC)
@@ -365,12 +557,15 @@ class WorkspaceStore:
             row = cur.fetchone()
             if row is None:
                 raise WorkspaceNotFound("workspace_goal_not_found")
-            goal = self._goal(row, self._basis(cur, user_id), now)
+            basis = self._basis(cur, user_id, include_operations=False)
+            goal = self._goals_with_progress(cur, user_id, [row], basis, now)[0]
             cur.execute("SELECT version, document, updated_at FROM goal_plans "
                         "WHERE user_id = %s AND goal_id = %s", (user_id, goal_id))
             plan = cur.fetchone()
             saved = dict(plan) if plan else {"version": 0, "document": None, "updated_at": None}
         return {**saved, "goal_id": str(goal_id), "goal_version": goal["version"],
+                "goal_kind": goal["kind"],
+                "applicable_fields": list(goal_plan_fields(goal["kind"])),
                 "forecast": goal_forecast(
                     goal, saved["document"], today=now.astimezone(ZoneInfo("Europe/Moscow")).date(),
                 )
@@ -380,14 +575,14 @@ class WorkspaceStore:
         self, user_id: UUID, goal_id: UUID, document: object, *,
         expected_version: int, expected_goal_version: int,
     ) -> dict[str, Any]:
-        normalized = normalize_goal_plan(document)
         with self._transaction(user_id) as cur:
-            cur.execute("SELECT version FROM investment_goals WHERE user_id = %s "
+            cur.execute("SELECT version, kind FROM investment_goals WHERE user_id = %s "
                         "AND id = %s FOR UPDATE", (user_id, goal_id))
             row = cur.fetchone()
             if row is None:
                 raise WorkspaceNotFound("workspace_goal_not_found")
             _version(expected_goal_version, row["version"])
+            normalized = normalize_goal_plan(document, kind=row["kind"])
             cur.execute("SELECT version FROM goal_plans WHERE user_id = %s AND goal_id = %s",
                         (user_id, goal_id))
             existing = cur.fetchone()
@@ -449,7 +644,8 @@ class WorkspaceStore:
                 (user_id, *(goal[key] for key in GOAL_FIELDS), account_id, environment),
             )
             row = dict(cur.fetchone())
-            return self._goal(row, self._basis(cur, user_id), now)
+            basis = self._basis(cur, user_id, include_operations=False)
+            return self._goals_with_progress(cur, user_id, [row], basis, now)[0]
 
     def update_goal(
         self,
@@ -485,7 +681,8 @@ class WorkspaceStore:
                 (*(goal[key] for key in GOAL_FIELDS), account_id, environment, user_id, goal_id),
             )
             row = dict(cur.fetchone())
-            return self._goal(row, self._basis(cur, user_id), now)
+            basis = self._basis(cur, user_id, include_operations=False)
+            return self._goals_with_progress(cur, user_id, [row], basis, now)[0]
 
     def delete_goal(self, user_id: UUID, goal_id: UUID, *, expected_version: int) -> bool:
         with self._transaction(user_id) as cur:
@@ -528,10 +725,10 @@ class WorkspaceStore:
         if latest is None:
             return result
         captured_at = timestamp(latest["captured_at"])
-        state = "observed" if latest["analysis_status"] == "observed" else "partial"
+        state = "observed" if snapshot_valuation_complete(latest) else "partial"
         if captured_at is None or captured_at > now:
             state = "partial"
-        elif now - captured_at > _FINANCIAL_AGE:
+        elif now - captured_at >= PORTFOLIO_MAX_AGE:
             state = "stale"
         analysis = latest["evidence"].get("analysis", {})
         return {
@@ -545,6 +742,13 @@ class WorkspaceStore:
             else None,
             "observed_at": captured_at.isoformat() if captured_at is not None else None,
             "allocations": analysis.get("classes", []),
+            "valuation_status": (
+                "complete" if snapshot_valuation_complete(latest) else "unavailable"
+            ),
+            "positions_valuation_status": analysis.get("positions_valuation_status", "unknown"),
+            "sector_status": analysis.get("sector_status", "unknown"),
+            "valid_until": ((captured_at + PORTFOLIO_MAX_AGE).isoformat()
+                            if captured_at is not None else None),
         }
 
     @staticmethod
@@ -710,7 +914,9 @@ class WorkspaceStore:
             if goal["status"] != "active":
                 continue
             progress = goal["progress"]
-            if progress["status"] == "available" and amount(progress["percent"]) >= 100:
+            # This ratio comes from validated amounts. Its calculated scale can
+            # exceed the input-money precision without making the progress invalid.
+            if progress["status"] == "available" and Decimal(progress["percent"]) >= 100:
                 self._insert_event(
                     cur,
                     user_id,
@@ -893,15 +1099,19 @@ class WorkspaceStore:
         category: str = "all",
         cursor: str | None = None,
         query: str = "",
+        important_only: bool = False,
     ) -> dict[str, Any]:
         if type(limit) is not int or not 1 <= limit <= 200:
             raise ValueError("workspace_event_limit")
-        if category not in (*CATEGORIES, "all") or type(unread_only) is not bool:
+        if (category not in (*CATEGORIES, "all", "assets") or type(unread_only) is not bool
+                or type(important_only) is not bool):
             raise ValueError("workspace_event_filter")
         if (not isinstance(query, str) or len(query) > 200
                 or any(ord(char) < 32 for char in query)):
             raise ValueError("workspace_event_query_invalid")
-        before, before_id, ceiling = _event_cursor(cursor)
+        enabled = _event_categories(preferences, category)
+        filter_key = event_id("event_filter", [enabled, unread_only, important_only, query.strip()])
+        before, before_id, ceiling = _event_cursor(cursor, filter_key=filter_key)
         cur.execute(
             "SELECT COALESCE(max(revision), 0) AS revision FROM workspace_events "
             "WHERE user_id = %s", (user_id,),
@@ -910,21 +1120,17 @@ class WorkspaceStore:
         if ceiling is not None and ceiling > current_revision:
             raise ValueError("workspace_event_cursor_invalid")
         ceiling = current_revision if ceiling is None else ceiling
-        enabled = [
-            key
-            for key in CATEGORIES
-            if preferences["notifications"][key] and category in {"all", key}
-        ]
         cur.execute(
             "SELECT id, category, kind, severity, title, detail, occurred_at, read_at, "
             "target, source, revision "
             "FROM workspace_events WHERE user_id = %s AND category = ANY (%s) "
             "AND (NOT %s OR read_at IS NULL) AND revision <= %s "
+            "AND (NOT %s OR severity IN ('warning', 'critical')) "
             "AND (%s::timestamptz IS NULL OR (occurred_at, id) < (%s, %s)) "
             "AND (%s = '' OR position(lower(%s) IN lower(title || ' ' || detail "
             "|| ' ' || source::text)) > 0) "
             "ORDER BY occurred_at DESC, id DESC LIMIT %s",
-            (user_id, enabled, unread_only, ceiling, before, before, before_id,
+            (user_id, enabled, unread_only, ceiling, important_only, before, before, before_id,
              query.strip(), query.strip(), limit + 1),
         )
         rows = cur.fetchall()
@@ -933,7 +1139,7 @@ class WorkspaceStore:
         if len(rows) > limit:
             last = items[-1]
             next_cursor = base64.urlsafe_b64encode(_json([
-                last["occurred_at"], last["id"], ceiling,
+                last["occurred_at"], last["id"], ceiling, filter_key,
             ]).encode()).decode().rstrip("=")
         cur.execute(
             "SELECT count(*) AS total FROM workspace_events WHERE user_id = %s "
@@ -943,6 +1149,15 @@ class WorkspaceStore:
         unread = int(cur.fetchone()["total"])
         digest = event_digest([], preferences, now)
         if digest["frequency"] != "off":
+            cur.execute(
+                "SELECT id, category, kind, severity, title, detail, occurred_at, read_at, "
+                "updated_at, target, source, revision FROM workspace_events WHERE user_id = %s "
+                "AND category = ANY (%s) AND read_at IS NULL AND updated_at >= %s "
+                "AND updated_at <= %s ORDER BY CASE severity WHEN 'critical' THEN 0 "
+                "WHEN 'warning' THEN 1 ELSE 2 END, updated_at DESC, id DESC LIMIT 8",
+                (user_id, enabled, digest["from"], now),
+            )
+            digest = event_digest([_event_record(row) for row in cur.fetchall()], preferences, now)
             cur.execute(
                 "SELECT category, count(*) AS total FROM workspace_events WHERE user_id = %s "
                 "AND category = ANY (%s) AND read_at IS NULL AND updated_at >= %s "
@@ -970,11 +1185,14 @@ class WorkspaceStore:
         category: str = "all",
         cursor: str | None = None,
         query: str = "",
+        important_only: bool = False,
     ) -> dict[str, Any]:
         now = datetime.now(UTC)
         with self._transaction(user_id) as cur:
             basis = self._basis(cur, user_id)
-            goals = [self._goal(row, basis, now) for row in self._goal_rows(cur, user_id)]
+            goals = self._goals_with_progress(
+                cur, user_id, self._goal_rows(cur, user_id), basis, now,
+            )
             self._sync_events(cur, user_id, basis, goals, now)
             return self._events_payload(
                 cur,
@@ -986,14 +1204,38 @@ class WorkspaceStore:
                 category=category,
                 cursor=cursor,
                 query=query,
+                important_only=important_only,
             )
+
+    def events_summary(self, user_id: UUID) -> dict[str, Any]:
+        """Unbounded unread counts over persisted events, without loading ledger or feed."""
+        now = datetime.now(UTC)
+        with self._transaction(user_id) as cur:
+            preferences = self._preferences(cur, user_id)["document"]
+            enabled = _event_categories(preferences, "all")
+            cur.execute(
+                "SELECT category, count(*) FILTER (WHERE read_at IS NULL) AS unread, "
+                "COALESCE(max(revision), 0) AS revision FROM workspace_events "
+                "WHERE user_id = %s AND category = ANY (%s) GROUP BY category",
+                (user_id, enabled),
+            )
+            rows = cur.fetchall()
+            categories = dict.fromkeys(CATEGORIES, 0)
+            for row in rows:
+                categories[row["category"]] = int(row["unread"])
+            return {"unread_total": sum(categories.values()),
+                    "max_revision": max((int(row["revision"]) for row in rows), default=0),
+                    "categories": categories, "observed_at": now.isoformat(),
+                    "alerts_suppressed": quiet_now(preferences, now)}
 
     def synchronize_events(self, user_id: UUID) -> None:
         """Collect persisted facts even while the owner's browser is closed."""
         now = datetime.now(UTC)
         with self._transaction(user_id) as cur:
             basis = self._basis(cur, user_id)
-            goals = [self._goal(row, basis, now) for row in self._goal_rows(cur, user_id)]
+            goals = self._goals_with_progress(
+                cur, user_id, self._goal_rows(cur, user_id), basis, now,
+            )
             self._sync_events(cur, user_id, basis, goals, now)
 
     def get_event(self, user_id: UUID, ident: str) -> dict[str, Any]:
@@ -1014,7 +1256,7 @@ class WorkspaceStore:
         self, user_id: UUID, *, through_revision: int, category: str = "all",
     ) -> dict[str, Any]:
         if (type(through_revision) is not int or not 0 <= through_revision < 2**63
-                or category not in (*CATEGORIES, "all")):
+                or category not in (*CATEGORIES, "all", "assets")):
             raise ValueError("workspace_event_cutoff_invalid")
         now = datetime.now(UTC)
         with self._transaction(user_id) as cur:
@@ -1025,8 +1267,7 @@ class WorkspaceStore:
             )
             if through_revision > int(cur.fetchone()["revision"]):
                 raise ValueError("workspace_event_cutoff_invalid")
-            enabled = [key for key in CATEGORIES
-                       if preferences["notifications"][key] and category in {"all", key}]
+            enabled = _event_categories(preferences, category)
             cur.execute(
                 "UPDATE workspace_events SET read_at = %s WHERE user_id = %s "
                 "AND category = ANY (%s) AND read_at IS NULL AND revision <= %s",
@@ -1077,12 +1318,13 @@ class WorkspaceStore:
         from_at = (now - timedelta(days=_HISTORY_PERIOD_DAYS[history_period])
                    if history_period != "all" else None)
         with self._transaction(user_id) as cur:
-            basis = self._basis(cur, user_id)
+            basis = self._basis(cur, user_id, operations_from=from_at, operations_to=now)
             history = self._history(
                 cur, user_id, basis, period=history_period, from_at=from_at, now=now,
             )
             preferences = self._preferences(cur, user_id)
-            goals = [self._goal(row, basis, now) for row in self._goal_rows(cur, user_id)]
+            goal_rows = self._goal_rows(cur, user_id)
+            goals = self._goals_with_progress(cur, user_id, goal_rows, basis, now)
             self._sync_events(cur, user_id, basis, goals, now)
             return {
                 "generated_at": now.isoformat(),

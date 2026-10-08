@@ -213,14 +213,23 @@ def recovery_status(*, now: datetime | None = None) -> dict[str, object]:
         _timestamp(payload.get("latest_backup_at")), max_age=BACKUP_MAX_AGE,
         coverage="complete", now=checked_at,
     )
-    weekly, weekly_copies = _weekly_evidence(payload, checked_at)
-    copies = payload.get("retention_copies")
+    single_database = payload.get("policy_mode") == "single_existing_database"
+    # Historical mutation receipts remain on disk; they are not a fresh managed
+    # retention inventory once automatic copy creation has been disabled.
+    weekly, weekly_copies = _weekly_evidence({} if single_database else payload, checked_at)
+    copies = None if single_database else payload.get("retention_copies")
     if type(copies) is not int or not 1 <= copies <= 99:
         copies = None
     daily = payload.get("schedule_enabled") is True and payload.get("schedule_interval") == "day"
     restoration = _restore_verification(payload, checked_at)
+    copying_disabled = (
+        single_database and payload.get("copy_creation_enabled") is False
+        and payload.get("schedule_enabled") is False and inventory.status == "fresh"
+    )
     return {
-        "status": _status_label(inventory, backup, weekly, daily, copies),
+        "status": ("copying_disabled" if copying_disabled
+                   else _status_label(inventory, backup, weekly, daily, copies)),
+        "copy_creation_enabled": False if copying_disabled else None,
         "checked_at": checked_at,
         "freshness": asdict(inventory),
         "backup": asdict(backup),

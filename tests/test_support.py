@@ -6,7 +6,12 @@ from uuid import UUID
 import pytest
 
 from omnicio.db import UserRecord
-from omnicio.support import SupportCommandError, run_command, validate_reason
+from omnicio.support import (
+    SupportCommandError,
+    public_support_contact,
+    run_command,
+    validate_reason,
+)
 
 
 class FakeDatabase:
@@ -73,3 +78,22 @@ def test_reason_is_bounded() -> None:
         validate_reason("")
     with pytest.raises(SupportCommandError):
         validate_reason("x" * 201)
+
+
+def test_public_contact_is_a_user_initiated_draft_without_automatic_delivery() -> None:
+    result = public_support_contact("Test operator", "support@example.org")
+    assert result["configured"] is True
+    assert result["mailto"] == "mailto:support@example.org"
+    assert result["automatically_sent"] is False
+    assert result["safe_fields"] == ["request_id", "release", "route", "description"]
+
+
+@pytest.mark.parametrize(("name", "email"), [
+    ("", "support@example.org"), ("Operator", ""), ("Operator", "a@example.org?bcc=bad"),
+    ("Operator", "a@example.org\r\nBcc:bad@example.org"), ("Operator\nInjected", "a@example.org"),
+])
+def test_missing_or_injected_public_contact_stays_unavailable(name: str, email: str) -> None:
+    result = public_support_contact(name, email)
+    assert result["configured"] is False
+    assert result["email"] is None
+    assert result["mailto"] is None

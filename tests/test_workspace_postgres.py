@@ -28,12 +28,20 @@ from omnicio.db import Database
 from omnicio.notifications import (
     DeliveryResult,
     NotificationConfig,
+    NotificationConflict,
+    NotificationRateLimited,
     NotificationService,
     NotificationTransport,
     push_public_key,
+    vapid_authorization,
 )
-from omnicio.portfolio_store import SettingsVersionConflict
-from omnicio.workspace import default_preferences
+from omnicio.portfolio_store import (
+    PortfolioStore,
+    SettingsVersionConflict,
+    _save_operation_observation,
+)
+from omnicio.tbank import TBankMoney, TBankOperation
+from omnicio.workspace import cashflow_summary, default_preferences
 from omnicio.workspace_store import WorkspaceNotFound, WorkspaceStore
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
@@ -140,7 +148,7 @@ def insert_notification_event(
 def notification_service(database: Database) -> tuple[NotificationService, Mock, dict[str, Any]]:
     private = base64.urlsafe_b64encode(bytes([1]) * 32).decode().rstrip("=")
     config = NotificationConfig(
-        crypto_key=Fernet.generate_key().decode(), enabled=True,
+        crypto_key=Fernet.generate_key().decode(), enabled=True, email_enabled=True,
         vapid_private_key=private, vapid_subject="mailto:operator@example.org",
         smtp_host="smtp.example.org", smtp_sender="operator@example.org",
     )
@@ -155,6 +163,446 @@ def notification_service(database: Database) -> tuple[NotificationService, Mock,
                  "auth": base64.urlsafe_b64encode(bytes([2]) * 16).decode().rstrip("=")},
     }
     return service, transport, subscription
+
+
+def notification_session(database: Database, owner: UUID, *, name: str = "primary") -> bytes:
+    digest = hashlib.sha256(f"notification-fixture:{owner}:{name}".encode()).digest()
+    with database.pool.connection() as conn:
+        conn.execute(
+            "INSERT INTO sessions (user_id, token_digest, client_ip_hash, expires_at) "
+            "VALUES (%s, %s, %s, now() + interval '400 days') "
+            "ON CONFLICT (token_digest) DO NOTHING", (owner, digest, b"i" * 32),
+        )
+    return digest
+
+
+def subscribe_device(
+    service: NotificationService, owner: UUID, subscription: dict[str, Any],
+) -> dict[str, Any]:
+    return service.subscribe_push(
+        owner, subscription, session_digest=notification_session(service.database, owner),
+    )
+
+
+def last_delivery_payload(service: NotificationService, owner: UUID) -> dict[str, Any]:
+    """Assert financial/event membership in custody, not in a lock-screen payload."""
+    with service.workspace._transaction(owner) as cur:
+        cur.execute(
+            "SELECT payload_ciphertext FROM notification_outbox WHERE user_id = %s "
+            "AND status = 'accepted' ORDER BY accepted_at DESC, created_at DESC LIMIT 1",
+            (owner,),
+        )
+        return service._open(cur.fetchone()["payload_ciphertext"])
+
+
+def test_push_binding_is_session_owned_idempotent_and_respects_explicit_opt_out(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, other = user(database), user(database)
+    service, _, subscription = notification_service(database)
+    digest = notification_session(database, owner)
+    foreign_digest = notification_session(database, other)
+    with pytest.raises(PermissionError, match="session_expired"):
+        service.subscribe_push(owner, subscription, session_digest=foreign_digest)
+    first = service.subscribe_push(owner, subscription, session_digest=digest)
+    assert first["status"] == "active"
+    assert first["current_session"] is True
+    assert service.subscribe_push(owner, subscription, session_digest=digest,
+                                  intent="sync") == first
+    status = service.status(owner, session_digest=digest)["channels"][0]
+    assert status["binding_id"] == UUID(first["binding_id"])
+    assert status["current_session"] is True
+    assert "session_id" not in status
+    assert "session_id" not in service.status(owner)["channels"][0]
+    renewed = notification_session(database, owner, name="renewed")
+    rebound = service.subscribe_push(owner, subscription, session_digest=renewed, intent="sync")
+    assert rebound["id"] == first["id"]
+    assert rebound["binding_id"] != first["binding_id"]
+    assert not service.status(owner, session_digest=digest)["channels"][0]["current_session"]
+    service.revoke_channel(owner, UUID(first["id"]))
+    revoked = service.subscribe_push(owner, subscription, session_digest=renewed, intent="sync")
+    assert revoked["status"] == "revoked"
+    assert revoked["binding_id"] == rebound["binding_id"]
+    enabled = service.subscribe_push(owner, subscription, session_digest=renewed, intent="enable")
+    assert enabled["status"] == "active"
+    assert enabled["binding_id"] != rebound["binding_id"]
+
+
+@pytest.mark.parametrize("authority_alias", [False, True])
+def test_competing_push_owners_cannot_share_an_active_endpoint_under_rls(
+    workspace_database: tuple[Database, str, str], authority_alias: bool,
+) -> None:
+    database = workspace_database[0]
+    owners = [user(database), user(database)]
+    service, _, subscription = notification_service(database)
+    digests = {owner: notification_session(database, owner) for owner in owners}
+
+    def bind(owner: UUID) -> tuple[UUID, str]:
+        selected = subscription
+        if authority_alias and owner == owners[1]:
+            selected = {**subscription, "endpoint": subscription["endpoint"].replace(
+                "fcm.googleapis.com", "FCM.GOOGLEAPIS.COM:443",
+            )}
+        try:
+            result = service.subscribe_push(owner, selected, session_digest=digests[owner])
+        except NotificationConflict as exc:
+            return owner, str(exc)
+        return owner, result["status"]
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        outcomes = dict(workers.map(bind, owners))
+    assert sorted(outcomes.values()) == ["active", "notification_device_conflict"]
+    winner = next(owner for owner, value in outcomes.items() if value == "active")
+    loser = next(owner for owner in owners if owner != winner)
+    assert service.status(loser)["channels"] == []
+    old = service.status(winner)["channels"][0]
+    service.revoke_channel(winner, old["id"])
+    result = service.subscribe_push(loser, subscription, session_digest=digests[loser])
+    assert result["status"] == "active"
+    assert service.status(winner)["channels"][0]["status"] == "revoked"
+    # The FK itself also rejects a valid session UUID belonging to another owner.
+    with database.pool.connection() as conn:
+        foreign_session = conn.execute("SELECT id FROM sessions WHERE token_digest = %s",
+                                       (digests[winner],)).fetchone()["id"]
+    with service.workspace._transaction(loser) as cur, \
+            pytest.raises(psycopg.errors.ForeignKeyViolation):
+        cur.execute("UPDATE notification_channels SET session_id = %s WHERE user_id = %s",
+                    (foreign_session, loser))
+
+
+@pytest.mark.parametrize("ending", ["logout", "expiry", "pruned"])
+def test_session_end_cancels_pending_push_and_preserves_receipt_history(
+    workspace_database: tuple[Database, str, str], ending: str,
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    digest = notification_session(database, owner)
+    first = service.subscribe_push(owner, subscription, session_digest=digest)
+    insert_notification_event(service.workspace, owner, 1)
+    service.queue_events(owner)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner)
+    insert_notification_event(service.workspace, owner, 2)
+    service.queue_events(owner)
+    with database.pool.connection() as conn:
+        if ending == "logout":
+            database.revoke_session(digest)
+        elif ending == "expiry":
+            conn.execute("UPDATE sessions SET created_at = now() - interval '2 days', "
+                         "expires_at = now() - interval '1 second' "
+                         "WHERE token_digest = %s", (digest,))
+        else:
+            conn.execute("DELETE FROM sessions WHERE token_digest = %s", (digest,))
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not service.deliver_one(owner)
+    state = service.status(owner)
+    assert state["channels"][0]["id"] == UUID(first["id"])
+    assert state["channels"][0]["status"] == "expired"
+    assert {row["status"] for row in state["deliveries"]} == {"accepted", "cancelled"}
+    assert transport.send_push.call_count == 1
+    insert_notification_event(service.workspace, owner, 3)
+    service.queue_events(owner)
+    assert len(service.status(owner)["deliveries"]) == 2
+
+
+@pytest.mark.parametrize("provider_result", [
+    DeliveryResult("failed", "push_subscription_expired", expired=True),
+    DeliveryResult("queued", "push_rate_limited", 60),
+])
+def test_old_push_result_cannot_expire_or_retry_a_rebound_device(
+    workspace_database: tuple[Database, str, str], provider_result: DeliveryResult,
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    digest = notification_session(database, owner)
+    first = service.subscribe_push(owner, subscription, session_digest=digest)
+    insert_notification_event(service.workspace, owner, 1)
+    insert_notification_event(service.workspace, owner, 2)
+    service.queue_events(owner)
+    changed = {**subscription, "keys": {**subscription["keys"],
+               "auth": base64.urlsafe_b64encode(b"n" * 16).decode().rstrip("=")}}
+    rebound: dict[str, Any] = {}
+
+    def returned(*args: Any, **kwargs: Any) -> DeliveryResult:
+        rebound.update(service.subscribe_push(owner, changed, session_digest=digest, intent="sync"))
+        return provider_result
+
+    transport.send_push.side_effect = returned
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner)
+        assert not service.deliver_one(owner, now=datetime.now(UTC) + timedelta(minutes=2))
+    assert rebound["id"] == first["id"]
+    assert rebound["binding_id"] != first["binding_id"]
+    current = service.status(owner)["channels"][0]
+    assert current["status"] == "active"
+    assert str(current["binding_id"]) == rebound["binding_id"]
+    assert all(row["status"] in {"failed", "cancelled"}
+               for row in service.status(owner)["deliveries"])
+    assert transport.send_push.call_count == 1
+    payload = transport.send_push.call_args.args[1]
+    assert payload["binding_id"] == first["binding_id"]
+    assert set(payload) == {"title", "body", "url", "tag", "binding_id", "kind"}
+
+
+def test_explicit_push_test_is_current_device_only_rate_limited_and_immediate(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, other = user(database), user(database)
+    service, transport, subscription = notification_service(database)
+    digest = notification_session(database, owner)
+    different_device = notification_session(database, owner, name="different-browser")
+    foreign = notification_session(database, other)
+    channel = UUID(service.subscribe_push(owner, subscription, session_digest=digest)["id"])
+    with pytest.raises(WorkspaceNotFound):
+        service.test_push(owner, channel, session_digest=different_device)
+    with pytest.raises(WorkspaceNotFound):
+        service.test_push(other, channel, session_digest=foreign)
+    now = datetime.now(UTC)
+    prefs = default_preferences()
+    prefs["quiet_hours"].update(enabled=True, timezone="UTC", start=now.strftime("%H:%M"),
+                                end=(now + timedelta(hours=1)).strftime("%H:%M"))
+    service.workspace.save_preferences(owner, prefs, expected_version=0)
+
+    def queue(_: int) -> str:
+        try:
+            return service.test_push(owner, channel, session_digest=digest)["status"]
+        except NotificationRateLimited as exc:
+            return str(exc)
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        assert sorted(workers.map(queue, [0, 1])) == ["notification_test_rate_limited", "queued"]
+    created = service.status(owner)["deliveries"][0]["created_at"]
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner, now=created + timedelta(minutes=2))
+    assert transport.send_push.call_count == 1
+    assert transport.send_push.call_args.kwargs["ttl_seconds"] == 180
+    assert transport.send_push.call_args.args[1]["kind"] == "test"
+    assert service.status(owner)["deliveries"][0]["status"] == "accepted"
+    service.revoke_channel(owner, channel)
+    with pytest.raises(NotificationConflict, match="notification_channel_inactive"):
+        service.test_push(owner, channel, session_digest=digest)
+
+
+def test_push_test_expires_after_five_minutes_without_a_provider_request(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    digest = notification_session(database, owner)
+    channel = UUID(service.subscribe_push(owner, subscription, session_digest=digest)["id"])
+    service.test_push(owner, channel, session_digest=digest)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert not service.deliver_one(owner, now=datetime.now(UTC) + timedelta(minutes=5))
+    assert service.status(owner)["deliveries"][0]["last_error"] == "delivery_expired"
+    transport.send_push.assert_not_called()
+
+
+def test_disabled_email_retains_history_and_cancels_queue_without_new_messages(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    subscribe_device(service, owner, subscription)
+    with patch("omnicio.notifications.secrets.randbelow", return_value=123456):
+        requested = service.request_email_verification(owner, "person@example.org")
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner)
+    service.verify_email(owner, UUID(requested["id"]), "123456")
+    insert_notification_event(service.workspace, owner, 1)
+    service.queue_events(owner)
+    service.config = replace(service.config, email_enabled=False)
+    service.queue_events(owner)
+    insert_notification_event(service.workspace, owner, 2)
+    service.queue_events(owner)
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner)
+        assert service.deliver_one(owner)
+        assert not service.deliver_one(owner)
+    state = service.status(owner)
+    assert not state["email_configured"]
+    email = [row for row in state["deliveries"] if row["channel"]["kind"] == "email"]
+    assert {row["status"] for row in email} == {"accepted", "cancelled"}
+    assert len(email) == 2
+    assert transport.send_email.call_count == 1
+    assert transport.send_push.call_count == 2
+
+
+def test_push_status_is_bounded_but_sync_finds_an_old_explicit_opt_out(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, _, subscription = notification_service(database)
+    digest = notification_session(database, owner)
+    first = service.subscribe_push(owner, subscription, session_digest=digest)
+    service.revoke_channel(owner, UUID(first["id"]))
+    for number in range(34):
+        another = {**subscription, "endpoint": subscription["endpoint"] + str(number)}
+        item = service.subscribe_push(owner, another, session_digest=digest)
+        service.revoke_channel(owner, UUID(item["id"]))
+    active = service.subscribe_push(owner, {**subscription, "endpoint": subscription["endpoint"]
+                                           + "active"}, session_digest=digest)
+    channels = service.status(owner)["channels"]
+    assert len(channels) == 32
+    assert channels[0]["id"] == UUID(active["id"])
+    assert all(str(channel["id"]) != first["id"] for channel in channels)
+    assert service.subscribe_push(owner, subscription, session_digest=digest,
+                                  intent="sync")["status"] == "revoked"
+
+
+@pytest.mark.parametrize("identity_change", ["key", "subject"])
+def test_vapid_jwt_is_shared_across_workers_restart_and_bound_to_server_identity(
+    workspace_database: tuple[Database, str, str], identity_change: str,
+) -> None:
+    database = workspace_database[0]
+    original, _, _ = notification_service(database)
+    config = original.config
+    with database.pool.connection() as conn:
+        conn.execute("DELETE FROM notification_push_authorizations")
+    services = [NotificationService(database, config, legal_versions={}) for _ in range(2)]
+    assert all(service.transport.database is database for service in services)
+    endpoint = "https://web.push.apple.com/synthetic-device"
+    # The database clock, not either worker's supplied wall time, owns JWT validity.
+    arbitrary_clock = datetime(2000, 1, 1, tzinfo=UTC)
+
+    def issue(number: int) -> str | None:
+        return services[number % 2].transport._authorization(endpoint, arbitrary_clock)
+
+    with patch("omnicio.notifications.vapid_authorization", wraps=vapid_authorization) as sign:
+        with ThreadPoolExecutor(max_workers=8) as workers:
+            tokens = list(workers.map(issue, range(24)))
+        assert len(set(tokens)) == 1
+        assert tokens[0] is not None
+        assert sign.call_count == 1
+        restarted = NotificationService(database, config, legal_versions={})
+        assert restarted.transport._authorization(endpoint, arbitrary_clock) == tokens[0]
+        assert sign.call_count == 1
+    with database.pool.connection() as conn:
+        stored = conn.execute("SELECT * FROM notification_push_authorizations").fetchone()
+        assert stored["origin"] == "https://web.push.apple.com"
+        assert "user_id" not in stored
+        assert tokens[0].encode() not in bytes(stored["authorization_ciphertext"])
+        assert stored["issued_at"] < stored["expires_at"] <= (
+            stored["issued_at"] + timedelta(hours=2)
+        )
+        assert stored["issued_at"] > datetime.now(UTC) - timedelta(minutes=1)
+    changed = (replace(config, vapid_private_key=base64.urlsafe_b64encode(b"k" * 32).decode())
+               if identity_change == "key" else replace(config, vapid_subject="https://example.org"))
+    different_identity = NotificationService(database, changed, legal_versions={})
+    assert different_identity.transport._authorization(endpoint, arbitrary_clock) != tokens[0]
+    with database.pool.connection() as conn:
+        assert conn.execute("SELECT count(*) AS total FROM notification_push_authorizations"
+                            ).fetchone()["total"] == 2
+        conn.execute("UPDATE notification_push_authorizations SET "
+                     "issued_at = now() - interval '2 hours', "
+                     "expires_at = now() - interval '1 hour'")
+    renewed = services[0].transport._authorization(endpoint, arbitrary_clock)
+    assert renewed is not None
+    assert renewed != tokens[0]
+    jwt = renewed.split("t=", 1)[1].split(",", 1)[0]
+    claims = jwt.split(".")[1]
+    payload = json.loads(base64.urlsafe_b64decode(claims + "=" * (-len(claims) % 4)))
+    assert datetime.now(UTC).timestamp() < payload["exp"] <= (
+        datetime.now(UTC) + timedelta(hours=2)
+    ).timestamp()
+
+
+def test_shared_vapid_origin_bound_recovers_after_expiry_without_token_churn(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    original, _, _ = notification_service(database)
+    service = NotificationService(database, original.config, legal_versions={})
+    now = datetime.now(UTC)
+    with database.pool.connection() as conn:
+        conn.execute("DELETE FROM notification_push_authorizations")
+    first = service.transport._authorization("https://node-0.push.apple.com/path", now)
+    for number in range(1, 128):
+        assert service.transport._authorization(f"https://node-{number}.push.apple.com/path", now)
+    assert service.transport._authorization("https://extra.push.apple.com/path", now) is None
+    assert service.transport._authorization("https://node-0.push.apple.com/other", now) == first
+    with database.pool.connection() as conn:
+        conn.execute("UPDATE notification_push_authorizations SET "
+                     "issued_at = now() - interval '1 hour'")
+    assert service.transport._authorization("https://extra.push.apple.com/path", now)
+    with database.pool.connection() as conn:
+        assert conn.execute("SELECT count(*) AS total FROM notification_push_authorizations"
+                            ).fetchone()["total"] == 1
+
+
+def test_corrupted_shared_authorization_stays_queued_without_unknown_provider_outcome(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    original, _, subscription = notification_service(database)
+    service = NotificationService(database, original.config, legal_versions={})
+    owner = user(database)
+    digest = notification_session(database, owner)
+    with database.pool.connection() as conn:
+        conn.execute("DELETE FROM notification_push_authorizations")
+    assert service.transport._authorization(subscription["endpoint"], datetime.now(UTC))
+    with database.pool.connection() as conn:
+        conn.execute("UPDATE notification_push_authorizations SET authorization_ciphertext = %s",
+                     (b"private-corrupted-ciphertext-marker",))
+    channel = UUID(service.subscribe_push(owner, subscription, session_digest=digest)["id"])
+    service.test_push(owner, channel, session_digest=digest)
+    with patch.object(database, "has_legal_versions", return_value=True), \
+            patch("omnicio.notifications._public_address") as dns, \
+            patch("omnicio.notifications._PinnedHTTPSConnection") as connect:
+        assert service.deliver_one(owner)
+    delivery = service.status(owner)["deliveries"][0]
+    assert delivery["status"] == "queued"
+    assert delivery["last_error"] == "push_authorization_unavailable"
+    assert delivery["attempts"] == 1
+    assert delivery["error"]["retryable"]
+    assert "private-corrupted-ciphertext-marker" not in json.dumps(delivery, default=str)
+    dns.assert_not_called()
+    connect.assert_not_called()
+
+
+def test_disabling_legacy_email_frees_channel_capacity_without_erasing_history(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    service, transport, subscription = notification_service(database)
+    now = datetime.now(UTC)
+    with service.workspace._transaction(owner) as cur:
+        for number in range(8):
+            channel = service._insert_channel(
+                cur, owner, kind="email", destination={"email": f"old-{number}@example.org"},
+                label="Legacy email", status="pending", now=now, code="123456",
+            )
+            service._enqueue(cur, owner, channel, "old-verification", "verification",
+                             {"title": "Legacy code", "body": "Synthetic"}, now)
+    service.config = replace(service.config, email_enabled=False)
+    result = subscribe_device(service, owner, subscription)
+    assert result["status"] == "active"
+    status = service.status(owner)
+    assert len(status["channels"]) == 9
+    assert all(channel["status"] == "expired" for channel in status["channels"]
+               if channel["kind"] == "email")
+    assert len(status["deliveries"]) == 8
+    assert all(row["status"] == "cancelled" for row in status["deliveries"])
+    with service.workspace._transaction(owner) as cur:
+        cur.execute("SELECT verification_digest FROM notification_channels WHERE user_id = %s "
+                    "AND kind = 'email'", (owner,))
+        assert all(row["verification_digest"] is None for row in cur.fetchall())
+    transport.send_email.assert_not_called()
+
+
+def midnight_notification_preferences(timezone: str = "Europe/Moscow") -> dict[str, Any]:
+    """Keep receipt/retry fixtures independent of the new configurable default schedule."""
+    preferences = default_preferences()
+    preferences.update(digest_time="00:00", digest_timezone=timezone)
+    preferences["quiet_hours"]["timezone"] = timezone
+    return preferences
 
 
 def test_event_pagination_search_and_read_all_cover_more_than_fifty(
@@ -223,7 +671,7 @@ def test_notification_queue_deduplicates_and_retries_only_definite_failure(
     database = workspace_database[0]
     owner = user(database)
     service, transport, subscription = notification_service(database)
-    channel = service.subscribe_push(owner, subscription)
+    channel = subscribe_device(service, owner, subscription)
     insert_notification_event(service.workspace, owner, 1)
     service.queue_events(owner)
     service.queue_events(owner)
@@ -254,7 +702,7 @@ def test_pending_operational_alert_is_cancelled_when_operator_authority_changes(
     operator, ordinary = user(database), user(database)
     service, transport, subscription = notification_service(database)
     service.config = replace(service.config, operator_user_id=operator)
-    service.subscribe_push(operator, subscription)
+    subscribe_device(service, operator, subscription)
     service.queue_operator_alert(ordinary, "health-test", "Operational test")
     assert service.status(ordinary)["deliveries"] == []
     service.queue_operator_alert(operator, "health-test", "Operational test")
@@ -278,7 +726,7 @@ def test_notification_ambiguous_result_is_not_retried_and_revocation_is_tenant_s
     database = workspace_database[0]
     owner, other = user(database), user(database)
     service, transport, subscription = notification_service(database)
-    channel = UUID(service.subscribe_push(owner, subscription)["id"])
+    channel = UUID(subscribe_device(service, owner, subscription)["id"])
     insert_notification_event(service.workspace, owner, 1)
     service.queue_events(owner)
     transport.send_push.return_value = DeliveryResult("uncertain", "push_result_unknown")
@@ -305,7 +753,7 @@ def test_notification_claim_concurrency_and_crash_never_duplicate_delivery(
     database = workspace_database[0]
     owner = user(database)
     service, transport, subscription = notification_service(database)
-    service.subscribe_push(owner, subscription)
+    subscribe_device(service, owner, subscription)
     insert_notification_event(service.workspace, owner, 1)
     service.queue_events(owner)
     with patch.object(database, "has_legal_versions", return_value=True):
@@ -332,7 +780,7 @@ def test_queued_delivery_rechecks_read_state_preferences_and_retry_budget(
     database = workspace_database[0]
     owner = user(database)
     service, transport, subscription = notification_service(database)
-    service.subscribe_push(owner, subscription)
+    subscribe_device(service, owner, subscription)
     first = insert_notification_event(service.workspace, owner, 1)
     service.queue_events(owner)
     service.workspace.mark_events_read(owner, [first])
@@ -341,7 +789,7 @@ def test_queued_delivery_rechecks_read_state_preferences_and_retry_budget(
     transport.send_push.assert_not_called()
     second = insert_notification_event(service.workspace, owner, 2)
     service.queue_events(owner)
-    prefs = default_preferences()
+    prefs = midnight_notification_preferences()
     prefs["digest_frequency"] = "daily"
     service.workspace.save_preferences(owner, prefs, expected_version=0)
     with patch.object(database, "has_legal_versions", return_value=True):
@@ -352,7 +800,7 @@ def test_queued_delivery_rechecks_read_state_preferences_and_retry_budget(
     service.queue_events(owner)
     with patch.object(database, "has_legal_versions", return_value=True):
         assert service.deliver_one(owner)
-    assert transport.send_push.call_args.args[1]["event_id"] == second
+    assert last_delivery_payload(service, owner)["event_id"] == second
     insert_notification_event(service.workspace, owner, 3)
     service.queue_events(owner)
     transport.send_push.return_value = DeliveryResult("queued", "push_rate_limited", 120)
@@ -442,8 +890,8 @@ def test_quiet_hours_and_digest_schedule_have_durable_deduplication(
     database = workspace_database[0]
     owner = user(database)
     service, transport, subscription = notification_service(database)
-    channel = UUID(service.subscribe_push(owner, subscription)["id"])
-    prefs = default_preferences()
+    channel = UUID(subscribe_device(service, owner, subscription)["id"])
+    prefs = midnight_notification_preferences()
     prefs["quiet_hours"]["enabled"] = True
     service.workspace.save_preferences(owner, prefs, expected_version=0)
     now = datetime(2026, 10, 8, 20, tzinfo=UTC)
@@ -474,8 +922,8 @@ def test_digest_includes_late_imports_corrections_and_days_missed_during_worker_
     database = workspace_database[0]
     owner = user(database)
     service, transport, subscription = notification_service(database)
-    channel = UUID(service.subscribe_push(owner, subscription)["id"])
-    prefs = default_preferences()
+    channel = UUID(subscribe_device(service, owner, subscription)["id"])
+    prefs = midnight_notification_preferences("UTC")
     prefs["digest_frequency"] = "daily"
     prefs["quiet_hours"]["timezone"] = "UTC"
     service.workspace.save_preferences(owner, prefs, expected_version=0)
@@ -500,7 +948,7 @@ def test_digest_includes_late_imports_corrections_and_days_missed_during_worker_
     assert len(service.status(owner)["deliveries"]) == 1
     with patch.object(database, "has_legal_versions", return_value=True):
         assert service.deliver_one(owner, now=next_digest)
-    first_payload = transport.send_push.call_args.args[1]
+    first_payload = last_delivery_payload(service, owner)
     assert first_payload["period_basis"] == "available_at"
     assert datetime.fromisoformat(first_payload["from"]) == start + timedelta(days=1)
     assert "событий: 1" in first_payload["body"]
@@ -528,7 +976,7 @@ def test_digest_includes_late_imports_corrections_and_days_missed_during_worker_
         assert service.deliver_one(owner, now=resumed)
         assert not service.deliver_one(owner, now=resumed)
     assert transport.send_push.call_count == 2
-    payload = transport.send_push.call_args.args[1]
+    payload = last_delivery_payload(service, owner)
     assert datetime.fromisoformat(payload["from"]) == start + timedelta(days=2)
     assert datetime.fromisoformat(payload["to"]) == start + timedelta(days=5)
     assert "событий: 3" in payload["body"]
@@ -540,8 +988,8 @@ def test_digest_cursor_and_outbox_commit_together_after_interrupted_enqueue(
     database = workspace_database[0]
     owner = user(database)
     service, _, subscription = notification_service(database)
-    channel = UUID(service.subscribe_push(owner, subscription)["id"])
-    prefs = default_preferences()
+    channel = UUID(subscribe_device(service, owner, subscription)["id"])
+    prefs = midnight_notification_preferences("UTC")
     prefs["digest_frequency"] = "daily"
     prefs["quiet_hours"]["timezone"] = "UTC"
     service.workspace.save_preferences(owner, prefs, expected_version=0)
@@ -576,10 +1024,10 @@ def pending_digest(
 ) -> tuple[UUID, NotificationService, Mock, dict[str, Any], datetime, str]:
     owner = user(database)
     service, transport, subscription = notification_service(database)
-    channel = UUID(service.subscribe_push(owner, subscription)["id"])
+    channel = UUID(subscribe_device(service, owner, subscription)["id"])
     start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     start -= timedelta(days=2)
-    prefs = default_preferences()
+    prefs = midnight_notification_preferences("UTC")
     prefs["digest_frequency"] = "daily"
     prefs["quiet_hours"].update(enabled=True, timezone="UTC")
     service.workspace.save_preferences(owner, prefs, expected_version=0)
@@ -615,7 +1063,7 @@ def test_pending_digest_changes_frequency_without_losing_or_replaying_its_revisi
         assert due > now
         assert service.deliver_one(owner, now=due)
         assert not service.deliver_one(owner, now=due + timedelta(minutes=1))
-    payload = transport.send_push.call_args.args[1]
+    payload = last_delivery_payload(service, owner)
     if frequency == "off":
         assert payload["event_id"] == event
     else:
@@ -695,10 +1143,10 @@ def test_unsubmitted_weekly_digest_recomputes_its_calendar_boundary_after_timezo
     database = workspace_database[0]
     owner = user(database)
     service, transport, subscription = notification_service(database)
-    service.subscribe_push(owner, subscription)
+    subscribe_device(service, owner, subscription)
     insert_notification_event(service.workspace, owner, 201)
     service.queue_events(owner)
-    prefs = default_preferences()
+    prefs = midnight_notification_preferences("UTC")
     prefs["digest_frequency"] = "weekly"
     prefs["quiet_hours"]["timezone"] = "UTC"
     service.workspace.save_preferences(owner, prefs, expected_version=0)
@@ -707,6 +1155,7 @@ def test_unsubmitted_weekly_digest_recomputes_its_calendar_boundary_after_timezo
     queued = next(row for row in service.status(owner)["deliveries"] if row["status"] == "queued")
     assert queued["next_attempt_at"] > now
     prefs["quiet_hours"]["timezone"] = "Europe/Moscow"
+    prefs["digest_timezone"] = "Europe/Moscow"
     service.workspace.save_preferences(owner, prefs, expected_version=1)
     with patch.object(database, "has_legal_versions", return_value=True):
         assert not service.deliver_one(owner, now=now)
@@ -733,7 +1182,7 @@ def test_weekly_handoff_ttl_starts_after_period_close_and_never_slides_on_retry(
     database = workspace_database[0]
     owner = user(database)
     service, transport, subscription = notification_service(database)
-    service.subscribe_push(owner, subscription)
+    subscribe_device(service, owner, subscription)
     # Berlin crosses the autumn DST boundary during this exact weekly period.
     zone = ZoneInfo(timezone)
     now = datetime(2026, 10, 19, 0, 1, tzinfo=zone).astimezone(UTC)
@@ -744,7 +1193,7 @@ def test_weekly_handoff_ttl_starts_after_period_close_and_never_slides_on_retry(
     with service.workspace._transaction(owner) as cur:
         cur.execute("UPDATE workspace_events SET updated_at = %s WHERE user_id = %s AND id = %s",
                     (now - timedelta(seconds=30), owner, event))
-    prefs = default_preferences()
+    prefs = midnight_notification_preferences(timezone)
     prefs["quiet_hours"].update(enabled=True, timezone=timezone, start="22:00", end="08:00")
     service.workspace.save_preferences(owner, prefs, expected_version=0)
     service.queue_events(owner, now=now)
@@ -810,7 +1259,7 @@ def test_digest_membership_preserves_receipts_but_a_real_source_correction_can_n
         assert service.deliver_one(owner, now=now)
         assert not service.deliver_one(owner, now=now)
     assert transport.send_push.call_count == 1
-    assert transport.send_push.call_args.args[1]["event_id"] == event
+    assert last_delivery_payload(service, owner)["event_id"] == event
     with service.workspace._transaction(owner) as cur:
         cur.execute("SELECT count(*) AS total FROM notification_outbox_events "
                     "WHERE user_id = %s AND event_id = %s", (owner, event))
@@ -837,7 +1286,7 @@ def test_legacy_queued_digest_is_adopted_without_inventing_an_accepted_receipt(
     with patch.object(database, "has_legal_versions", return_value=True):
         assert service.deliver_one(owner, now=now)
         assert not service.deliver_one(owner, now=now)
-    assert transport.send_push.call_args.args[1]["event_id"] == event
+    assert last_delivery_payload(service, owner)["event_id"] == event
     assert transport.send_push.call_count == 1
 
 
@@ -923,7 +1372,7 @@ def test_operational_monitor_detects_degraded_observations_outbox_delay_and_dead
     database = workspace_database[0]
     owner = user(database, account=True)
     service, _, subscription = notification_service(database)
-    service.subscribe_push(owner, subscription)
+    subscribe_device(service, owner, subscription)
     insert_notification_event(service.workspace, owner, 1)
     service.queue_events(owner)
     with service.workspace._transaction(owner) as cur:
@@ -1351,9 +1800,10 @@ def test_full_range_nav_sampling_keeps_exact_covered_performance_endpoints(
         )
     partial = store.dashboard(owner)
     assert partial["overview"]["history_coverage"]["status"] == "sampled"
-    assert partial["performance"]["status"] == "unavailable"
-    assert partial["performance"]["investment_result_rub"] is None
-    assert partial["income"]["total_rub"] is None
+    # A new pending window does not erase the independently completed watermark.
+    assert partial["performance"]["status"] == "available"
+    assert partial["performance"]["investment_result_rub"] == performance["investment_result_rub"]
+    assert partial["income"]["total_rub"] == result["income"]["total_rub"]
 
 
 def test_nav_history_empty_single_zero_and_replaced_account_are_explicit(
@@ -1391,3 +1841,364 @@ def test_nav_history_empty_single_zero_and_replaced_account_are_explicit(
     assert switched["overview"]["history_coverage"]["total_stored_observations"] == 0
     assert switched["overview"]["nav_rub"] is None
     assert switched["performance"]["investment_result_rub"] is None
+
+
+def _ledger_fact(
+    database: Database, owner: UUID, ident: str, at: datetime, *, observed: datetime | None = None,
+    kind: str = "INPUT", value: str = "100",
+) -> None:
+    operation_type = "OPERATION_TYPE_" + kind
+    payload = {"provider_operation_id": ident, "operation_type": operation_type,
+               "state": "OPERATION_STATE_EXECUTED", "name": ident,
+               "payment": {"value": value, "currency": "RUB"}}
+    digest = hashlib.sha256(f"{ident}:{at}:{kind}:{value}".encode()).digest()
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        conn.execute(
+            "INSERT INTO operation_observations (user_id, account_id, observation_hash, "
+            "semantic_hash, provider_operation_id, operation_date, operation_type, "
+            "operation_state, "
+            "payment_value, payment_currency, normalized, observed_at) VALUES "
+            "(%s, %s, %s, %s, %s, %s, %s, 'OPERATION_STATE_EXECUTED', "
+            "%s, 'RUB', %s::jsonb, %s)",
+            (owner, str(owner), digest, digest, ident, at, operation_type, value,
+             json.dumps(payload), observed or datetime.now(UTC)),
+        )
+
+
+def test_parent_trade_and_fee_keep_distinct_lineages_in_totals_and_paginated_history(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, other = user(database, account=True), user(database, account=True)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    at = now - timedelta(hours=1)
+    _ledger_fact(database, owner, "shared-parent", at, kind="BUY", value="-5000")
+    _ledger_fact(database, owner, "shared-parent", at, kind="BROKER_FEE", value="-10")
+    _ledger_fact(database, owner, "shared-parent", at, kind="BROKER_FEE", value="-12")
+    _ledger_fact(database, owner, "contribution", at, value="1000")
+    # ID-less observations use their own semantic identity. A literal provider
+    # ID equal to that digest must not share the fallback's namespace.
+    _ledger_fact(database, owner, "", at, kind="COUPON", value="100")
+    _ledger_fact(database, owner, "", at, kind="COUPON", value="200")
+    fallback_hash = hashlib.sha256(f":{at}:COUPON:100".encode()).hexdigest()
+    _ledger_fact(database, owner, fallback_hash, at, kind="COUPON", value="300")
+    _ledger_fact(database, other, "shared-parent", at, kind="BROKER_FEE", value="-999")
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        conn.execute(
+            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
+            "VALUES(%s, %s, %s)", (owner, str(owner), now),
+        )
+    with store._transaction(owner) as cur:
+        basis = store._basis(cur, owner)
+    assert basis.complete
+    assert len(basis.operations) == 6
+    flow = cashflow_summary(basis.operations, from_at=at - timedelta(seconds=1),
+                            to_at=now, complete=basis.complete)
+    assert Decimal(flow["net_contributions_rub"]) == Decimal("1000")
+    assert Decimal(flow["fees_rub"]) == Decimal("12")
+    assert Decimal(flow["income"]["total_rub"]) == Decimal("600")
+    rows: list[dict[str, Any]] = []
+    cursor = None
+    for _ in range(3):
+        page = store.operations(owner, limit=2, cursor=cursor)
+        rows.extend(page["items"])
+        cursor = page["next_cursor"]
+    assert cursor is None
+    assert len({row["id"] for row in rows}) == 6
+    fees = [row for row in rows if row["category"] == "fee"]
+    assert len(fees) == 1
+    assert fees[0]["payment"]["value"] == "-12"
+    assert sum(row["category"] == "internal" for row in rows) == 1
+
+
+def test_reconfirmed_prior_operation_changes_current_totals_and_invalidates_old_page(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, other = user(database, account=True), user(database, account=True)
+    store = WorkspaceStore(database)
+    began = datetime.now(UTC) - timedelta(seconds=20)
+    source_at = began - timedelta(hours=1)
+    original = TBankOperation(
+        cursor="", broker_account_id=str(owner), id="fee", parent_operation_id="trade",
+        name="Broker fee", date=source_at, operation_type="OPERATION_TYPE_BROKER_FEE",
+        description="", state="OPERATION_STATE_EXECUTED", instrument_uid="", figi="",
+        instrument_type="", position_uid="", ticker="", class_code="",
+        payment=TBankMoney("RUB", "-10"), price=None, commission=None, accrued_int=None,
+        quantity="0", quantity_rest="0", quantity_done="0", asset_uid="", trades=(),
+    )
+
+    def observe(tenant: UUID, value: str, second: int, *, ident: str = "fee") -> bool:
+        item = replace(original, broker_account_id=str(tenant), id=ident,
+                       payment=TBankMoney("RUB", value))
+        with store._transaction(tenant) as cur:
+            return _save_operation_observation(
+                cur, user_id=tenant, account_id=str(tenant), operation=item,
+                observed_at=began + timedelta(seconds=second),
+            )
+
+    assert observe(owner, "-10", 0)
+    assert observe(other, "-12", 0)
+    _ledger_fact(database, owner, "deposit", source_at, observed=began)
+    assert observe(owner, "-12", 1)
+    with patch("omnicio.workspace_store.datetime") as clock:
+        clock.now.return_value = began + timedelta(seconds=2)
+        first = store.operations(owner, limit=1)
+        assert first["items"][0]["payment"]["value"] == "-12"
+        assert first["next_cursor"] is not None
+        # Re-reading the already-current fact does not move its timestamp or
+        # invalidate an otherwise consistent page snapshot.
+        assert not observe(owner, "-12", 3)
+        clock.now.return_value = began + timedelta(seconds=4)
+        second = store.operations(owner, limit=1, cursor=first["next_cursor"])
+        assert second["items"][0]["category"] == "contribution"
+        assert second["next_cursor"] is None
+        assert not observe(owner, "-10", 5)
+        # A delayed older read must not undo the newer confirmation.
+        assert not observe(owner, "-12", 4)
+        clock.now.return_value = began + timedelta(seconds=6)
+        with pytest.raises(ValueError, match="workspace_operation_history_changed"):
+            store.operations(owner, limit=1, cursor=first["next_cursor"])
+        fresh = store.operations(owner)
+        fees = [row for row in fresh["items"] if row["category"] == "fee"]
+        assert len(fees) == 1
+        assert fees[0]["payment"]["value"] == "-10"
+        assert datetime.fromisoformat(fees[0]["operation_date"]) == source_at
+        assert datetime.fromisoformat(fees[0]["observed_at"]) == began + timedelta(seconds=5)
+        assert store.operations(other)["items"][0]["payment"]["value"] == "-12"
+    # An exact semantic replay after a provider-ID rotation remains idempotent;
+    # this does not infer a relation between different financial facts.
+    assert not observe(owner, "-10", 7, ident="renamed-provider-id")
+    with store._transaction(owner) as cur:
+        basis = store._basis(cur, owner)
+        cur.execute("SELECT count(*) AS count FROM operation_observations WHERE user_id = %s",
+                    (owner,))
+        assert cur.fetchone()["count"] == 3
+    totals = cashflow_summary(basis.operations, from_at=source_at - timedelta(seconds=1),
+                              to_at=began, complete=True)
+    assert Decimal(totals["fees_rub"]) == Decimal("10")
+
+
+def test_operations_pages_freeze_ingestion_and_bind_account_filters(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, other = user(database, account=True), user(database, account=True)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    _ledger_fact(database, owner, "alpha", now - timedelta(hours=36),
+                 observed=now - timedelta(hours=2))
+    _ledger_fact(database, owner, "beta", now - timedelta(hours=24),
+                 observed=now - timedelta(hours=2))
+    _ledger_fact(database, owner, "gamma", now - timedelta(hours=6),
+                 observed=now - timedelta(hours=2))
+    lower = now - timedelta(days=2)
+    first = store.operations(owner, limit=1, from_at=lower)
+    assert first["items"][0]["provider_operation_id"] == "gamma"
+    assert first["items"][0]["category"] == "contribution"
+    _ledger_fact(database, owner, "beta", now - timedelta(days=10),
+                 observed=now - timedelta(hours=1))
+    second = store.operations(owner, limit=1, from_at=lower, cursor=first["next_cursor"])
+    assert second["items"][0]["provider_operation_id"] == "beta"
+    third = store.operations(owner, limit=1, from_at=lower, cursor=second["next_cursor"])
+    assert third["items"][0]["provider_operation_id"] == "alpha"
+    assert third["next_cursor"] is None
+    # A fresh read sees the corrected date outside the selected interval.
+    assert {item["provider_operation_id"] for item in store.operations(
+        owner, from_at=lower,
+    )["items"]} == {"alpha", "gamma"}
+    with pytest.raises(ValueError, match="cursor_invalid"):
+        store.operations(other, from_at=lower, cursor=first["next_cursor"])
+    changed_lower = lower - timedelta(days=1)
+    with pytest.raises(ValueError, match="cursor_invalid"):
+        store.operations(owner, from_at=changed_lower, cursor=first["next_cursor"])
+
+
+def test_selected_history_limit_is_applied_after_corrections_and_before_old_lifetime_rows(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    for index in range(5):
+        _ledger_fact(database, owner, str(index), now - timedelta(days=10 + index))
+    _ledger_fact(database, owner, "moved", now - timedelta(hours=12))
+    _ledger_fact(database, owner, "moved", now - timedelta(days=20))
+    _ledger_fact(database, owner, "current", now - timedelta(minutes=10))
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        conn.execute(
+            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
+            "VALUES(%s, %s, %s)", (owner, str(owner), now),
+        )
+    with patch("omnicio.workspace_store._MAX_OPERATIONS", 2), store._transaction(owner) as cur:
+        all_time = store._basis(cur, owner)
+        selected = store._basis(cur, owner, operations_from=now - timedelta(days=1))
+    assert not all_time.complete
+    assert selected.complete
+    assert [row["provider_operation_id"] for row in selected.operations] == ["current"]
+
+
+def test_income_goals_keep_separate_corrected_periods_before_history_limit(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, another = user(database, account=True), user(database, account=True)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    for index in range(5):
+        _ledger_fact(database, owner, str(index), now - timedelta(days=10 + index), kind="COUPON")
+    _ledger_fact(database, owner, "moved", now - timedelta(minutes=20), kind="COUPON")
+    _ledger_fact(database, owner, "moved", now - timedelta(days=20), kind="COUPON")
+    _ledger_fact(database, owner, "current", now - timedelta(minutes=10), kind="COUPON")
+    _ledger_fact(database, another, "other", now - timedelta(minutes=10), kind="COUPON")
+    with store._transaction(owner) as cur:
+        cur.execute(
+            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
+            "VALUES(%s, %s, %s)", (owner, str(owner), now),
+        )
+    with patch("omnicio.workspace_store._MAX_OPERATIONS", 2):
+        earlier = store.create_goal(owner, goal_document(
+            title="Earlier income", kind="income", progress_source="income",
+            allocation_percent="50", manual_amount_rub=None,
+            start_date=(now - timedelta(days=40)).date().isoformat(),
+        ))
+        recent = store.create_goal(owner, goal_document(
+            title="Recent income", kind="income", progress_source="income",
+            allocation_percent="50", manual_amount_rub=None,
+            start_date=(now - timedelta(days=1)).date().isoformat(),
+        ))
+        assert earlier["progress"]["status"] == "unavailable"
+        assert recent["progress"]["status"] == "available"
+        assert Decimal(recent["progress"]["amount_rub"]) == 50
+        for result in (store.goals(owner), store.dashboard(owner)["goals"]):
+            progress = {row["id"]: row["progress"] for row in result["items"]}
+            assert progress[earlier["id"]]["status"] == "unavailable"
+            assert Decimal(progress[recent["id"]]["amount_rub"]) == 50
+
+
+def test_fund_nav_coverage_enables_intraday_return_and_goal_without_sector_guess(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        for at, nav in ((now - timedelta(hours=2), "1000"), (now - timedelta(minutes=1), "1100")):
+            evidence = {"analysis": {"valuation_status": "complete", "sector_status": "partial"},
+                        "account": {"opened_at": (now - timedelta(days=30)).isoformat()}}
+            conn.execute(
+                "INSERT INTO portfolio_snapshots (user_id, account_id, environment, captured_at, "
+                "analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, rub_cash_unblocked, "
+                "limits_loading_in_progress, evidence) "
+                "VALUES(%s, %s, 'prod', %s, 'partial', %s, 0, 0, 0, false, %s::jsonb)",
+                (owner, str(owner), at, nav, json.dumps(evidence)),
+            )
+        conn.execute(
+            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
+            "VALUES(%s, %s, %s)", (owner, str(owner), now),
+        )
+    goal = store.create_goal(owner, goal_document(
+        progress_source="portfolio", allocation_percent="100", manual_amount_rub=None,
+    ))
+    result = store.dashboard(owner, history_period="1d")
+    assert result["overview"]["status"] == "observed"
+    assert result["overview"]["sector_status"] == "partial"
+    assert len(result["overview"]["history"]) == 2
+    assert Decimal(result["performance"]["return_percent"]) == 10
+    assert Decimal(goal["progress"]["amount_rub"]) == 1100
+
+
+def test_event_important_assets_filters_apply_before_pagination_and_summary_has_no_page_limit(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    with store._transaction(owner) as cur:
+        for number in range(80):
+            store._insert_event(
+                cur, owner, identity=number, category="system", kind="fixture_info",
+                title=f"Info {number}", occurred_at=now - timedelta(seconds=number),
+                target="settings", source={},
+            )
+        for number, category in enumerate(("portfolio", "payments")):
+            store._insert_event(
+                cur, owner, identity=number, category=category, kind="fixture_important",
+                title=f"Important {number}", occurred_at=now - timedelta(days=1),
+                target="portfolio", source={}, severity="warning",
+            )
+    first = store.events(owner, important_only=True, category="assets", limit=1)
+    assert len(first["items"]) == 1
+    assert first["items"][0]["severity"] == "warning"
+    second = store.events(owner, important_only=True, category="assets", limit=1,
+                          cursor=first["next_cursor"])
+    assert len(second["items"]) == 1
+    assert second["items"][0]["id"] != first["items"][0]["id"]
+    with pytest.raises(ValueError, match="cursor_filter_changed"):
+        store.events(owner, cursor=first["next_cursor"])
+    summary = store.events_summary(owner)
+    assert summary["unread_total"] == 82
+    assert summary["categories"] == {"system": 80, "portfolio": 1, "payments": 1, "goals": 0}
+    store.mark_all_events_read(owner, category="assets", through_revision=summary["max_revision"])
+    assert store.events_summary(owner)["unread_total"] == 80
+
+
+def test_new_nav_snapshot_keeps_original_risk_time_and_closed_position_is_not_current(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    now = datetime.now(UTC)
+    old = now - timedelta(days=3)
+    ids = []
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        for at in (old, now - timedelta(minutes=1)):
+            row = conn.execute(
+                "INSERT INTO portfolio_snapshots (user_id, account_id, environment, captured_at, "
+                "analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, rub_cash_unblocked, "
+                "limits_loading_in_progress, evidence) "
+                "VALUES(%s, %s, 'prod', %s, 'observed', 1000, 0, 0, 0, false, '{}'::jsonb) "
+                "RETURNING id", (owner, str(owner), at),
+            ).fetchone()
+            ids.append(row["id"])
+            conn.execute(
+                "INSERT INTO portfolio_snapshot_positions (snapshot_id, user_id, instrument_uid, "
+                "ticker, instrument_type, quantity, current_price_value, current_price_currency, "
+                "blocked, blocked_lots, value_rub) VALUES "
+                "(%s, %s, 'held', 'HELD', 'share', 10, 100, 'RUB', false, 0, 1000)",
+                (row["id"], owner),
+            )
+        conn.execute(
+            "INSERT INTO portfolio_snapshot_positions (snapshot_id, user_id, instrument_uid, "
+            "ticker, instrument_type, quantity, current_price_value, current_price_currency, "
+            "blocked, blocked_lots, value_rub) VALUES "
+            "(%s, %s, 'sold', 'SOLD', 'share', 1, 100, 'RUB', false, 0, 100)", (ids[0], owner),
+        )
+        conn.execute(
+            "INSERT INTO portfolio_risk_assessments (user_id, snapshot_id, instrument_uid, state, "
+            "rating_status, fundamental_status, source_status, reasons, evidence, assessed_at) "
+            "VALUES(%s, %s, 'held', 'watch', 'data_missing', 'data_missing', 'partial', "
+            "'[]'::jsonb, '{}'::jsonb, %s)", (owner, ids[0], old),
+        )
+    store = PortfolioStore(database)
+    positions = store.portfolio_visualization(owner, now=now)["latest"]["positions"]
+    assert positions[0]["risk_state"] == "watch"
+    assert positions[0]["assessed_at"] == old
+    assert positions[0]["assessment_freshness"] == "stale"
+    held = store.instrument_visualization(owner, "held", now=now)
+    assert held["latest"]["assessed_at"] == old
+    assert held["current_holding"]["status"] == "held"
+    sold = store.instrument_visualization(owner, "sold", now=now)
+    assert sold["latest"]["quantity"] == 1
+    assert sold["current_holding"]["status"] == "not_held"
+    assert sold["current_holding"]["quantity"] == "0"
+    assert len(sold["history"]) == 1  # No manufactured zero-price history point.

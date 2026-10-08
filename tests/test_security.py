@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
 from dataclasses import dataclass
@@ -11,11 +12,18 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from starlette.requests import Request
+from starlette.requests import ClientDisconnect, Request
 
 from omnicio.config import ConfigurationError, load_settings, optional_uuid
 from omnicio.db import Database, UserRecord
-from omnicio.main import CANONICAL_ORIGIN, app, client_ip, require_same_origin
+from omnicio.main import (
+    CANONICAL_ORIGIN,
+    _market_stream_response,
+    app,
+    client_ip,
+    require_same_origin,
+)
+from omnicio.market import MarketService, MarketStreamLimit
 from omnicio.security import (
     OAuthFlow,
     SecurityValueError,
@@ -29,6 +37,7 @@ from omnicio.security import (
     parse_public_id,
     pkce_challenge,
     seal_oauth_flow,
+    validate_auth_return_to,
 )
 
 
@@ -49,6 +58,43 @@ def test_operator_configuration_is_explicit_and_credentials_preserve_exact_bytes
     assert cfg.assistant_api_key == environment["ASSISTANT_API_KEY"]
     with patch.dict(os.environ, {}, clear=True):
         assert optional_uuid("OPERATOR_USER_ID") is None
+
+
+def test_disabled_email_ignores_legacy_smtp_environment_but_enabled_remains_strict() -> None:
+    environment = {
+        "DATABASE_URL": "postgresql://synthetic.invalid/example",
+        "CLIENT_IP_KEY": "synthetic-client-key",
+        "BROKER_TOKEN_CRYPTO_KEY": "synthetic-broker-key",
+        "VKID_FLOW_CRYPTO_KEY": "synthetic-flow-key",
+        "NOTIFICATIONS_ENABLED": "true", "NOTIFICATION_EMAIL_ENABLED": "false",
+        "NOTIFICATION_SMTP_PORT": "invalid", "NOTIFICATION_SMTP_MODE": "invalid",
+        "NOTIFICATION_SMTP_SENDER": "invalid\r\nheader",
+        "NOTIFICATION_SMTP_HOST": "legacy.example.org",
+    }
+    with patch.dict(os.environ, environment, clear=True):
+        cfg = load_settings()
+    assert cfg.notifications_enabled
+    assert not cfg.notification_email_enabled
+    assert cfg.notification_smtp_port == 465
+    assert cfg.notification_smtp_mode == "tls"
+    assert cfg.notification_smtp_sender == cfg.notification_smtp_host == ""
+    with (
+        patch.dict(os.environ, {**environment, "NOTIFICATION_EMAIL_ENABLED": "true"}, clear=True),
+        pytest.raises(ConfigurationError, match="NOTIFICATION_SMTP_PORT"),
+    ):
+        load_settings()
+
+
+def test_install_route_survives_authenticated_oauth_round_trip() -> None:
+    destination = "/#account/install"
+    key = Fernet.generate_key().decode()
+    token = seal_oauth_flow(state="state", code_verifier="v" * 64, legal_versions={},
+                           crypto_key=key, return_to=destination)
+    assert open_oauth_flow(token, crypto_key=key, ttl_seconds=600).return_to == destination
+    for invalid in ("https://example.org/#account/install", "/#account/install\\other",
+                    "/#account/install?next=%0d%0aX-Test:bad"):
+        with pytest.raises(SecurityValueError, match="oauth_return_to_invalid"):
+            validate_auth_return_to(invalid)
 
 
 @pytest.mark.parametrize("raw", ("owner", "000000501", str(UUID(int=0))))
@@ -147,6 +193,25 @@ def test_client_ip_digest_is_keyed() -> None:
         "203.0.113.10",
         second,
     )
+
+
+def test_auth_route_validator_preserves_filters_and_rejects_injected_flow_payload() -> None:
+    import json
+
+    destination = "/#account/market/news?q=%D0%A6%D0%91&filter=all"
+    assert validate_auth_return_to(destination) == destination
+    key = Fernet.generate_key().decode("ascii")
+    token = seal_oauth_flow(state="state", code_verifier="v" * 64, legal_versions={},
+                            crypto_key=key, return_to=destination)
+    cipher = Fernet(key.encode())
+    document = json.loads(cipher.decrypt(token.encode()))
+    document["return_to"] = "https://untrusted.invalid"
+    injected = cipher.encrypt(json.dumps(document).encode()).decode()
+    with pytest.raises(SecurityValueError, match="oauth_return_to_invalid"):
+        open_oauth_flow(injected, crypto_key=key, ttl_seconds=600)
+    del document["return_to"]
+    legacy = cipher.encrypt(json.dumps(document).encode()).decode()
+    assert open_oauth_flow(legacy, crypto_key=key, ttl_seconds=600).return_to == "/#account/home"
 
 
 def _request(client_host: str, headers: dict[str, str]) -> Request:
@@ -406,3 +471,46 @@ def test_market_stream_suppresses_data_after_session_revocation(path, revoked_du
     assert "event: market" not in response.text
     assert "event: quote" not in response.text
     assert reads == int(revoked_during_read)
+
+
+@pytest.mark.parametrize("disconnect_at", [1, 2])
+def test_market_stream_releases_its_slot_even_if_disconnect_precedes_first_chunk(
+    disconnect_at: int,
+) -> None:
+    market = MarketService(broker=Mock(), cbr=Mock())
+    owner, other = UUID(int=102), UUID(int=103)
+    other_lease = market.acquire_stream(other)
+
+    async def exercise() -> None:
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def events():
+            yield "event: quote\ndata: {}\n\n"
+
+        for _ in range(3):
+            sent = 0
+
+            async def send(message):
+                nonlocal sent
+                sent += 1
+                if sent == disconnect_at:
+                    raise OSError("synthetic disconnected socket")
+
+            response = _market_stream_response(market, owner, events())
+            with pytest.raises(ClientDisconnect):
+                await response({"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send)
+
+    try:
+        asyncio.run(exercise())
+        # Repeated disconnects leave both of this owner's admission slots free.
+        owner_leases = [market.acquire_stream(owner), market.acquire_stream(owner)]
+        for lease in owner_leases:
+            market.release_stream(owner, lease)
+        second_other_lease = market.acquire_stream(other)
+        with pytest.raises(MarketStreamLimit):
+            market.acquire_stream(other)
+        market.release_stream(other, second_other_lease)
+        market.release_stream(other, other_lease)
+    finally:
+        market.close()

@@ -11,6 +11,14 @@ assert.equal(I.t("nav.events"), "События");
 assert.equal(I.setLocale("en-US"), "en");
 assert.equal(I.t("nav.events"), "Events");
 assert.equal(I.t("События"), "Events", "Explicit authored literals share the semantic registry");
+assert.equal(I.t("goals.active", {}, "ru"), "Активные цели", "The final authored override remains authoritative");
+assert.equal(I.t("goals.active", {}, "en"), "Active goals");
+assert.equal(I.t("Активная", {}, "en"), "Active", "The old status phrase remains a separate supported alias");
+assert.equal(I.t("Ранее начатые исполнения", {}, "en"), "Previous executions");
+assert.equal(I.t("Обновить приложение", {}, "en"), "Update app", "Shared phrases retain first-insertion fallback precedence");
+assert.equal(I.t("pwa.apply", {}, "en"), "Update application", "A semantic key retains its own authored wording");
+assert.equal(I.t("Ограничение", {}, "en"), "Constraint", "An explicit phrase key wins over a semantic fallback");
+assert.equal(I.t("billing.limit", {}, "en"), "Limit");
 for (const key of ["home", "portfolio", "market", "strategies", "assistant", "goals", "analytics", "events", "profile", "settings"]) {
   assert.notEqual(I.t(`nav.${key}`, {}, "en"), I.t(`nav.${key}`, {}, "ru"), "Each primary tab has a translation");
 }
@@ -56,6 +64,17 @@ assert.equal(root.documentElement.lang, "en");
 I.apply(root, "ru");
 assert.equal(menu.textContent, "Портфель", "Locale switching is reversible from canonical messages");
 assert.equal(root.documentElement.lang, "ru");
+const bootLabel = element({"data-i18n": "nav.events"}, "События");
+const bootDocument = {
+  documentElement: {dataset: {i18nDeviceLocale: ""}, lang: "ru"},
+  readyState: "complete",
+  querySelectorAll: () => [bootLabel]
+};
+const bootContext = {window: {}, document: bootDocument, navigator: {language: "en-US"}};
+vm.runInNewContext(readFileSync(join(__dirname, "../web/i18n.js"), "utf8"), bootContext);
+assert.equal(bootContext.window.OMNICIO_I18N.getLocale(), "en", "The device-locale API is ready synchronously");
+assert.equal(bootDocument.documentElement.lang, "en");
+assert.equal(bootLabel.textContent, "Events", "Initial rendering needs no additional asset or asynchronous catalog request");
 const textNode = {nodeType: 3, data: "  Закрыть  "};
 const iconButton = element({"data-i18n-text": '["Закрыть"]'}, "", {tagName: "BUTTON", children: [{tagName: "SVG"}]});
 iconButton.childNodes = [{nodeType: 1, tagName: "SVG"}, textNode];
@@ -74,7 +93,7 @@ assert.equal(I.preset({id: "unknown", title: "Сбалансированная"}
 const source = {id: "buffett1989", title: "Berkshire Hathaway: письмо 1989 года", url: "https://www.berkshirehathaway.com/letters/1989.html"};
 assert.equal(I.catalogSource(source).title, "Berkshire Hathaway: 1989 shareholder letter");
 assert.equal(I.catalogSource(source).url, source.url);
-const displayContext = {window: {OMNICIO_I18N: I}, Intl, console};
+const displayContext = {window: {OMNICIO_I18N: I}, Intl, console, URLSearchParams};
 vm.runInNewContext(readFileSync(join(__dirname, "../web/workspace.js"), "utf8"), displayContext);
 displayContext.window.OmniUI.setLocale("en");
 assert.equal(displayContext.window.OmniUI.navigation.find(([key]) => key === "events")[1], "Events");
@@ -82,11 +101,57 @@ assert.ok(displayContext.window.OmniUI.periods("portfolio", "1d").includes("1D")
 displayContext.window.OmniUI.setLocale("ru");
 assert.equal(displayContext.window.OmniUI.navigation.find(([key]) => key === "events")[1], "События", "Labels must be evaluated in the current locale, not frozen at page startup");
 assert.ok(displayContext.window.OmniUI.periods("portfolio", "1d").includes("1Д"));
+const U = displayContext.window.OmniUI;
+for (const hash of ["#demo/market/reference?currency=CNY&reference_period=1y", "#account/portfolio/positions?assets=bond&sort=price&direction=-1", "#account/goals/plan?goal=00000000-0000-4000-8000-000000000001", "#public/features", "#public/install", "#demo/install", "#account/install"]) {
+  const route = U.parseRoute(hash);
+  assert.equal(route.invalid, false, "A supported nested screen is a valid bookmark");
+  assert.equal(U.routeHash(route), hash, "Mode, screen and controls survive a URL round trip");
+}
+assert.equal(U.parseRoute("#public-strategies").mode, "public");
+assert.equal(U.parseRoute("#asset?uid=synthetic-a").uid, "synthetic-a");
+assert.equal(U.parseRoute("#demo/unsupported").invalid, true);
+assert.equal(U.parseRoute("#account/settings/unknown").invalid, true);
+assert.equal(U.parseRoute("#public/features/unknown").invalid, true);
+assert.equal(U.parseRoute("#account/home?user_id=other").user_id, undefined, "Navigation never accepts tenant authority fields");
+for (const [hash, expected] of [
+  ["#account/asset?uid=private-instrument", "#account/market"],
+  ["#demo/search?q=private-search", "#demo/market"],
+  ["#account/goals/edit?goal=private-goal", "#account/goals"],
+  ["#account/goals/plan?goal=private-goal", "#account/goals"],
+  ["#account/events/detail?event=private-event", "#account/events"],
+  ["#demo/events/news?news=private-news", "#demo/events"],
+  ["#account/strategies/detail?preset=private-preset", "#account/strategies"],
+  ["#account/strategies/result?run=private-run", "#account/strategies"],
+  ["#account/portfolio/positions?assets=bond&sort=price&overlay=private-overlay", "#account/portfolio/positions"],
+  ["#public/features?q=private-search", "#public/features"],
+  ["#account/market/reference/extra", "#public/welcome"],
+  ["#account/unsupported", "#public/welcome"]
+]) {
+  const resumed = U.resumeRoute(U.parseRoute(hash));
+  assert.equal(U.routeHash(resumed), expected, "Resume keeps a usable screen without saved identifiers or query text");
+  assert.deepEqual(Array.from(Object.keys(resumed)).sort(), ["mode", "screen", "view"], "Stored resume metadata cannot contain q, uid, event, goal_id or overlay");
+}
+const scenario = U.chart([{month: 0, amount_rub: "100", target_rub: "200", contributions_rub: "0"}, {month: 12, amount_rub: "220", target_rub: "240", contributions_rub: "120"}], {timeKey: "month", valueKey: "amount_rub", xKind: "model_month", comparison: [{key: "target_rub", label: "Target"}, {key: "contributions_rub", label: "Contributions"}]});
+assert.ok(scenario.includes("Месяц 12"));
+assert.ok(!scenario.includes("1970"), "Model months cannot masquerade as observed calendar dates");
+assert.ok(scenario.includes("chart-comparison-0"), "The scenario includes the numerical target series");
+assert.ok(scenario.includes("chart-comparison-1"), "The scenario includes the numerical contributions series");
+const dynamicMessageFamilies = {
+  "install.steps.": ["ios", "android", "desktop"],
+  "install.result.": ["accepted", "dismissed", "unavailable"],
+  "install.state.": ["installed", "pending", "available", "manual"],
+  "push.state.": ["checking", "unauthenticated", "unsupported", "unconfigured", "default", "denied", "granted-pending", "active", "revoked", "error"],
+  "push.test_": ["queued"]
+};
+for (const [prefix, states] of Object.entries(dynamicMessageFamilies)) {
+  for (const state of states) assert.ok(I.has(prefix + state), "Every supported installation and delivery state has an authored bilingual message: " + prefix + state);
+}
 for (const file of ["app.js", "workspace.js"]) {
   const code = readFileSync(join(__dirname, "../web/", file), "utf8");
   for (const match of code.matchAll(/\b[TH]\(("(?:\\.|[^"\\])*")/g)) {
     const key = JSON.parse(match[1]);
-    assert.ok(I.has(key), `${file} has an authored UI message without a translation: ${key}`);
+    const knownFamily = Object.hasOwn(dynamicMessageFamilies, key) && /^\s*\+/.test(code.slice(match.index + match[0].length));
+    assert.ok(I.has(key) || knownFamily, `${file} has an authored UI message without a translation: ${key}`);
   }
 }
 console.log(`PASS i18n: ${I.keys().length} bilingual messages, all tabs, reversible explicit DOM hooks, private-data boundaries and escaped interpolation`);

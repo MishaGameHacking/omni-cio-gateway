@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import io
 import json
 import os
@@ -45,21 +46,26 @@ LEGAL_OPERATOR_MARKERS = (
     "__OMNICIO_OPERATOR_NAME__",
     "__OMNICIO_OPERATOR_EMAIL__",
 )
+LEGAL_DOCUMENT_KEYS = {
+    "privacy": "privacy_policy",
+    "consent": "personal_data_consent",
+    "terms": "terms",
+}
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
 LEGACY_RESET_MARKER = "/etc/omnicio/legacy-profile-reset-v1.done"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
+INVALID_RELEASE_SHA = "Release SHA must be a full lowercase 40-character SHA"
+BRAND_SOURCE = "assets/brand/omnicio-logo.png"
+# The unchanged owner-provided PNG and the two existing backgrounds total 6 MiB.
+# Keep a bounded archive budget that includes that explicit brand requirement.
+MAX_RELEASE_ARCHIVE_BYTES = 8 * 1024 * 1024
 BRAND_RUNTIME_FILES = (
-    "assets/brand/web/omnicio-mark.svg",
-    "assets/brand/web/apple-touch-icon-180.png",
-    "assets/brand/web/favicon.ico",
-    "assets/brand/web/pwa-icon-192.png",
-    "assets/brand/web/pwa-icon-512.png",
-    "assets/brand/web/pwa-maskable-512.png",
+    BRAND_SOURCE,
     "assets/brand/web/earth-hero.png",
     "assets/brand/web/auth-mountains.png",
 )
-BRAND_PUBLIC_MARK = "/assets/brand/pwa-icon-192.png"
+BRAND_PUBLIC_MARK = "/assets/brand/omnicio-logo.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
 JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
@@ -68,7 +74,8 @@ OPTIONAL_INTEGRATION_KEYS = (
     "TID_CLIENT_ID", "TID_CLIENT_SECRET", "TID_LOGIN_ENABLED", "TID_PKCE_ENABLED",
     "ASSISTANT_BASE_URL", "ASSISTANT_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_ENABLED",
     "ASSISTANT_ALLOWED_ENDPOINTS", "ASSISTANT_DAILY_REQUEST_LIMIT",
-    "NOTIFICATIONS_ENABLED", "NOTIFICATION_CRYPTO_KEY", "NOTIFICATION_VAPID_PRIVATE_KEY",
+    "NOTIFICATIONS_ENABLED", "NOTIFICATION_EMAIL_ENABLED", "NOTIFICATION_CRYPTO_KEY",
+    "NOTIFICATION_VAPID_PRIVATE_KEY",
     "NOTIFICATION_VAPID_SUBJECT", "NOTIFICATION_SMTP_HOST", "NOTIFICATION_SMTP_PORT",
     "NOTIFICATION_SMTP_USERNAME", "NOTIFICATION_SMTP_PASSWORD", "NOTIFICATION_SMTP_SENDER",
     "NOTIFICATION_SMTP_MODE", "OMNICIO_RESTORE_RECEIPT_KEY",
@@ -116,8 +123,8 @@ def build_release_archive(root: pathlib.Path) -> str:
     raw = buffer.getvalue()
     if not raw:
         raise InfraError("Release archive is empty")
-    if len(raw) > 5 * 1024 * 1024:
-        raise InfraError("Release archive unexpectedly exceeds 5 MiB")
+    if len(raw) > MAX_RELEASE_ARCHIVE_BYTES:
+        raise InfraError("Release archive unexpectedly exceeds 8 MiB")
     return base64.b64encode(raw).decode("ascii")
 
 
@@ -322,12 +329,17 @@ def validate_product_environment() -> None:
         )
 
 
+def verify_legal_document_version(body: str, path: str) -> None:
+    name = f"LEGAL_{pathlib.PurePosixPath(path).stem.upper()}_VERSION"
+    expected = os.environ.get(name, "").strip()
+    versions = re.findall(r'<p class="legal-meta">OMNICIO · omnicio.ru · версия ([^<]+)</p>', body)
+    if not expected or versions != [expected]:
+        raise InfraError(f"Legal document version does not match deployment config: {path}")
+
+
 def validate_legal_documents(repository_root: pathlib.Path) -> None:
-    for relative in (
-        "web/legal/privacy.html",
-        "web/legal/consent.html",
-        "web/legal/terms.html",
-    ):
+    for public_path in LEGAL_PAGES:
+        relative = "web" + public_path
         path = repository_root / relative
         try:
             body = path.read_text(encoding="utf-8")
@@ -338,9 +350,12 @@ def validate_legal_documents(repository_root: pathlib.Path) -> None:
             raise InfraError(
                 f"Legal document {relative} is missing operator placeholders"
             )
+        verify_legal_document_version(body, public_path)
 
 
-def build_product_environment() -> str:
+def build_product_environment(*, release_sha: str = "") -> str:
+    if release_sha and not RELEASE_RE.fullmatch(release_sha):
+        raise InfraError(INVALID_RELEASE_SHA)
     values = {
         "OMNICIO_RECOVERY_STATUS_PATH": REMOTE_STATUS_PATH,
         # Authority must be explicitly revoked when the workflow variable is cleared.
@@ -362,6 +377,8 @@ def build_product_environment() -> str:
         "PORTFOLIO_LIVE_MAX_ORDER_RUB": str(portfolio_live_caps()[0]),
         "PORTFOLIO_LIVE_MAX_DAILY_RUB": str(portfolio_live_caps()[1]),
     }
+    if release_sha:
+        values["OMNICIO_RELEASE_BUILD"] = release_sha[:12]
     # Missing workflow secrets must not erase an integration configured on the server.
     values.update({
         name: os.environ[name] if name in OPTIONAL_SECRET_KEYS else os.environ[name].strip()
@@ -376,7 +393,7 @@ def build_product_environment() -> str:
 
 def product_environment_backup_paths(release_sha: str) -> tuple[str, str]:
     if not RELEASE_RE.fullmatch(release_sha):
-        raise InfraError("Release SHA must be a full lowercase 40-character SHA")
+        raise InfraError(INVALID_RELEASE_SHA)
     return (
         f"{PRODUCT_ENV}.pre-{release_sha}",
         f"{PRODUCT_ENV}.pre-{release_sha}.state",
@@ -410,7 +427,7 @@ def write_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
         'chmod 600 "$tmp"; '
         f"mv -f \"$tmp\" {PRODUCT_ENV}"
     )
-    ssh.run(command, input_text=build_product_environment())
+    ssh.run(command, input_text=build_product_environment(release_sha=release_sha))
 
 
 def commit_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
@@ -521,6 +538,11 @@ python3 -m venv "$RELEASE/.venv"
 "$RELEASE/.venv/bin/python" -m pip install --disable-pip-version-check -q \
     --no-deps --no-build-isolation --no-index --only-binary=:all: "$RELEASE"
 
+# Keep the signing identity outside product.env rollback and release cleanup.
+# The helper preserves an existing key, writes private files atomically, and
+# exposes only a readiness status. SMTP remains separately disabled.
+"$RELEASE/.venv/bin/python" -m omnicio.notification_setup
+
 install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
 install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
 install -m 0644 "$RELEASE/web/app.js" "$WEB_RELEASE/assets/app.js"
@@ -528,14 +550,14 @@ install -m 0644 "$RELEASE/web/workspace.js" "$WEB_RELEASE/assets/workspace.js"
 install -m 0644 "$RELEASE/web/i18n.js" "$WEB_RELEASE/assets/i18n.js"
 install -m 0644 "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html"
 install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
-install -m 0644 "$RELEASE/assets/brand/web/omnicio-mark.svg" "$WEB_RELEASE/assets/brand/omnicio-mark.svg"
+install -m 0644 "$RELEASE/assets/brand/omnicio-logo.png" "$WEB_RELEASE/assets/brand/omnicio-logo.png"
 install -m 0644 "$RELEASE/assets/brand/web/earth-hero.png" "$WEB_RELEASE/assets/brand/earth-hero.png"
 install -m 0644 "$RELEASE/assets/brand/web/auth-mountains.png" "$WEB_RELEASE/assets/brand/auth-mountains.png"
-install -m 0644 "$RELEASE/assets/brand/web/apple-touch-icon-180.png" "$WEB_RELEASE/assets/brand/apple-touch-icon-180.png"
-install -m 0644 "$RELEASE/assets/brand/web/favicon.ico" "$WEB_RELEASE/assets/brand/favicon.ico"
-install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-192.png" "$WEB_RELEASE/assets/brand/pwa-icon-192.png"
-install -m 0644 "$RELEASE/assets/brand/web/pwa-icon-512.png" "$WEB_RELEASE/assets/brand/pwa-icon-512.png"
-install -m 0644 "$RELEASE/assets/brand/web/pwa-maskable-512.png" "$WEB_RELEASE/assets/brand/pwa-maskable-512.png"
+# Existing installed clients may still request the former PNG URLs. All resolve
+# to the owner's unchanged original, while the new manifest uses its canonical URL.
+for name in apple-touch-icon-180.png pwa-icon-192.png pwa-icon-512.png pwa-maskable-512.png; do
+    ln -s omnicio-logo.png "$WEB_RELEASE/assets/brand/$name"
+done
 set -a
 . /etc/omnicio/product.env
 set +a
@@ -596,6 +618,13 @@ for source_index in (6, 8):
     pathlib.Path(sys.argv[source_index + 1]).write_text(
         template.replace("__OMNICIO_BUILD__", build), encoding="utf-8",
     )
+assets = pathlib.Path(sys.argv[4]).parent / "assets"
+for name in ("app.js", "workspace.js", "i18n.js"):
+    script = assets / name
+    template = script.read_text(encoding="utf-8")
+    if "__OMNICIO_BUILD__" not in template:
+        raise SystemExit(f"release marker is missing: {name}")
+    script.write_text(template.replace("__OMNICIO_BUILD__", build), encoding="utf-8")
 PY
 chmod 0644 "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" "$WEB_RELEASE/sw.js"
 
@@ -1219,10 +1248,26 @@ def verify_public_root(body: bytes, release_sha: str) -> None:
         raise InfraError("Public auth page contains unresolved release markers")
 
 
-def verify_public_config(body: bytes) -> None:
+def verify_public_legal_versions(payload: dict[str, object]) -> None:
+    expected_legal = {
+        key: os.environ.get(f"LEGAL_{name.upper()}_VERSION", "").strip()
+        for name, key in LEGAL_DOCUMENT_KEYS.items()
+    }
+    if not all(expected_legal.values()) or payload.get("legal_versions") != expected_legal:
+        raise InfraError("Public legal versions do not match deployment config")
+
+
+def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
     payload = json.loads(body)
     if not isinstance(payload, dict):
         raise InfraError("Public auth config is not an object")
+    verify_public_legal_versions(payload)
+    release = payload.get("release")
+    expected_build = release_sha[:12]
+    if release_sha and (
+        not isinstance(release, dict) or release.get("build") != expected_build
+    ):
+        raise InfraError("Public API build does not match the frontend release")
 
     expected_registration = registration_enabled()
     if payload.get("registration_enabled") is not expected_registration:
@@ -1249,7 +1294,9 @@ def verify_public_config(body: bytes) -> None:
 
 def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
     brand, content_type = fetch_public(BRAND_PUBLIC_MARK, context)
-    if content_type != PNG_CONTENT_TYPE or not brand:
+    approved = (pathlib.Path(__file__).resolve().parents[2] / BRAND_SOURCE).read_bytes()
+    if (content_type != PNG_CONTENT_TYPE
+            or hashlib.sha256(brand).digest() != hashlib.sha256(approved).digest()):
         raise InfraError("Public approved brand mark verification failed")
 
     manifest_body, _ = fetch_public(WEB_MANIFEST_PATH, context)
@@ -1278,7 +1325,8 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         body, content_type = fetch_public(f"{path}?build={release_sha[:12]}", context)
         if content_type not in content_types or marker not in body:
             raise InfraError(f"Public runtime asset verification failed: {path}")
-        if path in {"/sw.js", "/offline.html"} and (
+        if path in {"/sw.js", "/offline.html", "/assets/app.js",
+                    "/assets/workspace.js", "/assets/i18n.js"} and (
             release_sha[:12].encode() not in body or b"__OMNICIO_BUILD__" in body
         ):
             raise InfraError(f"Public runtime asset build does not match release: {path}")
@@ -1291,14 +1339,15 @@ def verify_public(release_sha: str) -> None:
         verify_public_root(root, release_sha)
         verify_public_assets(context, release_sha)
         config, _ = fetch_public("/api/auth/config", context)
-        verify_public_config(config)
+        verify_public_config(config, release_sha=release_sha)
         for path, marker in LEGAL_PAGES.items():
-            body, _ = fetch_public(path, context)
+            body, content_type = fetch_public(path, context)
             rendered = body.decode(errors="replace")
-            if marker not in rendered:
+            if content_type != "text/html" or marker not in rendered:
                 raise InfraError(f"Public legal page verification failed: {path}")
             if "__OMNICIO_OPERATOR_" in rendered:
                 raise InfraError(f"Public legal page contains unresolved operator data: {path}")
+            verify_legal_document_version(rendered, path)
     except (
         urllib.error.URLError, TimeoutError, ssl.SSLError, json.JSONDecodeError, UnicodeDecodeError,
     ) as exc:
@@ -1320,7 +1369,7 @@ def reconcile(
     availability_zone: str,
 ) -> int:
     if not RELEASE_RE.fullmatch(release_sha):
-        raise InfraError("Release SHA must be a full lowercase 40-character SHA")
+        raise InfraError(INVALID_RELEASE_SHA)
 
     add_summary("## OmniCIO auth application deploy")
     validate_product_environment()
@@ -1391,8 +1440,8 @@ def reconcile(
             # is already healthy. The reset itself is one transaction and
             # refuses to touch a database containing more than one user.
             retire_legacy_profile(ssh)
-            commit_product_environment(ssh, release_sha=release_sha)
             used_slots, active_users = registration_occupancy(ssh)
+            commit_product_environment(ssh, release_sha=release_sha)
         except InfraError:
             rollback_remote(ssh, release_sha=release_sha)
             raise
