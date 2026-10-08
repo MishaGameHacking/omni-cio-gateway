@@ -6924,6 +6924,7 @@
     dialog.addEventListener("cancel", event => { event.preventDefault(); captureScreenDrafts(); routeBack(); });
     dialog.addEventListener("close", () => {
       if (dialog.dataset.routeClosing === "true") { delete dialog.dataset.routeClosing; return; }
+      if (dialog.open) return;
       if (state.route.overlay || dialog.classList.contains("route-dialog")) {
         const parent = {...state.route, screen: dialog.classList.contains("route-dialog") ? "" : state.route.screen, overlay: ""};
         navigate(state.view, parent, {replace: true});
