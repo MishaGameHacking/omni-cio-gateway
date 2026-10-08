@@ -115,6 +115,117 @@ def test_confirmed_user_zero_debt_remains_distinct_from_provider_missing_zero():
     assert fact.available_at == START
 
 
+def dividend_evidence_document():
+    """Synthetic annual issuer statement; never a production market observation."""
+    document = evidence_document()
+    facts = document["assets"][0]["facts"]
+    facts["dividend_cashflow_coverage"] = {
+        "value": {
+            "issuer_id": "issuer-a",
+            "scope": "consolidated_issuer_all_equity",
+            "currency": "USD",
+            "period_start": (START - timedelta(days=365)).isoformat(),
+            "period_end": START.isoformat(),
+            "operating_cashflow": "1000.01",
+            "capital_expenditure": "400.01",
+            "gross_dividends_paid": "600",
+            "cashflows_complete": True,
+        },
+        "available_at": START.isoformat(),
+        "source_url": SOURCE,
+    }
+    for name, value in (
+        ("dividend_yield_percent", "6"), ("payout_ratio_percent", "40"),
+        ("debt_to_ebitda", "1"), ("free_cashflow_yield_percent", "8"),
+        ("dividend_declared", True),
+    ):
+        facts[name] = {"value": value, "available_at": START.isoformat(), "source_url": SOURCE}
+    return document
+
+
+def test_linked_issuer_cashflows_survive_import_archive_and_replay_without_currency_conversion():
+    evidence = normalize_research_evidence(dividend_evidence_document())["assets"][0]
+    asset = _user_asset_evidence(prices(), evidence, START, END)
+    coverage = asset.candidate.facts["dividend_cashflow_coverage"]
+    assert coverage.value["currency"] == "USD"
+    assert coverage.value["operating_cashflow"] == "1000.01"
+    assert coverage.source_url == SOURCE
+    document = research_document("dividends")
+    expected = run([asset], document=document)
+    assert expected["selection"]["status"] == "ready"
+    inputs = research_inputs(
+        document, [asset], from_at=START, to_at=END, capital=Decimal(10000),
+        costs=ZERO_COSTS, observed=END,
+    )
+    # PostgreSQL JSONB may change object-key order. The semantic fingerprint and
+    # every result must survive the same reorder on nested structured facts.
+    replay = replay_research_inputs(json.loads(json.dumps(inputs, default=str, sort_keys=True)))
+    assert replay["data_hash"] == expected["data_hash"]
+    assert replay["selection"] == expected["selection"]
+    assert replay["metrics"] == expected["metrics"]
+
+
+@pytest.mark.parametrize("field,value", [
+    ("capital_expenditure", "-0.01"), ("gross_dividends_paid", "1e1000000"),
+    ("scope", "one_share_class"), ("currency", "usd"),
+    ("period_end", (START + timedelta(days=1)).isoformat()),
+    ("cashflows_complete", "true"),
+])
+def test_linked_dividend_evidence_rejects_incompatible_or_malformed_values(field, value):
+    document = dividend_evidence_document()
+    document["assets"][0]["facts"]["dividend_cashflow_coverage"]["value"][field] = value
+    with pytest.raises(ValueError, match="research_dividend_coverage_invalid"):
+        normalize_research_evidence(document)
+
+
+@pytest.mark.parametrize("explicit_units", [False, True])
+def test_cashflow_units_are_archived_only_when_the_user_explicitly_declares_them(explicit_units):
+    raw = evidence_document()
+    raw["assets"][0]["coverage"] = {
+        "from": (START - timedelta(days=365)).isoformat(), "to": END.isoformat(),
+        "cashflows_complete": True, "corporate_actions_complete": True,
+        "lot_history_complete": True, "source_url": SOURCE,
+    }
+    if explicit_units:
+        raw["assets"][0]["coverage"]["cashflow_unit_basis"] = "entitlement_security"
+    evidence = normalize_research_evidence(raw)["assets"][0]
+    asset = _user_asset_evidence(prices(), evidence, START, END)
+    recorded = asset.provider_observations.get("user_cashflow_coverage")
+    if explicit_units:
+        assert recorded == evidence["coverage"]
+        inputs = research_inputs(
+            research_document(), [asset], from_at=START, to_at=END, capital=Decimal(10000),
+            costs=ZERO_COSTS, observed=END,
+        )
+        from omnicio.strategy_service import research_assets_from_inputs
+
+        restored = research_assets_from_inputs(json.loads(json.dumps(inputs, default=str)))[0]
+        assert restored.provider_observations["user_cashflow_coverage"] == recorded
+    else:
+        assert recorded is None
+
+
+def test_cashflow_unit_declaration_cannot_use_an_ambiguous_current_share_basis():
+    raw = evidence_document()
+    raw["assets"][0]["coverage"] = {"cashflow_unit_basis": "current_share"}
+    with pytest.raises(ValueError, match="research_cashflow_unit_basis_invalid"):
+        normalize_research_evidence(raw)
+
+
+@pytest.mark.parametrize("field", ["available_at", "maturity_date"])
+def test_extreme_timezone_cannot_overflow_evidence_utc_normalization(field):
+    raw = evidence_document()
+    impossible = "0001-01-01T00:00:00+01:00"
+    if field == "available_at":
+        raw["assets"][0]["facts"]["roe_percent"]["available_at"] = impossible
+    else:
+        raw["assets"][0]["facts"]["maturity_date"] = {
+            "value": impossible, "available_at": START.isoformat(), "source_url": SOURCE,
+        }
+    with pytest.raises(ValueError, match="research_evidence_time_invalid"):
+        normalize_research_evidence(raw)
+
+
 @pytest.mark.parametrize("changed", ["paid_at", "entitlement_at", "both"])
 def test_complete_user_cashflows_replace_corrected_dates_without_doubling_nav(changed):
     from omnicio.backtest import HistoricalCashflow
@@ -233,7 +344,7 @@ def test_archive_roundtrip_reproduces_exact_hash_metrics_and_curve_without_provi
         replay_research_inputs(inputs)
 
 
-@pytest.mark.parametrize("engine_version", ["1.1.0", "1.2.0", "1.3.0"])
+@pytest.mark.parametrize("engine_version", ["1.1.0", "1.2.0", "1.3.0", "1.3.1"])
 def test_archive_replay_keeps_versioned_allocation_and_dated_observations(engine_version):
     from omnicio.backtest import HistoricalCashflow
 

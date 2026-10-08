@@ -415,6 +415,8 @@
       research_cashflow_order_invalid: T("research.evidence_cashflow_order"),
       research_cashflow_duplicate: T("research.missing.cashflow_duplicate"),
       research_coverage_invalid: T("research.evidence_coverage"),
+      research_cashflow_unit_basis_invalid: T("research.evidence_cashflow_units"),
+      research_dividend_coverage_invalid: T("research.evidence_dividend_coverage"),
       research_factor_availability_invalid: T("research.evidence_factor_time"),
       research_factor_date_duplicate: T("research.missing.factors"),
       research_split_ratio_invalid: T("research.missing.split_invalid"),
@@ -2588,6 +2590,7 @@
     payout_ratio_percent: T("доля прибыли на дивиденды"),
     dividend_decision: T("решение о дивидендах"),
     dividend_declared: T("подтверждение дивидендов"),
+    dividend_cashflow_coverage: T("research.dividend.coverage_fact"),
     net_yield_percent: T("доходность после издержек"),
     key_rate_percent: T("ключевая ставка"),
     cashflow_yield_percent: T("доходность денежного потока"),
@@ -2656,7 +2659,16 @@
     fund_expense_limit: T("Расходы фонда превышают предел"),
     insufficient_factor_history: T("Недостаточная история экономических факторов"),
     factor_exposure_not_identified: T("Влияние экономических факторов не установлено"),
-    dividends_not_cashflow_covered: T("Дивиденды не подтверждены денежным потоком"),
+    dividends_not_cashflow_covered: T("research.dividend.not_covered"),
+    dividend_coverage_issuer_mismatch: T("research.dividend.issuer_mismatch"),
+    dividend_coverage_stale: T("research.dividend.stale"),
+    ladder_horizon_unavailable: T("research.ladder.horizon_missing"),
+    dividend_payment_window_unverified: T("research.cashflow.payment_window"),
+    dividend_unit_basis_unverified: T("research.cashflow.units_missing"),
+    cashflow_coverage_missing: T("research.cashflow.coverage_missing"),
+    cashflow_coverage_invalid: T("research.cashflow.coverage_invalid"),
+    cashflow_coverage_incomplete: T("research.cashflow.coverage_incomplete"),
+    cashflow_unit_basis_unverified: T("research.cashflow.units_missing"),
     payout_limit: T("Доля прибыли на дивиденды не отвечает условию"),
     positive_dividend_required: T("Нет подтверждённой положительной дивидендной доходности"),
     net_yield_floor: T("Доходность после издержек ниже заданного порога"),
@@ -2675,6 +2687,7 @@
     four_economic_regimes: T("Не покрыты все четыре экономических режима")
   });
   const allocationRequirement = (key, prefix, name) => {
+    if (prefix === "ladder_rung_unfilled") return T("research.ladder.rung_unfilled", {rung: name});
     const assetClass = {
       shares: T("акций"),
       bonds: T("облигаций"),
@@ -2711,7 +2724,7 @@
     if (/[А-Яа-яЁё]/.test(key)) return key;
     if (selectionReasonLabels()[key]) return selectionReasonLabels()[key];
     const [prefix, name] = key.split(":");
-    if (["missing", "unverified"].includes(prefix)) return factLabels()[name] ? `${T("Не подтверждены данные:")} ${factLabels()[name]}.` : T("Не подтверждён необходимый показатель источника.");
+    if (["missing", "unverified"].includes(prefix)) return selectionReasonLabels()[name] || (factLabels()[name] ? `${T("Не подтверждены данные:")} ${factLabels()[name]}.` : T("Не подтверждён необходимый показатель источника."));
     const allocationReason = allocationRequirement(key, prefix, name);
     if (allocationReason) return allocationReason;
     const configurationReason = strategyConfigurationRequirement(key);
@@ -2719,10 +2732,18 @@
     if (factLabels()[key]) return `${T("Не получены данные:")} ${factLabels()[key]}.`;
     return T("Требуется проверка условий и полноты исходных данных.");
   };
+  const researchSourceAmount = (value, currency) => {
+    if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?$/.test(value) || !/^[A-Z]{3}$/.test(currency)) return "—";
+    const exact = value.includes(".") ? value.replace(/0+$/, "").replace(/\.$/, "") : value;
+    return `${exact} ${currency}`;
+  };
   const assessmentValue = (value, key = "") => {
     if (value === null || value === undefined) return "—";
     if (Array.isArray(value)) return value.map(item => assessmentValue(item)).join(", ") || "—";
     if (typeof value === "boolean") return value ? T("Да") : T("Нет");
+    if (key === "dividend_cashflow_coverage" && typeof value === "object") {
+      return T("research.dividend.fact_summary", {issuer: value.issuer_id || "—", from: date(value.period_start), to: date(value.period_end), operating: researchSourceAmount(value.operating_cashflow, value.currency), capex: researchSourceAmount(value.capital_expenditure, value.currency), paid: researchSourceAmount(value.gross_dividends_paid, value.currency)});
+    }
     if (typeof value === "object") {
       const labels = {
         rub: T("Сумма"),
@@ -2762,6 +2783,18 @@
     if (!rows.length && !errors) return "";
     return `<details class="section-gap"><summary class="details-summary">${H("research.current_history_title")}</summary><p class="fine-print">${H("research.current_history_scope", {days: format(selection.history_max_age_seconds / 86400, 0)})}</p>${infoRows(rows)}${errors}</details>`;
   };
+  const dividendCoverageHTML = item => {
+    const coverage = item.dividend_cashflow_coverage;
+    if (!coverage || typeof coverage !== "object") return "";
+    const amounts = [["operating", "operating_cashflow"], ["capex", "capital_expenditure"], ["free", "free_cashflow"], ["paid", "gross_dividends_paid"]].map(([label, field]) => [T(`research.dividend.${label}`), researchSourceAmount(coverage[field], coverage.currency)]);
+    return `<details class="section-gap" data-dividend-coverage><summary class="details-summary">${H("research.dividend.title")} · ${esc(item.ticker || item.instrument_uid)}</summary>${infoRows([[T("research.dividend.period"), `${date(coverage.period_start)} — ${date(coverage.period_end)}`], ...amounts, [T("research.dividend.ratio"), `${format(coverage.coverage_ratio, 4)} ×`]])}<p class="fine-print">${H("research.dividend.scope")}</p><p class="fine-print">${esc(date(coverage.available_at, true))} ${U.sourceLink(coverage.source_url, T("Источник"))}</p></details>`;
+  };
+  const ladderRungsHTML = selection => {
+    const rungs = selection.ladder_rungs;
+    if (!Array.isArray(rungs) || !rungs.length) return "";
+    const rows = rungs.map(row => `<div class="section-gap" data-ladder-rung="${esc(row.rung)}"><h4 class="panel-title">${H("research.ladder.rung", {rung: row.rung})}</h4><p class="fine-print">${esc(date(row.from, true))} — ${esc(date(row.to, true))}</p>${infoRows([[T("research.ladder.target"), percent(row.target_weight_percent)], [T("research.ladder.allocated"), percent(row.allocated_weight_percent)]])}</div>`).join("");
+    return `<details class="section-gap" data-ladder-rungs><summary class="details-summary">${H("research.ladder.title")}</summary><p class="fine-print">${H("research.ladder.scope")}</p>${rows}</details>`;
+  };
   const selectionHTML = (selection, title = T("Подбор по подтверждённым данным")) => {
     if (!selection) return "";
     const selected = Array.isArray(selection.selected) ? selection.selected : [];
@@ -2770,7 +2803,7 @@
       ready: T("Данные для корзины подтверждены"),
       partial: T("Частичное покрытие"),
       insufficient_data: T("Недостаточно данных")
-    }[selection.status] || T("Ожидается проверка"))} ${H("· на")} ${esc(date(selection.as_of, true))} ${H("МСК")}</p>${selection.scope ? renderSelectionHTMLNotice(selection) : ""}${selected.length ? renderSelectionHTMLPanelTitle(selected) : ("<p class=\"fine-print\">" + H("Корзина из подтверждённых инструментов пока не сформирована.") + "</p>")}${infoRows([[T("Остаток расчётной доли деньгами"), percent(selection.cash_weight_percent)]])}${selection.missing_requirements?.length ? renderSelectionHTMLRiskList(selection) : ""}${candidates.length ? renderSelectionHTMLDetailsSummary2(candidates) : ""}${currentSelectionHistoryHTML(selection)}</details>`;
+    }[selection.status] || T("Ожидается проверка"))} ${H("· на")} ${esc(date(selection.as_of, true))} ${H("МСК")}</p>${selection.scope ? renderSelectionHTMLNotice(selection) : ""}${selected.length ? renderSelectionHTMLPanelTitle(selected) : ("<p class=\"fine-print\">" + H("Корзина из подтверждённых инструментов пока не сформирована.") + "</p>")}${infoRows([[T("Остаток расчётной доли деньгами"), percent(selection.cash_weight_percent)]])}${ladderRungsHTML(selection)}${selected.map(dividendCoverageHTML).join("")}${selection.missing_requirements?.length ? renderSelectionHTMLRiskList(selection) : ""}${candidates.length ? renderSelectionHTMLDetailsSummary2(candidates) : ""}${currentSelectionHistoryHTML(selection)}</details>`;
   };
   const assessmentIsCurrent = (result, strategyVersion) => {
     const observed = Date.parse(result.captured_at);
@@ -2936,9 +2969,12 @@
     const items = rows.map(item => {
       const facts = infoRows([[T("research.coverage.cashflows"), format(item.automatic_cashflow_events, 0)],
         [T("research.coverage.accruals"), format(item.daily_accrual_observations, 0)],
-        [T("research.coverage.facts"), format(item.historical_fact_observations, 0)]]);
+        [T("research.coverage.facts"), format(item.historical_fact_observations, 0)],
+        ...(item.cashflow_yield_coverage?.as_of ? [[T("research.cashflow.as_of"), date(item.cashflow_yield_coverage.as_of, true)]] : [])]);
       const missing = item.missing?.length ? `<ul class="risk-list">${item.missing.map(renderFundamentalMetricsHTMLLi2).join("")}</ul>` : "";
-      return `<section class="section-gap"><h4>${esc(item.instrument_uid)}</h4>${facts}<p class="fine-print">${item.total_return_verified ? H("research.coverage.user_confirmed") : H("research.coverage.incomplete")}</p>${missing}</section>`;
+      const yieldReasons = item.cashflow_yield_coverage?.reasons;
+      const yieldCoverage = yieldReasons?.length ? `<p class="fine-print">${H("research.cashflow.yield_coverage")}</p><ul class="risk-list">${yieldReasons.map(renderFundamentalMetricsHTMLLi2).join("")}</ul>` : "";
+      return `<section class="section-gap"><h4>${esc(item.instrument_uid)}</h4>${facts}<p class="fine-print">${item.total_return_verified ? H("research.coverage.user_confirmed") : H("research.coverage.incomplete")}</p>${missing}${yieldCoverage}</section>`;
     }).join("");
     return `<details class="section-gap" data-research-coverage><summary class="details-summary">${H("research.coverage.title")}</summary><p class="fine-print">${H("research.coverage.scope")}</p>${items}</details>`;
   };
@@ -3097,7 +3133,7 @@
     try {
       const payload = await api("/api/research/evidence");
       if (!current()) return;
-      openDialog(T("Дополнительные источники исследования"), `<form id="research-evidence-form" data-version="${payload.version}"><p class="notice">${H("Данные, которых нет у подключённых источников, можно импортировать в свой аккаунт. Для каждого факта нужны значение, реальная дата его доступности и ссылка на источник. Загруженные сведения обозначаются как предоставленные вами; ссылка сама по себе не подтверждает достоверность.")}</p><label class="field"><span>${H("research.evidence_file")}</span><input type="file" name="evidence_file" accept="application/json,.json"></label><label class="field section-gap"><span>${H("Документ исходных данных")}</span><textarea name="document" rows="14" maxlength="16777216" required spellcheck="false"></textarea></label><details><summary class="details-summary">${H("Состав документа")}</summary><p class="fine-print">${H("research.evidence_structure")}</p></details><div class="form-actions"><button class="button primary" type="submit">${H("Проверить и сохранить данные")}</button><button class="button secondary" type="button" data-close-dialog>${H("Закрыть")}</button></div><output class="form-message" id="evidence-message"></output></form>`);
+      openDialog(T("Дополнительные источники исследования"), `<form id="research-evidence-form" data-version="${payload.version}"><p class="notice">${H("Данные, которых нет у подключённых источников, можно импортировать в свой аккаунт. Для каждого факта нужны значение, реальная дата его доступности и ссылка на источник. Загруженные сведения обозначаются как предоставленные вами; ссылка сама по себе не подтверждает достоверность.")}</p><label class="field"><span>${H("research.evidence_file")}</span><input type="file" name="evidence_file" accept="application/json,.json"></label><label class="field section-gap"><span>${H("Документ исходных данных")}</span><textarea name="document" rows="14" maxlength="16777216" required spellcheck="false"></textarea></label><details><summary class="details-summary">${H("Состав документа")}</summary><p class="fine-print">${H("research.evidence_structure")}</p><p class="fine-print">${H("research.evidence_dividend_structure")}</p></details><div class="form-actions"><button class="button primary" type="submit">${H("Проверить и сохранить данные")}</button><button class="button secondary" type="button" data-close-dialog>${H("Закрыть")}</button></div><output class="form-message" id="evidence-message"></output></form>`);
       const form = $("#research-evidence-form");
       form.elements.document.value = JSON.stringify(payload.document || {assets: []});
       form.elements.evidence_file.addEventListener("change", async event => {
@@ -5187,7 +5223,21 @@
     return `<a class="screen-menu-item${selected ? " selected" : ""}" href="${U.routeHash({mode: state.mode, view, screen: key})}" data-route="${view}" data-screen="${key}"${selected ? ' aria-current="page"' : ""}><span><strong>${esc(title)}</strong>${note}</span>${icon("arrow", true)}</a>`;
   }
   function screenLinks(view, panes) {
-    return `<nav class="screen-menu" aria-label="${H("navigation.sections")}">${panes.map(pane => screenLink(view, pane)).join("")}</nav>`;
+    const menu = `<nav class="screen-menu" aria-label="${H("navigation.sections")}">${panes.map(pane => screenLink(view, pane)).join("")}</nav>`;
+    if (!state.route.screen || panes.length <= 2) return menu;
+    const current = panes.find(([key]) => key === state.route.screen)?.[1] || T("navigation.sections");
+    const compact = window.innerWidth <= 960;
+    return `<details class="screen-menu-picker" data-compact="${compact}"${compact ? "" : " open"}><summary class="button secondary screen-menu-toggle"><span>${H("navigation.current_section", {title: current})}</span>${icon("arrow", true)}</summary>${menu}</details>`;
+  }
+  function syncScreenMenus() {
+    const compact = window.innerWidth <= 960;
+    for (const picker of $$(".screen-menu-picker")) {
+      if (picker.dataset.compact === String(compact)) continue;
+      const focused = picker.contains(document.activeElement);
+      picker.dataset.compact = String(compact);
+      picker.open = !compact;
+      if (focused) $(compact ? "summary" : '[aria-current="page"]', picker)?.focus();
+    }
   }
   function layoutMarket({root, attach}) {
     const columns = $$(":scope > .two-column > section", root);
@@ -6748,6 +6798,7 @@
   window.addEventListener("resize", () => {
     if (window.innerWidth > 960 && !$("#drawer-backdrop").hidden) closeDrawer(false);
     $("#app-sidebar").inert = window.innerWidth <= 960 && $("#drawer-backdrop").hidden;
+    syncScreenMenus();
   });
   window.addEventListener("offline", () => { stopQuoteStream(); toast(T("Нет соединения. Новые данные и изменения требуют сети."), true); });
   window.addEventListener("online", () => {

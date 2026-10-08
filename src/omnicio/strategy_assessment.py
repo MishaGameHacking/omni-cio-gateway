@@ -12,7 +12,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
@@ -38,6 +38,11 @@ _CLASS_CAP = {
 _RATING_MAX_AGE = timedelta(days=366)
 _IDENTITY_MAX_AGE = timedelta(days=30)
 _MISSING_PREFIX = "missing:"
+_DIVIDEND_COVERAGE_INVALID = "research_dividend_coverage_invalid"
+_DIVIDEND_COVERAGE_KEYS = frozenset({
+    "issuer_id", "scope", "currency", "period_start", "period_end",
+    "operating_cashflow", "capital_expenditure", "gross_dividends_paid", "cashflows_complete",
+})
 _State = Literal["evaluated", "blocked", "unknown", "inapplicable"]
 
 
@@ -511,14 +516,20 @@ def _maturity_terms(
     return terms, covered
 
 
-def calendar_horizon_days(months: Decimal, now: datetime) -> Decimal | None:
+def _calendar_horizon_end(months: Decimal, now: datetime) -> datetime | None:
     limit_month = now.year * 12 + now.month - 1 + int(months)
     year, month0 = divmod(limit_month, 12)
-    if year > 9999:
+    if not 1 <= year <= 9999:
         return None
-    end = now.replace(
+    return now.replace(
         year=year, month=month0 + 1, day=min(now.day, calendar.monthrange(year, month0 + 1)[1])
     )
+
+
+def calendar_horizon_days(months: Decimal, now: datetime) -> Decimal | None:
+    end = _calendar_horizon_end(months, now)
+    if end is None:
+        return None
     return Decimal(str((end - now).total_seconds())) / Decimal("86400")
 
 
@@ -818,11 +829,79 @@ def assess_strategy_account(
 
 @dataclass(frozen=True, slots=True)
 class StrategyFact:
-    """A scalar observation with its availability time, not merely period end."""
+    """An observation with its availability time, not merely period end."""
 
-    value: Decimal | int | str | bool | datetime
+    value: Decimal | int | str | bool | datetime | Mapping[str, Any]
     available_at: datetime
     source_url: str
+
+
+def _dividend_coverage_date(value: object) -> datetime:
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError(_DIVIDEND_COVERAGE_INVALID) from exc
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(_DIVIDEND_COVERAGE_INVALID)
+    try:
+        return value.astimezone(UTC)
+    except (ValueError, OverflowError) as exc:
+        raise ValueError(_DIVIDEND_COVERAGE_INVALID) from exc
+
+
+def _dividend_coverage_amount(value: object, *, nonnegative: bool) -> str:
+    if (isinstance(value, bool) or not isinstance(value, (str, int, Decimal))
+            or len(str(value)) > 80):
+        raise ValueError(_DIVIDEND_COVERAGE_INVALID)
+    try:
+        number = Decimal(value)
+    except InvalidOperation as exc:
+        raise ValueError(_DIVIDEND_COVERAGE_INVALID) from exc
+    exponent = number.as_tuple().exponent
+    if (
+        not number.is_finite() or not isinstance(exponent, int)
+        or exponent < -28 or exponent > 15 or number.copy_abs() > Decimal("1e15")
+        or (nonnegative and number < 0)
+    ):
+        raise ValueError(_DIVIDEND_COVERAGE_INVALID)
+    return format(number, "f")
+
+
+def normalize_dividend_cashflow_coverage(
+    value: object, *, available_at: datetime
+) -> dict[str, Any]:
+    """Validate same-issuer annual cash flows in one disclosed original currency."""
+    if not isinstance(value, Mapping) or set(value) != _DIVIDEND_COVERAGE_KEYS:
+        raise ValueError(_DIVIDEND_COVERAGE_INVALID)
+    issuer, currency = value["issuer_id"], value["currency"]
+    if not isinstance(issuer, str) or not 1 <= len(issuer.strip()) <= 200:
+        raise ValueError(_DIVIDEND_COVERAGE_INVALID)
+    issuer = issuer.strip()
+    if value["scope"] != "consolidated_issuer_all_equity":
+        raise ValueError(_DIVIDEND_COVERAGE_INVALID)
+    if (
+        not isinstance(currency, str) or len(currency) != 3
+        or not currency.isascii() or not currency.isalpha() or currency != currency.upper()
+    ):
+        raise ValueError(_DIVIDEND_COVERAGE_INVALID)
+    if type(value["cashflows_complete"]) is not bool:
+        raise ValueError(_DIVIDEND_COVERAGE_INVALID)
+    start = _dividend_coverage_date(value["period_start"])
+    end = _dividend_coverage_date(value["period_end"])
+    available = _dividend_coverage_date(available_at)
+    if (start >= end or end > available
+            or not timedelta(days=330) <= end - start <= timedelta(days=400)):
+        raise ValueError(_DIVIDEND_COVERAGE_INVALID)
+    amounts = {
+        key: _dividend_coverage_amount(value[key], nonnegative=key != "operating_cashflow")
+        for key in ("operating_cashflow", "capital_expenditure", "gross_dividends_paid")
+    }
+    return {
+        "issuer_id": issuer, "scope": value["scope"], "currency": currency,
+        "period_start": start.isoformat(), "period_end": end.isoformat(),
+        **amounts, "cashflows_complete": value["cashflows_complete"],
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -938,6 +1017,42 @@ def _bond_maturity(
         ):
             reasons.append("maturity_limit")
     return reasons, months
+
+
+def _ladder_rung_ends(data: Mapping[str, Any], as_of: datetime) -> tuple[datetime, ...]:
+    limits = [
+        _amount(data[section][key])
+        for section, key in (("profile", "horizon_months"), ("policy", "max_term_months"))
+    ]
+    if any(limit is None or limit <= 0 for limit in limits):
+        return ()
+    horizon = int(min(limit for limit in limits if limit is not None))
+    step = int(strategy_rule_set(data["base_preset_id"])["rung_months"])
+    ends = []
+    for months in range(step, horizon + step, step):
+        end = _calendar_horizon_end(Decimal(min(months, horizon)), as_of)
+        if end is None:
+            return ()
+        ends.append(end)
+    return tuple(ends)
+
+
+def _bond_maturity_bucket(
+    candidate: StrategyCandidateFacts,
+    data: Mapping[str, Any],
+    as_of: datetime,
+    rules: Mapping[str, Any],
+    months: int,
+    engine_version: str,
+) -> str:
+    if rules["ranking"] != "maturity_ladder" or engine_version != "1.3.2":
+        return str(max(0, months) // int(rules.get("rung_months", 12)))
+    maturity = _known_fact(candidate, "maturity_date", as_of)
+    if isinstance(maturity, datetime):
+        for index, end in enumerate(_ladder_rung_ends(data, as_of)):
+            if maturity <= end:
+                return str(index)
+    return ""
 
 
 def _credit_category_reasons(notch: str, data: Mapping[str, Any]) -> list[str]:
@@ -1119,18 +1234,16 @@ def _covered_dividends_score(
     candidate: StrategyCandidateFacts,
     as_of: datetime,
     rules: Mapping[str, Any],
+    *,
+    engine_version: str = "1.3.1",
 ) -> tuple[Decimal, list[str], str] | None:
     if candidate.asset_class != "shares":
         return None
+    keys: tuple[str, ...] = ("dividend_yield_percent", "payout_ratio_percent", "debt_to_ebitda")
+    if engine_version != "1.3.2":
+        keys += ("free_cashflow_yield_percent",)
     values, reasons = _required_numbers(
-        candidate,
-        as_of,
-        (
-            "dividend_yield_percent",
-            "payout_ratio_percent",
-            "debt_to_ebitda",
-            "free_cashflow_yield_percent",
-        ),
+        candidate, as_of, keys,
     )
     score, payout, debt = (
         values[key]
@@ -1142,7 +1255,10 @@ def _covered_dividends_score(
     )
     if _known_fact(candidate, "dividend_declared", as_of) is not True:
         reasons.append("missing:dividend_decision")
-    if values["free_cashflow_yield_percent"] <= 0:
+    if engine_version == "1.3.2":
+        _, coverage_reasons = _dividend_cashflow_evidence(candidate, as_of)
+        reasons.extend(coverage_reasons)
+    elif values["free_cashflow_yield_percent"] <= 0:
         reasons.append("dividends_not_cashflow_covered")
     if not 0 <= payout <= Decimal(rules["maximum_payout_percent"]):
         reasons.append("payout_limit")
@@ -1153,14 +1269,70 @@ def _covered_dividends_score(
     return score, reasons, ""
 
 
+def _dividend_cashflow_evidence(
+    candidate: StrategyCandidateFacts, as_of: datetime,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    observation = _known_observation(candidate, "dividend_cashflow_coverage", as_of)
+    if observation is None:
+        return None, ["missing:dividend_cashflow_coverage"]
+    try:
+        value = normalize_dividend_cashflow_coverage(
+            observation.value, available_at=observation.available_at,
+        )
+    except ValueError:
+        return None, ["missing:dividend_cashflow_coverage"]
+    reasons = []
+    if value["issuer_id"] != _known_fact(candidate, "issuer_id", as_of):
+        reasons.append("dividend_coverage_issuer_mismatch")
+    if not value["cashflows_complete"]:
+        reasons.append("missing:dividend_cashflow_coverage")
+    earliest = _calendar_horizon_end(Decimal(-18), as_of)
+    if earliest is not None and datetime.fromisoformat(value["period_end"]) < earliest:
+        reasons.append("dividend_coverage_stale")
+    # Input bounds allow 16 integer and 28 fractional digits. Preserve the exact
+    # subtraction/comparison even at the smallest permitted unit near 1e15.
+    with localcontext() as context:
+        context.prec = 64
+        cashflow = Decimal(value["operating_cashflow"]) - Decimal(value["capital_expenditure"])
+        dividends = Decimal(value["gross_dividends_paid"])
+        ratio = None
+        if dividends <= 0:
+            reasons.append("positive_dividend_required")
+        else:
+            ratio = format(cashflow / dividends, "f")
+            if cashflow < dividends:
+                reasons.append("dividends_not_cashflow_covered")
+    return {
+        key: value[key] for key in (
+            "issuer_id", "currency", "period_start", "period_end", "operating_cashflow",
+            "capital_expenditure", "gross_dividends_paid",
+        )
+    } | {
+        "free_cashflow": format(cashflow, "f"), "coverage_ratio": ratio,
+        "available_at": observation.available_at.astimezone(UTC).isoformat(),
+        "source_url": observation.source_url,
+    }, reasons
+
+
 _FACT_SCORERS = {
     "documented_cashflow": _cashflow_score,
     "floating_cashflow": _cashflow_score,
     "quality_value": _quality_value_score,
     "index_cost": _index_cost_score,
     "regime_risk": _regime_risk_score,
-    "covered_dividends": _covered_dividends_score,
 }
+
+
+def _fact_method_score(
+    candidate: StrategyCandidateFacts, as_of: datetime,
+    rules: Mapping[str, Any], engine_version: str,
+) -> tuple[Decimal, list[str], str] | None:
+    if rules["ranking"] == "covered_dividends":
+        return _covered_dividends_score(candidate, as_of, rules, engine_version=engine_version)
+    scorer = _FACT_SCORERS.get(rules["ranking"])
+    if scorer is None:
+        return None
+    return scorer(candidate, as_of, rules)
 
 
 def _yield_floor_reasons(
@@ -1201,6 +1373,7 @@ def _method_score(
     candidate: StrategyCandidateFacts,
     data: Mapping[str, Any],
     as_of: datetime,
+    engine_version: str,
 ) -> tuple[Decimal | None, list[str], str]:
     rules = strategy_rule_set(data["base_preset_id"])
     mode = rules["ranking"]
@@ -1212,14 +1385,12 @@ def _method_score(
         bond_reasons, months = _bond_criteria(candidate, data, as_of, rules)
         reasons.extend(bond_reasons)
         if mode in {"maturity_ladder", "short_quality"} and months is not None:
-            bucket = str(max(0, months) // int(rules.get("rung_months", 12)))
+            bucket = _bond_maturity_bucket(candidate, data, as_of, rules, months, engine_version)
             score /= 1 + max(0, months)
-    scorer = _FACT_SCORERS.get(mode)
-    if scorer is not None:
-        details = scorer(candidate, as_of, rules)
-        if details is not None:
-            score, method_reasons, bucket = details
-            reasons.extend(method_reasons)
+    details = _fact_method_score(candidate, as_of, rules, engine_version)
+    if details is not None:
+        score, method_reasons, bucket = details
+        reasons.extend(method_reasons)
     reasons.extend(_yield_floor_reasons(candidate, data, as_of))
     return (None if reasons else score), sorted(set(reasons)), bucket
 
@@ -1254,10 +1425,20 @@ _RankedCandidate = tuple[StrategyCandidateFacts, Decimal, str]
 _ExposureLedger = dict[str, dict[str, Decimal]]
 
 
+def _candidate_fact_value(key: str, fact: StrategyFact, engine_version: str) -> object:
+    if key == "dividend_cashflow_coverage" and engine_version == "1.3.2":
+        try:
+            return normalize_dividend_cashflow_coverage(fact.value, available_at=fact.available_at)
+        except ValueError:
+            return None
+    return str(fact.value)
+
+
 def _rank_candidates(
     data: Mapping[str, Any],
     candidates: Sequence[StrategyCandidateFacts],
     as_of: datetime,
+    engine_version: str,
 ) -> tuple[list[dict[str, Any]], list[_RankedCandidate]]:
     rows, eligible = [], []
     for candidate in candidates:
@@ -1273,7 +1454,7 @@ def _rank_candidates(
             reasons.append("non_ruble_series")
         if type(candidate.lot_size) is not int or candidate.lot_size <= 0:
             reasons.append("lot_size_missing")
-        score, evidence_reasons, bucket = _method_score(candidate, data, as_of)
+        score, evidence_reasons, bucket = _method_score(candidate, data, as_of, engine_version)
         reasons = sorted(set(reasons + evidence_reasons))
         rows.append(
             {
@@ -1286,7 +1467,7 @@ def _rank_candidates(
                 "bucket": bucket,
                 "facts": {
                     key: {
-                        "value": str(fact.value),
+                        "value": _candidate_fact_value(key, fact, engine_version),
                         "available_at": fact.available_at.isoformat(),
                         "source_url": fact.source_url,
                     }
@@ -1409,36 +1590,20 @@ def _allocate_ranked_group(
     return weights
 
 
-def _select_asset_class(
+def _class_weights(
     data: Mapping[str, Any],
-    eligible: Sequence[_RankedCandidate],
-    kind: str,
+    matching: Sequence[_RankedCandidate],
     as_of: datetime,
     used: _ExposureLedger,
     missing: set[str],
+    budget: Decimal,
     *,
     redistribute: bool,
-) -> list[dict[str, Any]]:
-    target = Decimal(data["allocation"][kind])
-    if not target:
-        return []
-    class_cap = _amount(data["policy"][_CLASS_CAP[kind]])
-    if class_cap is None:
-        missing.add("policy." + _CLASS_CAP[kind])
-        return []
-    matching = sorted(
-        (item for item in eligible if item[0].asset_class == kind),
-        key=lambda item: (-item[1], item[0].instrument_uid),
-    )
-    if not matching:
-        missing.add("eligible_" + kind)
-        return []
-    if target > class_cap:
-        missing.add("target_above_class_cap:" + kind)
+) -> dict[str, Decimal]:
     mode = strategy_rule_set(data["base_preset_id"])["ranking"]
-    budget = min(target, class_cap)
     # Ladder rungs and economic regimes have separate deliberate budgets.
     # A constrained rung must not silently transfer its mandate to another rung.
+    groups: list[Sequence[_RankedCandidate]]
     if redistribute and mode in {"maturity_ladder", "regime_risk"}:
         buckets = sorted({item[2] for item in matching})
         groups = [[item for item in matching if item[2] == bucket] for bucket in buckets]
@@ -1458,10 +1623,44 @@ def _select_asset_class(
                 redistribute=redistribute,
             )
         )
+    return weights
+
+
+def _ladder_weights(
+    data: Mapping[str, Any],
+    matching: Sequence[_RankedCandidate],
+    as_of: datetime,
+    used: _ExposureLedger,
+    missing: set[str],
+    budget: Decimal,
+) -> dict[str, Decimal]:
+    ends = _ladder_rung_ends(data, as_of)
+    if not ends:
+        missing.add("ladder_horizon_unavailable")
+        return {}
+    rung_budget = budget / len(ends)
+    weights: dict[str, Decimal] = {}
+    for index in range(len(ends)):
+        group = [item for item in matching if item[2] == str(index)]
+        allocations = _allocate_ranked_group(
+            group, rung_budget, "maturity_ladder", data, as_of, used, missing, redistribute=True,
+        )
+        weights.update(allocations)
+    return weights
+
+
+def _selected_class_rows(
+    matching: Sequence[_RankedCandidate],
+    weights: Mapping[str, Decimal],
+    mode: str,
+    kind: str,
+    target: Decimal,
+    missing: set[str],
+) -> list[dict[str, Any]]:
     selected, allocated = [], _ZERO
     for ranked in matching:
         candidate, _, bucket = ranked
-        weight = weights[candidate.instrument_uid]
+        weight = weights.get(candidate.instrument_uid, _ZERO)
         if weight <= 0:
             continue
         allocated += weight
@@ -1480,12 +1679,116 @@ def _select_asset_class(
     return selected
 
 
+def _select_asset_class(
+    data: Mapping[str, Any],
+    eligible: Sequence[_RankedCandidate],
+    kind: str,
+    as_of: datetime,
+    used: _ExposureLedger,
+    missing: set[str],
+    *,
+    engine_version: str,
+) -> list[dict[str, Any]]:
+    target = Decimal(data["allocation"][kind])
+    if not target:
+        return []
+    class_cap = _amount(data["policy"][_CLASS_CAP[kind]])
+    if class_cap is None:
+        missing.add("policy." + _CLASS_CAP[kind])
+        return []
+    matching = sorted(
+        (item for item in eligible if item[0].asset_class == kind),
+        key=lambda item: (-item[1], item[0].instrument_uid),
+    )
+    mode = strategy_rule_set(data["base_preset_id"])["ranking"]
+    calendar_ladder = mode == "maturity_ladder" and kind == "bonds" and engine_version == "1.3.2"
+    if not matching:
+        missing.add("eligible_" + kind)
+        if not calendar_ladder:
+            return []
+    if target > class_cap:
+        missing.add("target_above_class_cap:" + kind)
+    budget = min(target, class_cap)
+    if calendar_ladder:
+        weights = _ladder_weights(data, matching, as_of, used, missing, budget)
+    else:
+        weights = _class_weights(
+            data, matching, as_of, used, missing, budget,
+            redistribute=engine_version != "1.1.0",
+        )
+    return _selected_class_rows(matching, weights, mode, kind, target, missing)
+
+
+def _ladder_coverage(
+    data: Mapping[str, Any],
+    selected: Sequence[Mapping[str, Any]],
+    as_of: datetime,
+    missing: set[str],
+) -> list[dict[str, Any]]:
+    ends = _ladder_rung_ends(data, as_of)
+    if not ends:
+        missing.update(("ladder_horizon_unavailable", "unfilled_target:bonds"))
+        return []
+    target = Decimal(data["allocation"]["bonds"]) / len(ends)
+    rows = []
+    start = as_of
+    for index, end in enumerate(ends):
+        allocated = sum(
+            (Decimal(row["target_weight_percent"]) for row in selected
+             if row["asset_class"] == "bonds" and row["bucket"] == str(index)), _ZERO,
+        )
+        if allocated + Decimal("0.000001") < target:
+            missing.add("ladder_rung_unfilled:" + str(index + 1))
+        rows.append({
+            "rung": index + 1, "from": start.isoformat(), "to": end.isoformat(),
+            "target_weight_percent": _text(target), "allocated_weight_percent": _text(allocated),
+        })
+        start = end
+    return rows
+
+
+def _selection_status(
+    selected: Sequence[Mapping[str, Any]],
+    missing: set[str],
+    *,
+    cash_only: bool,
+    engine_version: str,
+) -> str:
+    ready = (bool(selected) or (cash_only and engine_version in {"1.3.1", "1.3.2"})) and not missing
+    if ready:
+        return "ready"
+    if selected:
+        return "partial"
+    return "insufficient_data"
+
+
+def _current_selection_evidence(
+    data: Mapping[str, Any],
+    candidates: Sequence[StrategyCandidateFacts],
+    selected: list[dict[str, Any]],
+    as_of: datetime,
+    missing: set[str],
+) -> dict[str, Any]:
+    mode = strategy_rule_set(data["base_preset_id"])["ranking"]
+    if mode == "maturity_ladder" and data["allocation"]["bonds"]:
+        return {"ladder_rungs": _ladder_coverage(data, selected, as_of, missing)}
+    if mode == "covered_dividends":
+        by_uid = {candidate.instrument_uid: candidate for candidate in candidates}
+        for row in selected:
+            if row["asset_class"] != "shares":
+                continue
+            evidence, reasons = _dividend_cashflow_evidence(by_uid[row["instrument_uid"]], as_of)
+            if evidence is not None and not reasons:
+                row["dividend_cashflow_coverage"] = evidence
+    return {}
+
+
 def select_strategy_candidates(
     document: object,
     candidates: Sequence[StrategyCandidateFacts],
     *,
     as_of: datetime,
-    engine_version: str = "1.3.1",
+    engine_version: str = "1.3.2",
 ) -> dict[str, Any]:
     """Screen dated facts, rank by the mandate and allocate bounded research weights.
 
@@ -1494,17 +1797,17 @@ def select_strategy_candidates(
     """
     data = normalize_document(document)
     if (as_of.tzinfo is None or len(candidates) > 100
-            or engine_version not in {"1.1.0", "1.2.0", "1.3.0", "1.3.1"}):
+            or engine_version not in {"1.1.0", "1.2.0", "1.3.0", "1.3.1", "1.3.2"}):
         raise ValueError("strategy_candidate_input_invalid")
     ids = [row.instrument_uid for row in candidates]
     if any(not uid for uid in ids) or len(ids) != len(set(ids)):
         raise ValueError("strategy_duplicate_candidate")
-    rows, eligible = _rank_candidates(data, candidates, as_of)
+    rows, eligible = _rank_candidates(data, candidates, as_of, engine_version)
     missing: set[str] = set()
     mode = strategy_rule_set(data["base_preset_id"])["ranking"]
     cash_only = data["allocation"]["cash"] == 100
     if mode == "regime_risk" and len({bucket for _, _, bucket in eligible}) < 4 and not (
-        cash_only and engine_version == "1.3.1"
+        cash_only and engine_version in {"1.3.1", "1.3.2"}
     ):
         missing.add("four_economic_regimes")
     used: _ExposureLedger = {
@@ -1514,7 +1817,8 @@ def select_strategy_candidates(
     for kind in ALLOCATION_KEYS[:3]:
         selected.extend(
             _select_asset_class(
-                data, eligible, kind, as_of, used, missing, redistribute=engine_version != "1.1.0"
+                data, eligible, kind, as_of, used, missing,
+                engine_version=engine_version,
             )
         )
     missing.update(
@@ -1524,17 +1828,16 @@ def select_strategy_candidates(
         for reason in row["reasons"]
         if reason.startswith(_MISSING_PREFIX)
     )
+    details = {}
+    if engine_version == "1.3.2":
+        details = _current_selection_evidence(data, candidates, selected, as_of, missing)
     total = sum((Decimal(item["target_weight_percent"]) for item in selected), _ZERO)
-    ready = (bool(selected) or (cash_only and engine_version == "1.3.1")) and not missing
-    if ready:
-        status = "ready"
-    elif selected:
-        status = "partial"
-    else:
-        status = "insufficient_data"
+    status = _selection_status(
+        selected, missing, cash_only=cash_only, engine_version=engine_version,
+    )
     return {
         "status": status,
-        "candidate_selection_ready": ready,
+        "candidate_selection_ready": status == "ready",
         "execution_enabled": False,
         "method": mode,
         "base_preset_id": data["base_preset_id"],
@@ -1547,6 +1850,7 @@ def select_strategy_candidates(
         "probability_reason": "Лимиты и подбор по фактам не оценивают вероятность будущей прибыли.",
         "scope": "Условный подбор по доступным на указанную дату фактам. Незаполненные доли "
         "остаются деньгами. Это исследовательская корзина, не торговое поручение.",
+        **details,
     }
 
 

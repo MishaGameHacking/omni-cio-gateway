@@ -549,6 +549,94 @@ def test_provider_zero_fundamentals_follow_the_real_missing_data_contract(runtim
     assert facts == {}
 
 
+def test_record_date_provider_window_does_not_claim_complete_paid_dividend_yield(runtime):
+    from test_backtest import prices, research_document
+
+    from omnicio.backtest import ResearchCosts
+    from omnicio.strategy_service import _current_method_facts
+
+    _, broker = research_runtime(runtime)
+    asset = prices()
+    observed = asset.candles[-1].time + timedelta(days=1)
+    result = _current_method_facts(
+        A, {"asset_uid": "asset-a"}, asset.candidate, asset.candles, broker, observed,
+        research_document("dividends"), ResearchCosts(Decimal(0), Decimal(0)),
+    )
+    assert result == {}
+    broker.candidate_dividends.assert_not_called()
+
+
+@pytest.mark.parametrize("kind", ["shares", "bonds"])
+def test_provider_future_candle_cannot_overflow_current_method_before_research_validation(
+    runtime, kind,
+):
+    from test_backtest import END, START, ZERO_COSTS, prices, research_document
+
+    from omnicio.strategy_service import _current_method_facts, _research_assets
+    from omnicio.tbank import _historic_exchange_candle
+
+    _, broker = research_runtime(runtime)
+    future = _historic_exchange_candle({
+        "time": "9999-12-31T00:00:00Z", "isComplete": True,
+        "candleSourceType": "CANDLE_SOURCE_EXCHANGE", "volume": "100",
+        **{key: {"units": "999", "nano": 0} for key in ("open", "high", "low", "close")},
+    }, "a")
+    asset = prices()
+    candles = (*asset.candles, future)
+    candidate = replace(asset.candidate, asset_class=kind)
+    document = research_document("dividends" if kind == "shares" else "income")
+    result = _current_method_facts(A, {}, candidate, candles, broker, END, document, ZERO_COSTS)
+    assert result == {}
+    broker.candidate_market_yields.assert_not_called()
+    if kind == "shares":
+        broker.candidate_daily_exchange_candles.side_effect = None
+        broker.candidate_daily_exchange_candles.return_value = candles
+        rows = [{"instrument_uid": "a", "ticker": "SYNTHETIC", "instrument_type": "share",
+                 "currency": "RUB", "lot": 1}]
+        assets, unavailable = _research_assets(
+            A, rows, broker, START, END, END, document=document, costs=ZERO_COSTS,
+            evidence={"assets": []},
+        )
+        assert unavailable == []
+        assert assets[0].candles[-1].time == future.time
+
+
+def test_new_research_drops_legacy_automatic_dividend_yields_but_keeps_explicit_user_evidence(
+    runtime,
+):
+    from test_backtest import END, SOURCE, START, ZERO_COSTS, research_document
+
+    from omnicio.research_store import normalize_research_evidence
+    from omnicio.strategy_assessment import StrategyFact
+    from omnicio.strategy_service import _research_assets
+
+    store, broker = research_runtime(runtime)
+    facts = {
+        "dividend_yield_percent": (
+            StrategyFact(Decimal("99"), START, "https://developer.tbank.ru/invest/api/instruments-service-get-dividends"),
+        ),
+        "roe_percent": (StrategyFact(Decimal("20"), START, SOURCE),),
+    }
+    row = store.latest_balancing_context.return_value["candidates"][0]
+    explicit = normalize_research_evidence({"assets": [{
+        "instrument_uid": row["instrument_uid"],
+        "facts": {"dividend_yield_percent": {
+            "value": "6", "available_at": START.isoformat(), "source_url": SOURCE,
+        }},
+        "constituents": [], "cashflows": [], "coverage": None, "corporate_action_dates": [],
+    }]})
+    for evidence in ({"assets": []}, explicit):
+        assets, _ = _research_assets(
+            A, [row], broker, START, END, END, document=research_document("dividends"),
+            costs=ZERO_COSTS, evidence=evidence, fact_history={row["instrument_uid"]: facts},
+        )
+        candidate = assets[0].candidate
+        assert "dividend_yield_percent" not in candidate.fact_history
+        assert candidate.fact_history["roe_percent"] == facts["roe_percent"]
+        actual = candidate.facts.get("dividend_yield_percent")
+        assert (actual.value if actual else None) == (Decimal(6) if evidence["assets"] else None)
+
+
 @pytest.mark.parametrize("change", ["version", "document", "account"])
 def test_research_rechecks_exact_strategy_and_connection_after_provider_reads(runtime, change):
     from test_backtest import prices

@@ -46,6 +46,7 @@ from .strategy_assessment import (
     StrategyCandidateFacts,
     StrategyFact,
     assess_strategy_account,
+    normalize_dividend_cashflow_coverage,
     rating_notch,
     select_strategy_candidates,
 )
@@ -497,7 +498,11 @@ def _user_asset_evidence(
         if covered
         else (),
         observed_cashflows=cashflows,
-        provider_observations=asset.provider_observations,
+        provider_observations={
+            **asset.provider_observations,
+            **({"user_cashflow_coverage": dict(coverage)}
+               if coverage and "cashflow_unit_basis" in coverage else {}),
+        },
     )
 
 
@@ -580,41 +585,6 @@ def _fund_profile_facts(
     return facts
 
 
-def _trailing_dividend_facts(
-    user_id: UUID,
-    instrument_uid: str,
-    price: Decimal,
-    broker: BrokerService,
-    now: datetime,
-) -> dict[str, StrategyFact]:
-    dividends = broker.candidate_dividends(
-        user_id,
-        instrument_uid,
-        from_at=now - timedelta(days=366),
-        to_at=now,
-    )
-    accepted = [
-        item
-        for item in dividends
-        if item.dividend_type == "Regular Cash"
-        and item.dividend_net.currency.upper() == "RUB"
-        and item.declared_date
-        and item.declared_date <= now
-        and item.payment_date
-        and now - timedelta(days=365) < item.payment_date <= now
-    ]
-    if not accepted:
-        return {}
-    source = "https://developer.tbank.ru/invest/api/instruments-service-get-dividends"
-    annual_income = sum((Decimal(item.dividend_net.value) for item in accepted), Decimal(0))
-    yield_fact = StrategyFact(annual_income / price * 100, now, source)
-    return {
-        "dividend_declared": StrategyFact(True, now, source),
-        "dividend_yield_percent": yield_fact,
-        "cashflow_yield_percent": yield_fact,
-    }
-
-
 def _bond_yield_facts(
     user_id: UUID,
     instrument_uid: str,
@@ -653,15 +623,20 @@ def _current_method_facts(
             return _fund_profile_facts(user_id, str(row["asset_uid"]), broker, now)
         if method not in {"income", "dividends", "floating"} or not bars:
             return {}
-        price = Decimal(bars[-1].close)
-        if bars[-1].time + timedelta(days=4) < now or price <= 0:
+        if candidate.asset_class != "bonds":
+            # GetDividends filters record dates, not payment dates, and does not
+            # establish the per-share basis after splits. Observed events stay
+            # in the source history; only complete, unit-defined evidence may
+            # derive an annual cashflow yield in the research engine.
             return {}
-        if candidate.asset_class == "shares":
-            facts = _trailing_dividend_facts(user_id, candidate.instrument_uid, price, broker, now)
-        elif candidate.asset_class == "bonds":
-            facts = _bond_yield_facts(user_id, candidate.instrument_uid, broker, now)
-        else:
+        last = bars[-1]
+        if (not last.is_complete or last.time.tzinfo is None
+                or not timedelta(days=1) <= now - last.time <= timedelta(days=4)):
             return {}
+        price = Decimal(last.close)
+        if not price.is_finite() or price <= 0:
+            return {}
+        facts = _bond_yield_facts(user_id, candidate.instrument_uid, broker, now)
     except TBankUnavailable:
         return {}
     gross_fact = facts.get("cashflow_yield_percent")
@@ -848,7 +823,10 @@ def _provider_history(
             dividends, flows = (), ()
             observations["missing"].append("dividend_history_unavailable")
         observations["dividends"] = [asdict(item) for item in dividends]
-        observations["missing"].extend(("historical_lot_sizes", "share_splits_and_other_actions"))
+        observations["missing"].extend((
+            "historical_lot_sizes", "share_splits_and_other_actions",
+            "dividend_payment_window_unverified", "dividend_unit_basis_unverified",
+        ))
         if kind == "etf":
             observations["missing"].append("dated_fund_constituents")
         return flows, (), observations
@@ -891,6 +869,18 @@ def _research_asset(
     fact_history: Mapping[str, tuple[StrategyFact, ...]],
 ) -> tuple[ResearchAsset, bool]:
     candidate = _row_candidate(row, request.now)
+    if candidate.asset_class == "shares":
+        # Previously archived automatic yields had no proof of a complete
+        # payment window or split units. Keep those immutable archives, but do
+        # not admit their derived values into a new research run. Explicit
+        # user evidence is applied separately below.
+        fact_history = {
+            key: values for key, values in fact_history.items()
+            if key not in {
+                "dividend_yield_percent", "cashflow_yield_percent", "net_yield_percent",
+                "dividend_declared",
+            }
+        }
     if monotonic() >= request.deadline:
         return ResearchAsset(
             candidate,
@@ -1050,11 +1040,14 @@ def _research_attempt(
 
 def _research_fact(name: str, raw: Mapping[str, Any]) -> StrategyFact:
     value = raw["value"]
-    if name == "maturity_date":
+    available = datetime.fromisoformat(str(raw["available_at"]))
+    if name == "dividend_cashflow_coverage":
+        value = normalize_dividend_cashflow_coverage(value, available_at=available)
+    elif name == "maturity_date":
         value = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     elif name not in {"issuer_id", "group_id", "sector", "rating"} and type(value) is not bool:
         value = Decimal(str(value))
-    return StrategyFact(value, datetime.fromisoformat(str(raw["available_at"])), raw["source_url"])
+    return StrategyFact(value, available, raw["source_url"])
 
 
 @dataclass(frozen=True, slots=True)
@@ -1281,6 +1274,9 @@ def _collect_research_result(
                 "historical_fact_observations": sum(
                     len(values) for values in asset.candidate.fact_history.values()
                 ),
+                "cashflow_yield_coverage": diagnostics[asset.candidate.instrument_uid].get(
+                    "cashflow_yield_coverage"
+                ),
                 "missing": sorted(
                     set(
                         (
@@ -1423,6 +1419,7 @@ def research_assets_from_inputs(inputs: Mapping[str, Any]) -> list[ResearchAsset
         "1.1.0",
         "1.2.0",
         "1.3.0",
+        "1.3.1",
         RESEARCH_ENGINE_VERSION,
     }:
         raise ValueError("research_replay_version_unsupported")

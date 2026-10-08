@@ -718,9 +718,37 @@ const displayContracts = () => {
   goalVersionContracts(ui);
   chartAxisContracts(ui);
   researchMathContracts(ui, context.window.OMNICIO_I18N);
+  presetMathContracts(ui, context.window.OMNICIO_I18N);
   viewportSizeContracts();
   console.log("PASS display contracts: unknown values, source escaping, privacy, real-series requirements and locale");
 };
+function presetMathContracts(ui, i18n) {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const strategyMethodLabels ="), app.indexOf("  const assessmentIsCurrent ="));
+  const renderers = app.slice(app.indexOf("  function renderSelectionHTMLNotice("), app.indexOf("  function renderAssessmentValue("));
+  const context = vm.createContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
+    infoRows: ui.infoRows, format: ui.format, percent: ui.percent, money: ui.money, date: ui.date,
+    number: ui.number, policyFields: () => [],
+    renderFundamentalMetricsHTMLLi2: value => `<li>${ui.escape(context.requirement(value))}</li>`});
+  vm.runInContext(source + renderers + "\nglobalThis.selection=selectionHTML; globalThis.requirement=humanRequirement; globalThis.amount=researchSourceAmount;", context);
+  for (const locale of ["ru", "en"]) {
+    ui.setLocale(locale);
+    const ladder = context.selection(serverContracts.research_ladder_result.selection);
+    assert.equal((ladder.match(/data-ladder-rung="/g) || []).length, 5);
+    assert.ok(ladder.includes(ui.escape(i18n.t("research.ladder.rung_unfilled", {rung: 3}))));
+    assert.ok(ladder.includes(ui.escape(ui.percent("60"))), "Missing years retain their actual cash allocation");
+    const dividends = context.selection(serverContracts.research_dividend_result.selection);
+    assert.ok(dividends.includes("data-dividend-coverage") && dividends.includes("600 USD"));
+    assert.ok(dividends.includes(ui.escape(i18n.t("research.dividend.scope"))));
+    assert.ok(!dividends.includes("[object Object]") && !dividends.includes("undefined") && !dividends.includes("NaN"));
+    assert.equal(context.requirement("missing:cashflow_coverage_incomplete"), i18n.t("research.cashflow.coverage_incomplete"));
+    assert.ok(context.requirement("missing:dividend_cashflow_coverage").includes(i18n.t("research.dividend.coverage_fact")));
+  }
+  assert.equal(context.amount("1000.0000000001", "USD"), "1000.0000000001 USD", "Coverage amounts retain source decimal precision");
+  assert.equal(context.amount("600.000", "USD"), "600 USD");
+  assert.equal(context.amount("NaN", "USD"), "—");
+  console.log("PASS preset mathematics: actual calendar rungs, exact issuer cashflows, provenance and translated missing evidence");
+}
 function researchMathContracts(ui, i18n) {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const helpers = app.slice(app.indexOf("  const researchCashProjectionHTML ="), app.indexOf("  const researchWindowHTML ="));
@@ -1979,10 +2007,22 @@ const runBrowser = async base => {
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.text + ": " + (result.exceptionDetails.exception?.description || ""));
       return result.result.value;
     };
+    const revealScreenMenu = async selector => evaluate(`(() => {
+      const element=document.querySelector(${JSON.stringify(selector)});
+      const picker=element?.closest('.screen-menu')?.closest('.screen-menu-picker:not([open])');
+      if (!picker) return;
+      const summary=picker.querySelector(':scope > summary');
+      if (!summary?.getClientRects().length) throw new Error('Section menu has no visible summary');
+      summary.click();
+      if (!picker.open || !element.getClientRects().length) throw new Error('Section menu did not reveal its links');
+    })()`);
     const revealControl = async selector => {
+      await revealScreenMenu(selector);
       const section = await evaluate(`(() => { const matches=[...document.querySelectorAll(${JSON.stringify(selector)})]; const element=matches.find(item=>item.getClientRects().length) || matches[0]; if (!element || element.getClientRects().length) return null; return element.closest("[data-screen-content]")?.dataset.screenContent || null; })()`);
       if (!section) return;
-      await evaluate(`(() => { const view=document.querySelector(".view:not([hidden])"); const menu=view?.querySelector('[data-route][data-screen="'+${JSON.stringify(section)}+'"]'); if(!menu) throw new Error("No visible section menu for requested control"); menu.click(); })()`);
+      const menuSelector = `.view:not([hidden]) .screen-menu [data-route][data-screen="${section}"]`;
+      await revealScreenMenu(menuSelector);
+      await evaluate(`(() => { const menu=document.querySelector(${JSON.stringify(menuSelector)}); if(!menu?.getClientRects().length) throw new Error("No visible section menu for requested control"); menu.click(); })()`);
       await wait(`document.querySelector(${JSON.stringify(selector)})?.getClientRects().length > 0`, "Control is visible in its own section: " + selector);
     };
     const click = async selector => { await revealControl(selector); return evaluate(`(() => {
@@ -3095,7 +3135,7 @@ async function exerciseResearchMathematics({fixture,click,wait,evaluate,configur
   await click('#dialog-content [data-research-outcome-sessions="5"] summary');
   const insufficient = await evaluate(`document.querySelector('#dialog-content [data-research-outcome-sessions="5"]').textContent`);
   assert.ok(insufficient.includes("12") && insufficient.includes("Полных непересекающихся окон недостаточно"), "The longer horizon shows real window counts without inventing a percentage");
-  for (const width of [390, 1366]) {
+  for (const width of [390, 320, 1366]) {
     await configureViewport(width);
     await evaluate('document.querySelector("#dialog-content [data-research-outcomes]").scrollIntoView({behavior:"instant",block:"start"})');
     await checkLayout(`research-math-${round}-${width}`, {minCharts: 1});
@@ -3112,8 +3152,31 @@ async function exerciseResearchMathematics({fixture,click,wait,evaluate,configur
     assert.ok(text.includes("Денежная модель не содержит рыночных наблюдений"));
     assert.equal(await evaluate('Boolean(document.querySelector("#dialog-content .chart-path"))'), false, "A cash model cannot fabricate a market chart");
     if (incomplete) assert.ok(text.includes("Резерв вне инвестиций") && text.includes("готовность стратегии не подтверждена"));
-    await checkLayout(`research-cash-${incomplete}-${round}-390`);
-    await screenshot(`research-cash-${incomplete}-${round}-390.png`);
+    for (const width of [390, 320]) {
+      await configureViewport(width);
+      await checkLayout(`research-cash-${incomplete}-${round}-${width}`);
+      await screenshot(`research-cash-${incomplete}-${round}-${width}.png`);
+    }
+    await configureViewport(390);
+    await close();
+  }
+  for (const [key, marker, label] of [["research_ladder_result", "data-ladder-rungs", "ladder"], ["research_dividend_result", "data-dividend-coverage", "dividends"]]) {
+    const result = clone(serverContracts[key]);
+    Object.assign(run, {result: {...result, strategy_version: run.strategy_version}, status: result.status, metrics: result.metrics});
+    await open();
+    await wait(`document.querySelector('#dialog-content [${marker}]')`, "The real preset calculator has its own detailed output");
+    await click(`#dialog-content details:has([${marker}]) > summary`);
+    await click(`#dialog-content [${marker}] > summary`);
+    const details = await evaluate(`document.querySelector('#dialog-content [${marker}]').textContent`);
+    if (label === "ladder") assert.ok(details.includes("Ступень 5") && details.includes("Заполненная доля"));
+    else assert.ok(details.includes("600 USD") && details.includes("не гарантирует будущие выплаты"));
+    for (const width of [390, 320, 1366]) {
+      await configureViewport(width);
+      await evaluate(`document.querySelector('#dialog-content [${marker}]').scrollIntoView({behavior:'instant',block:'start'})`);
+      await checkLayout(`research-${label}-${round}-${width}`);
+      await screenshot(`research-${label}-${round}-${width}.png`);
+    }
+    await configureViewport(390);
     await close();
   }
   Object.assign(run, original);
@@ -4705,6 +4768,35 @@ const screenPages = {
   settings: [["appearance", 0, 0], ["notifications", 0, 0], ["broker", 0, 0], ["recovery", 0, 0], ["about", 0, 0], ["support", 0, 0]],
   assistant: [["conversation", 0, 0], ["history", 0, 0], ["memory", 0, 0], ["sources", 0, 0]]
 };
+async function exerciseCompactScreenMenu({send, configureViewport, round, click, wait, evaluate, checkLayout, screenshot, fixture}) {
+  await click('#view-strategies .screen-menu [data-screen="editor"]');
+  await wait('location.hash.endsWith("/strategies/editor") && document.querySelector("#strategy-form")?.getClientRects().length', "Compact navigation opens the existing strategy editor route");
+  const before = await evaluate('({hash:location.hash,history:history.length,value:document.querySelector("#allocation-shares").value})');
+  const saved = clone(fixture.strategy);
+  assert.equal(await evaluate('document.querySelector("#view-strategies .screen-menu-picker").open'), false);
+  assert.ok(await evaluate('document.querySelector("#view-strategies .screen-menu-toggle").textContent.includes("Моя настройка")'));
+  await evaluate('document.querySelector("#view-strategies .screen-menu-toggle").focus()');
+  for (const [key, code, virtualKey, expected] of [["Enter", "Enter", 13, true], [" ", "Space", 32, false]]) {
+    for (const type of ["keyDown", "keyUp"]) await send("Input.dispatchKeyEvent", {type, key, code, windowsVirtualKeyCode: virtualKey});
+    await wait(`document.querySelector('#view-strategies .screen-menu-picker').open===${expected}`, "Native keyboard activation toggles the section summary");
+  }
+  assert.deepEqual(await evaluate('({hash:location.hash,history:history.length,value:document.querySelector("#allocation-shares").value})'), before, "Opening a menu cannot navigate or change a draft");
+  for (const width of [1366, 390, 320]) {
+    await configureViewport(width);
+    await wait(`document.querySelector('#view-strategies .screen-menu-picker').open===${width > 960}`, "The menu matches its breakpoint without a page reload");
+    assert.equal(await evaluate(`document.activeElement.matches(${JSON.stringify(width > 960 ? '.screen-menu [aria-current="page"]' : '.screen-menu-toggle')})`), true, "Responsive changes keep keyboard focus on a visible navigation control");
+    assert.deepEqual(await evaluate('({hash:location.hash,history:history.length,value:document.querySelector("#allocation-shares").value})'), before);
+    await evaluate('window.scrollTo({top:0,behavior:"instant"})');
+    if (width <= 390) {
+      const placement = await evaluate('(() => {const field=document.querySelector("#allocation-shares").getBoundingClientRect();const nav=document.querySelector("#mobile-nav").getBoundingClientRect();return {top:field.top,bottom:field.bottom,navTop:nav.top};})()');
+      assert.ok(placement.top >= 0 && placement.bottom <= placement.navTop, "The first allocation control is visible above mobile navigation with the menu closed");
+    }
+    await checkLayout(`compact-strategy-${round}/${width}`);
+    await screenshot(`strategy-compact-${round}-${width}.png`);
+  }
+  assert.deepEqual(fixture.strategy, saved, "Changing screen density does not save or replace the strategy");
+  console.log(`PASS compact section menu round ${round}: native keyboard, responsive focus, stable route/draft and visible mobile fields`);
+}
 async function exerciseScreenPages({view, label, click, wait, evaluate, checkLayout, screenshot, width}) {
   for (const [screen, minCharts, minTables] of screenPages[view] || []) {
     await click(`#view-${view} .screen-menu [data-screen="${screen}"]`);
@@ -4782,6 +4874,7 @@ async function exerciseViewport({
     await wait(`!document.querySelector('#view-${view}').hidden && document.querySelector('#view-${view}').textContent.length>20`, view);
     if (view === "strategies") await wait('document.querySelector("#strategy-form") && !document.querySelector("#view-strategies .loading-panel")', "Strategy loaded");
     if (view === "settings") await wait('document.querySelector("#preferences-form")', "Server preferences loaded");
+    if (view === "strategies" && width === 320) await exerciseCompactScreenMenu({send, configureViewport, round, click, wait, evaluate, checkLayout, screenshot, fixture});
     await delay(80);
     await checkLayout(`${view} ${round}/${width}`);
     if (width <= 390) await screenshot(`${view}-${round}-${width}.png`);

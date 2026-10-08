@@ -20,6 +20,7 @@ from .strategy import document_hash, expected_shortfall, normalize_document, str
 from .strategy_assessment import (
     StrategyCandidateFacts,
     StrategyFact,
+    _source_url,
     calendar_horizon_days,
     candidate_weight_constraints,
     select_strategy_candidates,
@@ -29,7 +30,8 @@ from .tbank import TBankHistoricCandle
 ResearchBasis = Literal["unadjusted_price", "verified_total_return"]
 HISTORY_SOURCE = "https://developer.tbank.ru/invest/api/market-data-service-get-candles"
 MAX_RESEARCH_ASSETS = 100
-RESEARCH_ENGINE_VERSION = "1.3.1"
+RESEARCH_ENGINE_VERSION = "1.3.2"
+_CORRECTED_MATH_ENGINES = frozenset({"1.3.1", "1.3.2"})
 MAX_RESEARCH_DAYS = 1095
 MIN_TRAIN_OBSERVATIONS = 60
 MIN_TEST_OBSERVATIONS = 20
@@ -38,6 +40,10 @@ _BOOTSTRAP_REPLICATES = 1024
 _BOOTSTRAP_SOURCE = "https://users.ssc.wisc.edu/~behansen/718/Politis%20Romano.pdf"
 _ZERO, _ONE, _HUNDRED = Decimal(0), Decimal(1), Decimal(100)
 _DAY = timedelta(days=1)
+_CASHFLOW_YEAR = timedelta(days=365)
+_CASHFLOW_COVERAGE_FLAGS = (
+    "cashflows_complete", "corporate_actions_complete", "lot_history_complete",
+)
 _HTTPS_PREFIX = "https://"
 _MALFORMED_HISTORY_REASONS = {
     "research_too_many_daily_bars", "research_non_chronological_bars",
@@ -155,11 +161,18 @@ def history_candidate(
     cashflows: Sequence[HistoricalCashflow] = (),
     document: Mapping[str, Any] | None = None,
     costs: ResearchCosts | None = None,
+    splits: Sequence[HistoricalSplit] = (),
+    corporate_action_dates: Sequence[datetime] = (),
+    cashflow_coverage: object = None,
+    engine_version: str = RESEARCH_ENGINE_VERSION,
 ) -> StrategyCandidateFacts:
-    """Only completed bars whose whole daily interval was known by as_of."""
-    past = [bar for bar in candles if bar.is_complete and as_of - bar.time >= _DAY]
-    if not past:
+    """Only completed daily bars; 1.3.2 receives raw bars and explicit split evidence."""
+    completed = [bar for bar in candles if bar.is_complete and as_of - bar.time >= _DAY]
+    if not completed:
         return candidate
+    past: Sequence[TBankHistoricCandle] = completed
+    if engine_version == RESEARCH_ENGINE_VERSION:
+        past = split_adjusted_history(completed, splits, as_of)
     prices = [_decimal(bar.close) for bar in past]
     values: dict[str, Decimal | int] = {
         "history_observations": len(past),
@@ -182,7 +195,20 @@ def history_candidate(
         for key in ("growth_beta", "inflation_beta", "factor_observations"):
             facts.pop(key, None)
         facts.update(_factor_facts(past, factors, as_of))
-    if cashflows:
+    if engine_version == RESEARCH_ENGINE_VERSION:
+        income_end = completed[-1].time + _DAY
+        coverage_reasons = _cashflow_window_reasons(
+            cashflow_coverage, cashflows, splits, corporate_action_dates, income_end,
+        )
+        if not coverage_reasons and isinstance(cashflow_coverage, Mapping):
+            income_bar = split_adjusted_history(completed[-1:], splits, income_end)[0]
+            observed_income = _cashflow_facts(
+                candidate, cashflows, _decimal(income_bar.close), income_end,
+                document=document, costs=costs,
+                splits=splits, coverage_source=str(cashflow_coverage["source_url"]),
+            )
+            _merge_observed_income(facts, observed_income, as_of)
+    elif cashflows:
         facts.update(
             _cashflow_facts(candidate, cashflows, prices[-1], as_of, document=document, costs=costs)
         )
@@ -198,6 +224,119 @@ def history_candidate(
     )
 
 
+def _newer_income_fact(
+    key: str, fact: StrategyFact | None, income_end: datetime, as_of: datetime,
+) -> bool:
+    if (fact is None or fact.available_at.tzinfo is None
+            or not income_end < fact.available_at <= as_of
+            or not isinstance(fact.source_url, str) or not _source_url(fact.source_url)):
+        return False
+    if key == "dividend_declared":
+        return type(fact.value) is bool
+    try:
+        _decimal(fact.value)
+    except ValueError:
+        return False
+    return True
+
+
+def _merge_observed_income(
+    facts: dict[str, StrategyFact], observed: Mapping[str, StrategyFact], as_of: datetime,
+) -> None:
+    """A daily observation cannot overwrite a valid later explicit scalar fact."""
+    for key, observation in observed.items():
+        if not _newer_income_fact(key, facts.get(key), observation.available_at, as_of):
+            facts[key] = observation
+
+
+def _cashflow_coverage_period(coverage: Mapping[str, Any]) -> tuple[datetime, datetime]:
+    """Validate explicit evidence metadata; timestamps are not guessed from events."""
+    source = coverage.get("source_url")
+    if not isinstance(source, str) or not source.strip() or len(source) > 2000:
+        raise ValueError("cashflow_coverage_invalid")
+    if not _source_url(source):
+        raise ValueError("cashflow_coverage_invalid")
+    if any(type(coverage.get(key)) is not bool for key in _CASHFLOW_COVERAGE_FLAGS):
+        raise ValueError("cashflow_coverage_invalid")
+    bounds = []
+    for key in ("from", "to"):
+        raw = coverage.get(key)
+        if not isinstance(raw, str):
+            raise ValueError("cashflow_coverage_invalid")
+        when = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if when.tzinfo is None:
+            raise ValueError("cashflow_coverage_invalid")
+        bounds.append(when)
+    if bounds[0] >= bounds[1]:
+        raise ValueError("cashflow_coverage_invalid")
+    return bounds[0], bounds[1]
+
+
+def _cashflow_window_reasons(
+    coverage: object,
+    cashflows: Sequence[HistoricalCashflow],
+    splits: Sequence[HistoricalSplit],
+    corporate_action_dates: Sequence[datetime],
+    as_of: datetime,
+) -> list[str]:
+    """Require the payment window and every entitlement-to-price unit adjustment."""
+    if coverage is None:
+        return ["cashflow_coverage_missing"]
+    if not isinstance(coverage, Mapping) or as_of.tzinfo is None:
+        return ["cashflow_coverage_invalid"]
+    try:
+        from_at, to_at = _cashflow_coverage_period(coverage)
+        year_start = as_of - _CASHFLOW_YEAR
+    except (ValueError, OverflowError):
+        return ["cashflow_coverage_invalid"]
+    reasons = _cashflow_reasons(cashflows)
+    if reasons:
+        return sorted(set(reasons))
+    paid = [event for event in cashflows
+            if event.kind == "income" and year_start < event.paid_at <= as_of]
+    required_from = min([year_start, *(event.entitlement_at for event in paid)])
+    if (from_at > required_from or to_at < as_of
+            or not all(coverage[key] for key in _CASHFLOW_COVERAGE_FLAGS)):
+        reasons.append("cashflow_coverage_incomplete")
+    if coverage.get("cashflow_unit_basis") != "entitlement_security":
+        reasons.append("cashflow_unit_basis_unverified")
+    reasons.extend(_action_reasons(splits, corporate_action_dates, required_from, as_of))
+    return sorted(set(reasons))
+
+
+def cashflow_coverage_reasons(asset: ResearchAsset, *, as_of: datetime) -> list[str]:
+    """Explain whether observed payments can support a complete annual yield.
+
+    The observation ends with the latest completed daily candle, not the later
+    request clock. Independently supplied dated scalar facts keep their source.
+    """
+    income_end = _income_observation_end(asset.candles, as_of)
+    if income_end is None:
+        return ["insufficient_training_history"]
+    coverage = asset.provider_observations.get("user_cashflow_coverage")
+    return _cashflow_window_reasons(
+        coverage, asset.observed_cashflows, asset.splits, asset.corporate_action_dates, income_end,
+    )
+
+
+def _income_observation_end(
+    bars: Sequence[TBankHistoricCandle], as_of: datetime,
+) -> datetime | None:
+    return max((bar.time + _DAY for bar in bars
+                if bar.is_complete and as_of - bar.time >= _DAY), default=None)
+
+
+def _cashflow_coverage_diagnostic(asset: ResearchAsset, as_of: datetime) -> dict[str, Any]:
+    reasons = cashflow_coverage_reasons(asset, as_of=as_of)
+    income_end = _income_observation_end(asset.candles, as_of)
+    return {
+        "status": "complete" if not reasons else "incomplete",
+        "reasons": reasons,
+        "window_days": 365,
+        "as_of": income_end.isoformat() if income_end is not None else None,
+    }
+
+
 def _cashflow_facts(
     candidate: StrategyCandidateFacts,
     cashflows: Sequence[HistoricalCashflow],
@@ -206,6 +345,8 @@ def _cashflow_facts(
     *,
     document: Mapping[str, Any] | None,
     costs: ResearchCosts | None,
+    splits: Sequence[HistoricalSplit] = (),
+    coverage_source: str | None = None,
 ) -> dict[str, StrategyFact]:
     """Trailing observed income, never future payouts or principal disguised as yield."""
     paid = [
@@ -213,16 +354,24 @@ def _cashflow_facts(
         for event in cashflows
         if event.kind == "income" and as_of - timedelta(days=365) < event.paid_at <= as_of
     ]
-    if not paid or price <= 0:
+    if (not paid and coverage_source is None) or price <= 0:
         return {}
-    gross = sum((event.amount_per_unit_rub for event in paid), _ZERO) / price * 100
-    source = max(paid, key=lambda event: event.paid_at).source_url
+    if coverage_source is None:
+        # Archived engines retain their original unadjusted per-security sum.
+        gross = sum((event.amount_per_unit_rub for event in paid), _ZERO) / price * 100
+        source = max(paid, key=lambda event: event.paid_at).source_url
+    else:
+        # Entitlement uses the unit after actions effective at that timestamp.
+        # A later split therefore divides this historical per-unit payment.
+        gross = sum((event.amount_per_unit_rub / _split_factor(
+            splits, event.entitlement_at, as_of,
+        ) for event in paid), _ZERO) / price * 100
+        source = coverage_source
     facts = {"cashflow_yield_percent": StrategyFact(gross, as_of, source)}
     if candidate.asset_class == "shares":
-        facts.update(
-            dividend_yield_percent=StrategyFact(gross, as_of, source),
-            dividend_declared=StrategyFact(True, as_of, source),
-        )
+        facts["dividend_yield_percent"] = StrategyFact(gross, as_of, source)
+        if paid:
+            facts["dividend_declared"] = StrategyFact(True, as_of, source)
     if document is not None and costs is not None:
         tax, horizon = (
             document["policy"]["securities_tax_rate_percent"],
@@ -349,21 +498,30 @@ def _cashflow_reasons(events: Sequence[HistoricalCashflow]) -> list[str]:
 def _corporate_action_reasons(
     asset: ResearchAsset, from_at: datetime, to_at: datetime
 ) -> list[str]:
+    return _action_reasons(asset.splits, asset.corporate_action_dates, from_at, to_at)
+
+
+def _action_reasons(
+    splits: Sequence[HistoricalSplit],
+    corporate_action_dates: Sequence[datetime],
+    from_at: datetime,
+    to_at: datetime,
+) -> list[str]:
     reasons = []
-    for when in asset.corporate_action_dates:
+    for when in corporate_action_dates:
         if when.tzinfo is None:
             reasons.append("corporate_action_time_missing")
-        elif from_at <= when <= to_at and not any(split.time == when for split in asset.splits):
+        elif from_at <= when <= to_at and not any(split.time == when for split in splits):
             reasons.append("corporate_action_requires_adjustment")
     if any(
         split.time.tzinfo is None
         or not split.ratio.is_finite()
         or split.ratio <= 0
         or not split.source_url.startswith(_HTTPS_PREFIX)
-        for split in asset.splits
+        for split in splits
     ):
         reasons.append("split_evidence_invalid")
-    if len({split.time for split in asset.splits}) != len(asset.splits):
+    if len({split.time for split in splits}) != len(splits):
         reasons.append("duplicate_split_event")
     return reasons
 
@@ -444,6 +602,7 @@ def research_history_candidate(
     as_of: datetime,
     document: Mapping[str, Any] | None = None,
     costs: ResearchCosts | None = None,
+    engine_version: str = RESEARCH_ENGINE_VERSION,
 ) -> StrategyCandidateFacts:
     """Validate imported history before any split, factor or income arithmetic.
 
@@ -460,14 +619,21 @@ def research_history_candidate(
     bars = _validated_bars(asset, begin, as_of)
     if len(bars) < MIN_TRAIN_OBSERVATIONS:
         raise ValueError("insufficient_training_history")
+    signal_bars = bars
+    if engine_version != RESEARCH_ENGINE_VERSION:
+        signal_bars = split_adjusted_history(bars, asset.splits, as_of)
     return history_candidate(
         asset.candidate,
-        split_adjusted_history(bars, asset.splits, as_of),
+        signal_bars,
         as_of=as_of,
         factors=asset.factors,
         cashflows=asset.observed_cashflows,
         document=document,
         costs=costs,
+        splits=asset.splits,
+        corporate_action_dates=asset.corporate_action_dates,
+        cashflow_coverage=asset.provider_observations.get("user_cashflow_coverage"),
+        engine_version=engine_version,
     )
 
 
@@ -1291,7 +1457,7 @@ def _prepare_research_asset(
 ) -> tuple[ResearchAsset, dict[str, Any]]:
     """Validate one series and derive its facts from the training window only."""
     reasons = _asset_reasons(asset, from_at, to_at)
-    if engine_version == RESEARCH_ENGINE_VERSION:
+    if engine_version in _CORRECTED_MATH_ENGINES:
         reasons.extend(_cashflow_reasons(asset.observed_cashflows))
     try:
         bars = _validated_bars(asset, from_at, to_at)
@@ -1301,19 +1467,26 @@ def _prepare_research_asset(
     training = tuple(bar for bar in bars if split - bar.time >= _DAY)
     if len(training) < MIN_TRAIN_OBSERVATIONS:
         reasons.append("insufficient_training_history")
-    unsafe = engine_version == RESEARCH_ENGINE_VERSION and bool(
+    unsafe = engine_version in _CORRECTED_MATH_ENGINES and bool(
         set(reasons) & _MALFORMED_HISTORY_REASONS
     )
     candidate = asset.candidate
     if not unsafe:
+        signal_bars = training
+        if engine_version != RESEARCH_ENGINE_VERSION:
+            signal_bars = split_adjusted_history(training, asset.splits, split)
         candidate = history_candidate(
             asset.candidate,
-            split_adjusted_history(training, asset.splits, split),
+            signal_bars,
             as_of=split,
             factors=asset.factors,
             cashflows=asset.observed_cashflows if engine_version != "1.1.0" else (),
             document=document,
             costs=costs,
+            splits=asset.splits,
+            corporate_action_dates=asset.corporate_action_dates,
+            cashflow_coverage=asset.provider_observations.get("user_cashflow_coverage"),
+            engine_version=engine_version,
         )
     prices = [_decimal(bar.close) for bar in bars]
     diagnostic = {
@@ -1322,10 +1495,34 @@ def _prepare_research_asset(
         "observations": len(bars),
         "train_observations": len(training),
         "status": "observed" if not reasons else "incomplete",
-        "reasons": sorted(set(reasons)) if engine_version == RESEARCH_ENGINE_VERSION else reasons,
+        "reasons": sorted(set(reasons)) if engine_version in _CORRECTED_MATH_ENGINES else reasons,
         "price_return_percent": _text((prices[-1] / prices[0] - 1) * 100) if prices else None,
     }
+    if engine_version == RESEARCH_ENGINE_VERSION:
+        diagnostic["cashflow_yield_coverage"] = _cashflow_coverage_diagnostic(
+            replace(asset, candles=training), split,
+        )
     return replace(asset, candles=bars, candidate=candidate), diagnostic
+
+
+def _selection_cashflow_gaps(
+    selection: dict[str, Any], diagnostics: Sequence[Mapping[str, Any]],
+) -> None:
+    """Explain a missing required yield without blocking unrelated eligible assets."""
+    coverage = {row["instrument_uid"]: row["cashflow_yield_coverage"] for row in diagnostics}
+    required = {
+        "missing:cashflow_yield_percent", "missing:dividend_yield_percent",
+        "missing:net_yield_percent",
+    }
+    missing = set(selection["missing_requirements"])
+    for row in selection["candidates"]:
+        if not required.intersection(row["reasons"]):
+            continue
+        gaps = {"missing:" + reason for reason in coverage[row["instrument_uid"]]["reasons"]}
+        row["reasons"] = sorted(set(row["reasons"]) | gaps)
+        if "eligible_" + row["asset_class"] in missing:
+            missing.update(gaps)
+    selection["missing_requirements"] = sorted(missing)
 
 
 def _selected_evidence_requirements(
@@ -1449,7 +1646,7 @@ def _research_asset_fingerprint(asset: ResearchAsset, engine_version: str) -> di
             for bar in asset.candles
         ],
         "facts": {
-            key: [str(f.value), f.available_at.isoformat(), f.source_url]
+            key: _fact_fingerprint(f, engine_version)
             for key, f in asset.candidate.facts.items()
         },
         "cashflows": [
@@ -1489,7 +1686,7 @@ def _research_asset_fingerprint(asset: ResearchAsset, engine_version: str) -> di
     if engine_version != "1.1.0":
         row["fact_history"] = {
             key: [
-                [str(f.value), f.available_at.isoformat(), f.source_url] for f in observations
+                _fact_fingerprint(f, engine_version) for f in observations
             ]
             for key, observations in asset.candidate.fact_history.items()
         }
@@ -1503,7 +1700,29 @@ def _research_asset_fingerprint(asset: ResearchAsset, engine_version: str) -> di
             ]
             for event in asset.observed_cashflows
         ]
+    if engine_version == RESEARCH_ENGINE_VERSION:
+        row["user_cashflow_coverage"] = _structured_fingerprint(
+            asset.provider_observations.get("user_cashflow_coverage"),
+        )
     return row
+
+
+def _structured_fingerprint(value: object) -> Any:
+    """Keep structured evidence as JSON so nested key order cannot alter its hash."""
+    if isinstance(value, Mapping):
+        return {key: _structured_fingerprint(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_structured_fingerprint(item) for item in value]
+    if isinstance(value, (datetime, Decimal)):
+        return str(value)
+    return value
+
+
+def _fact_fingerprint(fact: StrategyFact, engine_version: str) -> list[Any]:
+    value: Any = str(fact.value)
+    if engine_version == RESEARCH_ENGINE_VERSION and isinstance(fact.value, Mapping):
+        value = _structured_fingerprint(fact.value)
+    return [value, fact.available_at.isoformat(), fact.source_url]
 
 
 def run_strategy_backtest(
@@ -1534,7 +1753,7 @@ def run_strategy_backtest(
     )
     invalid_assets = {
         row["instrument_uid"] for row in diagnostics
-        if engine_version == RESEARCH_ENGINE_VERSION
+        if engine_version in _CORRECTED_MATH_ENGINES
         and set(row["reasons"]) & _MALFORMED_HISTORY_REASONS
     }
     selection = select_strategy_candidates(
@@ -1544,6 +1763,8 @@ def run_strategy_backtest(
         as_of=split,
         engine_version=engine_version,
     )
+    if engine_version == RESEARCH_ENGINE_VERSION:
+        _selection_cashflow_gaps(selection, diagnostics)
     chosen = {
         row["instrument_uid"]: Decimal(row["target_weight_percent"])
         for row in selection["selected"]
@@ -1617,7 +1838,7 @@ def run_strategy_backtest(
         "data_hash": hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest(),
         "missing_requirements": [],
     }
-    if engine_version == RESEARCH_ENGINE_VERSION and data["allocation"]["cash"] == 100:
+    if engine_version in _CORRECTED_MATH_ENGINES and data["allocation"]["cash"] == 100:
         cash_missing = set(selection["missing_requirements"])
         cash_missing.update(
             reason for row in diagnostics if row["instrument_uid"] in invalid_assets
@@ -1653,7 +1874,7 @@ def run_strategy_backtest(
         test_from=test_times[0].isoformat() if test_times else None,
     )
     result["missing_requirements"] = sorted(missing | set(selection["missing_requirements"]))
-    if engine_version == RESEARCH_ENGINE_VERSION:
+    if engine_version in _CORRECTED_MATH_ENGINES:
         result["assumptions"].update(
             liquidity="min_previous_planned_and_observed_session_volume",
             buy_sizing="previous_close_signal_bounded_by_open_mark_and_post_cost_nav_floor",
@@ -1666,7 +1887,7 @@ def run_strategy_backtest(
             "доступность всего этого объёма на аукционе открытия."
         )
     if missing:
-        if engine_version == RESEARCH_ENGINE_VERSION:
+        if engine_version in _CORRECTED_MATH_ENGINES:
             result["historical_outcomes"] = _historical_outcomes(result, data)
         return result
     times = [training_times[-1], *test_times]
@@ -1693,17 +1914,17 @@ def _simulate_research_result(
     try:
         state = _simulate(
             selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=period,
-            current_math=engine_version == RESEARCH_ENGINE_VERSION,
+            current_math=engine_version in _CORRECTED_MATH_ENGINES,
         )
         baseline = _simulate(
             selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=None,
-            current_math=engine_version == RESEARCH_ENGINE_VERSION,
+            current_math=engine_version in _CORRECTED_MATH_ENGINES,
         )
     except ValueError as exc:
         if str(exc) != "fractional_split_cash_settlement_required":
             raise
         result["missing_requirements"].append(str(exc))
-        if engine_version == RESEARCH_ENGINE_VERSION:
+        if engine_version in _CORRECTED_MATH_ENGINES:
             result["historical_outcomes"] = _historical_outcomes(result, data)
         return result
     result.update(
@@ -1717,7 +1938,7 @@ def _simulate_research_result(
         },
     )
     result["stress_scenario"] = _stress_scenario(state, selected_assets, panel, times[-1], data)
-    if engine_version == RESEARCH_ENGINE_VERSION:
+    if engine_version in _CORRECTED_MATH_ENGINES:
         result["historical_outcomes"] = _historical_outcomes(result, data)
         result["holding_constraints"] = {
             "evaluated_sessions": len(times) - 1,
@@ -1773,7 +1994,7 @@ def research_robustness(
     engine_version: str = RESEARCH_ENGINE_VERSION,
 ) -> dict[str, Any]:
     """Three declared chronological holdouts; no search for the best result."""
-    if engine_version == RESEARCH_ENGINE_VERSION and normalize_document(document)[
+    if engine_version in _CORRECTED_MATH_ENGINES and normalize_document(document)[
         "allocation"
     ]["cash"] == 100:
         _validated_research_capital(

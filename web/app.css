@@ -4597,9 +4597,19 @@ body.drawer-open {
 .screen-menu-item strong { font-weight: 650; overflow-wrap: anywhere; }
 .screen-menu-item small { display: block; color: var(--muted); margin-top: 5px; }
 .screen-menu-item:hover, .screen-menu-item.selected { border-color: var(--blue-light); background: var(--panel-hover); }
-.has-screen-menu:not([data-screen=""]) > .screen-menu { display: flex; flex-wrap: wrap; gap: 8px; }
-.has-screen-menu:not([data-screen=""]) > .screen-menu .screen-menu-item { min-height: 44px; padding: 10px 14px; border-radius: 12px; font-size: 13px; }
-.has-screen-menu:not([data-screen=""]) > .screen-menu .icon { display: none; }
+.has-screen-menu:not([data-screen=""]) .screen-menu { display: flex; flex-wrap: wrap; gap: 8px; }
+.has-screen-menu:not([data-screen=""]) .screen-menu .screen-menu-item { min-height: 44px; padding: 10px 14px; border-radius: 12px; font-size: 13px; }
+.has-screen-menu:not([data-screen=""]) .screen-menu .icon { display: none; }
+.screen-menu-picker { margin-bottom: 24px; }
+.screen-menu-picker > .screen-menu { margin: 12px 0 0; }
+.screen-menu-toggle { display: none; width: 100%; justify-content: space-between; text-align: left; white-space: normal; }
+.screen-menu-toggle::-webkit-details-marker { display: none; }
+.screen-menu-toggle:focus-visible { outline: 2px solid var(--blue-light); outline-offset: 3px; }
+.screen-menu-toggle .icon { transform: rotate(90deg); flex-shrink: 0; }
+.screen-menu-picker[open] > .screen-menu-toggle .icon { transform: rotate(-90deg); }
+@media (max-width: 960px) {
+  .screen-menu-toggle { display: flex; }
+}
 .has-screen-menu .screen-layout { display: contents; }
 .has-screen-menu [data-screen-content]:not([hidden]) { margin-bottom: 22px; min-width: 0; }
 .has-screen-menu .strategy-catalog { position: static; width: 100%; }

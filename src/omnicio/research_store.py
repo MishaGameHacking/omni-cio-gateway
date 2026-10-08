@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 from .db import Database, live_execution_lock_key
 from .portfolio_store import SettingsVersionConflict
 from .strategy import document_hash
+from .strategy_assessment import normalize_dividend_cashflow_coverage
 
 MAX_RESEARCH_RUN_PAGE = 200
 MAX_ARCHIVE_DOCUMENT_BYTES = 32 * 1024 * 1024
@@ -43,6 +44,7 @@ _FACT_KEYS = frozenset(
         "dividend_yield_percent",
         "payout_ratio_percent",
         "dividend_declared",
+        "dividend_cashflow_coverage",
         "expense_ratio_percent",
         "index_tracking",
         "growth_beta",
@@ -94,11 +96,11 @@ def _time(value: object, now: datetime) -> str:
         raise ValueError("research_evidence_time_invalid")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as exc:
+        if parsed.tzinfo is None or parsed > now:
+            raise ValueError("research_evidence_time_invalid")
+        return parsed.astimezone(UTC).isoformat()
+    except (ValueError, OverflowError) as exc:
         raise ValueError("research_evidence_time_invalid") from exc
-    if parsed.tzinfo is None or parsed > now:
-        raise ValueError("research_evidence_time_invalid")
-    return parsed.astimezone(UTC).isoformat()
 
 
 def _number(value: object, *, nonnegative: bool = False) -> str:
@@ -135,10 +137,13 @@ def _fact_value(name: str, number: Any) -> Any:
     elif name in _STRING_FACTS:
         number = _text(number)
         if name == "maturity_date":
-            parsed = datetime.fromisoformat(number.replace("Z", "+00:00"))
-            if parsed.tzinfo is None:
-                raise ValueError("research_evidence_time_invalid")
-            number = parsed.astimezone(UTC).isoformat()
+            try:
+                parsed = datetime.fromisoformat(number.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    raise ValueError("research_evidence_time_invalid")
+                number = parsed.astimezone(UTC).isoformat()
+            except (ValueError, OverflowError) as exc:
+                raise ValueError("research_evidence_time_invalid") from exc
     else:
         number = _number(number)
     return number
@@ -150,10 +155,17 @@ def _facts(value: object, now: datetime) -> dict[str, Any]:
     result = {}
     for name, raw in value.items():
         row = _object(raw, {"value", "available_at", "source_url"})
-        number = _fact_value(name, row["value"])
+        available = _time(row["available_at"], now)
+        number = (
+            normalize_dividend_cashflow_coverage(
+                row["value"], available_at=datetime.fromisoformat(available)
+            )
+            if name == "dividend_cashflow_coverage"
+            else _fact_value(name, row["value"])
+        )
         result[name] = {
             "value": number,
-            "available_at": _time(row["available_at"], now),
+            "available_at": available,
             "source_url": _source(row["source_url"]),
         }
     return result
@@ -209,6 +221,13 @@ def _cashflows(value: object, now: datetime) -> list[dict[str, Any]]:
 def _coverage(value: object, now: datetime) -> dict[str, Any] | None:
     if value is None:
         return None
+    unit_basis = {}
+    if isinstance(value, dict) and "cashflow_unit_basis" in value:
+        value = dict(value)
+        basis = value.pop("cashflow_unit_basis")
+        if basis != "entitlement_security":
+            raise ValueError("research_cashflow_unit_basis_invalid")
+        unit_basis["cashflow_unit_basis"] = basis
     row = _object(
         value,
         {
@@ -227,7 +246,10 @@ def _coverage(value: object, now: datetime) -> dict[str, Any] | None:
     }
     if begin >= end or any(type(value) is not bool for value in flags.values()):
         raise ValueError("research_coverage_invalid")
-    return {"from": begin, "to": end, **flags, "source_url": _source(row["source_url"])}
+    return {
+        "from": begin, "to": end, **flags, "source_url": _source(row["source_url"]),
+        **unit_basis,
+    }
 
 
 def _factors(value: object, now: datetime) -> list[dict[str, Any]]:

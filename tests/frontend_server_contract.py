@@ -225,6 +225,41 @@ def research_contract() -> dict[str, Any]:
     }
 
 
+def preset_math_contract() -> dict[str, Any]:
+    """The real selector emits the rung schedule and linked cashflow calculations."""
+    from test_research_store import dividend_evidence_document
+    from test_strategy_assessment import ladder_candidate, ladder_document
+
+    from omnicio.research_store import normalize_research_evidence
+    from omnicio.strategy_service import _user_asset_evidence
+
+    split = START + (END - START) * 0.7
+    bonds = [
+        replace(prices(uid), candidate=ladder_candidate(
+            uid, split + timedelta(days=days), as_of=split,
+        ))
+        for uid, days in (("rung-a", 300), ("rung-b", 700))
+    ]
+    evidence = normalize_research_evidence(dividend_evidence_document())["assets"][0]
+    dividend = _user_asset_evidence(prices(), evidence, START, END)
+    common = {
+        "from_at": START, "to_at": END, "now": END,
+        "initial_capital_rub": Decimal(10000), "costs": ZERO_COSTS,
+    }
+    ladder_result = run_strategy_backtest(ladder_document(), bonds, **common)
+    dividend_result = run_strategy_backtest(research_document("dividends"), [dividend], **common)
+    assert len(ladder_result["selection"]["ladder_rungs"]) == 5
+    assert Decimal(ladder_result["selection"]["cash_weight_percent"]) == 60
+    assert dividend_result["selection"]["status"] == "ready"
+    assert Decimal(dividend_result["selection"]["selected"][0][
+        "dividend_cashflow_coverage"
+    ]["coverage_ratio"]) == 1
+    return {
+        "research_ladder_result": ladder_result,
+        "research_dividend_result": dividend_result,
+    }
+
+
 def billing_contract() -> dict[str, Any]:
     """Keep the offer and entitlements aligned with the actual billing service."""
     cursor = Mock()
@@ -243,5 +278,6 @@ def billing_contract() -> dict[str, Any]:
 
 if __name__ == "__main__":
     print(json.dumps({**market_contract(), "market_precision_cases": market_precision_contract(),
-                      **goal_contract(), **research_contract(), **billing_contract()},
+                      **goal_contract(), **research_contract(), **preset_math_contract(),
+                      **billing_contract()},
                      ensure_ascii=True))

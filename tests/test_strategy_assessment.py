@@ -14,6 +14,7 @@ from omnicio.strategy_assessment import (
     StrategyCandidateFacts,
     StrategyFact,
     assess_strategy_account,
+    normalize_dividend_cashflow_coverage,
     rating_notch,
     select_strategy_candidates,
 )
@@ -94,6 +95,54 @@ def candidate_facts(uid="a", kind="shares", **overrides):
     return StrategyCandidateFacts(uid, uid.upper(), kind, 1, "RUB", facts, constituents)
 
 
+def ladder_candidate(uid, maturity, *, as_of=NOW):
+    candidate = candidate_facts(uid, "bonds", maturity_date=maturity)
+    return replace(candidate, facts={
+        key: replace(fact, available_at=as_of - timedelta(days=1))
+        for key, fact in candidate.facts.items()
+    })
+
+
+def ladder_document(horizon="60", max_term="60"):
+    data = selection_document("ladder", "bonds")
+    data["profile"]["horizon_months"] = horizon
+    data["policy"]["max_term_months"] = max_term
+    return data
+
+
+def dividend_cashflow_value(issuer_id="issuer-a", *, period_end=None, **overrides):
+    end = period_end or NOW - timedelta(days=30)
+    return {
+        "issuer_id": issuer_id, "scope": "consolidated_issuer_all_equity", "currency": "USD",
+        "period_start": (end - timedelta(days=365)).isoformat(), "period_end": end.isoformat(),
+        "operating_cashflow": "120", "capital_expenditure": "20", "gross_dividends_paid": "100",
+        "cashflows_complete": True, **overrides,
+    }
+
+
+def with_dividend_coverage(candidate, value, *, available_at=NOW - timedelta(days=1)):
+    return replace(candidate, facts={
+        **candidate.facts,
+        "dividend_cashflow_coverage": StrategyFact(value, available_at, FACT_SOURCE),
+    })
+
+
+def feasible_default_candidate(preset, kind, index):
+    maturity = NOW + timedelta(days=300)
+    if preset == "ladder" and kind == "bonds":
+        maturity = NOW.replace(year=NOW.year + 1 + index % 5, month=4)
+    candidate = candidate_facts(
+        f"{kind}-{index}", kind, maturity_date=maturity,
+        growth_beta=Decimal(1 if index % 4 < 2 else -1),
+        inflation_beta=Decimal(1 if index % 2 == 0 else -1),
+    )
+    if preset == "dividends" and kind == "shares":
+        candidate = with_dividend_coverage(
+            candidate, dividend_cashflow_value(issuer_id="issuer-" + candidate.instrument_uid),
+        )
+    return candidate
+
+
 @pytest.mark.parametrize(
     "preset,kind",
     [
@@ -110,8 +159,11 @@ def candidate_facts(uid="a", kind="shares", **overrides):
     ],
 )
 def test_every_new_mandate_has_a_fact_consuming_selection(preset, kind):
+    candidate = candidate_facts(kind=kind)
+    if preset == "dividends":
+        candidate = with_dividend_coverage(candidate, dividend_cashflow_value())
     result = select_strategy_candidates(
-        selection_document(preset, kind), [candidate_facts(kind=kind)], as_of=NOW
+        selection_document(preset, kind), [candidate], as_of=NOW
     )
     assert result["selected"], result["candidates"]
     assert result["candidates"][0]["eligible"] is True
@@ -120,7 +172,7 @@ def test_every_new_mandate_has_a_fact_consuming_selection(preset, kind):
     assert result["selected"][0]["target_weight_percent"]
 
 
-@pytest.mark.parametrize("preset", ["balanced", "dalio"])
+@pytest.mark.parametrize("preset", ["balanced", "dalio", "ladder"])
 def test_cash_only_custom_strategy_is_a_valid_selection_without_invented_market_assets(preset):
     data = selection_document(preset, "cash")
     result = select_strategy_candidates(data, [], as_of=NOW)
@@ -162,9 +214,12 @@ def test_each_distinct_method_rejects_evidence_that_breaks_its_actual_rule(
     bad_value,
     reason,
 ):
+    candidate = candidate_facts(kind=kind, **{field: bad_value})
+    if preset == "dividends":
+        candidate = with_dividend_coverage(candidate, dividend_cashflow_value())
     result = select_strategy_candidates(
         selection_document(preset, kind),
-        [candidate_facts(kind=kind, **{field: bad_value})],
+        [candidate],
         as_of=NOW,
     )
     assert not result["selected"]
@@ -179,15 +234,408 @@ def test_unavailable_fund_composition_is_never_guessed_from_the_fund_name():
     assert "missing:fund_constituents" in result["missing_requirements"]
 
 
-def test_ladder_distributes_across_distinct_maturity_buckets():
+@pytest.mark.parametrize("engine", ["1.1.0", "1.2.0", "1.3.0", "1.3.1", "1.3.2"])
+def test_ladder_keeps_missing_years_in_cash_and_preserves_archived_allocations(engine):
     data = selection_document("ladder", "bonds")
     rows = [
         candidate_facts("a", "bonds", maturity_date=NOW + timedelta(days=300)),
         candidate_facts("b", "bonds", maturity_date=NOW + timedelta(days=700)),
     ]
-    result = select_strategy_candidates(data, rows, as_of=NOW)
+    result = select_strategy_candidates(data, rows, as_of=NOW, engine_version=engine)
     assert len({row["bucket"] for row in result["selected"]}) == 2
-    assert [Decimal(row["target_weight_percent"]) for row in result["selected"]] == [50, 50]
+    if engine != "1.3.2":
+        assert [Decimal(row["target_weight_percent"]) for row in result["selected"]] == [50, 50]
+        assert result["candidate_selection_ready"] is True
+        assert "ladder_rungs" not in result
+        return
+    assert [Decimal(row["target_weight_percent"]) for row in result["selected"]] == [20, 20]
+    assert Decimal(result["cash_weight_percent"]) == 60
+    assert result["candidate_selection_ready"] is False
+    assert result["missing_requirements"] == [
+        "ladder_rung_unfilled:3", "ladder_rung_unfilled:4", "ladder_rung_unfilled:5",
+        "unfilled_target:bonds",
+    ]
+    assert [Decimal(row["allocated_weight_percent"]) for row in result["ladder_rungs"]] == [
+        20, 20, 0, 0, 0,
+    ]
+
+
+@pytest.mark.parametrize(
+    "as_of_text,horizon,first_text,last_text",
+    [
+        ("2026-10-06T06:00:00+00:00", "24", "2027-10-06T06:00:00+00:00",
+         "2028-10-06T06:00:00+00:00"),
+        ("2024-02-29T12:00:00+00:00", "24", "2025-02-28T12:00:00+00:00",
+         "2026-02-28T12:00:00+00:00"),
+        ("2023-01-31T12:00:00+00:00", "13", "2024-01-31T12:00:00+00:00",
+         "2024-02-29T12:00:00+00:00"),
+        ("2024-01-31T12:00:00+00:00", "13", "2025-01-31T12:00:00+00:00",
+         "2025-02-28T12:00:00+00:00"),
+    ],
+)
+def test_ladder_calendar_anniversaries_and_short_final_rung_are_right_inclusive(
+    as_of_text, horizon, first_text, last_text
+):
+    as_of, first, last = map(datetime.fromisoformat, (as_of_text, first_text, last_text))
+    tiny = timedelta(microseconds=1)
+    rows = [ladder_candidate(uid, maturity, as_of=as_of) for uid, maturity in (
+        ("before", first - tiny), ("exact", first), ("after", first + tiny),
+        ("final", last), ("outside", last + tiny),
+    )]
+    result = select_strategy_candidates(ladder_document(horizon, horizon), rows, as_of=as_of)
+    assert {row["instrument_uid"]: row["bucket"] for row in result["selected"]} == {
+        "before": "0", "exact": "0", "after": "1", "final": "1",
+    }
+    assert result["candidate_selection_ready"] is True
+    assert result["ladder_rungs"] == [
+        {"rung": 1, "from": as_of_text, "to": first_text,
+         "target_weight_percent": "50", "allocated_weight_percent": "50"},
+        {"rung": 2, "from": first_text, "to": last_text,
+         "target_weight_percent": "50", "allocated_weight_percent": "50"},
+    ]
+    assert "maturity_limit" in result["candidates"][-1]["reasons"]
+
+
+def test_ladder_single_partial_year_uses_calendar_month_end():
+    as_of = datetime(2024, 1, 31, 12, tzinfo=UTC)
+    end = datetime(2024, 2, 29, 12, tzinfo=UTC)
+    rows = [ladder_candidate("a", end, as_of=as_of)]
+    result = select_strategy_candidates(ladder_document("1", "60"), rows, as_of=as_of)
+    assert result["candidate_selection_ready"] is True
+    assert result["selected"][0]["bucket"] == "0"
+    assert result["ladder_rungs"] == [{
+        "rung": 1, "from": as_of.isoformat(), "to": end.isoformat(),
+        "target_weight_percent": "100", "allocated_weight_percent": "100",
+    }]
+
+
+@pytest.mark.parametrize("horizon,max_term", [("60", "24"), ("24", "60")])
+def test_ladder_uses_the_strictest_of_the_two_user_term_limits(horizon, max_term):
+    rows = [ladder_candidate(uid, NOW + timedelta(days=days)) for uid, days in (
+        ("a", 300), ("b", 700), ("beyond", 1000),
+    )]
+    result = select_strategy_candidates(ladder_document(horizon, max_term), rows, as_of=NOW)
+    assert [row["instrument_uid"] for row in result["selected"]] == ["a", "b"]
+    assert result["candidate_selection_ready"] is True
+    assert len(result["ladder_rungs"]) == 2
+    assert "maturity_limit" in result["candidates"][-1]["reasons"]
+
+
+def test_ladder_instrument_cap_cannot_transfer_an_unfilled_rung_to_another_year():
+    data = ladder_document("24", "24")
+    data["policy"]["max_instrument_percent"] = "30"
+    rows = [ladder_candidate(uid, NOW + timedelta(days=days)) for uid, days in (
+        ("a", 300), ("b", 500), ("c", 700),
+    )]
+    result = select_strategy_candidates(data, rows, as_of=NOW)
+    assert {row["instrument_uid"]: Decimal(row["target_weight_percent"])
+            for row in result["selected"]} == {"a": 30, "b": 25, "c": 25}
+    assert Decimal(result["cash_weight_percent"]) == 20
+    assert result["missing_requirements"] == ["ladder_rung_unfilled:1", "unfilled_target:bonds"]
+
+
+def test_ladder_class_cap_reports_each_shortfall_against_the_requested_rung():
+    data = ladder_document("24", "24")
+    data["policy"]["max_bond_percent"] = "50"
+    rows = [ladder_candidate(uid, NOW + timedelta(days=days)) for uid, days in (
+        ("a", 300), ("b", 700),
+    )]
+    result = select_strategy_candidates(data, rows, as_of=NOW)
+    assert Decimal(result["cash_weight_percent"]) == 50
+    assert [row["target_weight_percent"] for row in result["ladder_rungs"]] == ["50", "50"]
+    assert [row["allocated_weight_percent"] for row in result["ladder_rungs"]] == ["25", "25"]
+    assert "ladder_rung_unfilled:1" in result["missing_requirements"]
+    assert "ladder_rung_unfilled:2" in result["missing_requirements"]
+    assert result["candidate_selection_ready"] is False
+
+
+@pytest.mark.parametrize("horizon,max_term", [(None, "60"), ("60", None), ("60", "0")])
+def test_ladder_unknown_or_zero_permitted_term_cannot_invent_a_schedule(horizon, max_term):
+    rows = [ladder_candidate("a", NOW + timedelta(days=300))]
+    result = select_strategy_candidates(ladder_document(horizon, max_term), rows, as_of=NOW)
+    assert result["selected"] == []
+    assert result["ladder_rungs"] == []
+    assert "ladder_horizon_unavailable" in result["missing_requirements"]
+    assert "unfilled_target:bonds" in result["missing_requirements"]
+
+
+def test_ladder_zero_personal_horizon_is_rejected_before_allocation():
+    data = ladder_document("0", "60")
+    with pytest.raises(ValueError, match="strategy_horizon_invalid"):
+        select_strategy_candidates(data, [], as_of=NOW)
+
+
+def test_ladder_unrepresentable_future_calendar_is_unavailable_without_overflow():
+    as_of = datetime(9999, 12, 1, tzinfo=UTC)
+    rows = [ladder_candidate("a", as_of.replace(day=20), as_of=as_of)]
+    result = select_strategy_candidates(ladder_document(), rows, as_of=as_of)
+    assert result["ladder_rungs"] == []
+    assert "ladder_horizon_unavailable" in result["missing_requirements"]
+    assert result["candidate_selection_ready"] is False
+
+
+def test_ladder_empty_universe_retains_every_expected_rung():
+    result = select_strategy_candidates(ladder_document("24", "24"), [], as_of=NOW)
+    assert Decimal(result["cash_weight_percent"]) == 100
+    assert len(result["ladder_rungs"]) == 2
+    assert result["missing_requirements"] == [
+        "eligible_bonds", "ladder_rung_unfilled:1", "ladder_rung_unfilled:2",
+        "unfilled_target:bonds",
+    ]
+
+
+@pytest.mark.parametrize("kind", ["shares", "funds"])
+def test_custom_ladder_nonbond_classes_keep_their_existing_behavior(kind):
+    data = selection_document("ladder", kind)
+    rows = [candidate_facts(kind=kind)]
+    current = select_strategy_candidates(data, rows, as_of=NOW)
+    archived = select_strategy_candidates(data, rows, as_of=NOW, engine_version="1.3.1")
+    assert current == archived
+    assert "ladder_rungs" not in current
+
+
+def test_dividend_coverage_normalizer_preserves_original_currency_and_exact_amounts():
+    value = dividend_cashflow_value(
+        issuer_id="  issuer-a \t",
+        operating_cashflow="1.2E+2", capital_expenditure="20.00000001",
+        gross_dividends_paid=100, cashflows_complete=False,
+    )
+    value.update(
+        period_start="2024-07-01T03:00:00+03:00", period_end="2025-07-01T03:00:00+03:00",
+    )
+    result = normalize_dividend_cashflow_coverage(value, available_at=NOW)
+    assert result["issuer_id"] == "issuer-a"
+    assert result["currency"] == "USD"
+    assert result["period_start"] == "2024-07-01T00:00:00+00:00"
+    assert result["period_end"] == "2025-07-01T00:00:00+00:00"
+    assert result["operating_cashflow"] == "120"
+    assert result["capital_expenditure"] == "20.00000001"
+    assert result["gross_dividends_paid"] == "100"
+    assert result["cashflows_complete"] is False
+
+
+@pytest.mark.parametrize("days", [330, 364, 365, 366, 371, 400])
+def test_dividend_coverage_accepts_disclosed_full_year_and_52_or_53_week_periods(days):
+    end = NOW - timedelta(days=30)
+    value = dividend_cashflow_value(
+        period_end=end, period_start=(end - timedelta(days=days)).isoformat(),
+        operating_cashflow="-0.1234567890123456789012345678",
+    )
+    result = normalize_dividend_cashflow_coverage(value, available_at=NOW)
+    assert result["operating_cashflow"] == "-0.1234567890123456789012345678"
+
+
+@pytest.mark.parametrize("key", list(dividend_cashflow_value()))
+def test_dividend_coverage_requires_every_schema_field(key):
+    value = dividend_cashflow_value()
+    del value[key]
+    with pytest.raises(ValueError, match="research_dividend_coverage_invalid"):
+        normalize_dividend_cashflow_coverage(value, available_at=NOW)
+
+
+@pytest.mark.parametrize("value", [None, [], {}, {**dividend_cashflow_value(), "extra": "value"}])
+def test_dividend_coverage_rejects_nonobjects_and_unrecognized_schema_fields(value):
+    with pytest.raises(ValueError, match="research_dividend_coverage_invalid"):
+        normalize_dividend_cashflow_coverage(value, available_at=NOW)
+
+
+@pytest.mark.parametrize("key,value", [
+    ("issuer_id", ""), ("issuer_id", "  "), ("issuer_id", None), ("issuer_id", "a" * 201),
+    ("scope", "single_share_class"), ("currency", "usd"), ("currency", "US"),
+    ("currency", "USDT"), ("currency", "РUB"), ("cashflows_complete", "true"),
+    ("operating_cashflow", "NaN"), ("operating_cashflow", "Infinity"),
+    ("operating_cashflow", "1e16"), ("operating_cashflow", "1e-29"),
+    ("operating_cashflow", "1e999999"), ("operating_cashflow", True),
+    ("operating_cashflow", 1.2), ("capital_expenditure", "-0.01"),
+    ("gross_dividends_paid", "-1"), ("period_start", "2025-01-01"),
+    ("period_end", "2026-12-31T00:00:00+00:00"),
+    ("period_start", "2026-12-31T00:00:00+00:00"),
+])
+def test_dividend_coverage_rejects_invalid_units_dates_and_numeric_values(key, value):
+    record = dividend_cashflow_value()
+    record[key] = value
+    with pytest.raises(ValueError, match="research_dividend_coverage_invalid"):
+        normalize_dividend_cashflow_coverage(record, available_at=NOW)
+
+
+@pytest.mark.parametrize("days", [0, 329, 401])
+def test_dividend_coverage_cannot_mix_partial_or_multiple_reporting_years(days):
+    end = NOW - timedelta(days=30)
+    record = dividend_cashflow_value(
+        period_end=end, period_start=(end - timedelta(days=days)).isoformat(),
+    )
+    with pytest.raises(ValueError, match="research_dividend_coverage_invalid"):
+        normalize_dividend_cashflow_coverage(record, available_at=NOW)
+
+
+def test_dividend_coverage_period_cannot_end_after_the_evidences_availability():
+    record = dividend_cashflow_value()
+    available = datetime.fromisoformat(record["period_end"]) - timedelta(microseconds=1)
+    with pytest.raises(ValueError, match="research_dividend_coverage_invalid"):
+        normalize_dividend_cashflow_coverage(record, available_at=available)
+
+
+@pytest.mark.parametrize("engine", ["1.1.0", "1.2.0", "1.3.0", "1.3.1", "1.3.2"])
+def test_dividend_percentages_alone_do_not_prove_cashflow_coverage_in_the_new_engine(engine):
+    result = select_strategy_candidates(
+        selection_document("dividends"), [candidate_facts()], as_of=NOW, engine_version=engine,
+    )
+    if engine == "1.3.2":
+        assert result["selected"] == []
+        assert "missing:dividend_cashflow_coverage" in result["candidates"][0]["reasons"]
+    else:
+        assert result["candidate_selection_ready"] is True
+        assert "dividend_cashflow_coverage" not in result["selected"][0]
+
+
+@pytest.mark.parametrize("ocf,capex,dividends,reason", [
+    ("120", "20", "100", None),
+    ("121", "20", "100", None),
+    ("119.9999999999999999999999999999", "20", "100", "dividends_not_cashflow_covered"),
+    ("1000000000000000", "0.0000000000000000000000000001", "1000000000000000",
+     "dividends_not_cashflow_covered"),
+    ("0.0000000000000000000000000001", "0", "0.0000000000000000000000000001", None),
+    ("-1", "0", "1", "dividends_not_cashflow_covered"),
+    ("120", "20", "0", "positive_dividend_required"),
+])
+def test_dividend_admission_compares_exact_same_period_cashflow_and_gross_payouts(
+    ocf, capex, dividends, reason
+):
+    value = dividend_cashflow_value(
+        operating_cashflow=ocf, capital_expenditure=capex, gross_dividends_paid=dividends,
+    )
+    candidate = with_dividend_coverage(candidate_facts(free_cashflow_yield_percent=None), value)
+    result = select_strategy_candidates(selection_document("dividends"), [candidate], as_of=NOW)
+    if reason:
+        assert result["selected"] == []
+        assert reason in result["candidates"][0]["reasons"]
+    else:
+        assert result["candidate_selection_ready"] is True
+        evidence = result["selected"][0]["dividend_cashflow_coverage"]
+        assert evidence["currency"] == "USD"
+        assert evidence["gross_dividends_paid"] == dividends
+        assert Decimal(evidence["coverage_ratio"]) >= 1
+        displayed = result["candidates"][0]["facts"]["dividend_cashflow_coverage"]["value"]
+        assert isinstance(displayed, dict)
+
+
+def test_dividend_selected_evidence_uses_the_actual_inputs_and_exact_cashflow():
+    candidate = with_dividend_coverage(candidate_facts(), dividend_cashflow_value())
+    result = select_strategy_candidates(selection_document("dividends"), [candidate], as_of=NOW)
+    assert result["selected"][0]["dividend_cashflow_coverage"] == {
+        "issuer_id": "issuer-a", "currency": "USD",
+        "period_start": (NOW - timedelta(days=395)).isoformat(),
+        "period_end": (NOW - timedelta(days=30)).isoformat(),
+        "operating_cashflow": "120", "capital_expenditure": "20", "gross_dividends_paid": "100",
+        "free_cashflow": "100", "coverage_ratio": "1",
+        "available_at": (NOW - timedelta(days=1)).isoformat(), "source_url": FACT_SOURCE,
+    }
+
+
+@pytest.mark.parametrize("changes,reason", [
+    ({"issuer_id": "another-company"}, "dividend_coverage_issuer_mismatch"),
+    ({"cashflows_complete": False}, "missing:dividend_cashflow_coverage"),
+    ({"scope": "single_share_class"}, "missing:dividend_cashflow_coverage"),
+    ({"operating_cashflow": "NaN"}, "missing:dividend_cashflow_coverage"),
+])
+def test_dividend_coverage_requires_the_same_issuer_and_complete_valid_evidence(changes, reason):
+    candidate = with_dividend_coverage(candidate_facts(), dividend_cashflow_value(**changes))
+    result = select_strategy_candidates(selection_document("dividends"), [candidate], as_of=NOW)
+    assert result["selected"] == []
+    assert reason in result["candidates"][0]["reasons"]
+
+
+@pytest.mark.parametrize("key,value,reason", [
+    ("payout_ratio_percent", "80.0001", "payout_limit"),
+    ("payout_ratio_percent", "-1", "payout_limit"),
+    ("debt_to_ebitda", "3.0001", "debt_limit"),
+    ("debt_to_ebitda", "-1", "debt_limit"),
+    ("dividend_yield_percent", "0", "positive_dividend_required"),
+    ("dividend_declared", False, "missing:dividend_decision"),
+])
+def test_verified_dividend_cashflows_do_not_bypass_other_selected_method_limits(key, value, reason):
+    candidate = with_dividend_coverage(candidate_facts(**{key: value}), dividend_cashflow_value())
+    result = select_strategy_candidates(selection_document("dividends"), [candidate], as_of=NOW)
+    assert result["selected"] == []
+    assert reason in result["candidates"][0]["reasons"]
+
+
+@pytest.mark.parametrize("as_of,oldest_end", [
+    (NOW, datetime(2025, 4, 6, 6, tzinfo=UTC)),
+    (datetime(2025, 8, 31, 12, tzinfo=UTC), datetime(2024, 2, 29, 12, tzinfo=UTC)),
+])
+@pytest.mark.parametrize("older", [False, True])
+def test_dividend_coverage_age_uses_eighteen_calendar_months_with_an_inclusive_boundary(
+    as_of, oldest_end, older
+):
+    end = oldest_end - timedelta(microseconds=int(older))
+    candidate = candidate_facts()
+    candidate = replace(candidate, facts={
+        key: replace(fact, available_at=as_of - timedelta(days=1))
+        for key, fact in candidate.facts.items()
+    })
+    candidate = with_dividend_coverage(
+        candidate, dividend_cashflow_value(period_end=end), available_at=as_of - timedelta(days=1),
+    )
+    result = select_strategy_candidates(selection_document("dividends"), [candidate], as_of=as_of)
+    assert result["candidate_selection_ready"] is not older
+    if older:
+        assert "dividend_coverage_stale" in result["candidates"][0]["reasons"]
+
+
+def test_dividend_evidence_uses_only_the_latest_fact_published_by_the_calculation_date():
+    old_value = dividend_cashflow_value(period_end=NOW - timedelta(days=100))
+    old = StrategyFact(old_value, NOW - timedelta(days=50), FACT_SOURCE)
+    current_value = dividend_cashflow_value(operating_cashflow="1")
+    candidate = with_dividend_coverage(
+        candidate_facts(), current_value, available_at=NOW + timedelta(days=1),
+    )
+    candidate = replace(candidate, fact_history={"dividend_cashflow_coverage": (old,)})
+    before = select_strategy_candidates(selection_document("dividends"), [candidate], as_of=NOW)
+    assert before["candidate_selection_ready"] is True
+    displayed = before["selected"][0]["dividend_cashflow_coverage"]
+    assert displayed["available_at"] == old.available_at.isoformat()
+    after = select_strategy_candidates(
+        selection_document("dividends"), [candidate], as_of=NOW + timedelta(days=2),
+    )
+    assert after["selected"] == []
+    assert "dividends_not_cashflow_covered" in after["candidates"][0]["reasons"]
+
+
+@pytest.mark.parametrize("invalid", ["future", "naive_time", "source"])
+def test_dividend_statement_needs_a_known_availability_time_and_source(invalid):
+    candidate = with_dividend_coverage(candidate_facts(), dividend_cashflow_value())
+    fact = candidate.facts["dividend_cashflow_coverage"]
+    changes = {
+        "future": {"available_at": NOW + timedelta(days=1)},
+        "naive_time": {"available_at": NOW.replace(tzinfo=None)},
+        "source": {"source_url": "http://synthetic.example/statement"},
+    }
+    candidate = replace(candidate, facts={
+        **candidate.facts, "dividend_cashflow_coverage": replace(fact, **changes[invalid]),
+    })
+    result = select_strategy_candidates(selection_document("dividends"), [candidate], as_of=NOW)
+    assert result["selected"] == []
+    assert "missing:dividend_cashflow_coverage" in result["candidates"][0]["reasons"]
+
+
+def test_a_known_malformed_dividend_statement_cannot_silently_fall_back_to_an_older_one():
+    candidate = with_dividend_coverage(candidate_facts(), {"issuer_id": "issuer-a"})
+    old = StrategyFact(dividend_cashflow_value(), NOW - timedelta(days=2), FACT_SOURCE)
+    candidate = replace(candidate, fact_history={"dividend_cashflow_coverage": (old,)})
+    result = select_strategy_candidates(selection_document("dividends"), [candidate], as_of=NOW)
+    assert result["selected"] == []
+    assert "missing:dividend_cashflow_coverage" in result["candidates"][0]["reasons"]
+    assert result["candidates"][0]["facts"]["dividend_cashflow_coverage"]["value"] is None
+
+
+@pytest.mark.parametrize("kind", ["bonds", "funds"])
+def test_custom_dividend_nonshare_classes_do_not_invent_issuer_dividend_statements(kind):
+    data = selection_document("dividends", kind)
+    rows = [candidate_facts(kind=kind)]
+    current = select_strategy_candidates(data, rows, as_of=NOW)
+    archived = select_strategy_candidates(data, rows, as_of=NOW, engine_version="1.3.1")
+    assert current == archived
 
 
 def test_unknown_identity_is_a_partial_research_basket_not_full_personal_readiness():
@@ -260,14 +708,7 @@ def test_shipped_default_allocations_are_feasible_without_weakening_any_risk_lim
     rows = []
     for kind in ("shares", "bonds", "funds"):
         for index in range(32):
-            rows.append(
-                candidate_facts(
-                    f"{kind}-{index}",
-                    kind,
-                    growth_beta=Decimal(1 if index % 4 < 2 else -1),
-                    inflation_beta=Decimal(1 if index % 2 == 0 else -1),
-                )
-            )
+            rows.append(feasible_default_candidate(preset, kind, index))
     result = select_strategy_candidates(data, rows, as_of=NOW)
     assert result["candidate_selection_ready"] is True, result["missing_requirements"]
     assert abs(Decimal(result["cash_weight_percent"]) - data["allocation"]["cash"]) < Decimal(
