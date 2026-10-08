@@ -874,7 +874,9 @@ def test_native_news_page_checkpoint_is_atomic_resumable_and_connection_bound(
     snapshot = store.save_snapshot(ident, job_run_id=job.id, bundle=observation)
     news_id = str(uuid4().int % 10**18 + 1)
     documents = build_news_evidence(frozenset({"bond-uid"}), [news_item(news_id)], observed_at=now)
-    checkpoint = {"cursor": "10", "seen_cursors": [], "status": "partial",
+    continuations = [{"cursor": "10", "seen_cursors": []},
+                     {"cursor": "20", "seen_cursors": ["30"]}]
+    checkpoint = {"continuations": continuations, "completed_cursors": [], "status": "partial",
                   "observed_at": now.isoformat(), "pages": 1, "scanned_items": 1,
                   "documents_new": 0, "scope": "held_instrument_links"}
     arguments = {"job_run_id": job.id, "snapshot_id": snapshot, "documents": documents,
@@ -892,13 +894,15 @@ def test_native_news_page_checkpoint_is_atomic_resumable_and_connection_bound(
         ).fetchone()["total"] == 0
     assert store.save_evidence(ident, **arguments) == (1, 0)
     saved = PortfolioStore(database).news_state(ident, job_run_id=job.id)
-    assert saved["cursor"] == "10"
+    assert saved["continuations"] == continuations
     assert saved["documents_new"] == 1
     visible = store.refresh_status(ident)["news"]
     assert visible["status"] == "partial"
     assert visible["documents_new"] == 1
     assert "cursor" not in visible
     assert "seen_cursors" not in visible
+    assert "continuations" not in visible
+    assert "completed_cursors" not in visible
     with pytest.raises(ObservationCancelled):
         store.news_state(other, job_run_id=job.id)
     assert store.finish_job(ident, job.id, status="succeeded", details={})
@@ -906,7 +910,7 @@ def test_native_news_page_checkpoint_is_atomic_resumable_and_connection_bound(
     store.request_refresh(ident, LEGAL_VERSIONS)
     resumed = PortfolioStore(database).claim_refresh_job(ident, LEGAL_VERSIONS)
     assert resumed is not None
-    assert store.news_state(ident, job_run_id=resumed.id)["cursor"] == "10"
+    assert store.news_state(ident, job_run_id=resumed.id)["continuations"] == continuations
     assert database.delete_tbank_connection(ident)
     with pytest.raises(ObservationCancelled):
         store.news_state(ident, job_run_id=resumed.id)

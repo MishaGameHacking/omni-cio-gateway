@@ -156,7 +156,7 @@ def test_news_evidence_requires_source_identity_time_and_current_holding_link() 
     observed = _bundle()
     item = news_item(published=now - timedelta(minutes=1))
     rejected = [
-        {**item, "id": ""}, {**item, "id": "0"},
+        {**item, "id": ""}, {**item, "id": "0"}, {**item, "id": "1٢"},
         {**item, "occurred_at": None}, {**item, "occurred_at": now.replace(tzinfo=None)},
         {**item, "occurred_at": now + timedelta(seconds=1)},
         {**item, "occurred_at": now - timedelta(hours=49)},

@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import secrets
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from threading import BoundedSemaphore, Event, Thread
-from typing import Literal, cast
+from typing import Literal, TypedDict, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -35,6 +38,9 @@ PROVIDER_READ_ATTEMPTS = 3
 NEWS_MAX_PAGES_PER_RUN = 3
 NEWS_PAGE_SIZE = 50
 NEWS_BUDGET_SECONDS = 12
+NEWS_MAX_CONTINUATIONS = 64
+NEWS_MAX_PATH_PROOFS = 128
+NEWS_MAX_COMPLETED_CURSORS = 64
 _AWARE_OBSERVER_TIME_REQUIRED = "observer time must be timezone-aware"
 
 
@@ -49,6 +55,93 @@ class ObservationInterrupted(RuntimeError):
 def _checkpoint(should_stop: Callable[[], bool] | None) -> None:
     if should_stop is not None and should_stop():
         raise ObservationInterrupted("observer_stopping")
+
+
+class NewsContinuation(TypedDict):
+    cursor: str
+    seen_cursors: list[str]
+
+
+def _bound_news_proofs(state: dict[str, object]) -> None:
+    paths = cast(list[NewsContinuation], state["continuations"])
+    per_path = max(1, NEWS_MAX_PATH_PROOFS // max(1, len(paths)))
+    for path in paths:
+        path["seen_cursors"] = list(dict.fromkeys(path["seen_cursors"]))[-per_path:]
+    completed = cast(list[str], state["completed_cursors"])
+    state["completed_cursors"] = list(dict.fromkeys(completed))[-NEWS_MAX_COMPLETED_CURSORS:]
+
+
+def _news_state(previous: dict[str, object], held_uids: frozenset[str]) -> dict[str, object]:
+    paths = deepcopy(cast(list[NewsContinuation], previous.get("continuations", [])))
+    if "continuations" not in previous and previous.get("cursor") is not None:
+        paths = [{"cursor": cast(str, previous["cursor"]),
+                  "seen_cursors": list(cast(list[str], previous.get("seen_cursors", [])))}]
+    holdings = hashlib.sha256(json.dumps(sorted(held_uids)).encode("utf-8")).hexdigest()
+    same_holdings = previous.get("holdings") == holdings
+    if not same_holdings:
+        # Previously read pages were filtered against a different set of holdings.
+        for path in paths:
+            path["seen_cursors"] = []
+    state: dict[str, object] = {
+        "continuations": paths,
+        # A finished traversal never suppresses the next scan for source corrections.
+        "completed_cursors": previous.get("completed_cursors", [])
+        if paths and same_holdings else [],
+        "holdings": holdings, "recovery_required": previous.get("recovery_required", False),
+        "coverage_reset_at": previous.get("coverage_reset_at"), "reset_in_run": False,
+        "status": "partial", "observed_at": previous.get("observed_at"),
+        "pages": 0, "scanned_items": 0, "documents_new": 0, "scope": "held_instrument_links",
+    }
+    _bound_news_proofs(state)
+    return state
+
+
+def _news_path_for(paths: list[NewsContinuation], cursor: str) -> NewsContinuation | None:
+    return next((path for path in paths
+                 if cursor == path["cursor"] or cursor in path["seen_cursors"]), None)
+
+
+def _enqueue_news_head(state: dict[str, object], cursor: str | None, observed_at: str) -> None:
+    if cursor is None or cursor in cast(list[str], state["completed_cursors"]):
+        return
+    paths = cast(list[NewsContinuation], state["continuations"])
+    existing = _news_path_for(paths, cursor)
+    if existing is not None:
+        # Keep the head's proof while a long static continuation advances behind it.
+        if cursor in existing["seen_cursors"]:
+            existing["seen_cursors"].remove(cursor)
+            existing["seen_cursors"].append(cursor)
+        return
+    if len(paths) >= NEWS_MAX_CONTINUATIONS:
+        # The bounded queue cannot promise its old coverage. Restart from this
+        # successfully received head, retaining a visible partial recovery state.
+        paths.clear()
+        state.update(completed_cursors=[], recovery_required=True,
+                     coverage_reset_at=observed_at, reset_in_run=True)
+    paths.append({"cursor": cursor, "seen_cursors": []})
+
+
+def _advance_news_path(state: dict[str, object], cursor: str, next_cursor: str | None) -> None:
+    paths = cast(list[NewsContinuation], state["continuations"])
+    path = paths.pop(0)
+    if path["cursor"] != cursor:
+        raise ValueError("news continuation changed before commit")
+    visited = [*path["seen_cursors"], cursor]
+    if next_cursor in visited:
+        # A cycle is unfinished work. Forgetting its proof permits a later fixed
+        # provider response to recover without ever declaring the loop complete.
+        paths.append({"cursor": next_cursor, "seen_cursors": []})
+        state["recovery_required"] = True
+        return
+    completed = cast(list[str], state["completed_cursors"])
+    if next_cursor is None or next_cursor in completed:
+        completed.extend(visited)
+        return
+    existing = _news_path_for(paths, next_cursor)
+    if existing is not None:
+        existing["seen_cursors"].extend(visited)
+    else:
+        paths.append({"cursor": next_cursor, "seen_cursors": visited})
 
 
 def _history_window(
@@ -322,22 +415,16 @@ class PortfolioObserver:
         self, job: JobRunRecord, bundle: BrokerObservationBundle, snapshot_id: UUID,
         details: dict[str, object], should_stop: Callable[[], bool] | None,
     ) -> None:
-        state: dict[str, object] = {
-            "cursor": None, "seen_cursors": [], "status": "partial",
-            "observed_at": None, "pages": 0, "scanned_items": 0,
-            "documents_new": 0, "scope": "held_instrument_links",
-        }
-        details["news"] = state
         held_uids = held_news_instrument_uids(bundle)
+        state = _news_state({}, held_uids)
+        details["news"] = state
         if not held_uids:
             state["status"] = (
                 "not_applicable" if bundle.analysis.security_count == 0 else "unavailable"
             )
             return
         previous = self.store.news_state(job.user_id, job_run_id=job.id)
-        pending = cast(str | None, previous.get("cursor"))
-        state.update(cursor=pending, observed_at=previous.get("observed_at"),
-                     seen_cursors=previous.get("seen_cursors", []) if pending else [])
+        state.update(_news_state(previous, held_uids))
         deadline = time.monotonic() + NEWS_BUDGET_SECONDS
         cursor = None
         try:
@@ -345,38 +432,37 @@ class PortfolioObserver:
                 _checkpoint(should_stop)
                 if time.monotonic() >= deadline:
                     break
-                if not self._news_page(job, snapshot_id, held_uids, state,
-                                       cursor=cursor, resume_cursor=pending):
+                if not self._news_page(job, snapshot_id, held_uids, state, cursor=cursor):
                     break
-                cursor, pending = cast(str | None, state["cursor"]), None
+                cursor = cast(list[NewsContinuation], state["continuations"])[0]["cursor"]
         except ObservationCancelled:
             raise
         except (TBankUnavailable, ValueError) as exc:
             # News cannot turn a valid NAV or ledger into unavailable financial data.
-            # Keep the last committed cursor and observation time for restart/readback.
+            # Keep the last committed queue and observation time for restart/readback.
             state.update(status="partial" if state["pages"] else "unavailable",
                          error=type(exc).__name__)
 
     def _news_page(
         self, job: JobRunRecord, snapshot_id: UUID, held_uids: frozenset[str],
-        state: dict[str, object], *, cursor: str | None, resume_cursor: str | None,
+        state: dict[str, object], *, cursor: str | None,
     ) -> bool:
         """Commit a source page and its continuation together before advancing in memory."""
         page = self.broker.instrument_news(job.user_id, cursor=cursor, limit=NEWS_PAGE_SIZE)
         observed = datetime.fromisoformat(page["observed_at"])
         documents = build_news_evidence(held_uids, page["items"], observed_at=observed)
-        seen = list(cast(list[str], state["seen_cursors"]))
-        if cursor is not None:
-            seen.append(cursor)
-        # Every run polls the newest page before resuming older work.
-        next_cursor = resume_cursor if resume_cursor is not None else page["next_cursor"]
-        repeated = next_cursor is not None and next_cursor in seen
-        if repeated:
-            next_cursor = None
-        checkpoint = dict(state)
+        # Queue mutations must also roll back in memory when persistence fails.
+        checkpoint = deepcopy(state)
+        if cursor is None:
+            _enqueue_news_head(checkpoint, page["next_cursor"], observed.isoformat())
+        else:
+            _advance_news_path(checkpoint, cursor, page["next_cursor"])
+        _bound_news_proofs(checkpoint)
+        pending = bool(checkpoint["continuations"])
+        complete = not pending and not checkpoint["reset_in_run"]
         checkpoint.update(
-            cursor=next_cursor, seen_cursors=seen[-64:] if next_cursor else [],
-            status="partial" if next_cursor or repeated else "received",
+            status="received" if complete else "partial",
+            recovery_required=False if complete else checkpoint["recovery_required"],
             observed_at=observed.isoformat(), pages=cast(int, state["pages"]) + 1,
             scanned_items=cast(int, state["scanned_items"]) + page["scanned_items"],
         )
@@ -386,7 +472,7 @@ class PortfolioObserver:
             news_checkpoint=checkpoint,
         )
         state.update(checkpoint, documents_new=cast(int, state["documents_new"]) + written)
-        return next_cursor is not None
+        return pending
 
     def _snapshot(
         self, job: JobRunRecord, details: dict[str, object],

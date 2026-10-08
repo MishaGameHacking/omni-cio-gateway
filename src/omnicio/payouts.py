@@ -25,6 +25,23 @@ PAYOUT_IDENTITY_SQL = (
 )
 
 
+def payout_source_sql(alias: str) -> str:
+    """Compare payout facts without treating an equivalent timezone as a correction."""
+    if alias not in {"workspace_events", "EXCLUDED"}:
+        raise ValueError("unsupported_payout_source_alias")
+    source = f"{alias}.source"
+    expected = f"{source} ->> 'expected_at'"
+    return (
+        f"({source} - ARRAY['id', 'superseded_by', 'expected_at']) "
+        "|| jsonb_build_object('expected_at', CASE "
+        f"WHEN jsonb_typeof({source} -> 'expected_at') = 'string' "
+        f"AND {expected} ~ '(Z|[+-][0-9]{{2}}:[0-9]{{2}})$' "
+        f"AND pg_input_is_valid({expected}, 'timestamptz') "
+        f"THEN to_jsonb(({expected})::timestamptz AT TIME ZONE 'UTC') "
+        f"ELSE {source} -> 'expected_at' END)"
+    )
+
+
 def visible_event_sql(alias: str = "") -> str:
     """Hide only server-owned superseded payout aliases, preserving their receipts."""
     if alias not in {"", "e"}:

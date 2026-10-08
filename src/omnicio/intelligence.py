@@ -152,7 +152,8 @@ def build_news_evidence(
     for item in items:
         ident, title = item.get("id"), item.get("title")
         published, uids = item.get("occurred_at"), item.get("instrument_uids")
-        if (not isinstance(ident, str) or re.fullmatch(r"[1-9][0-9]{0,18}", ident) is None
+        if (not isinstance(ident, str)
+                or re.fullmatch(r"[1-9]\d{0,18}", ident, flags=re.ASCII) is None
                 or int(ident) > 2**63 - 1 or not isinstance(title, str) or not title.strip()
                 or not isinstance(published, datetime) or published.tzinfo is None
                 or not observed_at - ISSUER_NEWS_MAX_AGE <= published <= observed_at

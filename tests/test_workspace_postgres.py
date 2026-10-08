@@ -1784,12 +1784,162 @@ def dividend_revision(
     }}
 
 
+@pytest.mark.parametrize(("older_receipt", "newer_receipt"), [
+    ("accepted", "queued"), ("accepted", "accepted"), ("queued", "accepted"),
+])
 def test_dividend_legacy_aliases_preserve_receipts_and_follow_date_corrections(
     workspace_database: tuple[Database, str, str],
+    older_receipt: str, newer_receipt: str,
 ) -> None:
     database = workspace_database[0]
     owner, other = user(database, account=True), user(database)
     store, portfolio = WorkspaceStore(database), PortfolioStore(database)
+    service, transport, _ = notification_service(database)
+    start, uid = datetime.now(UTC) - timedelta(hours=1), str(uuid4())
+    created, expected = start - timedelta(days=2), start + timedelta(days=2)
+    payout_position(store, owner, uid, start)
+    preferences = default_preferences()
+    preferences["digest_frequency"] = "off"
+    preferences["quiet_hours"]["enabled"] = False
+    store.save_preferences(owner, preferences, expected_version=0)
+    with store._transaction(owner) as cur:
+        channel = service._insert_channel(
+            cur, owner, kind="email", destination={"email": "payout-test@example.org"},
+            label="Synthetic payout test", status="active", now=start,
+        )
+    old_events = []
+    for index, value in enumerate(("10", "12")):
+        at = start + timedelta(minutes=index)
+        saved = dividend_revision(store, owner, uid, at, created=created,
+                                  expected=expected, value=value)
+        if index == 1:
+            # A legacy session's timezone must not invent a financial correction.
+            saved["source"]["expected_at"] = expected.astimezone(ZoneInfo("Europe/Moscow"))
+        ident = event_id("payout_calendar", [uid, "dividend", saved["provider_key"]])
+        with store._transaction(owner) as cur:
+            store._insert_event(
+                cur, owner, identity=[uid, "dividend", saved["provider_key"]],
+                category="payments", kind="payout_calendar", title="Old payout",
+                occurred_at=at, target="income", source=saved["source"],
+            )
+            cur.execute("UPDATE workspace_events SET created_at = %s WHERE user_id = %s "
+                        "AND id = %s RETURNING *", (at, owner, ident))
+            legacy = dict(cur.fetchone())
+            service._queue_event(cur, owner, channel, legacy, preferences, start)
+            if (older_receipt, newer_receipt)[index] == "accepted":
+                cur.execute("UPDATE notification_outbox SET status = 'accepted', accepted_at = %s "
+                            "WHERE user_id = %s AND message_key = %s",
+                            (at, owner, f"event:{ident}:{legacy['revision']}"))
+                cur.execute("UPDATE workspace_events SET read_at = %s WHERE user_id = %s "
+                            "AND id = %s", (at, owner, ident))
+        old_events.append(legacy)
+    canonical, alias = reversed(old_events)
+    with store._transaction(owner) as cur:
+        cur.execute("SELECT id, status, accepted_at FROM notification_outbox "
+                    "WHERE user_id = %s", (owner,))
+        original_receipts = {row["id"]: dict(row) for row in cur.fetchall()}
+    with store._transaction(other) as cur:
+        store._insert_event(
+            cur, other, identity="other-owner", category="payments", kind="payout_calendar",
+            title="Other owner history", occurred_at=start, source=alias["source"],
+        )
+    unrelated = insert_notification_event(
+        store, owner, 400, source={"type": "payout", "superseded_by": canonical["id"]},
+    )
+    events = store.events(owner)
+    assert {item["id"] for item in events["items"]} == {canonical["id"], unrelated}
+    unread = 2 if newer_receipt == "queued" else 1
+    assert events["unread_count"] == unread
+    assert store.events_summary(owner)["unread_total"] == unread
+    updated = store.get_event(owner, canonical["id"])
+    assert updated["revision"] == canonical["revision"]
+    assert updated["source"]["amount_per_security"] == canonical["source"]["amount_per_security"]
+    assert (updated["read_at"] is not None) is (newer_receipt == "accepted")
+    retained = store.get_event(owner, alias["id"])
+    assert retained["revision"] == alias["revision"]
+    assert (retained["read_at"] is not None) is (older_receipt == "accepted")
+    assert retained["source"]["superseded_by"] == canonical["id"]
+    assert "superseded_by" not in store.events(other)["items"][0]["source"]
+    with store._transaction(owner) as cur:
+        # An existing delivery for the current financial fact remains authoritative.
+        service._queue_event(cur, owner, channel, updated, preferences, datetime.now(UTC))
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner) is (newer_receipt == "queued")
+        assert service.deliver_one(owner) is False
+    assert transport.send_email.call_count == int(newer_receipt == "queued")
+    with store._transaction(owner) as cur:
+        cur.execute("SELECT event_id, event_revision FROM notification_outbox_events "
+                    "WHERE user_id = %s", (owner,))
+        assert {(row["event_id"], row["event_revision"]) for row in cur.fetchall()} == {
+            (row["id"], row["revision"]) for row in old_events
+        }
+        cur.execute("SELECT id, status, accepted_at FROM notification_outbox "
+                    "WHERE user_id = %s", (owner,))
+        receipts = {row["id"]: dict(row) for row in cur.fetchall()}
+        assert receipts.keys() == original_receipts.keys()
+        expected_statuses = {"accepted", "cancelled"} if older_receipt == "queued" else {"accepted"}
+        assert {row["status"] for row in receipts.values()} == expected_statuses
+        for ident, receipt in original_receipts.items():
+            if receipt["status"] == "accepted":
+                assert receipts[ident] == receipt
+    store.mark_events_read(owner, [canonical["id"]])
+    revision = updated["revision"]
+    dividend_revision(store, owner, uid, start + timedelta(minutes=2), created=created,
+                      expected=expected, value="12", note="provider metadata corrected")
+    current = next(row for row in store.events(owner)["items"]
+                   if row["kind"] == "payout_calendar")
+    assert current["id"] == canonical["id"]
+    assert current["read_at"] is not None
+    assert current["revision"] == revision
+    assert current["source"]["id"] != canonical["source"]["id"]
+    # Returning to the old amount is a new correction, not the old accepted alias.
+    dividend_revision(store, owner, uid, start + timedelta(minutes=3), created=created,
+                      expected=expected, value="10")
+    reverted = next(row for row in store.events(owner)["items"]
+                    if row["kind"] == "payout_calendar")
+    assert reverted["id"] == canonical["id"]
+    assert reverted["revision"] > revision
+    assert reverted["read_at"] is None
+    assert reverted["source"]["id"] == alias["source"]["id"]
+    assert Decimal(reverted["source"]["amount_per_security"]) == Decimal("10")
+    with store._transaction(owner) as cur:
+        service._queue_event(cur, owner, channel, reverted, preferences, datetime.now(UTC))
+    with patch.object(database, "has_legal_versions", return_value=True):
+        assert service.deliver_one(owner) is True
+        assert service.deliver_one(owner) is False
+    assert transport.send_email.call_count == int(newer_receipt == "queued") + 1
+    store.mark_events_read(owner, [canonical["id"]])
+    revision = reverted["revision"]
+    unchanged = next(row for row in store.events(owner)["items"]
+                     if row["kind"] == "payout_calendar")
+    assert unchanged["id"] == canonical["id"]
+    assert unchanged["revision"] == revision
+    assert unchanged["read_at"] is not None
+    for index, date in enumerate((None, start - timedelta(days=20), expected + timedelta(days=1))):
+        dividend_revision(store, owner, uid, start + timedelta(minutes=4 + index),
+                          created=created, expected=date, value="12", status="cancelled")
+        current = next(row for row in store.events(owner)["items"]
+                       if row["kind"] == "payout_calendar")
+        assert current["id"] == canonical["id"]
+        assert current["read_at"] is None
+        assert current["revision"] > revision
+        revision = current["revision"]
+        actual_date = current["source"]["expected_at"]
+        assert (datetime.fromisoformat(actual_date) if actual_date is not None else None) == date
+        assert current["source"]["status"] == "cancelled"
+        visible = portfolio.instrument_visualization(owner, uid)
+        assert visible is not None
+        assert len(visible["payouts"]) == 1
+        assert visible["payouts"][0]["expected_at"] == date
+        store.mark_events_read(owner, [canonical["id"]])
+
+
+def test_legacy_dividend_reversion_before_consolidation_updates_last_projected_revision(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner = user(database, account=True)
+    store = WorkspaceStore(database)
     service, transport, _ = notification_service(database)
     start, uid = datetime.now(UTC) - timedelta(hours=1), str(uuid4())
     created, expected = start - timedelta(days=2), start + timedelta(days=2)
@@ -1815,71 +1965,46 @@ def test_dividend_legacy_aliases_preserve_receipts_and_follow_date_corrections(
                 category="payments", kind="payout_calendar", title="Old payout",
                 occurred_at=at, target="income", source=saved["source"],
             )
-            cur.execute("UPDATE workspace_events SET created_at = %s WHERE user_id = %s "
-                        "AND id = %s RETURNING *", (at, owner, ident))
+            cur.execute("SELECT * FROM workspace_events WHERE user_id = %s AND id = %s",
+                        (owner, ident))
             legacy = dict(cur.fetchone())
-            service._queue_event(cur, owner, channel, legacy, preferences, start)
-            if index == 0:
-                cur.execute("UPDATE notification_outbox SET status = 'accepted', accepted_at = %s "
-                            "WHERE user_id = %s", (start, owner))
-                cur.execute("UPDATE workspace_events SET read_at = %s WHERE user_id = %s "
-                            "AND id = %s", (start, owner, ident))
+            service._queue_event(cur, owner, channel, legacy, preferences, at)
+            cur.execute("UPDATE notification_outbox SET status = 'accepted', accepted_at = %s "
+                        "WHERE user_id = %s AND message_key = %s",
+                        (at, owner, f"event:{ident}:{legacy['revision']}"))
+            cur.execute("UPDATE workspace_events SET read_at = %s WHERE user_id = %s AND id = %s",
+                        (at, owner, ident))
         old_events.append(legacy)
-    canonical, alias = old_events
-    with store._transaction(other) as cur:
-        store._insert_event(
-            cur, other, identity="other-owner", category="payments", kind="payout_calendar",
-            title="Other owner history", occurred_at=start, source=alias["source"],
-        )
-    unrelated = insert_notification_event(
-        store, owner, 400, source={"type": "payout", "superseded_by": canonical["id"]},
-    )
-    events = store.events(owner)
-    assert {item["id"] for item in events["items"]} == {canonical["id"], unrelated}
-    assert events["unread_count"] == 2
-    assert store.events_summary(owner)["unread_total"] == 2
-    updated = store.get_event(owner, canonical["id"])
-    assert updated["revision"] > canonical["revision"]
-    assert updated["source"]["amount_per_security"] == alias["source"]["amount_per_security"]
-    retained = store.get_event(owner, alias["id"])
-    assert retained["revision"] == alias["revision"]
-    assert retained["read_at"] is None
-    assert retained["source"]["superseded_by"] == canonical["id"]
-    assert "superseded_by" not in store.events(other)["items"][0]["source"]
+    # The old producer re-observed the original immutable payout before this upgrade.
+    dividend_revision(store, owner, uid, start + timedelta(minutes=2), created=created,
+                      expected=expected, value="10")
+    first, latest = old_events
+    alerts = [row for row in store.events(owner)["items"] if row["kind"] == "payout_calendar"]
+    assert len(alerts) == 1
+    current = alerts[0]
+    assert current["id"] == latest["id"]
+    assert current["revision"] > latest["revision"]
+    assert current["read_at"] is None
+    assert current["source"]["id"] == first["source"]["id"]
+    assert Decimal(current["source"]["amount_per_security"]) == Decimal("10")
+    with store._transaction(owner) as cur:
+        service._queue_event(cur, owner, channel, current, preferences, datetime.now(UTC))
     with patch.object(database, "has_legal_versions", return_value=True):
-        assert service._claim(owner, datetime.now(UTC)) is None
-    transport.send_email.assert_not_called()
+        assert service.deliver_one(owner) is True
+        assert service.deliver_one(owner) is False
+    transport.send_email.assert_called_once()
+    store.mark_events_read(owner, [current["id"]])
+    unchanged = next(row for row in store.events(owner)["items"]
+                     if row["kind"] == "payout_calendar")
+    assert unchanged["id"] == latest["id"]
+    assert unchanged["revision"] == current["revision"]
+    assert unchanged["read_at"] is not None
     with store._transaction(owner) as cur:
         cur.execute("SELECT event_id, event_revision FROM notification_outbox_events "
                     "WHERE user_id = %s", (owner,))
         assert {(row["event_id"], row["event_revision"]) for row in cur.fetchall()} == {
-            (row["id"], row["revision"]) for row in old_events
+            (row["id"], row["revision"]) for row in [*old_events, current]
         }
-        cur.execute("SELECT status FROM notification_outbox WHERE user_id = %s", (owner,))
-        assert {row["status"] for row in cur.fetchall()} == {"accepted", "cancelled"}
-    store.mark_events_read(owner, [canonical["id"]])
-    revision = updated["revision"]
-    dividend_revision(store, owner, uid, start + timedelta(minutes=2), created=created,
-                      expected=expected, value="12", note="provider metadata corrected")
-    current = next(row for row in store.events(owner)["items"]
-                   if row["kind"] == "payout_calendar")
-    assert current["id"] == canonical["id"]
-    assert current["read_at"] is not None and current["revision"] == revision
-    assert current["source"]["id"] != alias["source"]["id"]
-    for index, date in enumerate((None, start - timedelta(days=20), expected + timedelta(days=1))):
-        dividend_revision(store, owner, uid, start + timedelta(minutes=3 + index),
-                          created=created, expected=date, value="12", status="cancelled")
-        current = next(row for row in store.events(owner)["items"]
-                       if row["kind"] == "payout_calendar")
-        assert current["id"] == canonical["id"]
-        assert current["read_at"] is None and current["revision"] > revision
-        revision = current["revision"]
-        assert current["source"]["expected_at"] == (str(date) if date is not None else None)
-        assert current["source"]["status"] == "cancelled"
-        visible = portfolio.instrument_visualization(owner, uid)
-        assert visible is not None and len(visible["payouts"]) == 1
-        assert visible["payouts"][0]["expected_at"] == date
-        store.mark_events_read(owner, [canonical["id"]])
 
 
 @pytest.mark.parametrize(("created", "count"), [
@@ -1904,7 +2029,8 @@ def test_dividend_projection_requires_a_valid_creation_identity(
         dividend_revision(store, owner, uid, now + timedelta(minutes=index), created=metadata,
                           expected=now + timedelta(days=1), value=str(10 + index))
     visible = portfolio.instrument_visualization(owner, uid)
-    assert visible is not None and len(visible["payouts"]) == count
+    assert visible is not None
+    assert len(visible["payouts"]) == count
     alerts = [row for row in store.events(owner)["items"] if row["kind"] == "payout_calendar"]
     assert len(alerts) == count
 
@@ -1932,7 +2058,8 @@ def test_dividends_created_in_one_batch_keep_distinct_distribution_anchors(
                           created=now - timedelta(days=2), expected=now + timedelta(days=1),
                           value=str(10 + index), anchors=changed)
     visible = portfolio.instrument_visualization(owner, uid)
-    assert visible is not None and len(visible["payouts"]) == 2
+    assert visible is not None
+    assert len(visible["payouts"]) == 2
     alerts = [row for row in store.events(owner)["items"] if row["kind"] == "payout_calendar"]
     assert len(alerts) == 2
 
@@ -2579,3 +2706,58 @@ def test_issuer_news_does_not_invent_current_portfolio_binding_from_old_snapshot
     if holding == "disconnected":
         database.delete_tbank_connection(owner)
     assert not [row for row in store.events(owner)["items"] if row["kind"] == "instrument_news"]
+
+
+def test_issuer_news_projection_bound_does_not_starve_missing_or_corrected_older_alerts(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    store, owner = WorkspaceStore(database), user(database, account=True)
+    uid, first_ident = str(uuid4()), uuid4().int % 10**18 + 1
+    start = datetime.now(UTC) - timedelta(seconds=10)
+    payout_position(store, owner, uid, start)
+    items = [news_item(str(first_ident + index), uid=uid,
+                       published=start - timedelta(minutes=index)) for index in range(101)]
+    with store._transaction(owner) as cur:
+        for document in build_news_evidence(frozenset({uid}), items, observed_at=start):
+            document_id, _ = _source_document_id(cur, document, start)
+            _save_source_retrieval(cur, document_id, start)
+
+    store.synchronize_events(owner)
+    assert store.events_summary(owner)["categories"]["portfolio"] == 100
+    identities = [event_id("instrument_news", [str(owner), "prod", item["id"]]) for item in items]
+    oldest_identity = identities[-1]
+    with pytest.raises(WorkspaceNotFound):
+        store.get_event(owner, oldest_identity)
+    store.synchronize_events(owner)
+    assert store.events_summary(owner)["categories"]["portfolio"] == 101
+    original = store.get_event(owner, oldest_identity)
+    assert original["source"]["news_id"] == items[-1]["id"]
+    store.mark_events_read(owner, identities)
+    assert store.events_summary(owner)["categories"]["portfolio"] == 0
+
+    # An older correction, a priority withdrawal and A -> B -> A all outrank
+    # the 100 unchanged newer projections without resetting their read receipts.
+    previous_revision = original["revision"]
+    for index, (title, priority) in enumerate((
+        ("Уточнённое сообщение", True), ("Уточнённое сообщение", False),
+        (items[-1]["title"], True),
+    ), start=1):
+        received = start + timedelta(seconds=index)
+        item = {**items[-1], "title": title, "priority": priority}
+        document = build_news_evidence(frozenset({uid}), [item], observed_at=received)[0]
+        with store._transaction(owner) as cur:
+            document_id, _ = _source_document_id(cur, document, received)
+            _save_source_retrieval(cur, document_id, received)
+        store.synchronize_events(owner)
+        revised = store.get_event(owner, oldest_identity)
+        assert revised["title"] == title
+        assert revised["source"]["priority"] is priority
+        assert revised["revision"] > previous_revision
+        assert revised["read_at"] is None
+        assert store.events_summary(owner)["categories"]["portfolio"] == 1
+        previous_revision = revised["revision"]
+        store.mark_events_read(owner, [oldest_identity])
+        store.synchronize_events(owner)
+        assert store.events_summary(owner)["categories"]["portfolio"] == 0
+        assert store.get_event(owner, oldest_identity)["revision"] == previous_revision

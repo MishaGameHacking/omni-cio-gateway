@@ -4638,6 +4638,9 @@ body.drawer-open {
   .update-banner .button { white-space: normal; flex-shrink: 0; max-width: 130px; }
   .route-dialog .dialog-header h2 { font-size: 20px; }
 }
+@media (max-width: 360px) {
+  .has-screen-menu[data-screen=""] .screen-menu { grid-template-columns: minmax(0, 1fr); }
+}
 
 .assistant-prefix, .source-document { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
 .source-document { background: var(--panel-deep); padding: 18px; border-radius: 12px; font-size: 14px; line-height: 1.65; }

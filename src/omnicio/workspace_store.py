@@ -22,7 +22,7 @@ from .db import Database, live_execution_lock_key
 from .freshness import PORTFOLIO_MAX_AGE
 from .goal_planning import goal_forecast, goal_plan_fields, normalize_goal_plan
 from .intelligence import ISSUER_NEWS_MAX_AGE
-from .payouts import PAYOUT_IDENTITY_SQL, visible_event_sql
+from .payouts import PAYOUT_IDENTITY_SQL, payout_source_sql, visible_event_sql
 from .portfolio_store import SettingsVersionConflict
 from .workspace import (
     CATEGORIES,
@@ -820,8 +820,8 @@ class WorkspaceStore:
         changed = (
             "CASE WHEN EXCLUDED.kind = 'payout_calendar' "
             "AND EXCLUDED.source ->> 'type' = 'payout' "
-            "THEN (workspace_events.source - ARRAY['id', 'superseded_by']) IS DISTINCT FROM "
-            "(EXCLUDED.source - ARRAY['id', 'superseded_by']) "
+            f"THEN ({payout_source_sql('workspace_events')}) IS DISTINCT FROM "
+            f"({payout_source_sql('EXCLUDED')}) "
             "ELSE workspace_events.source IS DISTINCT FROM EXCLUDED.source END"
         )
         cur.execute(
@@ -997,32 +997,37 @@ class WorkspaceStore:
             "WHERE catalog.provider = 'tbank' AND p.figi <> '' AND catalog.figi = p.figi "
             "GROUP BY catalog.figi HAVING count(*) = 1 AND news.payload -> 'instrument_uids' "
             "? min(catalog.instrument_uid)))) "
-            "ORDER BY news.published_at DESC, news.provider_key LIMIT 100",
+            "ORDER BY (prior.id IS NULL OR prior.source ->> 'document_id' "
+            "IS DISTINCT FROM news.id::text) DESC, news.published_at DESC, "
+            "news.provider_key LIMIT 100",
             (now - ISSUER_NEWS_MAX_AGE, now, now, user_id, account_id, environment,
              user_id, snapshot["id"]),
         )
         for row in cur.fetchall():
-            payload = row["payload"]
-            priority = payload.get("priority") is True
-            if not priority and not row["previously_alerted"]:
-                continue
-            source_url = payload.get("source_url")
-            url = (source_url if isinstance(source_url, str)
-                   and len(source_url.encode("utf-8")) <= 2000 else row["source_url"])
-            summary = str(payload.get("summary") or "")
-            detail = ("Источник отметил публикацию как важную. " if priority else
-                      "Источник снял отметку важности с публикации. ") + summary
-            self._insert_event(
-                cur, user_id, identity=[account_id, environment, row["provider_key"]],
-                category="portfolio", kind="instrument_news", title=payload["title"],
-                detail=detail, severity="warning" if priority else "info", target="portfolio",
-                occurred_at=(row["retrieved_at"] if row["previously_alerted"]
-                             else row["published_at"]),
-                source={"type": "issuer_news", "provider": "tbank", "url": url,
-                        "document_id": str(row["id"]), "news_id": row["provider_key"],
-                        "account_id": account_id, "environment": environment,
-                        "priority": priority, "published_at": row["published_at"].isoformat()},
-            )
+            self._project_news_event(cur, user_id, row, account_id, environment)
+
+    def _project_news_event(
+        self, cur: Any, user_id: UUID, row: Mapping[str, Any],
+        account_id: str, environment: str,
+    ) -> None:
+        payload = row["payload"]
+        priority = payload.get("priority") is True
+        source_url = payload.get("source_url")
+        url = (source_url if isinstance(source_url, str)
+               and len(source_url.encode("utf-8")) <= 2000 else row["source_url"])
+        summary = str(payload.get("summary") or "")
+        detail = ("Источник отметил публикацию как важную. " if priority else
+                  "Источник снял отметку важности с публикации. ") + summary
+        self._insert_event(
+            cur, user_id, identity=[account_id, environment, row["provider_key"]],
+            category="portfolio", kind="instrument_news", title=payload["title"],
+            detail=detail, severity="warning" if priority else "info", target="portfolio",
+            occurred_at=(row["retrieved_at"] if row["previously_alerted"] else row["published_at"]),
+            source={"type": "issuer_news", "provider": "tbank", "url": url,
+                    "document_id": str(row["id"]), "news_id": row["provider_key"],
+                    "account_id": account_id, "environment": environment,
+                    "priority": priority, "published_at": row["published_at"].isoformat()},
+        )
 
     def _risk_events(
         self, cur: Any, user_id: UUID, snapshot_id: UUID,
@@ -1142,7 +1147,7 @@ class WorkspaceStore:
                 ORDER BY provider, instrument_uid, event_type, logical_key,
                     retrieved_at DESC, id DESC
             ), aliases AS (
-                SELECT e.id, e.created_at, pe.provider, pe.instrument_uid, pe.event_type,
+                SELECT e.id, e.revision, pe.provider, pe.instrument_uid, pe.event_type,
                     {PAYOUT_IDENTITY_SQL} AS logical_key,
                     e.source ->> 'superseded_by' AS superseded_by,
                     pe.status, pe.expected_at, pe.amount, pe.currency, sd.source_url
@@ -1176,7 +1181,14 @@ class WorkspaceStore:
                     WHERE (a.provider, a.instrument_uid, a.event_type, a.logical_key) =
                         (latest.provider, latest.instrument_uid,
                          latest.event_type, latest.logical_key)
-                    ORDER BY a.created_at, a.id LIMIT 1
+                    -- Keep an established canonical identity through later reversions.
+                    -- Start from the last projected revision, including its receipts.
+                    ORDER BY EXISTS (SELECT 1 FROM aliases settled
+                        WHERE settled.superseded_by = a.id
+                        AND (settled.provider, settled.instrument_uid,
+                             settled.event_type, settled.logical_key) =
+                            (a.provider, a.instrument_uid, a.event_type, a.logical_key)) DESC,
+                        a.revision DESC, a.id LIMIT 1
                 ) canonical ON true
             )
             SELECT * FROM current_events
@@ -1222,7 +1234,7 @@ class WorkspaceStore:
                     "type": "payout",
                     "id": str(row["id"]),
                     "instrument_uid": row["instrument_uid"],
-                    "expected_at": row["expected_at"],
+                    "expected_at": timestamp(row["expected_at"]),
                     "amount_per_security": str(row["amount"])
                     if row["amount"] is not None
                     else None,
