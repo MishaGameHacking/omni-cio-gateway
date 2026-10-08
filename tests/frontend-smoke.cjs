@@ -3126,6 +3126,23 @@ async function exerciseResearchMathematics({fixture,click,wait,evaluate,configur
     await click('#workspace-dialog [data-close-dialog]');
     await wait('!document.querySelector("#workspace-dialog").open && !location.hash.includes("/strategies/result")', "Back navigation finishes before the next research result opens");
   };
+  const revealSection = async marker => {
+    await evaluate('new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))');
+    const selector = "#dialog-content [" + marker + "]";
+    const visible = await evaluate(`(() => {
+      const section = document.querySelector(${JSON.stringify(selector)});
+      section.scrollIntoView({behavior:'instant',block:'start'});
+      const heading = section.querySelector(':scope > summary, :scope > h3');
+      const rect = heading.getBoundingClientRect();
+      const header = document.querySelector('#workspace-dialog .dialog-header').getBoundingClientRect();
+      return {width:innerWidth,height:innerHeight,top:rect.top,bottom:rect.bottom,headerBottom:header.bottom,
+        hittable:heading.contains(document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2))};
+    })()`);
+    assert.ok(visible.top >= visible.headerBottom, 'The research heading is below the sticky header: ' + marker);
+    assert.ok(visible.bottom <= visible.height, 'The complete research heading fits the viewport: ' + marker);
+    assert.equal(visible.hittable, true, 'The research heading is not covered by another element: ' + marker);
+    console.log(`PASS research heading ${round}/${marker}: ${JSON.stringify(visible)}`);
+  };
   Object.assign(run, {result: {...clone(serverContracts.research_outcomes_result), strategy_version: run.strategy_version}, status: "computed", metrics: clone(serverContracts.research_outcomes_result.metrics)});
   await open();
   await wait('document.querySelector("#dialog-content [data-research-outcomes]")', "The UI receives the actual calculator's historical-outcome schema");
@@ -3137,7 +3154,7 @@ async function exerciseResearchMathematics({fixture,click,wait,evaluate,configur
   assert.ok(insufficient.includes("12") && insufficient.includes("Полных непересекающихся окон недостаточно"), "The longer horizon shows real window counts without inventing a percentage");
   for (const width of [390, 320, 1366]) {
     await configureViewport(width);
-    await evaluate('document.querySelector("#dialog-content [data-research-outcomes]").scrollIntoView({behavior:"instant",block:"start"})');
+    await revealSection("data-research-outcomes");
     await checkLayout(`research-math-${round}-${width}`, {minCharts: 1});
     await screenshot(`research-math-${round}-${width}.png`);
   }
@@ -3172,7 +3189,7 @@ async function exerciseResearchMathematics({fixture,click,wait,evaluate,configur
     else assert.ok(details.includes("600 USD") && details.includes("не гарантирует будущие выплаты"));
     for (const width of [390, 320, 1366]) {
       await configureViewport(width);
-      await evaluate(`document.querySelector('#dialog-content [${marker}]').scrollIntoView({behavior:'instant',block:'start'})`);
+      await revealSection(marker);
       await checkLayout(`research-${label}-${round}-${width}`);
       await screenshot(`research-${label}-${round}-${width}.png`);
     }

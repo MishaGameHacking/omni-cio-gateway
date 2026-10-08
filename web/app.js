@@ -486,6 +486,12 @@
     element.classList.toggle("error", isError);
     element.classList.toggle("success", !isError && Boolean(text));
   };
+  const syncDialogScrollPadding = () => {
+    const dialog = $("#workspace-dialog");
+    if (!dialog.open || !dialog.classList.contains("route-dialog")) return;
+    const height = $(".dialog-header", dialog).getBoundingClientRect().height;
+    dialog.style.setProperty("--dialog-header-height", `${height}px`);
+  };
   const openDialog = (title, content) => {
     captureScreenDrafts();
     const routed = dialogScreens.has(`${state.view}/${state.route.screen}`);
@@ -510,6 +516,7 @@
     restoreScreenDrafts(dialog);
     if (state.outdated) flagApplicationUpdate();
     if (!dialog.open) dialog.showModal();
+    syncDialogScrollPadding();
     U.bindCharts(dialog);
     return dialog;
   };
@@ -6741,6 +6748,10 @@
       }
     });
   }
+  if (window.ResizeObserver) {
+    const headerObserver = new ResizeObserver(syncDialogScrollPadding);
+    headerObserver.observe($("#workspace-dialog .dialog-header"));
+  }
   let scrollSaveScheduled = false;
   window.addEventListener("scroll", () => {
     if (scrollSaveScheduled) return;
@@ -6805,6 +6816,7 @@
     if (window.innerWidth > 960 && !$("#drawer-backdrop").hidden) closeDrawer(false);
     $("#app-sidebar").inert = window.innerWidth <= 960 && $("#drawer-backdrop").hidden;
     syncScreenMenus();
+    syncDialogScrollPadding();
   });
   window.addEventListener("offline", () => { stopQuoteStream(); toast(T("Нет соединения. Новые данные и изменения требуют сети."), true); });
   window.addEventListener("online", () => {

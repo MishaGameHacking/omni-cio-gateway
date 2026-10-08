@@ -4614,7 +4614,7 @@ body.drawer-open {
 .has-screen-menu [data-screen-content]:not([hidden]) { margin-bottom: 22px; min-width: 0; }
 .has-screen-menu .strategy-catalog { position: static; width: 100%; }
 .has-screen-menu #preferences-form { display: contents; }
-.route-dialog { position: fixed; inset: 0; margin: 0; width: 100%; max-width: none; height: 100dvh; max-height: none; border-radius: 0; padding: max(18px, env(safe-area-inset-top)) clamp(18px, 5vw, 80px) max(32px, env(safe-area-inset-bottom)); background: var(--bg); overflow-y: auto; }
+.route-dialog { position: fixed; inset: 0; margin: 0; width: 100%; max-width: none; height: 100dvh; max-height: none; border-radius: 0; padding: max(18px, env(safe-area-inset-top)) clamp(18px, 5vw, 80px) max(32px, env(safe-area-inset-bottom)); background: var(--bg); overflow-y: auto; scroll-padding-top: calc(var(--dialog-header-height, 0px) + max(18px, env(safe-area-inset-top)) + 12px); }
 .route-dialog .dialog-header, .route-dialog #dialog-content { width: min(100%, 1060px); margin-inline: auto; }
 .route-dialog .dialog-header { position: sticky; top: 0; background: var(--bg); z-index: 2; padding-block: 12px; display: flex; flex-direction: row-reverse; justify-content: flex-end; gap: 16px; }
 .route-dialog .dialog-header h2 { flex: 1; }
