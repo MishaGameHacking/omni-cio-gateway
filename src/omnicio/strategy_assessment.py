@@ -39,6 +39,7 @@ _RATING_MAX_AGE = timedelta(days=366)
 _IDENTITY_MAX_AGE = timedelta(days=30)
 _MISSING_PREFIX = "missing:"
 _DIVIDEND_COVERAGE_INVALID = "research_dividend_coverage_invalid"
+_DIVIDEND_COVERAGE_MISSING = "missing:dividend_cashflow_coverage"
 _DIVIDEND_COVERAGE_KEYS = frozenset({
     "issuer_id", "scope", "currency", "period_start", "period_end",
     "operating_cashflow", "capital_expenditure", "gross_dividends_paid", "cashflows_complete",
@@ -1274,18 +1275,18 @@ def _dividend_cashflow_evidence(
 ) -> tuple[dict[str, Any] | None, list[str]]:
     observation = _known_observation(candidate, "dividend_cashflow_coverage", as_of)
     if observation is None:
-        return None, ["missing:dividend_cashflow_coverage"]
+        return None, [_DIVIDEND_COVERAGE_MISSING]
     try:
         value = normalize_dividend_cashflow_coverage(
             observation.value, available_at=observation.available_at,
         )
     except ValueError:
-        return None, ["missing:dividend_cashflow_coverage"]
+        return None, [_DIVIDEND_COVERAGE_MISSING]
     reasons = []
     if value["issuer_id"] != _known_fact(candidate, "issuer_id", as_of):
         reasons.append("dividend_coverage_issuer_mismatch")
     if not value["cashflows_complete"]:
-        reasons.append("missing:dividend_cashflow_coverage")
+        reasons.append(_DIVIDEND_COVERAGE_MISSING)
     earliest = _calendar_horizon_end(Decimal(-18), as_of)
     if earliest is not None and datetime.fromisoformat(value["period_end"]) < earliest:
         reasons.append("dividend_coverage_stale")

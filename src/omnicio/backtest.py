@@ -304,13 +304,19 @@ def _cashflow_window_reasons(
     return sorted(set(reasons))
 
 
-def cashflow_coverage_reasons(asset: ResearchAsset, *, as_of: datetime) -> list[str]:
+def cashflow_coverage_reasons(
+    asset: ResearchAsset,
+    *,
+    as_of: datetime,
+    candles: Sequence[TBankHistoricCandle] | None = None,
+) -> list[str]:
     """Explain whether observed payments can support a complete annual yield.
 
     The observation ends with the latest completed daily candle, not the later
     request clock. Independently supplied dated scalar facts keep their source.
     """
-    income_end = _income_observation_end(asset.candles, as_of)
+    observation_bars = asset.candles if candles is None else candles
+    income_end = _income_observation_end(observation_bars, as_of)
     if income_end is None:
         return ["insufficient_training_history"]
     coverage = asset.provider_observations.get("user_cashflow_coverage")
@@ -326,9 +332,11 @@ def _income_observation_end(
                 if bar.is_complete and as_of - bar.time >= _DAY), default=None)
 
 
-def _cashflow_coverage_diagnostic(asset: ResearchAsset, as_of: datetime) -> dict[str, Any]:
-    reasons = cashflow_coverage_reasons(asset, as_of=as_of)
-    income_end = _income_observation_end(asset.candles, as_of)
+def _cashflow_coverage_diagnostic(
+    asset: ResearchAsset, as_of: datetime, *, candles: Sequence[TBankHistoricCandle],
+) -> dict[str, Any]:
+    reasons = cashflow_coverage_reasons(asset, as_of=as_of, candles=candles)
+    income_end = _income_observation_end(candles, as_of)
     return {
         "status": "complete" if not reasons else "incomplete",
         "reasons": reasons,
@@ -1500,7 +1508,7 @@ def _prepare_research_asset(
     }
     if engine_version == RESEARCH_ENGINE_VERSION:
         diagnostic["cashflow_yield_coverage"] = _cashflow_coverage_diagnostic(
-            replace(asset, candles=training), split,
+            asset, split, candles=training,
         )
     return replace(asset, candles=bars, candidate=candidate), diagnostic
 

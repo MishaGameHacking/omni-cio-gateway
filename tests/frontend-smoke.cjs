@@ -4776,9 +4776,14 @@ async function exerciseCompactScreenMenu({send, configureViewport, round, click,
   assert.equal(await evaluate('document.querySelector("#view-strategies .screen-menu-picker").open'), false);
   assert.ok(await evaluate('document.querySelector("#view-strategies .screen-menu-toggle").textContent.includes("Моя настройка")'));
   await evaluate('document.querySelector("#view-strategies .screen-menu-toggle").focus()');
+  assert.equal(await evaluate('document.activeElement.matches("#view-strategies .screen-menu-toggle")'), true);
   for (const [key, code, virtualKey, expected] of [["Enter", "Enter", 13, true], [" ", "Space", 32, false]]) {
-    for (const type of ["keyDown", "keyUp"]) await send("Input.dispatchKeyEvent", {type, key, code, windowsVirtualKeyCode: virtualKey});
-    await wait(`document.querySelector('#view-strategies .screen-menu-picker').open===${expected}`, "Native keyboard activation toggles the section summary");
+    const nativeKey = {key, code, windowsVirtualKeyCode: virtualKey};
+    // Chromium creates the native Enter keypress only when keyDown carries text.
+    const text = key === "Enter" ? "\r" : key;
+    await send("Input.dispatchKeyEvent", {...nativeKey, type: "keyDown", text, unmodifiedText: text});
+    await send("Input.dispatchKeyEvent", {...nativeKey, type: "keyUp"});
+    await wait(`document.querySelector('#view-strategies .screen-menu-picker').open===${expected}`, "Native keyboard activation toggles the section summary: " + code);
   }
   assert.deepEqual(await evaluate('({hash:location.hash,history:history.length,value:document.querySelector("#allocation-shares").value})'), before, "Opening a menu cannot navigate or change a draft");
   for (const width of [1366, 390, 320]) {

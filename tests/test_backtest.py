@@ -361,6 +361,23 @@ def test_training_coverage_diagnostic_uses_the_last_completed_observation_end():
     assert coverage["reasons"] == ["cashflow_coverage_incomplete"]
 
 
+def test_empty_training_coverage_does_not_fall_back_to_older_asset_candles():
+    asset = prices()
+    asset = replace(asset, candles=tuple(
+        replace(bar, time=bar.time - timedelta(days=200)) for bar in asset.candles
+    ), provider_observations={"user_cashflow_coverage": income_coverage(START)})
+    assert cashflow_coverage_reasons(asset, as_of=START) == []
+    assert cashflow_coverage_reasons(asset, as_of=START, candles=()) == [
+        "insufficient_training_history",
+    ]
+    result = run([asset])
+    coverage = result["asset_diagnostics"][0]["cashflow_yield_coverage"]
+    assert coverage == {
+        "status": "incomplete", "reasons": ["insufficient_training_history"],
+        "window_days": 365, "as_of": None,
+    }
+
+
 @pytest.mark.parametrize(
     "hours,value,source,expected,expected_hours",
     [

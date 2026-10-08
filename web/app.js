@@ -2734,8 +2734,12 @@
   };
   const researchSourceAmount = (value, currency) => {
     if (typeof value !== "string" || !/^-?\d+(?:\.\d+)?$/.test(value) || !/^[A-Z]{3}$/.test(currency)) return "—";
-    const exact = value.includes(".") ? value.replace(/0+$/, "").replace(/\.$/, "") : value;
-    return `${exact} ${currency}`;
+    let end = value.length;
+    if (value.includes(".")) {
+      while (end > 0 && value[end - 1] === "0") end -= 1;
+      if (value[end - 1] === ".") end -= 1;
+    }
+    return `${value.slice(0, end)} ${currency}`;
   };
   const assessmentValue = (value, key = "") => {
     if (value === null || value === undefined) return "—";
@@ -2787,7 +2791,9 @@
     const coverage = item.dividend_cashflow_coverage;
     if (!coverage || typeof coverage !== "object") return "";
     const amounts = [["operating", "operating_cashflow"], ["capex", "capital_expenditure"], ["free", "free_cashflow"], ["paid", "gross_dividends_paid"]].map(([label, field]) => [T(`research.dividend.${label}`), researchSourceAmount(coverage[field], coverage.currency)]);
-    return `<details class="section-gap" data-dividend-coverage><summary class="details-summary">${H("research.dividend.title")} · ${esc(item.ticker || item.instrument_uid)}</summary>${infoRows([[T("research.dividend.period"), `${date(coverage.period_start)} — ${date(coverage.period_end)}`], ...amounts, [T("research.dividend.ratio"), `${format(coverage.coverage_ratio, 4)} ×`]])}<p class="fine-print">${H("research.dividend.scope")}</p><p class="fine-print">${esc(date(coverage.available_at, true))} ${U.sourceLink(coverage.source_url, T("Источник"))}</p></details>`;
+    const rows = [[T("research.dividend.period"), `${date(coverage.period_start)} — ${date(coverage.period_end)}`], ...amounts,
+      [T("research.dividend.ratio"), `${format(coverage.coverage_ratio, 4)} ×`]];
+    return `<details class="section-gap" data-dividend-coverage><summary class="details-summary">${H("research.dividend.title")} · ${esc(item.ticker || item.instrument_uid)}</summary>${infoRows(rows)}<p class="fine-print">${H("research.dividend.scope")}</p><p class="fine-print">${esc(date(coverage.available_at, true))} ${U.sourceLink(coverage.source_url, T("Источник"))}</p></details>`;
   };
   const ladderRungsHTML = selection => {
     const rungs = selection.ladder_rungs;
