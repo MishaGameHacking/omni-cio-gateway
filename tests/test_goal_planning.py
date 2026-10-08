@@ -44,6 +44,83 @@ def test_zero_return_has_exact_linear_growth_and_required_contribution() -> None
     assert result["source_as_of"] == "2026-01-01T00:00:00+00:00"
 
 
+@pytest.mark.parametrize("kind,annual_return,inflation", [
+    ("capital", "0", "0"), ("capital", "-30", "10"),
+    ("capital", "15", "0"), ("income", "0", "0"),
+])
+def test_minimum_monthly_payment_reaches_target_and_one_kopeck_less_does_not(
+    kind: str, annual_return: str, inflation: str,
+) -> None:
+    observed = goal(kind=kind, target_amount_rub="100", target_date="2026-04-01",
+                    progress={"amount_rub": "0", "status": "available"})
+    assumptions = plan(monthly_contribution_rub="0", monthly_income_rub="0",
+                       annual_return_percent=annual_return, annual_inflation_percent=inflation)
+    result = goal_forecast(observed, assumptions, today=date(2026, 1, 1))
+    payment = Decimal(result["required_monthly_rub"])
+    field = "monthly_income_rub" if kind == "income" else "monthly_contribution_rub"
+    funded = goal_forecast(observed, {**assumptions, field: str(payment)}, today=date(2026, 1, 1))
+    short = goal_forecast(observed, {**assumptions, field: str(payment - Decimal("0.01"))},
+                          today=date(2026, 1, 1))
+    assert funded["deterministic_months_to_target"] is not None
+    assert short["deterministic_months_to_target"] is None
+    assert Decimal(funded["projected_amount_rub"]) >= Decimal(
+        funded["inflation_adjusted_target_rub"],
+    )
+
+
+def test_allocated_portfolio_progress_keeps_derived_decimal_precision_in_forecast() -> None:
+    from omnicio.workspace import goal_progress
+
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    document = {**goal(), "progress_source": "portfolio", "account_id": "A",
+                "environment": "prod", "allocation_percent": "33.333333333"}
+    progress = goal_progress(
+        document, connection={"account_id": "A", "environment": "prod"},
+        snapshot={"captured_at": now, "analysis_status": "observed", "nav_rub": "1000.01"},
+        operations=[], watermark=None, history_complete=True, now=now,
+    )
+    assert progress["amount_rub"] == "333.3366666633333"
+    result = goal_forecast({**document, "progress": progress}, plan(), today=now.date())
+    assert result["status"] == "available"
+    assert result["source_amount_rub"] == progress["amount_rub"]
+    assert result["projected_amount_rub"] == "120333.34"
+
+
+def test_allocated_income_preserves_twenty_decimal_places_without_relaxing_user_inputs() -> None:
+    from omnicio.workspace import goal_progress
+
+    now = datetime(2026, 1, 2, tzinfo=UTC)
+    document = {**goal(kind="income"), "progress_source": "income", "account_id": "A",
+                "environment": "prod", "allocation_percent": "0.000000001",
+                "start_date": "2026-01-01"}
+    progress = goal_progress(
+        document, connection={"account_id": "A", "environment": "prod"}, snapshot=None,
+        operations=[{"operation_date": now, "operation_type": "OPERATION_TYPE_COUPON",
+                     "operation_state": "OPERATION_STATE_EXECUTED",
+                     "payment_value": "0.000000001", "payment_currency": "RUB"}],
+        watermark=now, history_complete=True, now=now,
+    )
+    result = goal_forecast({**document, "progress": progress}, plan(), today=now.date())
+    assert result["status"] == "available"
+    assert Decimal(result["source_amount_rub"]) == Decimal("1e-20")
+    with pytest.raises(ValueError, match="precision"):
+        normalize_goal_plan(plan(monthly_income_rub="0.000000001"), kind="income")
+
+
+def test_deterministic_attainment_uses_unrounded_amounts_and_large_money_is_decimal() -> None:
+    almost = goal(target_amount_rub="100", target_date="2026-02-01",
+                  progress={"amount_rub": "99.995", "status": "available"})
+    result = goal_forecast(almost, plan(monthly_contribution_rub="0"), today=date(2026, 1, 1))
+    assert result["projected_amount_rub"] == "100.00"
+    assert result["deterministic_months_to_target"] is None
+    assert result["required_monthly_rub"] == "0.01"
+    large = goal(target_date="2056-01-01", target_amount_rub="1000000000000",
+                 progress={"amount_rub": "999999999999.99", "status": "available"})
+    result = goal_forecast(large, plan(monthly_contribution_rub="999999999999.99"),
+                           today=date(2026, 1, 1))
+    assert result["projected_amount_rub"] == "360999999999996.39"
+
+
 def test_stale_portfolio_progress_cannot_be_presented_as_a_current_forecast() -> None:
     from omnicio.workspace import goal_progress
 

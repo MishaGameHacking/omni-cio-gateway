@@ -511,7 +511,7 @@ def _maturity_terms(
     return terms, covered
 
 
-def _calendar_days(months: Decimal, now: datetime) -> Decimal | None:
+def calendar_horizon_days(months: Decimal, now: datetime) -> Decimal | None:
     limit_month = now.year * 12 + now.month - 1 + int(months)
     year, month0 = divmod(limit_month, 12)
     if year > 9999:
@@ -534,7 +534,7 @@ def _term_check(
 ) -> dict[str, Any]:
     state: _State = "unknown"
     detail = "Неизвестны срок или условия погашения. Дата погашения не обещает возврат денег."
-    max_days = _calendar_days(months, now) if months is not None else None
+    max_days = calendar_horizon_days(months, now) if months is not None else None
     if not has_bonds:
         state, detail = "inapplicable", "Сейчас нет оценённых облигаций для сравнения срока."
     elif max_days is not None:
@@ -887,7 +887,7 @@ def _numeric_fact(
         value = Decimal(raw)
     except InvalidOperation:
         return None
-    return value if value.is_finite() and abs(value) <= Decimal("1e15") else None
+    return value if value.is_finite() and value.copy_abs() <= Decimal("1e15") else None
 
 
 def _constituents_known(candidate: StrategyCandidateFacts, as_of: datetime) -> bool:
@@ -932,7 +932,7 @@ def _bond_maturity(
             reasons.append("missing:maturity_limit")
         elif maturity <= as_of or any(
             Decimal(str((maturity - as_of).total_seconds())) / 86400
-            > (_calendar_days(limit, as_of) or _ZERO)
+            > (calendar_horizon_days(limit, as_of) or _ZERO)
             for limit in limits
             if limit is not None
         ):
@@ -1485,7 +1485,7 @@ def select_strategy_candidates(
     candidates: Sequence[StrategyCandidateFacts],
     *,
     as_of: datetime,
-    engine_version: str = "1.3.0",
+    engine_version: str = "1.3.1",
 ) -> dict[str, Any]:
     """Screen dated facts, rank by the mandate and allocate bounded research weights.
 
@@ -1494,7 +1494,7 @@ def select_strategy_candidates(
     """
     data = normalize_document(document)
     if (as_of.tzinfo is None or len(candidates) > 100
-            or engine_version not in {"1.1.0", "1.2.0", "1.3.0"}):
+            or engine_version not in {"1.1.0", "1.2.0", "1.3.0", "1.3.1"}):
         raise ValueError("strategy_candidate_input_invalid")
     ids = [row.instrument_uid for row in candidates]
     if any(not uid for uid in ids) or len(ids) != len(set(ids)):
@@ -1502,7 +1502,10 @@ def select_strategy_candidates(
     rows, eligible = _rank_candidates(data, candidates, as_of)
     missing: set[str] = set()
     mode = strategy_rule_set(data["base_preset_id"])["ranking"]
-    if mode == "regime_risk" and len({bucket for _, _, bucket in eligible}) < 4:
+    cash_only = data["allocation"]["cash"] == 100
+    if mode == "regime_risk" and len({bucket for _, _, bucket in eligible}) < 4 and not (
+        cash_only and engine_version == "1.3.1"
+    ):
         missing.add("four_economic_regimes")
     used: _ExposureLedger = {
         name: defaultdict(Decimal) for name in ("issuer", "sector", "group", "rating", "credit")
@@ -1522,7 +1525,7 @@ def select_strategy_candidates(
         if reason.startswith(_MISSING_PREFIX)
     )
     total = sum((Decimal(item["target_weight_percent"]) for item in selected), _ZERO)
-    ready = bool(selected) and not missing
+    ready = (bool(selected) or (cash_only and engine_version == "1.3.1")) and not missing
     if ready:
         status = "ready"
     elif selected:

@@ -85,6 +85,36 @@ def test_user_facts_keep_declared_date_and_do_not_claim_complete_cashflow_histor
     assert asset.cashflow_history_verified is False
 
 
+@pytest.mark.parametrize("value", ["1e1000000", "-1e1000000", "1e-1000000", "0e1000000"])
+def test_extreme_decimal_exponents_are_rejected_before_arithmetic_or_expansion(value):
+    data = evidence_document()
+    data["assets"][0]["facts"]["roe_percent"]["value"] = value
+    with pytest.raises(ValueError, match="research_evidence_number_invalid"):
+        normalize_research_evidence(data)
+
+
+@pytest.mark.parametrize("value", ["1e15", "-1e15", "1e-28", "0"])
+def test_bounded_evidence_decimals_keep_their_exact_value(value):
+    data = evidence_document()
+    data["assets"][0]["facts"]["roe_percent"]["value"] = value
+    normalized = normalize_research_evidence(data)
+    actual = normalized["assets"][0]["facts"]["roe_percent"]["value"]
+    assert Decimal(actual) == Decimal(value)
+
+
+def test_confirmed_user_zero_debt_remains_distinct_from_provider_missing_zero():
+    data = evidence_document()
+    data["assets"][0]["facts"] = {
+        "debt_to_ebitda": {"value": "0", "available_at": START.isoformat(), "source_url": SOURCE},
+    }
+    normalized = normalize_research_evidence(data)["assets"][0]
+    asset = _user_asset_evidence(prices(), normalized, START, END)
+    fact = asset.candidate.facts["debt_to_ebitda"]
+    assert fact.value == 0
+    assert fact.source_url == SOURCE
+    assert fact.available_at == START
+
+
 @pytest.mark.parametrize("changed", ["paid_at", "entitlement_at", "both"])
 def test_complete_user_cashflows_replace_corrected_dates_without_doubling_nav(changed):
     from omnicio.backtest import HistoricalCashflow
@@ -203,7 +233,7 @@ def test_archive_roundtrip_reproduces_exact_hash_metrics_and_curve_without_provi
         replay_research_inputs(inputs)
 
 
-@pytest.mark.parametrize("engine_version", ["1.1.0", "1.2.0"])
+@pytest.mark.parametrize("engine_version", ["1.1.0", "1.2.0", "1.3.0"])
 def test_archive_replay_keeps_versioned_allocation_and_dated_observations(engine_version):
     from omnicio.backtest import HistoricalCashflow
 

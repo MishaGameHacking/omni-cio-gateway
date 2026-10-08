@@ -2367,7 +2367,7 @@ def cbr_market_indicators(
     response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict[str, object]:
-    authenticated_user(request, session_token)
+    user = authenticated_user(request, session_token)
     try:
         snapshot = market_service(request).cbr_indicators()
     except CBRUnavailable as exc:
@@ -2376,7 +2376,7 @@ def cbr_market_indicators(
             detail="Bank of Russia indicators unavailable",
         ) from exc
     response.headers["Cache-Control"] = _PRIVATE_NO_STORE
-    return asdict(snapshot)
+    return _workspace_result(request, session_token, user, asdict(snapshot))
 
 
 @app.get(
@@ -2406,7 +2406,7 @@ def usd_rub_market_snapshot(
             status_code=503,
             detail="USD/RUB market quote unavailable",
         ) from exc
-    return asdict(snapshot)
+    return _workspace_result(request, session_token, user, asdict(snapshot))
 
 
 async def _stream_session_current(

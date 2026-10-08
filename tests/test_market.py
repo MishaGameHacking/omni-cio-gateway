@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from threading import Event
 from unittest.mock import Mock, patch
@@ -423,6 +424,56 @@ def test_market_service_marks_old_provider_timestamp_stale() -> None:
 
     assert snapshot.status == "stale"
     assert snapshot.age_seconds > 30
+
+
+@pytest.mark.parametrize("ahead_seconds", [5, 6])
+def test_fx_quote_uses_the_same_provider_clock_tolerance_as_instrument_quotes(
+    ahead_seconds: int,
+) -> None:
+    now = datetime(2026, 10, 8, tzinfo=UTC)
+    broker = FakeBroker((now + timedelta(seconds=ahead_seconds)).isoformat())
+    service = MarketService(broker=broker, cbr=FakeCBR())  # type: ignore[arg-type]
+    owner = UUID("00000000-0000-0000-0000-000000000001")
+    with patch("omnicio.market.datetime") as clock:
+        clock.now.return_value = now
+        clock.fromisoformat.side_effect = datetime.fromisoformat
+        if ahead_seconds == 5:
+            snapshot = service.usd_rub(owner)
+            assert snapshot.status == "live"
+            assert snapshot.age_seconds == 0
+        else:
+            with pytest.raises(TBankUnavailable, match="quote_timestamp"):
+                service.usd_rub(owner)
+
+
+@pytest.mark.parametrize("changes", [
+    {"price": "0"}, {"price": "-83.37"}, {"price": "NaN"}, {"currency": "EUR"},
+])
+def test_invalid_fx_price_or_currency_cannot_be_presented_as_live(
+    changes: dict[str, str],
+) -> None:
+    owner = UUID("00000000-0000-0000-0000-000000000001")
+    broker = FakeBroker(datetime.now(UTC).isoformat())
+    quote = replace(broker.usd_rub_quote(owner), **changes)
+    with patch.object(broker, "usd_rub_quote", return_value=quote):
+        service = MarketService(broker=broker, cbr=FakeCBR())  # type: ignore[arg-type]
+        with pytest.raises(TBankUnavailable):
+            service.usd_rub(owner)
+
+
+@pytest.mark.parametrize("previous", ["0", "-83.10", "NaN"])
+def test_invalid_fx_previous_close_does_not_hide_valid_current_quote(previous: str) -> None:
+    owner = UUID("00000000-0000-0000-0000-000000000001")
+    broker = FakeBroker(datetime.now(UTC).isoformat())
+    quote = replace(broker.usd_rub_quote(owner), previous_close=previous)
+    with patch.object(broker, "usd_rub_quote", return_value=quote):
+        service = MarketService(broker=broker, cbr=FakeCBR())  # type: ignore[arg-type]
+        snapshot = service.usd_rub(owner)
+    assert snapshot.status == "live"
+    assert snapshot.price == "83.37"
+    assert snapshot.previous_close is None
+    assert snapshot.change is None
+    assert snapshot.change_percent is None
 
 
 def test_market_service_instrument_snapshot_preserves_quote_time_ohlc_and_status() -> None:

@@ -717,9 +717,255 @@ const displayContracts = () => {
   quoteChartPrecisionContracts(ui);
   goalVersionContracts(ui);
   chartAxisContracts(ui);
+  researchMathContracts(ui, context.window.OMNICIO_I18N);
   viewportSizeContracts();
   console.log("PASS display contracts: unknown values, source escaping, privacy, real-series requirements and locale");
 };
+function researchMathContracts(ui, i18n) {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const helpers = app.slice(app.indexOf("  const researchCashProjectionHTML ="), app.indexOf("  const researchWindowHTML ="));
+  const freshnessCheck = app.slice(app.indexOf("  const assessmentIsCurrent ="), app.indexOf("  const renderAssessment ="));
+  const context = vm.createContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
+    infoRows: ui.infoRows, format: ui.format, percent: ui.percent, money: ui.money, date: ui.date,
+    renderFundamentalMetricsHTMLLi2: value => `<li>${ui.escape(value)}</li>`, Date, Number});
+  vm.runInContext(helpers + freshnessCheck + "\nglobalThis.renderOutcomes=researchOutcomesHTML; globalThis.renderCash=researchCashProjectionHTML; globalThis.renderWindow=researchOutcomeWindowHTML; globalThis.current=assessmentIsCurrent;", context);
+  const result = serverContracts.research_outcomes_result;
+  assert.equal(result.historical_outcomes.horizons[0].profit_frequency_percent, "50");
+  for (const locale of ["ru", "en"]) {
+    ui.setLocale(locale);
+    const html = context.renderOutcomes(result);
+    assert.ok(html.includes(ui.escape(i18n.t("research.outcomes.title"))));
+    assert.ok(html.includes(ui.escape(i18n.t("research.outcomes.scope"))), "Observed frequency retains its non-forecast scope in both languages");
+    assert.ok(html.includes(ui.escape(ui.percent("50"))));
+    assert.ok(html.includes(ui.escape(i18n.t("research.outcomes.too_few"))), "Insufficient longer horizons retain their actual counts and reason");
+    assert.ok(html.includes(ui.escape(i18n.t("research.outcomes.interval"))));
+    assert.ok(!html.includes("undefined") && !html.includes("NaN"));
+    const weekly = result.historical_outcomes.horizons[1];
+    const unavailable = context.renderWindow({...weekly, profit_frequency_percent: "99.999"});
+    assert.ok(!unavailable.includes("99.999"), "An unavailable estimate cannot become a displayed percentage even if a stale value is present");
+    const cash = context.renderCash(serverContracts.research_cash_result);
+    assert.ok(cash.includes(ui.escape(i18n.t("research.cash.no_observations"))));
+    assert.ok(!cash.includes("chart-path") && !cash.includes("data-research-outcome-sessions"));
+    const incomplete = context.renderCash(serverContracts.research_cash_incomplete_result);
+    assert.ok(incomplete.includes(ui.escape(i18n.t("research.cash.conditions_missing"))));
+  }
+  const observed = Date.now();
+  const assessment = {strategy_version: 7, captured_at: new Date(observed).toISOString(), valid_until: new Date(observed + 300000).toISOString(), checks: []};
+  assert.equal(context.current(assessment, 7), true);
+  assert.equal(context.current(assessment, 8), false, "A newer remote strategy version cannot inherit a still-recent old assessment");
+  assert.equal(context.current({...assessment, captured_at: new Date(observed - 600000).toISOString(), valid_until: new Date(observed - 300000).toISOString()}, 7), false);
+  assert.equal(context.current({...assessment, valid_until: undefined}, 7), false);
+  assert.equal(context.current({...assessment, captured_at: new Date(observed + 60000).toISOString(), valid_until: new Date(observed + 360000).toISOString()}, 7), false);
+  let clock = observed, expire;
+  const panel = {innerHTML: ""};
+  Object.assign(context, {state: {generation: 1, loading: new Set(), errors: {}, strategy: {assessment, server: {version: 7}}},
+    Date: class extends Date { static now() { return clock; } }, setTimeout: callback => { expire = callback; return 1; }, clearTimeout() {},
+    $: () => panel, freshness: ui.freshness, selectionHTML: () => "", renderAssessmentDetailsSummary: () => ""});
+  const render = app.slice(app.indexOf("  const renderAssessment ="), app.indexOf("  const assessStrategy ="));
+  vm.runInContext(render + "\nglobalThis.renderAssessmentNow=renderAssessment;", context);
+  assert.ok(!context.renderAssessmentNow().includes("data-assessment-expired"));
+  assert.equal(typeof expire, "function");
+  clock += 300001;
+  expire();
+  assert.ok(panel.innerHTML.includes("data-assessment-expired"), "The assessment expires locally without a network refresh or form rerender");
+  console.log("PASS research contracts: real calculator results, historical frequency limits, explicit cash model and expiring account assessment");
+}
+async function ledgerPaginationContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  async function loadLedgerPage()"), app.indexOf("  function supportAddress("));
+  const state = {generation: 1, view: "portfolio", data: {ledger: {items: [{id: "old"}], next_cursor: "cursor-old"}}, errors: {}, loading: new Set(), resourceVersions: new Map([["ledger", 1]])};
+  let resolveRead, requests = 0, merges = 0;
+  const context = vm.createContext({state, encodeURIComponent, isCancelled: () => false, renderPortfolio() {},
+    api: () => { requests += 1; return new Promise(resolve => { resolveRead = resolve; }); },
+    mergePage: (before, after) => { merges += 1; return {...after, items: [...before.items, ...after.items]}; }});
+  vm.runInContext(source + "\nglobalThis.load=loadLedgerPage;", context);
+  const pending = context.load();
+  const corrected = {items: [{id: "corrected"}], next_cursor: "cursor-new"};
+  state.data.ledger = corrected;
+  resolveRead({items: [{id: "stale-page"}], next_cursor: null});
+  await pending;
+  assert.equal(state.data.ledger, corrected, "A late page from the prior snapshot cannot replace a corrected first page");
+  assert.equal(merges, 0);
+  const oldMore = context.load();
+  state.resourceVersions.set("ledger", 2);
+  const newError = Object.assign(new Error("Newer first-page reload failed"), {code: "request_timeout"});
+  state.errors.ledger = newError;
+  resolveRead({items: [{id: "old-more"}], next_cursor: null});
+  await oldMore;
+  assert.equal(state.errors.ledger, newError, "An older page cannot erase a failed newer refresh and its recovery action");
+  assert.equal(merges, 0);
+  context.api = async () => { requests += 1; throw Object.assign(new Error("history changed"), {code: "workspace_operation_history_changed"}); };
+  await context.load();
+  assert.equal(state.errors.ledger.code, "workspace_operation_history_changed");
+  await context.load();
+  assert.equal(requests, 3, "A rejected frozen cursor requires a first-page reload instead of repeating it");
+  assert.equal(state.loading.has("ledger-more"), false);
+  console.log("PASS ledger pagination contracts: corrected snapshots and explicit cursor restart");
+}
+async function strategyInputContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const between = (from, to) => {
+    const start = app.indexOf(from);
+    const end = app.indexOf(to, start + from.length);
+    assert.ok(start >= 0 && end > start, from);
+    return app.slice(start, end);
+  };
+  const source = [
+    between("  const writePayload = ", "  const editPreferences = "),
+    between("  const documentChanged = ", "  const redistribute = "),
+    between("  const updateStrategyField = ", "  const stepField = "),
+    between("  function renderUpdateStrategyFieldValue(", "  function renderStepFieldValue("),
+    between("  const strategySaveUnavailable = ", "  const updateStrategySaveControls = "),
+    between("  const reloadVersioned = ", "  const saveErrorHTML = "),
+    between("  function adoptStrategy(", "  const strategySaveUnavailable = "),
+    between("  function renderUpdateSaveStatusValue(", "  function renderUpdateSaveStatusValue5(")
+  ].join("\n");
+
+  function numericInput(name, value, valid = true, badInput = false) {
+    const attributes = new Map();
+    return {
+      name, value, type: "number", nativeValid: valid, badInput, customError: "",
+      get validity() { return {valid: this.nativeValid && !this.customError, badInput: this.badInput}; },
+      setAttribute(name, value) { attributes.set(name, value); },
+      removeAttribute(name) { attributes.delete(name); },
+      setCustomValidity(value) { this.customError = value; },
+      getAttribute(name) { return attributes.get(name); }
+    };
+  }
+
+  function fixture() {
+    const document = {
+      profile: {reserve_rub: "5000", horizon_months: "24", max_drawdown_percent: "20"},
+      policy: {turnover_budget_percent: "20"},
+      rules: {rating_caps: {AAA: "0.1234"}}, customized: false
+    };
+    const state = {generation: 1, user: {public_id: "123456789"}, locked: false, data: {},
+      strategy: {server: {version: 1, document: structuredClone(document)}, draft: structuredClone(document),
+        invalidInputs: {}, revision: 0, dirty: false, busy: false, error: null}};
+    let present = true, hold = false, release;
+    let remote = structuredClone(state.strategy.server);
+    const writes = [], controls = [], statuses = [];
+    const form = {elements: controls, checkValidity: () => controls.every(input => input.validity.valid)};
+    const context = vm.createContext({
+      state, structuredClone, clone: structuredClone, same: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+      $: () => present ? form : null, window: {setTimeout: () => 1}, clearTimeout() {},
+      updateSaveStatus() { statuses.push({dirty: state.strategy.dirty, error: state.strategy.error?.message || null}); },
+      applySavedEffects() { statuses.push({dirty: state.strategy.dirty, error: state.strategy.error?.message || null}); },
+      validRecord: record => Number.isInteger(record?.version) && !!record.document,
+      isCancelled: () => false, renderCurrent() {}, toast() {}, T: value => value, humanError: error => error.message,
+      api: async (_url, options) => {
+        if (!options) return {selection: structuredClone(remote)};
+        writes.push(structuredClone(options.body));
+        if (hold) await new Promise(resolve => { release = resolve; });
+        remote = {version: options.body.expected_version + 1, document: structuredClone(options.body.document)};
+        return {selection: structuredClone(remote)};
+      }
+    });
+    vm.runInContext(source + `
+      globalThis.edit = updateStrategyField;
+      globalThis.save = () => saveVersioned("strategy");
+      globalThis.retry = () => retryVersioned("strategy");
+      globalThis.reload = () => reloadVersioned("strategy", true);
+      globalThis.blocked = () => strategySaveUnavailable(state.strategy);
+      globalThis.status = () => state.strategy.error ? renderUpdateSaveStatusValue(state.strategy) : renderUpdateSaveStatusValue4(state.strategy);
+    `, context);
+    return {state, context, writes, controls, statuses,
+      add(name, value, valid = true, badInput = false) {
+        const input = numericInput(name, value, valid, badInput);
+        controls.push(input);
+        return input;
+      },
+      removeForm() { present = false; },
+      restoreForm() { present = true; },
+      holdNextWrite() { hold = true; },
+      releaseWrite() { hold = false; release(); },
+      remote(record) { remote = structuredClone(record); }
+    };
+  }
+
+  async function exercise() {
+    const active = fixture();
+    const amount = active.add("strategy.profile.reserve_rub", "6000");
+    active.context.edit(amount);
+    active.holdNextWrite();
+    const pending = active.context.save();
+    assert.equal(active.writes.length, 1);
+    amount.value = "";
+    amount.nativeValid = false;
+    amount.badInput = true;
+    active.context.edit(amount);
+    active.removeForm();
+    active.releaseWrite();
+    await pending;
+
+    assert.equal(active.writes.length, 1, "No subsequent PUT after an invalid edit and route change");
+    assert.equal(active.state.strategy.draft.profile.reserve_rub, "6000", "Incomplete input cannot change the numeric draft");
+    assert.equal(active.state.strategy.server.document.profile.reserve_rub, "6000");
+    assert.equal(active.state.strategy.invalidInputs[amount.name], "");
+    assert.equal(active.context.status(), "error", "Late ACK cannot claim saved while input is invalid");
+    assert.equal(active.context.blocked(), true, "Research and execution remain blocked");
+    assert.equal(active.state.strategy.dirty, true);
+
+    active.restoreForm();
+    amount.value = "6000";
+    amount.nativeValid = true;
+    amount.badInput = false;
+    active.context.edit(amount);
+    assert.equal(active.context.status(), "saved", "Correction to the last actual value recovers without a duplicate write");
+    assert.equal(active.writes.length, 1);
+    amount.value = "";
+    active.context.edit(amount);
+    await active.context.save();
+    assert.equal(active.writes.at(-1).document.profile.reserve_rub, null, "Intentional valid clearing still saves unknown");
+    assert.equal(active.context.status(), "saved");
+    assert.equal(Object.hasOwn(active.writes.at(-1).document, "invalidInputs"), false, "Browser validation metadata is never part of the wire document");
+
+    const multiple = fixture();
+    const invalidAmount = multiple.add("strategy.profile.reserve_rub", "", false, true);
+    const fractionalMonths = multiple.add("strategy.profile.horizon_months", "6.5", false);
+    multiple.context.edit(invalidAmount);
+    multiple.context.edit(fractionalMonths);
+    assert.equal(multiple.state.strategy.draft.profile.horizon_months, "24", "Integer-only terms are never silently floored");
+    invalidAmount.value = "5000";
+    invalidAmount.nativeValid = true;
+    invalidAmount.badInput = false;
+    multiple.context.edit(invalidAmount);
+    multiple.removeForm();
+    await multiple.context.save();
+    assert.equal(multiple.writes.length, 0);
+    assert.equal(multiple.state.strategy.dirty, true, "Recovering one field cannot hide another invalid field");
+    assert.equal(multiple.context.status(), "error");
+    multiple.remote({version: 2, document: structuredClone(multiple.state.strategy.draft)});
+    await multiple.context.retry();
+    assert.equal(multiple.context.status(), "error", "Successful reconciliation cannot clear validation metadata");
+    assert.equal(multiple.context.blocked(), true);
+    assert.equal(multiple.state.strategy.invalidInputs[fractionalMonths.name], "6.5");
+    multiple.remote({version: 3});
+    await multiple.context.reload();
+    assert.equal(multiple.state.strategy.invalidInputs[fractionalMonths.name], "6.5", "An incomplete read response cannot discard pending input");
+    multiple.remote({version: 2, document: structuredClone(multiple.state.strategy.draft)});
+    await multiple.context.reload();
+    assert.equal(Object.keys(multiple.state.strategy.invalidInputs).length, 0, "Explicit server reload discards invalid input");
+    assert.equal(multiple.context.status(), "saved");
+
+    const exact = fixture();
+    for (const [name, value] of [["strategy.profile.reserve_rub", "123456789.12345678"], ["strategy.policy.turnover_budget_percent", "20.375"], ["strategy.profile.max_drawdown_percent", "0.1234"]]) {
+      exact.context.edit(exact.add(name, value));
+    }
+    await exact.context.save();
+    assert.equal(exact.writes.length, 1);
+    assert.equal(exact.writes[0].document.profile.reserve_rub, "123456789.12345678");
+    assert.equal(exact.writes[0].document.profile.max_drawdown_percent, "0.1234");
+    assert.equal(exact.writes[0].document.policy.turnover_budget_percent, "20.375");
+    const rating = exact.add("strategy.rules.rating_caps.AAA", "", false);
+    exact.context.edit(rating);
+    await exact.context.save();
+    assert.equal(exact.writes.length, 1, "Clearing a required numeric rule cannot save null");
+    assert.equal(exact.state.strategy.draft.rules.rating_caps.AAA, "0.1234");
+    console.log("PASS actual-source strategy numeric input: held ACK, removed DOM, valid null, exact decimals, integer rejection, multiple invalid fields, reconciliation and explicit reload.");
+  }
+  await exercise();
+}
 function startupBuildContracts() {
   for (const [bundleBuild, releaseBuild] of [["__OMNICIO_BUILD__", undefined], [build, undefined], [build, build]]) {
     const reachedApplication = new Error("compatible modules reached document initialization");
@@ -1911,6 +2157,8 @@ const runBrowser = async base => {
 (async () => {
   try {
     displayContracts();
+    await ledgerPaginationContracts();
+    await strategyInputContracts();
     await installLifecycleContracts();
     await installPromptInterleavingContracts();
     await pushEndpointContracts();
@@ -2256,7 +2504,8 @@ async function serveTestProfileStrategyAccountAssessment({
     strategy_version: fixture.selection.version,
     status: "assessed",
     nav_rub: "150000.25",
-    captured_at: stamp,
+    captured_at: new Date().toISOString(),
+    valid_until: new Date(Date.now() + 300000).toISOString(),
     checks: [{
       title: "Проверка доли",
       state: "pass",
@@ -2826,6 +3075,52 @@ async function exerciseResearchSubmission({fixture,click,fieldValue,wait,evaluat
   assert.ok(coverage.includes("Выплаты из API источника") && coverage.includes("история размеров лота") && coverage.includes("НКД на открытие"));
   assert.ok(!coverage.includes("bond_nkd_open_close_timing"),"Missing evidence is explained in user language");
 }
+async function exerciseResearchMathematics({fixture,click,wait,evaluate,configureViewport,checkLayout,screenshot,round}) {
+  const run = fixture.researchRuns[0];
+  const original = clone(run);
+  const open = async () => {
+    await click('#strategy-research [data-research-operation="open"]');
+    await wait('document.querySelector("#workspace-dialog").open && location.hash.includes("/strategies/result")', "The saved research has its own addressable result screen");
+  };
+  const close = async () => {
+    await click('#workspace-dialog [data-close-dialog]');
+    await wait('!document.querySelector("#workspace-dialog").open && !location.hash.includes("/strategies/result")', "Back navigation finishes before the next research result opens");
+  };
+  Object.assign(run, {result: {...clone(serverContracts.research_outcomes_result), strategy_version: run.strategy_version}, status: "computed", metrics: clone(serverContracts.research_outcomes_result.metrics)});
+  await open();
+  await wait('document.querySelector("#dialog-content [data-research-outcomes]")', "The UI receives the actual calculator's historical-outcome schema");
+  await click('#dialog-content [data-research-outcome-sessions="1"] summary');
+  const actual = await evaluate('document.querySelector("#dialog-content [data-research-outcome-sessions=\"1\"]").textContent');
+  assert.ok(actual.includes("Историческая частота прибыли") && actual.includes("50") && actual.includes("95% интервал исторической частоты"));
+  await click('#dialog-content [data-research-outcome-sessions="5"] summary');
+  const insufficient = await evaluate('document.querySelector("#dialog-content [data-research-outcome-sessions=\"5\"]").textContent');
+  assert.ok(insufficient.includes("12") && insufficient.includes("Полных непересекающихся окон недостаточно"), "The longer horizon shows real window counts without inventing a percentage");
+  for (const width of [390, 1366]) {
+    await configureViewport(width);
+    await evaluate('document.querySelector("#dialog-content [data-research-outcomes]").scrollIntoView({behavior:"instant",block:"start"})');
+    await checkLayout(`research-math-${round}-${width}`, {minCharts: 1});
+    await screenshot(`research-math-${round}-${width}.png`);
+  }
+  await configureViewport(390);
+  await close();
+  for (const [key, incomplete] of [["research_cash_result", false], ["research_cash_incomplete_result", true]]) {
+    const result = clone(serverContracts[key]);
+    Object.assign(run, {result: {...result, strategy_version: run.strategy_version}, status: result.status, metrics: result.metrics});
+    await open();
+    await wait('document.querySelector("#dialog-content [data-research-cash-model]")', "A cash-only result uses the separate real model contract");
+    const text = await evaluate('document.querySelector("#dialog-content").textContent');
+    assert.ok(text.includes("Денежная модель не содержит рыночных наблюдений"));
+    assert.equal(await evaluate('Boolean(document.querySelector("#dialog-content .chart-path"))'), false, "A cash model cannot fabricate a market chart");
+    if (incomplete) assert.ok(text.includes("Резерв вне инвестиций") && text.includes("готовность стратегии не подтверждена"));
+    await checkLayout(`research-cash-${incomplete}-${round}-390`);
+    await screenshot(`research-cash-${incomplete}-${round}-390.png`);
+    await close();
+  }
+  Object.assign(run, original);
+  await open();
+  await wait('document.querySelector("#dialog-content").textContent.includes("Нет достаточной истории")', "The original isolated request remains intact after result-display contracts");
+  await close();
+}
 async function exerciseResearchEvidence({fixture,click,wait,evaluate}) {
   await click('[data-research-action="evidence"]');
   await wait('document.querySelector("#research-evidence-form")',"Evidence import opens its owned document");
@@ -2988,6 +3283,7 @@ async function exerciseReadConsistency(options) {
   await exerciseSearchReadConsistency(context);
   await exerciseGoalSourceContract(context);
   await exerciseResearchSubmission(context);
+  await exerciseResearchMathematics(context);
   await exerciseResearchEvidence(context);
   await exerciseResearchReload(context);
   await exerciseResearchLateResult(context);
@@ -4559,6 +4855,7 @@ async function exerciseViewport({
   await until(() => fixture.selection.document.profile.reserve_rub === "123457789.12345678", "Exact decimal step");
   await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Saved custom parameters");
   assert.equal(fixture.selection.document.customized, true);
+  if (width === 390) await exerciseStrategyNumericFields({fixture, click, fieldValue, wait, evaluate});
   await screenshot(`strategies-${round}-${width}.png`);
   await exerciseCustomStrategyRestore({
     fixture,
@@ -4742,6 +5039,31 @@ async function exerciseStrategyTabs({
   assert.equal(strategyWrites(fixture), writes + 1, "Only the explicit Create action writes");
   await assertStrategyPane(evaluate, "custom");
   await click('#strategy-tab-catalog');
+}
+async function exerciseStrategyNumericFields({fixture, click, fieldValue, wait, evaluate}) {
+  const saved = clone(fixture.selection.document);
+  const writes = strategyWrites(fixture);
+  const keys = ["yield_margin_pp", "fund_wrapper_cap_percent"];
+  for (const key of keys) {
+    await fieldValue("#strategy-form", `strategy.rules.${key}`, "");
+    assert.equal(await evaluate(`document.querySelector('[name="strategy.rules.${key}"]').validity.valueMissing`), true, "Required rules are validated by the real rendered input");
+  }
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="error"', "Invalid rule input blocks autosave visibly");
+  await click('#sidebar-nav [data-route="portfolio"]');
+  await wait('!document.querySelector("#view-portfolio").hidden', "Leaving the strategy editor finishes before returning");
+  await click('#sidebar-nav [data-route="strategies"]');
+  await wait('!document.querySelector("#view-strategies").hidden && document.querySelector("#strategy-form")', "The editor is rebuilt after navigation");
+  await delay(700);
+  assert.equal(strategyWrites(fixture), writes, "Removing and rebuilding the form cannot save invalid rules as null");
+  assert.deepEqual(fixture.selection.document, saved, "Invalid input preserves all previously saved parameters");
+  for (const [index, key] of keys.entries()) {
+    assert.equal(await evaluate(`document.querySelector('[name="strategy.rules.${key}"]').getAttribute('aria-invalid')`), "true", "Validation survives the rebuilt editor");
+    await fieldValue("#strategy-form", `strategy.rules.${key}`, saved.rules[key]);
+    if (index === 0) assert.equal(await evaluate('document.querySelector("[data-save-status=strategy]").dataset.state'), "error", "Repairing one rule cannot hide the other invalid rule");
+  }
+  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved"', "Restoring the original valid rules clears the local error");
+  await delay(700);
+  assert.equal(strategyWrites(fixture), writes, "Repairing back to saved values requires no duplicate write");
 }
 async function exerciseCustomStrategyRestore({
   fixture,

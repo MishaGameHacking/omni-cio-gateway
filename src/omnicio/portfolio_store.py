@@ -488,6 +488,7 @@ def _save_operation_observation(
 ) -> bool:
     normalized = _operation_payload(operation)
     semantic = _semantic_operation_payload(normalized)
+    semantic_hash = _hash_json(semantic)
     cur.execute(
         """
         INSERT INTO operation_observations (
@@ -528,7 +529,7 @@ def _save_operation_observation(
             user_id,
             account_id,
             _hash_json(normalized),
-            _hash_json(semantic),
+            semantic_hash,
             operation.id,
             operation.cursor,
             operation.date,
@@ -552,7 +553,25 @@ def _save_operation_observation(
             observed_at,
         ),
     )
-    return cur.fetchone() is not None
+    if cur.fetchone() is not None:
+        return True
+    if operation.id:
+        # A provider correction can return to a previously observed exact fact
+        # (10 -> 12 -> 10). Keep the immutable financial payload and its source
+        # date, but make this later confirmation current within the same typed ID.
+        # An unchanged latest replay and an older/renamed observation do not move it.
+        cur.execute(
+            "WITH current_fact AS (SELECT id, observed_at FROM operation_observations "
+            "WHERE user_id = %s AND account_id = %s AND provider_operation_id = %s "
+            "AND operation_type = %s ORDER BY observed_at DESC, id DESC LIMIT 1) "
+            "UPDATE operation_observations AS prior SET observed_at = %s FROM current_fact "
+            "WHERE prior.user_id = %s AND prior.account_id = %s AND prior.semantic_hash = %s "
+            "AND prior.provider_operation_id = %s AND prior.id <> current_fact.id "
+            "AND current_fact.observed_at < %s",
+            (user_id, account_id, operation.id, operation.operation_type, observed_at,
+             user_id, account_id, semantic_hash, operation.id, observed_at),
+        )
+    return False
 
 
 def _save_history_sync_state(

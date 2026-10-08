@@ -120,6 +120,29 @@ def test_every_new_mandate_has_a_fact_consuming_selection(preset, kind):
     assert result["selected"][0]["target_weight_percent"]
 
 
+@pytest.mark.parametrize("preset", ["balanced", "dalio"])
+def test_cash_only_custom_strategy_is_a_valid_selection_without_invented_market_assets(preset):
+    data = selection_document(preset, "cash")
+    result = select_strategy_candidates(data, [], as_of=NOW)
+    assert result["candidate_selection_ready"] is True
+    assert result["status"] == "ready"
+    assert result["selected"] == []
+    assert result["cash_weight_percent"] == "100"
+    assert result["execution_enabled"] is False
+    assert select_strategy_candidates(data, [], as_of=NOW, engine_version="1.3.0")[
+        "candidate_selection_ready"
+    ] is False
+
+
+def test_imported_oversized_exponent_is_missing_evidence_not_unhandled_arithmetic():
+    result = select_strategy_candidates(
+        selection_document("balanced"),
+        [candidate_facts(volatility_percent="1e1000000")], as_of=NOW,
+    )
+    assert result["candidate_selection_ready"] is False
+    assert "missing:volatility_percent" in result["candidates"][0]["reasons"]
+
+
 @pytest.mark.parametrize(
     "preset,kind,field,bad_value,reason",
     [

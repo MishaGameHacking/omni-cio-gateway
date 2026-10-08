@@ -1,14 +1,16 @@
-"""Emit the actual FastAPI market stream for the isolated browser regression server.
+"""Emit actual server results for the isolated browser regression server.
 
-Only external broker reads and session lookup are synthetic. MarketService, the
-HTTP route, event names, freshness mapping and SSE serialization are production
-code, so the browser cannot silently test an independently invented protocol.
+The market contract replaces only external broker reads and session lookup.
+MarketService, the HTTP route, event names, freshness mapping and SSE serialization
+are production code, so the browser cannot test an independently invented protocol.
+Strategy results use the actual research engine with explicitly synthetic test prices.
 """
 
 from __future__ import annotations
 
 import json
 from contextlib import nullcontext
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -16,8 +18,10 @@ from unittest.mock import Mock, patch
 from uuid import UUID
 
 from fastapi.testclient import TestClient
+from test_backtest import END, START, ZERO_COSTS, prices, research_document
 
 from omnicio import main
+from omnicio.backtest import run_strategy_backtest
 from omnicio.billing import BillingConfig, BillingService
 from omnicio.broker import BrokerService
 from omnicio.cbr import CBRClient
@@ -181,6 +185,46 @@ def goal_contract() -> dict[str, Any]:
     }
 
 
+def research_contract() -> dict[str, Any]:
+    """Render the mathematical engine's real DTOs, never a separately invented response."""
+    asset = prices()
+    asset = replace(asset, candles=tuple(
+        replace(bar, open="100", high="103", low="99",
+                close="102" if index % 2 == 0 else "100") if index >= 140 else bar
+        for index, bar in enumerate(asset.candles)
+    ))
+    outcomes = run_strategy_backtest(
+        research_document(), [asset], from_at=START, to_at=END, now=END,
+        initial_capital_rub=Decimal(10000), costs=ZERO_COSTS,
+    )
+    daily, weekly, monthly = outcomes["historical_outcomes"]["horizons"]
+    assert outcomes["status"] == "computed"
+    assert daily["windows"] == 60 and Decimal(daily["profit_frequency_percent"]) == 50
+    assert weekly["status"] == monthly["status"] == "insufficient_data"
+    cash_document = research_document()
+    cash_document["allocation"].update(shares=0, cash=100)
+    cash_document["policy"]["securities_tax_rate_percent"] = "0"
+    cash = run_strategy_backtest(
+        cash_document, [], from_at=START, to_at=END, now=END,
+        initial_capital_rub=Decimal(10000), costs=ZERO_COSTS,
+    )
+    incomplete_document = {
+        **cash_document, "profile": {**cash_document["profile"], "reserve_rub": None},
+    }
+    incomplete = run_strategy_backtest(
+        incomplete_document, [], from_at=START, to_at=END, now=END,
+        initial_capital_rub=Decimal(10000), costs=ZERO_COSTS,
+    )
+    assert cash["status"] == "computed" and cash["basis"] == "cash_balance_model"
+    assert incomplete["status"] == "insufficient_data"
+    assert "profile.reserve_rub" in incomplete["missing_requirements"]
+    return {
+        "research_outcomes_result": outcomes,
+        "research_cash_result": cash,
+        "research_cash_incomplete_result": incomplete,
+    }
+
+
 def billing_contract() -> dict[str, Any]:
     """Keep the offer and entitlements aligned with the actual billing service."""
     cursor = Mock()
@@ -199,5 +243,5 @@ def billing_contract() -> dict[str, Any]:
 
 if __name__ == "__main__":
     print(json.dumps({**market_contract(), "market_precision_cases": market_precision_contract(),
-                      **goal_contract(), **billing_contract()},
+                      **goal_contract(), **research_contract(), **billing_contract()},
                      ensure_ascii=True))

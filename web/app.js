@@ -156,6 +156,7 @@
     strategy: {
       server: null,
       draft: null,
+      invalidInputs: {},
       revision: 0,
       dirty: false,
       busy: false,
@@ -376,6 +377,8 @@
   };
   const humanError = error => {
     const reasons = {
+      strategy_input_invalid: T("strategy.input_invalid"),
+      workspace_operation_history_changed: T("portfolio.history_changed"),
       offline_write_not_sent: T("Нет сети. Изменение не отправлено. Подключитесь к интернету и повторите."),
       frontend_update_required: T("pwa.update_before_write"),
       client_build_changed: T("pwa.update_before_write"),
@@ -669,6 +672,7 @@
     state.strategy = {
       server: null,
       draft: null,
+      invalidInputs: {},
       revision: 0,
       dirty: false,
       busy: false,
@@ -2037,7 +2041,7 @@
     slot.draft = selection ? clone(selection.document) : null;
     slot.error = null;
   }
-  const strategySaveUnavailable = slot => !slot.server || slot.dirty || slot.busy || Boolean(slot.error);
+  const strategySaveUnavailable = slot => !slot.server || slot.dirty || slot.busy || Boolean(slot.error) || Object.keys(slot.invalidInputs || {}).length > 0;
   const updateStrategySaveControls = slot => {
     const unavailable = strategySaveUnavailable(slot);
     const assess = $('[data-action="assess-strategy"]');
@@ -2112,11 +2116,12 @@
       status: 502
     });
     slot.server = clone(saved);
-    if (slot.revision === revision) {
+    const validInputs = kind !== "strategy" || validateStrategyInputs(slot);
+    if (slot.revision === revision && validInputs) {
       slot.draft = clone(saved.document);
       slot.dirty = false;
     }
-    slot.error = null;
+    if (validInputs) slot.error = null;
     if (kind === "prefs" && slot.revision === revision) for (const id of ["profile-form", "preferences-form"]) if ($( "#" + id)) clearScreenDraft($("#" + id));
     applySavedEffects(kind);
   };
@@ -2164,18 +2169,28 @@
     }
     return !slot.error;
   };
-  const canSaveVersioned = (kind, slot) => {
-    if (slot.busy || !slot.dirty || slot.error || !slot.draft || !state.user || state.locked) return false;
-    if (kind === "prefs" && !slot.server) return false;
-    const activeForm = kind === "strategy" ? $("#strategy-form") : null;
-    if (activeForm && !activeForm.checkValidity()) {
-      slot.error = Object.assign(new Error("invalid_values"), {
+  const validateStrategyInputs = slot => {
+    const activeForm = $("#strategy-form");
+    slot.invalidInputs ||= {};
+    for (const input of Array.from(activeForm?.elements || [])) {
+      if (input.name?.startsWith("strategy.") && input.type === "number" && !input.validity.valid) {
+        slot.invalidInputs[input.name] = input.value;
+        input.setAttribute("aria-invalid", "true");
+      }
+    }
+    if (Object.keys(slot.invalidInputs).length || activeForm && !activeForm.checkValidity()) {
+      slot.error = Object.assign(new Error("strategy_input_invalid"), {
         status: 422
       });
-      updateSaveStatus(kind);
+      updateSaveStatus("strategy");
       return false;
     }
     return true;
+  };
+  const canSaveVersioned = (kind, slot) => {
+    if (slot.busy || !slot.dirty || slot.error || !slot.draft || !state.user || state.locked) return false;
+    if (kind === "prefs" && !slot.server) return false;
+    return kind !== "strategy" || validateStrategyInputs(slot);
   };
   const finishVersionedSave = context => {
     if (!currentWrite(context)) return;
@@ -2200,6 +2215,7 @@
     updateSaveStatus(kind);
     try {
       while (slot.dirty && !slot.error && currentWrite(context)) {
+        if (kind === "strategy" && !validateStrategyInputs(slot)) break;
         if (!(await attemptVersionedWrite(context))) break;
       }
     } finally {
@@ -2251,13 +2267,15 @@
       const generation = state.generation;
       const payload = await api(kind === "strategy" ? "/api/profile/strategy" : "/api/preferences");
       if (generation !== state.generation) return;
-      if (kind === "prefs" && !validRecord(payload)) throw Object.assign(new Error("invalid_server_response"), {
+      const saved = recordFrom(kind, payload);
+      if (!validRecord(saved) && !(kind === "strategy" && saved === null)) throw Object.assign(new Error("invalid_server_response"), {
         status: 502
       });
       slot.dirty = false;
       slot.error = null;
       slot.revision += 1;
       if (kind === "strategy") {
+        slot.invalidInputs = {};
         adoptStrategy(payload);
         state.data.strategy = payload;
         slot.assessment = null;
@@ -2322,9 +2340,10 @@
     const preset = state.data.catalog?.presets?.find(item => item.id === id);
     if (!preset) return;
     const document = preservePersonal(clone(preset.document));
-    if (same(document, state.strategy.draft)) return;
+    if (same(document, state.strategy.draft) && !Object.keys(state.strategy.invalidInputs || {}).length) return;
     const slot = state.strategy;
     slot.draft = document;
+    slot.invalidInputs = {};
     slot.dirty = true;
     slot.intent = "select";
     slot.revision += 1;
@@ -2340,6 +2359,7 @@
     const slot = state.strategy;
     const custom = slot.server?.custom_document || slot.draft;
     slot.draft = preservePersonal(clone(custom));
+    slot.invalidInputs = {};
     slot.draft.customized = true;
     slot.intent = "edit";
     slot.revision += 1;
@@ -2417,11 +2437,11 @@
       return `<button type="button" id="strategy-tab-${key}" class="tab-button" role="tab" data-action="strategy-${key}" aria-controls="strategy-panel-${key}" aria-selected="${selected}" tabindex="${selected ? 0 : -1}">${label}</button>`;
     }).join("") + "</div>";
   };
-  const policyFields = () => ([["max_instrument_percent", T("Один инструмент"), "%", 100, T("Максимальная доля одного инструмента. Превышение отмечается в проверке состава; это не предел убытка.")], ["max_sector_percent", T("Один сектор"), "%", 100, T("Ограничение концентрации в одном секторе. Нужны данные о секторе каждого инструмента.")], ["max_issuer_percent", T("Один эмитент"), "%", 100, T("Суммарная доля бумаг одного эмитента. Малый лимит требует большего числа доступных инструментов.")], ["max_group_percent", T("Одна группа компаний"), "%", 100, T("Доля связанных эмитентов. Без подтверждённых связей полная проверка невозможна.")], ["max_share_percent", T("Акции — предел"), "%", 100, T("Верхняя граница доли акций. Целевые доли задаются отдельно в распределении.")], ["max_bond_percent", T("Облигации — предел"), "%", 100, T("Верхняя граница доли облигаций. Кредитный и процентный риски сохраняются.")], ["max_etf_percent", T("Фонды — предел"), "%", 100, T("Верхняя граница доли фондов. Состав фонда проверяется отдельно при наличии данных.")], ["max_below_grade_percent", T("Ниже инвест. уровня"), "%", 100, T("Максимальная доля бумаг ниже выбранного рейтингового уровня. Рейтинг не является вероятностью прибыли.")], ["max_unknown_percent", T("Неизвестные данные"), "%", 100, T("Допустимая доля инструментов с неполной классификацией. Неизвестное не означает безопасное.")], ["max_term_months", T("Срок инструментов"), T("мес."), 1200, T("Предельный срок до погашения в условиях модели. Для проверки нужна дата погашения.")], ["turnover_budget_percent", T("Оборот портфеля"), "%", 100, T("Предел оборота в расчётном предложении. Сам по себе не включает исполнение сделок.")], ["max_daily_turnover_participation_percent", T("Участие в обороте"), "%", 100, T("Ограничение доли заявки в наблюдаемом дневном обороте. Требует данных ликвидности.")], ["securities_tax_rate_percent", T("Личная налоговая ставка"), "%", 100, T("Укажите ставку, применимую к вашей ситуации. Неизвестная ставка остаётся пустой и не заменяется предположением.")], ["uncertainty_haircut_percent", T("Запас на неопределённость"), "%", 100, T("Заданный запас в модели, а не статистически доказанная вероятность или гарантия.")], ["credit_loss_haircut_percent", T("Запас на кредитный риск"), "%", 100, T("Пользовательский параметр допустимого сценария потерь. Без данных эмитента это не прогноз дефолта.")], ["no_trade_band_percent", T("Порог отклонения долей"), "%", 100, T("Небольшие отклонения можно не перестраивать. Увеличение порога уменьшает частоту расчётной ребалансировки.")], ["min_replace_benefit_rub", T("Минимальный эффект замены"), "₽", 1000000000000, T("Минимальный расчётный эффект после заданных затрат. Сохранение значения не создаёт сделки.")]]);
+  const policyFields = () => ([["max_instrument_percent", T("Один инструмент"), "%", 100, T("Максимальная доля одного инструмента. Превышение отмечается в проверке состава; это не предел убытка.")], ["max_sector_percent", T("Один сектор"), "%", 100, T("Ограничение концентрации в одном секторе. Нужны данные о секторе каждого инструмента.")], ["max_issuer_percent", T("Один эмитент"), "%", 100, T("Суммарная доля бумаг одного эмитента. Малый лимит требует большего числа доступных инструментов.")], ["max_group_percent", T("Одна группа компаний"), "%", 100, T("Доля связанных эмитентов. Без подтверждённых связей полная проверка невозможна.")], ["max_share_percent", T("Акции — предел"), "%", 100, T("Верхняя граница доли акций. Целевые доли задаются отдельно в распределении.")], ["max_bond_percent", T("Облигации — предел"), "%", 100, T("Верхняя граница доли облигаций. Кредитный и процентный риски сохраняются.")], ["max_etf_percent", T("Фонды — предел"), "%", 100, T("Верхняя граница доли фондов. Состав фонда проверяется отдельно при наличии данных.")], ["max_below_grade_percent", T("Ниже инвест. уровня"), "%", 100, T("Максимальная доля бумаг ниже выбранного рейтингового уровня. Рейтинг не является вероятностью прибыли.")], ["max_unknown_percent", T("Неизвестные данные"), "%", 100, T("Допустимая доля инструментов с неполной классификацией. Неизвестное не означает безопасное.")], ["max_term_months", T("Срок инструментов"), T("мес."), 1200, T("Предельный срок до погашения в условиях модели. Для проверки нужна дата погашения.")], ["turnover_budget_percent", T("strategy.turnover_with_commission"), "%", 100, T("strategy.turnover_scope")], ["max_daily_turnover_participation_percent", T("Участие в обороте"), "%", 100, T("Ограничение доли заявки в наблюдаемом дневном обороте. Требует данных ликвидности.")], ["securities_tax_rate_percent", T("Личная налоговая ставка"), "%", 100, T("Укажите ставку, применимую к вашей ситуации. Неизвестная ставка остаётся пустой и не заменяется предположением.")], ["uncertainty_haircut_percent", T("Запас на неопределённость"), "%", 100, T("Заданный запас в модели, а не статистически доказанная вероятность или гарантия.")], ["credit_loss_haircut_percent", T("Запас на кредитный риск"), "%", 100, T("Пользовательский параметр допустимого сценария потерь. Без данных эмитента это не прогноз дефолта.")], ["no_trade_band_percent", T("Порог отклонения долей"), "%", 100, T("Небольшие отклонения можно не перестраивать. Увеличение порога уменьшает частоту расчётной ребалансировки.")], ["min_replace_benefit_rub", T("Минимальный эффект замены"), "₽", 1000000000000, T("strategy.effect_scope")]]);
   const strategyField = (section, key, title, unit, max, helpText, value) => {
     const name = `strategy.${section}.${key}`;
     const step = key.includes("months") || key.includes("days") ? "1" : "any";
-    return `<div class="field"><span>${esc(title)}${help(title, helpText)}</span><div class="touch-input"><button type="button" class="step-button" data-step-field="${name}" data-step-direction="-1" aria-label="${H("Уменьшить:")} ${esc(title)}">−</button><input name="${name}" aria-label="${esc(title)}, ${esc(unit)}" type="number" inputmode="decimal" min="${key === "horizon_months" ? "1" : "0"}" max="${max}" step="${step}" value="${esc(value ?? "")}" placeholder="${H("Не указано")}"><button type="button" class="step-button" data-step-field="${name}" data-step-direction="1" aria-label="${H("Увеличить:")} ${esc(title)}">+</button><small>${esc(unit)}</small></div></div>`;
+    return `<div class="field"><span>${esc(title)}${help(title, helpText)}</span><div class="touch-input"><button type="button" class="step-button" data-step-field="${name}" data-step-direction="-1" aria-label="${H("Уменьшить:")} ${esc(title)}">−</button><input name="${name}" aria-label="${esc(title)}, ${esc(unit)}" type="number" inputmode="decimal" min="${key === "horizon_months" ? "1" : "0"}" max="${max}" step="${step}"${section === "rules" ? " required" : ""} value="${esc(value ?? "")}" placeholder="${H("Не указано")}"><button type="button" class="step-button" data-step-field="${name}" data-step-direction="1" aria-label="${H("Увеличить:")} ${esc(title)}">+</button><small>${esc(unit)}</small></div></div>`;
   };
   const strategyEditorHTML = ({
     document,
@@ -2436,7 +2456,7 @@
       type: "number",
       min: 0,
       max: 100,
-      step: "0.01",
+      step: "0.0001",
       required: true,
       value: document.rules.rating_caps[grade]
     })).join("")}</div></details></form><details><summary class="details-summary">${H("Методика и источники")}</summary><p class="help-copy">${esc(preset?.risk || T("Проверяйте ограничения и полноту данных."))}</p><ul class="source-list">${(catalog.sources || []).filter(item => !preset?.source_ids || preset.source_ids.includes(item.id)).map(item => renderStrategiesLi(item)).join("")}</ul></details></section><section class="card"><div class="card-header"><h2>${H("Проверка на вашем счёте")}</h2>${button(T("Рассчитать"), "assess-strategy", {
@@ -2471,6 +2491,14 @@
       small: true
     }))}<div class="strategy-layout">${list}${editor}</div>${dataError("investmentProfile")}${dataError("balancingPolicy")}`;
     if (document) $("#view-strategies .strategy-editor")?.insertAdjacentHTML("beforeend", executionPlannerCard());
+    const form = $("#strategy-form");
+    for (const [name, value] of Object.entries(slot.invalidInputs || {})) {
+      const input = form?.elements.namedItem(name);
+      if (!input) continue;
+      input.value = value;
+      input.setAttribute("aria-invalid", "true");
+      input.setCustomValidity(T("strategy.input_reenter"));
+    }
     updateSaveStatus("strategy");
     U.bindCharts($("#view-strategies"));
     applyScreenLayout("strategies");
@@ -2611,6 +2639,10 @@
     cashflows_require_verified_basis: T("research.missing.total_return"),
     bond_principal_and_accrual_history_required: T("research.missing.bond_principal"),
     insufficient_training_history: T("Недостаточная история для обучающего периода"),
+    fresh_account_catalog: T("research.current_catalog_missing"),
+    invalid_current_research_evidence: T("research.current_evidence_invalid"),
+    current_price_history_stale: T("research.current_history_stale"),
+    cash_reserve_conflict: T("research.cash.conflict"),
     price_or_liquidity_missing: T("Нет подтверждённых цены или ликвидности"),
     invalid_risk_metric: T("Показатель риска не прошёл проверку"),
     historical_drawdown_limit: T("Историческая просадка превышает условие"),
@@ -2653,16 +2685,34 @@
     if (prefix === "target_above_class_cap" && assetClass) return `${T("Целевая доля")} ${assetClass} ${T("выше ограничения.")}`;
     return null;
   };
+  const holdingLimitReason = key => {
+    const [prefix, category, ...identity] = key.split(":");
+    if (prefix === "instrument_cap") return T("research.holdings.instrument", {id: category});
+    if (prefix === "fund_wrapper_cap") return T("research.holdings.fund", {id: category});
+    if (["class_cap", "excluded_class"].includes(prefix)) return T("research.holdings.asset_class", {id: assessmentValue(category)});
+    if (prefix !== "exposure_cap") return null;
+    const scope = {issuer: T("Один эмитент"), group: T("Одна группа компаний"), sector: T("Один сектор")}[category] || category;
+    return T("research.holdings.exposure", {scope, id: identity.join(":")});
+  };
   const humanRequirement = value => {
     if (value && typeof value === "object") return humanRequirement(value.title || value.reason || "");
     const key = String(value || "");
+    const holdingReason = holdingLimitReason(key);
+    if (holdingReason) return holdingReason;
     if (/[А-Яа-яЁё]/.test(key)) return key;
     if (selectionReasonLabels()[key]) return selectionReasonLabels()[key];
     const [prefix, name] = key.split(":");
     if (["missing", "unverified"].includes(prefix)) return factLabels()[name] ? `${T("Не подтверждены данные:")} ${factLabels()[name]}.` : T("Не подтверждён необходимый показатель источника.");
     const allocationReason = allocationRequirement(key, prefix, name);
     if (allocationReason) return allocationReason;
-    if (key.startsWith("policy.")) return T("Не указан необходимый предел в настройках портфеля.");
+    if (key.startsWith("policy.")) {
+      const title = policyFields().find(row => row[0] === key.slice(7))?.[1];
+      return title ? T("strategy.required_field", {field: title}) : T("Не указан необходимый предел в настройках портфеля.");
+    }
+    if (key.startsWith("profile.")) {
+      const title = {reserve_rub: T("Резерв вне инвестиций"), planned_withdrawal_rub: T("Планируемый вывод"), horizon_months: T("Инвестиционный горизонт"), max_drawdown_percent: T("Допустимая просадка"), liquidity_horizon_days: T("Срок доступности денег")}[key.slice(8)];
+      if (title) return T("strategy.required_field", {field: title});
+    }
     if (factLabels()[key]) return `${T("Не получены данные:")} ${factLabels()[key]}.`;
     return T("Требуется проверка условий и полноты исходных данных.");
   };
@@ -2701,6 +2751,14 @@
       cash: T("Деньги")
     }[value] || String(value);
   };
+  const currentSelectionHistoryHTML = selection => {
+    const histories = selection.history_sources;
+    const invalid = selection.invalid_evidence;
+    const rows = Array.isArray(histories) ? histories.map(row => [row.instrument_uid, date(row.latest_completed_candle_at, true)]) : [];
+    const errors = Array.isArray(invalid) ? invalid.map(row => `<p class="notice warning">${esc(row.instrument_uid)}: ${esc(humanRequirement(row.reason))}</p>`).join("") : "";
+    if (!rows.length && !errors) return "";
+    return `<details class="section-gap"><summary class="details-summary">${H("research.current_history_title")}</summary><p class="fine-print">${H("research.current_history_scope", {days: format(selection.history_max_age_seconds / 86400, 0)})}</p>${infoRows(rows)}${errors}</details>`;
+  };
   const selectionHTML = (selection, title = T("Подбор по подтверждённым данным")) => {
     if (!selection) return "";
     const selected = Array.isArray(selection.selected) ? selection.selected : [];
@@ -2709,14 +2767,31 @@
       ready: T("Данные для корзины подтверждены"),
       partial: T("Частичное покрытие"),
       insufficient_data: T("Недостаточно данных")
-    }[selection.status] || T("Ожидается проверка"))} ${H("· на")} ${esc(date(selection.as_of, true))} ${H("МСК")}</p>${selection.scope ? renderSelectionHTMLNotice(selection) : ""}${selected.length ? renderSelectionHTMLPanelTitle(selected) : ("<p class=\"fine-print\">" + H("Корзина из подтверждённых инструментов пока не сформирована.") + "</p>")}${infoRows([[T("Остаток расчётной доли деньгами"), percent(selection.cash_weight_percent)]])}${selection.missing_requirements?.length ? renderSelectionHTMLRiskList(selection) : ""}${candidates.length ? renderSelectionHTMLDetailsSummary2(candidates) : ""}</details>`;
+    }[selection.status] || T("Ожидается проверка"))} ${H("· на")} ${esc(date(selection.as_of, true))} ${H("МСК")}</p>${selection.scope ? renderSelectionHTMLNotice(selection) : ""}${selected.length ? renderSelectionHTMLPanelTitle(selected) : ("<p class=\"fine-print\">" + H("Корзина из подтверждённых инструментов пока не сформирована.") + "</p>")}${infoRows([[T("Остаток расчётной доли деньгами"), percent(selection.cash_weight_percent)]])}${selection.missing_requirements?.length ? renderSelectionHTMLRiskList(selection) : ""}${candidates.length ? renderSelectionHTMLDetailsSummary2(candidates) : ""}${currentSelectionHistoryHTML(selection)}</details>`;
+  };
+  const assessmentIsCurrent = (result, strategyVersion) => {
+    const observed = Date.parse(result.captured_at);
+    const until = Date.parse(result.valid_until);
+    return result.strategy_version === strategyVersion && Number.isInteger(strategyVersion) && strategyVersion > 0 && Number.isFinite(observed) && Number.isFinite(until) && observed <= Date.now() + 5000 && until > Date.now() && until >= observed;
   };
   const renderAssessment = () => {
+    clearTimeout(state.assessmentExpiryTimer);
+    state.assessmentExpiryTimer = null;
     if (state.loading.has("assessment")) return U.loading(T("Проверяем данные и ограничения счёта…"));
     if (state.errors.assessment) return `<div class="notice error">${esc(humanError(state.errors.assessment))}</div>`;
     const result = state.strategy.assessment;
     if (!result) return empty(T("Проверка ещё не выполнена"), T("Сохраните параметры и запустите расчёт. Неполные данные будут отмечены отдельно."), "", "", "analytics");
-    return `${freshness(T("Состав T-Invest"), result.captured_at)}<div class="assessment-metrics section-gap"><div class="assessment-metric"><span>${H("Стоимость счёта")}</span><strong>${esc(money(result.nav_rub))}</strong></div><div class="assessment-metric"><span>${H("Проверок")}</span><strong>${result.checks?.length || 0}</strong></div><div class="assessment-metric"><span>${H("Вероятность прибыли")}</span><strong>—</strong></div></div><p class="fine-print section-gap">${esc(result.probability_reason || T("Проверка ограничений не оценивает вероятность будущей прибыли."))}</p>${(result.checks || []).map(item => renderAssessmentDetailsSummary(item)).join("")}${selectionHTML(result.selection)}`;
+    const current = assessmentIsCurrent(result, state.strategy.server?.version);
+    if (current) {
+      const generation = state.generation;
+      state.assessmentExpiryTimer = setTimeout(() => {
+        if (generation !== state.generation) return;
+        const panel = $("#strategy-assessment");
+        if (panel) panel.innerHTML = renderAssessment();
+      }, Math.min(2147483647, Math.max(1, Date.parse(result.valid_until) - Date.now() + 1)));
+    }
+    const content = `<div class="assessment-metrics section-gap"><div class="assessment-metric"><span>${H("Стоимость счёта")}</span><strong>${esc(money(result.nav_rub))}</strong></div><div class="assessment-metric"><span>${H("Проверок")}</span><strong>${result.checks?.length || 0}</strong></div><div class="assessment-metric"><span>${H("Вероятность прибыли")}</span><strong>—</strong></div></div><p class="fine-print section-gap">${esc(result.probability_reason || T("Проверка ограничений не оценивает вероятность будущей прибыли."))}</p>${(result.checks || []).map(item => renderAssessmentDetailsSummary(item)).join("")}${selectionHTML(result.selection)}`;
+    return `${freshness(T("Состав T-Invest"), result.captured_at, current ? "fresh" : "stale")}${current ? content : `<p class="notice warning" data-assessment-expired>${H("strategy.assessment_expired")}</p><details><summary class="details-summary">${H("strategy.assessment_previous")}</summary>${content}</details>`}`;
   };
   const assessStrategy = async () => {
     if (!requireUser() || state.loading.has("assessment")) return;
@@ -2732,7 +2807,8 @@
     delete state.errors.assessment;
     slot.assessment = null;
     updateSaveStatus("strategy");
-    $("#strategy-assessment").innerHTML = renderAssessment();
+    const container = $("#strategy-assessment");
+    if (container) container.innerHTML = renderAssessment();
     try {
       const result = await api("/api/profile/strategy/account-assessment", {
         method: "POST",
@@ -2869,13 +2945,57 @@
     if (!result) return status;
     const otherVersion = result.archive?.strategy_version !== state.strategy.server?.version ? " · " + H("research.archive_version") : "";
     const source = result.archive?.strategy_version ? `<p class="data-footnote">${H("Версия стратегии:")} ${esc(result.archive.strategy_version)}${otherVersion}</p>` : "";
+    const cash = researchCashProjectionHTML(result);
+    if (cash) return status + source + cash + (result.missing_requirements?.length ? renderResearchRiskList(result) : "") + selectionHTML(result.current_selection, T("Отдельный подбор по сегодняшним данным")) + researchRobustnessHTML(result);
     if (result.status !== "computed") return status + source + incompleteResearchHTML(result);
     return `${status}${source}<div class="section-gap"><h3 class="panel-title">${esc(result.return_label || T("Результат исторического исследования"))}</h3>${result.complete_strategy_coverage === false ? renderResearchNotice(result) : ""}<p class="research-period">${esc(date(result.period?.from))} — ${esc(date(result.period?.to))} · ${esc(format(result.period?.observations, 0))} ${H("наблюдений")}</p><div class="assessment-metrics">${Object.entries(researchMetricLabels()).map(([key, label]) => renderResearchAssessmentMetric(label, key, result)).join("")}</div>${chart(result.equity_curve, {
       timeKey: "time",
       valueKey: "nav_rub",
       label: T("Расчётная стоимость на исторических данных"),
       personal: false
-    })}<p class="notice">${esc(result.probability_reason || T("Результат на прошлом периоде не оценивает вероятность будущей прибыли."))}</p>${result.period?.test_from ? renderResearchFinePrint(result) : ""}${result.benchmark ? renderResearchDetailsSummary(result) : ""}${result.missing_requirements?.length ? renderResearchRiskList(result) : ""}${selectionHTML(result.selection, T("Корзина по данным обучающего периода"))}${selectionHTML(result.current_selection, T("Отдельный подбор по сегодняшним данным"))}${researchDataCoverageHTML(result.data_coverage)}${researchRobustnessHTML(result)}${result.limitations?.length ? renderResearchDetailsSummary2(result) : ""}${result.sources?.length ? renderResearchSourceList(result) : ""}</div>`;
+    })}<p class="notice">${esc(result.probability_reason || T("Результат на прошлом периоде не оценивает вероятность будущей прибыли."))}</p>${result.period?.test_from ? renderResearchFinePrint(result) : ""}${result.benchmark ? renderResearchDetailsSummary(result) : ""}${result.missing_requirements?.length ? renderResearchRiskList(result) : ""}${selectionHTML(result.selection, T("Корзина по данным обучающего периода"))}${selectionHTML(result.current_selection, T("Отдельный подбор по сегодняшним данным"))}${researchDataCoverageHTML(result.data_coverage)}${researchOutcomesHTML(result)}${researchHoldingConstraintsHTML(result)}${researchRobustnessHTML(result)}${result.limitations?.length ? renderResearchDetailsSummary2(result) : ""}${result.sources?.length ? renderResearchSourceList(result) : ""}</div>`;
+  };
+  const researchCashProjectionHTML = result => {
+    const cash = result.cash_projection;
+    if (result.basis !== "cash_balance_model" || cash?.method !== "constant_nominal_cash_zero_rate_no_flows") return "";
+    return `<section class="section-gap" data-research-cash-model><h3 class="panel-title">${H("research.cash.title")}</h3><p>${H("research.cash.scope")}</p><p class="fine-print">${esc(date(cash.from))} — ${esc(date(cash.to))}</p>${infoRows([[T("research.cash.start"), money(cash.starting_cash_rub)], [T("research.cash.end"), money(cash.ending_cash_rub)], [T("research.cash.rate"), percent(cash.assumed_annual_cash_rate_percent)], [T("research.cash.required"), money(cash.required_retained_cash_rub)]])}${cash.personal_constraints_ready ? "" : `<p class="notice warning">${H("research.cash.conditions_missing")}</p>`}<p class="notice">${H("research.cash.no_observations")}</p></section>`;
+  };
+  const researchOutcomeReason = reason => ({
+    cash_only_no_market_observations: T("research.cash.no_observations"),
+    incomplete_strategy_coverage: T("research.outcomes.incomplete"),
+    insufficient_non_overlapping_windows: T("research.outcomes.too_few"),
+    no_profit_indicator_variation: T("research.outcomes.no_variation"),
+    strategy_risk_stop_regime_change: T("research.outcomes.risk_stop"),
+    insufficient_calendar_horizon_history: T("research.outcomes.horizon_missing"),
+    future_probability_not_calibrated: T("research.outcomes.future_unknown")
+  }[reason] || T("research.outcomes.unavailable"));
+  const researchOutcomeWindowHTML = row => {
+    const title = {1: T("research.outcomes.session_1"), 5: T("research.outcomes.session_5"), 21: T("research.outcomes.session_21")}[row.sessions];
+    if (!title) return "";
+    const computed = row.status === "computed";
+    const counts = infoRows([[T("research.outcomes.windows"), format(row.windows, 0)], [T("research.outcomes.profit_windows"), format(row.profit_windows, 0)], [T("research.outcomes.loss_windows"), format(row.loss_windows, 0)], [T("research.outcomes.flat_windows"), format(row.flat_windows, 0)], [T("research.outcomes.trailing"), format(row.discarded_trailing_sessions, 0)]]);
+    const metrics = computed ? infoRows([[T("research.outcomes.profit_frequency"), percent(row.profit_frequency_percent)], [T("research.outcomes.loss_frequency"), percent(row.loss_frequency_percent)], [T("research.outcomes.median"), percent(row.median_return_percent)], [T("research.outcomes.worst"), percent(row.worst_return_percent)], [T("research.outcomes.var"), percent(row.var_95_loss_percent)], [T("research.outcomes.shortfall"), percent(row.expected_shortfall_95_loss_percent)]]) : `<p class="notice">${esc(researchOutcomeReason(row.reason))}</p>`;
+    const interval = row.sampling_interval;
+    const intervalAvailable = computed && interval?.method === "stationary_block_bootstrap_of_profit_indicators" && interval.lower_percent != null && interval.upper_percent != null && !interval.reason;
+    const uncertainty = intervalAvailable ? `<p><strong>${H("research.outcomes.interval")}:</strong> ${esc(percent(interval.lower_percent))} — ${esc(percent(interval.upper_percent))}</p>${infoRows([[T("research.outcomes.replicates"), format(interval.replicates, 0)], [T("research.outcomes.block_length"), format(interval.expected_block_length_windows, 0)]])}<p class="fine-print">${H("research.outcomes.assumption")}</p>` : (computed ? `<p class="notice">${esc(researchOutcomeReason(interval?.reason))}</p>` : "");
+    const period = row.from && row.to ? `<p class="fine-print">${esc(date(row.from))} — ${esc(date(row.to))}</p>` : "";
+    return `<details class="section-gap" data-research-outcome-sessions="${esc(row.sessions)}" data-outcome-status="${esc(row.status)}"><summary class="details-summary">${esc(title)} · ${computed ? esc(percent(row.profit_frequency_percent)) : H("Данные неполные")}</summary>${period}${counts}${metrics}${uncertainty}</details>`;
+  };
+  const researchOutcomesHTML = result => {
+    const outcomes = result.historical_outcomes;
+    if (outcomes?.method !== "non_overlapping_held_out_net_strategy_nav" || !Array.isArray(outcomes.horizons)) return "";
+    if (result.basis === "cash_balance_model") return `<p class="notice">${H("research.cash.no_observations")}</p>`;
+    const horizon = outcomes.requested_horizon;
+    const requested = horizon?.calendar_months != null ? `<h4 class="section-gap">${H("research.outcomes.personal_horizon")}</h4>${infoRows([[T("Инвестиционный горизонт"), `${format(horizon.calendar_months, 0)} ${T("мес.")}`], [T("research.outcomes.first_window_end"), date(horizon.first_window_end)]])}<p class="notice">${esc(researchOutcomeReason(horizon.reason))}</p>` : "";
+    const source = U.external(outcomes.method_source_url);
+    const methodSource = source ? `<p class="data-footnote"><a href="${esc(source)}" target="_blank" rel="noopener noreferrer">${H("research.outcomes.method_source")}</a></p>` : "";
+    return `<section class="section-gap" data-research-outcomes><h3 class="panel-title">${H("research.outcomes.title")}</h3><p>${H("research.outcomes.scope")}</p><p class="fine-print">${H("research.outcomes.minimum", {count: format(outcomes.minimum_windows, 0)})}</p>${outcomes.horizons.map(researchOutcomeWindowHTML).join("")}${requested}<p class="fine-print">${H("research.outcomes.calendar_scope")}</p>${methodSource}</section>`;
+  };
+  const researchHoldingConstraintsHTML = result => {
+    const checks = result.holding_constraints;
+    if (!checks) return "";
+    const reasons = [...(checks.breaches || []), ...(checks.unknown || [])];
+    return `<details class="section-gap" data-research-holding-constraints><summary class="details-summary">${H("research.holdings.title")}</summary>${infoRows([[T("research.holdings.sessions"), format(checks.evaluated_sessions, 0)], [T("research.holdings.breaches"), format(checks.breach_sessions, 0)]])}<p class="fine-print">${H("research.holdings.scope")}</p>${reasons.length ? `<ul class="risk-list">${reasons.map(renderFundamentalMetricsHTMLLi2).join("")}</ul>` : ""}</details>`;
   };
   const researchWindowHTML = item => {
     const result = item.status === "computed" ? infoRows([[T("Результат"), percent(item.metrics?.net_return_percent)], [T("Просадка"), percent(item.metrics?.max_drawdown_percent)]]) : ("<p class=\"notice\">" + H("Недостаточно данных для этого окна.") + "</p>");
@@ -3083,7 +3203,7 @@
   const executionPlanLegHTML = leg => `<article class="recovery-leg"><h3>${esc(leg.action === "buy" ? T("Покупка") : T("Продажа"))} · ${esc(leg.ticker || leg.instrument_uid)}</h3>${infoRows([[T("execution.lots"), format(leg.lots, 0)], [T("execution.lot_size"), format(leg.lot_size, 0)], [T("execution.limit"), money(leg.limit_price, 4, "RUB", false)], [T("execution.gross"), money(leg.gross_amount_rub)], [T("execution.commission"), money(leg.commission_cap_rub)], [T("execution.tax"), money(leg.tax_reserve_rub)]])}</article>`;
   const executionPlanHTML = plan => {
     const payload = plan.payload;
-    return `<p class="notice">${H("execution.shadow_notice")}</p>${infoRows([[T("execution.nav"), money(payload.nav_rub)], [T("execution.cash_before"), money(payload.cash_before_rub)], [T("execution.cash_after"), money(payload.cash_after_rub)], [T("execution.reserve"), money(payload.reserve_rub)], [T("execution.turnover"), money(payload.gross_turnover_rub)], [T("execution.expires"), date(plan.expires_at, true)]])}<div class="recovery-legs">${payload.legs.map(executionPlanLegHTML).join("")}</div><p class="fine-print">${H("execution.quoted")}</p><label class="check-field section-gap"><input id="execution-review-consent" type="checkbox"><span>${H("execution.review_consent")}</span></label><div class="form-actions">${button(T("execution.confirm"), "execution-confirm", {primary: true})}${button(T("execution.recalculate"), "execution-plan")}</div><output id="execution-plan-message" class="form-message"></output>`;
+    return `<p class="notice">${H("execution.shadow_notice")}</p>${infoRows([[T("execution.nav"), money(payload.nav_rub)], [T("execution.cash_before"), money(payload.cash_before_rub)], [T("execution.cash_after"), money(payload.cash_after_rub)], [T("execution.reserve"), money(payload.reserve_rub)], [T("execution.nav_floor"), money(payload.allocation_nav_floor_rub)], [T("execution.cost_buffer"), money(payload.maximum_cost_buffer_rub)], [T("execution.turnover"), money(payload.gross_turnover_rub)], [T("execution.expires"), date(plan.expires_at, true)]])}<div class="recovery-legs">${payload.legs.map(executionPlanLegHTML).join("")}</div>${payload.allocation_nav_floor_rub != null ? `<p class="fine-print">${H("execution.cost_bound_scope")}</p>` : ""}<p class="fine-print">${H("execution.quoted")}</p><label class="check-field section-gap"><input id="execution-review-consent" type="checkbox"><span>${H("execution.review_consent")}</span></label><div class="form-actions">${button(T("execution.confirm"), "execution-confirm", {primary: true})}${button(T("execution.recalculate"), "execution-plan")}</div><output id="execution-plan-message" class="form-message"></output>`;
   };
   const displayExecutionPlan = result => {
     if (result.status !== "blocked" && result.status !== "no_change") {
@@ -5171,18 +5291,27 @@
     const names = {contribution: T("portfolio.contribution"), withdrawal: T("portfolio.withdrawal"), fee: T("Комиссии за период"), tax: T("Налоги"), income: T("Полученные выплаты"), principal_return: T("Погашения капитала"), internal: T("portfolio.internal"), non_cash_transfer: T("portfolio.non_cash"), unclassified: T("portfolio.unclassified")};
     const rows = (data.items || []).map(item => ledgerRow(item, names)).join("");
     const table = rows ? `<div class="table-scroll"><table class="asset-table"><thead><tr><th>${H("Дата")}</th><th>${H("Операция")}</th><th>${H("Сумма")}</th><th>${H("Инструмент")}</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty(T("portfolio.no_operations"), T("portfolio.no_operations_details"));
-    const more = data.next_cursor ? button(T("Загрузить ещё"), "ledger-more", {small: true, extra: state.loading.has("ledger-more") ? " disabled" : ""}) : "";
+    const restart = state.errors.ledger?.code === "workspace_operation_history_changed";
+    const more = data.next_cursor && !restart ? button(T("Загрузить ещё"), "ledger-more", {small: true, extra: state.loading.has("ledger-more") || state.loading.has("ledger") ? " disabled" : ""}) : "";
     return `${cardHeader(T("portfolio.operations"))}${freshness(data.source || "T-Invest", data.observed_at, data.status)}${dataError("ledger")}<p class="fine-print">${H("portfolio.operations_notice")}</p>${table}${more}`;
   }
   async function loadLedgerPage() {
-    if (!state.data.ledger?.next_cursor || state.loading.has("ledger-more")) return;
+    const ledger = state.data.ledger;
+    if (!ledger?.next_cursor || state.loading.has("ledger-more") || state.loading.has("ledger") || state.errors.ledger?.code === "workspace_operation_history_changed") return;
     const generation = state.generation;
+    const version = state.resourceVersions.get("ledger") || 0;
+    const current = () => generation === state.generation && state.data.ledger === ledger && version === (state.resourceVersions.get("ledger") || 0);
     state.loading.add("ledger-more");
     try {
-      const page = await api(`/api/workspace/operations?limit=50&cursor=${encodeURIComponent(state.data.ledger.next_cursor)}`);
-      if (generation === state.generation) { state.data.ledger = mergePage(state.data.ledger, page); delete state.errors.ledger; }
-    } catch (error) { if (generation === state.generation && !isCancelled(error)) state.errors.ledger = error; }
-    finally { state.loading.delete("ledger-more"); if (generation === state.generation && state.view === "portfolio") renderPortfolio(); }
+      const page = await api(`/api/workspace/operations?limit=50&cursor=${encodeURIComponent(ledger.next_cursor)}`);
+      if (current()) { state.data.ledger = mergePage(ledger, page); delete state.errors.ledger; }
+    } catch (error) { if (current() && !isCancelled(error)) state.errors.ledger = error; }
+    finally {
+      if (generation === state.generation) {
+        state.loading.delete("ledger-more");
+        if (state.view === "portfolio") renderPortfolio();
+      }
+    }
   }
   function supportAddress(value) {
     if (typeof value !== "string" || value.length > 254 || /[\s<>]/.test(value)) return "";
@@ -5787,10 +5916,37 @@
     }
     const key = path.at(-1);
     if (!Object.hasOwn(parent, key)) return;
+    slot.invalidInputs ||= {};
+    const recovering = Object.hasOwn(slot.invalidInputs, input.name);
+    if (input.type === "number") {
+      if (recovering) input.setCustomValidity("");
+      if (!input.validity.valid) {
+        slot.invalidInputs[input.name] = input.value;
+        input.setAttribute("aria-invalid", "true");
+        slot.revision += 1;
+        slot.dirty = true;
+        slot.assessment = null;
+        slot.research = null;
+        clearTimeout(slot.timer);
+        validateStrategyInputs(slot);
+        return;
+      }
+    }
+    delete slot.invalidInputs[input.name];
+    input.removeAttribute("aria-invalid");
+    if (!Object.keys(slot.invalidInputs).length && slot.error?.message === "strategy_input_invalid") slot.error = null;
     const value = input.type === "checkbox" ? input.checked : renderUpdateStrategyFieldValue(input);
-    if (parent[key] === value) return;
+    if (parent[key] === value) {
+      if (recovering) {
+        if (!Object.keys(slot.invalidInputs).length && !slot.busy && slot.server && same(slot.draft, slot.server.document)) slot.dirty = false;
+        updateSaveStatus("strategy");
+        if (slot.dirty) scheduleSave("strategy");
+      }
+      return;
+    }
     parent[key] = value;
     documentChanged();
+    if (Object.keys(slot.invalidInputs).length) validateStrategyInputs(slot);
   };
   const stepField = control => {
     const input = document.getElementsByName(control.dataset.stepField)[0];

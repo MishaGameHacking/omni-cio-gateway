@@ -111,9 +111,10 @@ def _number(value: object, *, nonnegative: bool = False) -> str:
     exponent = number.as_tuple().exponent
     if (
         not number.is_finite()
-        or abs(number) > Decimal("1e15")
         or not isinstance(exponent, int)
         or exponent < -28
+        or exponent > 15
+        or number.copy_abs() > Decimal("1e15")
         or nonnegative
         and number < 0
     ):

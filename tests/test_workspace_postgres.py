@@ -35,8 +35,13 @@ from omnicio.notifications import (
     push_public_key,
     vapid_authorization,
 )
-from omnicio.portfolio_store import PortfolioStore, SettingsVersionConflict
-from omnicio.workspace import default_preferences
+from omnicio.portfolio_store import (
+    PortfolioStore,
+    SettingsVersionConflict,
+    _save_operation_observation,
+)
+from omnicio.tbank import TBankMoney, TBankOperation
+from omnicio.workspace import cashflow_summary, default_preferences
 from omnicio.workspace_store import WorkspaceNotFound, WorkspaceStore
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
@@ -1859,6 +1864,122 @@ def _ledger_fact(
             (owner, str(owner), digest, digest, ident, at, operation_type, value,
              json.dumps(payload), observed or datetime.now(UTC)),
         )
+
+
+def test_parent_trade_and_fee_keep_distinct_lineages_in_totals_and_paginated_history(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, other = user(database, account=True), user(database, account=True)
+    store = WorkspaceStore(database)
+    now = datetime.now(UTC)
+    at = now - timedelta(hours=1)
+    _ledger_fact(database, owner, "shared-parent", at, kind="BUY", value="-5000")
+    _ledger_fact(database, owner, "shared-parent", at, kind="BROKER_FEE", value="-10")
+    _ledger_fact(database, owner, "shared-parent", at, kind="BROKER_FEE", value="-12")
+    _ledger_fact(database, owner, "contribution", at, value="1000")
+    # ID-less observations use their own semantic identity. A literal provider
+    # ID equal to that digest must not share the fallback's namespace.
+    _ledger_fact(database, owner, "", at, kind="COUPON", value="100")
+    _ledger_fact(database, owner, "", at, kind="COUPON", value="200")
+    fallback_hash = hashlib.sha256(f":{at}:COUPON:100".encode()).hexdigest()
+    _ledger_fact(database, owner, fallback_hash, at, kind="COUPON", value="300")
+    _ledger_fact(database, other, "shared-parent", at, kind="BROKER_FEE", value="-999")
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
+        conn.execute(
+            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
+            "VALUES(%s, %s, %s)", (owner, str(owner), now),
+        )
+    with store._transaction(owner) as cur:
+        basis = store._basis(cur, owner)
+    assert basis.complete
+    assert len(basis.operations) == 6
+    flow = cashflow_summary(basis.operations, from_at=at - timedelta(seconds=1),
+                            to_at=now, complete=basis.complete)
+    assert Decimal(flow["net_contributions_rub"]) == Decimal("1000")
+    assert Decimal(flow["fees_rub"]) == Decimal("12")
+    assert Decimal(flow["income"]["total_rub"]) == Decimal("600")
+    rows: list[dict[str, Any]] = []
+    cursor = None
+    for _ in range(3):
+        page = store.operations(owner, limit=2, cursor=cursor)
+        rows.extend(page["items"])
+        cursor = page["next_cursor"]
+    assert cursor is None
+    assert len({row["id"] for row in rows}) == 6
+    fees = [row for row in rows if row["category"] == "fee"]
+    assert len(fees) == 1
+    assert fees[0]["payment"]["value"] == "-12"
+    assert sum(row["category"] == "internal" for row in rows) == 1
+
+
+def test_reconfirmed_prior_operation_changes_current_totals_and_invalidates_old_page(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    owner, other = user(database, account=True), user(database, account=True)
+    store = WorkspaceStore(database)
+    began = datetime.now(UTC) - timedelta(seconds=20)
+    source_at = began - timedelta(hours=1)
+    original = TBankOperation(
+        cursor="", broker_account_id=str(owner), id="fee", parent_operation_id="trade",
+        name="Broker fee", date=source_at, operation_type="OPERATION_TYPE_BROKER_FEE",
+        description="", state="OPERATION_STATE_EXECUTED", instrument_uid="", figi="",
+        instrument_type="", position_uid="", ticker="", class_code="",
+        payment=TBankMoney("RUB", "-10"), price=None, commission=None, accrued_int=None,
+        quantity="0", quantity_rest="0", quantity_done="0", asset_uid="", trades=(),
+    )
+
+    def observe(tenant: UUID, value: str, second: int, *, ident: str = "fee") -> bool:
+        item = replace(original, broker_account_id=str(tenant), id=ident,
+                       payment=TBankMoney("RUB", value))
+        with store._transaction(tenant) as cur:
+            return _save_operation_observation(
+                cur, user_id=tenant, account_id=str(tenant), operation=item,
+                observed_at=began + timedelta(seconds=second),
+            )
+
+    assert observe(owner, "-10", 0)
+    assert observe(other, "-12", 0)
+    _ledger_fact(database, owner, "deposit", source_at, observed=began)
+    assert observe(owner, "-12", 1)
+    with patch("omnicio.workspace_store.datetime") as clock:
+        clock.now.return_value = began + timedelta(seconds=2)
+        first = store.operations(owner, limit=1)
+        assert first["items"][0]["payment"]["value"] == "-12"
+        assert first["next_cursor"] is not None
+        # Re-reading the already-current fact does not move its timestamp or
+        # invalidate an otherwise consistent page snapshot.
+        assert not observe(owner, "-12", 3)
+        clock.now.return_value = began + timedelta(seconds=4)
+        second = store.operations(owner, limit=1, cursor=first["next_cursor"])
+        assert second["items"][0]["category"] == "contribution"
+        assert second["next_cursor"] is None
+        assert not observe(owner, "-10", 5)
+        # A delayed older read must not undo the newer confirmation.
+        assert not observe(owner, "-12", 4)
+        clock.now.return_value = began + timedelta(seconds=6)
+        with pytest.raises(ValueError, match="workspace_operation_history_changed"):
+            store.operations(owner, limit=1, cursor=first["next_cursor"])
+        fresh = store.operations(owner)
+        fees = [row for row in fresh["items"] if row["category"] == "fee"]
+        assert len(fees) == 1
+        assert fees[0]["payment"]["value"] == "-10"
+        assert fees[0]["operation_date"] == source_at.isoformat()
+        assert fees[0]["observed_at"] == (began + timedelta(seconds=5)).isoformat()
+        assert store.operations(other)["items"][0]["payment"]["value"] == "-12"
+    # An exact semantic replay after a provider-ID rotation remains idempotent;
+    # this does not infer a relation between different financial facts.
+    assert not observe(owner, "-10", 7, ident="renamed-provider-id")
+    with store._transaction(owner) as cur:
+        basis = store._basis(cur, owner)
+        cur.execute("SELECT count(*) AS count FROM operation_observations WHERE user_id = %s",
+                    (owner,))
+        assert cur.fetchone()["count"] == 3
+    totals = cashflow_summary(basis.operations, from_at=source_at - timedelta(seconds=1),
+                              to_at=began, complete=True)
+    assert Decimal(totals["fees_rub"]) == Decimal("10")
 
 
 def test_operations_pages_freeze_ingestion_and_bind_account_filters(

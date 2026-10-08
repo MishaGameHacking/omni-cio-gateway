@@ -206,6 +206,42 @@ def test_negative_asset_total_requires_reconciliation() -> None:
     assert report.rub_cash_unblocked is None
 
 
+def test_impossible_asset_subtotal_invalidates_nav_without_rescaling_source_values() -> None:
+    report = analyze_portfolio(
+        portfolio(position("share", "9", "100"), asset_total="2000"),
+        cash(), (metadata("share", "energy"),),
+    )
+    assert report.status == "needs_reconciliation"
+    assert report.valuation_status == "unavailable"
+    assert report.rub_cash_unblocked is None
+    assert report.nav_rub == "1000"
+    assert report.classes[0].value_rub == "2000"
+    assert report.classes[0].nav_percent is None
+    assert report.securities[0].value_rub == "900"
+    assert report.securities[0].nav_percent is None
+    assert report.sectors[0].nav_percent is None
+
+
+def test_asset_subtotal_tolerance_and_partial_currency_evidence_preserve_independent_nav() -> None:
+    item = replace(position("foreign", "1", "10"), current_price=money("10", "USD"))
+    observed = replace(
+        portfolio(item),
+        asset_totals=(TBankAssetTotal("shares", money("900.005")),
+                      TBankAssetTotal("currencies", money("100"))),
+    )
+    report = analyze_portfolio(observed, cash(), ())
+    assert report.status == "partial"
+    assert report.valuation_status == "complete"
+    assert report.positions_valuation_status == "partial"
+    assert report.securities[0].value_rub is None
+    inconsistent = replace(
+        observed,
+        asset_totals=(TBankAssetTotal("shares", money("900.02")),
+                      TBankAssetTotal("currencies", money("100"))),
+    )
+    assert analyze_portfolio(inconsistent, cash(), ()).valuation_status == "unavailable"
+
+
 def test_empty_zero_nav_and_order_blocked_are_not_default_claims() -> None:
     empty = analyze_portfolio(portfolio(total="0", asset_total="0"), cash("0", "0"), ())
     assert empty.security_count == 0
@@ -277,7 +313,8 @@ def test_cbr_indicator_http_is_private_but_broker_independent() -> None:
     assert body["key_rate"]["value"] == "14"
     assert body["usd_rub"]["value"] == "83.4839"
     assert body["eur_rub"]["value"] == "94.3201"
-    user.assert_called_once()
+    assert user.call_count == 2
+    assert user.call_args_list[0] == user.call_args_list[1]
     market.return_value.cbr_indicators.assert_called_once_with()
 
 

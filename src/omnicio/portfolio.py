@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 
 from .tbank import (
@@ -408,9 +408,20 @@ def analyze_portfolio(
 
     # GetPortfolio and GetPositions are separate provider reads, not an atomic valuation.
     # A large impossible overlap is surfaced as reconciliation instead of normalized away.
-    valuation_consistent = nav >= 0 and nav >= valued + cash - Decimal("0.01")
+    class_subtotal = sum(
+        (_number(item.money.value) for item in portfolio.asset_totals
+         if item.money.currency.upper() == "RUB"),
+        Decimal(0),
+    )
+    valuation_consistent = (
+        nav >= 0 and nav >= max(valued + cash, class_subtotal) - Decimal("0.01")
+    )
     if not valuation_consistent:
         compatible = False
+        # Retain raw observations for reconciliation, but do not turn a
+        # contradictory denominator into apparently valid allocation percentages.
+        securities = tuple(replace(item, nav_percent=None) for item in securities)
+    allocation_nav = nav if valuation_consistent else Decimal(0)
 
     unblocked = (
         cash - blocked
@@ -432,8 +443,8 @@ def analyze_portfolio(
         security_count=len(securities),
         valued_security_count=sum(item.value_rub is not None for item in securities),
         sector_coverage_percent=_percent(classified, valued),
-        classes=_class_allocations(portfolio, nav),
-        sectors=_sector_allocations(sector_values, nav),
+        classes=_class_allocations(portfolio, allocation_nav),
+        sectors=_sector_allocations(sector_values, allocation_nav),
         securities=securities,
         observations=_observations(
             securities,

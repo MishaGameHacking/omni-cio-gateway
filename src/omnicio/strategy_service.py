@@ -24,10 +24,9 @@ from .backtest import (
     ResearchAsset,
     ResearchBasis,
     ResearchCosts,
-    history_candidate,
+    research_history_candidate,
     research_robustness,
     run_strategy_backtest,
-    split_adjusted_history,
 )
 from .broker import (
     STRATEGY_RATING_READ_LIMIT,
@@ -64,6 +63,7 @@ from .tbank import (
 _MOSCOW = ZoneInfo("Europe/Moscow")
 _RESEARCH_WORKERS = 4
 _RESEARCH_DEADLINE_SECONDS = 180
+CURRENT_RESEARCH_HISTORY_MAX_AGE = timedelta(days=4)
 _DIVIDEND_SOURCE = "https://developer.tbank.ru/invest/api/instruments-service-get-dividends"
 _BOND_EVENT_SOURCE = "https://developer.tbank.ru/invest/api/instruments-service-get-bond-events"
 _ACCRUAL_SOURCE = "https://developer.tbank.ru/invest/api/instruments-service-get-accrued-interests"
@@ -398,6 +398,8 @@ def _fundamental_facts(item: TBankAssetFundamental, now: datetime) -> dict[str, 
         if raw is None:
             continue
         number = Decimal(raw)
+        # GetAssetFundamentals documents zero as unavailable. A confirmed
+        # user-supplied zero follows the separate evidence import path.
         if number.is_finite() and number != 0:
             facts[key] = StrategyFact(number, now, source)
     capitalization = item.market_capitalization
@@ -1216,21 +1218,8 @@ def _collect_research_result(
         now=now,
     )
     if to_at >= now - timedelta(days=4):
-        payload["current_selection"] = select_strategy_candidates(
-            document,
-            [
-                history_candidate(
-                    asset.candidate,
-                    split_adjusted_history(asset.candles, asset.splits, now),
-                    as_of=now,
-                    factors=asset.factors,
-                    cashflows=asset.observed_cashflows,
-                    document=document,
-                    costs=costs,
-                )
-                for asset in assets
-            ],
-            as_of=now,
+        payload["current_selection"] = _current_research_selection(
+            document, assets, costs=costs, now=now, catalog=run.catalog,
         )
     latest = store.current_strategy_draft(user_id)
     if (
@@ -1277,6 +1266,8 @@ def _collect_research_result(
             "parallel_reads": _RESEARCH_WORKERS,
             "provider_deadline_seconds": _RESEARCH_DEADLINE_SECONDS,
             "selection_policy": "held_positions_then_required_class_capacity_with_headroom",
+            "catalog_snapshot_id": run.catalog.get("snapshot_id"),
+            "catalog_freshness": _research_catalog_freshness(run.catalog, now),
         },
         "data_coverage": [
             {
@@ -1331,6 +1322,76 @@ def _collect_research_result(
     return result
 
 
+def _research_catalog_freshness(
+    catalog: Mapping[str, Any], now: datetime,
+) -> dict[str, Any]:
+    captured = catalog.get("captured_at")
+    return asdict(describe_freshness(
+        captured if isinstance(captured, datetime) else None,
+        max_age=PORTFOLIO_MAX_AGE, now=now,
+        coverage="complete" if catalog.get("analysis_status") == "observed" else "partial",
+    ))
+
+
+def _current_research_selection(
+    document: Mapping[str, Any], assets: list[ResearchAsset], *,
+    costs: ResearchCosts, now: datetime, catalog: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Today's screening requires a current universe and valid input evidence.
+
+    An invalid candidate must not be quietly replaced by a healthy neighbour.
+    Historical calculations keep their dated catalog independently of this gate.
+    """
+    missing: set[str] = set()
+    if _research_catalog_freshness(catalog, now)["status"] != "fresh":
+        missing.add("fresh_account_catalog")
+    candidates = []
+    invalid = []
+    histories = []
+    for asset in assets:
+        try:
+            candidates.append(current_research_candidate(
+                asset, as_of=now, document=document, costs=costs,
+            ))
+            histories.append({
+                "instrument_uid": asset.candidate.instrument_uid,
+                "latest_completed_candle_at": max(
+                    bar.time for bar in asset.candles
+                    if bar.is_complete and bar.time <= now - timedelta(days=1)
+                ).isoformat(),
+            })
+        except ValueError as exc:
+            missing.add("invalid_current_research_evidence")
+            invalid.append({"instrument_uid": asset.candidate.instrument_uid, "reason": str(exc)})
+    selection = select_strategy_candidates(document, candidates, as_of=now)
+    if missing:
+        selection.update(
+            status="insufficient_data", candidate_selection_ready=False, selected=[],
+            cash_weight_percent=None,
+            missing_requirements=sorted(missing | set(selection["missing_requirements"])),
+        )
+    selection["invalid_evidence"] = invalid
+    selection["history_sources"] = histories
+    selection["history_max_age_seconds"] = int(CURRENT_RESEARCH_HISTORY_MAX_AGE.total_seconds())
+    return selection
+
+
+def current_research_candidate(
+    asset: ResearchAsset, *, as_of: datetime, document: Mapping[str, Any], costs: ResearchCosts,
+) -> StrategyCandidateFacts:
+    """Validate actual daily observations before a current screen or plan.
+
+    A recent requested range or retrieval time does not make an old returned
+    candle current. Extended closures deliberately require refreshed evidence.
+    """
+    candidate = research_history_candidate(asset, as_of=as_of, document=document, costs=costs)
+    latest = max(bar.time for bar in asset.candles
+                 if bar.is_complete and bar.time <= as_of - timedelta(days=1))
+    if as_of - latest > CURRENT_RESEARCH_HISTORY_MAX_AGE:
+        raise ValueError("current_price_history_stale")
+    return candidate
+
+
 def research_inputs(
     document: Mapping[str, Any],
     assets: list[ResearchAsset],
@@ -1361,6 +1422,7 @@ def research_assets_from_inputs(inputs: Mapping[str, Any]) -> list[ResearchAsset
     if inputs.get("schema_version") != 1 or inputs.get("engine_version") not in {
         "1.1.0",
         "1.2.0",
+        "1.3.0",
         RESEARCH_ENGINE_VERSION,
     }:
         raise ValueError("research_replay_version_unsupported")

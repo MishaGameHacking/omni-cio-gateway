@@ -346,6 +346,80 @@ def test_research_uses_owner_provider_history_and_never_calls_trade_methods(runt
     store.latest_balancing_context.assert_called_once_with(A, candidate_limit=100)
 
 
+@pytest.mark.parametrize("catalog_state", ["fresh", "stale", "missing", "future", "partial"])
+def test_today_selection_cannot_promote_a_stale_or_incomplete_account_universe(catalog_state):
+    from test_backtest import END, ZERO_COSTS, prices, research_document
+
+    from omnicio.strategy_service import _current_research_selection
+
+    catalog = {"captured_at": END, "analysis_status": "observed"}
+    if catalog_state == "stale":
+        catalog["captured_at"] = END - timedelta(minutes=6)
+    elif catalog_state == "missing":
+        catalog.pop("captured_at")
+    elif catalog_state == "future":
+        catalog["captured_at"] = END + timedelta(minutes=1)
+    elif catalog_state == "partial":
+        catalog["analysis_status"] = "partial"
+    selection = _current_research_selection(
+        research_document(), [prices()], costs=ZERO_COSTS, now=END, catalog=catalog,
+    )
+    assert selection["candidate_selection_ready"] is (catalog_state == "fresh")
+    if catalog_state != "fresh":
+        assert selection["selected"] == []
+        assert selection["cash_weight_percent"] is None
+        assert "fresh_account_catalog" in selection["missing_requirements"]
+
+
+@pytest.mark.parametrize("bad_evidence", ["split_zero", "split_nan", "empty_history"])
+def test_today_selection_cannot_replace_a_corrupt_candidate_with_a_healthy_neighbour(bad_evidence):
+    from test_backtest import END, SOURCE, START, ZERO_COSTS, prices, research_document
+
+    from omnicio.backtest import HistoricalSplit
+    from omnicio.strategy_service import _current_research_selection
+
+    invalid = prices("broken")
+    if bad_evidence == "empty_history":
+        invalid = replace(invalid, candles=())
+    else:
+        invalid = replace(invalid, splits=(HistoricalSplit(
+            START + timedelta(days=10),
+            Decimal(0) if bad_evidence == "split_zero" else Decimal("NaN"),
+            SOURCE,
+        ),))
+    selection = _current_research_selection(
+        research_document(), [prices(), invalid], costs=ZERO_COSTS, now=END,
+        catalog={"captured_at": END, "analysis_status": "observed"},
+    )
+    assert selection["candidate_selection_ready"] is False
+    assert selection["selected"] == []
+    assert "invalid_current_research_evidence" in selection["missing_requirements"]
+    assert selection["invalid_evidence"][0]["instrument_uid"] == "broken"
+
+
+@pytest.mark.parametrize("today_complete", [None, False, True])
+def test_fresh_account_catalog_cannot_make_old_completed_price_history_current(today_complete):
+    from test_backtest import END, ZERO_COSTS, prices, research_document
+
+    from omnicio.strategy_service import _current_research_selection
+
+    asset = prices()
+    observed = END + timedelta(days=30)
+    if today_complete is not None:
+        asset = replace(asset, candles=asset.candles + (
+            replace(asset.candles[-1], time=observed, is_complete=today_complete),
+        ))
+    selection = _current_research_selection(
+        research_document(), [asset], costs=ZERO_COSTS, now=observed,
+        catalog={"captured_at": observed, "analysis_status": "observed"},
+    )
+    assert selection["candidate_selection_ready"] is False
+    assert selection["selected"] == []
+    assert selection["invalid_evidence"] == [
+        {"instrument_uid": "a", "reason": "current_price_history_stale"},
+    ]
+
+
 @pytest.mark.parametrize("status", ["running", "failed", "expired", "deleted"])
 def test_duplicate_research_request_never_restarts_external_reads(runtime, status):
     store, broker = research_runtime(runtime)
@@ -456,6 +530,23 @@ def test_fundamental_adapter_does_not_invent_percentage_units_or_publication_tim
     assert facts["debt_to_ebitda"].value == Decimal("1.75")
     assert facts["free_cash_flow_ttm"].value == Decimal("-100")
     assert all(fact.available_at >= observed for fact in facts.values())
+
+
+@pytest.mark.parametrize("reported", [0, None])
+def test_provider_zero_fundamentals_follow_the_real_missing_data_contract(runtime, reported):
+    from omnicio.strategy_service import _research_fundamentals
+    from omnicio.tbank import _asset_fundamental
+
+    _, broker = research_runtime(runtime)
+    observed = datetime.now(UTC)
+    raw = {"assetUid": "asset-0", "totalDebtToEbitdaMrq": reported,
+           "freeCashFlowTtm": reported, "netIncomeTtm": reported,
+           "marketCapitalization": 1000, "dividendPayoutRatioFy": reported}
+    broker.candidate_fundamentals.return_value = (
+        _asset_fundamental(raw, {"asset-0"}, set()),
+    )
+    facts = _research_fundamentals(A, [{"asset_uid": "asset-0"}], broker, observed)["asset-0"]
+    assert facts == {}
 
 
 @pytest.mark.parametrize("change", ["version", "document", "account"])

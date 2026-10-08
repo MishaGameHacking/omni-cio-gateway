@@ -607,8 +607,10 @@ def portfolio_performance(
         "return_denominator_rub": None,
         "return_is_estimate": True,
         "return_is_annualized": False,
+        "return_time_basis": "broker_operation_instruction_time",
         "return_limitations": [
-            "Cash flows are weighted by their recorded execution time within the observed period.",
+            "Cash flows are weighted by the broker's recorded operation time (OperationItem.date), "
+            "which is the instruction date, not a separately confirmed settlement timestamp.",
             "Large flows and volatility can make this estimate differ from time-weighted return.",
             "This is a historical account result, not a forecast or a probability of success.",
         ],
@@ -680,10 +682,12 @@ def portfolio_performance(
 def _dietz_denominator(
     start_nav: Decimal, operations: Sequence[Mapping[str, Any]], begin: datetime, end: datetime,
 ) -> Decimal:
-    """Modified Dietz; use execution timestamps, never ingestion time or binary money floats.
+    """Modified Dietz estimate using broker operation times, never ingestion time.
 
     A flow at the ending valuation has weight zero; a flow at the beginning
     is already in opening NAV and is excluded by the same accounting boundary.
+    OperationItem.date is the broker's instruction time; exact settlement time
+    is not supplied by this ledger and must not be claimed as known.
     Called only after cash-flow classification and coverage succeed.
     """
     span = end - begin

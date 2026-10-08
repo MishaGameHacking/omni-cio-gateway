@@ -16,8 +16,6 @@ from .backtest import (
     MAX_RESEARCH_ASSETS,
     RESEARCH_ENGINE_VERSION,
     ResearchCosts,
-    history_candidate,
-    split_adjusted_history,
 )
 from .broker import (
     BrokerConnectionError,
@@ -28,7 +26,9 @@ from .broker import (
 from .execution import (
     ExecutionLegStatus,
     ExecutionStateError,
+    execution_cash_reserve,
     execution_depth,
+    execution_position_lots,
     execution_quote,
     provider_leg_status,
     strategy_order_plan,
@@ -44,7 +44,7 @@ from .portfolio_store import PortfolioStore
 from .research_store import ResearchStore
 from .strategy import document_hash, normalize_document
 from .strategy_assessment import StrategyCandidateFacts, select_strategy_candidates
-from .strategy_service import research_assets_from_inputs
+from .strategy_service import current_research_candidate, research_assets_from_inputs
 from .tbank import (
     TBankInstrumentMetadata,
     TBankMoney,
@@ -139,18 +139,18 @@ class PortfolioExecutionService:
         )
         inputs = archive["inputs"]
         assets = research_assets_from_inputs(inputs)
-        candidates = [
-            history_candidate(
-                asset.candidate,
-                split_adjusted_history(asset.candles, asset.splits, now),
-                as_of=now,
-                factors=asset.factors,
-                cashflows=asset.observed_cashflows,
-                document=payload["document"],
-                costs=ResearchCosts(commission_bps, slippage_bps),
-            )
-            for asset in assets
-        ]
+        try:
+            candidates = [
+                current_research_candidate(
+                    asset,
+                    as_of=now,
+                    document=payload["document"],
+                    costs=ResearchCosts(commission_bps, slippage_bps),
+                )
+                for asset in assets
+            ]
+        except ValueError as exc:
+            raise ExecutionServiceError("execution_current_research_required") from exc
         selection = select_strategy_candidates(payload["document"], candidates, as_of=now)
         if not selection["candidate_selection_ready"]:
             return {
@@ -276,6 +276,7 @@ class PortfolioExecutionService:
         if (
             archive.get("result", {}).get("status") != "computed"
             or not isinstance(archive.get("result", {}).get("metrics"), dict)
+            or archive["result"].get("engine_version") != RESEARCH_ENGINE_VERSION
             or inputs.get("engine_version") != RESEARCH_ENGINE_VERSION
         ):
             raise ExecutionServiceError("execution_computed_research_required")
@@ -292,10 +293,28 @@ class PortfolioExecutionService:
             or Decimal(inputs["slippage_bps"]) != slippage_bps
         ):
             raise ExecutionServiceError("execution_current_research_required")
+        self._require_current_selection(archive["result"].get("current_selection"), now)
         evidence = self.research_store.evidence(user_id)
         if evidence["version"] != archive["evidence_version"]:
             raise ExecutionServiceError("execution_research_evidence_changed")
         return archive, evidence, now
+
+    @staticmethod
+    def _require_current_selection(selection: object, now: datetime) -> None:
+        # A historical basket cannot override an explicitly unavailable current
+        # catalog/evidence assessment, even when its backtest itself is computed.
+        if (
+            not isinstance(selection, dict)
+            or selection.get("status") != "ready"
+            or selection.get("candidate_selection_ready") is not True
+        ):
+            raise ExecutionServiceError("execution_current_research_required")
+        try:
+            observed = datetime.fromisoformat(selection["as_of"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ExecutionServiceError("execution_current_research_required") from exc
+        if observed.tzinfo is None or not 0 <= (now - observed).total_seconds() <= 86400:
+            raise ExecutionServiceError("execution_current_research_required")
 
     def _planning_snapshot(
         self,
@@ -694,6 +713,8 @@ class PortfolioExecutionService:
             ),
             Decimal(0),
         )
+        if not 0 <= blocked <= cash:
+            raise ExecutionServiceError("execution_cash_inconsistent")
         position = next(
             (
                 row
@@ -702,10 +723,9 @@ class PortfolioExecutionService:
             ),
             None,
         )
-        available_lots = (
-            Decimal(0)
-            if position is None or position.blocked
-            else Decimal(position.quantity_lots) - Decimal(position.blocked_lots)
+        available_lots = Decimal(
+            execution_position_lots(position, leg_payload["lot_size"])[1]
+            if position is not None else 0
         )
         self._check_execution_balances(snapshot, cash, payload, legs, mode)
         if mode == "shadow":
@@ -714,9 +734,11 @@ class PortfolioExecutionService:
             )
         if leg.action == "sell" and available_lots < leg.lots_requested:
             raise ExecutionServiceError("execution_free_inventory_changed")
-        if leg.action == "buy" and cash - blocked - Decimal(leg_payload["max_spend_rub"]) < Decimal(
-            payload["reserve_rub"]
-        ) - Decimal(payload["blocked_cash_rub"]):
+        if leg.action == "buy" and cash - Decimal(leg_payload["max_spend_rub"]) < (
+            execution_cash_reserve(
+                payload["document"], nav=Decimal(payload["nav_rub"]), blocked_cash=blocked,
+            )
+        ):
             raise ExecutionServiceError("execution_free_cash_changed")
 
     def _dispatch_market_preflight(
@@ -776,11 +798,15 @@ class PortfolioExecutionService:
                     expected_lots.get(previous.instrument_uid, 0) + sign * previous.lots_executed
                 )
                 expected_cash -= sign * previous.executed_amount_rub
-        actual_lots = {
-            row.instrument_uid: Decimal(row.quantity_lots)
-            for row in snapshot.portfolio.positions
-            if row.instrument_type != "currency" and Decimal(row.quantity) != 0
-        }
+        actual_lots = {}
+        lot_sizes = payload.get("lot_sizes", {})
+        for row in snapshot.portfolio.positions:
+            if row.instrument_type == "currency" or Decimal(row.quantity) == 0:
+                continue
+            uid = row.instrument_uid
+            if uid in actual_lots or uid not in lot_sizes:
+                raise ExecutionServiceError("execution_portfolio_changed")
+            actual_lots[uid] = execution_position_lots(row, lot_sizes[uid])[0]
         if actual_lots != {uid: count for uid, count in expected_lots.items() if count} or abs(
             cash - expected_cash
         ) > Decimal("0.01"):

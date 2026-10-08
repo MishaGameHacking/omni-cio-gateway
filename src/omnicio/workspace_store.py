@@ -47,6 +47,13 @@ _MAX_OPERATIONS = 50_000
 _MAX_HISTORY_POINTS = 366
 _HISTORY_PERIOD_DAYS = {"1d": 1, "1w": 7, "1m": 31, "3m": 93, "1y": 365}
 _EVENT_ID_PATTERN = r"[0-9a-f]{64}"
+# Broker commission IDs may equal their parent trade ID. Corrections are
+# selected within an operation type, and ID-less facts have a separate namespace.
+# https://developer.tbank.ru/invest/services/operations/operations_problems
+_OPERATION_IDENTITY_SQL = (
+    "operation_type, CASE WHEN provider_operation_id <> '' "
+    "THEN 'id:' || provider_operation_id ELSE 'hash:' || encode(semantic_hash, 'hex') END"
+)
 _ACTIVITY = {
     "account_created": "Аккаунт создан",
     "login_succeeded": "Выполнен вход в аккаунт",
@@ -295,13 +302,11 @@ class WorkspaceStore:
         if basis.connection is None:
             return basis
         cur.execute(
-            "SELECT * FROM (SELECT DISTINCT ON (CASE WHEN provider_operation_id <> '' "
-            "THEN provider_operation_id ELSE encode(semantic_hash, 'hex') END) "
+            "SELECT * FROM (SELECT DISTINCT ON (" + _OPERATION_IDENTITY_SQL + ") "
             "id, provider_operation_id, operation_date, operation_type, operation_state, "
             "instrument_uid, payment_value, payment_currency, observed_at "
             "FROM operation_observations WHERE user_id = %s AND account_id = %s "
-            "ORDER BY CASE WHEN provider_operation_id <> '' THEN provider_operation_id "
-            "ELSE encode(semantic_hash, 'hex') END, observed_at DESC, id DESC) AS latest "
+            "ORDER BY " + _OPERATION_IDENTITY_SQL + ", observed_at DESC, id DESC) AS latest "
             "WHERE (%s::timestamptz IS NULL OR operation_date >= %s) "
             "AND (%s::timestamptz IS NULL OR operation_date <= %s) "
             "ORDER BY operation_date DESC, id DESC LIMIT %s",
@@ -468,8 +473,8 @@ class WorkspaceStore:
     ) -> dict[str, Any]:
         """Page the actual corrected broker ledger under the current account authority.
 
-        Ingestion is frozen at the first page time. Later corrections cannot
-        cause duplicates or omissions halfway through the same pagination.
+        New facts are frozen at the first page time. Reconfirming an older
+        correction invalidates that snapshot instead of omitting a row silently.
         """
         now = datetime.now(UTC)
         _validate_operation_page(limit, from_at, to_at, now)
@@ -483,6 +488,14 @@ class WorkspaceStore:
             observed_at, before, before_id = now, None, None
             if cursor is not None:
                 observed_at, before, before_id, ceiling = _operation_cursor(cursor, context, now)
+                cur.execute(
+                    "SELECT EXISTS (SELECT 1 FROM operation_observations "
+                    "WHERE user_id = %s AND account_id = %s AND id <= %s "
+                    "AND observed_at > %s) AS changed",
+                    (user_id, connection["account_id"], ceiling, observed_at),
+                )
+                if cur.fetchone()["changed"]:
+                    raise ValueError("workspace_operation_history_changed")
             else:
                 # Ledger ingestion uses the same owner transaction lock, so its
                 # next committed ID cannot appear below this snapshot ceiling.
@@ -493,12 +506,10 @@ class WorkspaceStore:
                 )
                 ceiling = int(cur.fetchone()["ceiling"])
             cur.execute(
-                "WITH latest AS (SELECT DISTINCT ON (CASE WHEN provider_operation_id <> '' "
-                "THEN provider_operation_id ELSE encode(semantic_hash, 'hex') END) "
+                "WITH latest AS (SELECT DISTINCT ON (" + _OPERATION_IDENTITY_SQL + ") "
                 "id, operation_date, observed_at, normalized FROM operation_observations "
                 "WHERE user_id = %s AND account_id = %s AND observed_at <= %s AND id <= %s "
-                "ORDER BY CASE WHEN provider_operation_id <> '' THEN provider_operation_id "
-                "ELSE encode(semantic_hash, 'hex') END, observed_at DESC, id DESC) "
+                "ORDER BY " + _OPERATION_IDENTITY_SQL + ", observed_at DESC, id DESC) "
                 "SELECT * FROM latest WHERE (%s::timestamptz IS NULL OR operation_date >= %s) "
                 "AND operation_date <= %s "
                 "AND (%s::timestamptz IS NULL OR (operation_date, id) < (%s, %s::bigint)) "

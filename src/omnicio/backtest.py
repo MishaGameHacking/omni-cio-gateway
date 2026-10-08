@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
@@ -17,19 +18,36 @@ from decimal import ROUND_CEILING, Decimal
 from typing import Any, Literal
 
 from .strategy import document_hash, expected_shortfall, normalize_document, strategy_rule_set
-from .strategy_assessment import StrategyCandidateFacts, StrategyFact, select_strategy_candidates
+from .strategy_assessment import (
+    StrategyCandidateFacts,
+    StrategyFact,
+    calendar_horizon_days,
+    candidate_weight_constraints,
+    select_strategy_candidates,
+)
 from .tbank import TBankHistoricCandle
 
 ResearchBasis = Literal["unadjusted_price", "verified_total_return"]
 HISTORY_SOURCE = "https://developer.tbank.ru/invest/api/market-data-service-get-candles"
 MAX_RESEARCH_ASSETS = 100
-RESEARCH_ENGINE_VERSION = "1.3.0"
+RESEARCH_ENGINE_VERSION = "1.3.1"
 MAX_RESEARCH_DAYS = 1095
 MIN_TRAIN_OBSERVATIONS = 60
 MIN_TEST_OBSERVATIONS = 20
+_OUTCOME_HORIZONS = (1, 5, 21)
+_BOOTSTRAP_REPLICATES = 1024
+_BOOTSTRAP_SOURCE = "https://users.ssc.wisc.edu/~behansen/718/Politis%20Romano.pdf"
 _ZERO, _ONE, _HUNDRED = Decimal(0), Decimal(1), Decimal(100)
 _DAY = timedelta(days=1)
 _HTTPS_PREFIX = "https://"
+_MALFORMED_HISTORY_REASONS = {
+    "research_too_many_daily_bars", "research_non_chronological_bars",
+    "research_series_identity_or_source", "research_invalid_volume",
+    "research_decimal_invalid", "research_invalid_ohlc", "invalid_distribution_event",
+    "duplicate_distribution_event", "split_evidence_invalid", "duplicate_split_event",
+    "corporate_action_time_missing", "bond_valuation_history_invalid",
+    "factor_history_invalid", "factor_history_duplicate",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +116,7 @@ def _decimal(value: object) -> Decimal:
         number = Decimal(value)
     except ArithmeticError as exc:
         raise ValueError("research_decimal_invalid") from exc
-    if not number.is_finite() or abs(number) > Decimal("1e15"):
+    if not number.is_finite() or number.copy_abs() > Decimal("1e15"):
         raise ValueError("research_decimal_invalid")
     return number
 
@@ -140,7 +158,7 @@ def history_candidate(
     costs: ResearchCosts | None = None,
 ) -> StrategyCandidateFacts:
     """Only completed bars whose whole daily interval was known by as_of."""
-    past = [bar for bar in candles if bar.is_complete and bar.time + _DAY <= as_of]
+    past = [bar for bar in candles if bar.is_complete and as_of - bar.time >= _DAY]
     if not past:
         return candidate
     prices = [_decimal(bar.close) for bar in past]
@@ -293,7 +311,7 @@ def _validated_bars(
             or bar.source != "CANDLE_SOURCE_EXCHANGE"
         ):
             raise ValueError("research_series_identity_or_source")
-        if not bar.is_complete or bar.time < from_at or bar.time + _DAY > to_at:
+        if not bar.is_complete or bar.time < from_at or to_at - bar.time < _DAY:
             continue
         _validate_bar_values(bar)
         result.append(bar)
@@ -358,7 +376,7 @@ def _bond_history_reasons(asset: ResearchAsset, from_at: datetime, to_at: dateti
         if len(values) != len(asset.bond_valuations) or any(
             bar.time.date() not in values
             for bar in asset.candles
-            if from_at <= bar.time and bar.time + _DAY <= to_at
+            if from_at <= bar.time and to_at - bar.time >= _DAY
         ):
             reasons.append("bond_valuation_history_incomplete")
         if any(
@@ -421,6 +439,39 @@ def _asset_reasons(asset: ResearchAsset, from_at: datetime, to_at: datetime) -> 
     return sorted(set(reasons))
 
 
+def research_history_candidate(
+    asset: ResearchAsset,
+    *,
+    as_of: datetime,
+    document: Mapping[str, Any] | None = None,
+    costs: ResearchCosts | None = None,
+) -> StrategyCandidateFacts:
+    """Validate imported history before any split, factor or income arithmetic.
+
+    Callers must expose the error as unavailable evidence. Falling back to old
+    candidate facts after a corrupt observation would make selection fail open.
+    """
+    if as_of.tzinfo is None:
+        raise ValueError("research_window_invalid")
+    begin = datetime.min.replace(tzinfo=UTC)
+    reasons = _asset_reasons(asset, begin, as_of)
+    reasons.extend(_cashflow_reasons(asset.observed_cashflows))
+    if reasons:
+        raise ValueError(sorted(set(reasons))[0])
+    bars = _validated_bars(asset, begin, as_of)
+    if len(bars) < MIN_TRAIN_OBSERVATIONS:
+        raise ValueError("insufficient_training_history")
+    return history_candidate(
+        asset.candidate,
+        split_adjusted_history(bars, asset.splits, as_of),
+        as_of=as_of,
+        factors=asset.factors,
+        cashflows=asset.observed_cashflows,
+        document=document,
+        costs=costs,
+    )
+
+
 @dataclass(slots=True)
 class _Simulation:
     cash: Decimal
@@ -437,6 +488,10 @@ class _Simulation:
     taxes: Decimal = _ZERO
     tax_rate: Decimal = _ZERO
     applied_splits: set[tuple[str, int]] = field(default_factory=set)
+    net_receivables: bool = False
+    constraint_breach_sessions: int = 0
+    constraint_breaches: set[str] = field(default_factory=set)
+    constraint_unknown: set[str] = field(default_factory=set)
 
 
 def _order(
@@ -450,6 +505,9 @@ def _order(
     minimum_cash: Decimal,
     volume_limit: int,
     costs: ResearchCosts,
+    allocation_target: Decimal | None = None,
+    minimum_effect: Decimal = _ZERO,
+    turnover_includes_commission: bool = False,
 ) -> Decimal:
     if not delta or not volume_limit or remaining_turnover <= 0:
         return _ZERO
@@ -457,7 +515,8 @@ def _order(
     execution = opening * (1 + direction * costs.slippage_bps / 10000)
     per_lot = execution * lot
     fee_per_lot = per_lot * costs.commission_bps / 10000
-    amount = min(abs(delta), volume_limit, int(remaining_turnover / per_lot))
+    turnover_per_lot = per_lot + fee_per_lot if turnover_includes_commission else per_lot
+    amount = min(abs(delta), volume_limit, int(remaining_turnover / turnover_per_lot))
     if direction == 1:
         capacity = max(_ZERO, state.cash - minimum_cash)
         amount = min(amount, int(capacity / (per_lot + fee_per_lot)))
@@ -467,6 +526,12 @@ def _order(
         return _ZERO
     fee = amount * fee_per_lot
     slip = amount * lot * abs(execution - opening)
+    if allocation_target is not None:
+        current = state.lots[uid] * opening * lot
+        change = direction * amount * opening * lot
+        reduction = abs(allocation_target - current) - abs(allocation_target - current - change)
+        if reduction - fee - slip < minimum_effect:
+            return _ZERO
     if direction == 1:
         state.cost_basis[uid] = state.cost_basis.get(uid, _ZERO) + amount * per_lot + fee
     else:
@@ -481,7 +546,7 @@ def _order(
     state.slippage += slip
     state.costs += fee + slip
     state.trades += 1
-    return amount * per_lot
+    return amount * turnover_per_lot
 
 
 def _accrue_distributions(
@@ -542,7 +607,17 @@ def _nav(
             ),
             _ZERO,
         )
-        + sum((amount for _, amount, _ in state.receivables), _ZERO)
+        + _receivables_value(state)
+    )
+
+
+def _receivables_value(state: _Simulation) -> Decimal:
+    return sum(
+        (
+            amount * (1 - state.tax_rate if taxable and state.net_receivables else 1)
+            for _, amount, taxable in state.receivables
+        ),
+        _ZERO,
     )
 
 
@@ -595,19 +670,15 @@ def _apply_rebalance(
     document: Mapping[str, Any],
     costs: ResearchCosts,
     session: _RebalanceSession,
+    *,
+    current_math: bool,
 ) -> None:
     """Size from the previous close, then sell before buying at this session's open."""
     participation = Decimal(document["policy"]["max_daily_turnover_participation_percent"]) / 100
     turnover_fraction = Decimal(document["policy"]["turnover_budget_percent"]) / 100
     cash_target = max(_ZERO, 1 - sum(weights.values(), _ZERO) / 100)
-    reserve = sum(
-        (
-            _decimal(document["profile"][key])
-            for key in ("reserve_rub", "planned_withdrawal_rub")
-            if document["profile"][key] is not None
-        ),
-        _ZERO,
-    )
+    reserve = _decimal(document["profile"]["reserve_rub"] or "0")
+    withdrawals = _decimal(document["profile"]["planned_withdrawal_rub"] or "0")
     turnover = session.previous_nav * turnover_fraction
     targets = {
         asset.candidate.instrument_uid: _rebalance_change(
@@ -622,28 +693,70 @@ def _apply_rebalance(
         )
         for asset in assets
     }
-    minimum_cash = max(reserve, session.previous_nav * cash_target)
+    minimum_cash = max(reserve + withdrawals, session.previous_nav * cash_target)
+    opening_prices = {
+        asset.candidate.instrument_uid: _decimal(panel[asset.candidate.instrument_uid][
+            session.opening
+        ].open)
+        for asset in assets
+    }
     for side in (-1, 1):
+        buying_nav_floor = session.previous_nav
+        if side == 1 and current_math:
+            opening_nav = _nav(state, assets, opening_prices)
+            slip = costs.slippage_bps / 10000
+            # Sells and their taxes are already known. Every later purchase loses
+            # at most this fraction of notional plus commission to fees and slippage.
+            # Size all buys against one lower NAV bound so a later fee cannot
+            # push an earlier purchase above its target/concentration ceiling.
+            fee_rate = costs.commission_bps / 10000
+            buy_loss_rate = (slip / (1 + slip) + fee_rate) / (1 + fee_rate)
+            buying_nav_floor = max(_ZERO, opening_nav - turnover * buy_loss_rate)
+            minimum_cash = max(reserve, opening_nav * cash_target) + withdrawals
         for asset in assets:
             uid = asset.candidate.instrument_uid
             delta = targets[uid]
             if (delta > 0) != (side > 0) or delta == 0:
                 continue
+            if side == 1 and current_math:
+                cap_lots = int(
+                    buying_nav_floor * weights[uid] / 100
+                    / (opening_prices[uid] * asset.candidate.lot_size)
+                )
+                delta = min(delta, max(0, cap_lots - state.lots[uid]))
             turnover -= _order(
                 state,
                 uid,
                 delta,
-                opening=_decimal(panel[uid][session.opening].open),
+                opening=opening_prices[uid],
                 lot=asset.candidate.lot_size,
                 remaining_turnover=turnover,
                 minimum_cash=minimum_cash,
-                volume_limit=int(
-                    panel[uid][session.previous].volume_lots
-                    * _split_factor(asset.splits, session.previous, session.opening)
-                    * participation
+                volume_limit=_session_volume_limit(
+                    asset, panel[uid], session, participation, current_math=current_math
                 ),
                 costs=costs,
+                allocation_target=(buying_nav_floor * weights[uid] / 100)
+                if current_math and not state.risk_stopped else None,
+                minimum_effect=_decimal(document["policy"]["min_replace_benefit_rub"] or "0"),
+                turnover_includes_commission=current_math,
             )
+
+
+def _session_volume_limit(
+    asset: ResearchAsset,
+    bars: Mapping[datetime, TBankHistoricCandle],
+    session: _RebalanceSession,
+    participation: Decimal,
+    *,
+    current_math: bool,
+) -> int:
+    volume = bars[session.previous].volume_lots * _split_factor(
+        asset.splits, session.previous, session.opening
+    )
+    if current_math:
+        volume = min(volume, Decimal(bars[session.opening].volume_lots))
+    return int(volume * participation)
 
 
 def _simulate(
@@ -656,9 +769,11 @@ def _simulate(
     costs: ResearchCosts,
     *,
     rebalance_sessions: int | None,
+    current_math: bool,
 ) -> _Simulation:
     ids = [asset.candidate.instrument_uid for asset in assets]
     state = _Simulation(capital, dict.fromkeys(ids, 0))
+    state.net_receivables = current_math
     tax = document["policy"]["securities_tax_rate_percent"]
     state.tax_rate = _ZERO if tax is None else _decimal(tax) / 100
     state.curve.append(
@@ -690,6 +805,7 @@ def _simulate(
                 document,
                 costs,
                 _RebalanceSession(previous, when, previous_nav),
+                current_math=current_math,
             )
         closing_time = when + _DAY
         # Same-day distributions cannot fund orders already filled at the open.
@@ -697,15 +813,46 @@ def _simulate(
         prices = {uid: _decimal(panel[uid][when].close) for uid in ids}
         previous_nav = _nav(state, assets, prices)
         peak = max(peak, previous_nav)
+        if current_math:
+            _record_holding_constraints(state, assets, prices, previous_nav, document, when)
         state.curve.append(
             {
                 "time": closing_time.isoformat(),
                 "nav_rub": _text(previous_nav),
                 "cash_rub": _text(state.cash),
-                "receivables_rub": _text(sum((a for _, a, _ in state.receivables), _ZERO)),
+                "receivables_rub": _text(_receivables_value(state)),
             }
         )
     return state
+
+
+def _record_holding_constraints(
+    state: _Simulation,
+    assets: Sequence[ResearchAsset],
+    prices: Mapping[str, Decimal],
+    nav: Decimal,
+    document: Mapping[str, Any],
+    when: datetime,
+) -> None:
+    weights = {
+        asset.candidate.instrument_uid: (
+            state.lots[asset.candidate.instrument_uid] * asset.candidate.lot_size
+            * prices[asset.candidate.instrument_uid] * 100 / nav
+        )
+        for asset in assets
+    }
+    checks = candidate_weight_constraints(
+        document, [asset.candidate for asset in assets], weights, as_of=when + _DAY
+    )
+    breaches = [
+        reason for reason in checks
+        if reason.startswith(("instrument_cap:", "excluded_class:", "fund_wrapper_cap:",
+                              "exposure_cap:", "class_cap:"))
+    ]
+    state.constraint_unknown.update(set(checks) - set(breaches))
+    if breaches:
+        state.constraint_breach_sessions += 1
+        state.constraint_breaches.update(breaches)
 
 
 def _split_factor(
@@ -764,19 +911,17 @@ def split_adjusted_history(
 def _metrics(state: _Simulation, capital: Decimal) -> dict[str, Any]:
     navs = [Decimal(row["nav_rub"]) for row in state.curve]
     changes = _returns(navs)
-    losses = sorted(-value * 100 for value in changes)
-    count = len(losses)
-    quantile = int((Decimal(count) * Decimal("0.95")).to_integral_value(rounding=ROUND_CEILING)) - 1
-    probability = _ONE / count
-    masses = [probability] * (count - 1)
-    masses.append(_ONE - sum(masses, _ZERO))
+    var, shortfall = _tail_loss_percent([value * 100 for value in changes]) if changes else (
+        None, None
+    )
+    count = len(changes)
     volatility = _volatility(changes)
     return {
         "net_return_percent": _text((navs[-1] / capital - 1) * 100),
         "max_drawdown_percent": _text(_drawdown(navs)),
         "annualized_volatility_percent": None if volatility is None else _text(volatility),
-        "var_95_percent": _text(max(_ZERO, losses[max(0, quantile)])),
-        "expected_shortfall_95_percent": _text(max(_ZERO, expected_shortfall(losses, masses))),
+        "var_95_percent": _text(var) if var is not None else None,
+        "expected_shortfall_95_percent": _text(shortfall) if shortfall is not None else None,
         "transaction_costs_rub": _text(state.costs),
         "taxes_rub": _text(state.taxes),
         "commissions_rub": _text(state.fees),
@@ -788,6 +933,253 @@ def _metrics(state: _Simulation, capital: Decimal) -> dict[str, Any]:
         "return_observations": count,
         "risk_limit_triggered": state.risk_stopped,
     }
+
+
+def _tail_loss_percent(gains: Sequence[Decimal]) -> tuple[Decimal, Decimal]:
+    losses = sorted(-value for value in gains)
+    count = len(losses)
+    quantile = int((Decimal(count) * Decimal("0.95")).to_integral_value(rounding=ROUND_CEILING)) - 1
+    probability = _ONE / count
+    masses = [probability] * (count - 1)
+    masses.append(_ONE - sum(masses, _ZERO))
+    return max(_ZERO, losses[max(0, quantile)]), max(_ZERO, expected_shortfall(losses, masses))
+
+
+def _percentile(values: Sequence[Decimal], probability: Decimal) -> Decimal:
+    """Linear interpolation of an explicitly sorted empirical sample."""
+    index = (len(values) - 1) * probability
+    lower = int(index)
+    upper = min(lower + 1, len(values) - 1)
+    return values[lower] + (values[upper] - values[lower]) * (index - lower)
+
+
+def _profit_frequency_interval(
+    gains: Sequence[Decimal], *, seed: str, risk_stopped: bool,
+) -> dict[str, Any]:
+    """Stationary block bootstrap of indicators, not hypothetical strategy paths.
+
+    The resampled statistic is the historical mean of 1[net return > 0].
+    No rebalance, drawdown stop or fee is replayed on a fabricated price path.
+    """
+    count = len(gains)
+    indicators = [int(value > 0) for value in gains]
+    block_length = 1
+    while block_length ** 3 < count:
+        block_length += 1
+    result: dict[str, Any] = {
+        "method": "stationary_block_bootstrap_of_profit_indicators",
+        "confidence": "0.95",
+        "lower_percent": None,
+        "upper_percent": None,
+        "replicates": _BOOTSTRAP_REPLICATES,
+        "expected_block_length_windows": block_length,
+        "block_length_selection": "ceiling_cube_root_window_count_not_optimized",
+        "reason": None,
+        "assumption": "Стационарность и слабая временная зависимость внутри выбранного "
+        "периода; интервал не учитывает смену режима и ошибку выбора модели.",
+    }
+    if count < MIN_TEST_OBSERVATIONS:
+        result["reason"] = "insufficient_non_overlapping_windows"
+        return result
+    if risk_stopped:
+        result["reason"] = "strategy_risk_stop_regime_change"
+        return result
+    if min(indicators) == max(indicators):
+        result["reason"] = "no_profit_indicator_variation"
+        return result
+    rng = random.Random(seed)  # reproducible research, not authentication or order randomness
+    totals = []
+    for _ in range(_BOOTSTRAP_REPLICATES):
+        position = rng.randrange(count)
+        wins = indicators[position]
+        for _ in range(1, count):
+            if rng.randrange(block_length) == 0:
+                position = rng.randrange(count)
+            else:
+                position = (position + 1) % count
+            wins += indicators[position]
+        totals.append(Decimal(wins) * 100 / count)
+    totals.sort()
+    result.update(
+        lower_percent=_text(_percentile(totals, Decimal("0.025"))),
+        upper_percent=_text(_percentile(totals, Decimal("0.975"))),
+    )
+    return result
+
+
+def _outcome_window_row(
+    curve: Sequence[Mapping[str, str]],
+    sessions: int,
+    *,
+    complete: bool,
+    seed: str,
+    risk_stopped: bool,
+) -> dict[str, Any]:
+    windows = max(0, (len(curve) - 1) // sessions)
+    gains = [
+        (Decimal(curve[(index + 1) * sessions]["nav_rub"])
+         / Decimal(curve[index * sessions]["nav_rub"]) - 1) * 100
+        for index in range(windows)
+    ]
+    profitable = sum(value > 0 for value in gains)
+    losing = sum(value < 0 for value in gains)
+    enough = complete and windows >= MIN_TEST_OBSERVATIONS
+    reason = None
+    if not complete:
+        reason = "incomplete_strategy_coverage"
+    elif windows < MIN_TEST_OBSERVATIONS:
+        reason = "insufficient_non_overlapping_windows"
+    interval = (
+        _profit_frequency_interval(gains, seed=seed + ":" + str(sessions),
+                                   risk_stopped=risk_stopped) if enough else None
+    )
+    ordered = sorted(gains)
+    var, shortfall = _tail_loss_percent(gains) if enough else (None, None)
+    return {
+        "status": "computed" if enough else "insufficient_data",
+        "reason": reason,
+        "sessions": sessions,
+        "from": curve[0]["time"] if windows else None,
+        "to": curve[windows * sessions]["time"] if windows else None,
+        "windows": windows,
+        "discarded_trailing_sessions": max(0, len(curve) - 1) % sessions,
+        "profit_windows": profitable,
+        "loss_windows": losing,
+        "flat_windows": windows - profitable - losing,
+        "profit_frequency_percent": _text(Decimal(profitable) * 100 / windows) if enough else None,
+        "loss_frequency_percent": _text(Decimal(losing) * 100 / windows) if enough else None,
+        "worst_return_percent": _text(ordered[0]) if enough else None,
+        "median_return_percent": _text(_percentile(ordered, Decimal("0.5"))) if enough else None,
+        "var_95_loss_percent": _text(var) if var is not None else None,
+        "expected_shortfall_95_loss_percent": _text(shortfall) if shortfall is not None else None,
+        "sampling_interval": interval,
+    }
+
+
+def _requested_horizon(
+    document: Mapping[str, Any], curve: Sequence[Mapping[str, str]],
+) -> dict[str, Any]:
+    months = document["profile"]["horizon_months"]
+    first = datetime.fromisoformat(curve[0]["time"]) if curve else None
+    days = calendar_horizon_days(Decimal(months), first) if months is not None and first else None
+    end = first + timedelta(days=int(days)) if first is not None and days is not None else None
+    last = datetime.fromisoformat(curve[-1]["time"]) if curve else None
+    covered = bool(end is not None and last is not None and last >= end)
+    return {
+        "calendar_months": months,
+        "first_window_end": end.isoformat() if end is not None else None,
+        "one_window_covered": covered,
+        "future_probability_of_profit": None,
+        "reason": "future_probability_not_calibrated" if covered
+        else "insufficient_calendar_horizon_history",
+    }
+
+
+def _historical_outcomes(
+    result: Mapping[str, Any], document: Mapping[str, Any],
+) -> dict[str, Any]:
+    curve = result["equity_curve"]
+    complete = result["complete_strategy_coverage"]
+    risk_stopped = bool((result["metrics"] or {}).get("risk_limit_triggered"))
+    rows = [
+        _outcome_window_row(curve, sessions, complete=complete, seed=result["data_hash"],
+                            risk_stopped=risk_stopped)
+        for sessions in _OUTCOME_HORIZONS
+    ]
+    if result["basis"] == "cash_balance_model":
+        for row in rows:
+            row["reason"] = "cash_only_no_market_observations"
+    computed = sum(row["status"] == "computed" for row in rows)
+    return {
+        "status": "computed" if computed == len(rows) else (
+            "partial" if computed else "insufficient_data"
+        ),
+        "method": "non_overlapping_held_out_net_strategy_nav",
+        "source": "no_market_observations_cash_model" if result["basis"] == "cash_balance_model"
+        else "executed_strategy_equity_curve",
+        "basis": result["basis"],
+        "strategy_hash": result["strategy_hash"],
+        "data_hash": result["data_hash"],
+        "complete_strategy_coverage": complete,
+        "minimum_windows": MIN_TEST_OBSERVATIONS,
+        "method_source_url": _BOOTSTRAP_SOURCE,
+        "future_probability_calibrated": False,
+        "horizons": rows,
+        "requested_horizon": _requested_horizon(document, curve),
+        "limitations": [
+            "Частота положительного результата на прошлом тестовом периоде, "
+            "не калиброванная вероятность будущей прибыли.",
+            "Окна внутри каждого горизонта не пересекаются, но могут зависеть друг от друга. "
+            "Горизонты между собой не являются независимыми исследованиями.",
+            "Доходности получены из фактического пути исторической модели после её "
+            "издержек и налоговых допущений. Сделки и остановки не переставляются местами.",
+            "21 торговая сессия не приравнивается к календарному месяцу или личному горизонту.",
+            "Не менее 20 окон — технический минимум отображения оценки, "
+            "не доказательство достаточной статистической точности.",
+        ],
+    }
+
+
+def _cash_balance_research(
+    result: dict[str, Any], document: Mapping[str, Any], capital: Decimal, missing: set[str],
+) -> dict[str, Any]:
+    """A constant nominal balance is a disclosed model, with zero market observations."""
+    missing.update(
+        section + "." + key for section in ("profile", "policy")
+        for key, value in document[section].items() if value is None
+    )
+    reserve, withdrawals = (
+        document["profile"][key] for key in ("reserve_rub", "planned_withdrawal_rub")
+    )
+    required = None
+    if reserve is not None and withdrawals is not None:
+        required = max(Decimal(reserve), capital) + Decimal(withdrawals)
+        if required > capital:
+            missing.add("cash_reserve_conflict")
+    ready = not missing
+    state = _Simulation(capital, {})
+    state.curve.append({"time": result["period"]["to"], "nav_rub": _text(capital)})
+    result.update(
+        status="computed" if ready else "insufficient_data",
+        basis="cash_balance_model",
+        return_label="Модель денежного остатка при нулевой ставке",
+        complete_strategy_coverage=ready,
+        metrics=_metrics(state, capital) if ready else None,
+        sources=[],
+        missing_requirements=sorted(missing),
+        probability_reason="Денежная модель не содержит рыночных наблюдений "
+        "для оценки вероятности прибыли.",
+        cash_projection={
+            "method": "constant_nominal_cash_zero_rate_no_flows",
+            "source": "strategy_document_and_initial_capital",
+            "from": result["period"]["from"],
+            "to": result["period"]["to"],
+            "starting_cash_rub": _text(capital),
+            "ending_cash_rub": _text(capital),
+            "assumed_annual_cash_rate_percent": "0",
+            "required_retained_cash_rub": _text(required) if required is not None else None,
+            "personal_constraints_ready": ready,
+            "scope": "Условный начальный капитал уже находится в рублях. Ставка равна нулю, "
+            "пополнений и выплат в модели нет. Нулевой номинальный результат не означает "
+            "отсутствия инфляционного или иных рисков. Продажа существующих активов "
+            "и её издержки проверяются отдельно по текущему счёту.",
+        },
+    )
+    result["selection"].update(
+        status="ready" if ready else "insufficient_data",
+        candidate_selection_ready=ready,
+        missing_requirements=sorted(missing),
+    )
+    result["assumptions"].update(
+        execution="no_orders_cash_balance_model", annual_cash_rate_percent="0",
+        tax_method="no_taxable_events_in_cash_model", configurations_tested=1,
+        training_fraction=None, annualization_sessions=None, tail_confidence=None,
+        risk_control="not_inferred_nominal_cash_model",
+    )
+    result["period"]["train_end"] = None
+    result["limitations"] = [result["cash_projection"]["scope"]]
+    result["historical_outcomes"] = _historical_outcomes(result, document)
+    return result
 
 
 def _validated_research_capital(
@@ -830,14 +1222,30 @@ def _prepare_research_assets(
     clean_assets = []
     for asset in assets:
         reasons = _asset_reasons(asset, from_at, to_at)
+        if engine_version == RESEARCH_ENGINE_VERSION:
+            reasons.extend(_cashflow_reasons(asset.observed_cashflows))
         try:
             bars = _validated_bars(asset, from_at, to_at)
         except ValueError as exc:
             bars = ()
             reasons.append(str(exc))
-        training = tuple(bar for bar in bars if bar.time + _DAY <= split)
+        training = tuple(bar for bar in bars if split - bar.time >= _DAY)
         if len(training) < MIN_TRAIN_OBSERVATIONS:
             reasons.append("insufficient_training_history")
+        unsafe = engine_version == RESEARCH_ENGINE_VERSION and bool(
+            set(reasons) & _MALFORMED_HISTORY_REASONS
+        )
+        candidate = asset.candidate
+        if not unsafe:
+            candidate = history_candidate(
+                asset.candidate,
+                split_adjusted_history(training, asset.splits, split),
+                as_of=split,
+                factors=asset.factors,
+                cashflows=asset.observed_cashflows if engine_version != "1.1.0" else (),
+                document=document,
+                costs=costs,
+            )
         prices = [_decimal(bar.close) for bar in bars]
         diagnostics.append(
             {
@@ -846,7 +1254,8 @@ def _prepare_research_assets(
                 "observations": len(bars),
                 "train_observations": len(training),
                 "status": "observed" if not reasons else "incomplete",
-                "reasons": reasons,
+                "reasons": sorted(set(reasons)) if engine_version == RESEARCH_ENGINE_VERSION
+                else reasons,
                 "price_return_percent": _text((prices[-1] / prices[0] - 1) * 100)
                 if prices
                 else None,
@@ -856,15 +1265,7 @@ def _prepare_research_assets(
             replace(
                 asset,
                 candles=bars,
-                candidate=history_candidate(
-                    asset.candidate,
-                    split_adjusted_history(training, asset.splits, split),
-                    as_of=split,
-                    factors=asset.factors,
-                    cashflows=asset.observed_cashflows if engine_version != "1.1.0" else (),
-                    document=document,
-                    costs=costs,
-                ),
+                candidate=candidate,
             )
         )
     return clean_assets, diagnostics
@@ -916,7 +1317,7 @@ def _common_research_times(
         compared = [{when for when in dates if first <= when <= last} for dates in compared]
     if any(dates != common for dates in compared):
         missing.add("unaligned_history")
-    training_times = sorted(when for when in common if when + _DAY <= split)
+    training_times = sorted(when for when in common if split - when >= _DAY)
     test_times = sorted(when for when in common if when >= split)
     if len(training_times) < MIN_TRAIN_OBSERVATIONS:
         missing.add("insufficient_training_history")
@@ -989,9 +1390,15 @@ def run_strategy_backtest(
     clean_assets, diagnostics = _prepare_research_assets(
         assets, from_at, to_at, split, data, costs, engine_version
     )
+    invalid_assets = {
+        row["instrument_uid"] for row in diagnostics
+        if engine_version == RESEARCH_ENGINE_VERSION
+        and set(row["reasons"]) & _MALFORMED_HISTORY_REASONS
+    }
     selection = select_strategy_candidates(
         data,
-        [asset.candidate for asset in clean_assets],
+        [asset.candidate for asset in clean_assets
+         if asset.candidate.instrument_uid not in invalid_assets],
         as_of=split,
         engine_version=engine_version,
     )
@@ -1151,7 +1558,19 @@ def run_strategy_backtest(
         "data_hash": hashlib.sha256(json.dumps(fingerprint, sort_keys=True).encode()).hexdigest(),
         "missing_requirements": [],
     }
+    if engine_version == RESEARCH_ENGINE_VERSION and data["allocation"]["cash"] == 100:
+        cash_missing = set(selection["missing_requirements"])
+        cash_missing.update(
+            reason for row in diagnostics if row["instrument_uid"] in invalid_assets
+            for reason in row["reasons"]
+        )
+        return _cash_balance_research(result, data, capital, cash_missing)
     missing = _selected_evidence_requirements(data, selection, selected_assets, diagnostics, bases)
+    if invalid_assets:
+        missing.update(
+            reason for row in diagnostics if row["instrument_uid"] in invalid_assets
+            for reason in row["reasons"]
+        )
     panel = {
         asset.candidate.instrument_uid: {bar.time: bar for bar in asset.candles}
         for asset in selected_assets
@@ -1175,21 +1594,39 @@ def run_strategy_backtest(
         test_from=test_times[0].isoformat() if test_times else None,
     )
     result["missing_requirements"] = sorted(missing | set(selection["missing_requirements"]))
+    if engine_version == RESEARCH_ENGINE_VERSION:
+        result["assumptions"].update(
+            liquidity="min_previous_planned_and_observed_session_volume",
+            buy_sizing="previous_close_signal_bounded_by_open_mark_and_post_cost_nav_floor",
+            receivable_valuation="net_of_configured_distribution_tax",
+            volatility_annualization="daily_sample_standard_deviation_sqrt_252_no_serial_adjustment",
+            turnover_budget="gross_execution_notional_plus_commission",
+        )
+        result["limitations"].append(
+            "Дневной объём ограничивает модельное исполнение, но не доказывает "
+            "доступность всего этого объёма на аукционе открытия."
+        )
     if missing:
+        if engine_version == RESEARCH_ENGINE_VERSION:
+            result["historical_outcomes"] = _historical_outcomes(result, data)
         return result
     times = [training_times[-1], *test_times]
     period = strategy_rule_set(data["base_preset_id"])["rebalance_sessions"]
     try:
         state = _simulate(
-            selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=period
+            selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=period,
+            current_math=engine_version == RESEARCH_ENGINE_VERSION,
         )
         baseline = _simulate(
-            selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=None
+            selected_assets, panel, times, chosen, data, capital, costs, rebalance_sessions=None,
+            current_math=engine_version == RESEARCH_ENGINE_VERSION,
         )
     except ValueError as exc:
         if str(exc) != "fractional_split_cash_settlement_required":
             raise
         result["missing_requirements"].append(str(exc))
+        if engine_version == RESEARCH_ENGINE_VERSION:
+            result["historical_outcomes"] = _historical_outcomes(result, data)
         return result
     result.update(
         status="computed",
@@ -1202,6 +1639,16 @@ def run_strategy_backtest(
         },
     )
     result["stress_scenario"] = _stress_scenario(state, selected_assets, panel, times[-1], data)
+    if engine_version == RESEARCH_ENGINE_VERSION:
+        result["historical_outcomes"] = _historical_outcomes(result, data)
+        result["holding_constraints"] = {
+            "evaluated_sessions": len(times) - 1,
+            "breach_sessions": state.constraint_breach_sessions,
+            "breaches": sorted(state.constraint_breaches),
+            "unknown": sorted(state.constraint_unknown),
+            "scope": "Проверка долей после каждого закрытия. Движение цен между "
+            "перебалансировками может нарушать лимиты; это не гарантия ограничения потерь.",
+        }
     return result
 
 
@@ -1248,6 +1695,21 @@ def research_robustness(
     engine_version: str = RESEARCH_ENGINE_VERSION,
 ) -> dict[str, Any]:
     """Three declared chronological holdouts; no search for the best result."""
+    if engine_version == RESEARCH_ENGINE_VERSION and normalize_document(document)[
+        "allocation"
+    ]["cash"] == 100:
+        _validated_research_capital(
+            from_at, to_at, now, len(assets), initial_capital_rub, costs
+        )
+        return {
+            "method": "not_applicable_cash_balance_model",
+            "windows": [],
+            "computed_windows": 0,
+            "minimum_return_percent": None,
+            "maximum_return_percent": None,
+            "scope": "Постоянный денежный остаток при заданной нулевой ставке "
+            "не является исторической проверкой устойчивости стратегии.",
+        }
     windows = []
     for fraction in (Decimal("0.6"), Decimal("0.8"), Decimal("1")):
         end = from_at + (to_at - from_at) * float(fraction)

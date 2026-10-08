@@ -10,7 +10,7 @@ import math
 import random
 from collections.abc import Mapping
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal, localcontext
 from typing import Any
 
 from .workspace import amount
@@ -78,13 +78,21 @@ def normalize_goal_plan(document: object, *, kind: str | None = None) -> dict[st
     return result
 
 
-def _money(value: float) -> str:
+def _money(value: Decimal | float) -> str:
     return format(value, ".2f")
 
 
-def _future(capital: float, monthly: float, log_rate: float, months: int) -> float:
-    growth = math.exp(log_rate * months)
-    annuity = math.expm1(log_rate * months) / math.expm1(log_rate) if log_rate else months
+def _future_factors(monthly_factor: Decimal, months: int) -> tuple[Decimal, Decimal]:
+    growth = monthly_factor**months
+    annuity = ((growth - 1) / (monthly_factor - 1)
+               if monthly_factor != 1 else Decimal(months))
+    return growth, annuity
+
+
+def _future(
+    capital: Decimal, monthly: Decimal, monthly_factor: Decimal, months: int,
+) -> Decimal:
+    growth, annuity = _future_factors(monthly_factor, months)
     return capital * growth + monthly * annuity
 
 
@@ -158,26 +166,37 @@ def goal_forecast(
     months = (end.year - today.year) * 12 + end.month - today.month + (end.day > today.day)
     if end <= today or not 1 <= months <= _MAX_MONTHS:
         return {**result, "reason": "goal_plan_horizon_out_of_range"}
-    capital = float(amount(progress["amount_rub"]))
-    target = float(amount(goal["target_amount_rub"]))
+    # Server-derived progress multiplies 8-place NAV or 9-place received income
+    # by a 9-place allocation percentage and divides by 100. These calculated
+    # amounts legitimately have more precision than user-entered assumptions.
+    capital = amount(progress["amount_rub"], places=20)
+    target = amount(goal["target_amount_rub"])
     income = goal["kind"] == "income"
-    monthly = float(plan["monthly_income_rub" if income else "monthly_contribution_rub"])
-    log_rate = 0.0 if income else math.log1p(float(plan["annual_return_percent"]) / 100) / 12
+    monthly = Decimal(plan["monthly_income_rub" if income else "monthly_contribution_rub"])
     sigma = 0.0 if income else float(plan["annual_volatility_percent"]) / 100 / math.sqrt(12)
-    inflation = (math.log1p(float(plan["annual_inflation_percent"]) / 100) / 12
-                 if plan["target_in_today_money"] else 0.0)
-    adjusted_target = target * math.exp(inflation * months)
-    growth = math.exp(log_rate * months)
-    annuity = math.expm1(log_rate * months) / math.expm1(log_rate) if log_rate else months
-    required = max(0.0, (adjusted_target - capital * growth) / annuity)
-    path: list[dict[str, Any]] = [
-        {"month": month, "amount_rub": _money(_future(capital, monthly, log_rate, month)),
+    with localcontext() as context:
+        # Bounded 30-year assumptions fit with ample guard digits. Binary floats
+        # are used only by the explicitly approximate stochastic model below.
+        context.prec = 48
+        rate = Decimal(0) if income else Decimal(plan["annual_return_percent"])
+        monthly_factor = (1 + rate / 100) ** (1 / Decimal(12))
+        inflation = Decimal(plan["annual_inflation_percent"])
+        inflation_factor = ((1 + inflation / 100) ** (1 / Decimal(12))
+                            if plan["target_in_today_money"] else Decimal(1))
+        adjusted_target = target * inflation_factor**months
+        growth, annuity = _future_factors(monthly_factor, months)
+        required = max(Decimal(0), (adjusted_target - capital * growth) / annuity)
+        required = required.quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+        points = [(_future(capital, monthly, monthly_factor, month),
+                   target * inflation_factor**month) for month in range(months + 1)]
+        reached = next((month for month, (value, threshold) in enumerate(points)
+                        if value >= threshold), None)
+        path: list[dict[str, Any]] = [
+            {"month": month, "amount_rub": _money(value),
              "contributions_rub": _money(monthly * month),
-             "source_amount_rub": _money(capital),
-             "target_rub": _money(target * math.exp(inflation * month))}
-            for month in range(months + 1)]
-    reached = next((point["month"] for point in path
-                    if Decimal(point["amount_rub"]) >= Decimal(point["target_rub"])), None)
+             "source_amount_rub": _money(capital), "target_rub": _money(threshold)}
+            for month, (value, threshold) in enumerate(points)]
+        log_rate = float(monthly_factor.ln())
     result.update({
         "status": "available", "reason": None, "months": months,
         "contribution_timing": "end_of_month_including_remaining_partial_month",
@@ -198,6 +217,7 @@ def goal_forecast(
         result["method"] = "monthly_income_accumulation_v1"
     elif sigma > 0:
         result["simulation"] = _simulation(
-            capital, monthly, log_rate, sigma, months, adjusted_target, plan["seed"],
+            float(capital), float(monthly), log_rate, sigma, months,
+            float(adjusted_target), plan["seed"],
         )
     return result

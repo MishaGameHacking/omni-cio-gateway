@@ -404,8 +404,20 @@ class MarketService:
         quote = self.broker.usd_rub_quote(user_id)
         observed = datetime.now(UTC)
         quote_time = _parse_provider_time(quote.quote_time)
-        age_seconds = max(0, int((observed - quote_time).total_seconds()))
-        change, change_percent = _change(quote.price, quote.previous_close)
+        provider_age = observed - quote_time
+        if provider_age < -_PROVIDER_CLOCK_SKEW_TOLERANCE:
+            raise TBankUnavailable("fx_quote_timestamp_invalid")
+        if quote.currency.upper() != "RUB":
+            raise TBankUnavailable("fx_quote_currency_invalid")
+        price = _required_market_price(quote.price)
+        age_seconds = max(0, int(provider_age.total_seconds()))
+        try:
+            previous_close = _required_market_price(quote.previous_close)
+        except TBankUnavailable:
+            # A missing or corrupt reference must not invent a daily change,
+            # nor hide an independently valid current quote.
+            previous_close = None
+        change, change_percent = _change(price, previous_close)
 
         reference: MarketReferenceRate | None = None
         next_reference: MarketReferenceRate | None = None
@@ -426,7 +438,7 @@ class MarketService:
 
         return UsdRubSnapshot(
             pair="USD/RUB",
-            price=quote.price,
+            price=price,
             currency=quote.currency,
             ticker=quote.ticker,
             instrument_name=quote.name,
@@ -436,7 +448,7 @@ class MarketService:
             observed_at=observed.isoformat(),
             age_seconds=age_seconds,
             status="live" if age_seconds <= self.live_after_seconds else "stale",
-            previous_close=quote.previous_close,
+            previous_close=previous_close,
             change=change,
             change_percent=change_percent,
             cbr_reference=reference,
