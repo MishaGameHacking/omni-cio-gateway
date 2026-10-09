@@ -296,8 +296,12 @@ def _inspect_recovery_file(path: pathlib.Path) -> dict[str, Any]:
         return report
     if not 0 <= details.st_size <= MAX_OBSERVED_BYTES:
         return report
-    kind = ("regular" if stat.S_ISREG(details.st_mode) else
-            "symlink" if stat.S_ISLNK(details.st_mode) else "other")
+    if stat.S_ISREG(details.st_mode):
+        kind = "regular"
+    elif stat.S_ISLNK(details.st_mode):
+        kind = "symlink"
+    else:
+        kind = "other"
     return {
         "state": "observed", "exists": True, "kind": kind,
         "root_owned": details.st_uid == 0,
@@ -320,11 +324,12 @@ def inspect_host_capacity() -> dict[str, Any]:
             raise ValueError("host_capacity_unavailable")
         for line in raw_memory.splitlines():
             key, separator, value = line.partition(":")
-            if separator and key in CAPACITY_MEMORY_FIELDS:
-                amount, unit = value.split()
-                if unit != "kB":
-                    raise ValueError("host_capacity_unavailable")
-                memory[key] = int(amount) * 1024
+            if not separator or key not in CAPACITY_MEMORY_FIELDS:
+                continue
+            amount, unit = value.split()
+            if unit != "kB":
+                raise ValueError("host_capacity_unavailable")
+            memory[key] = int(amount) * 1024
         release = {}
         for line in raw_release.splitlines():
             key, separator, value = line.partition("=")

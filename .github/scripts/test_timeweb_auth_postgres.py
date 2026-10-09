@@ -851,17 +851,17 @@ class PostgresTests(unittest.TestCase):
                 patch.object(UPGRADE, "_operational_bytes") as content,
             ):
                 report = UPGRADE._inspect_recovery_file(path)
-            self.assertEqual(report["state"], expected)
-            self.assertTrue(UPGRADE._valid_file_observation(report))
-            if expected == "observed":
-                self.assertEqual(report["size_bytes"], details.st_size)
-                self.assertEqual(report["root_owned"], scenario != "foreign_owner")
-                self.assertEqual(report["mode_octal"], format(details.st_mode & 0o7777, "04o"))
-            if scenario.startswith("parent_"):
-                path.lstat.assert_not_called()
-            self.assertNotIn("canary", json.dumps(report))
-            opened.assert_not_called()
-            content.assert_not_called()
+                self.assertEqual(report["state"], expected)
+                self.assertTrue(UPGRADE._valid_file_observation(report))
+                if expected == "observed":
+                    self.assertEqual(report["size_bytes"], details.st_size)
+                    self.assertEqual(report["root_owned"], scenario != "foreign_owner")
+                    self.assertEqual(report["mode_octal"], format(details.st_mode & 0o7777, "04o"))
+                if scenario.startswith("parent_"):
+                    path.lstat.assert_not_called()
+                self.assertNotIn("canary", json.dumps(report))
+                opened.assert_not_called()
+                content.assert_not_called()
 
     def test_generated_inspection_program_is_bounded_and_probe_is_only_explicit(self) -> None:
         environment = {

@@ -232,8 +232,9 @@ def test_market_http_429_defers_all_clients_without_replay_or_secret_exposure(
         network.side_effect = None
         network.return_value = FakeResponse({})
         market_clock.return_value = math.nextafter(deadline, -math.inf)
+        other_client = TBankInvestClient(purpose="market")
         with pytest.raises(TBankRateLimited) as shared:
-            TBankInvestClient(purpose="market").find_instruments(
+            other_client.find_instruments(
                 "synthetic-other-market-bearer", "prod", "test",
             )
         assert shared.value.retry_at_monotonic == deadline

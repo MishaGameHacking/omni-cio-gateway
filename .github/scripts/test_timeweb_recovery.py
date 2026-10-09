@@ -11,7 +11,8 @@ import unittest
 from contextlib import ExitStack
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from itertools import product
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
@@ -1045,8 +1046,11 @@ class RestoreCapacityTests(unittest.TestCase):
         major = Mock()
         major.name = "18"
         major.is_dir.return_value = True
-        for scenario in ("complete", "unknown_available", "invalid_unit", "invalid_os",
-                         "negative_memory", "oversized_source", "unavailable"):
+        for path_type, scenario in product(
+            (PurePosixPath, PureWindowsPath),
+            ("complete", "unknown_available", "invalid_unit", "invalid_os",
+             "negative_memory", "oversized_source", "unavailable"),
+        ):
             contents = dict(base)
             if scenario == "unknown_available":
                 contents["/proc/meminfo"] = "MemTotal: 8192 kB\n"
@@ -1059,35 +1063,39 @@ class RestoreCapacityTests(unittest.TestCase):
             elif scenario == "oversized_source":
                 contents["/proc/meminfo"] = "p" * 65537
 
-            def read_file(path, *_args, source=contents,
-                          unavailable=scenario == "unavailable", **_kwargs):
-                if unavailable:
-                    raise PermissionError("private-canary")
-                return io.StringIO(source[str(path)])
+            def fixture_path(value, flavor=path_type, source=contents,
+                             unavailable=scenario == "unavailable"):
+                path = flavor(value)
+
+                def open_file(*_args, **_kwargs):
+                    if unavailable:
+                        raise PermissionError("private-canary")
+                    return io.StringIO(source[path.as_posix()])
+
+                return Mock(open=Mock(side_effect=open_file), glob=Mock(return_value=[major]))
 
             with (
-                self.subTest(scenario=scenario),
-                patch.object(Path, "open", autospec=True, side_effect=read_file),
-                patch.object(Path, "glob", return_value=[major]),
+                self.subTest(scenario=scenario, path_flavor=path_type.__name__),
+                patch.object(inplace_upgrade, "pathlib", SimpleNamespace(Path=fixture_path)),
                 patch.object(inplace_upgrade.os, "cpu_count", return_value=2),
                 patch("shutil.disk_usage", return_value=SimpleNamespace(total=100, free=80)),
                 patch("shutil.which", return_value=None),
             ):
                 report = inplace_upgrade.inspect_host_capacity()
-            if scenario in ("complete", "unknown_available"):
-                self.assertEqual(report["status"], "observed")
-                self.assertEqual(report["memory_bytes"]["MemTotal"], 8192 * 1024)
-                self.assertEqual(report["memory_bytes"]["MemAvailable"],
-                                 4096 * 1024 if scenario == "complete" else None)
-                self.assertEqual(report["os"], {
-                    "ID": "ubuntu", "VERSION_ID": "24.04", "VERSION_CODENAME": "noble",
-                })
-                self.assertEqual(report["postgres_majors"], ["18"])
-            else:
-                self.assertEqual(report, {
-                    "status": "unavailable", "code": "host_capacity_unavailable",
-                })
-            self.assertNotIn("canary", json.dumps(report))
+                if scenario in ("complete", "unknown_available"):
+                    self.assertEqual(report["status"], "observed")
+                    self.assertEqual(report["memory_bytes"]["MemTotal"], 8192 * 1024)
+                    self.assertEqual(report["memory_bytes"]["MemAvailable"],
+                                     4096 * 1024 if scenario == "complete" else None)
+                    self.assertEqual(report["os"], {
+                        "ID": "ubuntu", "VERSION_ID": "24.04", "VERSION_CODENAME": "noble",
+                    })
+                    self.assertEqual(report["postgres_majors"], ["18"])
+                else:
+                    self.assertEqual(report, {
+                        "status": "unavailable", "code": "host_capacity_unavailable",
+                    })
+                self.assertNotIn("canary", json.dumps(report))
 
     def test_drill_renders_the_same_standalone_capacity_reader(self) -> None:
         provider = Mock(request=Mock(return_value={"backups": [], "buckets": []}))
@@ -1118,12 +1126,13 @@ class RestoreCapacityTests(unittest.TestCase):
             with (
                 self.subTest(raw_length=len(raw)),
                 patch("builtins.print") as output,
-                self.assertRaisesRegex(recovery.RecoveryBlocked,
-                                       "^Invalid restore capacity response$"),
             ):
-                recovery.inspect_restore_capacity(provider, remote, CLUSTER_ID)
-            output.assert_not_called()
-            self.assertTrue(all(call.args[0] == "GET" for call in provider.request.call_args_list))
+                with self.assertRaisesRegex(recovery.RecoveryBlocked,
+                                           "^Invalid restore capacity response$"):
+                    recovery.inspect_restore_capacity(provider, remote, CLUSTER_ID)
+                output.assert_not_called()
+                self.assertTrue(all(call.args[0] == "GET"
+                                    for call in provider.request.call_args_list))
 
     def test_inventory_is_read_only_and_filters_storage_credentials(self) -> None:
         provider = Mock()
