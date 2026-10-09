@@ -824,12 +824,9 @@ def _required_historic_candle_price(
 
 
 def _historic_candle_volume(value: object) -> int:
-    if isinstance(value, bool):
+    if value is None or isinstance(value, bool):
         raise TBankUnavailable(_HISTORIC_CANDLE_REQUIRED_FIELDS_ERROR)
-    try:
-        volume = int(str(value))
-    except ValueError as exc:
-        raise TBankUnavailable("T-Invest historic candle has invalid volume") from exc
+    volume = int(_integer_text(value))
     if volume < 0:
         raise TBankUnavailable("T-Invest historic candle has negative volume")
     return volume
@@ -845,17 +842,21 @@ def _historic_exchange_candle(
     low = _required_historic_candle_price(item, "low")
     close = _required_historic_candle_price(item, "close")
     candle_time = _optional_provider_timestamp(item.get("time"))
-    complete = item.get("isComplete")
-    if candle_time is None or not isinstance(complete, bool):
+    complete = _implicit_bool(item, "isComplete")
+    if candle_time is None:
         raise TBankUnavailable(_HISTORIC_CANDLE_REQUIRED_FIELDS_ERROR)
 
-    source_name = _text(item.get("candleSourceType")).strip()
-    if source_name != "CANDLE_SOURCE_EXCHANGE":
+    # The wire response uses candleSource; candleSourceType is the request field.
+    # Accept the portal's documented response alias only with the same confirmed
+    # exchange source. A conflicting, null or missing source is never inferred.
+    sources = [_text(item[key]).strip() for key in ("candleSource", "candleSourceType")
+               if key in item]
+    if not sources or any(source != "CANDLE_SOURCE_EXCHANGE" for source in sources):
         raise TBankUnavailable(
             "T-Invest historic candle is not confirmed exchange-sourced"
         )
 
-    volume = _historic_candle_volume(item.get("volume"))
+    volume = _historic_candle_volume(item.get("volume", 0))
     open_decimal = Decimal(open_value)
     high_decimal = Decimal(high)
     low_decimal = Decimal(low)
@@ -879,7 +880,7 @@ def _historic_exchange_candle(
         volume_lots=volume,
         time=candle_time,
         is_complete=complete,
-        source=source_name,
+        source="CANDLE_SOURCE_EXCHANGE",
         open=open_value,
         high=high,
         low=low,
@@ -1251,7 +1252,7 @@ class TBankInvestClient:
 
         result: list[TBankHistoricCandle] = []
         seen_times: set[datetime] = set()
-        for raw in _required_list(payload, "candles"):
+        for raw in _optional_list(payload, "candles"):
             candle = _historic_exchange_candle(raw, instrument)
             if candle.time in seen_times:
                 raise TBankUnavailable(
@@ -1299,22 +1300,14 @@ class TBankInvestClient:
                 "T-Invest trading status returned a different instrument"
             )
 
-        limit_order_available = _optional_bool(payload, "limitOrderAvailableFlag")
-        market_order_available = _optional_bool(payload, "marketOrderAvailableFlag")
-        api_trade_available = _optional_bool(payload, "apiTradeAvailableFlag")
-        best_price_order_available = _optional_bool(
+        limit_order_available = _implicit_bool(payload, "limitOrderAvailableFlag")
+        market_order_available = _implicit_bool(payload, "marketOrderAvailableFlag")
+        api_trade_available = _implicit_bool(payload, "apiTradeAvailableFlag")
+        best_price_order_available = _implicit_bool(
             payload,
             "bestpriceOrderAvailableFlag",
         )
-        only_best_price = _optional_bool(payload, "onlyBestPrice")
-        if (
-            limit_order_available is None
-            or market_order_available is None
-            or api_trade_available is None
-            or best_price_order_available is None
-            or only_best_price is None
-        ):
-            raise TBankUnavailable("T-Invest trading status is missing availability flags")
+        only_best_price = _implicit_bool(payload, "onlyBestPrice")
 
         trading_status = _text(payload.get("tradingStatus")).strip()
         if not trading_status:
@@ -1368,7 +1361,7 @@ class TBankInvestClient:
         seen: set[str] = set()
         result: list[TBankLastPrice] = []
         unavailable: list[str] = []
-        for raw in _required_list(payload, "lastPrices"):
+        for raw in _optional_list(payload, "lastPrices"):
             item = _required_object(raw, "last price")
             uid = _text(item.get("instrumentUid")).strip()
             if not uid or uid not in requested or uid in seen:
@@ -2335,6 +2328,14 @@ def _optional_bool(payload: dict[str, object], key: str) -> bool | None:
     value = payload.get(key)
     if value is None:
         return None
+    if not isinstance(value, bool):
+        raise TBankUnavailable(f"T-Invest API returned invalid {key} flag")
+    return value
+
+
+def _implicit_bool(payload: dict[str, object], key: str) -> bool:
+    """Proto3 implicit false may be omitted; an explicitly invalid value is rejected."""
+    value = payload.get(key, False)
     if not isinstance(value, bool):
         raise TBankUnavailable(f"T-Invest API returned invalid {key} flag")
     return value

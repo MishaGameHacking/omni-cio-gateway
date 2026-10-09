@@ -542,8 +542,12 @@
     return !state.locked;
   };
   let quoteStream = null;
+  let quoteStreamAsset = null;
   let quoteFailures = 0;
   let quoteReconnectTimer = null;
+  let assetQuoteFallbackTimer = null;
+  let assetQuoteRequest = null;
+  let assetHistoryTimer = null;
   let freshnessTimer = null;
   let freshnessBusy = false;
   const stopVisibleRefresh = () => {
@@ -559,46 +563,193 @@
   };
   const stopQuoteStream = () => {
     clearTimeout(quoteReconnectTimer);
+    clearTimeout(assetQuoteFallbackTimer);
     quoteStream?.close();
     quoteStream = null;
+    quoteStreamAsset = null;
   };
   const quoteForConnection = payload => navigator.onLine ? payload : {...payload, quote_status: "offline"};
-  const repaintAssetQuote = () => {
-    if (!state.asset?.market || state.view !== "asset" || state.tour || state.locked) return;
+  const visibleAsset = (asset = state.asset) => Boolean(asset && asset === state.asset && state.user && !state.locked && !state.tour && state.mode === "account" && state.view === "asset" && document.visibilityState === "visible" && navigator.onLine);
+  const adoptAssetQuote = (asset, payload) => {
+    if (payload?.instrument_uid !== asset.uid || !Number.isFinite(Date.parse(payload.observed_at))) return false;
+    const previous = asset.market || {};
+    if (Date.parse(payload.observed_at) < Date.parse(asset.quoteObservedAt)) return false;
+    const olderPrice = Date.parse(payload.quote_time) < Date.parse(previous.quote_time);
+    const unavailablePrice = payload.last_price === null || payload.last_price === undefined;
+    const next = {...payload};
+    // A slow history response cannot roll back a newer stream price. If a
+    // provider has no new price, retain the known value with its actual time.
+    if (olderPrice || unavailablePrice && previous.last_price !== undefined) {
+      for (const key of ["last_price", "quote_time", "quote_age_seconds", "price_unit", "price_currency", "cash_price", "cash_price_currency"]) next[key] = previous[key];
+      if (olderPrice) next.quote_status = "stale";
+    }
+    const keys = ["instrument_uid", "observed_at", "last_price", "quote_time", "quote_age_seconds", "quote_status", "trading_status", "api_trade_available", "limit_order_available", "market_order_available", "price_unit", "price_currency", "cash_price", "cash_price_currency", "trading_status_status", "metadata_status"];
+    asset.market = {...previous, ...quoteForConnection(Object.fromEntries(keys.filter(key => Object.hasOwn(next, key)).map(key => [key, next[key]])))};
+    asset.quoteUnitsChanged = previous.price_unit !== asset.market.price_unit || previous.price_currency !== asset.market.price_currency;
+    asset.quoteObservedAt = payload.observed_at;
+    asset.quoteRevision = (asset.quoteRevision || 0) + 1;
+    return true;
+  };
+  const scheduleAssetQuoteFallback = (delay = C.timing.quotePollMs) => {
+    clearTimeout(assetQuoteFallbackTimer);
+    if (!visibleAsset()) return;
+    assetQuoteFallbackTimer = setTimeout(() => void readAssetQuoteFallback(state.asset), delay);
+  };
+  const readAssetQuoteFallback = async asset => {
+    if (!visibleAsset(asset)) return;
+    if (assetQuoteRequest) { scheduleAssetQuoteFallback(); return; }
+    const generation = state.generation;
+    const request = {quoteRevision: asset.quoteRevision || 0};
+    assetQuoteRequest = request;
+    try {
+      const payload = await api(`/api/market/quotes?instrument_uids=${encodeURIComponent(asset.uid)}`);
+      if (generation !== state.generation || !visibleAsset(asset)) return;
+      const quote = payload.items?.find(item => item.instrument_uid === asset.uid);
+      if (quote && adoptAssetQuote(asset, quote)) repaintAssetQuote();
+    } catch (error) {
+      // A failed fallback can finish after SSE has already confirmed a newer
+      // observation, including another update with the same provider timestamp.
+      if (generation === state.generation && visibleAsset(asset) && (asset.quoteRevision || 0) === request.quoteRevision && !isCancelled(error)) {
+        asset.market = {...asset.market, quote_status: navigator.onLine ? "unavailable" : "offline"};
+        repaintAssetQuote();
+      }
+    } finally {
+      if (assetQuoteRequest === request) assetQuoteRequest = null;
+      if (generation === state.generation && visibleAsset(asset)) scheduleAssetQuoteFallback();
+    }
+  };
+  const stopAssetHistory = () => { clearTimeout(assetHistoryTimer); assetHistoryTimer = null; };
+  const scheduleAssetHistory = () => {
+    stopAssetHistory();
+    if (!visibleAsset()) return;
+    assetHistoryTimer = setTimeout(() => void readAssetHistory(state.asset), C.timing.candlePollMs);
+  };
+  const repaintAssetHistory = asset => {
+    if (state.asset !== asset || state.view !== "asset" || state.tour || state.locked) return;
     const container = $("#view-asset");
-    // A source update must not replace a chart or focused control being inspected.
-    const quote = $("[data-market-quote]", container);
-    if (quote) quote.innerHTML = assetQuoteHTML(assetPricing(state.asset));
-    const source = $("[data-market-source]", container);
-    const market = state.asset.market;
-    if (source) source.innerHTML = freshness(market.source || "T-Invest", market.quote_time || market.observed_at, market.quote_status);
+    const context = assetPricing(asset);
+    const target = $("[data-market-chart]", container);
+    if (target && container.dataset.assetPeriod === state.assetPeriod && container.dataset.assetUid === asset.uid) {
+      U.updateChart(target, assetChartMarkup(context));
+      asset.quoteUnitsChanged = false;
+      $("[data-market-history-state]", container).innerHTML = assetHistoryStateHTML(context);
+      if (!refreshAssetChartContext(container, context)) {
+        const sidebar = $("[data-asset-sidebar]", container);
+        if (sidebar) sidebar.innerHTML = assetSideHTML(context);
+      }
+      repaintAssetQuote();
+    } else {
+      renderAsset();
+      U.bindCharts(container);
+    }
+  };
+  const adoptAssetHistory = (asset, payload, period) => {
+    if (payload.instrument_uid !== asset.uid || payload.period !== period || !Array.isArray(payload.candles)) throw new Error("invalid_market_history");
+    const incomplete = ["loading", "unavailable"].includes(payload.history_status);
+    const historyAt = Object.hasOwn(payload, "history_observed_at") ? payload.history_observed_at : payload.observed_at;
+    const historyTime = Date.parse(historyAt);
+    if ((!incomplete || payload.candles.length) && !Number.isFinite(historyTime)) throw new Error("invalid_market_history");
+    const samePeriod = asset.marketPeriod === period;
+    const previousTime = Date.parse(asset.market?.history_observed_at);
+    const older = samePeriod && Number.isFinite(previousTime) && (!Number.isFinite(historyTime) || historyTime < previousTime);
+    const noNewBars = incomplete && !payload.candles.length && asset.market?.candles?.length;
+    if (samePeriod && (older || noNewBars)) {
+      // Observe the current source failure even if its worker retained older
+      // bars. Neither older bars nor an older empty result replace newer data.
+      if (incomplete) asset.market.history_status = payload.history_status;
+    } else {
+      const keys = ["period", "interval", "source", "candles", "history_from", "history_note", "history_status"];
+      const history = Object.fromEntries(keys.filter(key => Object.hasOwn(payload, key)).map(key => [key, payload[key]]));
+      asset.market = {...asset.market, ...history, history_observed_at: historyAt};
+      asset.marketPeriod = period;
+    }
+    adoptAssetQuote(asset, payload);
+  };
+  const readAssetHistory = (asset = state.asset) => {
+    if (!asset || state.asset !== asset || !state.user || state.tour || state.locked) return Promise.resolve();
+    const period = state.assetPeriod, generation = state.generation;
+    if (asset.historyRequest?.period === period && asset.historyRequest.generation === generation) return asset.historyRequest.promise;
+    const request = {period, generation, promise: null};
+    asset.historyRequest = request;
+    const current = () => generation === state.generation && state.asset === asset && state.assetPeriod === period && asset.historyRequest === request && !state.tour && !state.locked;
+    request.promise = api(`/api/market/instruments/${safeSegment(asset.uid)}?period=${encodeURIComponent(period)}`).then(payload => {
+      if (!current()) return;
+      adoptAssetHistory(asset, payload, period);
+      asset.historyError = null;
+      asset.error = null;
+    }).catch(error => {
+      if (!current() || isCancelled(error)) return;
+      asset.historyError = error;
+      asset.market = {...asset.market, history_status: "unavailable"};
+    }).finally(() => {
+      if (!current()) return;
+      asset.loading = false;
+      asset.historyRequest = null;
+      repaintAssetHistory(asset);
+      scheduleAssetHistory();
+    });
+    return request.promise;
+  };
+  const repaintAssetMarketMetrics = (container, market) => {
     for (const row of $$(".asset-tab-content .info-row", container)) {
       const label = $("dt", row)?.textContent;
       const value = $("dd", row);
       if (value && label === T("Последняя цена")) value.textContent = marketPrice(market.last_price, market.price_unit, market.price_currency);
       if (value && label === T("Время цены")) value.textContent = date(market.quote_time, true);
+      if (value && label === T("Режим торгов")) value.textContent = tradingLabel(market.trading_status);
     }
   };
+  const repaintAssetQuote = () => {
+    if (!state.asset?.market || state.view !== "asset" || state.tour || state.locked) return;
+    const container = $("#view-asset");
+    const context = assetPricing(state.asset);
+    // A source update must not replace a chart or focused control being inspected.
+    const quote = $("[data-market-quote]", container);
+    if (quote) quote.innerHTML = assetQuoteHTML(context);
+    const source = $("[data-market-source]", container);
+    const market = state.asset.market;
+    if (state.asset.quoteUnitsChanged) {
+      const target = $("[data-market-chart]", container);
+      if (target && market.candles?.length) U.updateChart(target, assetChartMarkup(context));
+      state.asset.quoteUnitsChanged = false;
+    }
+    const notes = $("[data-market-notes]", container);
+    if (notes) notes.innerHTML = assetChartNotesHTML(context);
+    if (source) source.innerHTML = freshness(market.source || "T-Invest", market.quote_time || market.observed_at, market.quote_status);
+    repaintAssetMarketMetrics(container, market);
+  };
   const startQuoteStream = () => {
+    if (quoteStream && visibleAsset() && quoteStreamAsset === state.asset) return;
     stopQuoteStream();
-    if (!window.EventSource || !state.user || state.locked || state.tour || state.view !== "asset" || !state.asset?.market || document.visibilityState !== "visible" || !navigator.onLine) return;
+    if (!visibleAsset()) return;
+    if (!window.EventSource) { scheduleAssetQuoteFallback(0); return; }
     const uid = state.asset.uid;
     const generation = state.generation;
-    const stream = new EventSource(`/api/market/instruments/${safeSegment(uid)}/stream?profile_context=${encodeURIComponent(state.user.public_id)}`);
+    let stream;
+    try {
+      stream = new EventSource(`/api/market/instruments/${safeSegment(uid)}/stream?profile_context=${encodeURIComponent(state.user.public_id)}`);
+    } catch {
+      scheduleAssetQuoteFallback(0);
+      return;
+    }
     quoteStream = stream;
-    const current = () => quoteStream === stream && generation === state.generation && state.view === "asset" && state.asset?.uid === uid && !state.locked;
+    quoteStreamAsset = state.asset;
+    const current = () => quoteStream === stream && generation === state.generation && state.view === "asset" && state.asset === quoteStreamAsset && state.asset?.uid === uid && !state.locked && !state.tour;
     const reconnect = () => {
       if (!current()) return;
       stopQuoteStream();
       quoteFailures += 1;
       state.asset.market.quote_status = navigator.onLine ? "reconnect" : "offline";
       repaintAssetQuote();
+      scheduleAssetQuoteFallback(0);
       if (navigator.onLine && document.visibilityState === "visible") quoteReconnectTimer = setTimeout(() => {
         if (generation === state.generation && state.view === "asset" && state.asset?.uid === uid) startQuoteStream();
       }, Math.min(C.timing.quoteReconnectMaxMs, C.timing.quoteReconnectBaseMs * 2 ** Math.min(quoteFailures, C.timing.quoteReconnectExponentMax)));
     };
+    state.asset.market ||= {};
     state.asset.market.quote_status = "connecting";
     repaintAssetQuote();
+    scheduleAssetQuoteFallback(C.timing.quotePollMs);
     stream.addEventListener("open", () => { if (current()) { state.asset.market.quote_status = "connecting"; repaintAssetQuote(); } });
     stream.addEventListener("market", event => {
       if (!current()) return;
@@ -606,10 +757,10 @@
         const payload = JSON.parse(event.data);
         const observedAt = Date.parse(payload.observed_at);
         if (payload.instrument_uid !== uid || typeof payload.observed_at !== "string" || !Number.isFinite(observedAt) || !["currency", "percent_nominal", "points", "per_nominal", "unknown"].includes(payload.price_unit)) throw new Error("invalid_market_stream");
-        if (observedAt < Date.parse(state.asset.market.observed_at)) return;
-        state.asset.market = {...state.asset.market, ...payload};
+        if (!adoptAssetQuote(state.asset, payload)) return;
         quoteFailures = 0;
         repaintAssetQuote();
+        scheduleAssetQuoteFallback(C.timing.quotePollMs);
       } catch {
         reconnect();
       }
@@ -631,9 +782,11 @@
   };
   const clearPrivateState = () => {
     stopQuoteStream();
+    stopAssetHistory();
     stopTableQuotes();
     clearTimeout(eventSummaryTimer);
     eventSummaryRequest = null;
+    assetQuoteRequest = null;
     state.quotes = {};
     state.screenDrafts = {};
     state.screenBaselines = {};
@@ -910,6 +1063,7 @@
       if (credential) credential.value = "";
     }
     stopQuoteStream();
+    stopAssetHistory();
     stopTableQuotes();
     state.mode = route.mode;
     state.tour = route.mode === "demo";
@@ -939,7 +1093,7 @@
       preventScroll: true
     });
     restoreNavigationScroll(scrollPosition, sequence);
-    scheduleTableQuotes(100);
+    scheduleTableQuotes(C.timing.quoteInitialDelayMs);
     scheduleEventSummary(C.timing.eventSummaryChangedMs);
     scheduleVisibleRefresh();
     if (state.devicePush.status === "checking") void refreshPushDevice();
@@ -1195,9 +1349,9 @@
     path: "/api/broker/tbank/analysis",
     timeout: C.timing.portfolioRequestMs
   }];
-  const loadAssetView = async (uid, force) => {
+  const loadAssetView = async (uid, force, background) => {
     try {
-      await loadAsset(uid, force);
+      await loadAsset(uid, force, {background});
     } catch (error) {
       if (!isCancelled(error) && state.view === "asset") {
         state.asset = null;
@@ -1205,7 +1359,7 @@
       }
     }
   };
-  const loadForView = async (view, detail = {}, force = false) => {
+  const loadForView = async (view, detail = {}, force = false, {background = false} = {}) => {
     const generation = state.generation;
     const sequence = state.navigationSequence;
     const current = () => generation === state.generation && sequence === state.navigationSequence && state.view === view;
@@ -1218,10 +1372,10 @@
         timeout: resource.timeout || C.timing.requestMs
       });
     });
-    if (state.view === view) renderCurrent();
+    if (state.view === view) renderCurrent({preserveAssetChart: background && view === "asset"});
     const secondary = Promise.allSettled(resourceWork);
     if (["asset", "search"].includes(view)) {
-      if (current()) await renderLoadedView(view, detail, force);
+      if (current()) await renderLoadedView(view, detail, force, background);
       return;
     }
     await secondary;
@@ -1229,11 +1383,11 @@
     if (view === "strategies") restoreResearchRequest();
     if (view === "assistant") await loadSelectedAssistantConversation();
     if (!current()) return;
-    await renderLoadedView(view, detail, force);
+    await renderLoadedView(view, detail, force, background);
   };
-  const renderLoadedView = async (view, detail, force) => {
+  const renderLoadedView = async (view, detail, force, background) => {
     if (view === "asset" && detail.uid && !state.tour) {
-      if (detail.uid === state.route.uid) await loadAssetView(detail.uid, force);
+      if (detail.uid === state.route.uid) await loadAssetView(detail.uid, force, background);
       return;
     }
     if (view === "search") {
@@ -1802,8 +1956,9 @@
     else if (!selectedQuery) content = empty(T("Что найдём?"), T("Введите название компании, тикер или слово из события в строке поиска."), "", "", "search", true);
     else content = searchMatchesHTML(errors, matches, more);
     $("#view-search").innerHTML = `${heading(T("Поиск"), selectedQuery ? renderSearchFragment(selectedQuery) : T("Инструменты, компании и события"))}<section class="card">${content}</section>`;
+    if (state.view === "search") scheduleTableQuotes(C.timing.quoteInitialDelayMs);
   };
-  const loadAsset = async (uid, force = false) => {
+  const loadAsset = async (uid, force = false, {background = false} = {}) => {
     const segment = safeSegment(uid);
     const generation = state.generation;
     const asset = state.asset?.uid === uid ? state.asset : {
@@ -1813,17 +1968,25 @@
       market: null,
       details: null
     };
-    state.asset = asset;
-    asset.loading = true;
-    asset.error = null;
-    renderAsset();
     const requestedPeriod = state.assetPeriod;
+    const retained = asset.marketPeriod === requestedPeriod && Array.isArray(asset.market?.candles) && asset.market.candles.length > 0;
+    if (asset.marketPeriod !== requestedPeriod && asset.market) {
+      asset.market = {...asset.market, candles: [], history_status: "loading", history_observed_at: null};
+    }
+    state.asset = asset;
+    asset.loading = !retained;
+    asset.error = null;
+    renderAsset({preserveChart: retained});
+    // Price transport is independent of the OHLC response, including when
+    // the browser has no EventSource or the provider is still loading history.
+    startQuoteStream();
+    // The active history scheduler owns periodic OHLC reads. A general page
+    // refresh updates auxiliary resources without issuing a duplicate snapshot.
+    const historyScheduled = background && asset.marketPeriod === requestedPeriod && (asset.historyRequest || assetHistoryTimer !== null);
+    const history = historyScheduled ? asset.historyRequest?.promise || Promise.resolve() : readAssetHistory(asset);
     const sequence = (state.resourceVersions.get("asset") || 0) + 1;
     state.resourceVersions.set("asset", sequence);
-    const requests = [{
-      key: "market",
-      promise: api(`/api/market/instruments/${segment}?period=${encodeURIComponent(requestedPeriod)}`)
-    }];
+    const requests = [];
     if (!asset.details || force) requests.push({
       key: "details",
       promise: api(`/api/portfolio/instruments/${segment}/visualization?history_limit=${C.pagination.historyObservations}`)
@@ -1836,38 +1999,28 @@
       key: "news",
       promise: api(`/api/news?instrument_uid=${segment}&limit=${C.pagination.pageSize}`)
     });
-    const current = () => generation === state.generation && state.resourceVersions.get("asset") === sequence && state.asset?.uid === uid && state.assetPeriod === requestedPeriod;
-    const repaint = preserveChart => {
-      const preservedChart = renderAsset({preserveChart});
+    const current = () => generation === state.generation && state.resourceVersions.get("asset") === sequence && state.asset === asset && state.assetPeriod === requestedPeriod;
+    const repaint = () => {
+      const preservedChart = renderAsset({preserveChart: true});
       if (!preservedChart) U.bindCharts($("#view-asset"));
     };
-    await Promise.allSettled(requests.map(async ({key, promise}) => {
+    await Promise.allSettled([history, ...requests.map(async ({key, promise}) => {
       try {
         const value = await promise;
         if (!current()) return;
-        asset[key] = key === "market" ? quoteForConnection(value) : value;
+        asset[key] = value;
         asset[`${key}Error`] = null;
       } catch (error) {
         if (!current() || isCancelled(error)) return;
         asset[`${key}Error`] = error;
-        if (key === "market") asset.error = error;
       } finally {
-        if (current() && state.view === "asset") {
-          if (key === "market") asset.loading = false;
-          repaint(key !== "market");
-          if (key === "market" && asset.market) startQuoteStream();
-        }
+        if (current() && state.view === "asset") repaint();
       }
-    }));
+    })]);
     if (!current()) return;
     asset.name = asset.facts?.name || asset.details?.latest?.name || asset.name;
     asset.ticker = asset.facts?.ticker || asset.details?.latest?.ticker || asset.ticker;
-    asset.loading = false;
-    if (state.view === "asset") {
-      repaint(true);
-      quoteFailures = 0;
-      startQuoteStream();
-    }
+    if (state.view === "asset") repaint();
   };
   const fundamentalMetricsHTML = (asset, compact = false) => {
     const facts = asset.facts;
@@ -1877,12 +2030,7 @@
     const metrics = (facts.metrics || []).filter(item => number(item.value) !== null);
     return `<h3 class="panel-title">${H("Финансовые показатели")}</h3>${metrics.length ? renderFundamentalMetricsHTMLInfoList(metrics, compact) : ("<p class=\"notice\">" + H("Источник не предоставил подтверждённые финансовые показатели этого инструмента.") + "</p>")}${freshness(T("Финансовые данные T-Invest"), facts.observed_at)}${!compact && facts.metrics?.length ? renderFundamentalMetricsHTMLSourceList(facts) : ""}${!compact && facts.missing_requirements?.length ? renderFundamentalMetricsHTMLDetailsSummary(facts) : ""}${!compact && facts.limitations?.length ? renderFundamentalMetricsHTMLFinePrint(facts) : ""}`;
   };
-  const quotationNanos = value => {
-    if (typeof value !== "string" || !/^(?:0|[1-9]\d{0,18})(?:\.\d{1,9})?$/.test(value)) return null;
-    const [whole, fraction = ""] = value.split(".");
-    const nanos = BigInt(whole) * 1000000000n + BigInt(fraction.padEnd(9, "0"));
-    return nanos > 0n ? nanos : null;
-  };
+  const quotationNanos = U.quotationNanos;
   const assetPriceChange = (current, initial) => {
     const currentNanos = quotationNanos(current), initialNanos = quotationNanos(initial);
     if (currentNanos === null || initialNanos === null) return null;
@@ -1946,22 +2094,41 @@
   };
   const assetChartMarkup = (context) => {
     const {asset, market, candles, priceUnit, currency} = context;
-    if (asset.loading) return U.loading(T("Загружаем биржевой график…"));
-    if (market?.history_status === "unavailable") return `<div class="notice error">${H("market.history_unavailable")}${button(T("Повторить"), "asset-refresh", {small: true})}</div>`;
+    if (!candles.length && (asset.loading || market?.history_status === "loading")) return U.loading(T("Загружаем биржевой график…"));
+    if (!candles.length && market?.history_status === "unavailable") return `<div class="notice error">${H("market.history_unavailable")}${button(T("Повторить"), "asset-refresh", {small: true})}</div>`;
     return chart(candles, {
       timeKey: "time",
       valueKey: "close",
+      kind: "candlestick",
       label: renderAssetFragment2(asset),
       personal: false,
       priceUnit,
       currency
     });
   };
-  const assetChartHTML = (context) => {
+  const assetHistoryStateHTML = ({asset, market, candles}) => {
+    const status = asset.historyError ? "unavailable" : market?.history_status;
+    let message = "", sourceState = "available";
+    if (status === "loading") {
+      message = T("market.history_updating");
+      sourceState = "pending";
+    } else if (status === "unavailable") {
+      sourceState = "cached";
+      if (candles.length) message = T("market.history_retained");
+    }
+    const source = candles.length ? freshness(T("market.history_source"), market?.history_observed_at, sourceState) : "";
+    const noticeClass = status === "unavailable" ? " error" : "";
+    const notice = message ? `<p class="notice${noticeClass}">${esc(message)}</p>` : "";
+    return notice + source;
+  };
+  const assetChartNotesHTML = context => {
     const {market, priceUnit} = context;
+    return [priceUnit === "unknown" ? T("Источник не подтвердил единицы цены.") : "", priceUnit === "percent_nominal" ? T("Цена и история — в процентах номинала, без НКД. Текущий номинал не применяется к старым свечам.") : "", priceUnit === "points" ? T("Котировки в пунктах. Денежная стоимость шага может меняться.") : "", renderAssetFragment3(market || {}), state.assetPeriod === "all" ? T("Доступная история источника.") : "", esc(market?.history_note || ""), T("market.candle_description")].filter(Boolean).join(" ");
+  };
+  const assetChartHTML = (context) => {
+    const {market} = context;
     const chartMarkup = assetChartMarkup(context);
-    const notes = [priceUnit === "unknown" ? T("Источник не подтвердил единицы цены.") : "", priceUnit === "percent_nominal" ? T("Цена и история — в процентах номинала, без НКД. Текущий номинал не применяется к старым свечам.") : "", priceUnit === "points" ? T("Котировки в пунктах. Денежная стоимость шага может меняться.") : "", market?.trading_status ? renderAssetFragment3(market) : "", state.assetPeriod === "all" ? T("Доступная история источника.") : "", esc(market?.history_note || ""), T("График показывает цены закрытия свечей.")].filter(Boolean).join(" ");
-    return `<div data-market-quote>${assetQuoteHTML(context)}</div>${periods("asset", state.assetPeriod, true)}${chartMarkup}<div data-market-source>${freshness(market?.source || "T-Invest", market?.quote_time || market?.observed_at, market?.quote_status)}</div><p class="data-footnote">${notes}</p>`;
+    return `<div data-market-quote>${assetQuoteHTML(context)}</div>${periods("asset", state.assetPeriod, true)}<div data-market-chart>${chartMarkup}</div><div data-market-history-state>${assetHistoryStateHTML(context)}</div><div data-market-source>${freshness(market?.source || "T-Invest", market?.quote_time || market?.observed_at, market?.quote_status)}</div><p class="data-footnote" data-market-notes>${assetChartNotesHTML(context)}</p>`;
   };
   const assetHoldingNote = ({
     asset,
@@ -2122,8 +2289,17 @@
     SECURITY_TRADING_STATUS_CLOSING_PERIOD: T("Закрытие сессии"),
     SECURITY_TRADING_STATUS_BREAK_IN_TRADING: T("Перерыв в торгах"),
     SECURITY_TRADING_STATUS_OPENING_AUCTION_PERIOD: T("Аукцион открытия"),
-    SECURITY_TRADING_STATUS_CLOSING_AUCTION: T("Аукцион закрытия")
-  })[value] || (value ? T("Режим получен от биржи") : T("Нет данных"));
+    SECURITY_TRADING_STATUS_CLOSING_AUCTION: T("Аукцион закрытия"),
+    SECURITY_TRADING_STATUS_SESSION_OPEN: T("market.session_open"),
+    SECURITY_TRADING_STATUS_SESSION_CLOSE: T("market.session_closed"),
+    SECURITY_TRADING_STATUS_PRE_MARKET: T("market.premarket"),
+    SECURITY_TRADING_STATUS_POST_MARKET: T("market.postmarket"),
+    SECURITY_TRADING_STATUS_TRADING_AT_CLOSING_AUCTION_PRICE: T("market.closing_price_trading"),
+    SECURITY_TRADING_STATUS_DISCRETE_AUCTION: T("market.discrete_auction"),
+    SECURITY_TRADING_STATUS_DEALER_NORMAL_TRADING: T("market.dealer_session"),
+    SECURITY_TRADING_STATUS_DEALER_BREAK_IN_TRADING: T("market.dealer_break"),
+    SECURITY_TRADING_STATUS_DEALER_NOT_AVAILABLE_FOR_TRADING: T("market.dealer_closed")
+  })[value] || T("Нет данных");
   const riskLabel = value => ({
     data_missing: T("Недостаточно данных для полной оценки риска."),
     restricted: T("Для инструмента действуют ограничения. Проверьте условия доступа."),
@@ -5719,12 +5895,15 @@
   function stopTableQuotes() { clearTimeout(tableQuotesTimer); tableQuotesTimer = null; }
   function scheduleTableQuotes(delay = C.timing.quotePollMs) {
     stopTableQuotes();
-    if (state.mode !== "account" || !state.user || state.locked || document.visibilityState !== "visible" || !["home", "portfolio", "market"].includes(state.view)) return;
+    if (state.mode !== "account" || !state.user || state.locked || document.visibilityState !== "visible" || !["home", "portfolio", "market", "search"].includes(state.view)) return;
     tableQuotesTimer = setTimeout(() => void pollTableQuotes(), delay);
   }
   function adoptTableQuotes(items, uids) {
     for (const item of items || []) {
-      if (uids.includes(item.instrument_uid)) state.quotes[item.instrument_uid] = quoteForConnection(item);
+      if (!uids.includes(item.instrument_uid)) continue;
+      const previous = state.quotes[item.instrument_uid];
+      const target = {uid: item.instrument_uid, market: previous, quoteObservedAt: previous?.observed_at};
+      if (adoptAssetQuote(target, item)) state.quotes[item.instrument_uid] = target.market;
     }
     paintTableQuotes();
   }
@@ -6970,7 +7149,7 @@
       await verifySession();
       void refreshPushDevice();
       if (canRefresh()) {
-        await loadForView(state.view, state.route, true);
+        await loadForView(state.view, state.route, true, {background: true});
         if (canRefresh()) await resumeWorkspaceRefresh(canRefresh);
       }
     } finally {
@@ -6988,8 +7167,8 @@
     }
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") { void refreshVisibleData(); scheduleTableQuotes(100); scheduleEventSummary(C.timing.eventSummaryChangedMs); startQuoteStream(); }
-    else { stopQuoteStream(); stopTableQuotes(); clearTimeout(eventSummaryTimer); stopVisibleRefresh(); }
+    if (document.visibilityState === "visible") { void refreshVisibleData(); scheduleTableQuotes(C.timing.quoteInitialDelayMs); scheduleEventSummary(C.timing.eventSummaryChangedMs); startQuoteStream(); scheduleAssetHistory(); }
+    else { stopQuoteStream(); stopAssetHistory(); stopTableQuotes(); clearTimeout(eventSummaryTimer); stopVisibleRefresh(); }
   });
   window.addEventListener("beforeunload", event => {
     if (acceptingUpdate) return;
@@ -7001,6 +7180,7 @@
   });
   window.addEventListener("pagehide", () => {
     stopQuoteStream();
+    stopAssetHistory();
     stopTableQuotes();
     clearTimeout(eventSummaryTimer);
     stopVisibleRefresh();
@@ -7024,6 +7204,7 @@
   });
   window.addEventListener("offline", () => {
     stopQuoteStream();
+    stopAssetHistory();
     if (state.asset?.market) state.asset.market.quote_status = "offline";
     repaintAssetQuote();
     markTableQuotesUnavailable(Object.keys(state.quotes), "offline");
@@ -7032,9 +7213,10 @@
   window.addEventListener("online", () => {
     toast(T("Соединение восстановлено. Проверяем сессию и обновляем данные."));
     void refreshVisibleData();
-    scheduleTableQuotes(100);
+    scheduleTableQuotes(C.timing.quoteInitialDelayMs);
     scheduleEventSummary(C.timing.eventSummaryChangedMs);
     startQuoteStream();
+    scheduleAssetHistory();
     if (state.session.status === "error") void bootstrap();
   });
   prefersDark.addEventListener("change", () => {
@@ -7274,7 +7456,7 @@
       bond: T("Облигация"),
       etf: T("Фонд"),
       currency: T("Валюта")
-    }[item.instrument_type] || item.instrument_type || T("Инструмент"))}</small></span>${icon("chevron", true)}</button>`;
+    }[item.instrument_type] || item.instrument_type || T("Инструмент"))}</small><span class="search-quote" data-table-quote="${esc(item.uid || item.instrument_uid)}">${tableQuoteHTML({uid: item.uid || item.instrument_uid})}</span></span>${icon("chevron", true)}</button>`;
   }
   function renderSearchFragment(query) {
     return `${T("Результаты для «")}${query}»`;

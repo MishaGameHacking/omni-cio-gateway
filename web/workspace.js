@@ -61,6 +61,7 @@
     return result;
   };
   const pendingCharts = new Map();
+  const boundCharts = new WeakMap();
   let chartSequence = 0;
   let privateValuesHidden = false;
   let displayLocale = C.display.locales.ru;
@@ -174,6 +175,89 @@
     const suffix = {percent_nominal: T("% номинала"), points: T("пунктов"), per_nominal: `${currency} ${T("за номинал")}`, unknown: T("ед. источника")}[unit] || T("ед. источника");
     return `${format(value, C.display.marketPriceFractionDigits)} ${suffix}`;
   };
+  // Provider prices are decimal strings with nine fractional digits. Subtract
+  // exact nanounits before converting a distance to SVG coordinates.
+  const quotationNanos = value => {
+    if (typeof value !== "string" || !/^(?:0|[1-9]\d{0,18})(?:\.\d{1,9})?$/.test(value)) return null;
+    const [whole, fraction = ""] = value.split(".");
+    const nanos = BigInt(whole) * 1000000000n + BigInt(fraction.padEnd(9, "0"));
+    return nanos > 0n ? nanos : null;
+  };
+  const quotationText = nanos => {
+    const negative = nanos < 0n;
+    const absolute = negative ? -nanos : nanos;
+    const rawFraction = String(absolute % 1000000000n).padStart(9, "0");
+    let end = rawFraction.length;
+    while (end > 0 && rawFraction[end - 1] === "0") end -= 1;
+    const fraction = rawFraction.slice(0, end);
+    return `${negative ? "-" : ""}${absolute / 1000000000n}${fraction ? "." + fraction : ""}`;
+  };
+  const candlePoints = rows => {
+    const unique = new Map();
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (typeof row?.time !== "string") continue;
+      const time = Date.parse(row.time);
+      const values = Object.fromEntries(["open", "high", "low", "close"].map(key => [key, quotationNanos(row?.[key])]));
+      if (!Number.isFinite(time) || Object.values(values).includes(null)) continue;
+      if (values.low > values.open || values.low > values.close || values.high < values.open || values.high < values.close || values.low > values.high) continue;
+      const point = {time, value: values.close, sourceValue: row.close, comparison: [], values, source: row};
+      unique.set(time, point);
+    }
+    return [...unique.values()].sort((left, right) => left.time - right.time);
+  };
+  const candleReadout = (point, {priceUnit, currency}) => {
+    const price = key => marketPrice(point.source[key], priceUnit, currency, false);
+    const volume = point.source.volume_lots;
+    const validVolume = typeof volume === "string" ? /^\d{1,19}$/.test(volume) : Number.isSafeInteger(volume) && volume >= 0;
+    const completion = point.source.is_complete;
+    let status = T("market.candle_completion_unknown");
+    if (completion === true) status = T("market.candle_complete");
+    else if (completion === false) status = T("market.candle_forming");
+    return [[T("market.candle_open"), price("open")], [T("market.candle_high"), price("high")], [T("market.candle_low"), price("low")], [T("market.candle_close"), price("close")], [T("market.candle_volume"), validVolume ? format(String(volume), 0) : "—"], [T("market.candle_state"), status]].map(([label, value]) => `<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join("");
+  };
+  const candleChart = (rows, {label, priceUnit, currency}) => {
+    const points = candlePoints(rows);
+    if (!points.length) return `<div class="chart-empty">${H("market.candles_empty")}</div>`;
+    const {width, height, edgeInset: left} = C.charts;
+    const right = width - left;
+    // These bounds remain BigInt; Math.min/max would require losing the exact
+    // source nanounits before the relative coordinate calculation below.
+    const rawLow = points.reduce((value, point) => {
+      if (point.values.low < value) return point.values.low;
+      return value;
+    }, points[0].values.low);
+    const rawHigh = points.reduce((value, point) => {
+      if (point.values.high > value) return point.values.high;
+      return value;
+    }, points[0].values.high);
+    const range = rawHigh - rawLow;
+    const padding = BigInt(Math.max(1, Math.ceil(Number(range || rawHigh) * (range ? 1 : C.charts.flatRangeRatio) * C.charts.rangePaddingRatio)));
+    const low = rawLow > padding ? rawLow - padding : 0n;
+    const high = rawHigh + padding;
+    const indices = new Map(points.map((point, index) => [point.time, index]));
+    // Exchange observations occupy equal slots: closed sessions do not create
+    // invented empty candles. Each slot retains its actual source timestamp.
+    const x = time => left + (indices.get(time) + .5) / points.length * (right - left);
+    const y = value => height - Number(value - low) / Number(high - low) * height;
+    const bodyWidth = Math.min(C.charts.candleBodyWidthMax, (right - left) / points.length * C.charts.candleBodyRatio);
+    const grid = C.charts.gridFractions.map(part => `<line class="chart-grid" x1="${left}" x2="${right}" y1="${part * height}" y2="${part * height}"/>`).join("");
+    const bars = points.map(point => {
+      const px = x(point.time), open = y(point.values.open), close = y(point.values.close);
+      let tone = "doji";
+      if (point.values.close > point.values.open) tone = "rising";
+      else if (point.values.close < point.values.open) tone = "falling";
+      const body = tone === "doji" ? `<line class="candle-body" x1="${px - bodyWidth / 2}" x2="${px + bodyWidth / 2}" y1="${open}" y2="${open}"/>` : `<rect class="candle-body" x="${px - bodyWidth / 2}" y="${Math.min(open, close)}" width="${bodyWidth}" height="${Math.max(C.charts.candleBodyHeightMin, Math.abs(open - close))}"/>`;
+      return `<g class="chart-candle candle-${tone}" data-candle-time="${point.time}"><line class="candle-wick" x1="${px}" x2="${px}" y1="${y(point.values.high)}" y2="${y(point.values.low)}"/>${body}</g>`;
+    }).join("");
+    const id = `chart-${++chartSequence}`;
+    const timeLabel = value => date(value, true);
+    const data = {kind: "candlestick", points, x, y, right, left, width, label, currency, priceUnit, personal: false, comparison: [], timeLabel};
+    pendingCharts.set(id, data);
+    const valueAxis = [high, (high + low) / 2n, low].map(value => renderChartAxis(format(quotationText(value), C.display.marketPriceFractionDigits))).join("");
+    const axes = `<div class="chart-value-axis">${valueAxis}</div><div class="chart-time-axis">${renderChartAxis(timeLabel(points[0].time))}${renderChartAxis(timeLabel(points.at(-1).time))}</div>`;
+    const latest = points.at(-1);
+    return `<div class="chart-block candlestick-block"><div class="chart-plot"><svg class="chart-svg" data-chart="${id}" data-chart-kind="candlestick" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" tabindex="0" role="group" aria-label="${escape(label)}${H(". Используйте стрелки для просмотра значений.")}">${grid}${bars}<g class="chart-hover" visibility="hidden"><line class="chart-cursor" y1="0" y2="${height}"/><circle class="chart-point" r="4"/></g></svg>${axes}</div><div class="chart-readout" aria-live="off"><span>${escape(timeLabel(latest.time))}</span><strong>${escape(marketPrice(latest.sourceValue, priceUnit, currency, false))}</strong></div><dl class="candle-readout" data-candle-readout>${candleReadout(latest, data)}</dl></div>`;
+  };
   const chartPoints = (rows, timeKey, valueKey, comparison, xKind) => {
     const unique = new Map();
     for (const row of Array.isArray(rows) ? rows : []) {
@@ -203,9 +287,11 @@
     tone = "green",
     compact = false,
     comparison = [],
-    xKind = "date"
+    xKind = "date",
+    kind = "line"
   } = {}) => {
     if (personal && privateValuesHidden) return ("<div class=\"chart-empty\">" + H("Значения скрыты настройкой конфиденциальности.") + "</div>");
+    if (kind === "candlestick") return candleChart(rows, {label, priceUnit, currency});
     const timeLabel = value => xKind === "model_month" ? T("goals.model_month", {month: format(value, 0)}) : date(value, true);
     const points = chartPoints(rows, timeKey, valueKey, comparison, xKind);
     if (points.length < 2) return ("<div class=\"chart-empty\">" + H("Для графика нужны минимум два реальных наблюдения.") + "</div>");
@@ -250,64 +336,99 @@
     const legend = chartLegend(comparison, points, label, currency, personal);
     return `<div class="chart-block${tone === "purple" ? " chart-purple" : ""}"><div class="chart-plot${compact ? " chart-compact" : ""}"><svg class="chart-svg" data-chart="${id}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" tabindex="0" role="group" aria-label="${escape(label)}${H(". Используйте стрелки для просмотра значений.")}">${grid}<path class="chart-area" d="${path} L${right} ${bottom} L${left} ${bottom} Z"/><path class="chart-path" d="${path}"/>${compared}<g class="chart-hover" visibility="hidden"><line class="chart-cursor" y1="${top}" y2="${bottom}"/><circle class="chart-point" r="4"/></g></svg>${compact ? "" : renderChartAxes(points, low, high, timeLabel)}</div><div class="chart-readout" aria-live="off"><span>${escape(timeLabel(points.at(-1).time))}</span><strong>${escape(marketPrice(points.at(-1).sourceValue, priceUnit, currency, personal))}</strong></div>${legend}</div>`;
   };
+  const showChartObservation = (svg, binding, index, active = true, interaction = true) => {
+    const data = binding.data;
+    binding.selected = Math.max(0, Math.min(data.points.length - 1, index));
+    binding.active = active;
+    if (interaction) binding.selectedByUser = true;
+    const current = data.points[binding.selected];
+    const px = data.x(current.time), py = data.y(current.value);
+    const block = svg.closest(".chart-block");
+    const hover = svg.querySelector(".chart-hover");
+    hover.setAttribute("visibility", active ? "visible" : "hidden");
+    const cursor = hover.querySelector("line"), point = hover.querySelector("circle");
+    cursor.setAttribute("x1", String(px));
+    cursor.setAttribute("x2", String(px));
+    point.setAttribute("cx", String(px));
+    point.setAttribute("cy", String(py));
+    const readout = block.querySelector(".chart-readout");
+    readout.firstElementChild.textContent = data.timeLabel(current.time);
+    readout.lastElementChild.textContent = marketPrice(current.sourceValue, data.priceUnit, data.currency, data.personal);
+    for (const item of block.querySelectorAll("[data-chart-comparison]")) item.textContent = money(current.comparison[Number(item.dataset.chartComparison)], 0, data.currency, data.personal);
+    let detail = marketPrice(current.sourceValue, data.priceUnit, data.currency, data.personal);
+    if (data.kind === "candlestick") {
+      const fields = block.querySelector("[data-candle-readout]");
+      fields.innerHTML = candleReadout(current, data);
+      detail = fields.textContent;
+    }
+    svg.setAttribute("aria-label", `${data.label}: ${data.timeLabel(current.time)}, ${detail}${T(". Стрелки меняют наблюдение.")}`);
+  };
   const bindCharts = (container = document) => {
     for (const svg of container.querySelectorAll("svg[data-chart]")) {
       const data = pendingCharts.get(svg.dataset.chart);
       if (!data) continue;
       pendingCharts.delete(svg.dataset.chart);
-      let selected = data.points.length - 1;
-      const hover = svg.querySelector(".chart-hover");
-      const cursor = hover.querySelector("line");
-      const point = hover.querySelector("circle");
-      const readout = svg.closest(".chart-block").querySelector(".chart-readout");
-      const show = index => {
-        selected = Math.max(0, Math.min(data.points.length - 1, index));
-        const current = data.points[selected];
-        const px = data.x(current.time);
-        const py = data.y(current.value);
-        hover.setAttribute("visibility", "visible");
-        cursor.setAttribute("x1", String(px));
-        cursor.setAttribute("x2", String(px));
-        point.setAttribute("cx", String(px));
-        point.setAttribute("cy", String(py));
-        readout.firstElementChild.textContent = data.timeLabel(current.time);
-        readout.lastElementChild.textContent = marketPrice(current.sourceValue, data.priceUnit, data.currency, data.personal);
-        for (const item of svg.closest(".chart-block").querySelectorAll("[data-chart-comparison]")) item.textContent = money(current.comparison[Number(item.dataset.chartComparison)], 0, data.currency, data.personal);
-        svg.setAttribute("aria-label", `${data.label}: ${data.timeLabel(current.time)}, ${marketPrice(current.sourceValue, data.priceUnit, data.currency, data.personal)}${T(". Стрелки меняют наблюдение.")}`);
-      };
+      const existing = boundCharts.get(svg);
+      if (existing) {
+        const selected = existing.data.points[existing.selected].time;
+        const followLatest = !existing.selectedByUser && existing.selected === existing.data.points.length - 1;
+        existing.data = data;
+        const index = followLatest ? data.points.length - 1 : data.points.findIndex(point => point.time === selected);
+        showChartObservation(svg, existing, Math.max(0, index), existing.active, false);
+        continue;
+      }
+      const binding = {data, selected: data.points.length - 1, active: false, selectedByUser: false};
+      boundCharts.set(svg, binding);
       svg.addEventListener("pointermove", event => {
         const box = svg.getBoundingClientRect();
         if (!box.width) return;
-        const px = (event.clientX - box.left) / box.width * data.width;
-        let closest = 0;
-        let distance = Infinity;
-        data.points.forEach((item, index) => {
-          const delta = Math.abs(data.x(item.time) - px);
-          if (delta < distance) {
-            closest = index;
-            distance = delta;
-          }
+        const current = binding.data;
+        const px = (event.clientX - box.left) / box.width * current.width;
+        let closest = 0, distance = Infinity;
+        current.points.forEach((item, index) => {
+          const delta = Math.abs(current.x(item.time) - px);
+          if (delta < distance) { closest = index; distance = delta; }
         });
-        show(closest);
+        showChartObservation(svg, binding, closest);
       });
       svg.addEventListener("pointerleave", () => {
-        if (document.activeElement !== svg) hover.setAttribute("visibility", "hidden");
+        if (document.activeElement !== svg) {
+          binding.active = false;
+          svg.querySelector(".chart-hover").setAttribute("visibility", "hidden");
+        }
       });
-      svg.addEventListener("focus", () => show(selected));
-      svg.addEventListener("blur", () => hover.setAttribute("visibility", "hidden"));
+      svg.addEventListener("focus", () => showChartObservation(svg, binding, binding.selected));
+      svg.addEventListener("blur", () => {
+        binding.active = false;
+        svg.querySelector(".chart-hover").setAttribute("visibility", "hidden");
+      });
       svg.addEventListener("keydown", event => {
-        const destinations = {
-          ArrowLeft: selected - 1,
-          ArrowRight: selected + 1,
-          Home: 0,
-          End: data.points.length - 1
-        };
+        const destinations = {ArrowLeft: binding.selected - 1, ArrowRight: binding.selected + 1, Home: 0, End: binding.data.points.length - 1};
         if (Object.hasOwn(destinations, event.key)) {
           event.preventDefault();
-          show(destinations[event.key]);
+          showChartObservation(svg, binding, destinations[event.key]);
         }
       });
     }
+  };
+  const updateChart = (container, markup) => {
+    if (!container) return;
+    const previous = container.querySelector("svg[data-chart]");
+    const focused = previous && document.activeElement === previous;
+    const template = document.createElement("div");
+    template.innerHTML = markup;
+    const replacement = template.querySelector("svg[data-chart]");
+    if (previous && replacement && previous.dataset.chartKind === replacement.dataset.chartKind) {
+      // Keep the actual focusable SVG and its binding. Only validated geometry,
+      // axes and readouts change; keyboard selection follows the source time.
+      previous.innerHTML = replacement.innerHTML;
+      previous.dataset.chart = replacement.dataset.chart;
+      previous.setAttribute("viewBox", replacement.getAttribute("viewBox"));
+      replacement.replaceWith(previous);
+    }
+    container.replaceChildren(...template.childNodes);
+    bindCharts(container);
+    if (focused && previous.isConnected) previous.focus({preventScroll: true});
   };
   const allocation = (items, total) => {
     const valid = (Array.isArray(items) ? items : []).filter(item => number(item.value_rub) !== null && number(item.value_rub) >= 0 && number(item.nav_percent) !== null && number(item.nav_percent) >= 0);
@@ -381,6 +502,8 @@
     colors,
     get navigation() { return navigation(); },
     marketPrice,
+    quotationNanos,
+    updateChart,
     compiledBuild: "__OMNICIO_BUILD__",
     publicPages, routeScreens, parseRoute, routeHash, resumeRoute
   });

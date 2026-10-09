@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta, tzinfo
 from functools import partial
+from threading import Event
 from typing import Any
 from unittest.mock import Mock, patch
 from uuid import UUID
@@ -12,6 +13,7 @@ from uuid import UUID
 import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
+from test_market import _finish_market_reads
 from test_workspace_api import OWNER
 from test_workspace_api import workspace_http as workspace_http
 
@@ -100,11 +102,18 @@ def test_native_market_units_are_explicit_and_history_never_uses_current_nominal
         broker.market_instrument_metadata.return_value, instrument_type=kind, nominal=nominal,
     )
     broker.market_exchange_candles.return_value = (candle(NOW - timedelta(days=1)),)
-    with patch("omnicio.market.datetime", FixedDatetime):
-        result = (
-            market(broker).instrument_live_state(OWNER.id, UID) if surface == "live"
-            else market(broker).instrument_snapshot(OWNER.id, UID, period=surface)
-        )
+    service = market(broker)
+    operation = (
+        partial(service.instrument_live_state, OWNER.id, UID) if surface == "live"
+        else partial(service.instrument_snapshot, OWNER.id, UID, period=surface)
+    )
+    try:
+        with patch("omnicio.market.datetime", FixedDatetime):
+            operation()
+            _finish_market_reads(service)
+            result = operation()
+    finally:
+        service.close()
     assert result.price_unit == unit
     assert result.last_price == "101"
     assert result.cash_price == cash_price
@@ -128,8 +137,14 @@ def test_all_history_uses_real_first_date_ten_year_chunks_and_unique_sorted_mont
         return (candle(last_month), candle(begin), candle(NOW + timedelta(days=1)))
 
     broker.market_exchange_candles.side_effect = read
-    with patch("omnicio.market.datetime", FixedDatetime):
-        result = market(broker).instrument_snapshot(OWNER.id, UID, period="all")
+    service = market(broker)
+    try:
+        with patch("omnicio.market.datetime", FixedDatetime):
+            service.instrument_snapshot(OWNER.id, UID, period="all")
+            _finish_market_reads(service)
+            result = service.instrument_snapshot(OWNER.id, UID, period="all")
+    finally:
+        service.close()
     assert result.period == "all"
     assert result.interval == "CANDLE_INTERVAL_MONTH"
     assert result.history_from == first.isoformat()
@@ -158,8 +173,15 @@ def test_all_history_month_boundary_short_tail_stays_inside_provider_window() ->
         return ()
 
     broker.market_exchange_candles.side_effect = read
-    with patch("omnicio.market.datetime", FixedDatetime):
-        market(broker).instrument_snapshot(OWNER.id, UID, period="all")
+    service = market(broker)
+    try:
+        with patch("omnicio.market.datetime", FixedDatetime):
+            service.instrument_snapshot(OWNER.id, UID, period="all")
+            _finish_market_reads(service)
+            result = service.instrument_snapshot(OWNER.id, UID, period="all")
+    finally:
+        service.close()
+    assert result.history_status == "empty"
     assert broker.market_exchange_candles.call_count == 2
     tail = broker.market_exchange_candles.call_args.kwargs
     assert tail["to_at"] == NOW
@@ -170,12 +192,118 @@ def test_all_history_recent_listing_uses_daily_resolution_without_invented_origi
     first = NOW - timedelta(days=1)
     broker = history_broker(first)
     broker.market_exchange_candles.return_value = (candle(first),)
-    with patch("omnicio.market.datetime", FixedDatetime):
-        result = market(broker).instrument_snapshot(OWNER.id, UID, period="all")
+    service = market(broker)
+    try:
+        with patch("omnicio.market.datetime", FixedDatetime):
+            service.instrument_snapshot(OWNER.id, UID, period="all")
+            _finish_market_reads(service)
+            result = service.instrument_snapshot(OWNER.id, UID, period="all")
+    finally:
+        service.close()
     assert result.interval == "CANDLE_INTERVAL_DAY"
     assert result.history_from == first.isoformat()
     assert result.candles[0].time == first.isoformat()
     assert broker.market_exchange_candles.call_count == 1
+
+
+def test_history_refresh_keeps_old_candles_and_source_time_until_real_recovery() -> None:
+    broker = history_broker()
+    old = replace(candle(NOW - timedelta(hours=4)), is_complete=False)
+    corrected = replace(old, close="102", is_complete=True)
+    entered, release = Event(), Event()
+
+    def read(user, uid, **kwargs):
+        if broker.market_exchange_candles.call_count == 2:
+            entered.set()
+            assert release.wait(timeout=5)
+            raise TBankUnavailable("transient history failure")
+        return (old if broker.market_exchange_candles.call_count == 1 else corrected,)
+
+    broker.market_exchange_candles.side_effect = read
+    service = market(broker)
+    try:
+        with (
+            patch("omnicio.market.time.monotonic") as clock,
+            patch("omnicio.market.datetime") as wall,
+        ):
+            clock.return_value = 0
+            wall.now.side_effect = lambda _tz: NOW + timedelta(seconds=clock.return_value)
+            service.instrument_snapshot(OWNER.id, UID, period="1m")
+            _finish_market_reads(service)
+            initial = service.instrument_snapshot(OWNER.id, UID, period="1m")
+            assert initial.history_status == "available"
+            assert initial.history_observed_at == NOW.isoformat()
+            clock.return_value = 16
+            pending = service.instrument_snapshot(OWNER.id, UID, period="1m")
+            assert entered.wait(timeout=5)
+            assert pending.history_status == "loading"
+            assert pending.candles == initial.candles
+            assert pending.history_observed_at == initial.history_observed_at
+            clock.return_value = 17
+            release.set()
+            _finish_market_reads(service)
+            failed = service.instrument_snapshot(OWNER.id, UID, period="1m")
+            assert failed.history_status == "unavailable"
+            assert failed.errors["history"] == "source_unavailable"
+            assert failed.candles == initial.candles
+            assert failed.history_observed_at == initial.history_observed_at
+            assert failed.last_price == "101"
+            clock.return_value = 21
+            service.instrument_snapshot(OWNER.id, UID, period="1m")
+            assert broker.market_exchange_candles.call_count == 2
+            clock.return_value = 22
+            service.instrument_snapshot(OWNER.id, UID, period="1m")
+            _finish_market_reads(service)
+            recovered = service.instrument_snapshot(OWNER.id, UID, period="1m")
+            assert recovered.history_status == "available"
+            assert recovered.errors["history"] is None
+            assert recovered.candles[0].close == "102"
+            assert recovered.candles[0].is_complete is True
+            assert recovered.history_observed_at == (NOW + timedelta(seconds=22)).isoformat()
+            assert broker.market_exchange_candles.call_count == 3
+    finally:
+        release.set()
+        service.close()
+
+
+def test_busy_history_period_never_returns_another_periods_candles() -> None:
+    broker = history_broker(NOW - timedelta(days=400))
+    entered, release = Event(), Event()
+
+    def read(user, uid, **kwargs):
+        if kwargs["interval"] == "CANDLE_INTERVAL_MONTH":
+            entered.set()
+            assert release.wait(timeout=5)
+            return (replace(candle(NOW - timedelta(days=30)), close="100"),)
+        return (replace(candle(NOW - timedelta(minutes=5)), close="102"),)
+
+    broker.market_exchange_candles.side_effect = read
+    service = market(broker)
+    try:
+        with patch("omnicio.market.datetime", FixedDatetime):
+            first = service.instrument_snapshot(OWNER.id, UID, period="all")
+            assert entered.wait(timeout=5)
+            assert first.history_status == "loading"
+            another_period = service.instrument_snapshot(OWNER.id, UID, period="1d")
+            assert another_period.history_status == "loading"
+            assert another_period.candles == ()
+            assert another_period.history_observed_at is None
+            assert another_period.interval == "CANDLE_INTERVAL_5_MIN"
+            assert another_period.last_price == "101"
+            assert broker.market_exchange_candles.call_count == 1
+            release.set()
+            _finish_market_reads(service)
+            service.instrument_snapshot(OWNER.id, UID, period="1d")
+            _finish_market_reads(service)
+            ready = service.instrument_snapshot(OWNER.id, UID, period="1d")
+            assert ready.period == "1d"
+            assert ready.history_status == "available"
+            assert ready.candles[0].close == "102"
+            assert ready.candles[0].time == (NOW - timedelta(minutes=5)).isoformat()
+            assert broker.market_exchange_candles.call_count == 2
+    finally:
+        release.set()
+        service.close()
 
 
 @pytest.mark.parametrize(
@@ -186,32 +314,48 @@ def test_unknown_future_naive_or_over_budget_first_date_fails_before_candle_read
 ) -> None:
     broker = history_broker(first)
     service = market(broker)
-    with patch("omnicio.market.datetime", FixedDatetime):
-        result = service.instrument_snapshot(OWNER.id, UID, period="all")
+    try:
+        with patch("omnicio.market.datetime", FixedDatetime):
+            service.instrument_snapshot(OWNER.id, UID, period="all")
+            _finish_market_reads(service)
+            result = service.instrument_snapshot(OWNER.id, UID, period="all")
+    finally:
+        service.close()
     assert result.history_status == "unavailable"
     assert result.errors["history"] == "source_unavailable"
     assert result.last_price is not None
     broker.market_exchange_candles.assert_not_called()
-    broker.market_last_price.assert_called_once()
+    assert broker.market_last_price.call_count == 2
 
 
 @pytest.mark.parametrize("surface", ["all", "1m", "live"])
 def test_market_discards_every_result_if_account_changes_during_last_read(surface: str) -> None:
     broker = history_broker(datetime(2025, 1, 1, tzinfo=UTC))
     original = broker.market_trading_status.return_value
+    original_price = broker.market_last_price.return_value
+    connection_changed = Event()
 
     def changed(*args: Any) -> TBankTradingStatus:
         broker.status.return_value = BrokerConnectionStatus(True, "sandbox", "new-account")
+        connection_changed.set()
         return original
 
+    def last_price_after_change(*args: Any) -> TBankLastPrice:
+        assert connection_changed.wait(timeout=5)
+        return original_price
+
     broker.market_trading_status.side_effect = changed
+    broker.market_last_price.side_effect = last_price_after_change
     service = market(broker)
     if surface == "live":
         operation = partial(service.instrument_live_state, OWNER.id, UID)
     else:
         operation = partial(service.instrument_snapshot, OWNER.id, UID, period=surface)
-    with patch("omnicio.market.datetime", FixedDatetime), pytest.raises(BrokerConnectionError):
-        operation()
+    try:
+        with patch("omnicio.market.datetime", FixedDatetime), pytest.raises(BrokerConnectionError):
+            operation()
+    finally:
+        service.close()
 
 
 @pytest.mark.parametrize("fallback", [False, True])
@@ -327,19 +471,25 @@ def test_all_history_http_is_valid_owner_bound_and_discards_revoked_session(
     client, auth, _, _ = workspace_http
     broker = history_broker(datetime(2025, 1, 1, tzinfo=UTC))
     service = market(broker)
-    with (
-        patch.object(app.state, "market_service", service, create=True),
-        patch("omnicio.market.datetime", FixedDatetime),
-    ):
-        result = client.get(f"/api/market/instruments/{UID}?period=all&user_id=other")
-        assert result.status_code == 200
-        assert result.json()["period"] == "all"
-        assert result.headers["cache-control"] == "private, no-store"
-        assert all(call.args[0] == OWNER.id for call in broker.market_history_start.call_args_list)
-        auth.refresh_session.side_effect = [OWNER, None]
-        revoked = client.get(f"/api/market/instruments/{UID}?period=all")
-        assert revoked.status_code == 401
-        assert "candles" not in revoked.json()
+    try:
+        with (
+            patch.object(app.state, "market_service", service, create=True),
+            patch("omnicio.market.datetime", FixedDatetime),
+        ):
+            assert client.get(f"/api/market/instruments/{UID}?period=all").status_code == 200
+            _finish_market_reads(service)
+            result = client.get(f"/api/market/instruments/{UID}?period=all&user_id=other")
+            assert result.status_code == 200
+            assert result.json()["period"] == "all"
+            assert result.json()["history_status"] == "empty"
+            assert result.headers["cache-control"] == "private, no-store"
+            broker.market_history_start.assert_called_once_with(OWNER.id, UID)
+            auth.refresh_session.side_effect = [OWNER, None]
+            revoked = client.get(f"/api/market/instruments/{UID}?period=all")
+            assert revoked.status_code == 401
+            assert "candles" not in revoked.json()
+    finally:
+        service.close()
 
 
 def test_instrument_facts_http_keeps_owner_precondition_and_discards_revoked_response(
