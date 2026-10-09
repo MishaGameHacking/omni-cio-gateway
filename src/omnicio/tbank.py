@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import re
 import ssl
 import urllib.error
 import urllib.request
+from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from email.message import Message
+from email.utils import parsedate_to_datetime
 from http.client import HTTPException
+from threading import Lock
+from time import monotonic
 from typing import Literal, Never, cast
 from urllib.parse import urlsplit
 
@@ -34,6 +41,30 @@ _MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 # these are provider contracts, not runtime knobs that may be raised arbitrarily.
 NEWS_MAX_PAGE_SIZE = 50
 OPERATIONS_MAX_PAGE_SIZE = 1000
+
+# Conservative shares of https://developer.tbank.ru/invest/intro/intro/limits
+# for the current one web process and one observer process. These are local
+# steady-state admission ceilings, not tariff discovery or an account/IP-wide
+# guarantee. Windows and cooldown reset on process restart.
+_MARKET_PROCESSES = 2
+_MARKET_SERVICE_REQUESTS_PER_MINUTE = {"InstrumentsService": 200, "MarketDataService": 600}
+_MARKET_HEAVY_REQUESTS_PER_MINUTE = 15
+_MARKET_REQUESTS_PER_SECOND = 50
+_MARKET_HEAVY_METHODS = frozenset({"Bonds", "Shares", "Options", "Futures", "Etfs", "GetAssets"})
+_MARKET_MINUTE_SECONDS = 60.0
+_MARKET_BURST_SECONDS = 1.0
+# A positive pause prevents hot loops on zero/past Retry-After values. Bounded
+# ASCII input keeps numeric conversion finite without shortening a valid pause.
+_RATE_LIMIT_MIN_PAUSE_SECONDS = 1.0
+_RATE_LIMIT_FALLBACK_SECONDS = 60.0
+_RETRY_AFTER_MAX_LENGTH = 128
+_RETRY_AFTER_HTTP_DATE = re.compile(
+    r"(?:(?:[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} "
+    r"|[A-Za-z]+, [0-9]{2}-[A-Za-z]{3}-[0-9]{2} )"
+    r"[0-9]{2}:[0-9]{2}:[0-9]{2} GMT"
+    r"|[A-Za-z]{3} [A-Za-z]{3} [ 0-9][0-9] "
+    r"[0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4})"
+)
 
 # A user's bearer is never an all-purpose API credential. Unknown methods and
 # every mutation fail before constructing an authenticated network request.
@@ -103,6 +134,61 @@ class TBankUnavailable(TBankError):
 
 class TBankNotFound(TBankUnavailable):
     """The requested provider object does not exist."""
+
+
+class TBankRateLimited(TBankUnavailable):
+    """A read was deferred until retry_at_monotonic, in monotonic seconds."""
+
+    def __init__(self, retry_at_monotonic: float) -> None:
+        super().__init__("T-Invest request budget is temporarily exhausted")
+        self.retry_at_monotonic = retry_at_monotonic
+
+
+class _MarketRequestBudget:
+    """Atomic, nonblocking rolling windows shared by market clients in one process."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._burst: deque[float] = deque()
+        self._heavy: deque[float] = deque()
+        self._services: dict[str, deque[float]] = {
+            service: deque() for service in _MARKET_SERVICE_REQUESTS_PER_MINUTE
+        }
+        self._cooldown_until = 0.0
+
+    def admit(self, service: str, method: str) -> None:
+        """Reserve all applicable windows, or reject without reserving any."""
+        with self._lock:
+            now = monotonic()
+            windows = [
+                (self._burst, _MARKET_BURST_SECONDS,
+                 _MARKET_REQUESTS_PER_SECOND // _MARKET_PROCESSES),
+                (self._services[service], _MARKET_MINUTE_SECONDS,
+                 _MARKET_SERVICE_REQUESTS_PER_MINUTE[service] // _MARKET_PROCESSES),
+            ]
+            if service == "InstrumentsService" and method in _MARKET_HEAVY_METHODS:
+                windows.append((self._heavy, _MARKET_MINUTE_SECONDS,
+                                _MARKET_HEAVY_REQUESTS_PER_MINUTE // _MARKET_PROCESSES))
+            retry_at = self._cooldown_until
+            for timestamps, seconds, limit in windows:
+                while timestamps and timestamps[0] + seconds <= now:
+                    timestamps.popleft()
+                if len(timestamps) >= limit:
+                    retry_at = max(retry_at, timestamps[0] + seconds)
+            if retry_at > now:
+                raise TBankRateLimited(retry_at)
+            for timestamps, _seconds, _limit in windows:
+                timestamps.append(now)
+
+    def defer(self, retry_at_monotonic: float) -> None:
+        """A concurrent success or shorter provider pause cannot erase a cooldown."""
+        with self._lock:
+            self._cooldown_until = max(self._cooldown_until, retry_at_monotonic)
+
+
+# All market clients must share state: independent instance budgets multiply
+# the provider allowance under concurrent collectors and public requests.
+_MARKET_REQUEST_BUDGET = _MarketRequestBudget()
 
 
 @dataclass(frozen=True, slots=True)
@@ -913,11 +999,35 @@ def _news_item(raw: object) -> TBankNewsItem:
                          tuple(dict.fromkeys(uids)), priority)
 
 
+def _rate_limit_retry_seconds(value: str | None) -> float:
+    """Read bounded delta-seconds or an HTTP-date, without trusting arbitrary email dates."""
+    if not value or len(value) > _RETRY_AFTER_MAX_LENGTH or not value.isascii():
+        return _RATE_LIMIT_FALLBACK_SECONDS
+    value = value.strip(" \t")
+    try:
+        if value.isdecimal():
+            delay = float(value)
+        elif _RETRY_AFTER_HTTP_DATE.fullmatch(value):
+            when = parsedate_to_datetime(value)
+            # The obsolete asctime HTTP-date form has no zone; HTTP defines GMT.
+            delay = (when.replace(tzinfo=UTC) - datetime.now(UTC)).total_seconds()
+        else:
+            return _RATE_LIMIT_FALLBACK_SECONDS
+    except (OverflowError, TypeError, ValueError):
+        return _RATE_LIMIT_FALLBACK_SECONDS
+    if not math.isfinite(delay):
+        return _RATE_LIMIT_FALLBACK_SECONDS
+    return max(_RATE_LIMIT_MIN_PAUSE_SECONDS, delay)
+
+
 def _raise_tbank_http_error(
     method: str,
     exc: urllib.error.HTTPError,
 ) -> Never:
     tracking_id = exc.headers.get("x-tracking-id", "")
+    retry_after = exc.headers.get("Retry-After")
+    if isinstance(exc.headers, Message) and len(exc.headers.get_all("Retry-After", [])) > 1:
+        retry_after = None
     exc.close()
     logger.warning(
         "T-Invest request failed method=%s status=%s tracking_id=%s",
@@ -929,7 +1039,9 @@ def _raise_tbank_http_error(
         raise TBankTokenRejected("T-Invest token was rejected") from exc
     if exc.code == 404:
         raise TBankNotFound("T-Invest object was not found") from exc
-    if exc.code == 429 or exc.code >= 500:
+    if exc.code == 429:
+        raise TBankRateLimited(monotonic() + _rate_limit_retry_seconds(retry_after)) from exc
+    if exc.code >= 500:
         raise TBankUnavailable(
             f"T-Invest API unavailable: HTTP {exc.code}"
         ) from exc
@@ -1940,6 +2052,9 @@ class TBankInvestClient:
         base = _REST_BASES.get(environment)
         if base is None:
             raise TBankUnavailable("unsupported T-Invest environment")
+        market_budget = _MARKET_REQUEST_BUDGET if self.purpose == "market" else None
+        if market_budget is not None:
+            market_budget.admit(service, method)
         endpoint = f"{base}{_API_PREFIX}{service}/{method}"
         request = urllib.request.Request(
             endpoint,
@@ -1951,11 +2066,16 @@ class TBankInvestClient:
                 "Accept": "application/json",
             },
         )
-        raw = _read_tbank_response(
-            request,
-            timeout_seconds=self.timeout_seconds,
-            method=method,
-        )
+        try:
+            raw = _read_tbank_response(
+                request,
+                timeout_seconds=self.timeout_seconds,
+                method=method,
+            )
+        except TBankRateLimited as exc:
+            if market_budget is not None:
+                market_budget.defer(exc.retry_at_monotonic)
+            raise
         return _decode_tbank_response(raw)
 
 

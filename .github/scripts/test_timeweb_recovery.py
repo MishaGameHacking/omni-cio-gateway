@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
+import subprocess
+import sys
 import unittest
 from contextlib import ExitStack
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -1031,6 +1035,96 @@ class ProviderInspectionTests(unittest.TestCase):
 
 
 class RestoreCapacityTests(unittest.TestCase):
+    def test_shared_host_reader_exposes_only_bounded_resource_metadata(self) -> None:
+        base = {
+            "/proc/meminfo": "MemTotal: 8192 kB\nMemAvailable: 4096 kB\nSwapTotal: 0 kB\n"
+                             "SwapFree: 0 kB\nPrivateCanary: 100 kB\n",
+            "/etc/os-release": 'ID=ubuntu\nVERSION_ID="24.04"\nVERSION_CODENAME=noble\n'
+                               'PRIVATE="private-canary"\n',
+        }
+        major = Mock()
+        major.name = "18"
+        major.is_dir.return_value = True
+        for scenario in ("complete", "unknown_available", "invalid_unit", "invalid_os",
+                         "negative_memory", "oversized_source", "unavailable"):
+            contents = dict(base)
+            if scenario == "unknown_available":
+                contents["/proc/meminfo"] = "MemTotal: 8192 kB\n"
+            elif scenario == "invalid_unit":
+                contents["/proc/meminfo"] = "MemTotal: 8192 private-canary\n"
+            elif scenario == "invalid_os":
+                contents["/etc/os-release"] = 'ID="private-canary secret"\n'
+            elif scenario == "negative_memory":
+                contents["/proc/meminfo"] = "MemTotal: -1 kB\n"
+            elif scenario == "oversized_source":
+                contents["/proc/meminfo"] = "p" * 65537
+
+            def read_file(path, *_args, source=contents,
+                          unavailable=scenario == "unavailable", **_kwargs):
+                if unavailable:
+                    raise PermissionError("private-canary")
+                return io.StringIO(source[str(path)])
+
+            with (
+                self.subTest(scenario=scenario),
+                patch.object(Path, "open", autospec=True, side_effect=read_file),
+                patch.object(Path, "glob", return_value=[major]),
+                patch.object(inplace_upgrade.os, "cpu_count", return_value=2),
+                patch("shutil.disk_usage", return_value=SimpleNamespace(total=100, free=80)),
+                patch("shutil.which", return_value=None),
+            ):
+                report = inplace_upgrade.inspect_host_capacity()
+            if scenario in ("complete", "unknown_available"):
+                self.assertEqual(report["status"], "observed")
+                self.assertEqual(report["memory_bytes"]["MemTotal"], 8192 * 1024)
+                self.assertEqual(report["memory_bytes"]["MemAvailable"],
+                                 4096 * 1024 if scenario == "complete" else None)
+                self.assertEqual(report["os"], {
+                    "ID": "ubuntu", "VERSION_ID": "24.04", "VERSION_CODENAME": "noble",
+                })
+                self.assertEqual(report["postgres_majors"], ["18"])
+            else:
+                self.assertEqual(report, {
+                    "status": "unavailable", "code": "host_capacity_unavailable",
+                })
+            self.assertNotIn("canary", json.dumps(report))
+
+    def test_drill_renders_the_same_standalone_capacity_reader(self) -> None:
+        provider = Mock(request=Mock(return_value={"backups": [], "buckets": []}))
+        remote = Mock(run=Mock(return_value=json.dumps({
+            "status": "unavailable", "code": "host_capacity_unavailable",
+        })))
+        with patch("builtins.print"):
+            recovery.inspect_restore_capacity(provider, remote, CLUSTER_ID)
+        program = remote.run.call_args.kwargs["input_text"]
+        completed = subprocess.run(
+            [sys.executable, "-I", "-B", "-"], input=program, text=True, capture_output=True,
+            timeout=10, check=True,
+        )
+        report = json.loads(completed.stdout)
+        self.assertTrue(inplace_upgrade._valid_host_capacity(report))
+        self.assertEqual(program.count("def inspect_host_capacity("), 1)
+
+    def test_host_consumer_rejects_unbounded_or_unknown_data_before_printing(self) -> None:
+        unavailable = {"status": "unavailable", "code": "host_capacity_unavailable"}
+        for raw in (
+            '{"unexpected_secret":"synthetic-host-secret-canary"}',
+            "synthetic-host-secret-canary invalid JSON",
+            json.dumps(unavailable | {"unexpected_secret": "synthetic-host-secret-canary"}),
+            " " * 16384 + json.dumps(unavailable),
+        ):
+            provider = Mock(request=Mock(return_value={"backups": [], "buckets": []}))
+            remote = Mock(run=Mock(return_value=raw))
+            with (
+                self.subTest(raw_length=len(raw)),
+                patch("builtins.print") as output,
+                self.assertRaisesRegex(recovery.RecoveryBlocked,
+                                       "^Invalid restore capacity response$"),
+            ):
+                recovery.inspect_restore_capacity(provider, remote, CLUSTER_ID)
+            output.assert_not_called()
+            self.assertTrue(all(call.args[0] == "GET" for call in provider.request.call_args_list))
+
     def test_inventory_is_read_only_and_filters_storage_credentials(self) -> None:
         provider = Mock()
         provider.request.side_effect = [
@@ -1038,7 +1132,9 @@ class RestoreCapacityTests(unittest.TestCase):
             {"buckets": [{"id": 1, "type": "private", "secret_key": "private-canary",
                           "access_key": "credential-canary", "name": "personal-name"}]},
         ]
-        remote = Mock(run=Mock(return_value='{"disk_free_bytes":100}'))
+        remote = Mock(run=Mock(return_value=json.dumps({
+            "status": "unavailable", "code": "host_capacity_unavailable",
+        })))
         with patch("builtins.print") as output:
             recovery.inspect_restore_capacity(provider, remote, CLUSTER_ID)
         rendered = output.call_args.args[0]
@@ -1049,7 +1145,9 @@ class RestoreCapacityTests(unittest.TestCase):
 
     def test_unavailable_inventory_does_not_claim_success_or_print_provider_error(self) -> None:
         provider = Mock(request=Mock(side_effect=RuntimeError("sensitive-provider-response")))
-        remote = Mock(run=Mock(return_value="{}"))
+        remote = Mock(run=Mock(return_value=json.dumps({
+            "status": "unavailable", "code": "host_capacity_unavailable",
+        })))
         with patch("builtins.print") as output:
             recovery.inspect_restore_capacity(provider, remote, CLUSTER_ID)
         self.assertNotIn("sensitive-provider-response", output.call_args.args[0])

@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import socket
 import ssl
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from email.message import Message
 from functools import partial
 from http.client import HTTPResponse
+from threading import Barrier, Event
 from unittest.mock import Mock, patch
 from uuid import UUID
 
@@ -41,6 +45,7 @@ from omnicio.tbank import (
     TBankOrderLevel,
     TBankPortfolioPosition,
     TBankPositions,
+    TBankRateLimited,
     TBankRating,
     TBankTokenRejected,
     TBankTradingStatus,
@@ -62,6 +67,246 @@ class FakeResponse:
     def read(self, limit: int = -1) -> bytes:
         body = json.dumps(self.payload).encode()
         return body if limit < 0 else body[:limit]
+
+
+@pytest.fixture
+def market_clock(monkeypatch: pytest.MonkeyPatch) -> Mock:
+    clock = Mock(return_value=1000.0)
+    monkeypatch.setattr("omnicio.tbank.monotonic", clock)
+    return clock
+
+
+def _rate_limit_error(values: tuple[str, ...]) -> urllib.error.HTTPError:
+    headers = Message()
+    for value in values:
+        headers["Retry-After"] = value
+    return urllib.error.HTTPError(
+        "https://invest-public-api.tbank.ru/rest/", 429, "Too Many Requests", headers,
+        io.BytesIO(b"synthetic-provider-secret-must-not-leak"),
+    )
+
+
+def test_market_burst_is_atomic_across_clients_and_keeps_portfolio_independent(
+    market_clock: Mock,
+) -> None:
+    clients = (TBankInvestClient(purpose="market"), TBankInvestClient(purpose="market"))
+    start = Barrier(40)
+
+    def read(index: int) -> float | None:
+        start.wait(timeout=5)
+        client = clients[index % 2]
+        try:
+            if index % 2:
+                client.find_instruments("synthetic-market-source-a", "prod", "test")
+            else:
+                client.get_all_last_prices("synthetic-market-source-b", "prod")
+        except TBankRateLimited as exc:
+            return exc.retry_at_monotonic
+        return None
+
+    with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse({})) as network:
+        with ThreadPoolExecutor(max_workers=40) as readers:
+            results = list(readers.map(read, range(40)))
+        assert results.count(None) == 25
+        assert [value for value in results if value is not None] == [1001.0] * 15
+        assert network.call_count == 25
+
+        TBankInvestClient().get_positions("synthetic-private-bearer", "prod", "account-1")
+        assert network.call_count == 26
+
+        # An exhausted market budget is checked before creating an authenticated
+        # request, but cannot replace the existing scope/token validation result.
+        with patch("urllib.request.Request") as authenticated_request:
+            with pytest.raises(TBankRateLimited):
+                clients[0].get_all_last_prices("synthetic-market-source", "prod")
+            with pytest.raises(TBankTokenRejected):
+                clients[0].get_all_last_prices("invalid bearer", "prod")
+            with pytest.raises(TBankTokenRejected):
+                clients[0]._post(token="synthetic-market-source", environment="prod",
+                                 service="OrdersService", method="PostOrder", body={})
+            with pytest.raises(TBankTokenRejected):
+                clients[0].get_all_last_prices("synthetic-market-source", "sandbox")
+        authenticated_request.assert_not_called()
+        assert network.call_count == 26
+
+        market_clock.return_value = 1001.0
+        clients[1].get_all_last_prices("synthetic-market-source", "prod")
+        assert network.call_count == 27
+
+
+@pytest.mark.parametrize("service,limit", [("instruments", 100), ("market_data", 300)])
+def test_market_minute_windows_are_shared_per_service_and_expire_individually(
+    market_clock: Mock, service: str, limit: int,
+) -> None:
+    clients = (TBankInvestClient(purpose="market"), TBankInvestClient(purpose="market"))
+    if service == "instruments":
+        reads = [partial(client.find_instruments, "synthetic-market-source", "prod", "test")
+                 for client in clients]
+        other_service = partial(clients[0].get_all_last_prices, "synthetic-market-source", "prod")
+    else:
+        reads = [partial(client.get_all_last_prices, "synthetic-market-source", "prod")
+                 for client in clients]
+        other_service = partial(
+            clients[0].find_instruments, "synthetic-market-source", "prod", "test",
+        )
+    read = reads[0]
+    with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse({})) as network:
+        for index in range(limit):
+            market_clock.return_value = 1000.0 + index / 10
+            reads[index % 2]()
+        market_clock.return_value = 1000.0 + limit / 10
+        with pytest.raises(TBankRateLimited) as blocked:
+            read()
+        assert blocked.value.retry_at_monotonic == 1060.0
+        other_service()
+        assert network.call_count == limit + 1
+
+        market_clock.return_value = 1059.999
+        with pytest.raises(TBankRateLimited):
+            read()
+        market_clock.return_value = 1060.0
+        read()
+        with pytest.raises(TBankRateLimited) as next_slot:
+            read()
+        assert next_slot.value.retry_at_monotonic == pytest.approx(1060.1)
+        assert network.call_count == limit + 2
+
+
+def test_heavy_catalog_group_also_consumes_the_instruments_service_budget(
+    market_clock: Mock,
+) -> None:
+    client = TBankInvestClient(purpose="market")
+    kinds = ("share", "bond", "etf", "future", "share", "bond", "etf")
+    response = FakeResponse({"instruments": []})
+    with patch("urllib.request.OpenerDirector.open", return_value=response) as network:
+        for index, kind in enumerate(kinds):
+            market_clock.return_value = 1000.0 + index / 10
+            client.get_instrument_metadata("synthetic-market-source", "prod", kind)
+        with pytest.raises(TBankRateLimited) as heavy_blocked:
+            client.get_instrument_metadata("synthetic-market-source", "prod", "future")
+        assert heavy_blocked.value.retry_at_monotonic == 1060.0
+
+        # A denied heavy call reserves neither the service window nor a burst
+        # slot. Currencies remain usable until the shared service ceiling.
+        for index in range(93):
+            market_clock.return_value = 1000.0 + (len(kinds) + index) / 10
+            client.get_instrument_metadata("synthetic-market-source", "prod", "currency")
+        with pytest.raises(TBankRateLimited) as service_blocked:
+            client.find_instruments("synthetic-market-source", "prod", "test")
+        assert service_blocked.value.retry_at_monotonic == 1060.0
+        client.get_all_last_prices("synthetic-market-source", "prod")
+        assert network.call_count == 101
+
+
+@pytest.mark.parametrize("headers,delay", [
+    ((), 60.0), (("",), 60.0), (("75",), 75.0), (("7200",), 7200.0),
+    (("0",), 1.0), (("-1",), 60.0), (("1.5",), 60.0), (("NaN",), 60.0),
+    (("Infinity",), 60.0), (("١٢",), 60.0), (("9" * 129,), 60.0),
+    (("9" * 128,), float("9" * 128)), (("60", "7200"), 60.0),
+    (("Fri, 09 Oct 2026 02:00:00 GMT",), 7200.0),
+    (("Friday, 09-Oct-26 02:00:00 GMT",), 7200.0),
+    (("Fri Oct  9 02:00:00 2026",), 7200.0),
+    (("Thu, 08 Oct 2026 23:59:00 GMT",), 1.0),
+    (("Fri, 09 Oct 2026 02:00:00 GMT, 120",), 60.0),
+    (("Fri, 32 Oct 2026 02:00:00 GMT",), 60.0),
+    (("Fri, 09 Oct 2026 02:00:00 +0000",), 60.0),
+])
+def test_market_http_429_defers_all_clients_without_replay_or_secret_exposure(
+    market_clock: Mock, headers: tuple[str, ...], delay: float, caplog,
+) -> None:
+    error = _rate_limit_error(headers)
+    client = TBankInvestClient(purpose="market")
+    with (
+        patch("urllib.request.OpenerDirector.open", side_effect=error) as network,
+        patch("omnicio.tbank.datetime", wraps=datetime) as wall_clock,
+    ):
+        wall_clock.now.return_value = datetime(2026, 10, 9, tzinfo=UTC)
+        with pytest.raises(TBankRateLimited) as limited:
+            client.get_all_last_prices("synthetic-market-bearer-must-not-leak", "prod")
+        deadline = limited.value.retry_at_monotonic
+        assert math.isfinite(deadline)
+        assert deadline == 1000.0 + delay
+        assert error.fp.closed
+        network.assert_called_once()
+
+        network.side_effect = None
+        network.return_value = FakeResponse({})
+        market_clock.return_value = math.nextafter(deadline, -math.inf)
+        with pytest.raises(TBankRateLimited) as shared:
+            TBankInvestClient(purpose="market").find_instruments(
+                "synthetic-other-market-bearer", "prod", "test",
+            )
+        assert shared.value.retry_at_monotonic == deadline
+        network.assert_called_once()
+        TBankInvestClient().get_positions("synthetic-private-bearer", "prod", "account-1")
+        assert network.call_count == 2
+
+        market_clock.return_value = deadline
+        client.get_all_last_prices("synthetic-market-bearer-must-not-leak", "prod")
+        assert network.call_count == 3
+    assert "must-not-leak" not in str(limited.value)
+    assert "must-not-leak" not in caplog.text
+
+
+def test_parallel_success_and_shorter_http_429_cannot_erase_market_cooldown(
+    market_clock: Mock,
+) -> None:
+    client = TBankInvestClient(purpose="market")
+    success_started, short_started, finish = Event(), Event(), Event()
+
+    def respond(request, **_kwargs):
+        if request.full_url.endswith("/GetLastPrices"):
+            success_started.set()
+            assert finish.wait(timeout=5)
+            return FakeResponse({})
+        if request.full_url.endswith("/FindInstrument"):
+            short_started.set()
+            assert finish.wait(timeout=5)
+            raise _rate_limit_error(("5",))
+        raise _rate_limit_error(("120",))
+
+    with patch("urllib.request.OpenerDirector.open", side_effect=respond) as network:
+        with ThreadPoolExecutor(max_workers=2) as readers:
+            success = readers.submit(client.get_all_last_prices, "synthetic-market-source", "prod")
+            shorter = readers.submit(
+                client.find_instruments, "synthetic-market-source", "prod", "test",
+            )
+            try:
+                assert success_started.wait(timeout=5)
+                assert short_started.wait(timeout=5)
+                with pytest.raises(TBankRateLimited) as long_pause:
+                    client.get_news("synthetic-market-source", "prod")
+                assert long_pause.value.retry_at_monotonic == 1120.0
+            finally:
+                finish.set()
+            assert success.result(timeout=5).prices == ()
+            with pytest.raises(TBankRateLimited):
+                shorter.result(timeout=5)
+        with pytest.raises(TBankRateLimited) as retained:
+            client.get_all_last_prices("synthetic-market-source", "prod")
+        assert retained.value.retry_at_monotonic == 1120.0
+        assert network.call_count == 3
+
+
+@pytest.mark.parametrize("purpose,status", [("portfolio", 429), ("market", 503)])
+def test_portfolio_429_and_market_server_error_do_not_pause_market_clients(
+    market_clock: Mock, purpose, status: int,
+) -> None:
+    error = urllib.error.HTTPError(
+        "https://invest-public-api.tbank.ru/rest/", status, "Unavailable", {}, io.BytesIO(b"{}"),
+    )
+    client = TBankInvestClient(purpose=purpose)
+    read = (partial(client.get_positions, "synthetic-private-bearer", "prod", "account-1")
+            if purpose == "portfolio"
+            else partial(client.get_all_last_prices, "synthetic-market-source", "prod"))
+    with patch("urllib.request.OpenerDirector.open", side_effect=error) as network:
+        with pytest.raises(TBankUnavailable):
+            read()
+        network.assert_called_once()
+        network.side_effect = None
+        network.return_value = FakeResponse({})
+        TBankInvestClient(purpose="market").get_all_last_prices("synthetic-market-source", "prod")
+        assert network.call_count == 2
 
 
 @pytest.mark.parametrize(

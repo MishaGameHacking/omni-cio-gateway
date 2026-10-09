@@ -296,11 +296,19 @@ def build_product_environment(*, release_sha: str = "") -> str:
 
 
 _PRODUCT_PREFLIGHT_PROGRAM = r'''
-def _load_upgrade_product_settings() -> Settings:
+def _load_upgrade_product_settings(diagnostics: dict[str, object] | None = None) -> Settings:
     import pathlib
 
+    observation = {} if diagnostics is None else diagnostics
+    observation.update(dict.fromkeys((
+        "auth_smtp_host_present", "auth_smtp_sender_present", "existing_receipt_key_present",
+        "existing_archive_key_present", "market_data_token_present",
+        "market_data_distribution_approved",
+    )))
     environments = {}
     for name in ("runtime.env", "product.env"):
+        observation["stage"] = ("runtime_environment" if name == "runtime.env"
+                                else "product_environment")
         path = pathlib.Path("/etc/omnicio") / name
         try:
             text = _private_file(path, 65536)
@@ -312,6 +320,11 @@ def _load_upgrade_product_settings() -> Settings:
     # Match the writer: explicit values replace base settings; only optional
     # integration keys absent from the new file survive from product.env.
     existing = environments["product.env"]
+    observation.update({
+        "stage": "environment_merge",
+        "existing_receipt_key_present": bool(existing.get("OMNICIO_RESTORE_RECEIPT_KEY")),
+        "existing_archive_key_present": bool(existing.get("OMNICIO_RESTORE_ARCHIVE_KEY")),
+    })
     desired = parse_environment(__OMNICIO_PRODUCT_ENVIRONMENT__)
     for name in __OMNICIO_PRESERVED_KEYS__:
         if name in existing:
@@ -324,21 +337,39 @@ def _load_upgrade_product_settings() -> Settings:
     try:
         os.environ.clear()
         os.environ.update(effective)
+        observation["stage"] = "settings_validation"
         settings = load_settings()
+        observation.update({
+            "stage": "auth_email_validation",
+            "auth_smtp_host_present": bool(settings.auth_smtp_host),
+            "auth_smtp_sender_present": bool(settings.auth_smtp_sender),
+            "market_data_token_present": bool(settings.market_data_token),
+            "market_data_distribution_approved": settings.market_data_distribution_approved,
+        })
         validate_auth_email_configuration(settings)
+        observation["stage"] = "push_validation"
         validate_push_configuration(
             settings.notification_vapid_private_key, settings.notification_vapid_subject,
         )
     finally:
         os.environ.clear()
         os.environ.update(previous)
+    observation["stage"] = "email_readiness"
     if not settings.auth_email_ready:
         raise UpgradeBlocked("auth_email_configuration_required")
+    observation["stage"] = "validated"
     return settings
 
 
-def require_upgrade_product_configuration() -> dict[str, object]:
-    settings = _load_upgrade_product_settings()
+def require_upgrade_product_configuration(
+    diagnostics: dict[str, object] | None = None,
+) -> dict[str, object]:
+    try:
+        settings = _load_upgrade_product_settings(diagnostics)
+    except ConfigurationError:
+        if diagnostics is None:
+            raise
+        raise UpgradeBlocked("product_configuration_invalid") from None
     return {
         "status": "configuration_ready",
         "smtp_delivery_verified": False,
@@ -429,8 +460,15 @@ def render_product_preflight(
         callbacks = ["require_upgrade_product_configuration"]
         if smtp_probe:
             callbacks.append("send_upgrade_control_email")
+        unobserved = dict.fromkeys((
+            "auth_smtp_host_present", "auth_smtp_sender_present", "existing_receipt_key_present",
+            "existing_archive_key_present", "market_data_token_present",
+            "market_data_distribution_approved",
+        )) | {"stage": "candidate_validation"}
         return "\n".join(
-            f'\ndef {name}() -> dict[str, object]:\n'
+            f'\ndef {name}(diagnostics: dict[str, object] | None = None) -> dict[str, object]:\n'
+            '    if diagnostics is not None:\n'
+            f'        diagnostics.update({unobserved!r})\n'
             '    raise UpgradeBlocked("product_configuration_invalid")\n'
             for name in callbacks
         )
@@ -815,11 +853,15 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ExecStart=/opt/omnicio/current/.venv/bin/uvicorn omnicio.main:app \
     --host 127.0.0.1 --port 8001 --workers 1 --limit-concurrency 64 \
-    --backlog 128 --timeout-keep-alive 5 --proxy-headers --forwarded-allow-ips=127.0.0.1
+    --backlog 128 --timeout-keep-alive 5 --timeout-graceful-shutdown 30 \
+    --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=3
 TimeoutStartSec=45
-TimeoutStopSec=20
+# Allow HTTP drain plus worker cleanup; hung I/O still reaches the hard deadline.
+TimeoutStopSec=90
+KillMode=control-group
+SendSIGKILL=yes
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
@@ -1343,8 +1385,8 @@ def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
         raise InfraError(INVALID_RELEASE_SHA)
     try:
         ssh.run(
-            f"flock -w 855 {DEPLOY_LOCK} timeout --kill-after=5s 60s bash -s -- {release_sha}",
-            input_text=REMOTE_ROLLBACK_SCRIPT, timeout=960,
+            f"flock -w 855 {DEPLOY_LOCK} timeout --kill-after=5s 180s bash -s -- {release_sha}",
+            input_text=REMOTE_ROLLBACK_SCRIPT, timeout=1080,
         )
     except InfraError as exc:
         if "exit_code=45)" in str(exc):
