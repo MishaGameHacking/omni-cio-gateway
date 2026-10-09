@@ -43,6 +43,7 @@ const {version, build, assets: publicAssets} = JSON.parse(renderedResult.stdout)
 const configRealm = vm.createContext({});
 vm.runInContext(publicAssets["assets/config.js"], configRealm);
 const clientConfig = configRealm.OMNICIO_CONFIG;
+const generalNewsPath = `/api/news?limit=${clientConfig.pagination.publicNews}`;
 // Extracted production functions share the real config. Browser VMs model the
 // actual window/globalThis alias instead of maintaining two unrelated globals.
 const sourceContext = bindings => {
@@ -126,8 +127,17 @@ const makeFixture = mode => {
     legacyHtml: false,
     emailEnabled: true,
     email: "fixture@gmail.com",
+    emailVerified: mode === "signed",
+    emailPassword: mode === "signed" ? "synthetic-account-password" : null,
     emailChallenge: null,
+    emailClockOffset: 0,
+    emailResendSeconds: 60,
+    emailSession: mode === "signed" ? randomUUID() : null,
+    emailStrictCookies: false,
+    emailCookiesInitialized: false,
+    emailResendError: false,
     user: "000000123",
+    role: "user",
     canViewOperationalMetrics: false,
     prefs: defaultPreferences(),
     selection: {
@@ -423,9 +433,7 @@ const testApiHandlers = [{
   matches: ({path}) => path === "/api/me",
   run: serveTestMe
 }, {
-  matches: ({
-    fixture
-  }) => fixture.mode === "guest",
+  matches: ({fixture, request}) => fixture.mode === "guest" || fixture.emailStrictCookies && !emailFixtureSession(fixture, request),
   run: serveTestGuard6
 }, {
   matches: ({
@@ -460,7 +468,7 @@ const testApiHandlers = [{
   matches: ({path}) => path.startsWith("/api/research/"),
   run: serveTestResearchArchive
 }, {
-  matches: ({path}) => path === "/api/auth/email",
+  matches: ({path}) => path === "/api/auth/identities",
   run: serveTestAuthIdentities
 }, {
   matches: ({
@@ -617,6 +625,13 @@ const server = createServer(async (request, response) => {
     if (publicNetworkUnavailable) { request.socket.destroy(); return; }
     const page = new URL(request.headers.referer || url.href);
     const fixture = fixtures.get((url.pathname === "/" ? url : page).searchParams.get("case"));
+    if (url.pathname === "/" && fixture?.emailStrictCookies && !fixture.emailCookiesInitialized) {
+      // Seed only this synthetic document's starting session. Production cookies
+      // and their HTTPS attributes are verified separately by the actual API tests.
+      fixture.emailCookiesInitialized = true;
+      emailFixtureCookie(response, "omnicio_session", fixture.emailSession, "/");
+      emailFixtureCookie(response, "omnicio_email_flow", null, "/api/auth/email");
+    }
     if (unavailablePublicAsset === url.pathname || fixture?.missingBundle === url.pathname) {
       response.statusCode = 404;
       return response.end();
@@ -3307,6 +3322,7 @@ function assertChartLayout(charts, label) {
   }
 }
 const screenshotEvidenceNames = new Set(["portfolio-experience-1-320.png", "portfolio-experience-1-1440.png", "analytics-experience-1-320.png", "portfolio-2-320.png", "market-2-320.png", "strategies-2-390.png", "strategies-custom-2-390.png", "auth-2-390.png", "auth-2-320.png", "failure-state.png", "payout-source-normal-ru-320.png", "payout-source-ambiguous-ru-320.png", "payout-source-normal-en-320.png", "payout-source-ambiguous-en-320.png", "live-candles-1.png", "live-candles-2.png"]);
+for (const name of ["email-register-320.png", "email-register-1440.png", "email-verify-320.png", "email-reset-320.png", "email-reset-1440.png", "email-enroll-320.png"]) screenshotEvidenceNames.add(name);
 let screenshotEvidenceCharacters = 0;
 let screenshotEvidenceSequence = 0;
 function logScreenshotEvidence(name, png) {
@@ -3642,6 +3658,7 @@ const runBrowser = async base => {
     await exerciseInstallability({send, configureViewport, base, wait, evaluate});
     await exerciseInstallation({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot});
     await exercisePushLifecycle({send, configureViewport, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
+    await exerciseEmailAuthentication({send, configureViewport, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
     const widths = [1440, 1366, 768, 390, 320];
     for (const round of [1, 2]) {
       await exercisePortfolioExperience({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
@@ -3771,10 +3788,8 @@ async function serveTestPublicMarketReference({
   return sendJSON(response, reference);
 }
 async function serveTestPublicNews({
-  fixture,
   response
 }) {
-  if (fixture.holdPublicNews) await new Promise(release => fixture.heldPublicNews.push(release));
   return sendJSON(response, {
     items: [{
       id: "news-fixture",
@@ -3788,28 +3803,133 @@ async function serveTestPublicNews({
     freshness: "fresh"
   });
 }
+// The HTTP double models browser transitions and DTO boundaries only. Real
+// password hashing, SMTP/outbox and PostgreSQL concurrency have separate tests.
+function emailFixtureCookie(response, name, value, path, maxAge = 3600) {
+  const previous = response.getHeader("Set-Cookie") || [];
+  const values = Array.isArray(previous) ? previous : [previous];
+  const sameSite = name === "omnicio_email_flow" ? "Strict" : "Lax";
+  response.setHeader("Set-Cookie", [...values, `${name}=${value || ""}; Path=${path}; HttpOnly; SameSite=${sameSite}; Max-Age=${value ? maxAge : 0}`]);
+}
+function emailFixtureCookies(request) {
+  return Object.fromEntries(String(request.headers.cookie || "").split(";").filter(item => item.includes("=")).map(item => {
+    const offset = item.indexOf("=");
+    return [item.slice(0, offset).trim(), item.slice(offset + 1)];
+  }));
+}
+function emailFixtureSession(fixture, request) {
+  return fixture.mode === "signed" && Boolean(fixture.emailSession) && emailFixtureCookies(request).omnicio_session === fixture.emailSession;
+}
+const emailFixtureNow = fixture => Date.now() + fixture.emailClockOffset;
+const emailFixtureLegalKeys = ["accept_privacy", "accept_personal_data", "accept_terms", "confirm_age_18"];
+const emailFixtureLegalVersions = {privacy_policy:"test", personal_data_consent:"test", terms:"test"};
+function emailFixtureDTO(body, keys) {
+  return body && !Array.isArray(body) && typeof body === "object" && JSON.stringify(Object.keys(body).sort()) === JSON.stringify([...keys].sort());
+}
+function emailFixtureAddress(value) {
+  if (typeof value !== "string") return null;
+  const match = /^([^@\s]+)@(gmail\.com|mail\.ru|xmail\.ru)$/i.exec(value.trim());
+  return match ? `${match[1]}@${match[2].toLowerCase()}` : null;
+}
+function emailFixtureChallengeReply(fixture) {
+  const challenge = fixture.emailChallenge;
+  return {status:"verification_required", challenge_id:challenge.id,
+    expires_in_seconds:Math.max(0, Math.ceil((challenge.expiresAt - emailFixtureNow(fixture)) / 1000)),
+    resend_after_seconds:Math.max(0, Math.ceil((challenge.resendAt - emailFixtureNow(fixture)) / 1000))};
+}
+function emailFixtureProof(fixture, request, body, purpose) {
+  const challenge = fixture.emailChallenge;
+  if (!challenge || !purpose.includes(challenge.purpose) || challenge.id !== body.challenge_id || emailFixtureCookies(request).omnicio_email_flow !== challenge.flow) return null;
+  if (challenge.purpose === "enroll" && (!emailFixtureSession(fixture, request) || fixture.emailSession !== challenge.session)) return null;
+  if (!challenge.eligible || emailFixtureNow(fixture) >= challenge.expiresAt || challenge.attempts >= 5) return null;
+  if (body.code !== challenge.code) { challenge.attempts += 1; return null; }
+  return challenge;
+}
+async function issueEmailFixtureChallenge({fixture, response, request, body, purpose}) {
+  const keys = purpose === "reset" ? ["email"] : ["email", "password", ...emailFixtureLegalKeys, "legal_versions"];
+  if (!emailFixtureDTO(body, keys)) return sendJSON(response,{detail:"invalid_auth_payload"},422);
+  if (!fixture.emailEnabled) return sendJSON(response,{detail:"email_not_configured"},503);
+  const email = emailFixtureAddress(body.email);
+  if (!email) return sendJSON(response,{detail:"email_domain_not_allowed"},422);
+  if (purpose !== "reset") {
+    if (typeof body.password !== "string" || body.password.length < 15 || body.password.length > 128) return sendJSON(response,{detail:"password_length_invalid"},422);
+    if (!emailFixtureLegalKeys.slice(0,3).every(key => body[key] === true)) return sendJSON(response,{detail:"legal_acknowledgments_required"},400);
+    if (body.confirm_age_18 !== true) return sendJSON(response,{detail:"age_confirmation_required"},400);
+    if (JSON.stringify(reorderJSON(body.legal_versions)) !== JSON.stringify(reorderJSON(emailFixtureLegalVersions))) return sendJSON(response,{detail:"legal_versions_changed"},409);
+  }
+  if (purpose === "enroll") {
+    if (!emailFixtureSession(fixture, request)) return sendJSON(response,{detail:"authentication required"},401);
+    const profile = request.headers["x-omnicio-profile"];
+    if (!profile) return sendJSON(response,{detail:"profile_context_required"},409);
+    if (profile !== fixture.user) return sendJSON(response,{detail:"profile_context_changed"},409);
+    if (fixture.emailVerified) return sendJSON(response,{detail:"email_already_enrolled"},422);
+  }
+  const now = emailFixtureNow(fixture);
+  fixture.emailChallenge = {id:randomUUID(), flow:randomUUID(), purpose, email,
+    password:purpose === "reset" ? null : body.password, owner:fixture.user,
+    session:fixture.emailSession, code:"12345678", generation:0, attempts:0,
+    expiresAt:now + 600000, resendAt:now + fixture.emailResendSeconds * 1000,
+    eligible:purpose === "reset" ? fixture.emailVerified && email === fixture.email : !fixture.emailVerified};
+  emailFixtureCookie(response,"omnicio_email_flow",fixture.emailChallenge.flow,"/api/auth/email",600);
+  if (fixture.holdEmailReply) await new Promise(release => {fixture.releaseEmailReply = release;});
+  return sendJSON(response,emailFixtureChallengeReply(fixture),202);
+}
+function completeEmailFixtureSession(fixture, response) {
+  fixture.emailSession = randomUUID();
+  fixture.mode = "signed";
+  fixture.emailChallenge = null;
+  emailFixtureCookie(response,"omnicio_session",fixture.emailSession,"/");
+  emailFixtureCookie(response,"omnicio_email_flow",null,"/api/auth/email");
+}
 async function serveTestEmailAuth({path, method, fixture, body, response, request}) {
-  if (method !== "POST" || request.headers.origin !== `http://${request.headers.host}`) return sendJSON(response,{detail:"origin_not_allowed"},403);
-  if (path.endsWith("/register")) {
-    if (!fixture.emailEnabled) return sendJSON(response,{detail:"email_not_configured"},503);
-    if (!/^[^@]+@(gmail\.com|mail\.ru|xmail\.ru)$/.test(body.email || "")) return sendJSON(response,{detail:"email_domain_not_allowed"},422);
-    if (String(body.password || "").length < 15) return sendJSON(response,{detail:"password_length_invalid"},422);
-    if (!["accept_privacy","accept_personal_data","accept_terms","confirm_age_18"].every(key => body[key] === true)) return sendJSON(response,{detail:"legal_acknowledgments_required"},422);
-    fixture.email = body.email;
-    fixture.emailChallenge = "synthetic-challenge";
-    return sendJSON(response,{challenge_id:fixture.emailChallenge,resend_after_seconds:60,expires_in_seconds:600},202);
+  if (method !== "POST" || request.headers.origin !== `http://${request.headers.host}`) return sendJSON(response,{detail:"origin rejected"},403);
+  const operation = path.slice("/api/auth/email/".length);
+  const purpose = {register:"register",enroll:"enroll","password-reset/request":"reset"}[operation];
+  if (purpose) return issueEmailFixtureChallenge({fixture,response,request,body,purpose});
+  if (operation === "login") {
+    if (!emailFixtureDTO(body,["email","password"]) || typeof body.password !== "string") return sendJSON(response,{detail:"invalid_auth_payload"},422);
+    if (!fixture.emailVerified || emailFixtureAddress(body.email) !== fixture.email || body.password !== fixture.emailPassword) return sendJSON(response,{detail:"email_or_password_invalid"},401);
+    completeEmailFixtureSession(fixture,response);
+    return sendJSON(response,{public_id:fixture.user,created:false});
   }
-  if (path.endsWith("/verify")) {
-    if (body.challenge_id !== fixture.emailChallenge || body.code !== "12345678") return sendJSON(response,{detail:"email_code_invalid_or_expired"},400);
-    fixture.emailChallenge = null;
-    fixture.mode = "signed";
-    fixture.connected = false;
-    return sendJSON(response,{authenticated:true});
+  if (operation === "resend") {
+    if (!emailFixtureDTO(body,["challenge_id"])) return sendJSON(response,{detail:"invalid_auth_payload"},422);
+    const challenge = fixture.emailChallenge;
+    if (!challenge || body.challenge_id !== challenge.id || emailFixtureCookies(request).omnicio_email_flow !== challenge.flow || emailFixtureNow(fixture) >= challenge.expiresAt) return sendJSON(response,{detail:"email_code_invalid_or_expired"},400);
+    if (emailFixtureNow(fixture) < challenge.resendAt) {
+      response.setHeader("Retry-After","60");
+      return sendJSON(response,{detail:"auth_resend_unavailable"},429);
+    }
+    if (fixture.emailResendError) { fixture.emailResendError = false; return sendJSON(response,{detail:"email_not_configured"},503); }
+    challenge.generation += 1;
+    challenge.code = String(12345678 + challenge.generation);
+    challenge.resendAt = emailFixtureNow(fixture) + 60000;
+    const result = emailFixtureChallengeReply(fixture);
+    emailFixtureCookie(response,"omnicio_email_flow",challenge.flow,"/api/auth/email",result.expires_in_seconds);
+    return sendJSON(response,result,202);
   }
-  if (path.endsWith("/login")) {
-    if (body.email !== fixture.email || body.password !== "synthetic-account-password") return sendJSON(response,{detail:"email_or_password_invalid"},401);
-    fixture.mode = "signed";
-    return sendJSON(response,{authenticated:true});
+  if (operation === "verify" || operation === "password-reset/confirm") {
+    const reset = operation === "password-reset/confirm";
+    const keys = reset ? ["challenge_id","code","password"] : ["challenge_id","code"];
+    if (!emailFixtureDTO(body,keys) || typeof body.challenge_id !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(body.challenge_id) || typeof body.code !== "string" || !/^[0-9]{8}$/.test(body.code)) return sendJSON(response,{detail:"invalid_auth_payload"},422);
+    if (reset && (typeof body.password !== "string" || body.password.length < 15 || body.password.length > 128)) return sendJSON(response,{detail:"password_length_invalid"},422);
+    const challenge = emailFixtureProof(fixture,request,body,reset ? ["reset"] : ["register","enroll"]);
+    if (!challenge) return sendJSON(response,{detail:"email_code_invalid_or_expired"},400);
+    fixture.email = challenge.email;
+    fixture.emailPassword = reset ? body.password : challenge.password;
+    fixture.emailVerified = true;
+    if (reset) {
+      fixture.emailSession = null;
+      fixture.emailChallenge = null;
+      fixture.mode = "guest";
+      emailFixtureCookie(response,"omnicio_session",null,"/");
+      emailFixtureCookie(response,"omnicio_email_flow",null,"/api/auth/email");
+      return sendJSON(response,{status:"password_updated"});
+    }
+    const created = challenge.purpose === "register";
+    if (created) fixture.connected = false;
+    completeEmailFixtureSession(fixture,response);
+    return sendJSON(response,{public_id:fixture.user,created});
   }
   return sendJSON(response,{detail:"auth_test_endpoint_not_configured"},404);
 }
@@ -3836,15 +3956,17 @@ async function serveTestGuard8({
 }
 async function serveTestMe({
   response,
-  fixture
+  fixture,
+  request
 }) {
   if (fixture.holdMe) await new Promise(resolve => { fixture.releaseMe = resolve; });
   if (fixture.failMe) return sendJSON(response, {detail: "synthetic_session_unavailable"}, 503);
   if (fixture.mode === "guest") return sendJSON(response, {detail: "authentication required"}, 401);
+  if (fixture.emailStrictCookies && !emailFixtureSession(fixture, request)) return sendJSON(response, {detail: "authentication required"}, 401);
   return sendJSON(response, {
     public_id: fixture.user,
     status: "active",
-    role: "user",
+    role: fixture.role,
     can_view_operational_metrics: fixture.canViewOperationalMetrics
   });
 }
@@ -3861,7 +3983,9 @@ function serveTestOperationalMetrics({fixture,response}) {
   });
 }
 async function serveTestAuthIdentities({response, fixture}) {
-  return sendJSON(response, {email: fixture.email, email_verified: true});
+  return sendJSON(response, {email: fixture.emailVerified ? fixture.email : null,
+    email_verified: fixture.emailVerified, migration_required: !fixture.emailVerified,
+    providers: fixture.emailVerified ? ["email"] : [], available_providers: {email:true}});
 }
 async function serveTestWorkspace({
   fixture,
@@ -3901,9 +4025,11 @@ async function serveTestWorkspace({
 }
 async function serveTestWorkspaceResult({fixture, response, result}) {
   if (fixture.holdWorkspace) await new Promise(release => fixture.heldWorkspace.push(release));
-  return sendJSON(response, fixture.failWorkspace ? {
+  const reply = sendJSON(response, fixture.failWorkspace ? {
     detail: "synthetic_failure"
   } : result, fixture.failWorkspace ? 503 : 200);
+  fixture.workspaceResponses = (fixture.workspaceResponses || 0) + 1;
+  return reply;
 }
 function serveTestRefresh({
   fixture,
@@ -4312,6 +4438,9 @@ async function serveTestEvents({
 }
 async function serveTestNews({fixture, url, response}) {
   if (url.pathname !== "/api/news") { const item=fixture.news.find(row=>row.id===url.pathname.split("/").at(-1)); return sendJSON(response,item || {detail:"news_not_found"},item?200:404); }
+  if (fixture.holdPublicNews && url.pathname + url.search === generalNewsPath) {
+    await new Promise(release => fixture.heldPublicNews.push(release));
+  }
   const query = (url.searchParams.get("query") || "").toLowerCase();
   const uid = url.searchParams.get("instrument_uid");
   if (uid) await holdAssetEnrichment(fixture, "news");
@@ -4528,9 +4657,10 @@ async function exerciseSearchReadConsistency({fixture, click, fieldValue, wait, 
   await wait('document.querySelector("#view-search .search-result") && !document.querySelector("#view-search .loading-panel")', "The newer query finishes while the unrelated feed is still pending");
   const searches = fixture.requests.filter(item => item.path === "/api/market/instruments/search");
   assert.deepEqual(searches.map(item => new URLSearchParams(item.query).get("q")), ["older-query", "newer-query"], "Each explicit route starts its own search without a shared-data gate");
+  const completed = await evaluate(completedResourceCount(generalNewsPath));
   fixture.holdPublicNews = false;
   fixture.heldPublicNews.splice(0).forEach(release => release());
-  await wait(`${completedResourceCount("/api/public/news")} > 0`, "The shared feed finally completes");
+  await wait(`${completedResourceCount(generalNewsPath)} > ${completed}`, "The shared feed finally completes");
   assert.equal(fixture.requests.filter(item => item.path === "/api/market/instruments/search").length, 2, "A late shared read cannot launch the old query again");
   assert.equal(await evaluate('document.querySelector("#global-search").value'), "newer-query");
   assert.ok(await evaluate('document.querySelector("#view-search .view-header").textContent.includes("newer-query")'));
@@ -5263,6 +5393,8 @@ async function serveTestAuthLogout({
     if (channel.kind === "push" && channel.current_session) Object.assign(channel, {status: "revoked", binding_id: null, current_session: false});
   }
   fixture.mode = "guest";
+  fixture.emailSession = null;
+  emailFixtureCookie(response, "omnicio_session", null, "/");
   response.statusCode = 204;
   return response.end();
 }
@@ -5454,7 +5586,7 @@ async function exerciseAssetEnrichment({send, round, base, wait, evaluate, check
   await send("Input.dispatchKeyEvent", {type: "keyDown", key: "Home", code: "Home", windowsVirtualKeyCode: 36});
   const selected = await evaluate('document.querySelector("#view-asset .chart-readout").textContent');
   const aria = await evaluate('window.__enrichmentChart.getAttribute("aria-label")');
-  for (const [path, flag, pending] of [["/api/public/news", "holdPublicNews", "heldPublicNews"], ["/api/workspace", "holdWorkspace", "heldWorkspace"]]) {
+  for (const [path, flag, pending] of [[generalNewsPath, "holdPublicNews", "heldPublicNews"], ["/api/workspace", "holdWorkspace", "heldWorkspace"]]) {
     const completed = await evaluate(completedResourceCount(path));
     fixture[flag] = false;
     fixture[pending].splice(0).forEach(release => release());
@@ -6257,6 +6389,336 @@ async function exerciseQuotePrecisionCase({send, round, base, wait, click, evalu
   for (const [index, value] of [precision.expected.last_price, precision.expected.high, precision.expected.low].entries()) assert.equal(metrics[labels[index]], text(value), "Asset metrics preserve the source price for " + labels[index]);
   assert.equal(fixture.requests.filter(item => !["GET", "HEAD"].includes(item.method)).length, 0, "Reading precise market prices cannot write personal data");
 }
+const nativeEmailRequests = (fixture, endpoint) => fixture.requests.filter(item => item.path === `/api/auth/email/${endpoint}`);
+function assertNativeEmailRequest(fixture, endpoint, expected, base, profile) {
+  const request = nativeEmailRequests(fixture, endpoint).at(-1);
+  assert.ok(request, `The native form sent ${endpoint}`);
+  assert.equal(request.method, "POST", endpoint + ": a native form mutation uses POST");
+  assert.equal(request.origin, new URL(base).origin, endpoint + ": the browser supplies the exact site Origin");
+  assert.equal(request.clientBuild, build, endpoint + ": the current frontend build accompanies the request");
+  assert.equal(request.profile, profile, endpoint + ": account context follows the current flow");
+  assert.deepEqual(request.body, expected, endpoint + ": only the required DTO fields are sent, with an untrimmed service password");
+}
+async function assertNativeEmailScreen({evaluate, checkLayout}, phase, width) {
+  const expected = {
+    login: [true, false, true, false, true, "current-password", 1],
+    register: [true, false, true, true, true, "new-password", 15],
+    enroll: [true, false, true, true, false, "new-password", 15],
+    verify: [false, true, false, false, false, "new-password", 15],
+    resetRequest: [true, false, false, false, false, "current-password", 1],
+    resetConfirm: [false, true, true, false, false, "new-password", 15]
+  }[phase];
+  const state = await evaluate(`(() => {
+    const form = document.querySelector('#auth-form');
+    const visible = element => Boolean(element.getClientRects().length);
+    const inputs = ['email','code','password'].map(name => form.elements[name]);
+    return {open:document.querySelector('#auth-dialog').open,
+      visible:inputs.map(visible), disabled:inputs.map(input=>input.disabled), required:inputs.map(input=>input.required),
+      consents:visible(document.querySelector('#auth-consents')), tabs:visible(document.querySelector('#auth-tabs')),
+      forgot:visible(document.querySelector('#auth-dialog [data-action="auth-reset"]')),
+      legal:[...document.querySelectorAll('#auth-consents input')].map(input=>({required:input.required,disabled:input.disabled})),
+      autocomplete:form.elements.password.autocomplete, minLength:form.elements.password.minLength, maxLength:form.elements.password.maxLength,
+      codePattern:form.elements.code.pattern, codeInputMode:form.elements.code.inputMode};
+  })()`);
+  assert.equal(state.open, true, phase + ": the native dialog is open");
+  assert.deepEqual(state.visible, expected.slice(0,3), phase + ": only the active flow's fields are visible");
+  assert.deepEqual(state.disabled, expected.slice(0,3).map(value=>!value), phase + ": hidden fields cannot be submitted");
+  assert.deepEqual(state.required, expected.slice(0,3), phase + ": visible credentials have native validity checks");
+  assert.equal(state.consents, expected[3]);
+  assert.equal(state.tabs, expected[4]);
+  assert.equal(state.forgot, phase === "login", phase + ": the password-reset action belongs only to ordinary login inside this dialog");
+  assert.deepEqual(state.legal, Array.from({length:4},()=>({required:expected[3],disabled:!expected[3]})));
+  assert.equal(state.autocomplete, expected[5]);
+  assert.equal(state.minLength, expected[6]);
+  assert.equal(state.maxLength, 128);
+  assert.equal(state.codePattern, "[0-9]{8}");
+  assert.equal(state.codeInputMode, "numeric");
+  await checkLayout(`native email ${phase}/${width}`);
+  const targets = await evaluate(`(() => {
+    const dialog=document.querySelector('#auth-dialog');
+    const controls=[...dialog.querySelectorAll('input,button')].filter(item=>!item.disabled&&item.getClientRects().length);
+    const results=controls.map(control=>{
+      control.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
+      const rect=control.getBoundingClientRect(), hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+      return {name:control.name||control.id||control.dataset.action||control.textContent.trim(),
+        visible:rect.width>0&&rect.height>0&&rect.left>=-1&&rect.right<=innerWidth+1&&rect.top>=-1&&rect.bottom<=innerHeight+1,
+        reachable:control===hit||control.contains(hit)};
+    });
+    dialog.scrollTop=0;
+    return results;
+  })()`);
+  assert.ok(targets.length >= 2, phase + ": actual controls are available");
+  for (const target of targets) {
+    assert.equal(target.visible, true, `${phase}/${width}: the full control can be scrolled into view: ${target.name}`);
+    assert.equal(target.reachable, true, `${phase}/${width}: the control has an unobscured hit target: ${target.name}`);
+  }
+}
+async function assertNativeEmailSecrets(evaluate, secrets, label) {
+  const result = await evaluate(`(() => {
+    const form=document.querySelector('#auth-form');
+    const stored=[...Object.keys(localStorage).map(key=>localStorage.getItem(key)),...Object.keys(sessionStorage).map(key=>sessionStorage.getItem(key))].join(' | ');
+    return {password:form.elements.password.value,code:form.elements.code.value,
+      secretsStored:${JSON.stringify(secrets)}.some(secret=>stored.includes(secret)),
+      cookieExposed:/omnicio_(?:email_flow|session)=/.test(document.cookie)};
+  })()`);
+  assert.equal(result.password, "", label + ": the service password is cleared");
+  assert.equal(result.code, "", label + ": the ownership code is cleared");
+  assert.equal(result.secretsStored, false, label + ": credentials never enter browser storage");
+  assert.equal(result.cookieExposed, false, label + ": the fixture's actual HttpOnly session and flow cookies are inaccessible to page JavaScript");
+}
+async function openNativeEmailLogin({click, wait}) {
+  await click('[data-action="open-market"]');
+  await wait('document.querySelector("#public-market-notice")?.getClientRects().length > 0', "An anonymous visitor can open the shared market");
+  await click('#public-market-notice [data-action="login"]');
+  await wait('document.querySelector("#auth-dialog").open && !document.querySelector("#email-auth-submit").disabled', "Email login is ready through a visible public control");
+}
+async function fillNativeEmailRegistration({fieldValue, click}, email, password) {
+  await fieldValue("#auth-form", "email", email);
+  await fieldValue("#auth-form", "password", password);
+  for (const name of emailFixtureLegalKeys) await click(`#auth-form [name="${name}"]`);
+}
+function nativeEmailRegistrationBody(email, password) {
+  return {email,password,accept_privacy:true,accept_personal_data:true,accept_terms:true,confirm_age_18:true,legal_versions:emailFixtureLegalVersions};
+}
+async function nativeEmailLogout({click,wait,evaluate}, fixture, base) {
+  await click('#profile-button');
+  await click('#profile-menu [data-action="logout"]');
+  await wait('!document.querySelector("#public-site").hidden && document.querySelector("#app-shell").hidden && !document.querySelector("#auth-dialog").open', "Logout completes through the native profile menu");
+  assert.equal(fixture.mode, "guest");
+  assert.equal(fixture.emailSession, null);
+  const request=fixture.requests.filter(item=>item.path==="/api/auth/logout").at(-1);
+  assert.equal(request.profile, fixture.user, "Logout confirms the current profile");
+  assert.equal(request.origin, new URL(base).origin, "Logout retains the browser Origin boundary");
+  assert.equal(await evaluate('document.querySelector("#main-content").textContent.includes("Тестовая компания")'), false, "Logout clears the previous private holdings");
+}
+async function submitNativeEmailCode({fieldValue,click,wait}, code, success) {
+  await fieldValue("#auth-form", "code", code);
+  await click('#email-auth-submit');
+  await wait(success ? '!document.querySelector("#auth-dialog").open && location.hash.startsWith("#account/") && document.querySelector("#public-market-notice").hidden' : 'document.querySelector("#auth-message").classList.contains("error") && !document.querySelector("#email-auth-submit").disabled', success ? "Verified email enters the session-backed account" : "An incorrect ownership code remains recoverable in the same form");
+}
+async function exerciseNativeEmailRegistration(context, width) {
+  const {send,base,wait,click,evaluate,fieldValue,screenshot}=context;
+  const key=`guest-email-registration-${width}`, fixture=makeFixture("guest");
+  Object.assign(fixture,{email:null,emailVerified:false,emailPassword:null,emailStrictCookies:true,connected:false,user:`000001${width===320 ? '320' : '440'}`});
+  fixtures.set(key,fixture);
+  const email=`Native.Register+${width}@GMAIL.COM`, normalized=email.replace('GMAIL.COM','gmail.com'), password=`  Synthetic registration ${width}!  `;
+  await send("Page.navigate",{url:`${base}?case=${key}#public/welcome`});
+  await wait('document.querySelectorAll(".public-strategy-card").length===10', "The new email case starts with real public pages");
+  await openNativeEmailLogin(context);
+  await assertNativeEmailScreen(context,"login",width);
+  await click('[data-auth-mode="register"]');
+  await assertNativeEmailScreen(context,"register",width);
+  await screenshot(`email-register-${width}.png`);
+  await fillNativeEmailRegistration(context,email,password);
+  fixture.holdEmailReply=true;
+  await click('#email-auth-submit');
+  await until(()=>typeof fixture.releaseEmailReply==="function", "The registration HTTP acknowledgement is deliberately held");
+  assert.equal(await evaluate('document.querySelector("#email-auth-submit").disabled'),true,"A pending registration has a disabled submit control");
+  await evaluate('document.querySelector("#auth-form").requestSubmit()');
+  assert.equal(nativeEmailRequests(fixture,"register").length,1,"Submitting the busy native form cannot duplicate registration");
+  assert.equal(fixture.mode,"guest");
+  assert.equal(fixture.email,null,"Issuing a challenge cannot enroll an unverified address");
+  fixture.holdEmailReply=false; fixture.releaseEmailReply();
+  await wait('!document.querySelector("#auth-code-row").hidden && !document.querySelector("#email-auth-submit").disabled',"Registration awaits an ownership code");
+  const challenge=clone(fixture.emailChallenge);
+  assertNativeEmailRequest(fixture,"register",nativeEmailRegistrationBody(email,password),base);
+  await assertNativeEmailScreen(context,"verify",width);
+  await assertNativeEmailSecrets(evaluate,[password,challenge.code],"Accepted registration challenge");
+  assert.equal(await evaluate('document.querySelector("#auth-resend").disabled'),true,"The server's resend cooldown is initially enforced by the native control");
+  await screenshot(`email-verify-${width}.png`);
+  await submitNativeEmailCode(context,"11111111",false);
+  assertNativeEmailRequest(fixture,"verify",{challenge_id:challenge.id,code:"11111111"},base);
+  assert.equal(fixture.emailChallenge.id,challenge.id);
+  assert.equal(fixture.mode,"guest","A wrong ownership code cannot create a session");
+  await submitNativeEmailCode(context,challenge.code,true);
+  assertNativeEmailRequest(fixture,"verify",{challenge_id:challenge.id,code:challenge.code},base);
+  assert.equal(fixture.emailChallenge,null,"The successful code is consumed");
+  assert.equal(fixture.email,normalized,"Domain normalization preserves local case, dots and the plus suffix");
+  assert.equal(fixture.connected,false,"A new account starts without a broker connection");
+  await assertNativeEmailSecrets(evaluate,[password,challenge.code],"Completed registration");
+  fixture.emailEnabled=false;
+  await nativeEmailLogout(context,fixture,base);
+  await openNativeEmailLogin(context);
+  await wait('document.querySelector("#registration-state").textContent===window.OMNICIO_I18N.t("auth.email.mail_unavailable")',"SMTP unavailability is explicit after the new bootstrap");
+  await assertNativeEmailScreen(context,"login",width);
+  await fieldValue("#auth-form","email",email);
+  await fieldValue("#auth-form","password","will-be-cleared-before-login");
+  await click('#auth-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#auth-dialog").open',"The native close control dismisses the form");
+  await click('#public-market-notice [data-action="login"]');
+  await wait('document.querySelector("#auth-dialog").open',"The same public control reopens login");
+  await assertNativeEmailSecrets(evaluate,[password,"will-be-cleared-before-login"],"Closing and reopening login");
+  await fieldValue("#auth-form","email",email);
+  await fieldValue("#auth-form","password",password.trim());
+  await click('#email-auth-submit');
+  await wait('document.querySelector("#auth-message").classList.contains("error") && !document.querySelector("#email-auth-submit").disabled',"A wrong service password does not authenticate");
+  assertNativeEmailRequest(fixture,"login",{email,password:password.trim()},base);
+  assert.equal(await evaluate('document.querySelector("#auth-dialog").open && !document.querySelector("#session-dialog").open'),true,"A recoverable login error stays in the email form");
+  assert.equal(fixture.mode,"guest");
+  await fieldValue("#auth-form","password",password);
+  await click('#email-auth-submit');
+  await wait('!document.querySelector("#auth-dialog").open && location.hash.startsWith("#account/") && document.querySelector("#public-market-notice").hidden',"The exact password logs in despite the SMTP outage");
+  assertNativeEmailRequest(fixture,"login",{email,password},base);
+  await assertNativeEmailSecrets(evaluate,[password,challenge.code],"Ordinary email login");
+  assert.equal(fixture.email,normalized);
+  assert.equal(nativeEmailRequests(fixture,"register").length,1,"The completed HTTP lifecycle contains no late duplicate registration");
+  await click('#sidebar-nav [data-route="profile"]');
+  await wait(`document.querySelector("#view-profile [data-profile-personal]")?.textContent.includes(${JSON.stringify(fixture.user)})`,"Ordinary login restores the same server-issued public profile ID");
+  await nativeEmailLogout(context,fixture,base);
+  console.log(`PASS native email registration/login ${width}px: legal DTO, exact Origin, single-flight, pending proof, wrong/right OTP, HttpOnly cookies, close/reopen cleanup, logout, wrong/right untrimmed password and login without SMTP`);
+}
+async function exerciseNativeEmailReset(context, width) {
+  const {send,base,wait,click,evaluate,fieldValue,screenshot}=context;
+  const key=`signed-email-reset-${width}`,fixture=makeFixture("signed");
+  const email=`reset-${width}@mail.ru`,oldPassword=`  Synthetic old password ${width}!  `,password=`  Synthetic replacement ${width}!  `;
+  Object.assign(fixture,{email,emailPassword:oldPassword,emailStrictCookies:true,user:`000002${width===320 ? '320' : '440'}`});
+  fixture.prefs.document.display_name=`Reset owner ${width}`;
+  fixtures.set(key,fixture);
+  const preserved={user:fixture.user,prefs:clone(fixture.prefs),selection:clone(fixture.selection),connected:fixture.connected};
+  await send("Page.navigate",{url:`${base}?case=${key}#account/portfolio`});
+  await wait('document.querySelector("#view-portfolio .holding-quantity")?.textContent.includes("100")',"The authenticated reset case first renders its real fixture holdings");
+  await click('#sidebar-nav [data-route="settings"]');
+  await wait('document.querySelector("#view-settings [data-action=refresh]")?.getClientRects().length > 0',"The existing account exposes its ordinary refresh control");
+  fixture.holdWorkspace=true;
+  await click('#view-settings [data-action="refresh"]');
+  await until(()=>fixture.heldWorkspace.length>0,"A previous account workspace response remains in flight before reset");
+  await click('#sidebar-nav [data-route="profile"]');
+  await wait('document.querySelector("#view-profile [data-profile-identities] [data-action=auth-reset]")',"Email identity exposes password reset in the signed profile");
+  await click('#view-profile [data-profile-identities] [data-action="auth-reset"]');
+  await assertNativeEmailScreen(context,"resetRequest",width);
+  await fieldValue("#auth-form","email",email);
+  await click('#email-auth-submit');
+  await wait('!document.querySelector("#auth-code-row").hidden && !document.querySelector("#auth-password-row").hidden && !document.querySelector("#email-auth-submit").disabled',"Reset request requires a code and a new service password");
+  assertNativeEmailRequest(fixture,"password-reset/request",{email},base);
+  const challenge=clone(fixture.emailChallenge), previousSession=fixture.emailSession;
+  assert.equal(fixture.mode,"signed","Requesting a reset cannot revoke the existing session before proof");
+  assert.equal(fixture.emailPassword,oldPassword);
+  await assertNativeEmailScreen(context,"resetConfirm",width);
+  await assertNativeEmailSecrets(evaluate,[oldPassword,password,challenge.code],"Accepted reset challenge");
+  await screenshot(`email-reset-${width}.png`);
+  await fieldValue("#auth-form","code",challenge.code);
+  await fieldValue("#auth-form","password",password);
+  await click('#email-auth-submit');
+  await wait('document.querySelector("#auth-dialog").open && !document.querySelector("#auth-email-row").hidden && document.querySelector("#auth-code-row").hidden && !document.querySelector("#email-auth-submit").disabled && !document.querySelector("#public-site").hidden && document.querySelector("#app-shell").hidden',"Successful signed reset immediately removes private presentation and opens ordinary login");
+  assertNativeEmailRequest(fixture,"password-reset/confirm",{challenge_id:challenge.id,code:challenge.code,password},base);
+  assert.equal(fixture.mode,"guest","Password reset does not create an authenticated session");
+  assert.equal(fixture.emailSession,null,"Password reset revokes the previous synthetic server session");
+  assert.ok(previousSession);
+  assert.equal(fixture.emailPassword,password);
+  assert.equal(fixture.emailChallenge,null);
+  await assertNativeEmailScreen(context,"login",width);
+  await assertNativeEmailSecrets(evaluate,[oldPassword,password,challenge.code],"Reset completion and queued dialog close");
+  assert.equal(await evaluate('document.querySelector("#main-content").textContent.includes("Тестовая компания")'),false,"The previously rendered private holdings are removed immediately");
+  const repliesBeforeRelease=fixture.workspaceResponses;
+  fixture.holdWorkspace=false;
+  fixture.heldWorkspace.splice(0).forEach(release=>release());
+  await until(()=>fixture.workspaceResponses>repliesBeforeRelease,"The fixture finishes the deliberately held old-profile response");
+  await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+  assert.equal(await evaluate('document.querySelector("#app-shell").hidden && !document.querySelector("#main-content").textContent.includes("Тестовая компания")'),true,"The released response from the revoked generation cannot restore old private content");
+  await fieldValue("#auth-form","email",email);
+  await fieldValue("#auth-form","password",oldPassword);
+  await click('#email-auth-submit');
+  await wait('document.querySelector("#auth-message").classList.contains("error") && !document.querySelector("#email-auth-submit").disabled',"The old password is rejected after reset");
+  assertNativeEmailRequest(fixture,"login",{email,password:oldPassword},base);
+  assert.equal(await evaluate('document.querySelector("#auth-dialog").open && !document.querySelector("#session-dialog").open && document.querySelector("#app-shell").hidden'),true,"A wrong post-reset login keeps a usable email form and no private workspace");
+  await fieldValue("#auth-form","password",password);
+  await click('#email-auth-submit');
+  await wait('!document.querySelector("#auth-dialog").open && document.querySelector("#view-portfolio .holding-quantity")?.textContent.includes("100")',"Ordinary login with the new password restores the retained account and portfolio");
+  assertNativeEmailRequest(fixture,"login",{email,password},base);
+  assert.deepEqual({user:fixture.user,prefs:fixture.prefs,selection:fixture.selection,connected:fixture.connected},preserved,"Reset changes only login credentials and sessions, preserving identity, connection and strategy");
+  assert.notEqual(fixture.emailSession,previousSession,"The subsequent login has a newly issued session");
+  await assertNativeEmailSecrets(evaluate,[oldPassword,password,challenge.code],"New-password login");
+  await nativeEmailLogout(context,fixture,base);
+  console.log(`PASS native email reset ${width}px: signed-account reset, precise request/confirm DTO, old private DOM cleared, late-response generation isolation, no auto-login, wrong old password, new login and retained ID/connection/settings/holdings`);
+}
+async function exerciseNativeEmailEnrollment(context, width) {
+  const {send,base,wait,click,evaluate,fieldValue,screenshot}=context;
+  const key=`signed-email-enrollment-${width}`,fixture=makeFixture("signed");
+  Object.assign(fixture,{email:null,emailVerified:false,emailPassword:null,emailStrictCookies:true,emailResendSeconds:120,canViewOperationalMetrics:true,user:`000003${width===320 ? '320' : '440'}`});
+  fixture.prefs.document.display_name=`Legacy owner ${width}`;
+  fixtures.set(key,fixture);
+  const email=`Legacy.Owner+${width}@xmail.ru`,password=`  Synthetic enrollment ${width}!  `;
+  const preserved={user:fixture.user,role:fixture.role,operator:fixture.canViewOperationalMetrics,connected:fixture.connected,prefs:clone(fixture.prefs),selection:clone(fixture.selection)};
+  const originalSession=fixture.emailSession;
+  await send("Page.navigate",{url:`${base}?case=${key}#account/profile/identities`});
+  await wait('document.querySelector("#view-profile [data-action=link-identity]")?.getClientRects().length > 0',"An existing session without email exposes enrollment on its own profile");
+  await click('#view-profile [data-action="link-identity"]');
+  await assertNativeEmailScreen(context,"enroll",width);
+  await fillNativeEmailRegistration(context,email,password);
+  // Advance only Date.now in this document to test server-advertised cooldowns.
+  // The application state, auth helpers and timers themselves stay untouched.
+  await evaluate('window.__nativeEmailClock={original:Date.now,offset:0};Date.now=()=>window.__nativeEmailClock.original()+window.__nativeEmailClock.offset');
+  try {
+    await click('#email-auth-submit');
+    await wait('!document.querySelector("#auth-code-row").hidden && !document.querySelector("#email-auth-submit").disabled',"Legacy enrollment waits for proof in the original session");
+    assertNativeEmailRequest(fixture,"enroll",nativeEmailRegistrationBody(email,password),base,fixture.user);
+    const challenge=clone(fixture.emailChallenge);
+    assert.equal(fixture.email,null,"Enrollment cannot attach the address before ownership proof");
+    assert.equal(fixture.emailSession,originalSession);
+    await assertNativeEmailScreen(context,"verify",width);
+    await assertNativeEmailSecrets(evaluate,[password,challenge.code],"Pending legacy enrollment");
+    await screenshot(`email-enroll-${width}.png`);
+    await submitNativeEmailCode(context,"11111111",false);
+    const attemptsBeforeResend=fixture.emailChallenge.attempts;
+    assert.equal(attemptsBeforeResend,1,"An incorrect enrollment proof consumes one attempt before resend");
+    await evaluate('document.querySelector("#auth-resend").click()');
+    assert.equal(nativeEmailRequests(fixture,"resend").length,0,"A disabled resend control cannot send an early request");
+    await evaluate('window.__nativeEmailClock.offset=61000');
+    await wait('Number(document.querySelector("#auth-resend").textContent.match(/[0-9]+/)?.[0]) > 0 && Number(document.querySelector("#auth-resend").textContent.match(/[0-9]+/)?.[0]) < 60',"The visible countdown follows the server's 120 seconds, not an assumed 60");
+    assert.equal(await evaluate('document.querySelector("#auth-resend").disabled'),true);
+    await evaluate('window.__nativeEmailClock.offset=121000');
+    await wait('!document.querySelector("#auth-resend").disabled',"Client-side cooldown expires through the normal timer callback");
+    await click('#auth-resend');
+    await wait('document.querySelector("#auth-message").classList.contains("error") && document.querySelector("#auth-message").textContent===window.OMNICIO_I18N.t("auth.email.rate_limited") && !document.querySelector("#email-auth-submit").disabled',"A server 429 rejects a client clock that is ahead");
+    assertNativeEmailRequest(fixture,"resend",{challenge_id:challenge.id},base,fixture.user);
+    assert.equal(fixture.emailChallenge.expiresAt,challenge.expiresAt);
+    assert.equal(fixture.emailChallenge.code,challenge.code);
+    fixture.emailClockOffset=121000;
+    fixture.emailResendError=true;
+    await click('#auth-resend');
+    await wait('document.querySelector("#auth-message").classList.contains("error") && document.querySelector("#auth-message").textContent===window.OMNICIO_I18N.t("auth.email.mail_unavailable") && !document.querySelector("#auth-resend").disabled',"A delivery outage leaves the same enrollment challenge retryable");
+    assert.equal(fixture.emailChallenge.id,challenge.id);
+    assert.equal(fixture.emailChallenge.expiresAt,challenge.expiresAt,"A failed resend cannot extend the proof deadline");
+    await fieldValue("#auth-form","code","11111111");
+    await click('#auth-resend');
+    await wait('!document.querySelector("#auth-message").classList.contains("error") && document.querySelector("#auth-resend").disabled && !document.querySelector("#email-auth-submit").disabled && document.querySelector("#auth-form").elements.code.value===""',"Successful resend replaces the code, clears its field and reinstates cooldown");
+    assert.equal(nativeEmailRequests(fixture,"resend").length,3,"The native path contains server cooldown, delivery error and successful retry");
+    assertNativeEmailRequest(fixture,"resend",{challenge_id:challenge.id},base,fixture.user);
+    assert.equal(fixture.emailChallenge.id,challenge.id);
+    assert.equal(fixture.emailChallenge.expiresAt,challenge.expiresAt,"Resend retains the original 10-minute expiry");
+    assert.equal(fixture.emailChallenge.attempts,attemptsBeforeResend,"Resend cannot reset the proof attempt budget");
+    assert.notEqual(fixture.emailChallenge.code,challenge.code);
+    assert.ok(emailFixtureChallengeReply(fixture).expires_in_seconds<480,"The response reports only the remaining challenge lifetime");
+    await submitNativeEmailCode(context,challenge.code,false);
+    assert.equal(fixture.email,null,"The previous code cannot enroll the account after resend");
+    const currentCode=fixture.emailChallenge.code;
+    await submitNativeEmailCode(context,currentCode,true);
+    assertNativeEmailRequest(fixture,"verify",{challenge_id:challenge.id,code:currentCode},base,fixture.user);
+    assert.equal(fixture.email,email);
+    assert.notEqual(fixture.emailSession,originalSession,"Ownership proof rotates the original session");
+    assert.deepEqual({user:fixture.user,role:fixture.role,operator:fixture.canViewOperationalMetrics,connected:fixture.connected,prefs:fixture.prefs,selection:fixture.selection},preserved,"Enrollment preserves the existing owner, rights, connection, preferences and strategy");
+    await wait(`document.querySelector("#view-profile [data-profile-identities]")?.textContent.includes(${JSON.stringify(email)}) && !document.querySelector("#view-profile [data-action=link-identity]")`,"The same profile now displays its verified email identity");
+    await assertNativeEmailSecrets(evaluate,[password,challenge.code,currentCode],"Completed legacy enrollment");
+  } finally {
+    await evaluate('if(window.__nativeEmailClock){Date.now=window.__nativeEmailClock.original;delete window.__nativeEmailClock}');
+    fixture.emailClockOffset=0;
+  }
+  await click('#sidebar-nav [data-route="portfolio"]');
+  await wait('document.querySelector("#view-portfolio .holding-quantity")?.textContent.includes("100")',"Email enrollment retains the existing connected portfolio");
+  await click('#sidebar-nav [data-route="settings"]');
+  await wait('document.querySelector("#operations-settings")',"The retained operator capability still exposes its authorized settings");
+  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'),preserved.prefs.document.display_name);
+  await nativeEmailLogout(context,fixture,base);
+  console.log(`PASS native email enrollment/resend ${width}px: original session and profile context, preserved ID/rights/connection, server countdown, 429, delivery failure/retry, fixed TTL/attempt budget, replaced OTP and rotated session`);
+}
+async function exerciseEmailAuthentication(context) {
+  for (const width of [320,1440]) {
+    await context.configureViewport(width);
+    await exerciseNativeEmailRegistration(context,width);
+    await exerciseNativeEmailReset(context,width);
+    await exerciseNativeEmailEnrollment(context,width);
+  }
+}
 async function exerciseGuestViewport({send, width, round, base, wait, checkLayout, screenshot, click, evaluate}) {
   const guestKey = `guest-${round}-${width}`;
   const fixture = makeFixture("guest");
@@ -6773,7 +7235,11 @@ async function exerciseViewport({
   assert.deepEqual(await evaluate("window.__browserErrors"), [], "No browser errors after workflows");
   console.log(`PASS round ${round}, ${width}px: layout, navigation, search, real charts, strategies, goals, events, settings, session isolation`);
 }
-const completedResourceCount = path => `performance.getEntriesByType("resource").filter(entry=>new URL(entry.name).pathname===${JSON.stringify(path)}).length`;
+const completedResourceCount = path => {
+  const expected = new URL(path, "https://example.test");
+  const query = expected.search ? ` && url.search === ${JSON.stringify(expected.search)}` : "";
+  return `performance.getEntriesByType("resource").filter(entry=>{const url=new URL(entry.name);return url.pathname===${JSON.stringify(expected.pathname)}${query};}).length`;
+};
 const strategyWrites = fixture => fixture.requests.filter(item => item.path === "/api/profile/strategy" && !["GET", "HEAD"].includes(item.method)).length;
 async function assertStrategyPane(evaluate, pane, focused = false) {
   const state = await evaluate(`(() => ({

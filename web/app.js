@@ -5709,7 +5709,7 @@
     const mailUnavailable = state.config?.email_enabled === false;
     $('#email-auth-submit').disabled = state.authBusy || !state.config || needsEmail && mailUnavailable;
     $('#auth-restart').hidden = !challenge && !reset;
-    $('[data-action="auth-reset"]').hidden = challenge || reset || register;
+    $('#auth-dialog [data-action="auth-reset"]').hidden = challenge || reset || register;
     for (const tab of $$('[data-auth-mode]')) {
       tab.setAttribute('aria-selected', String(tab.dataset.authMode === state.authMode));
       tab.disabled = state.authBusy;
@@ -5819,10 +5819,23 @@
     }
     return {endpoint, payload};
   };
+  const completePasswordReset = () => {
+    const pushDevice = detachedPushDevice();
+    clearPrivateState();
+    void detachPushDevice(pushDevice, state.generation);
+    state.session.status = 'guest';
+    state.session.error = null;
+    state.locked = false;
+    try { localStorage.removeItem('omnicio-last-route'); } catch { /* Optional navigation state. */ }
+    navigate('public/welcome', {}, {replace: true});
+    sessionChannel?.postMessage({type: 'session-cleared'});
+    openAuth('login');
+    showMessage($('#auth-message'), T('auth.email.password_updated'));
+    void bootstrap();
+  };
   const completeEmailResponse = async (result, screen, endpoint) => {
     if (screen.challenge && screen.reset) {
-      openAuth('login');
-      showMessage($('#auth-message'), T('auth.email.password_updated'));
+      completePasswordReset();
       return;
     }
     if (endpoint === 'login' || screen.challenge) {
@@ -6918,6 +6931,7 @@
   });
   $("#session-dialog").addEventListener("cancel", event => event.preventDefault());
   $("#auth-dialog").addEventListener("close", () => {
+    if ($("#auth-dialog").open) return;
     $("#auth-form").reset();
     state.authChallenge = null;
     state.authBusy = false;
