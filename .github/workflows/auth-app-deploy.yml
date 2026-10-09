@@ -55,13 +55,6 @@ on:
       - "tests/i18n-contract.cjs"
       - "assets/brand/**"
       - "pyproject.toml"
-  workflow_run:
-    workflows:
-      - Auth PostgreSQL
-    branches:
-      - main
-    types:
-      - completed
   workflow_dispatch:
 
 permissions:
@@ -78,33 +71,19 @@ jobs:
     permissions:
       contents: read
       checks: read
-    # Scheduled database maintenance cannot promote an application release.
-    # A failed release prerequisite remains applicable so it is reported as RED.
+    # Exact main push tests remain release evidence; only manual dispatch deploys.
     if: >-
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
-       github.event.pull_request.author_association == 'OWNER') ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_repository.full_name == github.repository &&
-       github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.head_sha == github.sha)
+       github.event.pull_request.author_association == 'OWNER')
     name: Test auth deployer
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     # Include both browser rounds, artifacts and bounded Sonar diagnostics.
     timeout-minutes: 12
 
     steps:
-      - name: Require successful PostgreSQL release prerequisite
-        id: prerequisite
-        if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success'
-        shell: cmd
-        run: |
-          echo ::error::Application deployment is blocked because the required PostgreSQL release workflow did not succeed. Production was not changed by this run.
-          exit /b 1
-
       - name: Checkout candidate state
         id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -199,13 +178,7 @@ jobs:
       cancel-in-progress: false
       queue: max
     if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_repository.full_name == github.repository &&
-       github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.head_sha == github.sha)
+      github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     needs: tests
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     # Cover the release gate, bounded SSH propagation, deployment and rollback.

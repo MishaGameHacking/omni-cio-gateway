@@ -59,6 +59,20 @@ on:
       - "migrations/**"
   workflow_dispatch:
     inputs:
+      operation:
+        description: "Inspect live prerequisites, send one authorized control email, or apply the reviewed schema transition"
+        type: choice
+        required: true
+        default: preflight
+        options:
+          - preflight
+          - email_probe
+          - apply
+      smtp_probe_recipient:
+        description: "Explicitly authorized control-email recipient (email_probe only)"
+        type: string
+        required: false
+        default: ""
       restore_drill:
         description: "Legacy logical restore drill (disabled by the single-database policy)"
         type: boolean
@@ -152,6 +166,8 @@ jobs:
       MIN_DB_RAM_MB: "2048"
       MIN_DB_DISK_MB: "20480"
       BACKUP_ONLY: ${{ github.event_name == 'schedule' && '--backup-only' || '' }}
+      OMNICIO_POSTGRES_OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'preflight' }}
+      OMNICIO_SMTP_PROBE_RECIPIENT: ${{ github.event_name == 'workflow_dispatch' && inputs.smtp_probe_recipient || '' }}
       # Read-only cutover preflight uses the same future integration settings
       # as application deployment, before stopping the accepted source runtime.
       OPERATOR_USER_ID: ${{ vars.OPERATOR_USER_ID }}

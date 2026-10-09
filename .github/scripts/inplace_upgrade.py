@@ -18,11 +18,12 @@ import subprocess
 import sys
 import tomllib
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, BinaryIO
 
 MODE = "single_existing_database"
+OPERATIONS = ("preflight", "email_probe", "apply")
 RELEASE_SHA_PATTERN = r"[0-9a-f]{40}"
 RECEIPT_PATH = pathlib.Path("/var/lib/omnicio-upgrade/1.4.0.json")
 RELEASE_ROOT = pathlib.Path("/opt/omnicio/releases")
@@ -80,6 +81,28 @@ SELECT to_regclass('public.email_identities') IS NULL
 
 class UpgradeBlocked(RuntimeError):
     """A bounded diagnostic code; never include credentials, SQL or row values."""
+
+
+def validate_operation(
+    operation: str, *, release_sha: str | None, backup_only: bool = False,
+) -> None:
+    """Inspection is the default; mutations require an explicit accepted-main dispatch."""
+    if operation not in OPERATIONS:
+        raise UpgradeBlocked("invalid_postgres_operation")
+    if backup_only:
+        if operation != "preflight":
+            raise UpgradeBlocked("scheduled_verification_cannot_apply")
+        return
+    if operation != "preflight" and (
+        os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
+        or os.environ.get("GITHUB_REF") != "refs/heads/main"
+        or not isinstance(release_sha, str)
+        or re.fullmatch(RELEASE_SHA_PATTERN, release_sha) is None
+        or os.environ.get("GITHUB_SHA") != release_sha
+    ):
+        raise UpgradeBlocked("postgres_operation_requires_manual_main")
+    if operation == "email_probe" and os.environ.get("GITHUB_RUN_ATTEMPT") != "1":
+        raise UpgradeBlocked("smtp_probe_requires_first_attempt")
 
 
 def _digest(value: str) -> str:
@@ -158,8 +181,9 @@ def schema_query(source: str, expected_digest: str | None = None) -> str:
     return query
 
 
-def _operational_bytes(path: pathlib.Path, maximum: int, *, private: bool = True) -> bytes:
-    """Read one bounded existing root-owned file; never follow a final symlink."""
+@contextmanager
+def _operational_file(path: pathlib.Path, *, private: bool = True) -> Iterator[BinaryIO]:
+    """Open one existing trusted inode for reading, without creating or following it."""
     if sys.platform != "linux":
         raise UpgradeBlocked("upgrade_requires_linux")
     parent = path.parent.lstat()
@@ -170,12 +194,44 @@ def _operational_bytes(path: pathlib.Path, maximum: int, *, private: bool = True
         details = os.fstat(handle.fileno())
         mask = 0o077 if private else 0o022
         if (not stat.S_ISREG(details.st_mode) or details.st_uid != 0
-                or details.st_mode & mask or not 0 < details.st_size <= maximum):
+                or details.st_mode & mask):
+            raise UpgradeBlocked("untrusted_operational_file")
+        yield handle
+
+
+def _operational_bytes(path: pathlib.Path, maximum: int, *, private: bool = True) -> bytes:
+    """Read a bounded body from existing protected custody."""
+    with _operational_file(path, private=private) as handle:
+        details = os.fstat(handle.fileno())
+        if not 0 < details.st_size <= maximum:
             raise UpgradeBlocked("untrusted_operational_file")
         body = handle.read(maximum + 1)
         if len(body) != details.st_size:
             raise UpgradeBlocked("operational_file_changed")
         return body
+
+
+@contextmanager
+def _inspection_lock(path: Any) -> Iterator[None]:
+    """Share deployment serialization without creating the existing lock file."""
+    if not isinstance(path, str):
+        raise UpgradeBlocked("deployment_lock_unavailable")
+    if sys.platform != "linux":
+        raise UpgradeBlocked("upgrade_requires_linux")
+    import fcntl
+
+    lock_path = pathlib.Path(path)
+    with ExitStack() as stack:
+        try:
+            handle = stack.enter_context(_operational_file(lock_path, private=False))
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            held, current = os.fstat(handle.fileno()), lock_path.lstat()
+        except OSError as exc:
+            raise UpgradeBlocked("deployment_lock_unavailable") from exc
+        if (held.st_dev, held.st_ino) != (current.st_dev, current.st_ino):
+            raise UpgradeBlocked("deployment_lock_changed")
+        # Closing this descriptor also releases the lock after a timeout or error.
+        yield
 
 
 def _private_file(path: pathlib.Path, maximum: int) -> str:
@@ -630,12 +686,10 @@ def _resume_source_after_failure(
         return False
 
 
-def _current_preflight(
+def _current_schema_ready(
     connection: Any, *, payload: dict[str, Any], plan: dict[str, Any],
     receipt: dict[str, Any] | None,
     source_query: str, installed_release: str,
-    recovery_validator: Callable[..., dict[str, Any]],
-    product_preflight: Callable[[], dict[str, Any]],
 ) -> bool:
     _verify_upgrade_role(connection)
     ready = bool(connection.execute(payload["target_query"]).fetchone() == (True,))
@@ -653,11 +707,85 @@ def _current_preflight(
             raise UpgradeBlocked("completed_upgrade_schema_changed")
         if not _source_is_ready(connection, plan, source_query):
             raise UpgradeBlocked("source_schema_is_not_reviewed_baseline")
+    return ready
+
+
+def _current_preflight(
+    connection: Any, *, payload: dict[str, Any], plan: dict[str, Any],
+    receipt: dict[str, Any] | None,
+    source_query: str, installed_release: str,
+    recovery_validator: Callable[..., dict[str, Any]],
+    product_preflight: Callable[[], dict[str, Any]],
+) -> bool:
+    ready = _current_schema_ready(
+        connection, payload=payload, plan=plan, receipt=receipt,
+        source_query=source_query, installed_release=installed_release,
+    )
+    if not ready:
         # These checks neither create files nor touch systemd. Missing or stale
         # evidence and incomplete effective email configuration preserve 1.3.
         _require_recovery(connection, plan, payload["database"], recovery_validator)
         product_preflight()
     return ready
+
+
+def _inspection_failure(exc: Exception, component: str) -> dict[str, str]:
+    code = f"{component}_inspection_failed"
+    if isinstance(exc, UpgradeBlocked) and re.fullmatch(r"[a-z_]{1,64}", str(exc)):
+        code = str(exc)
+    return {"status": "blocked", "code": code}
+
+
+def _inspect_email_probe(
+    operation: str, configuration: dict[str, Any],
+    smtp_probe: Callable[[], dict[str, Any]] | None,
+) -> dict[str, Any]:
+    if operation != "email_probe":
+        return {"status": "not_requested", "code": "not_requested", "message_id": ""}
+    if configuration["status"] != "configuration_ready" or smtp_probe is None:
+        return {"status": "blocked", "code": "product_configuration_invalid", "message_id": ""}
+    try:
+        return smtp_probe()
+    except (UpgradeBlocked, OSError, ValueError) as exc:
+        return {**_inspection_failure(exc, "smtp"), "message_id": ""}
+
+
+def _inspect_current_upgrade(
+    connection: Any, *, payload: dict[str, Any], plan: dict[str, Any],
+    receipt: dict[str, Any] | None, source_query: str, installed_release: str,
+    recovery_validator: Callable[..., dict[str, Any]] | None,
+    product_preflight: Callable[[], dict[str, Any]] | None,
+    smtp_probe: Callable[[], dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Read both live prerequisites independently, without entering the mutation path."""
+    import psycopg
+
+    if recovery_validator is None or product_preflight is None:
+        raise UpgradeBlocked("upgrade_preflight_missing")
+    ready = _current_schema_ready(
+        connection, payload=payload, plan=plan, receipt=receipt,
+        source_query=source_query, installed_release=installed_release,
+    )
+    try:
+        _require_recovery(connection, plan, payload["database"], recovery_validator)
+        recovery = {"status": "ready", "code": "recovery_verified"}
+    except (UpgradeBlocked, OSError, ValueError, TypeError, psycopg.Error) as exc:
+        recovery = _inspection_failure(exc, "recovery")
+    try:
+        configuration = product_preflight()
+    except (UpgradeBlocked, OSError, ValueError, TypeError) as exc:
+        configuration = _inspection_failure(exc, "configuration")
+    probe = _inspect_email_probe(payload["operation"], configuration, smtp_probe)
+    preflight_ready = (recovery["status"] == "ready"
+                       and configuration["status"] == "configuration_ready"
+                       and probe["status"] in {"not_requested", "accepted"})
+    return {
+        "status": "preflight_ready" if preflight_ready else "preflight_blocked",
+        "operation": payload["operation"], "release_sha": payload["release_sha"],
+        "cluster_id": payload["database"]["cluster_id"], "new_database_copies": 0,
+        "schema": "target_ready" if ready else "source_ready",
+        "recovery": recovery, "configuration": configuration, "email_probe": probe,
+    }
 
 
 def _apply_current_upgrade(
@@ -718,6 +846,7 @@ def _apply_current_upgrade(
 def remote_main(
     payload: dict[str, Any], *, recovery_validator: Callable[..., dict[str, Any]] | None = None,
     product_preflight: Callable[[], dict[str, Any]] | None = None,
+    smtp_probe: Callable[[], dict[str, Any]] | None = None,
 ) -> None:
     if sys.platform != "linux":
         raise UpgradeBlocked("upgrade_requires_linux")
@@ -726,51 +855,77 @@ def remote_main(
     plan = validate_plan(payload["plan"])
     if payload.get("application_version") != plan["target_version"]:
         raise UpgradeBlocked("application_version_mismatch")
+    # The historical fixture predates staged inspection. Current release payloads
+    # always include an explicit operation and otherwise remain read-only.
+    operation = payload.get("operation", "apply" if plan["target_version"] == "1.3.0"
+                            else "preflight")
+    if operation not in OPERATIONS:
+        raise UpgradeBlocked("invalid_postgres_operation")
+    payload = {**payload, "operation": operation}
     release_sha = payload["release_sha"]
     if not isinstance(release_sha, str) or re.fullmatch(RELEASE_SHA_PATTERN, release_sha) is None:
         raise UpgradeBlocked("invalid_target_release")
     migration_bodies(plan, payload["statements"])
     expected = payload["database"]
-    url = _database_url(expected)
-    with psycopg.connect(
-        url, autocommit=True, connect_timeout=10,
-        options="-c statement_timeout=30000 -c lock_timeout=5000 "
-                "-c idle_session_timeout=60000 -c search_path=public,pg_temp",
-    ) as connection:
-        # This session lock survives COMMIT and protects both receipt reads and
-        # writes. Closing this bounded connection releases it even on failure.
-        if connection.execute("SELECT pg_try_advisory_lock(4215095001300)").fetchone() != (True,):
-            raise UpgradeBlocked("another_upgrade_is_running")
-        receipt = _read_receipt()
-        identity = operation_identity(plan, expected)
-        validate_receipt(receipt, identity)
-        source_query, installed_release = _existing_installation(plan, receipt, release_sha)
-        _verify_connected_database(connection, expected)
-        if plan["target_version"] == "1.4.0":
-            result = _apply_current_upgrade(
-                connection, payload=payload, plan=plan, url=url, identity=identity,
-                receipt=receipt, source_query=source_query, installed_release=installed_release,
-                recovery_validator=recovery_validator, product_preflight=product_preflight,
-            )
-        else:
-            with _operation_lock():
-                result = apply_upgrade(
-                    connection, plan=plan, statements=payload["statements"],
-                    source_query=source_query, target_query=payload["target_query"],
-                    identity=identity, receipt=receipt, release_sha=release_sha,
-                    installed_release=installed_release, save_receipt=_write_receipt,
+    lock = (_inspection_lock(payload.get("deployment_lock"))
+            if operation != "apply" else nullcontext())
+    with lock:
+        url = _database_url(expected)
+        options = ("-c statement_timeout=30000 -c lock_timeout=5000 "
+                   "-c idle_session_timeout=60000 -c search_path=public,pg_temp")
+        if operation != "apply":
+            options += " -c default_transaction_read_only=on"
+        with psycopg.connect(
+            url, autocommit=True, connect_timeout=10,
+            options=options,
+        ) as connection:
+            # This session lock survives COMMIT and protects both receipt reads and
+            # writes. Closing this bounded connection releases it even on failure.
+            if connection.execute(
+                "SELECT pg_try_advisory_lock(4215095001300)",
+            ).fetchone() != (True,):
+                raise UpgradeBlocked("another_upgrade_is_running")
+            receipt = _read_receipt()
+            identity = operation_identity(plan, expected)
+            validate_receipt(receipt, identity)
+            source_query, installed_release = _existing_installation(plan, receipt, release_sha)
+            _verify_connected_database(connection, expected)
+            if operation != "apply":
+                report = _inspect_current_upgrade(
+                    connection, payload=payload, plan=plan, receipt=receipt,
+                    source_query=source_query, installed_release=installed_release,
+                    recovery_validator=recovery_validator, product_preflight=product_preflight,
+                    smtp_probe=smtp_probe,
                 )
-        if connection.execute(payload["target_query"]).fetchone() != (True,):
-            raise UpgradeBlocked("committed_schema_not_ready")
-    print(json.dumps({"status": result, "cluster_id": expected["cluster_id"],
-                      "release_sha": release_sha, "new_database_copies": 0}))
+                print(json.dumps(report))
+                return
+            if plan["target_version"] == "1.4.0":
+                result = _apply_current_upgrade(
+                    connection, payload=payload, plan=plan, url=url, identity=identity,
+                    receipt=receipt, source_query=source_query, installed_release=installed_release,
+                    recovery_validator=recovery_validator, product_preflight=product_preflight,
+                )
+            else:
+                with _operation_lock():
+                    result = apply_upgrade(
+                        connection, plan=plan, statements=payload["statements"],
+                        source_query=source_query, target_query=payload["target_query"],
+                        identity=identity, receipt=receipt, release_sha=release_sha,
+                        installed_release=installed_release, save_receipt=_write_receipt,
+                    )
+            if connection.execute(payload["target_query"]).fetchone() != (True,):
+                raise UpgradeBlocked("committed_schema_not_ready")
+        print(json.dumps({"status": result, "cluster_id": expected["cluster_id"],
+                          "release_sha": release_sha, "new_database_copies": 0}))
 
 
 def render_remote_upgrade(
     statements: list[str], *, release_sha: str, database: dict[str, Any],
+    operation: str = "preflight",
 ) -> str:
-    from timeweb_auth_app import render_product_preflight
+    from timeweb_auth_app import DEPLOY_LOCK, render_product_preflight
 
+    validate_operation(operation, release_sha=release_sha)
     plan = load_plan()
     migration_bodies(plan, statements)
     root = pathlib.Path(__file__).resolve().parents[2]
@@ -779,14 +934,20 @@ def render_remote_upgrade(
     if application_version != plan["target_version"]:
         raise UpgradeBlocked("application_version_mismatch")
     source = (pathlib.Path(__file__).read_text(encoding="utf-8")
-              + render_recovery_validator() + render_product_preflight())
+              + render_recovery_validator() + render_product_preflight(
+                  smtp_probe=operation == "email_probe", release_sha=release_sha,
+                  capture_configuration_errors=operation != "apply",
+              ))
     contract = root / "src/omnicio/schema.py"
     payload = {"plan": plan, "statements": statements, "release_sha": release_sha,
                "database": database, "application_version": application_version,
+               "operation": operation, "deployment_lock": DEPLOY_LOCK,
                "target_query": schema_query(contract.read_text(encoding="utf-8"))}
+    probe_callback = "send_upgrade_control_email" if operation == "email_probe" else "None"
     invocation = ("\ntry:\n    remote_main(" + repr(payload)
                   + ", recovery_validator=require_upgrade_recovery, "
-                  "product_preflight=require_upgrade_product_configuration)\n")
+                  "product_preflight=require_upgrade_product_configuration, "
+                  f"smtp_probe={probe_callback})\n")
     return source + invocation + '''except Exception as exc:
     if isinstance(exc, UpgradeBlocked):
         print("OMNICIO_UPGRADE: " + str(exc), file=sys.stderr)

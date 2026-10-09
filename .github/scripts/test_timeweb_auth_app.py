@@ -85,19 +85,40 @@ class ProductPreflightTests(unittest.TestCase):
             "LEGAL_PRIVACY_VERSION": "fixture-privacy", "LEGAL_CONSENT_VERSION": "fixture-consent",
             "LEGAL_TERMS_VERSION": "fixture-terms",
         }
+        self.candidate_count = 0
+        self.probe_environment = {
+            "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/main",
+            "GITHUB_SHA": "b" * 40, "GITHUB_RUN_ATTEMPT": "1", "GITHUB_RUN_ID": "123456",
+            "OMNICIO_SMTP_PROBE_RECIPIENT": "Owner+release@GMAIL.COM",
+        }
+        self.auth_product = (
+            'AUTH_SMTP_HOST="smtp.auth.example.com"\nAUTH_SMTP_SENDER="auth@example.com"\n'
+            'AUTH_SMTP_USERNAME="auth-user"\nAUTH_SMTP_PASSWORD="auth-secret-fixture"\n'
+            'AUTH_SMTP_PORT="587"\nAUTH_SMTP_MODE="starttls"\n'
+        )
         environment = patch.dict(os.environ, self.legal, clear=True)
         environment.start()
         self.addCleanup(environment.stop)
 
-    def _candidate(self, overrides: dict[str, str]) -> SimpleNamespace:
+    def _candidate(
+        self, overrides: dict[str, str], *, smtp_probe: bool = False,
+        release_sha: str = "", capture_configuration_errors: bool = False,
+    ) -> SimpleNamespace:
         with patch.dict(os.environ, {**self.legal, **overrides}, clear=True):
-            source = MODULE.render_product_preflight()
-        path = self.directory / "candidate_configuration.py"
+            source = MODULE.render_product_preflight(
+                smtp_probe=smtp_probe, release_sha=release_sha,
+                capture_configuration_errors=capture_configuration_errors,
+            )
+        # Each generated fixture has its own module and bytecode path, including
+        # same-length variations created within one filesystem timestamp tick.
+        self.candidate_count += 1
+        name = f"candidate_configuration_{self.candidate_count}"
+        path = self.directory / (name + ".py")
         path.write_text(
             "from inplace_upgrade import UpgradeBlocked, _private_file, parse_environment\n"
             + source, encoding="utf-8",
         )
-        spec = importlib.util.spec_from_file_location("candidate_configuration", path)
+        spec = importlib.util.spec_from_file_location(name, path)
         if spec is None or spec.loader is None:
             self.fail("Unable to load candidate configuration")
         candidate = importlib.util.module_from_spec(spec)
@@ -106,7 +127,9 @@ class ProductPreflightTests(unittest.TestCase):
         spec.loader.exec_module(candidate)
         return candidate
 
-    def _run(self, candidate: SimpleNamespace, product: str) -> dict[str, object]:
+    def _run(
+        self, candidate: SimpleNamespace, product: str, *, smtp_probe: bool = False,
+    ) -> dict[str, object]:
         broker_key = base64.urlsafe_b64encode(b"b" * 32).decode("ascii")
         runtime = (
             'DATABASE_URL="postgresql://fixture@127.0.0.1/test"\n'
@@ -116,6 +139,8 @@ class ProductPreflightTests(unittest.TestCase):
         original = dict(os.environ)
         with patch.object(candidate, "_private_file", side_effect=[runtime, product]) as read:
             try:
+                if smtp_probe:
+                    return candidate.send_upgrade_control_email()
                 return candidate.require_upgrade_product_configuration()
             finally:
                 self.assertEqual(dict(os.environ), original)
@@ -281,6 +306,184 @@ class ProductPreflightTests(unittest.TestCase):
         for value in ('"$(printf unsafe)"', '"$HOME"', '"`id`"'):
             with self.subTest(value=value), self.assertRaises(candidate.UpgradeBlocked):
                 candidate.parse_environment("KEY=" + value + "\n")
+
+    def test_normal_preflight_never_sends_even_when_probe_inputs_exist(self) -> None:
+        for include_probe in (False, True):
+            with self.subTest(include_probe=include_probe):
+                candidate = self._candidate(
+                    self.probe_environment, smtp_probe=include_probe, release_sha="b" * 40,
+                )
+                self.assertEqual(hasattr(candidate, "send_upgrade_control_email"), include_probe)
+                with patch("omnicio.notifications.NotificationTransport.send_email") as send:
+                    result = self._run(candidate, self.auth_product)
+                send.assert_not_called()
+                self.assertEqual(result, {
+                    "status": "configuration_ready", "smtp_delivery_verified": False,
+                    "market_token_configured": False, "market_distribution_approved": False,
+                })
+
+    def test_probe_refuses_missing_or_repeated_manual_authority_before_send(self) -> None:
+        scenarios = (
+            ("GITHUB_EVENT_NAME", "push"), ("GITHUB_EVENT_NAME", "pull_request"),
+            ("GITHUB_REF", "refs/heads/feature"), ("GITHUB_SHA", "a" * 40),
+            ("GITHUB_RUN_ATTEMPT", None), ("GITHUB_RUN_ATTEMPT", ""),
+            ("GITHUB_RUN_ATTEMPT", "0"), ("GITHUB_RUN_ATTEMPT", "2"),
+            ("GITHUB_RUN_ATTEMPT", "01"), ("GITHUB_RUN_ID", None),
+            ("GITHUB_RUN_ID", "0"), ("GITHUB_RUN_ID", "1\nBcc: other@gmail.com"),
+            ("GITHUB_RUN_ID", "1\u0662"), ("GITHUB_RUN_ID", "1" * 21),
+            ("OMNICIO_SMTP_PROBE_RECIPIENT", None),
+        )
+        for name, value in scenarios:
+            environment = dict(self.probe_environment)
+            if value is None:
+                environment.pop(name)
+            else:
+                environment[name] = value
+            with self.subTest(name=name, value=value):
+                with (
+                    patch("omnicio.notifications.NotificationTransport.send_email") as send,
+                    self.assertRaises(MODULE.InfraError),
+                ):
+                    self._candidate(
+                        environment, smtp_probe=True, release_sha="b" * 40,
+                        capture_configuration_errors=True,
+                    )
+                send.assert_not_called()
+
+    def test_probe_rejects_malformed_recipient_and_header_injection(self) -> None:
+        for recipient in (
+            "Owner <owner@gmail.com>", "owner@gmail.com\r\nBcc: other@gmail.com",
+            "owner@gmail.com,other@gmail.com", "owner@GMAIL.COM.evil", "owner@example.com",
+            "a..b@gmail.com", "owner\t@gmail.com", "владелец@gmail.com",
+        ):
+            with self.subTest(recipient=recipient):
+                candidate = self._candidate(
+                    {**self.probe_environment, "OMNICIO_SMTP_PROBE_RECIPIENT": recipient},
+                    smtp_probe=True, release_sha="b" * 40,
+                )
+                with (
+                    patch("omnicio.notifications.NotificationTransport.send_email") as send,
+                    self.assertRaises(candidate.SecurityValueError),
+                ):
+                    self._run(candidate, self.auth_product, smtp_probe=True)
+                send.assert_not_called()
+
+    def test_probe_sends_one_auth_message_with_existing_transport_api(self) -> None:
+        from omnicio import notifications
+
+        candidate = self._candidate(
+            {**self.probe_environment, "AUTH_SMTP_PASSWORD": "future-auth-password"},
+            smtp_probe=True, release_sha="b" * 40,
+        )
+        # The accepted 1.3 module has these two API names, but none of the new
+        # candidate configuration validators. Exercise that import boundary.
+        legacy_api = SimpleNamespace(
+            NotificationConfig=notifications.NotificationConfig,
+            NotificationTransport=notifications.NotificationTransport,
+        )
+        product = self.auth_product + (
+            'NOTIFICATION_SMTP_HOST="unrelated.example.com"\n'
+            'NOTIFICATION_SMTP_USERNAME="unrelated-user"\n'
+            'NOTIFICATION_SMTP_PASSWORD="unrelated-secret"\n'
+            'NOTIFICATION_SMTP_SENDER="unrelated@example.com"\n'
+        )
+        with (
+            patch.object(notifications.smtplib, "SMTP") as smtp,
+            patch.object(notifications.smtplib, "SMTP_SSL") as smtp_tls,
+            patch.dict(sys.modules, {"omnicio.notifications": legacy_api}),
+        ):
+            result = self._run(candidate, product, smtp_probe=True)
+        smtp.assert_called_once_with("smtp.auth.example.com", 587, timeout=10)
+        smtp_tls.assert_not_called()
+        client = smtp.return_value
+        client.login.assert_called_once_with("auth-user", "future-auth-password")
+        client.starttls.assert_called_once()
+        client.send_message.assert_called_once()
+        message = client.send_message.call_args.args[0]
+        expected_id = "<smtp-probe-1.4-bbbbbbbbbbbb-123456@omnicio.ru>"
+        self.assertEqual(message["Message-ID"], expected_id)
+        self.assertEqual(message["To"], "Owner+release@gmail.com")
+        self.assertEqual(message["From"], "auth@example.com")
+        self.assertEqual(result, {
+            "message_id": expected_id, "status": "accepted", "code": "email_provider_accepted",
+        })
+        self.assertNotIn("secret", message.as_string())
+        self.assertNotIn("password", message.as_string())
+        self.assertNotIn("Owner", json.dumps(result))
+
+    def test_probe_reports_rejection_or_ambiguity_without_a_second_send(self) -> None:
+        from omnicio import notifications
+
+        recipient = "Owner+release@gmail.com"
+        cases = (
+            (notifications.smtplib.SMTPResponseException(451, b"synthetic-secret-reply"),
+             "queued", "email_temporary_rejection"),
+            (notifications.smtplib.SMTPResponseException(550, b"synthetic-secret-reply"),
+             "failed", "email_provider_rejected"),
+            (notifications.smtplib.SMTPRecipientsRefused({recipient: (550, b"private-reply")}),
+             "failed", "email_recipient_rejected"),
+            (OSError("synthetic-secret-connection"), "uncertain", "email_result_unknown"),
+        )
+        for error, status, code in cases:
+            with self.subTest(status=status, code=code):
+                candidate = self._candidate(
+                    self.probe_environment, smtp_probe=True, release_sha="b" * 40,
+                )
+                with patch.object(notifications.smtplib, "SMTP") as smtp:
+                    smtp.return_value.send_message.side_effect = error
+                    result = self._run(candidate, self.auth_product, smtp_probe=True)
+                smtp.assert_called_once()
+                smtp.return_value.send_message.assert_called_once()
+                self.assertEqual(result, {
+                    "message_id": "<smtp-probe-1.4-bbbbbbbbbbbb-123456@omnicio.ru>",
+                    "status": status, "code": code,
+                })
+                self.assertNotIn("secret", json.dumps(result))
+                self.assertNotIn("private", json.dumps(result))
+
+    def test_probe_placeholder_text_is_literal_recipient_data(self) -> None:
+        from omnicio.notifications import DeliveryResult
+
+        recipient = "__OMNICIO_SMTP_PROBE_TAG__@gmail.com"
+        candidate = self._candidate(
+            {**self.probe_environment, "OMNICIO_SMTP_PROBE_RECIPIENT": recipient},
+            smtp_probe=True, release_sha="b" * 40,
+        )
+        with patch("omnicio.notifications.NotificationTransport.send_email") as send:
+            send.return_value = DeliveryResult("accepted", "email_provider_accepted")
+            self._run(candidate, self.auth_product, smtp_probe=True)
+        send.assert_called_once()
+        self.assertEqual(send.call_args.args[0], {"email": recipient})
+
+    def test_configuration_failure_can_be_reported_independently_without_sending(self) -> None:
+        for include_probe in (False, True):
+            with self.subTest(include_probe=include_probe):
+                candidate = self._candidate(
+                    {**self.probe_environment, "AUTH_SMTP_HOST": "invalid host"},
+                    smtp_probe=include_probe, release_sha="b" * 40,
+                    capture_configuration_errors=True,
+                )
+                with self.assertRaisesRegex(
+                    candidate.UpgradeBlocked, "product_configuration_invalid",
+                ):
+                    candidate.require_upgrade_product_configuration()
+                if include_probe:
+                    with (
+                        patch("omnicio.notifications.NotificationTransport.send_email") as send,
+                        self.assertRaisesRegex(
+                            candidate.UpgradeBlocked, "product_configuration_invalid",
+                        ),
+                    ):
+                        candidate.send_upgrade_control_email()
+                    send.assert_not_called()
+
+    def test_configuration_capture_does_not_hide_source_read_failures(self) -> None:
+        error = OSError("unreadable source")
+        with (
+            patch.object(MODULE.pathlib.Path, "read_text", side_effect=error),
+            self.assertRaisesRegex(OSError, "unreadable source"),
+        ):
+            MODULE.render_product_preflight(capture_configuration_errors=True)
 
     def test_preflight_transport_accepts_only_bounded_safe_confirmation(self) -> None:
         from unittest.mock import Mock
@@ -629,6 +832,64 @@ nginx() {{
 
 
 class AuthAppDeployTests(unittest.TestCase):
+    def test_app_entrypoint_rejects_unapproved_context_before_provider_access(self) -> None:
+        args = SimpleNamespace(release_sha="a" * 40)
+        baseline = {
+            "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/main",
+            "GITHUB_SHA": "a" * 40, "TIMEWEB_CLOUD_TOKEN": "synthetic-private-token",
+        }
+        for overrides in (
+            {"GITHUB_EVENT_NAME": ""}, {"GITHUB_EVENT_NAME": "push"},
+            {"GITHUB_EVENT_NAME": "workflow_run"}, {"GITHUB_EVENT_NAME": "pull_request"},
+            {"GITHUB_REF": "refs/heads/feature"}, {"GITHUB_SHA": "b" * 40},
+        ):
+            with (
+                self.subTest(overrides=overrides),
+                patch.dict(os.environ, {**baseline, **overrides}, clear=True),
+                patch.object(MODULE, "parse_args", return_value=args),
+                patch.object(MODULE, "TimewebClient") as client,
+                patch.object(MODULE, "reconcile") as reconcile,
+                patch.object(sys, "stderr", new_callable=io.StringIO) as error,
+            ):
+                self.assertEqual(MODULE.main(), 1)
+                client.assert_not_called()
+                reconcile.assert_not_called()
+                self.assertEqual(
+                    error.getvalue(), "::error::postgres_operation_requires_manual_main\n",
+                )
+
+    def test_app_entrypoint_allows_explicit_main_apply_and_reconciliation_attempts(self) -> None:
+        args = SimpleNamespace(
+            release_sha="a" * 40, server_name="fixture-server", server_comment="fixture-managed",
+            repository_root=str(SCRIPT_DIR.parent.parent), cluster_name="fixture-database",
+            vpc_name="fixture-vpc", location="fixture-location", availability_zone="fixture-zone",
+        )
+        baseline = {
+            "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/main",
+            "GITHUB_SHA": "a" * 40, "TIMEWEB_CLOUD_TOKEN": "synthetic-private-token",
+        }
+        for attempt in (None, "1", "2"):
+            environment = dict(baseline)
+            if attempt is not None:
+                environment["GITHUB_RUN_ATTEMPT"] = attempt
+            with (
+                self.subTest(attempt=attempt),
+                patch.dict(os.environ, environment, clear=True),
+                patch.object(MODULE, "parse_args", return_value=args),
+                patch.object(MODULE, "TimewebClient") as client,
+                patch.object(MODULE, "reconcile", return_value=0) as reconcile,
+            ):
+                self.assertEqual(MODULE.main(), 0)
+                client.assert_called_once_with("synthetic-private-token")
+                reconcile.assert_called_once_with(
+                    client.return_value,
+                    server_name=args.server_name, server_comment=args.server_comment,
+                    release_sha=args.release_sha,
+                    repository_root=SCRIPT_DIR.parent.parent.resolve(),
+                    cluster_name=args.cluster_name, vpc_name=args.vpc_name,
+                    location=args.location, availability_zone=args.availability_zone,
+                )
+
     def test_release_sha_requires_full_lowercase_commit(self) -> None:
         self.assertIsNotNone(MODULE.RELEASE_RE.fullmatch("a" * 40))
         self.assertIsNone(MODULE.RELEASE_RE.fullmatch("A" * 40))
@@ -1032,11 +1293,9 @@ class AuthAppDeployTests(unittest.TestCase):
             ("newer same PR", "pull_request", 765, 1002),
             ("different PR", "pull_request", 766, 1003),
             ("main push", "push", None, 2001),
-            ("PostgreSQL completion", "workflow_run", None, 2002),
-            ("manual release", "workflow_dispatch", None, 2003),
-            ("later main push", "push", None, 2004),
-            ("later PostgreSQL completion", "workflow_run", None, 2005),
-            ("later manual release", "workflow_dispatch", None, 2006),
+            ("manual release", "workflow_dispatch", None, 2002),
+            ("later main push", "push", None, 2003),
+            ("later manual release", "workflow_dispatch", None, 2004),
         )
         contexts = [
             {"event_name": event, "run_id": run_id, "sha": "a" * 40,
@@ -1306,7 +1565,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("NoNewPrivileges=true", script)
         self.assertIn("proxy_pass http://127.0.0.1:8001", script)
 
-    def test_production_app_deploy_waits_for_postgres_reconcile(self) -> None:
+    def test_production_app_deploy_requires_explicit_main_dispatch(self) -> None:
         root = SCRIPT_DIR.parent.parent
         app_workflow = (
             root / ".github" / "workflows" / "auth-app-deploy.yml"
@@ -1315,21 +1574,17 @@ class AuthAppDeployTests(unittest.TestCase):
             root / ".github" / "workflows" / "auth-postgres.yml"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("workflow_run", app_workflow)
-        self.assertIn("Auth PostgreSQL", app_workflow)
+        self.assertNotIn("workflow_run", app_workflow)
+        trigger = app_workflow.split("\npermissions:\n", 1)[0]
+        for event in ("  pull_request:\n", "  push:\n", "  workflow_dispatch:\n"):
+            self.assertIn(event, trigger)
         deploy_if = app_workflow.split("  deploy:", 1)[1].split(
             "    needs: tests",
             1,
         )[0]
         self.assertNotIn("github.event_name == 'push'", deploy_if)
-        self.assertIn(
-            "github.event.workflow_run.conclusion == 'success'",
-            deploy_if,
-        )
-        self.assertIn(
-            "github.event.workflow_run.head_sha == github.sha",
-            deploy_if,
-        )
+        self.assertIn("github.event_name == 'workflow_dispatch'", deploy_if)
+        self.assertIn("github.ref == 'refs/heads/main'", deploy_if)
         self.assertNotIn("Detect schema-first release", app_workflow)
 
         for release_path in (
@@ -1349,7 +1604,7 @@ class AuthAppDeployTests(unittest.TestCase):
                 release_path,
             )
 
-    def test_workflow_events_preserve_validation_and_report_blocked_releases(self) -> None:
+    def test_workflow_events_preserve_validation_and_only_manual_main_deploys(self) -> None:
         workflow = (SCRIPT_DIR.parent / "workflows/auth-app-deploy.yml").read_text(
             encoding="utf-8",
         )
@@ -1359,14 +1614,7 @@ class AuthAppDeployTests(unittest.TestCase):
             match = re.search(r"^    if: >-\n((?:      .+\n)+)", job, flags=re.M)
             self.assertIsNotNone(match)
             expressions.append(match[1].strip())
-        prerequisite = tests.split(
-            "      - name: Require successful PostgreSQL release prerequisite", 1,
-        )[1].split("      - name:", 1)[0]
-        match = re.search(r"^        if: (.+)$", prerequisite, flags=re.M)
-        self.assertIsNotNone(match)
-        expressions.append(match[1])
-        self.assertIn("          exit /b 1\n", prerequisite)
-        self.assertLess(tests.index("id: prerequisite"), tests.index("Checkout candidate state"))
+        self.assertNotIn("Require successful PostgreSQL release prerequisite", tests)
         diagnostic_conditions = {
             "Upload synthetic interface screenshots": (
                 "always() && steps.checkout.outcome == 'success'"
@@ -1381,13 +1629,9 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn("        if: " + condition + "\n", step)
 
         baseline = {
-            "event_name": "workflow_run", "repository": "test/omnicio", "sha": "a" * 40,
+            "event_name": "workflow_dispatch", "repository": "test/omnicio", "sha": "a" * 40,
             "ref": "refs/heads/main",
             "event": {
-                "workflow_run": {
-                    "event": "push", "conclusion": "success", "head_sha": "a" * 40,
-                    "head_branch": "main", "head_repository": {"full_name": "test/omnicio"},
-                },
                 "pull_request": {
                     "author_association": "OWNER",
                     "head": {"repo": {"full_name": "test/omnicio"}},
@@ -1395,37 +1639,19 @@ class AuthAppDeployTests(unittest.TestCase):
             },
         }
         scenarios = (
-            ("accepted upstream push", {}, [True, True, False]),
-            ("failed upstream push", {"event.workflow_run.conclusion": "failure"},
-             [True, False, True]),
-            ("cancelled upstream push", {"event.workflow_run.conclusion": "cancelled"},
-             [True, False, True]),
-            ("missing upstream outcome", {"event.workflow_run.conclusion": ""},
-             [True, False, True]),
-            ("successful scheduled backup", {"event.workflow_run.event": "schedule"},
-             [False, False, False]),
-            ("failed scheduled backup", {"event.workflow_run.event": "schedule",
-                                         "event.workflow_run.conclusion": "failure"},
-             [False, False, False]),
-            ("stale upstream push", {"event.workflow_run.head_sha": "b" * 40},
-             [False, False, False]),
-            ("foreign upstream", {"event.workflow_run.head_repository.full_name": "fork/omnicio"},
-             [False, False, False]),
-            ("other upstream branch", {"event.workflow_run.head_branch": "feature"},
-             [False, False, False]),
-            ("upstream pull request", {"event.workflow_run.event": "pull_request"},
-             [False, False, False]),
-            ("push validation", {"event_name": "push"}, [True, False, False]),
-            ("owner PR validation", {"event_name": "pull_request"}, [True, False, False]),
+            ("manual main release", {}, [True, True]),
+            ("upstream completion", {"event_name": "workflow_run"}, [False, False]),
+            ("scheduled workflow", {"event_name": "schedule"}, [False, False]),
+            ("push validation", {"event_name": "push"}, [True, False]),
+            ("owner PR validation", {"event_name": "pull_request"}, [True, False]),
             ("fork PR", {"event_name": "pull_request",
                          "event.pull_request.head.repo.full_name": "fork/omnicio"},
-             [False, False, False]),
+             [False, False]),
             ("nonowner PR", {"event_name": "pull_request",
                              "event.pull_request.author_association": "CONTRIBUTOR"},
-             [False, False, False]),
-            ("manual main release", {"event_name": "workflow_dispatch"}, [True, True, False]),
+             [False, False]),
             ("manual branch validation", {"event_name": "workflow_dispatch",
-                                          "ref": "refs/heads/feature"}, [True, False, False]),
+                                          "ref": "refs/heads/feature"}, [True, False]),
         )
         contexts = []
         for _, changes, _ in scenarios:
@@ -1447,8 +1673,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "const results = contexts.map(github => {\n"
             f"  const tests = Boolean({expressions[0]});\n"
             f"  const deploy = tests && Boolean({expressions[1]});\n"
-            f"  const blocked = tests && Boolean({expressions[2]});\n"
-            "  return [tests, deploy, blocked];\n});\n"
+            "  return [tests, deploy];\n});\n"
             "process.stdout.write(JSON.stringify(results));\n"
         )
         result = subprocess.run([node, "-"], input=source, text=True,

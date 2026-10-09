@@ -757,6 +757,10 @@ class MigrationGateTests(unittest.TestCase):
         for single, backup_only, rejected in cases:
             with (self.subTest(single=single, scheduled=backup_only, rejected=rejected),
                   ExitStack() as stack):
+                stack.enter_context(patch.dict(postgres.os.environ, {
+                    "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/main",
+                    "GITHUB_SHA": RELEASE_SHA,
+                }, clear=True))
                 client = Mock()
                 mocks: dict[str, Any] = {}
                 values = {
@@ -811,6 +815,7 @@ class MigrationGateTests(unittest.TestCase):
                     migration_sqls=reviewed if single else ["SELECT 1"],
                     backup_only=backup_only,
                     release_sha=None if backup_only else RELEASE_SHA,
+                    operation="preflight" if backup_only else "apply",
                 )
                 if rejected:
                     with self.assertRaises(recovery.RecoveryBlocked):
@@ -827,6 +832,9 @@ class MigrationGateTests(unittest.TestCase):
                                      int(not single and not backup_only and not rejected))
                 self.assertEqual(mocks["run_inplace_upgrade"].call_count,
                                  int(single and not backup_only and not rejected))
+                if single and not backup_only and not rejected:
+                    self.assertEqual(mocks["run_inplace_upgrade"].call_args.kwargs["operation"],
+                                     "apply")
                 self.assertEqual(mocks["inspect_restore_capacity"].call_count,
                                  int(not single and not rejected))
                 self.assertEqual(

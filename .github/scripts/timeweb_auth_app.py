@@ -24,6 +24,7 @@ import urllib.request
 from collections.abc import Iterable
 from email.message import Message
 
+from inplace_upgrade import UpgradeBlocked, validate_operation
 from timeweb_auth_postgres import (
     AmbiguousProviderError,
     EphemeralSsh,
@@ -295,7 +296,7 @@ def build_product_environment(*, release_sha: str = "") -> str:
 
 
 _PRODUCT_PREFLIGHT_PROGRAM = r'''
-def require_upgrade_product_configuration() -> dict[str, object]:
+def _load_upgrade_product_settings() -> Settings:
     import pathlib
 
     environments = {}
@@ -333,6 +334,11 @@ def require_upgrade_product_configuration() -> dict[str, object]:
         os.environ.update(previous)
     if not settings.auth_email_ready:
         raise UpgradeBlocked("auth_email_configuration_required")
+    return settings
+
+
+def require_upgrade_product_configuration() -> dict[str, object]:
+    settings = _load_upgrade_product_settings()
     return {
         "status": "configuration_ready",
         "smtp_delivery_verified": False,
@@ -342,18 +348,92 @@ def require_upgrade_product_configuration() -> dict[str, object]:
 '''
 
 
-def render_product_preflight() -> str:
+_SMTP_PROBE_PROGRAM = r'''
+def send_upgrade_control_email() -> dict[str, str]:
+    settings = _load_upgrade_product_settings()
+    recipient = normalize_login_email(__OMNICIO_SMTP_PROBE_RECIPIENT__)
+    tag = __OMNICIO_SMTP_PROBE_TAG__
+    domain = __OMNICIO_SMTP_PROBE_DOMAIN__
+    # The accepted 1.3 runtime already provides this transport. Do not import
+    # the candidate's AuthService or start a database-backed delivery worker.
+    from omnicio.notifications import NotificationConfig, NotificationTransport
+
+    transport = NotificationTransport(NotificationConfig(
+        crypto_key=validate_auth_email_configuration(settings),
+        public_origin="https://" + domain,
+        email_enabled=True,
+        smtp_host=settings.auth_smtp_host,
+        smtp_port=settings.auth_smtp_port,
+        smtp_username=settings.auth_smtp_username,
+        smtp_password=settings.auth_smtp_password,
+        smtp_sender=settings.auth_smtp_sender,
+        smtp_mode=settings.auth_smtp_mode,
+    ))
+    result = transport.send_email({"email": recipient}, {
+        "title": "OMNICIO — проверка доставки перед обновлением 1.4 [" + tag + "]",
+        "body": (
+            "Это контрольное письмо с рабочего сервера OMNICIO, отправленное "
+            "по вашему разрешению перед обновлением 1.4. Действий с вашим "
+            "аккаунтом не выполняется. Идентификатор проверки: " + tag
+        ),
+        "tag": tag,
+    })
+    # A queued or uncertain outcome is reported once, never retried here.
+    # Provider acceptance does not claim receipt in the destination mailbox.
+    return {
+        "message_id": "<" + tag + "@" + domain + ">",
+        "status": result.status,
+        "code": result.code,
+    }
+'''
+
+
+def _smtp_probe_parameters(release_sha: str) -> tuple[str, str]:
+    if (not RELEASE_RE.fullmatch(release_sha)
+            or os.environ.get("GITHUB_SHA") != release_sha
+            or os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
+            or os.environ.get("GITHUB_REF") != "refs/heads/main"
+            or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"):
+        raise InfraError("SMTP probe requires the first manual accepted-main attempt")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    if re.fullmatch(r"[1-9]\d{0,19}", run_id, flags=re.ASCII) is None:
+        raise InfraError("SMTP probe requires a valid workflow run ID")
+    recipient = os.environ.get("OMNICIO_SMTP_PROBE_RECIPIENT", "")
+    if not recipient.strip():
+        raise InfraError("SMTP probe requires an explicitly selected recipient")
+    return recipient, "smtp-probe-1.4-" + release_sha[:12] + "-" + run_id
+
+
+def render_product_preflight(
+    *, smtp_probe: bool = False, release_sha: str = "",
+    capture_configuration_errors: bool = False,
+) -> str:
     """Append the candidate's config reader to the reviewed upgrade program.
 
-    Production secrets travel only over the existing SSH stdin. This checks the
-    effective future configuration without changing files or sending messages.
-    The caller supplies UpgradeBlocked, _private_file and parse_environment.
+    Production secrets travel only over the existing SSH stdin. Normal checks
+    neither change files nor send mail. The manual probe adds a separate callable
+    for one explicitly authorized send; rendering never invokes it. The caller
+    supplies UpgradeBlocked, _private_file and parse_environment.
     """
     from inplace_upgrade import render_source_definitions
 
     # Apply the same local checks as the app job before a database cutover can
     # start; runtime-only validation alone does not cover publication settings.
-    validate_product_environment()
+    probe = _smtp_probe_parameters(release_sha) if smtp_probe else None
+    try:
+        validate_product_environment()
+        product_environment = build_product_environment(release_sha=release_sha)
+    except (InfraError, ValueError):
+        if not capture_configuration_errors:
+            raise
+        callbacks = ["require_upgrade_product_configuration"]
+        if smtp_probe:
+            callbacks.append("send_upgrade_control_email")
+        return "\n".join(
+            f'\ndef {name}() -> dict[str, object]:\n'
+            '    raise UpgradeBlocked("product_configuration_invalid")\n'
+            for name in callbacks
+        )
     package = pathlib.Path(__file__).resolve().parents[2] / "src/omnicio"
     contract = package / "config.py"
     source = contract.read_text(encoding="utf-8").replace(
@@ -368,17 +448,28 @@ def render_product_preflight() -> str:
         "_EMAIL", "_MAILTO_SCHEME", "_HTTPS_SCHEME", "normalize_email", "_decode", "_b64",
         "push_public_key", "validate_push_configuration",
     })
-    source += render_source_definitions(package / "security.py", {
-        "SecurityValueError", "encrypt_secret", "decrypt_secret",
-    })
-    source += render_source_definitions(package / "service.py", {
-        "validate_auth_email_configuration",
-    })
-    return source + "\n" + _PRODUCT_PREFLIGHT_PROGRAM.replace(
+    security_names = {"SecurityValueError", "encrypt_secret", "decrypt_secret"}
+    service_names = {"validate_auth_email_configuration"}
+    if smtp_probe:
+        security_names.add("EMAIL_DOMAINS")
+        service_names.add("normalize_login_email")
+    source += render_source_definitions(package / "security.py", security_names)
+    source += render_source_definitions(package / "service.py", service_names)
+    source += "\n" + _PRODUCT_PREFLIGHT_PROGRAM.replace(
         "__OMNICIO_PRESERVED_KEYS__", repr(OPTIONAL_INTEGRATION_KEYS),
     ).replace(
-        "__OMNICIO_PRODUCT_ENVIRONMENT__", repr(build_product_environment()),
+        "__OMNICIO_PRODUCT_ENVIRONMENT__", repr(product_environment),
     )
+    if probe is not None:
+        recipient, tag = probe
+        source += "\n" + _SMTP_PROBE_PROGRAM.replace(
+            "__OMNICIO_SMTP_PROBE_TAG__", repr(tag),
+        ).replace(
+            "__OMNICIO_SMTP_PROBE_DOMAIN__", repr(DOMAIN),
+        ).replace(
+            "__OMNICIO_SMTP_PROBE_RECIPIENT__", repr(recipient),
+        )
+    return source
 
 
 def preflight_product_environment(ssh: EphemeralSsh) -> None:
@@ -1551,6 +1642,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
+        validate_operation("apply", release_sha=args.release_sha)
         client = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
         return reconcile(
             client,
@@ -1565,6 +1657,7 @@ def main() -> int:
         )
     except (
         InfraError,
+        UpgradeBlocked,
         TimewebApiError,
         AmbiguousProviderError,
         subprocess.SubprocessError,
