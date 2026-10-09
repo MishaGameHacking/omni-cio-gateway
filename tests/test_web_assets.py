@@ -50,7 +50,8 @@ def test_actual_templates_render_one_package_and_build_identity() -> None:
     assert set(rendered) == PUBLIC_PATHS
     assert release_metadata(rendered["version.js"]) == {"version": __version__, "build": BUILD}
     versions = re.findall(r'data-release-version[^>]*>([^<]+)<', rendered["index.html"])
-    assert versions and set(versions) == {__version__}
+    assert versions
+    assert set(versions) == {__version__}
     for path, body in rendered.items():
         assert "__OMNICIO_" not in body, path
         if path != "manifest.webmanifest":

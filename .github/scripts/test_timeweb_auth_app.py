@@ -1256,6 +1256,27 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertGreaterEqual(script.count('add_header Cache-Control "no-cache";'), 5)
         self.assertNotIn('add_header Cache-Control "public, max-age=300";', script)
 
+    def test_public_version_script_accepts_only_the_bounded_release_assignment(self) -> None:
+        sha = "b" * 40
+        metadata = json.dumps({"version": MODULE.release_version(), "build": sha[:12]})
+        assignment = "window.OMNICIO_RELEASE = " + metadata
+        for body in (assignment, assignment + ";", " \n" + assignment + ";\n"):
+            MODULE.verify_public_version_script(body.encode(), sha)
+        invalid = (
+            "document.location = " + metadata,
+            assignment + "; alert('unexpected');",
+            assignment + "; " + assignment,
+            "window.OMNICIO_RELEASE = []",
+            "window.OMNICIO_RELEASE = {broken}",
+            assignment.replace(MODULE.release_version(), "0.0.0-obsolete"),
+            assignment.replace(sha[:12], "old-build"),
+            assignment + " " * MODULE.MAX_RELEASE_METADATA_BYTES,
+        )
+        for value in invalid:
+            body = value.encode()
+            with self.subTest(body=body[:100]), self.assertRaises(MODULE.InfraError):
+                MODULE.verify_public_version_script(body, sha)
+
     def test_rendered_offline_styles_match_the_service_worker_build(self) -> None:
         root = SCRIPT_DIR.parent.parent
         build = "b" * 40

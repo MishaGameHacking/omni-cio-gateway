@@ -649,12 +649,17 @@ const serveTestApiRequest = async (request, response, url) => {
 // A dropped public connection exercises the real worker fetch-failure path.
 let publicNetworkUnavailable = false;
 let unavailablePublicAsset = "";
+const publicRequestDiagnostics = [];
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, "http://127.0.0.1");
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     if (url.pathname.startsWith("/api/")) return await serveTestApiRequest(request, response, url);
+    response.once("finish", () => {
+      publicRequestDiagnostics.push({path: url.pathname, build: url.searchParams.get("build"), status: response.statusCode, responseBuild: response.getHeader("X-Omnicio-Build") || null, contentType: response.getHeader("Content-Type") || null, destination: request.headers["sec-fetch-dest"] || null});
+      if (publicRequestDiagnostics.length > 100) publicRequestDiagnostics.shift();
+    });
     if (publicNetworkUnavailable) { request.socket.destroy(); return; }
     const page = new URL(request.headers.referer || url.href);
     const fixture = fixtures.get((url.pathname === "/" ? url : page).searchParams.get("case"));
@@ -3146,6 +3151,12 @@ const protocolClient = async url => {
   const pending = new Map();
   let sequence = 0;
   let nativeDialog = null;
+  const workerDiagnostics = {errors: [], registrations: [], versions: []};
+  const workerObservers = {
+    "ServiceWorker.workerErrorReported": params => { workerDiagnostics.errors = [...workerDiagnostics.errors, params.errorMessage].slice(-20); },
+    "ServiceWorker.workerRegistrationUpdated": params => { workerDiagnostics.registrations = params.registrations; },
+    "ServiceWorker.workerVersionUpdated": params => { workerDiagnostics.versions = [...workerDiagnostics.versions, ...params.versions].slice(-20); }
+  };
   const dialogError = method => Object.assign(new Error(`Unexpected native ${nativeDialog.type} dialog during ${method} at ${nativeDialog.url}`), {code: "unexpected_native_dialog", dialog: {...nativeDialog}});
   await new Promise((done, reject) => {
     socket.addEventListener("open", done, {
@@ -3159,6 +3170,9 @@ const protocolClient = async url => {
     data
   }) => {
     const message = JSON.parse(data);
+    // Worker-global failures do not reach the page's error event. Keep bounded
+    // native CDP evidence so an install failure has a concrete diagnostic.
+    if (Object.hasOwn(workerObservers, message.method)) workerObservers[message.method](message.params);
     if (message.method === "Page.javascriptDialogOpening") {
       nativeDialog = {...message.params, sessionId: message.sessionId};
       for (const [id, waiter] of pending) {
@@ -3178,6 +3192,7 @@ const protocolClient = async url => {
   });
   return {
     get nativeDialog() { return nativeDialog; },
+    get workerDiagnostics() { return workerDiagnostics; },
     send(method, params = {}, sessionId, timeout = 15000) {
       if (nativeDialog && nativeDialog.sessionId === sessionId && method !== "Browser.close") return Promise.reject(dialogError(method));
       return new Promise((done, reject) => {
@@ -3286,6 +3301,7 @@ const runBrowser = async base => {
     };
     await send("Page.enable");
     await send("Runtime.enable");
+    await send("ServiceWorker.enable");
     await send("Page.addScriptToEvaluateOnNewDocument", {
       source: 'window.__browserErrors=[];window.__cspViolations=[];addEventListener("error",e=>window.__browserErrors.push(e.error?.stack||e.message));addEventListener("unhandledrejection",e=>window.__browserErrors.push(e.reason?.stack||String(e.reason)));addEventListener("securitypolicyviolation",e=>window.__cspViolations.push(e.effectiveDirective));'
     });
@@ -3395,6 +3411,8 @@ const runBrowser = async base => {
       const debug = {
         failure: error.stack || String(error),
         nativeDialog: client.nativeDialog || error.dialog || null,
+        serviceWorker: client.workerDiagnostics,
+        publicRequests: publicRequestDiagnostics,
         requests
       };
       writeFileSync(join(artifacts, "failure-state.json"), JSON.stringify(debug, null, 2));
@@ -3410,6 +3428,8 @@ const runBrowser = async base => {
         url: documentState.url,
         errors: documentState.errors,
         csp: documentState.csp,
+        serviceWorker: client.workerDiagnostics,
+        publicRequests: publicRequestDiagnostics,
         bodyText: documentState.bodyText?.slice(0, 3500),
         requests
       }, null, 2));

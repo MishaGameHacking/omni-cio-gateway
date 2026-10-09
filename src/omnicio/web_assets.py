@@ -14,8 +14,10 @@ from pathlib import Path
 from . import __version__
 
 SCRIPT_ASSETS = ("config.js", "i18n.js", "workspace.js", "app.js")
-STYLE_ASSETS = ("tokens.css", "app.css")
-DOCUMENT_ASSETS = ("index.html", "offline.html", "sw.js", "manifest.webmanifest")
+INDEX_ASSET = "index.html"
+PALETTE_ASSET = "tokens.css"
+STYLE_ASSETS = (PALETTE_ASSET, "app.css")
+DOCUMENT_ASSETS = (INDEX_ASSET, "offline.html", "sw.js", "manifest.webmanifest")
 VERSION_MARKER = "__OMNICIO_VERSION__"
 BUILD_MARKER = "__OMNICIO_BUILD__"
 THEME_MARKERS = {
@@ -66,17 +68,17 @@ def render_web_assets(
     replacements = {
         VERSION_MARKER: version,
         BUILD_MARKER: build,
-        **_theme_replacements((source / "tokens.css").read_text(encoding="utf-8")),
+        **_theme_replacements((source / PALETTE_ASSET).read_text(encoding="utf-8")),
     }
     paths = {name: name for name in DOCUMENT_ASSETS}
     paths.update({f"assets/{name}": name for name in (*SCRIPT_ASSETS, *STYLE_ASSETS)})
     rendered: dict[str, str] = {}
     for destination, name in paths.items():
         template = (source / name).read_text(encoding="utf-8")
-        if (name in (*SCRIPT_ASSETS, "index.html", "offline.html", "sw.js", "tokens.css")
+        if (name in (*SCRIPT_ASSETS, INDEX_ASSET, "offline.html", "sw.js", PALETTE_ASSET)
                 and BUILD_MARKER not in template):
             raise ValueError(f"Missing build marker in public asset: {name}")
-        if name == "index.html" and VERSION_MARKER not in template:
+        if name == INDEX_ASSET and VERSION_MARKER not in template:
             raise ValueError("Missing package version marker in public index")
         content = _render_template(template, replacements)
         if name in STYLE_ASSETS:

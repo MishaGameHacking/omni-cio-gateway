@@ -114,8 +114,11 @@ def test_live_execution_cleanup_lock_is_stable_and_user_scoped() -> None:
 def test_one_package_release_reaches_framework_http_and_public_config() -> None:
     project = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
     expected = project["project"]["version"]
-    assert expected == version("omnicio-gateway") == __version__ == app.version
-    assert f"OMNICIO/{expected} (+https://omnicio.ru)" == APPLICATION_USER_AGENT
+    assert version("omnicio-gateway") == expected
+    assert __version__ == expected
+    assert app.version == expected
+    actual_user_agent = APPLICATION_USER_AGENT
+    assert actual_user_agent == f"OMNICIO/{expected} (+https://omnicio.ru)"
     cfg = settings(release_build="a" * 12)
     auth = AuthService(cfg, FakeDatabase())
     with (

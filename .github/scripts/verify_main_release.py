@@ -23,6 +23,7 @@ POSTGRES_TEST_JOB = "Test PostgreSQL reconciler"
 SONAR_PROJECT = "MishaGameHacking_omni-cio-gateway"
 MAX_RESPONSE_BYTES = 2_000_000
 RELEASE_TIMEOUT = "Timed out waiting for accepted main checks"
+GIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
 class ReleaseBlocked(RuntimeError):
@@ -224,7 +225,7 @@ def merged_pull_request(client: GitHubClient, sha: str, number: int) -> tuple[in
         raise ReleaseBlocked("Merged pull request did not target main")
     head = pull["head"].get("sha")
     merged_at = pull.get("merged_at")
-    if (not isinstance(head, str) or re.fullmatch(r"[0-9a-f]{40}", head) is None
+    if (not isinstance(head, str) or GIT_SHA_RE.fullmatch(head) is None
             or not isinstance(merged_at, str) or not merged_at):
         raise ReleaseBlocked("Merged pull request source identity is missing")
     return number, head, merged_at
@@ -236,7 +237,7 @@ def commit_tree(client: GitHubClient, sha: str) -> str:
     if commit.get("sha") != sha or not isinstance(tree, dict):
         raise ReleaseBlocked("GitHub commit tree identity is malformed")
     tree_sha = tree.get("sha")
-    if not isinstance(tree_sha, str) or re.fullmatch(r"[0-9a-f]{40}", tree_sha) is None:
+    if not isinstance(tree_sha, str) or GIT_SHA_RE.fullmatch(tree_sha) is None:
         raise ReleaseBlocked("GitHub commit tree SHA is malformed")
     return tree_sha
 
@@ -395,7 +396,7 @@ def release_context() -> tuple[str, str]:
             or os.environ.get("GITHUB_EVENT_NAME") not in {
                 "push", "schedule", "workflow_run", "workflow_dispatch",
             }
-            or re.fullmatch(r"[0-9a-f]{40}", sha) is None):
+            or GIT_SHA_RE.fullmatch(sha) is None):
         raise ReleaseBlocked("Only an exact main production event can pass the release gate")
     token = os.environ.get("GITHUB_TOKEN", "")
     if not token:

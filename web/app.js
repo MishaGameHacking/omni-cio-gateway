@@ -3967,7 +3967,8 @@
     state.loading.add(busy);
     renderEvents();
     try {
-      const page = await api(`${news ? `/api/news?limit=${C.pagination.pageSize}` : eventsPath()}&cursor=${encodeURIComponent(cursor)}`);
+      const requestPath = news ? `/api/news?limit=${C.pagination.pageSize}` : eventsPath();
+      const page = await api(`${requestPath}&cursor=${encodeURIComponent(cursor)}`);
       if (!current()) return;
       const snapshot = news ? mergePage(state.data[name], page) : await readEventSnapshot(page, eventsContext, true);
       if (!snapshot || !current()) return;

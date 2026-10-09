@@ -77,6 +77,8 @@ CALLBACK_PUBLIC_PATHS = (
 )
 JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
 PNG_CONTENT_TYPE = "image/png"
+# version.js holds only a bounded version/build object, never a runtime bundle.
+MAX_RELEASE_METADATA_BYTES = 2048
 PUBLIC_SECURITY_HEADERS = {
     "Strict-Transport-Security": "max-age=31536000",
     "X-Content-Type-Options": "nosniff",
@@ -1386,6 +1388,21 @@ def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
         raise InfraError("Public login readiness does not match available providers")
 
 
+def verify_public_version_script(body: bytes, release_sha: str) -> None:
+    """Parse the single generated assignment without a backtracking regex."""
+    if len(body) > MAX_RELEASE_METADATA_BYTES:
+        raise InfraError("Public application version metadata is too large")
+    binding, separator, payload = body.decode().strip().partition("=")
+    if not separator or binding.strip() != "window.OMNICIO_RELEASE":
+        raise InfraError("Public application version assignment is invalid")
+    try:
+        metadata = json.loads(payload.strip().removesuffix(";").rstrip())
+    except ValueError as exc:
+        raise InfraError("Public application version metadata is malformed") from exc
+    if metadata != {"version": release_version(), "build": release_sha[:12]}:
+        raise InfraError("Public application version metadata does not match the release")
+
+
 def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
     build = release_sha[:12]
     brand, content_type = fetch_public(BRAND_PUBLIC_MARK, context, expected_build=build)
@@ -1400,15 +1417,7 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         raise InfraError("Public web manifest verification failed")
 
     version_body, _ = fetch_public(VERSION_PUBLIC_PATH, context, expected_build=build)
-    version = version_body.decode()
-    if "window.OMNICIO_RELEASE" not in version:
-        raise InfraError("Public application version marker is missing")
-    if release_sha[:12] not in version:
-        raise InfraError("Public application build does not match release")
-    match = re.fullmatch(r"\s*window\.OMNICIO_RELEASE\s*=\s*(\{[^;]+\})\s*;?\s*", version)
-    expected_release = {"version": release_version(), "build": release_sha[:12]}
-    if match is None or json.loads(match.group(1)) != expected_release:
-        raise InfraError("Public application version metadata does not match the release")
+    verify_public_version_script(version_body, release_sha)
 
     runtime_assets = (
         ("/assets/config.js", b"OMNICIO_CONFIG", JAVASCRIPT_CONTENT_TYPES),

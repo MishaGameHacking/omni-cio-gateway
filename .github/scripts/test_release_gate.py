@@ -8,6 +8,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import unittest
 from unittest.mock import Mock, patch
 
@@ -397,8 +398,9 @@ class MergedPullRequestEvidenceTests(unittest.TestCase):
             (sonar(11), gate.PendingChecks),
             (sonar(completed_at="2026-10-09T05:00:00Z"), gate.PendingChecks),
         ):
+            client = client_with_evidence(final_sonar=check)
             with self.subTest(check=check), self.assertRaises(error):
-                gate.verify(client_with_evidence(final_sonar=check), SHA)
+                gate.verify(client, SHA)
 
     def test_foundation_rerun_after_initial_green_cannot_pass(self) -> None:
         for conclusion in ("failure", None, "success"):
@@ -569,6 +571,22 @@ class ApplicationPushEvidenceTests(unittest.TestCase):
 
 
 class SelfHostedCiPolicyTests(unittest.TestCase):
+    def test_workflow_environment_and_permission_blocks_are_not_empty(self) -> None:
+        workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
+        for path in workflow_dir.glob("*.yml"):
+            lines = [line for line in path.read_text(encoding="utf-8").splitlines()
+                     if line.strip() and not line.lstrip().startswith("#")]
+            for index, line in enumerate(lines):
+                mapping = re.fullmatch(r"( *)(env|permissions):", line)
+                if mapping is None:
+                    continue
+                following = lines[index + 1] if index + 1 < len(lines) else ""
+                with self.subTest(workflow=path.name, line=line):
+                    self.assertGreater(
+                        len(following) - len(following.lstrip()), len(mapping[1]),
+                        "An empty workflow mapping is null, not an accepted Actions configuration",
+                    )
+
     def test_infrastructure_pr_queues_are_isolated_from_production(self) -> None:
         workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
         for name in ("auth-postgres", "auth-private-network"):
