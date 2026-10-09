@@ -18,7 +18,6 @@ import unittest
 from contextlib import ExitStack, closing, nullcontext
 from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -49,11 +48,44 @@ class PostgresTests(unittest.TestCase):
             postgres_version="18",
             location="ru-3",
             availability_zone="msk-1",
-            max_price_rub=Decimal("1110"),
-            min_cpu=1,
-            min_ram_mb=2048,
-            min_disk_mb=20480,
         )
+
+    def existing_database_provider(self):
+        cluster = {
+            "id": 4215095, "name": self.desired.cluster_name, "type": "postgres18",
+            "location": "ru-3", "availability_zone": "msk-1",
+            "description": MODULE.DB_OWNERSHIP_MARKER,
+            "is_enabled_public_network": False, "is_enabled_public_ipv6": False,
+            "status": "started", "port": 5432,
+            "networks": [{"type": "private", "ips": [{"ip": "10.0.0.5"}]}],
+            "disk": {"size": 20971520}, "disk_autoscaling": {"is_enabled": False},
+        }
+        replies = {
+            "/servers": {"servers": [{"id": 1, "name": "server", "comment": "managed"}]},
+            "/servers/1": {"server": {
+                "networks": [{"type": "public", "ips": [{"ip": "8.8.8.8"}]}],
+            }},
+            "/vpcs": {"vpcs": [{"id": "private", "name": "private", "location": "ru-3",
+                                 "availability_zone": "msk-1", "subnet_v4": "10.0.0.0/24"}]},
+            "/vpcs/private/services": {"services": [
+                {"id": 1, "name": "server", "local_ip": "10.0.0.4"},
+                {"id": 4215095, "name": self.desired.cluster_name},
+            ]},
+            "/databases": {"dbs": [{"id": 4215095, "name": self.desired.cluster_name}]},
+            "/databases/4215095": {"db": cluster},
+            "/dbs/4215095/auto-backups": {"auto_backups_settings": {"is_enabled": False}},
+        }
+
+        def request(method, path, **_):
+            self.assertEqual(method, "GET")
+            result = replies[path]
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        client = MODULE.TimewebClient("synthetic-token")
+        client.request = Mock(side_effect=request)
+        return client, replies
 
 
     def test_address_inventory_keeps_private_endpoint_separate(self) -> None:
@@ -66,60 +98,6 @@ class PostgresTests(unittest.TestCase):
         cluster["networks"][0]["ips"].append({"ip": "10.0.0.6"})
         with self.assertRaises(MODULE.InfraError):
             MODULE.private_database_endpoint(cluster)
-
-    def test_selects_supported_postgres_18_type(self) -> None:
-        types = [
-            {
-                "name": "PostgreSQL",
-                "version": "18",
-                "type": "postgres18",
-                "is_deprecated": False,
-            },
-            {
-                "name": "PostgreSQL",
-                "version": "17",
-                "type": "postgres17",
-                "is_deprecated": False,
-            },
-        ]
-        self.assertEqual(
-            MODULE.select_postgres_type(types, version="18"),
-            "postgres18",
-        )
-
-    def test_preset_selection_enforces_resources_and_budget(self) -> None:
-        presets = [
-            {
-                "id": 1,
-                "type": "postgres",
-                "location": "ru-3",
-                "price": 700,
-                "cpu": 1,
-                "ram": 1024,
-                "disk": 8192,
-            },
-            {
-                "id": 2,
-                "type": "postgres",
-                "location": "ru-3",
-                "price": 1110,
-                "cpu": 1,
-                "ram": 2048,
-                "disk": 20480,
-            },
-            {
-                "id": 3,
-                "type": "postgres",
-                "location": "ru-3",
-                "price": 1200,
-                "cpu": 2,
-                "ram": 4096,
-                "disk": 40960,
-            },
-        ]
-        selected = MODULE.select_database_preset(presets, self.desired)
-        self.assertEqual(selected["id"], 2)
-
 
     def test_private_server_cidr_uses_vpc_prefix(self) -> None:
         vpc = {"subnet_v4": "10.77.0.0/24"}
@@ -310,10 +288,6 @@ class PostgresTests(unittest.TestCase):
                 "--postgres-version", "18",
                 "--location", "ru-3",
                 "--availability-zone", "msk-1",
-                "--max-price-rub", "1110",
-                "--min-cpu", "1",
-                "--min-ram-mb", "2048",
-                "--min-disk-mb", "20480",
                 "--migration", "migrations/0001.sql",
                 "--migration", "migrations/0002.sql",
             ]
@@ -969,28 +943,23 @@ class PostgresTests(unittest.TestCase):
             MODULE.validate_operation("apply", release_sha="a" * 40)
 
     def test_default_reconcile_inspects_existing_cluster_without_bootstrap_or_copy(self) -> None:
-        values = {
-            "find_managed_server": {"id": 1}, "find_vpc": {"id": "private"},
-            "find_vpc_service": {}, "private_server_cidr": "10.0.0.4/24",
-            "select_postgres_type": "postgres18", "select_database_preset": {"id": 1},
-            "find_database_cluster": {"id": 4215095}, "public_ipv4": "192.0.2.1",
-            "inspect_provider_recovery": {},
-            "wait_for_database_endpoint": (
-                {"id": 4215095}, MODULE.DatabaseEndpoint("10.0.0.5", 5432),
-            ),
-            "validate_existing_cluster": None, "service_matches": True,
-            "validate_budget": None, "get_schedule": {"is_enabled": False},
-        }
         mutation_names = (
             "ensure_recovery_point", "inspect_restore_capacity", "ensure_server_private_network",
             "load_or_create_server_secrets", "write_runtime_env", "run_schema_migration",
             "apply_database_release",
         )
-        for ready in (True, False):
+        for ready, catalog_unavailable in ((True, False), (True, True), (False, True)):
             report = self.inspection_report(ready=ready)
-            with self.subTest(ready=ready), ExitStack() as stack:
-                for name, value in values.items():
-                    stack.enter_context(patch.object(MODULE, name, return_value=value))
+            client, replies = self.existing_database_provider()
+            replies["/database-types"] = {"types": []}
+            replies["/presets/dbs"] = {"databases_presets": []}
+            if catalog_unavailable:
+                replies["/database-types"] = MODULE.InfraError("Synthetic catalog outage")
+                replies["/presets/dbs"] = MODULE.InfraError("Synthetic catalog outage")
+            with (self.subTest(ready=ready, catalog_unavailable=catalog_unavailable),
+                  ExitStack() as stack):
+                stack.enter_context(patch.object(MODULE, "inspect_provider_recovery",
+                                                return_value={}))
                 mutations = {name: stack.enter_context(patch.object(MODULE, name))
                              for name in mutation_names}
                 stack.enter_context(patch.dict(MODULE.os.environ, {}, clear=True))
@@ -1000,8 +969,6 @@ class PostgresTests(unittest.TestCase):
                 output = stack.enter_context(patch.object(MODULE, "set_output"))
                 summary = stack.enter_context(patch.object(MODULE, "add_summary"))
                 stack.enter_context(patch("sys.stderr"))
-                client = Mock()
-                client.get_vpc_services.return_value = [{}]
                 result = MODULE.reconcile(
                     client, desired=self.desired, server_name="server", server_comment="managed",
                     vpc_name="private", migration_sqls=self.reviewed_upgrade_sql(),
@@ -1016,7 +983,12 @@ class PostgresTests(unittest.TestCase):
             ssh.return_value.__exit__.assert_called_once()
             for name, mutation in mutations.items():
                 self.assertEqual(mutation.call_count, 0, name)
-            self.assertTrue(all(call[0].startswith("get_") for call in client.mock_calls))
+            paths = [call.args[1] for call in client.request.call_args_list]
+            self.assertEqual(paths.count("/databases"), 1)
+            self.assertEqual(paths.count("/databases/4215095"), 1)
+            self.assertEqual(paths.count("/dbs/4215095/auto-backups"), 1)
+            self.assertNotIn("/database-types", paths)
+            self.assertNotIn("/presets/dbs", paths)
 
     def test_full_release_checks_context_and_checkout_before_provider_access(self) -> None:
         sha = "a" * 40
@@ -1105,7 +1077,6 @@ class PostgresTests(unittest.TestCase):
             "load_policy": replace(MODULE.load_policy(), mode="managed_backups"),
             "find_managed_server": {"id": 1}, "find_vpc": {"id": "private"},
             "find_vpc_service": {}, "private_server_cidr": "10.0.0.4/24",
-            "select_postgres_type": "postgres18", "select_database_preset": {"id": 1},
             "find_database_cluster": {"id": cluster_id}, "public_ipv4": "192.0.2.1",
             "inspect_provider_recovery": {},
             "wait_for_database_endpoint": ({"id": cluster_id}, Mock()),
@@ -1180,20 +1151,108 @@ class PostgresTests(unittest.TestCase):
             ):
                 MODULE.load_migrations(["migrations/0001.sql"])
 
-    def test_existing_cluster_rejects_public_network(self) -> None:
-        cluster = {
-            "type": "postgres18",
-            "location": "ru-3",
-            "availability_zone": "msk-1",
-            "is_enabled_public_network": True,
-            "is_enabled_public_ipv6": False,
+    def test_existing_cluster_requires_actual_identity_and_isolation_before_ssh(self) -> None:
+        invalid = {
+            "id": (4215096, "4215095", 4215095.5),
+            "name": ("replacement", False), "type": ("postgres17", "mysql", {}),
+            "location": ("ru-1", []), "availability_zone": ("msk-2", {}),
+            "description": ("unmanaged", False),
+            "is_enabled_public_network": (True, 0, "false", []),
+            "is_enabled_public_ipv6": (True, 0, "false", {}),
         }
-        with self.assertRaises(MODULE.InfraError):
-            MODULE.validate_existing_cluster(
-                cluster,
-                desired=self.desired,
-                db_type="postgres18",
-            )
+        cases = [(key, value) for key, values in invalid.items() for value in values]
+        cases += [(key, None) for key in invalid]
+        migrations = self.reviewed_upgrade_sql()
+        for key, value in cases:
+            client, replies = self.existing_database_provider()
+            cluster = replies["/databases/4215095"]["db"]
+            if value is None:
+                del cluster[key]
+            else:
+                cluster[key] = value
+            with (self.subTest(key=key, value=value),
+                  patch.object(MODULE, "EphemeralSsh") as ssh,
+                  patch.object(MODULE, "inspect_provider_recovery") as recovery,
+                  patch.object(MODULE, "run_inplace_upgrade") as remote,
+                  patch.object(MODULE, "set_output") as output,
+                  patch.object(MODULE, "add_summary"),
+                  self.assertRaises(MODULE.InfraError)):
+                MODULE.reconcile(
+                    client, desired=self.desired, server_name="server",
+                    server_comment="managed", vpc_name="private",
+                    migration_sqls=migrations, release_sha="a" * 40,
+                )
+            ssh.assert_not_called()
+            recovery.assert_not_called()
+            remote.assert_not_called()
+            output.assert_not_called()
+
+    def test_existing_cluster_requires_pinned_inventory_and_vpc_before_ssh(self) -> None:
+        pinned = {"id": 4215095, "name": self.desired.cluster_name}
+        cases = (
+            ("/databases", {"dbs": []}),
+            ("/databases", {"dbs": [pinned, pinned]}),
+            ("/databases", {"dbs": [pinned | {"id": 4215096}]}),
+            ("/databases", {"dbs": [pinned | {"id": "4215095"}]}),
+            ("/databases", {"dbs": [{"name": self.desired.cluster_name}]}),
+            ("/vpcs/private/services", {"services": [
+                {"id": 1, "name": "server", "local_ip": "10.0.0.4"},
+            ]}),
+        )
+        migrations = self.reviewed_upgrade_sql()
+        for path, value in cases:
+            client, replies = self.existing_database_provider()
+            replies[path] = value
+            with (self.subTest(path=path, value=value),
+                  patch.object(MODULE, "EphemeralSsh") as ssh,
+                  patch.object(MODULE, "inspect_provider_recovery") as recovery,
+                  patch.object(MODULE, "run_inplace_upgrade") as remote,
+                  patch.object(MODULE, "set_output") as output,
+                  patch.object(MODULE, "add_summary"),
+                  self.assertRaises(MODULE.InfraError)):
+                MODULE.reconcile(
+                    client, desired=self.desired, server_name="server",
+                    server_comment="managed", vpc_name="private",
+                    migration_sqls=migrations, release_sha="a" * 40,
+                )
+            ssh.assert_not_called()
+            recovery.assert_not_called()
+            remote.assert_not_called()
+            output.assert_not_called()
+
+    def test_existing_cluster_keeps_actual_recovery_budget_and_schedule_guards(self) -> None:
+        cases = (
+            ({"disk": {"size": 20971521}}, False),
+            ({"disk": {"size": "20971520"}}, False),
+            ({"disk": {}}, False),
+            ({"disk_autoscaling": {"is_enabled": True}}, False),
+            ({"disk_autoscaling": {}}, False),
+            ({}, True),
+        )
+        migrations = self.reviewed_upgrade_sql()
+        for changes, schedule_enabled in cases:
+            client, replies = self.existing_database_provider()
+            replies["/databases/4215095"]["db"].update(changes)
+            replies["/dbs/4215095/auto-backups"] = {
+                "auto_backups_settings": {"is_enabled": schedule_enabled},
+            }
+            with (self.subTest(changes=changes, schedule=schedule_enabled),
+                  patch.object(MODULE, "EphemeralSsh") as ssh,
+                  patch.object(MODULE, "inspect_provider_recovery", return_value={}),
+                  patch.object(MODULE, "ensure_recovery_point") as copy,
+                  patch.object(MODULE, "run_inplace_upgrade") as remote,
+                  patch.object(MODULE, "set_output") as output,
+                  patch.object(MODULE, "add_summary"),
+                  self.assertRaises(MODULE.RecoveryBlocked)):
+                MODULE.reconcile(
+                    client, desired=self.desired, server_name="server",
+                    server_comment="managed", vpc_name="private",
+                    migration_sqls=migrations, release_sha="a" * 40,
+                )
+            copy.assert_not_called()
+            remote.assert_not_called()
+            output.assert_not_called()
+            ssh.return_value.__exit__.assert_called_once()
 
 
 class RemoteDiagnosticsTests(unittest.TestCase):

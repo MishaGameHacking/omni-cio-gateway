@@ -110,10 +110,6 @@ class DesiredDatabase:
     postgres_version: str
     location: str
     availability_zone: str
-    max_price_rub: Decimal
-    min_cpu: int
-    min_ram_mb: int
-    min_disk_mb: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,19 +196,6 @@ class TimewebClient:
                 f"/vpcs/{vpc_id}/services",
                 api_version="v2",
             ).get("services")
-            or []
-        )
-
-    def get_database_types(self) -> list[dict[str, Any]]:
-        return list(self.request("GET", "/database-types").get("types") or [])
-
-    def get_database_presets(self) -> list[dict[str, Any]]:
-        return list(
-            self.request(
-                "GET",
-                "/presets/dbs",
-                api_version="v2",
-            ).get("databases_presets")
             or []
         )
 
@@ -383,66 +366,6 @@ def private_server_cidr(
     return f"{address}/{subnet.prefixlen}"
 
 
-def select_postgres_type(
-    types: list[dict[str, Any]],
-    *,
-    version: str,
-) -> str:
-    matches = [
-        item
-        for item in types
-        if str(item.get("name") or "").strip().lower() in {"postgresql", "postgres"}
-        and str(item.get("version") or "").strip() == version
-        and not bool(item.get("is_deprecated"))
-        and str(item.get("type") or "").strip()
-    ]
-    if len(matches) != 1:
-        raise InfraError(
-            f"Expected exactly one supported PostgreSQL {version} type; "
-            f"found {len(matches)}"
-        )
-    return str(matches[0]["type"])
-
-
-def database_preset_is_compatible(preset: dict[str, Any], desired: DesiredDatabase) -> bool:
-    if str(preset.get("type") or "").strip().lower() != "postgres":
-        return False
-    if str(preset.get("location") or "").strip() != desired.location:
-        return False
-    price = decimal_value(preset.get("price") or 0)
-    if price <= 0 or price > desired.max_price_rub:
-        return False
-    minimums = {
-        "cpu": desired.min_cpu,
-        "ram": desired.min_ram_mb,
-        "disk": desired.min_disk_mb,
-    }
-    return all(integer_value(preset.get(key) or 0) >= value for key, value in minimums.items())
-
-
-def select_database_preset(
-    presets: list[dict[str, Any]],
-    desired: DesiredDatabase,
-) -> dict[str, Any]:
-    compatible = [preset for preset in presets if database_preset_is_compatible(preset, desired)]
-
-    if not compatible:
-        raise InfraError(
-            "No PostgreSQL preset satisfies location, resource, and budget limits"
-        )
-
-    return min(
-        compatible,
-        key=lambda item: (
-            decimal_value(item.get("price") or 0),
-            integer_value(item.get("ram") or 0),
-            integer_value(item.get("disk") or 0),
-            integer_value(item.get("cpu") or 0),
-            integer_value(item.get("id") or 0),
-        ),
-    )
-
-
 def find_database_cluster(
     clusters: list[dict[str, Any]],
     *,
@@ -490,9 +413,12 @@ def validate_existing_cluster(
     cluster: dict[str, Any],
     *,
     desired: DesiredDatabase,
-    db_type: str,
+    cluster_id: int,
 ) -> None:
-    if str(cluster.get("type") or "") != db_type:
+    if cluster.get("id") != cluster_id or cluster.get("name") != desired.cluster_name:
+        raise InfraError("Managed database detail does not match the pinned identity")
+    # Existing inventory types include engines no longer offered for new clusters.
+    if cluster.get("type") != f"postgres{desired.postgres_version}":
         raise InfraError("Managed database exists with an unexpected engine/version")
     if str(cluster.get("location") or "") != desired.location:
         raise InfraError("Managed database exists in the wrong location")
@@ -500,10 +426,10 @@ def validate_existing_cluster(
         raise InfraError("Managed database exists in the wrong availability zone")
     if str(cluster.get("description") or "") != DB_OWNERSHIP_MARKER:
         raise InfraError("Same-name database is not owned by this reconciler")
-    if bool(cluster.get("is_enabled_public_network")):
-        raise InfraError("Managed auth database unexpectedly has public IPv4 enabled")
-    if bool(cluster.get("is_enabled_public_ipv6")):
-        raise InfraError("Managed auth database unexpectedly has public IPv6 enabled")
+    if cluster.get("is_enabled_public_network") is not False:
+        raise InfraError("Managed auth database public IPv4 is not confirmed disabled")
+    if cluster.get("is_enabled_public_ipv6") is not False:
+        raise InfraError("Managed auth database public IPv6 is not confirmed disabled")
 
 
 def remote_operation_context(stage: str, migration_step: int | None) -> str:
@@ -1181,33 +1107,24 @@ def reconcile(
 
     server_private_cidr = private_server_cidr(vpc, server_vpc_service)
 
-    database_types = client.get_database_types()
-    database_presets = client.get_database_presets()
-    database_clusters = client.get_database_clusters()
-
-    db_type = select_postgres_type(
-        database_types,
-        version=desired.postgres_version,
-    )
-    preset = select_database_preset(database_presets, desired)
-    preset_id = integer_value(preset["id"])
-    preset_price = decimal_value(preset.get("price") or 0)
-    add_summary(
-        f"- Selected DB preset {preset_id}: "
-        f"{integer_value(preset.get('cpu') or 0)} CPU, "
-        f"{integer_value(preset.get('ram') or 0)} MB RAM, "
-        f"{integer_value(preset.get('disk') or 0)} MB disk, "
-        f"{preset_price} RUB/month API price."
-    )
-
     existing = find_database_cluster(
-        database_clusters,
+        client.get_database_clusters(),
         cluster_name=desired.cluster_name,
     )
-    if existing is None or integer_value(existing["id"]) != load_policy().cluster_id:
+    cluster_id = load_policy().cluster_id
+    if existing is None or existing.get("id") != cluster_id:
         raise InfraError(
             "Expected production database is missing or replaced; automatic creation is disabled"
         )
+
+    cluster, endpoint = wait_for_database_endpoint(client, cluster_id)
+    validate_existing_cluster(cluster, desired=desired, cluster_id=cluster_id)
+    current_services = client.get_vpc_services(vpc_id)
+    if not any(
+        service_matches(item, resource_id=cluster_id, resource_name=desired.cluster_name)
+        for item in current_services
+    ):
+        raise InfraError("Managed PostgreSQL cluster is not attached to approved VPC")
 
     add_summary("- Provider recovery inspection (read-only; not release readiness):")
     add_summary(json.dumps(inspect_provider_recovery(client), sort_keys=True, ensure_ascii=True))
@@ -1217,24 +1134,7 @@ def reconcile(
         server_id=server_id,
         server_ip=public_ipv4(server),
     ) as ssh:
-        cluster_id = integer_value(existing["id"])
         add_summary(f"- Reusing managed PostgreSQL cluster id {cluster_id}.")
-
-        cluster, endpoint = wait_for_database_endpoint(client, cluster_id)
-        validate_existing_cluster(cluster, desired=desired, db_type=db_type)
-
-        current_services = client.get_vpc_services(vpc_id)
-        if not any(
-            service_matches(
-                item,
-                resource_id=cluster_id,
-                resource_name=desired.cluster_name,
-            )
-            for item in current_services
-        ):
-            raise InfraError(
-                "Managed PostgreSQL cluster is not attached to approved VPC"
-            )
 
         reconcile_recovery_policy(
             client, ssh, cluster, cluster_id=cluster_id, single_database=single_database,
@@ -1278,10 +1178,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--postgres-version", required=True)
     parser.add_argument("--location", required=True)
     parser.add_argument("--availability-zone", required=True)
-    parser.add_argument("--max-price-rub", required=True)
-    parser.add_argument("--min-cpu", type=int, required=True)
-    parser.add_argument("--min-ram-mb", type=int, required=True)
-    parser.add_argument("--min-disk-mb", type=int, required=True)
     parser.add_argument("--migration", action="append", required=True)
     parser.add_argument("--backup-only", action="store_true")
     parser.add_argument("--operation", choices=OPERATIONS,
@@ -1329,10 +1225,6 @@ def main() -> int:
                 postgres_version=args.postgres_version,
                 location=args.location,
                 availability_zone=args.availability_zone,
-                max_price_rub=decimal_value(args.max_price_rub),
-                min_cpu=args.min_cpu,
-                min_ram_mb=args.min_ram_mb,
-                min_disk_mb=args.min_disk_mb,
             ),
             server_name=args.server_name,
             server_comment=args.server_comment,

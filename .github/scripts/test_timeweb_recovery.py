@@ -8,7 +8,6 @@ import unittest
 from contextlib import ExitStack
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
@@ -725,7 +724,7 @@ class MigrationGateTests(unittest.TestCase):
     def test_unreviewed_migration_is_rejected_before_provider_or_ssh_access(self) -> None:
         client = Mock()
         desired = postgres.DesiredDatabase(
-            "managed", "omnicio", "app", "18", "ru-3", "msk-1", Decimal(1110), 1, 2048, 20480
+            "managed", "omnicio", "app", "18", "ru-3", "msk-1",
         )
         with (
             patch.object(postgres, "load_policy", return_value=replace(
@@ -745,7 +744,7 @@ class MigrationGateTests(unittest.TestCase):
 
     def test_database_policy_guards_migrations_and_scheduled_checks_keep_runtime(self) -> None:
         desired = postgres.DesiredDatabase(
-            "managed", "omnicio", "app", "18", "ru-3", "msk-1", Decimal(1110), 1, 2048, 20480
+            "managed", "omnicio", "app", "18", "ru-3", "msk-1",
         )
         cases = [(single, scheduled, rejected) for single in (False, True)
                  for scheduled, rejected in ((False, True), (True, False), (False, False))]
@@ -771,8 +770,6 @@ class MigrationGateTests(unittest.TestCase):
                     "find_vpc": {"id": "private"},
                     "find_vpc_service": {"local_ip": "10.77.0.4"},
                     "private_server_cidr": "10.77.0.4/24",
-                    "select_postgres_type": "postgres18",
-                    "select_database_preset": {"id": 1},
                     "find_database_cluster": {"id": CLUSTER_ID},
                     "public_ipv4": "192.0.2.1",
                     "wait_for_database_endpoint": ({"id": CLUSTER_ID}, Mock()),
