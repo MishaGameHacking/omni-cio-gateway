@@ -32,21 +32,15 @@ from .monitoring import (
 )
 from .payouts import PAYOUT_READ_CTES
 from .portfolio import (
-    BROKER_POSITION_STATISTICS_FIELDS,
     SecurityExposure,
     analyze_portfolio,
-    broker_statistics,
-    broker_statistics_summary,
 )
 from .strategy import document_hash, normalize_document
 from .tbank import (
     TBankAccount,
     TBankInstrumentMetadata,
     TBankMoney,
-    TBankOperation,
-    TBankOperationsPage,
     TBankPortfolioPosition,
-    TBankUserInfo,
 )
 
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
@@ -71,12 +65,6 @@ LEFT JOIN LATERAL (
       )
 ) AS c ON true
 """
-
-
-def _position_statistics(document: object) -> dict[str, object]:
-    """Old snapshots have unknown metrics; their missing fields are not zeros."""
-    values = document if isinstance(document, Mapping) else {}
-    return {key: values.get(key) for key in BROKER_POSITION_STATISTICS_FIELDS}
 
 
 def _has_refresh_legal(cur: Any, user_id: UUID, versions: object) -> bool:
@@ -174,6 +162,8 @@ def _require_settings_version(expected: int, actual: int, *, unchanged: bool = F
 
 
 JobStatus = Literal["queued", "running", "succeeded", "degraded", "failed"]
+
+
 @dataclass(frozen=True, slots=True)
 class InvestmentProfileRecord:
     id: int
@@ -214,29 +204,6 @@ class BalancingPolicyRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class PortfolioProposalRecord:
-    id: UUID
-    user_id: UUID
-    version: int
-    source_snapshot_id: UUID
-    account_id: str
-    profile_version: int
-    policy_version: int
-    scenario_kind: str
-    target_instrument_uid: str | None
-    replaced_instrument_uid: str | None
-    proposal_hash: bytes
-    payload: dict[str, Any]
-    created_at: datetime
-    expires_at: datetime
-    status: str = "pending"
-    decision_reason: str = ""
-    decision_user_reason: str = ""
-    deferred_until: datetime | None = None
-    decided_at: datetime | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class JobRunRecord:
     id: UUID
     user_id: UUID
@@ -247,17 +214,6 @@ class JobRunRecord:
     started_at: datetime
     finished_at: datetime | None
     refresh_scope: str = "full"
-
-
-@dataclass(frozen=True, slots=True)
-class BrokerSyncState:
-    user_id: UUID
-    account_id: str
-    history_window_from: datetime | None
-    history_window_to: datetime | None
-    pending_cursor: str
-    last_complete_watermark: datetime | None
-    updated_at: datetime
 
 
 def _source_document_id(
@@ -515,159 +471,6 @@ def _save_risk_assessment(
     return cur.fetchone() is not None
 
 
-def _save_operation_observation(
-    cur: Any,
-    *,
-    user_id: UUID,
-    account_id: str,
-    operation: TBankOperation,
-    observed_at: datetime,
-) -> bool:
-    normalized = _operation_payload(operation)
-    semantic = _semantic_operation_payload(normalized)
-    semantic_hash = _hash_json(semantic)
-    cur.execute(
-        """
-        INSERT INTO operation_observations (
-            user_id,
-            account_id,
-            observation_hash,
-            semantic_hash,
-            provider_operation_id,
-            provider_cursor,
-            operation_date,
-            operation_type,
-            operation_state,
-            instrument_uid,
-            figi,
-            instrument_type,
-            payment_value,
-            payment_currency,
-            price_value,
-            price_currency,
-            commission_value,
-            commission_currency,
-            accrued_int_value,
-            accrued_int_currency,
-            quantity,
-            quantity_rest,
-            quantity_done,
-            normalized,
-            observed_at
-        )
-        VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
-        )
-        ON CONFLICT DO NOTHING
-        RETURNING id
-        """,
-        (
-            user_id,
-            account_id,
-            _hash_json(normalized),
-            semantic_hash,
-            operation.id,
-            operation.cursor,
-            operation.date,
-            operation.operation_type,
-            operation.state,
-            operation.instrument_uid,
-            operation.figi,
-            operation.instrument_type,
-            _money_decimal(operation.payment),
-            operation.payment.currency if operation.payment else None,
-            _money_decimal(operation.price),
-            operation.price.currency if operation.price else None,
-            _money_decimal(operation.commission),
-            operation.commission.currency if operation.commission else None,
-            _money_decimal(operation.accrued_int),
-            operation.accrued_int.currency if operation.accrued_int else None,
-            Decimal(operation.quantity),
-            Decimal(operation.quantity_rest),
-            Decimal(operation.quantity_done),
-            _json(normalized),
-            observed_at,
-        ),
-    )
-    if cur.fetchone() is not None:
-        return True
-    if operation.id:
-        # A provider correction can return to a previously observed exact fact
-        # (10 -> 12 -> 10). Keep the immutable financial payload and its source
-        # date, but make this later confirmation current within the same typed ID.
-        # An unchanged latest replay and an older/renamed observation do not move it.
-        cur.execute(
-            "WITH current_fact AS (SELECT id, observed_at FROM operation_observations "
-            "WHERE user_id = %s AND account_id = %s AND provider_operation_id = %s "
-            "AND operation_type = %s ORDER BY observed_at DESC, id DESC LIMIT 1) "
-            "UPDATE operation_observations AS prior SET observed_at = %s FROM current_fact "
-            "WHERE prior.user_id = %s AND prior.account_id = %s AND prior.semantic_hash = %s "
-            "AND prior.provider_operation_id = %s AND prior.id <> current_fact.id "
-            "AND current_fact.observed_at < %s",
-            (user_id, account_id, operation.id, operation.operation_type, observed_at,
-             user_id, account_id, semantic_hash, operation.id, observed_at),
-        )
-    return False
-
-
-def _save_history_sync_state(
-    cur: Any,
-    *,
-    user_id: UUID,
-    account_id: str,
-    window_from: datetime,
-    window_to: datetime,
-    page: TBankOperationsPage,
-) -> None:
-    if page.has_next:
-        if not page.next_cursor:
-            raise RuntimeError("history page has_next without a cursor")
-        cur.execute(
-            """
-            INSERT INTO broker_sync_state (
-                user_id,
-                account_id,
-                history_window_from,
-                history_window_to,
-                pending_cursor
-            )
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (user_id, account_id) DO UPDATE SET
-                history_window_from = EXCLUDED.history_window_from,
-                history_window_to = EXCLUDED.history_window_to,
-                pending_cursor = EXCLUDED.pending_cursor,
-                updated_at = now()
-            """,
-            (
-                user_id,
-                account_id,
-                window_from,
-                window_to,
-                page.next_cursor,
-            ),
-        )
-        return
-
-    cur.execute(
-        """
-        INSERT INTO broker_sync_state (
-            user_id,
-            account_id,
-            last_complete_watermark
-        )
-        VALUES (%s, %s, %s)
-        ON CONFLICT (user_id, account_id) DO UPDATE SET
-            history_window_from = NULL,
-            history_window_to = NULL,
-            pending_cursor = NULL,
-            last_complete_watermark = EXCLUDED.last_complete_watermark,
-            updated_at = now()
-        """,
-        (user_id, account_id, window_to),
-    )
-
-
 class PortfolioStore:
     """Store immutable observation facts behind explicit tenant context."""
 
@@ -880,62 +683,6 @@ class PortfolioStore:
             if fetched is None:
                 return None
             return _balancing_policy(cast(dict[str, Any], fetched))
-
-    def proposals(
-        self,
-        user_id: UUID,
-        *,
-        limit: int = 20,
-    ) -> tuple[PortfolioProposalRecord, ...]:
-        if not 1 <= limit <= 100:
-            raise ValueError("proposal limit must be between 1 and 100")
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
-            self._tenant(cur, user_id)
-            cur.execute(
-                """
-                SELECT
-                    p.id,
-                    p.user_id,
-                    p.version,
-                    p.source_snapshot_id,
-                    p.account_id,
-                    p.profile_version,
-                    p.policy_version,
-                    p.scenario_kind,
-                    p.target_instrument_uid,
-                    p.replaced_instrument_uid,
-                    p.proposal_hash,
-                    p.payload,
-                    p.created_at,
-                    p.expires_at,
-                    COALESCE(
-                        a.action,
-                        CASE
-                            WHEN p.expires_at <= now() THEN 'expired'
-                            ELSE 'pending'
-                        END
-                    ) AS status,
-                    COALESCE(a.reason, '') AS decision_reason,
-                    COALESCE(a.user_reason, '') AS decision_user_reason,
-                    a.deferred_until,
-                    a.acted_at AS decided_at
-                FROM portfolio_proposals AS p
-                LEFT JOIN portfolio_proposal_actions AS a
-                  ON a.proposal_id = p.id
-                WHERE p.user_id = %s
-                ORDER BY p.created_at DESC, p.version DESC
-                LIMIT %s
-                """,
-                (user_id, limit),
-            )
-            return tuple(
-                _proposal_record(dict(cast(dict[str, Any], row)))
-                for row in cur.fetchall()
-            )
 
     @staticmethod
     def _refresh_connection(cur: Any, user_id: UUID) -> dict[str, Any] | None:
@@ -1362,34 +1109,6 @@ class PortfolioStore:
                 raise RuntimeError("observation job is no longer running")
             return True
 
-    def sync_state(self, user_id: UUID, account_id: str) -> BrokerSyncState | None:
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
-            self._tenant(cur, user_id)
-            cur.execute(
-                """
-                SELECT
-                    user_id,
-                    account_id,
-                    history_window_from,
-                    history_window_to,
-                    COALESCE(pending_cursor, '') AS pending_cursor,
-                    last_complete_watermark,
-                    updated_at
-                FROM broker_sync_state
-                WHERE user_id = %s
-                  AND account_id = %s
-                """,
-                (user_id, account_id),
-            )
-            fetched = cur.fetchone()
-            if fetched is None:
-                return None
-            return _sync_state(cast(dict[str, Any], fetched))
-
     def reuse_snapshot_metadata(
         self, user_id: UUID, *, job_run_id: UUID, bundle: BrokerObservationBundle,
     ) -> BrokerObservationBundle:
@@ -1438,7 +1157,6 @@ class PortfolioStore:
     def _save_snapshot_catalog(
         self,
         cur: Any,
-        user_id: UUID,
         bundle: BrokerObservationBundle,
         catalog_retrieved_at: datetime,
     ) -> None:
@@ -1547,37 +1265,6 @@ class PortfolioStore:
                 catalog_rows,
             )
 
-            access_rows = [
-                (
-                    user_id,
-                    bundle.account_id,
-                    item.uid,
-                    _json(list(item.required_tests)),
-                    catalog_retrieved_at,
-                )
-                for item in bundle.metadata
-            ]
-            cur.executemany(
-                """
-                INSERT INTO account_instrument_access (
-                    user_id,
-                    account_id,
-                    provider,
-                    instrument_uid,
-                    required_tests,
-                    observed_at
-                )
-                VALUES (%s, %s, 'tbank', %s, %s::jsonb, %s)
-                ON CONFLICT (user_id, account_id, provider, instrument_uid)
-                DO UPDATE SET
-                    required_tests = EXCLUDED.required_tests,
-                    observed_at = EXCLUDED.observed_at
-                """,
-                access_rows,
-            )
-
-
-
     @staticmethod
     def _snapshot_position_row(
         snapshot_id: UUID,
@@ -1586,17 +1273,8 @@ class PortfolioStore:
         exposure: SecurityExposure | None,
         info: TBankInstrumentMetadata | None,
     ) -> tuple[object, ...]:
-        current_price_currency = (
-            position.current_price.currency if position.current_price else None
-        )
-        current_nkd_currency = (
-            position.current_nkd.currency if position.current_nkd else None
-        )
-        average_price_currency = (
-            position.average_price_fifo.currency
-            if position.average_price_fifo
-            else None
-        )
+        current_price_currency = position.current_price.currency if position.current_price else None
+        current_nkd_currency = position.current_nkd.currency if position.current_nkd else None
         value_rub = (
             Decimal(exposure.value_rub)
             if exposure is not None and exposure.value_rub is not None
@@ -1618,13 +1296,13 @@ class PortfolioStore:
             position.ticker,
             position.instrument_type,
             Decimal(position.quantity),
-            Decimal(position.quantity_lots),
+            Decimal(position.quantity_lots) if position.quantity_lots is not None else None,
             _money_decimal(position.current_price),
             current_price_currency,
             _money_decimal(position.current_nkd),
             current_nkd_currency,
-            _money_decimal(position.average_price_fifo),
-            average_price_currency,
+            None,
+            None,
             position.blocked,
             Decimal(position.blocked_lots),
             value_rub,
@@ -1689,7 +1367,6 @@ class PortfolioStore:
                 ),
             )
 
-
     def save_snapshot(
         self,
         user_id: UUID,
@@ -1697,40 +1374,23 @@ class PortfolioStore:
         job_run_id: UUID,
         bundle: BrokerObservationBundle,
         account: TBankAccount | None = None,
-        user_info: TBankUserInfo | None = None,
     ) -> UUID:
         if account is not None and account.id != bundle.account_id:
             raise ObservationCancelled("observation_account_mismatch")
         evidence: dict[str, object] = {
             "analysis": asdict(bundle.analysis),
             "sources": [asdict(source) for source in bundle.sources],
-            "broker_statistics": broker_statistics(
-                bundle.portfolio, observed_at=bundle.refreshed_at,
-            ),
         }
         if account is not None:
             evidence["account"] = {
                 "type": account.type,
                 "status": account.status,
                 "access_level": account.access_level,
-                "opened_at": account.opened_at,
-            }
-        if user_info is not None:
-            evidence["broker_user"] = {
-                "premium": user_info.premium,
-                "qualified": user_info.qualified,
-                "qualified_for_work_with": list(user_info.qualified_for_work_with),
-                "tariff": user_info.tariff,
-                "risk_level_code": user_info.risk_level_code,
             }
         securities = {item.uid: item for item in bundle.analysis.securities}
         metadata = {item.uid: item for item in bundle.metadata}
         catalog_retrieved_at = next(
-            (
-                source.retrieved_at
-                for source in bundle.sources
-                if source.id == "catalog"
-            ),
+            (source.retrieved_at for source in bundle.sources if source.id == "catalog"),
             bundle.refreshed_at,
         )
 
@@ -1741,12 +1401,14 @@ class PortfolioStore:
         ):
             self._tenant(cur, user_id)
             _require_observation_job(
-                cur, user_id, job_run_id,
-                account_id=bundle.account_id, environment=bundle.environment,
+                cur,
+                user_id,
+                job_run_id,
+                account_id=bundle.account_id,
+                environment=bundle.environment,
             )
             self._save_snapshot_catalog(
                 cur,
-                user_id,
                 bundle,
                 catalog_retrieved_at,
             )
@@ -1777,9 +1439,21 @@ class PortfolioStore:
                     bundle.environment,
                     bundle.refreshed_at,
                     bundle.analysis.status,
-                    Decimal(bundle.analysis.nav_rub),
-                    Decimal(bundle.analysis.rub_cash_total),
-                    Decimal(bundle.analysis.rub_cash_blocked),
+                    (
+                        Decimal(bundle.analysis.nav_rub)
+                        if bundle.analysis.nav_rub is not None
+                        else None
+                    ),
+                    (
+                        Decimal(bundle.analysis.rub_cash_total)
+                        if bundle.analysis.rub_cash_total is not None
+                        else None
+                    ),
+                    (
+                        Decimal(bundle.analysis.rub_cash_blocked)
+                        if bundle.analysis.rub_cash_blocked is not None
+                        else None
+                    ),
                     (
                         Decimal(bundle.analysis.rub_cash_unblocked)
                         if bundle.analysis.rub_cash_unblocked is not None
@@ -1924,7 +1598,14 @@ class PortfolioStore:
                     rub_cash_blocked,
                     rub_cash_unblocked,
                     limits_loading_in_progress,
-                    evidence
+                    jsonb_build_object(
+                        'analysis', evidence->'analysis',
+                        'account', jsonb_build_object(
+                            'type', evidence->'account'->'type',
+                            'status', evidence->'account'->'status',
+                            'access_level', evidence->'account'->'access_level'
+                        )
+                    ) AS evidence
                 FROM portfolio_snapshots
                 JOIN tbank_connection USING (user_id, account_id, environment)
                 WHERE user_id = %s
@@ -1975,8 +1656,6 @@ class PortfolioStore:
                     p.quantity,
                     p.current_price_value,
                     p.current_price_currency,
-                    p.average_price_fifo_value,
-                    p.average_price_fifo_currency,
                     p.blocked,
                     p.blocked_lots,
                     p.value_rub,
@@ -2023,12 +1702,7 @@ class PortfolioStore:
             if isinstance(raw_analysis, dict):
                 analysis = dict(cast(dict[str, object], raw_analysis))
 
-        statistics = evidence.get("broker_statistics") if isinstance(evidence, Mapping) else None
-        saved_positions = statistics.get("positions") if isinstance(statistics, Mapping) else None
         for position in positions:
-            saved = (saved_positions.get(position["instrument_uid"])
-                     if isinstance(saved_positions, Mapping) else None)
-            position.update(_position_statistics(saved))
             assessed_at = cast(datetime | None, position.get("assessed_at"))
             position["assessment_freshness"] = _freshness_status(
                 assessed_at,
@@ -2068,7 +1742,6 @@ class PortfolioStore:
                 "sector_coverage_percent": analysis.get("sector_coverage_percent"),
                 "valued_security_count": analysis.get("valued_security_count"),
                 "security_count": analysis.get("security_count"),
-                "broker_statistics": broker_statistics_summary(evidence),
                 "positions": positions,
             },
         }
@@ -2129,8 +1802,6 @@ class PortfolioStore:
                     p.quantity,
                     p.current_price_value,
                     p.current_price_currency,
-                    p.average_price_fifo_value,
-                    p.average_price_fifo_currency,
                     p.blocked,
                     p.blocked_lots,
                     p.value_rub,
@@ -2138,8 +1809,6 @@ class PortfolioStore:
                     p.sector,
                     p.country_of_risk,
                     p.for_qual_investor,
-                    s.evidence->'broker_statistics'->'positions'->p.instrument_uid
-                        AS broker_position_statistics,
                     COALESCE(c.instrument_uid, '') AS catalog_instrument_uid,
                     COALESCE(c.asset_uid, '') AS asset_uid,
                     COALESCE(c.name, '') AS name,
@@ -2182,7 +1851,6 @@ class PortfolioStore:
                 return None
 
             latest = rows[0]
-            latest.update(_position_statistics(latest.pop("broker_position_statistics", None)))
             subjects = [
                 value
                 for value in (
@@ -2298,16 +1966,15 @@ class PortfolioStore:
                 now=observed_at,
                 max_age=PORTFOLIO_MAX_AGE,
             ),
-            "latest": {
-                key: value
-                for key, value in latest.items()
-                if key not in {"risk_evidence"}
-            },
+            "latest": {key: value for key, value in latest.items() if key not in {"risk_evidence"}},
             "current_holding": {
-                "status": "held" if latest["snapshot_id"] == account["current_snapshot_id"]
-                and latest["quantity"] != 0 else "not_held",
+                "status": "held"
+                if latest["snapshot_id"] == account["current_snapshot_id"]
+                and latest["quantity"] != 0
+                else "not_held",
                 "quantity": str(latest["quantity"])
-                if latest["snapshot_id"] == account["current_snapshot_id"] else "0",
+                if latest["snapshot_id"] == account["current_snapshot_id"]
+                else "0",
                 "observed_at": account["current_snapshot_at"].isoformat(),
             },
             "risk_evidence": latest.get("risk_evidence") or {},
@@ -2341,7 +2008,14 @@ class PortfolioStore:
                     nav_rub,
                     rub_cash_unblocked,
                     limits_loading_in_progress,
-                    evidence
+                    jsonb_build_object(
+                        'analysis', evidence->'analysis',
+                        'account', jsonb_build_object(
+                            'type', evidence->'account'->'type',
+                            'status', evidence->'account'->'status',
+                            'access_level', evidence->'account'->'access_level'
+                        )
+                    ) AS evidence
                 FROM portfolio_snapshots
                 JOIN tbank_connection USING (user_id, account_id, environment)
                 WHERE user_id = %s
@@ -2357,18 +2031,6 @@ class PortfolioStore:
             snapshot_id = cast(UUID, snapshot["id"])
             account_id = str(snapshot["account_id"])
 
-            # Quick NAV snapshots intentionally omit UsersService/GetInfo. Keep
-            # the last actual response and its own time within this account.
-            cur.execute(
-                "SELECT captured_at, evidence->'broker_user' AS document "
-                "FROM portfolio_snapshots WHERE user_id = %s AND account_id = %s "
-                "AND environment = %s AND captured_at <= %s "
-                "AND jsonb_typeof(evidence->'broker_user') = 'object' "
-                "ORDER BY captured_at DESC, created_at DESC, id DESC LIMIT 1",
-                (user_id, account_id, snapshot["environment"], snapshot["captured_at"]),
-            )
-            broker_user_source = cast(dict[str, Any] | None, cur.fetchone())
-
             cur.execute(
                 f"""
                 SELECT
@@ -2378,8 +2040,6 @@ class PortfolioStore:
                     p.instrument_type,
                     p.quantity,
                     p.quantity_lots,
-                    p.average_price_fifo_value,
-                    p.average_price_fifo_currency,
                     p.blocked,
                     p.blocked_lots,
                     p.value_rub,
@@ -2484,8 +2144,8 @@ class PortfolioStore:
                     c.subordinated,
                     c.liquidity,
                     c.provider_retrieved_at,
-                    a.required_tests,
-                    a.observed_at AS access_observed_at,
+                    NULL::jsonb AS required_tests,
+                    NULL::timestamptz AS access_observed_at,
                     COALESCE(i.id::text, '') AS issuer_id,
                     COALESCE(i.group_id::text, '') AS group_id,
                     COALESCE(i.country_code, '') AS issuer_country_code,
@@ -2499,11 +2159,6 @@ class PortfolioStore:
                     g.verified_at AS group_verified_at,
                     g.effective_at AS group_effective_at
                 FROM instrument_catalog AS c
-                JOIN account_instrument_access AS a
-                  ON a.user_id = %s
-                 AND a.account_id = %s
-                 AND a.provider = c.provider
-                 AND a.instrument_uid = c.instrument_uid
                 LEFT JOIN instrument_issuer_map AS m
                   ON m.provider = c.provider
                  AND m.instrument_uid = c.instrument_uid
@@ -2525,7 +2180,7 @@ class PortfolioStore:
                     c.instrument_uid
                 LIMIT %s
                 """,
-                (user_id, account_id, candidate_limit),
+                (candidate_limit,),
             )
             candidates = [dict(row) for row in cur.fetchall()]
 
@@ -2533,13 +2188,10 @@ class PortfolioStore:
         broker_user: dict[str, object] = {}
         broker_user_as_of = None
         account: dict[str, object] = {}
-        if broker_user_source is not None:
-            broker_user = dict(broker_user_source["document"])
-            broker_user_as_of = broker_user_source["captured_at"]
         if isinstance(evidence, dict):
             account_raw = evidence.get("account")
             if isinstance(account_raw, dict):
-                account = dict(cast(dict[str, object], account_raw))
+                account = {key: account_raw.get(key) for key in ("type", "status", "access_level")}
 
         return {
             "snapshot_id": str(snapshot_id),
@@ -2551,60 +2203,17 @@ class PortfolioStore:
             "limits_loading_in_progress": snapshot["limits_loading_in_progress"],
             "broker_user": broker_user,
             "broker_user_as_of": broker_user_as_of,
-            "broker_user_time_basis": "source_snapshot",
+            "broker_user_time_basis": "not_collected",
             "broker_user_freshness": _freshness_status(
-                broker_user_as_of, now=datetime.now(UTC), max_age=PORTFOLIO_MAX_AGE,
+                broker_user_as_of,
+                now=datetime.now(UTC),
+                max_age=PORTFOLIO_MAX_AGE,
             ),
             "account": account,
             "holdings": holdings,
             "candidates": candidates,
             "issuer_imports": issuer_imports,
         }
-
-    def save_history_page(
-        self,
-        user_id: UUID,
-        *,
-        job_run_id: UUID,
-        account_id: str,
-        environment: str,
-        window_from: datetime,
-        window_to: datetime,
-        page: TBankOperationsPage,
-        observed_at: datetime,
-    ) -> int:
-        if window_from.tzinfo is None or window_to.tzinfo is None:
-            raise ValueError("history window must be timezone-aware")
-
-        inserted = 0
-        with (
-            self.database.pool.connection() as conn,
-            conn.transaction(),
-            conn.cursor() as cur,
-        ):
-            self._tenant(cur, user_id)
-            _require_observation_job(
-                cur, user_id, job_run_id, account_id=account_id, environment=environment,
-            )
-            for operation in page.items:
-                inserted += int(
-                    _save_operation_observation(
-                        cur,
-                        user_id=user_id,
-                        account_id=account_id,
-                        operation=operation,
-                        observed_at=observed_at,
-                    )
-                )
-            _save_history_sync_state(
-                cur,
-                user_id=user_id,
-                account_id=account_id,
-                window_from=window_from,
-                window_to=window_to,
-                page=page,
-            )
-        return inserted
 
 
 def _payout_payload(payout: dict[str, Any]) -> dict[str, Any]:
@@ -2686,33 +2295,6 @@ def _balancing_policy(row: dict[str, Any]) -> BalancingPolicyRecord:
     )
 
 
-def _proposal_record(row: dict[str, Any]) -> PortfolioProposalRecord:
-    return PortfolioProposalRecord(
-        id=cast(UUID, row["id"]),
-        user_id=cast(UUID, row["user_id"]),
-        version=int(row["version"]),
-        source_snapshot_id=cast(UUID, row["source_snapshot_id"]),
-        account_id=str(row["account_id"]),
-        profile_version=int(row["profile_version"]),
-        policy_version=int(row["policy_version"]),
-        scenario_kind=str(row["scenario_kind"]),
-        target_instrument_uid=cast(str | None, row.get("target_instrument_uid")),
-        replaced_instrument_uid=cast(
-            str | None,
-            row.get("replaced_instrument_uid"),
-        ),
-        proposal_hash=bytes(row["proposal_hash"]),
-        payload=dict(cast(dict[str, Any], row["payload"])),
-        created_at=cast(datetime, row["created_at"]),
-        expires_at=cast(datetime, row["expires_at"]),
-        status=str(row.get("status") or "pending"),
-        decision_reason=str(row.get("decision_reason") or ""),
-        decision_user_reason=str(row.get("decision_user_reason") or ""),
-        deferred_until=cast(datetime | None, row.get("deferred_until")),
-        decided_at=cast(datetime | None, row.get("decided_at")),
-    )
-
-
 def _job_run(row: dict[str, Any]) -> JobRunRecord:
     scheduled_for = row["scheduled_for"]
     if scheduled_for is None and row["job_type"] == "portfolio_daily":
@@ -2730,72 +2312,8 @@ def _job_run(row: dict[str, Any]) -> JobRunRecord:
     )
 
 
-def _sync_state(row: dict[str, Any]) -> BrokerSyncState:
-    return BrokerSyncState(
-        user_id=cast(UUID, row["user_id"]),
-        account_id=str(row["account_id"]),
-        history_window_from=cast(datetime | None, row["history_window_from"]),
-        history_window_to=cast(datetime | None, row["history_window_to"]),
-        pending_cursor=str(row["pending_cursor"]),
-        last_complete_watermark=cast(datetime | None, row["last_complete_watermark"]),
-        updated_at=cast(datetime, row["updated_at"]),
-    )
-
-
 def _money_decimal(value: TBankMoney | None) -> Decimal | None:
     return Decimal(value.value) if value is not None else None
-
-
-def _money_payload(value: TBankMoney | None) -> dict[str, str] | None:
-    if value is None:
-        return None
-    return {"currency": value.currency, "value": value.value}
-
-
-def _operation_payload(operation: TBankOperation) -> dict[str, object]:
-    return {
-        "provider_operation_id": operation.id,
-        "parent_operation_id": operation.parent_operation_id,
-        "broker_account_id": operation.broker_account_id,
-        "name": operation.name,
-        "date": operation.date.astimezone(UTC).isoformat(),
-        "operation_type": operation.operation_type,
-        "description": operation.description,
-        "state": operation.state,
-        "instrument_uid": operation.instrument_uid,
-        "figi": operation.figi,
-        "instrument_type": operation.instrument_type,
-        "position_uid": operation.position_uid,
-        "ticker": operation.ticker,
-        "class_code": operation.class_code,
-        "payment": _money_payload(operation.payment),
-        "price": _money_payload(operation.price),
-        "commission": _money_payload(operation.commission),
-        "accrued_int": _money_payload(operation.accrued_int),
-        "quantity": operation.quantity,
-        "quantity_rest": operation.quantity_rest,
-        "quantity_done": operation.quantity_done,
-        "asset_uid": operation.asset_uid,
-        "trades": [
-            {
-                "num": trade.num,
-                "date": trade.date.astimezone(UTC).isoformat(),
-                "quantity": trade.quantity,
-                "price": _money_payload(trade.price),
-            }
-            for trade in operation.trades
-        ],
-    }
-
-
-def _semantic_operation_payload(normalized: dict[str, object]) -> dict[str, object]:
-    # T-Invest documents that operation IDs may change over time. The provider ID
-    # is retained as provenance but excluded from this semantic lineage hash.
-    return {
-        key: value
-        for key, value in normalized.items()
-        if key not in {"provider_operation_id", "parent_operation_id"}
-    }
 
 
 def _hash_json(value: Mapping[str, object]) -> bytes:

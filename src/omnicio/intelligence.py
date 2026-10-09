@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from .broker import BrokerEvidenceSnapshot, BrokerObservationBundle
@@ -19,6 +19,7 @@ from .tbank import (
     TBankBondEvent,
     TBankDividend,
     TBankInstrumentMetadata,
+    TBankLastPrice,
     TBankPortfolioPosition,
     TBankRating,
 )
@@ -126,6 +127,47 @@ class InstrumentRiskAssessment:
     evidence: dict[str, object]
 
 
+@dataclass(frozen=True, slots=True)
+class MarketPriceChange:
+    instrument_uid: str
+    from_time: str
+    to_time: str
+    from_price: str
+    to_price: str
+    change_percent: str
+
+
+def market_price_changes(
+    prices: Sequence[TBankLastPrice],
+    previous: Mapping[str, TBankLastPrice],
+    *,
+    observed_at: datetime,
+) -> tuple[MarketPriceChange, ...]:
+    """Compare two observed exchange prices, without claiming a daily return or advice."""
+    if observed_at.tzinfo is None:
+        raise ValueError("market observation time must be timezone-aware")
+    changes = []
+    for current in prices:
+        before = previous.get(current.instrument_uid)
+        if (before is None or before.time.tzinfo is None or current.time.tzinfo is None
+                or not before.time < current.time <= observed_at):
+            continue
+        try:
+            start, end = Decimal(before.price), Decimal(current.price)
+        except (InvalidOperation, TypeError):
+            continue
+        if not start.is_finite() or not end.is_finite() or start <= 0 or end <= 0 or start == end:
+            continue
+        changes.append(MarketPriceChange(
+            instrument_uid=current.instrument_uid,
+            from_time=before.time.astimezone(UTC).isoformat(),
+            to_time=current.time.astimezone(UTC).isoformat(),
+            from_price=str(start), to_price=str(end),
+            change_percent=str((end - start) / start * 100),
+        ))
+    return tuple(sorted(changes, key=lambda item: abs(Decimal(item.change_percent)), reverse=True))
+
+
 def held_news_instrument_uids(bundle: BrokerObservationBundle) -> frozenset[str]:
     """Bind news to current nonzero holdings by provider UID, never by a name match."""
     matches: dict[str, set[str]] = {}
@@ -141,7 +183,8 @@ def held_news_instrument_uids(bundle: BrokerObservationBundle) -> frozenset[str]
 
 
 def build_news_evidence(
-    held_uids: frozenset[str], items: Sequence[Mapping[str, object]], *, observed_at: datetime,
+    held_uids: frozenset[str] | None,
+    items: Sequence[Mapping[str, object]], *, observed_at: datetime,
 ) -> tuple[EvidenceDocument, ...]:
     """Keep recent source-linked facts, including later priority corrections."""
     if observed_at.tzinfo is None:
@@ -157,7 +200,8 @@ def build_news_evidence(
                 or not observed_at - ISSUER_NEWS_MAX_AGE <= published <= observed_at
                 or not isinstance(uids, (tuple, list))
                 or any(not isinstance(uid, str) for uid in uids)
-                or not held_uids.intersection(uids) or type(item.get("priority")) is not bool):
+                or held_uids is not None and not held_uids.intersection(uids)
+                or type(item.get("priority")) is not bool):
             continue
         payload = {key: item.get(key) for key in (
             "id", "title", "summary", "source", "source_url", "occurred_at", "priority",

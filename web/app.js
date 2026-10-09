@@ -108,8 +108,9 @@
     config: null,
     generation: 0,
     brokerContext: 0,
+    authReadContext: 0,
     locked: false,
-    tour: false,
+    guest: false,
     mode: "auto",
     session: {status: "checking", error: null, sequence: 0, promise: null},
     navigationSequence: 0,
@@ -179,13 +180,14 @@
     chat: [],
     assistantBusy: false,
     billingBusy: false,
-    executionBusy: false,
-    executionPlan: null,
     assistantConversation: null,
     assistantDraft: {message: "", context: "general", include_news: false, research_run_id: ""},
     drawerReturn: null,
     verifying: false,
     authMode: "login",
+    authChallenge: null,
+    authBusy: false,
+    authSequence: 0,
     pendingTheme: null
   };
   state.formDrafts = {};
@@ -195,13 +197,7 @@
     timer: null,
     busy: false
   };
-  state.recovery = {
-    id: null,
-    sequence: 0,
-    busy: false,
-    record: null,
-    uncertain: false
-  };
+
   const views = new Set([...U.navigation.map(([key]) => key), "asset", "search", "install"]);
   const installedDisplay = () => window.matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || navigator.standalone === true;
   const installState = {prompt: null, installed: installedDisplay(), dismissed: false, busy: false, result: ""};
@@ -254,17 +250,22 @@
     if (url.origin !== location.origin || !url.pathname.startsWith("/api/") || url.hash || url.username || url.password) throw new TypeError("Invalid API origin");
     return url;
   };
-  const privateRequest = path => !path.split("?")[0].startsWith("/api/public/news/") && !["/api/auth/config", "/api/auth/vkid/start", "/api/auth/tid/start", "/api/strategy/catalog", "/api/public/market-reference", "/api/public/news", "/api/public/support"].includes(path.split("?")[0]);
-  const brokerReadPath = path => /^\/api\/(?:workspace|broker\/tbank|portfolio|market)(?:\/|\?|$)/.test(path);
+  const privateRequest = path => {
+    const endpoint = path.split("?")[0];
+    return !endpoint.startsWith("/api/public/") && !endpoint.startsWith("/api/market/") && !(endpoint === "/api/news" || endpoint.startsWith("/api/news/")) && !endpoint.startsWith("/api/auth/email/") && !["/api/auth/config", "/api/strategy/catalog"].includes(endpoint);
+  };
+  const brokerReadPath = path => /^\/api\/(?:workspace|broker\/tbank|portfolio)(?:\/|\?|$)/.test(path);
   const ensureResponseContext = ({
     generation,
     profile,
     bootstrap,
-    brokerContext
+    brokerContext,
+    authReadContext
   }) => {
     if (generation !== state.generation) throw contextError();
     if (profile && state.user?.public_id !== profile) throw contextError();
     if (brokerContext !== undefined && brokerContext !== (state.brokerContext || 0)) throw contextError();
+    if (authReadContext !== undefined && authReadContext !== (state.authReadContext || 0)) throw contextError();
     if (state.locked && !bootstrap) throw contextError();
   };
   const apiFailure = (response, payload, profile) => {
@@ -315,7 +316,7 @@
     if (state.locked && !bootstrap) throw contextError();
     const completionRequest = path.startsWith("/api/auth/") || /\/(cancel|revoke|reconcile)$/.test(path) || method === "DELETE";
     if (state.outdated && !["GET", "HEAD"].includes(method) && !completionRequest) throw Object.assign(new Error("frontend_update_required"), {status: 409, definite: true});
-    if (state.tour && privateRequest(path) && path !== "/api/me") throw Object.assign(new Error("tour_requires_login"), {
+    if (state.guest && privateRequest(path) && path !== "/api/me") throw Object.assign(new Error("account_required"), {
       status: 401
     });
     if (!navigator.onLine && !["GET", "HEAD"].includes(method)) throw Object.assign(new Error("offline_write_not_sent"), {
@@ -336,11 +337,13 @@
       generation: state.generation,
       profile: state.user?.public_id,
       bootstrap,
-      brokerContext: ["GET", "HEAD"].includes(method) && brokerReadPath(path) ? state.brokerContext || 0 : undefined
+      brokerContext: ["GET", "HEAD"].includes(method) && brokerReadPath(path) ? state.brokerContext || 0 : undefined,
+      authReadContext: ["GET", "HEAD"].includes(method) && privateRequest(path) ? state.authReadContext || 0 : undefined
     };
     const controller = new AbortController();
     controller.omnicioMutation = !["GET", "HEAD"].includes(method);
     controller.omnicioBrokerRead = context.brokerContext !== undefined;
+    controller.omnicioAuthRead = context.authReadContext !== undefined;
     state.requests.add(controller);
     let timedOut = false;
     const timer = window.setTimeout(() => {
@@ -378,18 +381,7 @@
       state.requests.delete(controller);
     }
   };
-  const recoveryErrorReason = code => {
-    const suffix = String(code || "").replace(/^(live|sandbox)_/, "");
-    const reasons = {
-      cancel_ambiguous: T("Ответ брокера на отмену не получен. Обновите состояние заявки; отмена пока не подтверждена."),
-      order_not_found_yet: T("Брокер пока не вернул заявку по её сохранённому номеру. Повторите сверку позднее."),
-      cancel_order_not_found: T("Брокер не подтвердил заявку при отмене. Обновите её состояние; успешная отмена не подтверждена."),
-      reconcile_unavailable: T("Состояние у брокера временно недоступно. Дождитесь восстановления связи и повторите сверку."),
-      account_mismatch: T("Подключён другой счёт. Для сверки требуется счёт, к которому относится запись.")
-    };
-    if (["request_id_mismatch", "instrument_mismatch", "lot_count_mismatch", "direction_mismatch", "order_type_mismatch"].includes(suffix)) return T("Ответ брокера не совпадает с сохранённой заявкой. Автоматическое подтверждение остановлено; проверьте заявку у брокера.");
-    return reasons[suffix] || null;
-  };
+
   const humanError = error => {
     const reasons = {
       strategy_input_invalid: T("strategy.input_invalid"),
@@ -400,7 +392,7 @@
       request_timeout: T("Сервер не успел ответить. Проверьте сохранённое состояние перед повтором."),
       request_interrupted: T("Отправка прервана. Проверьте сохранённое состояние перед повтором: сервер мог уже принять изменение."),
       invalid_server_response: T("Получен неполный ответ сервера. Повторите загрузку."),
-      tour_requires_login: T("Для этого действия войдите в личный аккаунт."),
+      account_required: T("Для этого действия войдите в личный аккаунт."),
       profile_context_changed: T("Сессия изменилась. Подтвердите текущий аккаунт."),
       settings_version_conflict: T("Сохранённая версия изменилась. Загрузите актуальные данные перед следующей правкой."),
       strategy_assessment_busy: T("Расчёт уже выполняется. Подождите и повторите через несколько секунд."),
@@ -481,11 +473,10 @@
       "legal acknowledgments are required": T("Подтвердите ознакомление с документами."),
       updated_legal_consent_required: T("Условия сервиса обновились. Войдите повторно и подтвердите актуальные документы."),
       goal_allocation_exceeded: T("Сумма долей активных целей превышает 100%. Уменьшите долю этой цели."),
-      active_live_execution_must_be_reconciled: T("Есть незавершённое исполнение. Откройте Настройки → Ранее начатые исполнения и сверьте заявку перед отключением или удалением аккаунта.")
     };
     const fallback = error?.status === 422 ? T("Проверьте поля и допустимые значения. Сервер не принял изменение.") : renderHumanErrorValue3(error);
     const code = error?.code || error?.message;
-    return reasons[code] || recoveryErrorReason(code) || fallback;
+    return reasons[code] || fallback;
   };
   const isCancelled = error => error?.name === "AbortError" || error?.message === "profile_context_changed";
   const toast = (message, isError = false) => {
@@ -521,11 +512,11 @@
       if (state.route.overlay !== overlay) updateViewRoute({overlay});
     }
     state.eventRequest = (state.eventRequest || 0) + 1;
-    state.recovery.id = null;
-    state.recovery.record = null;
-    state.recovery.uncertain = false;
-    state.recovery.busy = false;
-    state.recovery.sequence += 1;
+
+
+
+
+
     const dialog = $("#workspace-dialog");
     $("#dialog-title").textContent = title;
     $("#dialog-content").innerHTML = content;
@@ -541,7 +532,7 @@
     return dialog;
   };
   const requireUser = () => {
-    if (!state.user || state.tour) {
+    if (!state.user || state.guest) {
       openAuth();
       return false;
     }
@@ -561,7 +552,7 @@
     freshnessTimer = null;
   };
   const scheduleVisibleRefresh = () => {
-    if (freshnessTimer !== null || freshnessBusy || !state.user || state.locked || state.mode !== "account" || document.visibilityState !== "visible" || !navigator.onLine) return;
+    if (freshnessTimer !== null || freshnessBusy || state.locked || !["account", "guest"].includes(state.mode) || document.visibilityState !== "visible" || !navigator.onLine) return;
     freshnessTimer = setTimeout(() => {
       freshnessTimer = null;
       void refreshVisibleData();
@@ -575,7 +566,7 @@
     quoteStreamAsset = null;
   };
   const quoteForConnection = payload => navigator.onLine ? payload : {...payload, quote_status: "offline"};
-  const visibleAsset = (asset = state.asset) => Boolean(asset && asset === state.asset && state.user && !state.locked && !state.tour && state.mode === "account" && state.view === "asset" && document.visibilityState === "visible" && navigator.onLine);
+  const visibleAsset = (asset = state.asset) => Boolean(asset && asset === state.asset && !state.locked && ["account", "guest"].includes(state.mode) && state.view === "asset" && document.visibilityState === "visible" && navigator.onLine);
   const adoptAssetQuote = (asset, payload) => {
     if (payload?.instrument_uid !== asset.uid || !Number.isFinite(Date.parse(payload.observed_at))) return false;
     const previous = asset.market || {};
@@ -631,7 +622,7 @@
     assetHistoryTimer = setTimeout(() => void readAssetHistory(state.asset), C.timing.candlePollMs);
   };
   const repaintAssetHistory = asset => {
-    if (state.asset !== asset || state.view !== "asset" || state.tour || state.locked) return;
+    if (state.asset !== asset || state.view !== "asset" || state.locked) return;
     const container = $("#view-asset");
     const context = assetPricing(asset);
     const target = $("[data-market-chart]", container);
@@ -672,12 +663,12 @@
     adoptAssetQuote(asset, payload);
   };
   const readAssetHistory = (asset = state.asset) => {
-    if (!asset || state.asset !== asset || !state.user || state.tour || state.locked) return Promise.resolve();
+    if (!asset || state.asset !== asset || state.locked) return Promise.resolve();
     const period = state.assetPeriod, generation = state.generation;
     if (asset.historyRequest?.period === period && asset.historyRequest.generation === generation) return asset.historyRequest.promise;
     const request = {period, generation, promise: null};
     asset.historyRequest = request;
-    const current = () => generation === state.generation && state.asset === asset && state.assetPeriod === period && asset.historyRequest === request && !state.tour && !state.locked;
+    const current = () => generation === state.generation && state.asset === asset && state.assetPeriod === period && asset.historyRequest === request && !state.locked;
     request.promise = api(`/api/market/instruments/${safeSegment(asset.uid)}?period=${encodeURIComponent(period)}`).then(payload => {
       if (!current()) return;
       adoptAssetHistory(asset, payload, period);
@@ -706,7 +697,7 @@
     }
   };
   const repaintAssetQuote = () => {
-    if (!state.asset?.market || state.view !== "asset" || state.tour || state.locked) return;
+    if (!state.asset?.market || state.view !== "asset" || state.locked) return;
     const container = $("#view-asset");
     const context = assetPricing(state.asset);
     // A source update must not replace a chart or focused control being inspected.
@@ -733,14 +724,14 @@
     const generation = state.generation;
     let stream;
     try {
-      stream = new EventSource(`/api/market/instruments/${safeSegment(uid)}/stream?profile_context=${encodeURIComponent(state.user.public_id)}`);
+      stream = new EventSource(`/api/market/instruments/${safeSegment(uid)}/stream`);
     } catch {
       scheduleAssetQuoteFallback(0);
       return;
     }
     quoteStream = stream;
     quoteStreamAsset = state.asset;
-    const current = () => quoteStream === stream && generation === state.generation && state.view === "asset" && state.asset === quoteStreamAsset && state.asset?.uid === uid && !state.locked && !state.tour;
+    const current = () => quoteStream === stream && generation === state.generation && state.view === "asset" && state.asset === quoteStreamAsset && state.asset?.uid === uid && !state.locked;
     const reconnect = () => {
       if (!current()) return;
       stopQuoteStream();
@@ -820,13 +811,7 @@
       timer: null,
       busy: false
     };
-    state.recovery = {
-      id: null,
-      sequence: state.recovery.sequence + 1,
-      busy: false,
-      record: null,
-      uncertain: false
-    };
+
     state.user = null;
     state.pendingTheme = null;
     state.data = {};
@@ -836,8 +821,6 @@
     state.formBaselines = {};
     state.chat = [];
     state.billingBusy = false;
-    state.executionBusy = false;
-    state.executionPlan = null;
     state.assistantConversation = null;
     state.assistantDraft = {message: "", context: "general", include_news: false, research_run_id: ""};
     state.assistantRequest = null;
@@ -898,7 +881,7 @@
     clearPrivateState();
     void detachPushDevice(pushDevice, state.generation);
     state.locked = true;
-    state.tour = false;
+    state.guest = false;
     $("#app-shell").hidden = true;
     state.session.status = "guest";
     state.mode = "account";
@@ -918,7 +901,7 @@
     } catch {/* Display preference only. */}
   };
   const renderNav = () => {
-    const mode = state.mode === "demo" ? "demo" : "account";
+    const mode = state.mode === "guest" ? "guest" : "account";
     $("#sidebar-nav").innerHTML = U.navigation.map(([key, title]) => `<a class="nav-link" href="${U.routeHash({mode, view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
     $("#mobile-nav").innerHTML = U.mobileNavigation.map(([key, title]) => `<a href="${U.routeHash({mode, view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
     // Static shell links follow the same mode as the generated navigation.
@@ -1045,11 +1028,11 @@
   };
   const resolveNavigationRoute = (view, detail) => {
     let mode = detail.mode || state.mode;
-    if (!detail.mode && ["public", "auto"].includes(mode)) mode = state.user ? "account" : "demo";
-    const path = /^(public|demo|account)\//.test(view) ? view : `${mode}/${view}`;
+    if (!detail.mode && ["public", "auto"].includes(mode)) mode = state.user ? "account" : "guest";
+    const path = /^(public|guest|account)\//.test(view) ? view : `${mode}/${view}`;
     const parsed = U.parseRoute("#" + path);
     const route = {...parsed, ...detail, view: parsed.view, screen: detail.screen ?? parsed.screen};
-    if (route.mode === "auto") route.mode = !state.user && state.session.status === "guest" ? "demo" : "account";
+    if (route.mode === "auto") route.mode = !state.user && state.session.status === "guest" ? "guest" : "account";
     return route;
   };
   const navigate = (view, detail = {}, {
@@ -1075,7 +1058,7 @@
     stopAssetHistory();
     stopTableQuotes();
     state.mode = route.mode;
-    state.tour = route.mode === "demo";
+    state.guest = route.mode === "guest";
     state.view = route.view;
     state.route = route;
     state.navigationSequence += 1;
@@ -1090,7 +1073,7 @@
     $("#startup-state").hidden = true;
     $("#public-site").hidden = true;
     $("#app-shell").hidden = false;
-    $("#tour-notice").hidden = !state.tour;
+    $("#public-market-notice").hidden = !state.guest;
     for (const element of $$("[data-view]")) element.hidden = element.dataset.view !== route.view;
     document.title = `${U.navigation.find(([key]) => key === route.view)?.[1] || ({asset: T("Актив"), install: T("install.entry")}[route.view] || T("Поиск"))} · OMNICIO`;
     renderNav();
@@ -1145,7 +1128,7 @@
   const showApp = (tour = false) => {
     const route = parseRoute();
     const view = route.mode === "public" || route.invalid ? "portfolio" : route.view;
-    navigate(view, {...route, view, screen: views.has(view) ? route.screen : "", mode: tour ? "demo" : "account", invalid: false}, {replace: !tour});
+    navigate(view, {...route, view, screen: views.has(view) ? route.screen : "", mode: tour ? "guest" : "account", invalid: false}, {replace: !tour});
     if (!tour) {
       void resumeWorkspaceRefresh();
     }
@@ -1169,7 +1152,6 @@
     const currentRequest = state.resourceRequests.get(name);
     if ((!force || name === "notifications") && currentRequest?.path === path) return currentRequest.promise;
     if (!force && state.data[name] !== undefined) return state.data[name];
-    if (name === "executions") delete state.data.executions;
     const sequence = (state.resourceVersions.get(name) || 0) + 1;
     state.resourceVersions.set(name, sequence);
     const generation = state.generation;
@@ -1195,7 +1177,7 @@
         state.loading.delete(name);
         state.resourceRequests.delete(name);
         if (name === "events" && !currentEventSnapshot(eventsContext)) { retryMissingEvents(); return; }
-        if (state.mode !== "public" && (state.user || state.tour) && !state.locked && !document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent({preserveAssetChart: true});
+        if (state.mode !== "public" && (state.user || state.guest) && !state.locked && !document.activeElement?.matches("input,textarea,select") && !$("dialog[open]")) renderCurrent({preserveAssetChart: true});
       }
     });
     state.resourceRequests.set(name, {path, promise});
@@ -1238,126 +1220,141 @@
     return "all";
   };
   const workspacePath = () => `/api/workspace?history_period=${workspacePeriod()}`;
-  const viewResources = [{
+  const viewResources = [{name:"marketPublic",views:["home","market"],path:()=>"/api/public/market?limit=100&offset="+(state.marketOffset || 0),public:true},{name:"marketStatus",views:["home","market"],path:"/api/public/market-status",public:true},
+    {
     name: "news",
     views: ["home", "market", "events", "asset", "search"],
-    path: "/api/public/news",
+    path: `/api/news?limit=${C.pagination.publicNews}`,
     public: true
-  }, {
+  },
+    {
     name: "identities",
     views: ["profile"],
     path: "/api/auth/identities"
-  }, {
+  },
+    {
     name: "billing",
     views: ["profile"],
     path: "/api/billing"
-  }, {
+  },
+    {
     name: "sessions",
     views: ["profile"],
     path: "/api/me/sessions"
-  }, {
+  },
+    {
     name: "workspace",
     views: ["home", "portfolio", "analytics", "goals", "events", "settings", "profile"],
     path: workspacePath
-  }, {
+  },
+    {
     name: "visualization",
     views: ["home", "portfolio", "analytics", "market"],
     path: `/api/portfolio/visualization?history_limit=${C.pagination.historyObservations}`
-  }, {
+  },
+    {
     name: "strategy",
     views: ["home", "strategies", "analytics"],
     path: "/api/profile/strategy"
-  }, {
+  },
+    {
     name: "catalog",
     views: ["home", "strategies", "analytics"],
     path: "/api/strategy/catalog",
     public: true
-  }, {
+  },
+    {
     name: "investmentProfile",
     views: ["strategies"],
     path: "/api/profile/investment"
-  }, {
+  },
+    {
     name: "balancingPolicy",
     views: ["strategies"],
     path: "/api/profile/balancing"
-  }, {
+  },
+    {
     name: "marketReference",
     views: ["home", "market"],
     path: () => `/api/public/market-reference?currency=${state.cbrCurrency}&period=${state.cbrPeriod}`,
     public: true
-  }, {
+  },
+    {
     name: "preferences",
     views: [...views],
     path: "/api/preferences"
-  }, {
+  },
+    {
     name: "connection",
     views: ["market", "asset", "settings", "profile"],
     path: "/api/broker/tbank"
-  }, {
-    name: "executions",
-    views: ["settings", "strategies"],
-    path: "/api/portfolio/executions"
-  }, {
-    name: "executionCapabilities",
-    views: ["settings", "strategies"],
-    path: "/api/portfolio/execution-capabilities"
-  }, {
+  },
+    {
     name: "assistantConversations",
     views: ["assistant"],
     path: "/api/assistant/conversations"
-  }, {
+  },
+    {
     name: "researchArchive",
     views: ["strategies"],
     path: `/api/research/runs?limit=${C.pagination.pageSize}`
-  }, {
+  },
+    {
     name: "assistantResearch",
     views: ["assistant"],
     path: `/api/research/runs?limit=${C.pagination.researchChoicesPageSize}`,
     read: () => readResearchChoices()
-  }, {
+  },
+    {
     name: "assistantMemory",
     views: ["assistant"],
     path: "/api/assistant/memory"
-  }, {
+  },
+    {
     name: "assistantStatus",
     views: ["assistant"],
     path: "/api/assistant/status"
-  }, {
+  },
+    {
     name: "events",
     views: ["home", "events"],
     path: () => eventsPath()
-  }, {
+  },
+    {
     name: "marketArchive",
+    public: true,
     views: ["events"],
     path: `/api/news?limit=${C.pagination.pageSize}`
-  }, {
+  },
+    {
     name: "notifications",
     views: ["settings"],
     path: "/api/notifications"
-  }, {
+  },
+    {
     name: "operationalMetrics",
     views: ["settings"],
     path: "/api/system/metrics",
     operator: true
-  }, {
+  },
+    {
     name: "goals",
     views: ["goals"],
     path: "/api/goals"
-  }, {
-    name: "ledger",
-    views: ["portfolio"],
-    path: `/api/workspace/operations?limit=${C.pagination.pageSize}`
-  }, {
+  },
+    {
     name: "support",
     views: [],
     path: "/api/public/support",
     public: true
-  }, {
+  },
+    {
     name: "analysis",
     views: ["analytics"],
     path: "/api/broker/tbank/analysis",
     timeout: C.timing.portfolioRequestMs
-  }];
+  }
+  ];
   const loadAssetView = async (uid, force, background) => {
     try {
       await loadAsset(uid, force, {background});
@@ -1372,7 +1369,7 @@
     const generation = state.generation;
     const sequence = state.navigationSequence;
     const current = () => generation === state.generation && sequence === state.navigationSequence && state.view === view;
-    const resources = viewResources.filter(resource => resource.views.includes(view) && (resource.public || state.user && !state.tour) && (!resource.operator || state.user?.can_view_operational_metrics === true));
+    const resources = viewResources.filter(resource => resource.views.includes(view) && (resource.public || state.user && !state.guest) && (!resource.operator || state.user?.can_view_operational_metrics === true));
     const resourceWork = resources.map(resource => {
       const historyChanged = resource.name === "workspace" && state.data.workspace?.overview?.history_coverage?.period !== workspacePeriod(view);
       return loadResource(resource.name, typeof resource.path === "function" ? resource.path() : resource.path, {
@@ -1395,7 +1392,7 @@
     await renderLoadedView(view, detail, force, background);
   };
   const renderLoadedView = async (view, detail, force, background) => {
-    if (view === "asset" && detail.uid && !state.tour) {
+    if (view === "asset" && detail.uid) {
       if (detail.uid === state.route.uid) await loadAssetView(detail.uid, force, background);
       return;
     }
@@ -1408,7 +1405,7 @@
     if (view === "goals" && detail.goal_id) focusGoal(detail.goal_id);
   };
   const loadSelectedAssistantConversation = async () => {
-    if (state.tour || state.assistantBusy) return;
+    if (state.guest || state.assistantBusy) return;
     const selected = state.route.conversation || state.assistantConversation?.id || state.data.assistantConversations?.items?.[0]?.id;
     if (!selected) return;
     try { await loadAssistantConversation(selected); }
@@ -1449,13 +1446,13 @@
     else renderCurrent();
   };
   const updateIdentity = () => {
-    const name = state.tour ? T("Знакомство") : state.prefs.draft?.display_name?.trim() || T("Мой профиль");
+    const name = state.guest ? T("auth.email.guest") : state.prefs.draft?.display_name?.trim() || T("Мой профиль");
     $("#profile-name").textContent = name;
     $("#profile-avatar").textContent = name[0]?.toLocaleUpperCase("ru-RU") || T("О");
     paintEventCounters();
   };
   const eventUnreadCount = () => {
-    if (state.tour) return 0;
+    if (state.guest) return 0;
     const unread = number(state.data.eventSummary?.unread_total);
     return Number.isSafeInteger(unread) && unread >= 0 ? unread : null;
   };
@@ -1465,12 +1462,12 @@
     const unread = eventUnreadCount();
     const unknown = unread === null;
     const bell = $("#notifications-button");
-    $("#notification-dot").hidden = unknown || unread === 0 || state.tour || Boolean(state.data.eventSummary?.alerts_suppressed);
+    $("#notification-dot").hidden = unknown || unread === 0 || state.guest || Boolean(state.data.eventSummary?.alerts_suppressed);
     bell.setAttribute("aria-label", unknown || unread > 0 ? `${T("Уведомления:")} ${eventUnreadLabel(unread)}` : T("Уведомления"));
     bell.title = unknown || state.errors.eventSummary ? T("events.counter_unavailable") : "";
     for (const chip of $$("[data-event-unread]")) chip.textContent = eventUnreadLabel(unread);
     for (const control of $$('[data-action="events-read-all"]')) {
-      control.hidden = unknown || unread === 0 || state.tour;
+      control.hidden = unknown || unread === 0 || state.guest;
       control.disabled = state.eventWrites.size > 0 || state.loading.has("events-read-all");
       control.setAttribute("aria-busy", String(control.disabled));
     }
@@ -1606,7 +1603,7 @@
     }
   };
   const resumeWorkspaceRefresh = async (canAdopt = () => true) => {
-    if (!state.user || state.tour || state.locked || state.refresh.busy || !canAdopt()) return;
+    if (!state.user || state.guest || state.locked || state.refresh.busy || !canAdopt()) return;
     const context = {...refreshContext(), canAdopt};
     clearTimeout(state.refresh.timer);
     await pollWorkspaceRefresh(context);
@@ -1644,7 +1641,6 @@
     if (refreshText) return refreshText;
     if (connection && !connection.connected) return T("Подключите T-Invest, чтобы увидеть стоимость, состав и аналитику своего портфеля.");
     if (connection?.connected && workspace && !workspace.overview?.observed_at) return T("Счёт подключён. Подтверждённое наблюдение пока не получено. Запустите обновление: история начнётся с реальных данных источника.");
-    if (connection?.environment === "sandbox") return T("Подключена тестовая среда T-Invest. Эти данные относятся к тестовому счёту.");
     if (workspace?.overview?.status === "stale") return T("Последнее наблюдение устарело. Значения помечены временем получения; обновите данные.");
     if (workspace?.overview?.status === "partial") return T("Получена только часть данных счёта. Некоторые показатели пока не рассчитаны.");
     return "";
@@ -1653,7 +1649,7 @@
     const banner = $("#connection-banner");
     const ws = state.data.workspace;
     const connection = state.data.connection || ws?.connection;
-    if (state.tour || state.locked) {
+    if (state.guest || state.locked) {
       banner.hidden = true;
       return;
     }
@@ -1667,15 +1663,14 @@
     })}` : "";
   };
   const portfolioRows = () => {
-    if (state.tour) return [];
+    if (state.guest) return [];
     const stored = state.data.visualization?.latest?.positions;
     return (Array.isArray(stored) ? stored : []).map(item => ({
       ...item,
       uid: item.instrument_uid,
       name: item.name || item.ticker || item.instrument_uid,
       price: state.quotes[item.instrument_uid]?.last_price ?? null,
-      currency: String(item.current_price_currency || item.currency || "").toUpperCase(),
-      change: item.expected_yield_amount ?? null
+      currency: String(item.current_price_currency || item.currency || "").toUpperCase()
     }));
   };
   const filteredRows = () => {
@@ -1684,7 +1679,6 @@
       if (state.sort === "name") return state.sortDirection * a.name.localeCompare(b.name, "ru");
       const key = {
         price: "price",
-        change: "change",
         share: "nav_percent",
         value: "value_rub"
       }[state.sort];
@@ -1692,10 +1686,10 @@
       const right = number(b[key]);
       if (left === null) return right === null ? 0 : 1;
       if (right === null) return -1;
-      // Prices and position returns are comparable only in the same source unit.
+      // Prices are comparable only in the same source unit.
       // Group currencies/quote units before ordering their numeric values.
-      const group = item => state.sort === "price" ? `${state.quotes[item.uid]?.price_unit || "unknown"}:${state.quotes[item.uid]?.price_currency || ""}` : item.expected_yield_currency || "";
-      if (["price", "change"].includes(state.sort)) {
+      const group = item => state.sort === "price" ? `${state.quotes[item.uid]?.price_unit || "unknown"}:${state.quotes[item.uid]?.price_currency || ""}` : "";
+      if (state.sort === "price") {
         const units = group(a).localeCompare(group(b));
         if (units) return units;
       }
@@ -1703,7 +1697,7 @@
     });
   };
   const filtersHTML = (scope = "assets") => `<div class="filters" aria-label="${H("Тип актива")}">${assetTypes().map(([key, title]) => renderFiltersHTMLFilterButton(key, scope, title)).join("")}</div>`;
-  const assetSortOptions = () => [["name", T("Название")], ["price", T("Цена")], ["change", T("portfolio.since_purchase")], ["value", T("Стоимость")], ["share", T("Доля")]];
+  const assetSortOptions = () => [["name", T("Название")], ["price", T("Цена")], ["value", T("Стоимость")], ["share", T("Доля")]];
   const holdingsSortHTML = () => `<div class="holdings-sort">${select("holdings_sort", T("portfolio.sort_by"), assetSortOptions(), state.sort)}<button class="button secondary icon-button${state.sortDirection > 0 ? " sort-ascending" : ""}" data-sort="${esc(state.sort)}" aria-label="${H(state.sortDirection > 0 ? "portfolio.sort_descending" : "portfolio.sort_ascending")}" title="${H(state.sortDirection > 0 ? "portfolio.sort_descending" : "portfolio.sort_ascending")}">${icon("down")}</button></div>`;
   const assetsEmptyHTML = () => {
     if (portfolioRows().length) return empty(T("Нет активов этого типа"), T("Выберите другой фильтр."));
@@ -1712,14 +1706,14 @@
     return empty(T("Активы пока не получены"), T("Состав счёта появится после подключения и первого наблюдения."), connected ? "workspace-refresh" : "connect", connected ? T("Обновить") : T("Подключить счёт"));
   };
   const assetsTable = (compact = true) => {
-    if (state.tour) return empty(T("Ваши активы будут здесь"), T("Войдите и подключите свой счёт. Цены и доли появятся из источника."), "login", T("Войти"));
+    if (state.guest) return empty(T("Ваши активы будут здесь"), T("Войдите и подключите свой счёт. Цены и доли появятся из источника."), "login", T("Войти"));
     if (state.errors.visualization) return dataError("visualization");
     if (!state.data.visualization && state.loading.has("visualization")) return U.loading(T("quotes.positions_loading"));
     const rows = filteredRows();
     if (!rows.length) return assetsEmptyHTML();
     const headers = compact ? assetSortOptions().slice(0, -1) : assetSortOptions();
     const watchHeader = compact ? "" : `<th scope="col"><span class="sr-only">${H("Избранное")}</span></th>`;
-    return `${holdingsSortHTML()}<div class="table-scroll holdings-scroll"><table class="asset-table holdings-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${watchHeader}</tr></thead><tbody>${(compact ? rows.slice(0, C.pagination.compactAssets) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div><p class="data-footnote">${H("portfolio.position_result_help")} ${state.data.visualization?.latest?.captured_at ? esc(date(state.data.visualization.latest.captured_at, true)) + " " + H("МСК") : ""}</p>`;
+    return `${holdingsSortHTML()}<div class="table-scroll holdings-scroll"><table class="asset-table holdings-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${watchHeader}</tr></thead><tbody>${(compact ? rows.slice(0, C.pagination.compactAssets) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div><p class="data-footnote">${H("portfolio.position_scope")} ${state.data.visualization?.latest?.captured_at ? esc(date(state.data.visualization.latest.captured_at, true)) + " " + H("МСК") : ""}</p>`;
   };
   const selectedPreset = (document = state.strategy.draft) => {
     const id = document?.base_preset_id;
@@ -1733,7 +1727,7 @@
     }) : undefined;
   };
   const strategyTitle = () => {
-    if (state.tour) return T("Выберите стратегию");
+    if (state.guest) return T("Выберите стратегию");
     if (state.strategy.draft?.customized) return T("Моя настройка");
     return selectedPreset()?.title || T("Выберите стратегию");
   };
@@ -1743,7 +1737,7 @@
     return T("Готовая стратегия · ") + title;
   };
   const homeStrategy = () => {
-    const document = state.tour ? null : state.strategy.draft;
+    const document = state.guest ? null : state.strategy.draft;
     const horizon = number(document?.profile?.horizon_months);
     return `${cardHeader(T("Моя стратегия"))}<div class="strategy-current">${icon("strategies")}<strong>${esc(strategyTitle())}</strong><button class="icon-button" data-route="strategies" aria-label="${H("Настройки стратегии")}">${icon("settings", true)}</button></div><div class="strategy-chips"><span class="chip">${document ? renderHomeStrategyFragment(document) : T("Ваши условия")}</span><span class="chip">${horizon ? renderHomeStrategyFragment2(horizon) : T("Ваш горизонт")}</span></div><p class="strategy-note">${document ? T("Проверка состава и ограничений на данных вашего счёта.") : T("Выберите подход и уточните личные параметры, чтобы начать расчёты.")}</p><button class="button secondary full" data-route="strategies">${H("Настроить стратегию")} ${icon("arrow", true)}</button>`;
   };
@@ -1751,12 +1745,13 @@
   const eventItems = () => {
     const news = (state.data.news?.items || []).map(item => ({
       ...item,
-      occurred_at: item.published_at,
+      occurred_at: item.published_at || item.occurred_at,
+      url: item.url || item.source_url,
       news: true,
-      read_at: item.published_at,
+      read_at: item.published_at || item.occurred_at,
       severity: "info"
     }));
-    const rows = [...(state.tour ? [] : state.data.events?.items || []), ...news].sort((a, b) => (new Date(b.occurred_at).getTime() || 0) - (new Date(a.occurred_at).getTime() || 0));
+    const rows = [...(state.guest ? [] : state.data.events?.items || []), ...news].sort((a, b) => (new Date(b.occurred_at).getTime() || 0) - (new Date(a.occurred_at).getTime() || 0));
     if (state.eventFilter === "important") return rows.filter(item => ["warning", "critical", "high"].includes(item.severity));
     if (state.eventFilter === "assets") return rows.filter(item => ["portfolio", "payments"].includes(item.category));
     if (state.eventFilter === "market") return news;
@@ -1764,21 +1759,21 @@
   };
   const eventsHTML = (compact = true) => {
     const rows = eventItems();
-    if (!state.tour && state.eventFilter !== "market" && state.errors.events) return dataError("events");
-    if (state.loading.has("events") && !state.data.events && !state.tour && state.eventFilter !== "market") return U.loading(T("state.loading"));
+    if (!state.guest && state.eventFilter !== "market" && state.errors.events) return dataError("events");
+    if (state.loading.has("events") && !state.data.events && !state.guest && state.eventFilter !== "market") return U.loading(T("state.loading"));
     if (!rows.length) return empty(state.eventFilter === "market" ? T("Новостной источник не подключён") : T("Нет новых событий"), state.eventFilter === "market" ? T("Система не подставляет заголовки. События счёта появятся после подключения данных.") : T("Подтверждённые события портфеля и целей появятся здесь."), "", "", "events");
     return `<div class="event-list">${(compact ? rows.slice(0, C.pagination.compactEvents) : rows).map(item => renderEventsHTMLEventItem(item, compact)).join("")}</div>`;
   };
   const goalPreview = goal => `<article class="goal-preview"><span class="event-icon">${icon(goal.kind === "income" ? "wallet" : "building", true)}</span><div class="goal-preview-body"><h3>${esc(goal.title)}</h3><p>${esc(money(goal.progress?.amount_rub))} ${H("из")} ${esc(money(goal.target_amount_rub))}</p>${U.progress(goal.progress?.percent)}</div></article>`;
   const homeGoals = () => {
-    const goals = (state.tour ? [] : state.data.goals?.items || []).filter(item => item.status === "active");
+    const goals = (state.guest ? [] : state.data.goals?.items || []).filter(item => item.status === "active");
     return `${cardHeader(T("Цели"), "goals", "")}${goals.length ? renderHomeGoalsGoalsPreviewList(goals) : empty(T("Начните с цели"), T("Укажите сумму и срок. Прогресс рассчитывается по выбранному источнику."), "goal-create", T("Добавить цель"), "goals")}<button class="button secondary full" data-route="goals">${H("Все цели")} ${icon("arrow", true)}</button>`;
   };
   const portfolioHistory = (overview, period) => {
     if (overview.history_coverage?.period !== period) return [];
     return overview.history || [];
   };
-  const workspaceForPeriod = period => !state.tour && state.data.workspace?.overview?.history_coverage?.period === period ? state.data.workspace : undefined;
+
   const navCoverageHTML = (overview, period) => {
     const coverage = overview.history_coverage;
     if (!coverage || coverage.period !== period) return ("<p class=\"data-footnote\">" + H("Покрытие выбранного периода ещё не получено.") + "</p>");
@@ -1789,71 +1784,34 @@
   };
   const renderHome = () => {
     captureScreenDrafts();
-    const ws = workspaceForPeriod(state.homePeriod);
-    const overview = state.tour ? {} : state.data.workspace?.overview || {};
-    const performance = ws?.performance || {};
-    const income = ws?.income || {};
-    const monthly = Array.isArray(income.by_month) ? income.by_month : [];
-    const latestMonth = monthly.at(-1);
-    const incomeCurve = monthly.map(item => ({
-      ...item,
-      time: `${item.month}-01`
-    }));
-    const history = portfolioHistory(overview, state.homePeriod);
-    const result = number(performance.investment_result_rub);
-    const resultText = result === null ? T("Полная история для расчёта ещё не получена") : `${money(result)} · ${date(performance.from)} — ${date(performance.to)}`;
-    $("#view-home").innerHTML = `<h1 class="sr-only">${H("Главная — обзор портфеля")}</h1><div class="dashboard-top"><section class="card summary-card"><p class="card-label">${H("Общая стоимость")}</p><p class="main-value">${esc(money(overview.nav_rub))}</p>${freshness(T("portfolio.snapshot"), overview.observed_at, overview.freshness?.status || overview.status)}<div class="value-change ${result === null ? "" : renderHomeValue(result)}">${esc(resultText)}</div>${overview.observed_at ? renderHomeDataFootnote(overview) : ""}${chart(history, {
-      label: T("Стоимость портфеля"),
-      compact: true
-    })}${periods("home", state.homePeriod)}${navCoverageHTML(overview, state.homePeriod)}</section><section class="card allocation-card">${cardHeader(T("Структура портфеля"))}${U.allocation(overview.allocations, overview.nav_rub)}</section><div class="metric-stack"><section class="card metric-card"><p class="card-label">${H("Доходность")}</p><p class="main-value ${financialTone(performance.return_percent)}">${esc(percent(performance.return_percent, true, true))}</p><p class="metric-note">${performance.return_percent === null || performance.return_percent === undefined ? T("Недостаточно подтверждённых потоков или положительного вложенного капитала.") : renderHomeFragment(performance)}</p>${result !== null ? renderHomeMetricNote(result) : ""}</section><section class="card metric-card secondary-metric"><p class="card-label">${H("Пассивный доход")}</p><p class="main-value">${esc(money(latestMonth?.total_rub))}</p><p class="metric-note">${latestMonth ? renderHomeFragment3(latestMonth) : T("Выплаты до налоговых списаний: данных пока нет")}</p>${incomeCurve.length > 1 ? chart(incomeCurve, {
-      timeKey: "time",
-      valueKey: "total_rub",
-      label: T("Полученные выплаты по месяцам"),
-      tone: "purple",
-      compact: true
-    }) : ""}</section></div><section class="card strategy-card">${homeStrategy()}</section></div><div class="dashboard-bottom"><section class="card">${cardHeader(T("Мои активы"), "portfolio")}${filtersHTML()}${assetsTable()}<p class="data-footnote">${state.data.visualization?.latest?.captured_at ? renderHomeFragment4() : T("Только данные вашего подключённого счёта")}</p></section><section class="card">${cardHeader(T("Новости и события"), "events", "")}${eventFilters()}${eventsHTML()}</section><section class="card goals-overview">${homeGoals()}</section></div>${!ws && state.loading.has("workspace") ? U.loading(T("Получаем состояние вашего кабинета…")) : ""}`;
-    applyScreenLayout("home");
+    if (state.guest) {
+      $('#view-home').innerHTML = heading(T('market.public_title'),T('market.autonomous_help'))+'<section class="card">'+publicMarketStatusHTML()+'</section><section class="card section-gap">'+cardHeader(T('market.catalog_title'),'market')+publicMarketTableHTML()+'</section><section class="card section-gap">'+cardHeader(T('Новости и события'),'events')+newsHTML()+'</section>';
+      return;
+    }
+    const overview=state.data.workspace?.overview || {};
+    const history=portfolioHistory(overview,state.homePeriod);
+    const positions=state.data.visualization?.latest?.positions;
+    $('#view-home').innerHTML = `<h1 class="sr-only">${H('Главная — обзор портфеля')}</h1><div class="dashboard-top"><section class="card summary-card"><p class="card-label">${H('Общая стоимость')}</p><p class="main-value">${esc(money(overview.nav_rub))}</p>${freshness(T('portfolio.snapshot'),overview.observed_at,overview.freshness?.status || overview.status)}<p class="data-footnote">${H('portfolio.current_estimate')}</p>${chart(history,{label:T('Стоимость портфеля'),compact:true})}${periods('home',state.homePeriod)}${navCoverageHTML(overview,state.homePeriod)}</section><section class="card allocation-card">${cardHeader(T('Структура портфеля'))}${U.allocation(overview.allocations,overview.nav_rub)}</section><div class="metric-stack"><section class="card metric-card"><p class="card-label">${H('Свободные средства')}</p><p class="main-value">${esc(money(overview.free_cash_rub))}</p><p class="metric-note">${H('portfolio.cash_scope')}</p></section><section class="card metric-card secondary-metric"><p class="card-label">${H('market.instruments_count')}</p><p class="main-value">${esc(Array.isArray(positions) ? format(positions.length,0) : '—')}</p><p class="metric-note">${H('portfolio.analysis_scope')}</p></section></div><section class="card strategy-card">${homeStrategy()}</section></div><div class="dashboard-bottom"><section class="card">${cardHeader(T('Мои активы'),'portfolio')}${filtersHTML()}${assetsTable()}<p class="data-footnote">${H('portfolio.token_scope')}</p></section><section class="card">${cardHeader(T('Новости и события'),'events','')}${eventFilters()}${eventsHTML()}</section><section class="card goals-overview">${homeGoals()}</section></div>${!state.data.workspace && state.loading.has('workspace') ? U.loading(T('Получаем состояние вашего кабинета…')) : ''}`;
   };
   const eventFilters = () => `<div class="filters" aria-label="${H("Фильтр событий")}">${[["important", T("Важное")], ["assets", T("Мои активы")], ["market", T("Рынок")], ["all", T("Все")]].map(([key, title]) => renderEventFiltersFilterButton(key, title)).join("")}</div>`;
-  const signedMoney = (value, currency = "RUB") => {
-    const rendered = money(value, C.display.moneyFractionDigits, String(currency).toUpperCase());
-    return number(value) > 0 && !rendered.includes("•") ? "+" + rendered : rendered;
-  };
-  const financialTone = value => {
-    const numeric = number(value);
-    if (numeric === null || numeric === 0) return "muted";
-    return numeric > 0 ? "positive" : "negative";
-  };
-  const portfolioEntryHTML = () => empty(T("portfolio.start_title"), state.tour ? T("portfolio.start_guest") : T("portfolio.start_help"), state.tour ? "login" : "connect", state.tour ? T("Войти") : T("Подключить счёт"), "portfolio", true);
+
+  const portfolioEntryHTML = () => empty(T("portfolio.start_title"), state.guest ? T("portfolio.start_guest") : T("portfolio.start_help"), state.guest ? "login" : "connect", state.guest ? T("Войти") : T("Подключить счёт"), "portfolio", true);
   const portfolioQuickActions = () => {
-    const links = [["portfolio", "operations", T("portfolio.operations"), "events"], ["analytics", "", T("Аналитика"), "analytics"], ["market", "watchlist", T("Избранное"), "star"]];
+    const links = [["portfolio", "positions", T("Мои активы"), "portfolio"], ["analytics", "", T("Аналитика"), "analytics"], ["market", "watchlist", T("Избранное"), "star"]];
     const actions = links.map(([view, screen, label, symbol]) => `<a href="${U.routeHash({mode: state.mode, view, screen, ...(["portfolio", "analytics"].includes(view) ? {period: state.portfolioPeriod} : {})})}" data-route="${view}" data-screen="${screen}">${icon(symbol)}<span>${esc(label)}</span></a>`).join("");
     return `<nav class="portfolio-actions" aria-label="${H("portfolio.quick_actions")}">${actions}</nav>`;
   };
   const portfolioSummaryHTML = overview => {
     const connection = state.data.connection || state.data.workspace?.connection;
-    if (state.tour || connection?.connected === false) return `<section class="card portfolio-summary" data-portfolio-summary>${portfolioEntryHTML()}</section>`;
-    if (!connection) {
-      const resource = state.errors.workspace ? "workspace" : "connection";
-      const content = state.errors[resource] ? dataError(resource) : U.loading(T("Получаем состояние вашего кабинета…"));
-      return `<section class="card portfolio-summary" data-portfolio-summary>${content}</section>`;
-    }
-    const statistics = overview.broker_statistics || {};
-    const daily = statistics.daily_yield;
-    const hasResult = [statistics.return_percent, daily?.value, statistics.daily_yield_percent].some(value => number(value) !== null);
-    const dailyMoney = signedMoney(daily?.value, daily?.currency || "RUB");
-    const dailyPercent = percent(statistics.daily_yield_percent, true, true);
-    const dailyValue = [dailyMoney, dailyPercent].filter(value => value !== "—").join(" · ") || "—";
-    const accountName = connection?.account_name || T("Счёт T-Invest");
-    const result = `<dl class="portfolio-return-grid"><div><dt>${H("portfolio.today")}</dt><dd class="${financialTone(daily?.value ?? statistics.daily_yield_percent)}" data-broker-daily>${esc(dailyValue)}</dd></div><div><dt>${H("portfolio.open_return")}</dt><dd class="${financialTone(statistics.return_percent)}" data-broker-return>${esc(percent(statistics.return_percent, true, true))}</dd></div></dl>`;
-    const method = `<details class="portfolio-method"><summary>${H("portfolio.broker_method")}</summary><p>${H("portfolio.broker_method_help")}</p>${U.sourceLink(statistics.source_url, T("Методика и данные источника"))}</details>`;
-    const resultDetails = hasResult ? result + method : `<p class="fine-print">${H("portfolio.broker_result_missing")}</p>`;
-    return `<section class="card portfolio-summary" data-portfolio-summary><div class="portfolio-account-row"><button class="account-context" data-action="connect" aria-label="${esc(accountName)} · ${H("portfolio.manage_account")}">${icon("portfolio")}<span><strong>${esc(accountName)}</strong><small>${connection?.environment === "sandbox" ? H("Тестовая среда") : H("portfolio.account")}</small></span>${icon("settings", true)}</button></div><p class="card-label">${H("Стоимость портфеля")}</p><p class="main-value" data-portfolio-value>${esc(money(overview.nav_rub))}</p>${resultDetails}<div class="portfolio-cash"><span>${H("Свободные средства")}</span><strong>${esc(money(overview.free_cash_rub))}</strong></div>${freshness(T("portfolio.snapshot"), overview.observed_at, overview.freshness?.status || overview.status)}${portfolioQuickActions()}</section>`;
+    if (state.guest || connection?.connected === false) return '<section class="card portfolio-summary" data-portfolio-summary>'+portfolioEntryHTML()+'</section>';
+    if (!connection) return '<section class="card portfolio-summary" data-portfolio-summary>'+(dataError(state.errors.workspace ? 'workspace' : 'connection') || U.loading(T("Получаем состояние вашего кабинета…")))+'</section>';
+    const accountName = connection.account_name || T("Счёт T-Invest");
+    return `<section class="card portfolio-summary" data-portfolio-summary><div class="portfolio-account-row"><button class="account-context" data-action="connect">${icon("portfolio")}<span><strong>${esc(accountName)}</strong><small>${H("portfolio.readonly")}</small></span>${icon("settings",true)}</button></div><p class="card-label">${H("Стоимость портфеля")}</p><p class="main-value" data-portfolio-value>${esc(money(overview.nav_rub))}</p><p class="fine-print">${H("portfolio.current_estimate")}</p><div class="portfolio-cash"><span>${H("Свободные средства")}</span><strong>${esc(money(overview.free_cash_rub))}</strong></div>${freshness(T("portfolio.snapshot"),overview.observed_at,overview.freshness?.status || overview.status)}${portfolioQuickActions()}</section>`;
   };
   const renderPortfolio = () => {
     captureScreenDrafts();
-    const overview = state.tour ? {} : state.data.workspace?.overview || {};
-    $("#view-portfolio").innerHTML = `${heading(T("Портфель"), "", button(T("Обновить"), "refresh", {small: true}))}${portfolioSummaryHTML(overview)}<div class="two-column section-gap"><section class="card" data-portfolio-history>${cardHeader(T("Стоимость портфеля"))}${chart(portfolioHistory(overview, state.portfolioPeriod))}${periods("portfolio", state.portfolioPeriod)}${navCoverageHTML(overview, state.portfolioPeriod)}<p class="data-footnote">${H("График стоимости включает пополнения и выводы. Он не является графиком доходности.")}</p></section><section class="card" data-portfolio-structure>${cardHeader(T("Структура портфеля"))}${U.allocation(overview.allocations, overview.nav_rub)}</section></div><section class="card section-gap" data-portfolio-holdings>${cardHeader(T("Мои активы"))}${filtersHTML()}${assetsTable(false)}</section>${dataError("workspace")}`;
+    const overview = state.guest ? {} : state.data.workspace?.overview || {};
+    $("#view-portfolio").innerHTML = `${heading(T("Портфель"), "", button(T("Обновить"), "refresh", {small: true}))}${portfolioSummaryHTML(overview)}<div class="two-column section-gap"><section class="card" data-portfolio-history>${cardHeader(T("Стоимость портфеля"))}${chart(portfolioHistory(overview, state.portfolioPeriod))}${periods("portfolio", state.portfolioPeriod)}${navCoverageHTML(overview, state.portfolioPeriod)}<p class="data-footnote">${H("portfolio.history_scope")}</p></section><section class="card" data-portfolio-structure>${cardHeader(T("Структура портфеля"))}${U.allocation(overview.allocations, overview.nav_rub)}</section></div><section class="card section-gap" data-portfolio-holdings>${cardHeader(T("Мои активы"))}${filtersHTML()}${assetsTable(false)}</section>${dataError("workspace")}`;
     applyScreenLayout("portfolio");
   };
   const newsHTML = () => {
@@ -1861,27 +1819,43 @@
     if (state.loading.has("news") && !state.data.news) return U.loading(T("state.loading"));
     if (state.errors.news) return dataError("news");
     if (!rows.length) return empty(T("Новостной источник пока недоступен"), T("Повторите обновление. Заголовки не заменяются примерами."), "", "", "events");
-    return `<div class="event-list">${rows.slice(0, C.pagination.publicNews).map(item => renderNewsHTMLEventItem(item)).join("")}</div>${freshness(T("Официальная лента Банка России"), state.data.news.fetched_at, state.data.news.freshness === "cached" ? "cached" : "")}`;
+    return `<div class="event-list">${rows.slice(0, C.pagination.publicNews).map(item => renderNewsHTMLEventItem(item)).join("")}</div>${freshness((state.data.news.sources || []).join(" · "), state.data.news.observed_at || state.data.news.fetched_at, state.data.news.status || state.data.news.freshness)}`;
   };
   const indicatorCards = reference => {
     const data = reference?.indicators;
     return `<div class="market-indicators">${[["key_rate", T("Ключевая ставка"), "%"], ["usd_rub", T("Доллар США"), "₽"], ["eur_rub", T("Евро"), "₽"]].map(([key, title, unit]) => renderIndicatorCardsCard(title, data, key, unit)).join("")}</div>`;
   };
-  const watchlist = () => state.tour ? [] : state.prefs.draft?.watchlist || [];
+  const watchlist = () => state.guest ? [] : state.prefs.draft?.watchlist || [];
   const isWatched = uid => watchlist().some(item => item.instrument_uid === uid);
   const watchButton = item => `<button class="icon-button" data-watch="${esc(item.uid || item.instrument_uid)}" data-watch-name="${esc(item.name || item.ticker || T("Актив"))}" data-watch-ticker="${esc(item.ticker || "")}" aria-label="${isWatched(item.uid || item.instrument_uid) ? T("Удалить из избранного") : T("Добавить в избранное")}" aria-pressed="${isWatched(item.uid || item.instrument_uid)}">${icon("star", true)}</button>`;
+  const publicSourceStatus = status => T({'fresh':'market.source_ready','stale':'market.source_cached','available':'market.source_ready','partial':'market.source_partial','cached':'market.source_cached','unavailable':'market.source_unavailable','not_configured':'market.source_unavailable','not_started':'market.source_pending','empty':'market.source_empty','loading':'market.source_pending'}[status] || 'market.source_pending');
+  const publicMarketStatusHTML = () => {
+    const status=state.data.marketPublic?.status || state.data.marketStatus;
+    if(!status) return dataError('marketStatus') || U.loading(T('state.loading'));
+    const coverage=status.coverage || {};
+    const labels={reference:T('market.source_reference'),news:T('market.source_news'),quotes:T('market.source_quotes'),fundamentals:T('market.source_analysis'),instrument_news:T('market.source_issuer_news')};
+    const rows=Object.entries(status.sources || {}).map(([key,value])=>`<div class="source-status-item"><div><strong>${esc(labels[key] || key)}</strong><span class="fine-print">${esc(publicSourceStatus(value.status))}</span></div><time>${esc(value.observed_at ? date(value.observed_at,true)+' '+T('МСК') : '—')}</time></div>`).join('');
+    return `<div class="card-header"><h2>${H('market.shared_analysis')}</h2><span class="chip">${status.running ? H('market.worker_running') : H('market.source_pending')}</span></div><p class="fine-print">${H('market.autonomous_help')}</p><div class="market-coverage"><div><strong>${esc(format(coverage.instruments,0))}</strong><span>${H('market.covered_instruments')}</span></div><div><strong>${esc(format(coverage.quote_instruments,0))}</strong><span>${H('market.covered_quotes')}</span></div><div><strong>${esc(format(coverage.risk_assessments,0))}</strong><span>${H('market.covered_analysis')}</span></div></div><details class="source-status"><summary>${H('market.source_status')}</summary>${rows}</details><p class="data-footnote">${H('market.source_scope')}</p>`;
+  };
+  const publicMarketTableHTML = () => {
+    const payload=state.data.marketPublic;
+    if(!payload) return dataError('marketPublic') || U.loading(T('state.loading'));
+    if(!payload.items?.length) return empty(T('market.catalog_empty'),T('market.catalog_empty_help'),'refresh',T('Обновить'),'market');
+    const rows=payload.items.map(item=>`<tr><td><button class="asset-name" data-asset="${esc(item.instrument_uid)}" data-asset-name="${esc(item.name)}" data-asset-ticker="${esc(item.ticker)}"><span class="asset-logo">${esc((item.ticker || item.name || '·').slice(0,1))}</span><span>${esc(item.name)}<small class="asset-ticker">${esc(item.ticker)}</small></span></button></td><td>${esc(marketPrice(item.last_price,item.price_unit || 'unknown',item.price_currency || ''))}${freshness(payload.source || '',item.quote_time || item.observed_at,item.quote_status)}</td><td>${esc({share:T('Акция'),bond:T('Облигация'),etf:T('Фонд'),currency:T('Валюта'),futures:T('Фьючерс'),option:T('Опцион')}[item.instrument_type] || T('Инструмент'))}</td></tr>`).join('');
+    return `<div class="table-scroll"><table class="asset-table public-market-table"><thead><tr><th>${H('Название')}</th><th>${H('Цена')}</th><th>${H('Тип')}</th></tr></thead><tbody>${rows}</tbody></table></div><div class="form-actions market-pagination"><span class="fine-print">${esc(T('market.page_range',{from:payload.offset+1,to:payload.offset+payload.items.length,total:payload.total}))}</span>${payload.offset ? button(T('market.previous_page'),'market-previous',{small:true}) : ''}${payload.has_more ? button(T('market.next_page'),'market-next',{small:true}) : ''}</div>`;
+  };
+  const changeMarketPage = async direction => {
+    state.marketOffset=Math.max(0,(state.data.marketPublic?.offset || 0)+direction*100);
+    await loadResource('marketPublic','/api/public/market?limit=100&offset='+state.marketOffset,{force:true});
+    if(['market','home'].includes(state.view)) renderCurrent();
+  };
   const renderMarket = () => {
-    captureScreenDrafts();
-    const reference = state.data.marketReference;
-    $("#view-market").innerHTML = `${heading(T("Рынок"), T("market.overview_help"), button(T("market.find_instrument"), "focus-search", {primary: true, small: true}) + button(T("Обновить"), "refresh", {
-      small: true
-    }))}<p class="fine-print" data-market-search-help>${H("market.find_help")}</p>${indicatorCards(reference)}<div class="two-column section-gap"><section class="card">${cardHeader(T("Курсы Банка России"))}<div class="button-group">${select("cbr_currency", T("Валюта"), [["USD", T("Доллар США")], ["EUR", T("Евро")], ["CNY", T("Китайский юань")]], state.cbrCurrency)}${select("cbr_period", T("Период"), [["1m", T("Месяц")], ["3m", T("Три месяца")], ["1y", T("Год")]], state.cbrPeriod)}</div>${chart(reference?.history?.points, {
-      timeKey: "effective_date",
-      valueKey: "value",
-      label: renderMarketFragment(),
-      personal: false
-    })}${freshness(T("Банк России · официальный курс"), reference?.history?.fetched_at || reference?.indicators?.fetched_at)}<p class="data-footnote">${H("Официальный справочный курс отличается от биржевой котировки.")}</p></section><section class="card">${cardHeader(T("Избранное"))}${watchlist().length ? renderMarketSearchResults() : empty(T("Сохраните интересные активы"), T("Найдите компанию или тикер через поиск и нажмите звёздочку. Избранное сохраняется в аккаунте."), "", "", "star")}${!state.data.connection?.connected ? renderMarketNotice() : ""}</section></div><section class="card section-gap">${cardHeader(T("Активы вашего счёта"))}${filtersHTML()}${assetsTable(false)}</section>${dataError("marketReference")}<section class="card section-gap">${cardHeader(T("Новости Банка России"))}${newsHTML()}</section>`;
-    applyScreenLayout("market");
+    const reference=state.data.marketReference;
+    const guestAction = state.guest ? 'login' : '';
+    const guestLabel = state.guest ? T('Войти') : '';
+    const savedInstruments = watchlist().length ? renderMarketSearchResults() : empty(T('Сохраните интересные активы'),T('market.watchlist_help'),guestAction,guestLabel,'star');
+    $('#view-market').innerHTML=`${heading(T('Рынок'),T('market.public_access'),button(T('Найти актив'),'search-open',{small:true}))}<section class="card" data-market-status>${publicMarketStatusHTML()}</section>${indicatorCards(reference)}<section class="card section-gap" data-market-catalog>${cardHeader(T('market.catalog_title'))}${publicMarketTableHTML()}</section><div class="two-column section-gap"><section class="card" data-market-reference>${cardHeader(T('Курсы Банка России'))}<div class="button-group">${select('cbr_currency',T('Валюта'),[['USD',T('Доллар США')],['EUR',T('Евро')],['CNY',T('Китайский юань')]],state.cbrCurrency)}${select('cbr_period',T('Период'),[['1m',T('Месяц')],['3m',T('Три месяца')],['1y',T('Год')]],state.cbrPeriod)}</div>${chart(reference?.history?.points,{timeKey:'effective_date',valueKey:'value',label:renderMarketFragment(),personal:false})}${freshness(T('Банк России · официальный курс'),reference?.history?.fetched_at || reference?.indicators?.fetched_at)}<p class="data-footnote">${H('Официальный справочный курс отличается от биржевой котировки.')}</p></section><section class="card" data-market-watchlist>${cardHeader(T('Избранное'))}${savedInstruments}</section></div>${!state.guest ? '<section class="card section-gap" data-market-positions>'+cardHeader(T('Активы вашего счёта'))+filtersHTML()+assetsTable(false)+'</section>' : ''}${dataError('marketReference')}<section class="card section-gap" data-market-news>${cardHeader(T('Новости и события'))}${newsHTML()}</section>`;
+    applyScreenLayout('market');
   };
   const runSearch = async query => {
     const trimmed = String(query).trim().slice(0, C.limits.searchQueryCharacters);
@@ -1892,7 +1866,7 @@
     state.searchPages = {events: null, news: null};
     state.searchFailures = {};
     state.searchResults = [];
-    if (!trimmed || state.tour) {
+    if (!trimmed) {
       state.loading.delete("search");
       renderSearch();
       return;
@@ -1901,8 +1875,8 @@
     delete state.errors.search;
     renderSearch();
     const requests = [
-      ["instruments", `/api/broker/tbank/instruments/search?q=${encodeURIComponent(trimmed)}`],
-      ["events", `/api/events?limit=${C.pagination.pageSize}&query=${encodeURIComponent(trimmed)}`],
+      ["instruments", `/api/market/instruments/search?q=${encodeURIComponent(trimmed)}`],
+      ...(state.user && !state.guest ? [["events", `/api/events?limit=${C.pagination.pageSize}&query=${encodeURIComponent(trimmed)}`]] : []),
       ["news", `/api/news?limit=${C.pagination.pageSize}&query=${encodeURIComponent(trimmed)}`]
     ];
     const results = await Promise.allSettled(requests.map(([, path]) => api(path)));
@@ -2006,8 +1980,7 @@
     const more = ["events", "news"].filter(key => state.searchPages[key]?.next_cursor).map(key => button(key === "events" ? T("Ещё события") : T("Проверить следующую часть архива новостей"), `search-more-${key}`, {small: true, extra: state.loading.has(`search-${key}`) ? " disabled" : ""})).join("");
     const matches = `${state.searchResults.map(item => renderSearchSearchResult3(item)).join("")}${events.map(item => renderSearchSearchResult(item)).join("")}${news.map(archiveNewsItem).join("")}${localNews.map(item => renderSearchSearchResult2(item)).join("")}`;
     let content;
-    if (state.tour) content = `${empty(T("Полный поиск доступен после входа"), T("История событий ищется на сервере. Инструменты и архив новостей требуют подключённого источника."), "login", T("Войти"), "search", true)}${localNews.map(item => renderSearchSearchResult2(item)).join("")}`;
-    else if (state.loading.has("search") || selectedQuery !== state.searchQuery) content = U.loading(T("Ищем в инструментах, событиях и архиве новостей…"));
+    if (state.loading.has("search") || selectedQuery !== state.searchQuery) content = U.loading(T("Ищем в инструментах, событиях и архиве новостей…"));
     else if (!selectedQuery) content = empty(T("Что найдём?"), T("Введите название компании, тикер или слово из события в строке поиска."), "", "", "search", true);
     else content = searchMatchesHTML(errors, matches, more);
     $("#view-search").innerHTML = `${heading(T("Поиск"), selectedQuery ? renderSearchFragment(selectedQuery) : T("Инструменты, компании и события"))}<section class="card">${content}</section>`;
@@ -2042,7 +2015,7 @@
     const sequence = (state.resourceVersions.get("asset") || 0) + 1;
     state.resourceVersions.set("asset", sequence);
     const requests = [];
-    if (!asset.details || force) requests.push({
+    if (state.user && !state.guest && (!asset.details || force)) requests.push({
       key: "details",
       promise: api(`/api/portfolio/instruments/${segment}/visualization?history_limit=${C.pagination.historyObservations}`)
     });
@@ -2190,12 +2163,13 @@
     details,
     latest
   }) => {
+    if (state.guest) return `<p class="notice">${H("market.portfolio_optional")}</p>${button(T("Войти"),"login",{small:true})}`;
     if (details?.current_holding?.status === "not_held") return `<p class="notice">${H("asset.not_held")}</p>${freshness("T-Invest", details.current_holding.observed_at)}`;
     if (details?.current_holding?.status === "held") return renderAssetDataFootnote({...latest, captured_at: details.current_holding.observed_at || latest.captured_at});
     if (details) return `<p class="notice">${H("asset.holding_unknown")}</p>${renderAssetDataFootnote(latest)}`;
     if (asset.detailsError && asset.detailsError.status !== 404) return `<p class="notice error">${H("Данные позиции не загрузились:")} ${esc(humanError(asset.detailsError))}</p>`;
     if (asset.loading) return U.loading(T("Проверяем состав вашего счёта…"));
-    return ("<p class=\"notice\">" + H("Инструмент не найден в истории вашего счёта. Биржевой график доступен независимо от наличия позиции.") + "</p>");
+    return ("<p class=\"notice\">" + H("asset.holding_unknown") + "</p>");
   };
   const assetOverviewHTML = context => {
     const {
@@ -2209,7 +2183,7 @@
       etf: T("Фонд"),
       currency: T("Валюта")
     }[asset.facts?.instrument_type || latest.instrument_type] || T("Не получен");
-    return `${infoRows([[T("Название"), asset.name], [T("Тикер"), asset.ticker || "—"], [T("Тип"), type], [T("Биржа"), asset.facts?.exchange || "—"], [T("Размер лота"), format(asset.facts?.lot, 0)], [T("В портфеле"), money(position.value_rub)], [T("Доля"), percent(position.nav_percent)], [T("Количество"), format(position.quantity, C.display.quantityFractionDigits)], [T("portfolio.average_price"), marketPrice(position.average_price?.value, "currency", position.average_price?.currency?.toUpperCase() || "", true)], [T("portfolio.since_purchase"), position.expected_yield_currency ? signedMoney(position.expected_yield_amount, position.expected_yield_currency) : "—"]])}${assetHoldingNote(context)}`;
+    return `${infoRows([[T("Название"), asset.name], [T("Тикер"), asset.ticker || "—"], [T("Тип"), type], [T("Биржа"), asset.facts?.exchange || "—"], [T("Размер лота"), format(asset.facts?.lot, 0)], [T("В портфеле"), money(position.value_rub)], [T("Доля"), percent(position.nav_percent)], [T("Количество"), format(position.quantity, C.display.quantityFractionDigits)]])}${assetHoldingNote(context)}`;
   };
   const assetMetricsHTML = ({
     asset,
@@ -2265,7 +2239,7 @@
     position,
     details
   }) => {
-    const rows = [[T("Количество"), format(position.quantity, C.display.quantityFractionDigits)], [T("portfolio.average_price"), marketPrice(position.average_price?.value, "currency", position.average_price?.currency?.toUpperCase() || "", true)], [T("Стоимость в портфеле"), money(position.value_rub)], [T("portfolio.since_purchase"), position.expected_yield_currency ? signedMoney(position.expected_yield_amount, position.expected_yield_currency) : "—"], [T("Доля портфеля"), percent(position.nav_percent)], [T("Заблокировано лотов"), position.blocked_lots === undefined ? "—" : format(position.blocked_lots)]];
+    const rows = [[T("Количество"), format(position.quantity, C.display.quantityFractionDigits)], [T("Стоимость в портфеле"), money(position.value_rub)], [T("Доля портфеля"), percent(position.nav_percent)], [T("portfolio.blocked_units"), position.blocked_lots === undefined ? "—" : format(position.blocked_lots)]];
     const risk = position.risk_state ? riskLabel(position.risk_state) : T("Для оценки риска нужны данные об эмитенте и инструменте.");
     return `${cardHeader(T("В портфеле"))}${infoRows(rows)}${assetHoldingNote({asset, details, latest})}<p class="notice">${esc(risk)}</p><div class="section-gap">${fundamentalMetricsHTML(asset, true)}</div>${details?.payouts?.length ? renderAssetDetailsSummary2(details) : ""}`;
   };
@@ -2298,10 +2272,6 @@
   const renderAsset = ({preserveChart = false} = {}) => {
     if (!state.route.uid) { $("#view-asset").innerHTML = `${heading(T("Актив"))}<section class="card">${empty(T("Некорректный инструмент"), T("Откройте актив из портфеля или результатов поиска."), "asset-back", T("navigation.back"), "info", true)}</section>`; return; }
     const container = $("#view-asset");
-    if (state.tour) {
-      container.innerHTML = empty(T("Карточка инструмента"), T("Войдите и подключите источник, чтобы получить цену, историю и финансовые показатели."), "login", T("Войти"), "market", true);
-      return;
-    }
     const asset = state.asset;
     if (!asset || asset.uid !== state.route.uid) {
       container.innerHTML = U.loading(T("Получаем данные актива…"));
@@ -2393,7 +2363,7 @@
     slot.server = clone(payload);
     slot.draft = clone(payload.document);
     slot.error = null;
-    if (state.pendingTheme && state.user && !state.tour) {
+    if (state.pendingTheme && state.user && !state.guest) {
       const choice = state.pendingTheme;
       state.pendingTheme = null;
       editPreferences(document => {
@@ -2420,8 +2390,6 @@
     const research = $('#research-form [type="submit"]');
     if (research) research.disabled = unavailable || researchUnavailable();
     for (const input of $$("#research-form input")) input.disabled = researchPending();
-    const planner = $('#view-strategies [data-action="execution-plan"]');
-    if (planner) planner.disabled = unavailable || state.executionBusy;
     const title = $(".strategy-heading h2");
     if (title) title.textContent = strategyEditorTitle();
     for (const option of $$("[data-select-strategy]")) option.setAttribute("aria-pressed", String(!slot.draft?.customized && option.dataset.selectStrategy === slot.draft?.base_preset_id));
@@ -2765,7 +2733,7 @@
       detail,
       disabled: true
     });
-    if (!state.user || state.tour || state.locked) return blocked(T("Войдите в личный аккаунт, чтобы сохранять и применять свою настройку."));
+    if (!state.user || state.guest || state.locked) return blocked(T("Войдите в личный аккаунт, чтобы сохранять и применять свою настройку."));
     const resources = ["strategy", "investmentProfile", "balancingPolicy"];
     if (resources.some(key => state.loading.has(key))) return blocked(T("Получаем сохранённую стратегию и личные условия…"));
     if (resources.some(key => state.errors[key]) || !Object.hasOwn(state.data, "strategy")) return blocked(T("Сохранённые условия не загружены. Повторите загрузку перед применением настройки."));
@@ -2841,8 +2809,8 @@
     captureScreenDrafts();
     const catalog = state.data.catalog;
     const slot = state.strategy;
-    const document = state.tour ? null : slot.draft;
-    const preset = state.tour ? null : selectedPreset();
+    const document = state.guest ? null : slot.draft;
+    const preset = state.guest ? null : selectedPreset();
     if (!catalog) {
       $("#view-strategies").innerHTML = `${heading(T("Стратегии"), T("Выбор подхода и личные ограничения"))}${state.errors.catalog ? dataError("catalog") : U.loading(T("Получаем каталог стратегий…"))}`;
       return;
@@ -2861,7 +2829,6 @@
     $("#view-strategies").innerHTML = `${heading(T("Стратегии"), T("Десять подходов. Ваши цели, ограничения и данные."), button(T("Обновить"), "refresh", {
       small: true
     }))}<div class="strategy-layout">${list}${editor}</div>${dataError("investmentProfile")}${dataError("balancingPolicy")}`;
-    if (document) $("#view-strategies .strategy-editor")?.insertAdjacentHTML("beforeend", executionPlannerCard());
     const form = $("#strategy-form");
     for (const [name, value] of Object.entries(slot.invalidInputs || {})) {
       const input = form?.elements.namedItem(name);
@@ -3587,159 +3554,6 @@
       state.strategy.research = {...payload.result, archive: {id: payload.id, created_at: payload.created_at, strategy_version: payload.strategy_version}};
       navigate("strategies", {screen: "result", run: payload.id});
   };
-  const executionPlannerCard = () => `<section class="card"><h3 class="panel-title">${H("execution.title")}</h3><p class="fine-print">${H("execution.help")}</p><div class="form-actions">${button(T("execution.prepare"), "execution-plan", {primary: true, extra: strategySaveUnavailable(state.strategy) || state.executionBusy ? "disabled" : ""})}${button(T("execution.history"), "execution-history")}</div></section>`;
-  const executionProblem = code => ({
-    execution_planning_read_budget_exhausted: T("execution.error.read_budget"),
-    execution_policy_incomplete: T("execution.error.policy"),
-    execution_current_research_required: T("execution.error.research"),
-    execution_refresh_snapshot_required: T("execution.error.snapshot"),
-    execution_connection_required: T("execution.error.connection"),
-    execution_quote_incomplete_or_stale: T("execution.error.quote"),
-    execution_quote_expired_during_plan: T("execution.error.quote"),
-    execution_quote_moved_outside_limit: T("execution.error.moved"),
-    execution_provider_cost_exceeds_cap: T("execution.error.cost"),
-    execution_proposal_expired: T("execution.error.expired"),
-    execution_deployment_disabled: T("execution.error.disabled"),
-    execution_research_evidence_changed: T("execution.error.evidence"),
-    execution_portfolio_changed: T("execution.error.portfolio"),
-    execution_free_cash_changed: T("execution.error.portfolio"),
-    execution_held_evidence_missing: T("execution.error.held"),
-    execution_instrument_permission_unverified: T("execution.error.permission"),
-  })[code];
-  const executionError = error => executionProblem(error.code || error.message) || humanError(error);
-  const openExecutionPlanner = async () => {
-    if (enterRouteScreen("strategies", "plan", {})) return;
-    if (!requireUser() || state.executionBusy) return;
-    if (strategySaveUnavailable(state.strategy)) {
-      toast(T("execution.save_first"), true);
-      return;
-    }
-    const generation = state.generation;
-    const version = state.strategy.server.version;
-    openDialog(T("execution.title"), U.loading(T("execution.loading")));
-    const sequence = state.eventRequest;
-    state.executionPlan = null;
-    let results;
-    try { results = await Promise.all([readResearchChoices(), api("/api/portfolio/execution-capabilities")]); }
-    catch (error) {
-      if (generation === state.generation && sequence === state.eventRequest && !isCancelled(error)) openDialog(T("execution.title"), `<p class="notice error">${esc(humanError(error))}</p>${button(T("Повторить"), "route-retry")}`);
-      return;
-    }
-    if (generation !== state.generation || sequence !== state.eventRequest || !$("#workspace-dialog").open) return;
-    const [archive, caps] = results;
-    state.data.executionCapabilities = caps;
-    const runs = (archive.items || []).filter(item => item.strategy_version === version && item.status === "computed");
-    if (!runs.length) {
-      openDialog(T("execution.title"), `<p class="notice">${H("execution.no_research")}</p>`);
-      return;
-    }
-    openDialog(T("execution.title"), `<form id="execution-plan-form" data-strategy-version="${version}"><p class="notice">${H("execution.shadow_notice")}</p>${select("research_run_id", T("execution.research"), runs.map(item => [item.id, date(item.created_at, true) + " · " + percent(item.metrics?.net_return_percent)]), runs[0].id)}<p class="fine-print">${H("execution.inputs")}</p>${infoRows([[T("execution.order_cap"), money(caps.max_order_notional_rub)], [T("execution.daily_cap"), money(caps.max_daily_notional_rub)], [T("execution.validity"), T("execution.two_minutes")]])}<div class="form-actions"><button class="button primary" type="submit">${H("execution.calculate")}</button>${button(T("execution.refresh_snapshot"), "workspace-refresh")}</div><output id="execution-plan-message" class="form-message"></output></form>`);
-  };
-  const executionPlanLegHTML = leg => `<article class="recovery-leg"><h3>${esc(leg.action === "buy" ? T("Покупка") : T("Продажа"))} · ${esc(leg.ticker || leg.instrument_uid)}</h3>${infoRows([[T("execution.lots"), format(leg.lots, 0)], [T("execution.lot_size"), format(leg.lot_size, 0)], [T("execution.limit"), money(leg.limit_price, 4, "RUB", false)], [T("execution.gross"), money(leg.gross_amount_rub)], [T("execution.commission"), money(leg.commission_cap_rub)], [T("execution.tax"), money(leg.tax_reserve_rub)]])}</article>`;
-  const executionPlanHTML = plan => {
-    const payload = plan.payload;
-    const costBound = payload.allocation_nav_floor_rub != null ? `<p class="fine-print">${H("execution.cost_bound_scope")}</p>` : "";
-    return `<p class="notice">${H("execution.shadow_notice")}</p>${infoRows([[T("execution.nav"), money(payload.nav_rub)], [T("execution.cash_before"), money(payload.cash_before_rub)], [T("execution.cash_after"), money(payload.cash_after_rub)], [T("execution.reserve"), money(payload.reserve_rub)], [T("execution.nav_floor"), money(payload.allocation_nav_floor_rub)], [T("execution.cost_buffer"), money(payload.maximum_cost_buffer_rub)], [T("execution.turnover"), money(payload.gross_turnover_rub)], [T("execution.expires"), date(plan.expires_at, true)]])}<div class="recovery-legs">${payload.legs.map(executionPlanLegHTML).join("")}</div>${costBound}<p class="fine-print">${H("execution.quoted")}</p><label class="check-field section-gap"><input id="execution-review-consent" type="checkbox"><span>${H("execution.review_consent")}</span></label><div class="form-actions">${button(T("execution.confirm"), "execution-confirm", {primary: true})}${button(T("execution.recalculate"), "execution-plan")}</div><output id="execution-plan-message" class="form-message"></output>`;
-  };
-  const displayExecutionPlan = result => {
-    if (result.status !== "blocked" && result.status !== "no_change") {
-      state.executionPlan = result;
-      openDialog(T("execution.review"), executionPlanHTML(result));
-      return;
-    }
-    const items = (result.blockers || []).map(code => `<li>${esc(executionProblem(code) || code)}</li>`).join("");
-    const blockers = items ? `<ul class="source-list">${items}</ul>` : "";
-    openDialog(T("execution.title"), `<p class="notice">${esc(result.status === "no_change" ? T("execution.no_change") : T("execution.blocked"))}</p>${blockers}`);
-  };
-  const setPlanFormDisabled = (form, disabled) => {
-    for (const control of $$("button", form)) control.disabled = disabled;
-  };
-  const calculateExecutionPlan = async form => {
-    if (!requireUser() || state.executionBusy || !form.reportValidity()) return;
-    const generation = state.generation;
-    const sequence = state.eventRequest;
-    const current = () => generation === state.generation && sequence === state.eventRequest && form.isConnected && $("#workspace-dialog").open;
-    state.executionBusy = true;
-    setPlanFormDisabled(form, true);
-    try {
-      const archive = await api(`/api/research/runs/${safeSegment(form.elements.research_run_id.value)}`);
-      if (!current()) return;
-      const result = await api("/api/portfolio/proposals/plan", {method: "POST", timeout: C.timing.proposalRequestMs, body: {
-        expected_version: Number(form.dataset.strategyVersion), research_run_id: archive.id,
-        commission_bps: archive.inputs.commission_bps, slippage_bps: archive.inputs.slippage_bps,
-        mode: "shadow"
-      }});
-      if (!current()) return;
-      displayExecutionPlan(result);
-    } catch (error) {
-      if (current() && !isCancelled(error)) showMessage($("#execution-plan-message"), executionError(error), true);
-    } finally {
-      if (generation === state.generation) state.executionBusy = false;
-      if (form.isConnected) setPlanFormDisabled(form, false);
-    }
-  };
-  const confirmExecutionPlan = async control => {
-    if (!requireUser() || state.executionBusy || !state.executionPlan) return;
-    if (!$("#execution-review-consent")?.checked) {
-      showMessage($("#execution-plan-message"), T("execution.consent_required"), true);
-      return;
-    }
-    const plan = state.executionPlan;
-    const generation = state.generation;
-    const sequence = state.eventRequest;
-    state.executionBusy = true;
-    control.disabled = true;
-    try {
-      const result = await api(`/api/portfolio/proposals/${safeSegment(plan.id)}/confirm`, {method: "POST", body: {
-        proposal_version: plan.version, proposal_hash: plan.proposal_hash,
-        expected_strategy_version: plan.payload.strategy_version
-      }});
-      if (generation !== state.generation) return;
-      state.executionPlan = null;
-      if (sequence === state.eventRequest && $("#workspace-dialog").open) {
-        openDialog(T("execution.title"), U.loading(T("execution.loading")));
-        state.recovery.id = result.run.id;
-        await readRecoveryDetails(recoveryContext());
-      }
-      await reloadRecovery();
-    } catch (error) {
-      if (generation === state.generation && sequence === state.eventRequest && !isCancelled(error)) showMessage($("#execution-plan-message"), executionError(error), true);
-    } finally {
-      if (generation === state.generation) state.executionBusy = false;
-      if (control.isConnected) control.disabled = false;
-    }
-  };
-  const openExecutionHistory = async () => {
-    if (enterRouteScreen("strategies", "executions", {})) return;
-    if (!requireUser()) return;
-    const generation = state.generation;
-    openDialog(T("execution.history"), U.loading(T("execution.loading")));
-    const sequence = state.eventRequest;
-    await reloadRecovery();
-    if (generation === state.generation && sequence === state.eventRequest && $("#workspace-dialog").open) openDialog(T("execution.history"), recoveryPanelHTML());
-  };
-  const dispatchExecutionLeg = async () => {
-    const record = state.recovery.record;
-    const next = nextExecutionLeg(record);
-    if (!requireUser() || state.recovery.busy || state.recovery.uncertain || record?.mode !== "shadow" || next?.status !== "pending") return;
-    const context = recoveryContext();
-    state.recovery.busy = true;
-    updateRecoveryControls();
-    try {
-      await api(`/api/portfolio/executions/${safeSegment(record.id)}/dispatch`, {method: "POST", timeout: C.timing.calculationRequestMs, body: {expected_leg_id: next.id}});
-      if (currentRecovery(context)) await readRecoveryDetails(context);
-      if (context.generation === state.generation) await reloadRecovery();
-    } catch (error) {
-      if (currentRecovery(context) && !isCancelled(error)) {
-        state.recovery.uncertain = true;
-        showMessage($("#recovery-message"), executionError(error) + " " + T("execution.read_after_error"), true);
-      }
-    } finally {
-      if (context.generation === state.generation && context.sequence === state.recovery.sequence && context.id === state.recovery.id) state.recovery.busy = false;
-      if (currentRecovery(context)) updateRecoveryControls();
-    }
-  };
-
   const goalReason = goal => {
     const source = {
       portfolio: T("Выделенная доля портфеля"),
@@ -3750,7 +3564,7 @@
   };
   const renderGoals = () => {
     captureScreenDrafts();
-    const allGoals = state.tour ? [] : state.data.goals?.items || [];
+    const allGoals = state.guest ? [] : state.data.goals?.items || [];
     const selected = state.route.screen === "archive" ? "archive" : state.route.filter || "active";
     const goals = allGoals.filter(goal => selected === "all" || selected === "archive" ? (selected === "all" || goal.status !== "active") : goal.status === selected);
     let content = renderGoalsValue6(goals);
@@ -3878,7 +3692,7 @@
       type: "date",
       value: document.target_date || "",
       hint: T("Можно оставить пустой")
-    })}${select("progress_source", T("Источник прогресса"), [[document.kind === "income" ? "income" : "portfolio", document.kind === "income" ? T("Полученные выплаты") : T("Часть портфеля")], ["manual", T("Указать вручную")]], document.progress_source)}${select("status", T("Состояние"), [["active", T("Активная")], ["completed", T("Завершена")], ["archived", T("В архиве")]], document.status)}${field({
+    })}${select("progress_source", T("Источник прогресса"), [["portfolio", T("Часть портфеля")], ["manual", T("Указать вручную")]], document.progress_source === "income" ? "manual" : document.progress_source)}${select("status", T("Состояние"), [["active", T("Активная")], ["completed", T("Завершена")], ["archived", T("В архиве")]], document.status)}${field({
       name: "allocation_percent",
       label: T("Доля источника, %"),
       type: "number",
@@ -3899,22 +3713,12 @@
     })}</div><p id="goal-source-note" class="fine-print"></p><div class="form-actions"><button class="button primary" type="submit">${goal ? T("Сохранить цель") : T("Создать цель")}</button><button class="button secondary" type="button" data-close-dialog>${H("Отмена")}</button></div><output id="goal-message" class="form-message"></output></form>`);
     updateGoalFields();
   };
-  const updateGoalFields = (kindChanged = false) => {
-    const form = $("#goal-form");
-    if (!form) return;
-    const kind = form.elements.kind.value;
-    const source = form.elements.progress_source;
-    if (kindChanged) {
-      const isManual = source.value === "manual";
-      source.innerHTML = `<option value="${kind === "income" ? "income" : "portfolio"}">${kind === "income" ? T("Полученные выплаты") : T("Часть портфеля")}</option><option value="manual">${H("Указать вручную")}</option>`;
-      if (isManual) source.value = "manual";
-    }
-    const manual = source.value === "manual";
-    form.elements.allocation_percent.disabled = manual;
-    form.elements.allocation_percent.required = !manual;
-    form.elements.manual_amount_rub.disabled = !manual;
-    form.elements.manual_amount_rub.required = manual;
-    $("#goal-source-note").textContent = manual ? T("Вы явно задаёте накопленную сумму. Её можно обновить в любое время.") : renderUpdateGoalFieldsValue(kind);
+  const updateGoalFields = () => {
+    const form=$('#goal-form'); if(!form)return;
+    const manual=form.elements.progress_source.value==='manual';
+    form.elements.allocation_percent.disabled=manual;form.elements.allocation_percent.required=!manual;
+    form.elements.manual_amount_rub.disabled=!manual;form.elements.manual_amount_rub.required=manual;
+    $('#goal-source-note').textContent=manual ? T('Вы явно задаёте накопленную сумму. Её можно обновить в любое время.') : T('Прогресс — выбранная доля наблюдаемой стоимости портфеля. Он меняется вместе с рынком и движением денег.');
   };
   const goalWriteNeedsReadback = error => (error.code || error.message) === "updated_legal_consent_required" || !error.definite && (!error.status || error.status >= 500);
   const reportGoalSaveError = (form, error) => {
@@ -4067,7 +3871,7 @@
     })}</div><p data-goal-readback-status></p>`;
   };
   const eventNewsArchiveHTML = () => {
-    if (state.tour) return "";
+    if (state.guest) return "";
     const archive = state.data.marketArchive;
     const articles = (archive?.items || []).map(archiveNewsItem).join("") || ("<p class=\"notice\">" + H("В загруженной части архива публикаций нет.") + "</p>");
     const content = state.errors.marketArchive ? dataError("marketArchive") : `<div class="event-list">${articles}</div>`;
@@ -4076,7 +3880,7 @@
   };
   const renderEvents = () => {
     captureScreenDrafts();
-    const data = state.tour ? null : state.data.events;
+    const data = state.guest ? null : state.data.events;
     const unread = eventUnreadCount();
     const previousEvents = data?.next_cursor ? `<div class="form-actions">${button(T("Загрузить предыдущие события"), "events-more", {small: true, extra: state.loading.has("events-more") ? " disabled" : ""})}</div>` : "";
     $("#view-events").innerHTML = `${heading(T("События"), T("Подтверждённые изменения портфеля, выплат и целей"), button(T("Обновить"), "refresh", {
@@ -4214,11 +4018,10 @@
     if (state.view === "events" && current()) renderEvents();
     else if (!news) $("#view-events [data-action=events-more]")?.removeAttribute("disabled");
   };
-  const eventSourceLabel = type => ({operation: T("Операция брокера"), payout: T("Календарь выплат"), risk: T("Оценка инструмента"), goal: T("Цель"), audit: T("Журнал аккаунта"), job: T("Сбор данных")})[type] || type || T("Серверный факт");
+  const eventSourceLabel = type => ({payout: T("Календарь выплат"), risk: T("Оценка инструмента"), goal: T("Цель"), audit: T("Журнал аккаунта"), job: T("Сбор данных")})[type] || type || T("Серверный факт");
   const payoutIdentityUncertain = item => item?.identity_status === "ambiguous" || item?.supersession_reason === "identity_ambiguous";
   const eventSourceValues = source => {
     const rows = [];
-    if (source.amount !== undefined) rows.push([T("Сумма операции"), money(source.amount, 2, source.currency || "")]);
     if (source.amount_per_security != null) rows.push([T("На одну бумагу"), money(source.amount_per_security, 2, source.currency || "", false)]);
     if (source.expected_at) rows.push([T("Плановая дата выплаты"), date(source.expected_at)]);
     if (source.due_date) rows.push([T("Плановая дата цели"), date(source.due_date)]);
@@ -4284,28 +4087,11 @@
   const renderAnalytics = () => {
     captureScreenDrafts();
     const connection = state.data.connection || state.data.workspace?.connection;
-    if (state.tour || connection?.connected === false) {
-      $("#view-analytics").innerHTML = `${heading(T("Аналитика"), T("analytics.overview_help"))}<section class="card">${portfolioEntryHTML()}</section>`;
-      applyScreenLayout("analytics");
-      return;
+    if (state.guest || connection?.connected === false) {
+      $("#view-analytics").innerHTML = heading(T("Аналитика"))+'<section class="card">'+portfolioEntryHTML()+'</section>'; return;
     }
-    const ws = workspaceForPeriod(state.analyticsPeriod);
-    const performance = ws?.performance || {};
-    const income = ws?.income || {};
-    const analysis = state.tour ? null : state.data.analysis?.analysis;
-    const result = number(performance.investment_result_rub);
-    const incomePeriod = income.from ? `${esc(date(income.from))} — ${esc(date(income.to))}<br>` : "";
-    $("#view-analytics").innerHTML = `${heading(T("Аналитика"), T("analytics.overview_help"), button(T("Обновить"), "refresh", {
-      small: true
-    }))}${periods("analytics", state.analyticsPeriod)}${!ws ? ("<p class=\"notice\">" + H("Показатели выбранного периода ещё не получены. Расчёты другого периода здесь не отображаются.") + "</p>") : ""}${dataError("workspace")}<div class="metric-grid">${[[T("Финансовый результат"), signedMoney(result)], [T("analytics.period_return"), percent(performance.return_percent, true, true)], [T("Полученные выплаты"), money(income.total_rub)], [T("Чистые пополнения"), money(performance.net_contributions_rub)]].map(([label, value]) => renderAnalyticsCard(label, value)).join("")}</div><p class="data-footnote">${H("analytics.period_method")} · ${H("Modified Dietz · оценка за период с учётом времени пополнений и выводов. Не годовая ставка.")}</p><div class="two-column"><section class="card">${cardHeader(T("Стоимость по наблюдениям"))}${chart(ws?.overview?.history)}${navCoverageHTML(ws?.overview || {}, state.analyticsPeriod)}${freshness("T-Invest", ws?.overview?.observed_at, ws?.overview?.freshness?.status || ws?.overview?.status)}<p class="data-footnote">${H("Изменение стоимости включает движение денег. Доходность не выводится из разницы крайних точек.")}</p></section><section class="card">${cardHeader(T("Из чего складывается результат"))}${infoRows([[T("Стоимость в начале"), money(performance.start_nav_rub)], [T("Стоимость в конце"), money(performance.end_nav_rub)], [T("Изменение стоимости"), money(performance.nav_change_rub)], [T("Чистые пополнения / выводы"), money(performance.net_contributions_rub)], [T("Результат после внешних потоков"), money(performance.investment_result_rub)], [T("Комиссии за период"), money(performance.fees_rub)], [T("Налоговые списания"), money(performance.taxes_rub)]])}<p class="data-footnote">${performance.from ? renderAnalyticsFragment(performance) : ""}${H("Метод: изменение стоимости минус внешние денежные потоки. Комиссии и налоги уже отражаются в результате; повторно они не вычитаются.")}</p></section></div><div class="two-column section-gap"><section class="card">${cardHeader(T("Выплаты до налоговых списаний"))}${income.by_month?.length ? chart(income.by_month.map(item => ({
-      ...item,
-      time: renderAnalyticsFragment2(item)
-    })), {
-      timeKey: "time",
-      valueKey: "total_rub",
-      label: T("Подтверждённые выплаты по месяцам"),
-      tone: "purple"
-    }) : empty(T("История выплат пока недоступна"), T("Для расчёта нужны подтверждённые операции брокера."), "", "", "wallet")}${infoRows([[T("Купоны"), money(income.coupons_rub)], [T("Дивиденды"), money(income.dividends_rub)], [T("Прочие доходы"), money(income.other_income_rub)], [T("Погашения капитала"), money(income.redemptions_rub)]])}<p class="data-footnote">${incomePeriod}${H("Погашение возвращает капитал и не включается в доход. Налоговые списания учитываются отдельно в финансовом результате.")}</p></section><section class="card">${cardHeader(T("Полнота данных и риски"))}${analysis ? renderAnalyticsFragment3(analysis) : empty(T("Анализ ещё не получен"), T("Проверьте подключение счёта и наличие наблюдений."), "connect", T("Проверить подключение"), "analytics")}${dataError("analysis")}</section></div>${performance.status === "unavailable" ? ("<p class=\"notice section-gap\">" + H("Финансовый результат не рассчитан: недостаточно подтверждённых снимков или истории денежных потоков. Пропуски не заменяются нулями.") + "</p>") : ""}<section class="card section-gap">${cardHeader(T("Проверка выбранной стратегии"), "strategies", T("Открыть"))}<p class="fine-print">${esc(strategyTitle())}${H(". Подробные ограничения, проверка состава и исследование на истории находятся в разделе стратегий.")}</p></section>`;
+    const overview = state.data.workspace?.overview || {}, analysis = state.data.analysis?.analysis;
+    $("#view-analytics").innerHTML = `${heading(T("Аналитика"),T("portfolio.analysis_scope"),button(T("Обновить"),"refresh",{small:true}))}<div class="metric-grid">${[[T("Стоимость портфеля"),money(overview.nav_rub)],[T("Свободные средства"),money(overview.free_cash_rub)],[T("Инструментов"),Array.isArray(state.data.visualization?.latest?.positions) ? format(portfolioRows().length,0) : "—"]].map(([label,value])=>renderAnalyticsCard(label,value)).join('')}</div>${freshness(T("portfolio.snapshot"),overview.observed_at,overview.freshness?.status || overview.status)}<div class="two-column"><section class="card" data-analytics-allocation>${cardHeader(T("Структура портфеля"))}${U.allocation(overview.allocations,overview.nav_rub)}</section><section class="card" data-analytics-risk>${cardHeader(T("Полнота данных и риски"))}${analysis ? renderAnalyticsFragment3(analysis) : empty(T("Анализ ещё не получен"),T("Проверьте подключение счёта и наличие наблюдений."),"refresh",T("Обновить"),"analytics")}${dataError("analysis")}</section></div><section class="card section-gap" data-analytics-history>${cardHeader(T("Стоимость по наблюдениям"))}${chart(portfolioHistory(overview,state.analyticsPeriod))}${periods("analytics",state.analyticsPeriod)}${navCoverageHTML(overview,state.analyticsPeriod)}<p class="data-footnote">${H("portfolio.history_scope")}</p></section><section class="card section-gap">${cardHeader(T("Проверка выбранной стратегии"),"strategies",T("Открыть"))}<p>${esc(strategyTitle())}</p><p class="fine-print">${H("portfolio.no_history")}</p></section>${dataError("workspace")}`;
     applyScreenLayout("analytics");
   };
   const billingLabel = status => ({
@@ -4412,38 +4198,28 @@
 
   const renderProfile = () => {
     captureScreenDrafts();
-    if (state.tour) {
-      $("#view-profile").innerHTML = `${heading(T("Профиль"))}<section class="card">${empty(T("Ваш личный аккаунт"), T("Войдите через T-ID или VK ID, чтобы настроить профиль."), "login", T("Войти"), "profile", true)}</section>`;
+    if (state.guest) {
+      $("#view-profile").innerHTML = heading(T("Профиль"))+'<section class="card">'+empty(T("Ваш личный аккаунт"),T("auth.email.profile_guest"),"login",T("Войти"),"profile",true)+'</section>';
       return;
     }
-    const prefs = state.prefs.draft;
-    const user = state.user;
-    $("#view-profile").innerHTML = `${heading(T("Профиль"), T("Личные настройки и доступ к аккаунту"))}<div class="settings-layout"><section class="card"><div class="profile-summary"><span class="avatar">${esc((prefs?.display_name || T("О")).slice(0, 1).toUpperCase())}</span><div><h2>${esc(prefs?.display_name || T("Мой профиль"))}</h2><p>${H("Профиль")} ${esc(user?.public_id)} · ${user?.role === "owner" ? T("Владелец") : T("Пользователь")}</p></div></div>${prefs ? renderProfileForm(prefs) : renderProfileFragment()}<div class="form-actions"><button class="button secondary" data-action="copy-profile">${icon("copy", true)}${H("Копировать ID профиля")}</button></div></section><section class="card"><h2 class="panel-title">${H("Способы входа")}</h2>${infoRows([["T-ID", state.data.identities?.providers?.includes("tid") ? T("Привязан к аккаунту") : renderProfileValue()], ["VK ID", state.data.identities?.providers?.includes("vkid") ? T("Привязан к аккаунту") : renderProfileValue2()], [T("Подключённый счёт"), state.data.connection?.account_name || T("Нет подключения")]])}<p class="fine-print section-gap">${H("Вход подтверждает личный аккаунт OMNICIO. Подключение брокерских данных настраивается отдельно.")}</p><div class="form-actions">${button(T("Подключить способ входа"), "link-identity", {
-      small: true
-    })}${button(T("Настройки"), "settings", {
-      route: true,
-      small: true
-    })}${button(T("Выйти"), "logout", {
-      small: true
-    })}</div></section><section class="card wide"><h2 class="panel-title">${H("Удаление аккаунта")}</h2><p class="fine-print">${H("Удаляются профиль OMNICIO, его настройки, сессии и сохранённое подключение. Операция требует подтверждения ID вашего профиля.")}</p><button class="button danger" data-action="delete-account">${H("Удалить аккаунт")}</button></section></div>`;
-    $("#view-profile .settings-layout").insertAdjacentHTML("beforeend", sessionsHTML() + `<section class="card"><h2 class="panel-title">${H("План и подписка")}</h2><p class="help-copy">${state.data.billing?.plan === "premium" ? "Premium" : T("Личный кабинет")}</p>${button(T("Управление планом"), "premium", {small: true})}${dataError("billing")}</section>`);
-    restoreEditableForm("profile-form");
-    updateSaveStatus("prefs");
-    applyScreenLayout("profile");
+    const prefs = state.prefs.draft, user = state.user, identity = state.data.identities;
+    const identityBody = identity ? infoRows([[T("auth.email.address"),identity.email || T("auth.email.not_linked")],[T("auth.email.status"),identity.email_verified ? T("auth.email.verified") : T("auth.email.not_linked")]]) : dataError("identities") || U.loading(T("state.loading"));
+    const enrollment = identity?.migration_required ? button(T("auth.email.link"),"link-identity",{primary:true,small:true}) : '';
+    $("#view-profile").innerHTML = `${heading(T("Профиль"),T("Личные настройки и доступ к аккаунту"))}<div class="settings-layout"><section class="card" data-profile-personal><div class="profile-summary"><span class="avatar">${esc((prefs?.display_name || T("О")).slice(0,1).toUpperCase())}</span><div><h2>${esc(prefs?.display_name || T("Мой профиль"))}</h2><p>${H("Профиль")} ${esc(user?.public_id)}</p></div></div>${prefs ? renderProfileForm(prefs) : renderProfileFragment()}<div class="form-actions">${button(T("Копировать ID профиля"),"copy-profile",{small:true})}</div></section><section class="card" data-profile-identities><h2 class="panel-title">${H("auth.email.account_access")}</h2>${identityBody}<p class="fine-print section-gap">${H("auth.email.profile_scope")}</p><div class="form-actions">${enrollment}${identity?.email_verified ? button(T("auth.email.forgot"),"auth-reset",{small:true}) : ''}${button(T("Выйти"),"logout",{small:true})}</div></section><section class="card wide" data-profile-delete><h2 class="panel-title">${H("Удаление аккаунта")}</h2><p class="fine-print">${H("Удаляются профиль OMNICIO, его настройки, сессии и сохранённое подключение. Операция требует подтверждения ID вашего профиля.")}</p><button class="button danger" data-action="delete-account">${H("Удалить аккаунт")}</button></section>${sessionsHTML()}<section class="card" data-profile-plan><h2 class="panel-title">${H("План и подписка")}</h2><p>${state.data.billing?.plan === 'premium' ? 'Premium' : H("Личный кабинет")}</p>${button(T("Управление планом"),"premium",{small:true})}${dataError("billing")}</section></div>`;
+    restoreEditableForm("profile-form"); updateSaveStatus("prefs"); applyScreenLayout("profile");
   };
   const sessionItemHTML = item => {
     const action = item.current ? ("<span class=\"chip\">" + H("Это устройство") + "</span>") : `<button class="button secondary small" data-session-revoke="${esc(item.id)}">${H("Завершить")}</button>`;
-    return `<div class="setting-row"><div><strong>${item.current ? T("Текущая сессия") : T("Другой вход")} · ${esc({vkid: "VK ID", tid: "T-ID"}[item.auth_provider] || T("Провайдер не записан"))}</strong><p class="fine-print">${H("Вход:")} ${esc(date(item.created_at, true))} ${H("· Активность:")} ${esc(date(item.last_seen_at, true))} ${H("МСК")}<br>${H("Действует до")} ${esc(date(item.expires_at, true))}</p></div>${action}</div>`;
+    return `<div class="setting-row"><div><strong>${item.current ? T("Текущая сессия") : T("Другой вход")} · ${esc(item.auth_provider === "email" ? T("auth.email.address") : T("auth.email.legacy_session"))}</strong><p class="fine-print">${H("Вход:")} ${esc(date(item.created_at, true))} ${H("· Активность:")} ${esc(date(item.last_seen_at, true))} ${H("МСК")}<br>${H("Действует до")} ${esc(date(item.expires_at, true))}</p></div>${action}</div>`;
   };
-  const identityUnlinkHTML = (provider, count) => `<button class="button secondary small" data-identity-unlink="${esc(provider)}"${count < 2 ? " disabled" : ""}>${H("Отвязать")} ${provider === "tid" ? "T-ID" : "VK ID"}</button>`;
+
   const sessionsHTML = () => {
     const payload = state.data.sessions;
     const sessions = payload?.sessions || [];
     let content = U.loading(T("Загружаем активные сессии…"));
     if (state.errors.sessions) content = dataError("sessions");
     else if (sessions.length) content = sessions.map(sessionItemHTML).join("");
-    const providers = state.data.identities?.providers || [];
-    return `<section class="card wide"><div class="card-header"><h2>${H("Активные сессии")}</h2>${sessions.length > 1 ? ("<button class=\"button secondary small\" data-session-revoke=\"others\">" + H("Завершить остальные") + "</button>") : ""}</div>${content}${payload?.truncated ? ("<p class=\"notice\">" + H("Показаны последние 100 сессий. Кнопка завершения остальных применяется ко всем другим действующим сессиям.") + "</p>") : ""}</section><section class="card wide"><h2 class="panel-title">${H("Управление привязками входа")}</h2><p class="fine-print">${H("Для отвязки сначала повторно войдите через другой привязанный и доступный способ. Подтверждение действует 5 минут. Последний способ входа удалить нельзя.")}</p><div class="form-actions">${providers.map(provider => identityUnlinkHTML(provider, providers.length)).join("")}</div></section>`;
+    return `<section class="card wide"><div class="card-header"><h2>${H("Активные сессии")}</h2>${sessions.length > 1 ? '<button class="button secondary small" data-session-revoke="others">'+H("Завершить остальные")+'</button>' : ''}</div>${content}${payload?.truncated ? '<p class="notice">'+H("Показаны последние 100 сессий. Кнопка завершения остальных применяется ко всем другим действующим сессиям.")+'</p>' : ''}</section>`;
   };
   const revokeSession = async id => {
     if (!requireUser()) return;
@@ -4456,216 +4232,11 @@
       toast(T("Выбранный доступ завершён."));
     } catch (error) { if (!isCancelled(error)) toast(humanError(error), true); }
   };
-  const unlinkIdentity = async provider => {
-    if (!requireUser() || !["tid", "vkid"].includes(provider)) return;
-    const generation = state.generation;
-    try {
-      await api(`/api/me/identities/${provider}/unlink`, {method: "POST", body: {}});
-      if (generation !== state.generation) return;
-      await Promise.allSettled([loadResource("identities", "/api/auth/identities", {force: true}), loadResource("sessions", "/api/me/sessions", {force: true})]);
-      if (state.view === "profile") renderProfile();
-      toast(T("Привязка удалена; связанные с ней сессии завершены."));
-    } catch (error) { if (!isCancelled(error)) toast(["identity_reauthentication_required", "identity_last_provider"].includes(error.code || error.message) ? T("Сначала войдите заново через другой привязанный и включённый способ. Последний доступный способ отвязать нельзя.") : humanError(error), true); }
-  };
-  const executionActive = execution => ["created", "running", "reconciling"].includes(execution?.status) && ["live", "sandbox", "shadow"].includes(execution?.mode);
-  const activeExecutionExists = () => Boolean(state.data.executions?.has_active_live_execution || state.data.executions?.executions?.some(item => item.mode !== "shadow" && executionActive(item)));
-  const disconnectBlocked = () => state.loading.has("executions") || !state.data.executions || Boolean(state.errors.executions) || activeExecutionExists();
-  const executionStatus = status => ({
-    created: T("План создан"),
-    running: T("Есть незавершённые шаги"),
-    reconciling: T("Требуется сверка"),
-    succeeded: T("Завершено"),
-    cancelled: T("Отменено"),
-    failed: T("Ошибка"),
-    pending: T("Не отправлено"),
-    submitting: T("Результат отправки уточняется"),
-    submitted: T("Заявка у брокера"),
-    partially_filled: T("Исполнена частично"),
-    filled: T("Исполнена"),
-    cancel_requested: T("Отмена запрошена"),
-    rejected: T("Отклонена"),
-    shadow_filled: T("execution.shadow_filled")
-  })[status] || T("Статус требует проверки");
-  const executionMode = mode => ({
-    live: T("Основной счёт"),
-    sandbox: T("Тестовый счёт"),
-    shadow: T("execution.shadow")
-  })[mode] || T("Среда не подтверждена");
-  const executionRow = execution => `<button class="recovery-row" data-action="recovery-open" data-recovery-id="${esc(execution.id)}"><span><strong>${esc(executionStatus(execution.status))}</strong><small>${esc(executionMode(execution.mode))} · ${esc(date(execution.updated_at, true))} ${H("МСК")}</small><small>${H("Счёт")} ${esc(execution.account_id)}</small></span>${icon("arrow", true)}</button>`;
-  const mandateHTML = mandate => {
-    if (!mandate) return "";
-    return `<div class="notice section-gap"><strong>${H("Ранее выданное разрешение")}</strong>${infoRows([[T("Счёт"), mandate.account_id], [T("Действует до"), date(mandate.expires_at, true) + T(" МСК")], [T("Лимит заявки"), money(mandate.max_order_notional_rub)], [T("Дневной лимит"), money(mandate.max_daily_notional_rub)]])}<div class="form-actions">${button(T("Отозвать разрешение"), "mandate-revoke", {
-      small: true
-    })}</div></div>`;
-  };
-  const recoveryPanelHTML = () => {
-    if (state.errors.executions) return `<section class="card section-gap"><h2 class="panel-title">${H("Ранее начатые исполнения")}</h2>${dataError("executions", T("История исполнений недоступна"))}<p class="fine-print">${H("Перед отключением источника требуется проверить незавершённые заявки.")}</p></section>`;
-    const data = state.data.executions;
-    if (!data) {
-      if (state.loading.has("executions")) return `<section class="card section-gap">${U.loading(T("Проверяем ранее начатые исполнения…"))}</section>`;
-      return `<section class="card section-gap"><h2 class="panel-title">${H("Ранее начатые исполнения")}</h2><p class="notice">${H("История исполнений недоступна")}</p><p class="fine-print">${H("Перед отключением источника требуется проверить незавершённые заявки.")}</p>${button(T("Проверить историю"), "recovery-reload", {small: true})}</section>`;
-    }
-    if (!data.executions.length && !data.live_mandate) return `<section class="card section-gap"><h2 class="panel-title">${H("Ранее начатые исполнения")}</h2><p class="fine-print">${H("execution.history_empty")}</p>${button(T("Проверить историю"), "recovery-reload", {
-      small: true
-    })}</section>`;
-    return `<section class="card section-gap"><div class="card-header"><h2>${H("Ранее начатые исполнения")}</h2>${button(T("Обновить"), "recovery-reload", {
-      small: true
-    })}</div><p class="fine-print">${H("execution.history_help")}</p><div class="recovery-list">${data.executions.map(executionRow).join("")}</div>${mandateHTML(data.live_mandate)}<output id="recovery-list-message" class="form-message"></output></section>`;
-  };
-  const repaintRecoveryPanel = () => {
-    const panel = $("#recovery-settings");
-    if (panel) panel.innerHTML = recoveryPanelHTML();
-    const broker = $("#broker-settings");
-    if (broker && state.data.connection?.connected) broker.innerHTML = `<h2 class="panel-title">${H("Подключение T-Invest")}</h2>${brokerSettingsHTML()}`;
-  };
-  const reloadRecovery = async () => {
-    const generation = state.generation;
-    const pending = loadResource("executions", "/api/portfolio/executions", {
-      force: true
-    });
-    if (state.user && !state.locked) repaintRecoveryPanel();
-    await pending;
-    if (generation === state.generation && state.user && !state.locked) repaintRecoveryPanel();
-  };
-  const nextExecutionLeg = execution => execution?.legs?.find(leg => !["filled", "shadow_filled", "cancelled", "rejected", "failed"].includes(leg.status));
-  const recoveryButtons = execution => {
-    if (!executionActive(execution)) return "";
-    const next = nextExecutionLeg(execution);
-    if (!next) return "";
-    const pending = next.status === "pending";
-    if (execution.mode === "shadow") return `<div class="form-actions">${pending ? button(T("execution.next_leg"), "recovery-dispatch", {primary: true, small: true}) : ""}${button(T("Закрыть неотправленный план"), "recovery-cancel", {small: true})}</div>`;
-    const reconcile = pending ? "" : button(T("Сверить исполнение"), "recovery-reconcile", {
-      small: true
-    });
-    return `<div class="form-actions">${reconcile}${button(pending ? T("Закрыть неотправленный план") : T("Отменить заявку"), "recovery-cancel", {
-      small: true
-    })}</div>`;
-  };
-  const executionLegHTML = (leg, mode) => {
-    const action = {
-      buy: T("Покупка"),
-      sell: T("Продажа")
-    }[leg.action] || T("Действие не определено");
-    const rows = [[T("Инструмент"), leg.instrument_uid], [T("Запрошено лотов"), format(leg.lots_requested, 0)], [T("Исполнено лотов"), format(leg.lots_executed, 0)], [T("ID запроса"), leg.request_id || T("Не получен")]];
-    if (mode !== "shadow") rows.push([T("ID заявки брокера"), leg.provider_order_id || T("Не подтверждён")], [T("Статус брокера"), leg.provider_status || T("Не получен")], [T("Последняя сверка"), leg.last_checked_at ? date(leg.last_checked_at, true) + T(" МСК") : T("Ещё не выполнена")]);
-    return `<article class="recovery-leg"><h3>${esc(action)} · ${esc(executionStatus(leg.status))}</h3>${infoRows(rows)}</article>`;
-  };
-  const storedExecutionErrorHTML = code => `<p class="notice error">${esc(recoveryErrorReason(code) || T("Ранее получена ошибка. Сверьте состояние заявки перед следующим действием."))}</p>`;
-  const recoveryDetailsHTML = execution => `${infoRows([[T("Состояние"), executionStatus(execution.status)], [T("Среда"), executionMode(execution.mode)], [T("Счёт"), execution.account_id], [T("ID исполнения"), execution.id], [T("Обновлено"), date(execution.updated_at, true) + T(" МСК")]])}${execution.error_code ? storedExecutionErrorHTML(execution.error_code) : ""}<div class="recovery-legs">${(execution.legs || []).map(leg => executionLegHTML(leg, execution.mode)).join("")}</div>${recoveryButtons(execution)}<div id="recovery-confirmation"></div><output id="recovery-message" class="form-message"></output><p class="fine-print section-gap">${execution.mode === "shadow" ? H("execution.cancel_pending") : H("Отмена относится к ближайшему незавершённому шагу. Запрошенная отмена подтверждается состоянием брокера; фактически исполненные лоты остаются исполненными.")}</p>`;
-  const recoveryStatusButton = () => button(T("Обновить статус"), "recovery-detail-reload", {
-    small: true
-  });
-  const updateRecoveryControls = () => {
-    for (const control of $$('#dialog-content [data-action^="recovery-"]')) {
-      const needsConfirmation = control.dataset.action !== "recovery-detail-reload";
-      control.disabled = state.recovery.busy || state.recovery.uncertain && needsConfirmation;
-    }
-  };
-  const recoveryContext = () => ({
-    id: state.recovery.id,
-    sequence: state.recovery.sequence,
-    generation: state.generation
-  });
-  const currentRecovery = context => context.generation === state.generation && context.sequence === state.recovery.sequence && context.id === state.recovery.id && $("#workspace-dialog").open;
-  const readRecoveryDetails = async context => {
-    try {
-      const result = await api(`/api/portfolio/executions/${safeSegment(context.id)}`);
-      if (!currentRecovery(context)) return;
-      state.recovery.record = result.execution;
-      state.recovery.uncertain = false;
-      $("#dialog-content").innerHTML = recoveryDetailsHTML(result.execution) + recoveryStatusButton();
-      updateRecoveryControls();
-    } catch (error) {
-      if (!currentRecovery(context) || isCancelled(error)) return;
-      $("#dialog-content").innerHTML = `<div class="notice error">${esc(humanError(error))}</div>${button(T("Повторить загрузку"), "recovery-detail-reload", {
-        small: true
-      })}`;
-    }
-  };
-  const reloadRecoveryDetails = () => {
-    if (!state.recovery.id || state.recovery.busy) return;
-    state.recovery.sequence += 1;
-    return readRecoveryDetails(recoveryContext());
-  };
-  const openRecovery = async control => {
-    if (!requireUser()) return;
-    const id = control.dataset.recoveryId;
-    if (!state.data.executions?.executions.some(item => item.id === id)) return;
-    openDialog(T("Ранее начатое исполнение"), U.loading(T("Читаем сохранённое состояние…")));
-    state.recovery.id = id;
-    await readRecoveryDetails(recoveryContext());
-  };
-  const askRecoveryCancellation = () => {
-    const execution = state.recovery.record;
-    if (!executionActive(execution) || state.recovery.busy || state.recovery.uncertain) return;
-    const pending = nextExecutionLeg(execution)?.status === "pending";
-    const description = pending ? T("Неотправленный шаг будет закрыт в сохранённом плане. Брокерская заявка для него не создаётся.") : T("Сервер запросит отмену существующей заявки. Уже исполненные лоты отменить этим действием нельзя. После запроса проверьте ответ брокера.");
-    $("#recovery-confirmation").innerHTML = `<div class="notice section-gap"><p>${esc(description)}</p><div class="form-actions">${button(T("Подтвердить отмену"), "recovery-cancel-confirm", {
-      small: true
-    })}${button(T("Продолжить просмотр"), "recovery-cancel-dismiss", {
-      small: true
-    })}</div></div>`;
-    $('[data-action="recovery-cancel-confirm"]').focus();
-  };
-  const mutateRecovery = async action => {
-    if (!requireUser() || state.recovery.busy || state.recovery.uncertain || !executionActive(state.recovery.record)) return;
-    const context = recoveryContext();
-    state.recovery.busy = true;
-    for (const control of $$('#dialog-content [data-action^="recovery-"]')) control.disabled = true;
-    try {
-      const result = await api(`/api/portfolio/executions/${safeSegment(context.id)}/${action}`, {
-        method: "POST",
-        body: {}
-      });
-      if (currentRecovery(context)) {
-        state.recovery.record = result.execution;
-        $("#dialog-content").innerHTML = recoveryDetailsHTML(result.execution) + recoveryStatusButton();
-        showMessage($("#recovery-message"), T("Состояние получено с сервера: ") + executionStatus(result.execution.status));
-      }
-      if (context.generation === state.generation) await reloadRecovery();
-    } catch (error) {
-      if (currentRecovery(context) && !isCancelled(error)) {
-        state.recovery.uncertain = true;
-        showMessage($("#recovery-message"), humanError(error) + T(" Обновите состояние перед повтором."), true);
-      }
-    } finally {
-      if (context.generation === state.generation) state.recovery.busy = false;
-      if (currentRecovery(context)) updateRecoveryControls();
-    }
-  };
-  const askMandateRevoke = () => {
-    if (!requireUser() || !state.data.executions?.live_mandate) return;
-    openDialog(T("Отозвать ранее выданное разрешение?"), `<p class="help-copy">${H("Разрешение будет отозвано на сервере. Состояние уже отправленных заявок проверяется отдельно в истории исполнений.")}</p><div class="form-actions">${button(T("Отозвать разрешение"), "mandate-revoke-confirm", {
-      small: true
-    })}<button class="button secondary" data-close-dialog>${H("Отмена")}</button></div><output id="mandate-message" class="form-message"></output>`);
-  };
-  const revokeMandate = async control => {
-    if (!requireUser() || !state.data.executions?.live_mandate) return;
-    const generation = state.generation;
-    control.disabled = true;
-    try {
-      await api("/api/portfolio/live-execution/mandate", {
-        method: "DELETE",
-        body: {}
-      });
-      if (generation !== state.generation) return;
-      $("#workspace-dialog").close();
-      await reloadRecovery();
-      if (generation === state.generation) toast(T("Разрешение отозвано на сервере."));
-    } catch (error) {
-      if (generation === state.generation && !isCancelled(error)) {
-        showMessage($("#mandate-message"), humanError(error) + T(" Проверьте текущее разрешение перед повтором."), true);
-        control.disabled = false;
-      }
-    }
-  };
-  const brokerDisconnectDescription = () => {
-    if (activeExecutionExists()) return T("Есть незавершённое исполнение. Сначала проверьте заявки в панели ниже; источник нужен для их сверки и отмены.");
-    if (disconnectBlocked()) return T("Перед отключением проверяем ранее начатые исполнения. Если проверка не завершится, обновите историю ниже.");
-    return T("Токен хранится на сервере и не возвращается в браузер. Для замены счёта сначала отключите текущее подключение.");
-  };
+
+  const disconnectBlocked = () => state.loading.has("connection");
+  const brokerDisconnectDescription = () => T("portfolio.token_scope");
   const installLink = () => `<a class="button secondary small-button" href="${U.routeHash({mode: state.mode === "public" ? "public" : state.mode, view: "install"})}" data-action="install-open">${H("install.entry")}</a>`;
-  const openInstall = () => navigate("install", {mode: ["public", "demo", "account"].includes(state.mode) ? state.mode : "public"});
+  const openInstall = () => navigate("install", {mode: ["public", "guest", "account"].includes(state.mode) ? state.mode : "public"});
   const installStatus = () => {
     if (installState.installed || installedDisplay()) return "installed";
     if (installState.busy) return "pending";
@@ -4755,7 +4326,7 @@
   };
   const devicePushHTML = () => {
     const current = state.devicePush;
-    const status = !state.user || state.tour ? "unauthenticated" : current.status;
+    const status = !state.user || state.guest ? "unauthenticated" : current.status;
     const pending = state.deliveryBusy || Boolean(current.pending);
     const actions = devicePushActions(status, current, pending);
     const error = current.error ? `<p class="notice error">${esc(humanError(current.error))}</p>` : "";
@@ -4800,7 +4371,7 @@
     }
   };
   const pushContext = () => ({generation: state.generation, publicId: state.user?.public_id});
-  const currentPushContext = context => Boolean(context.publicId) && context.generation === state.generation && context.publicId === state.user?.public_id && !state.locked && !state.tour;
+  const currentPushContext = context => Boolean(context.publicId) && context.generation === state.generation && context.publicId === state.user?.public_id && !state.locked && !state.guest;
   const pushSupported = () => "Notification" in window && "PushManager" in window && "serviceWorker" in navigator && window.isSecureContext;
   const pushKeyBytes = key => Uint8Array.from(atob(key.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - key.length % 4) % 4)), char => char.codePointAt(0));
   const pushKeyMatches = (subscription, bytes) => {
@@ -4887,7 +4458,7 @@
     await withPushDeviceLock(async () => { if (currentPushContext(context)) await readPushSubscription(data, context, sync); });
   };
   const refreshPushDevice = ({sync = true, read = true, mutation = false} = {}) => {
-    if (!state.user || state.tour || state.locked) { renderNotificationPanel(); return Promise.resolve(); }
+    if (!state.user || state.guest || state.locked) { renderNotificationPanel(); return Promise.resolve(); }
     const target = state.devicePush;
     if (target.pending) return target.pending;
     if (state.deliveryBusy && !mutation) return Promise.resolve();
@@ -5056,7 +4627,7 @@
   };
   const renderSettings = () => {
     captureScreenDrafts();
-    if (state.tour) {
+    if (state.guest) {
       $("#view-settings").innerHTML = `${heading(T("Настройки"))}<section class="card">${empty(T("Настройки сохраняются в аккаунте"), T("Для источников данных, уведомлений и личных предпочтений войдите в OMNICIO."), "login", T("Войти"), "settings", true)}${installLink()}</section>`;
       return;
     }
@@ -5078,7 +4649,7 @@
     })}</div><div class="form-actions"><button class="button primary" type="submit">${H("Сохранить настройки")}</button><span class="save-status" data-save-status="prefs"></span></div>${saveErrorHTML("prefs")}</section></form>` : `<section class="card">${renderSettingsValue2()}</section>`;
     $("#view-settings").innerHTML = `${heading(T("Настройки"), T("Источники, оформление и события — под вашим контролем"), button(T("Обновить"), "refresh", {
       small: true
-    }))}<div class="settings-layout"><div>${preferences}</div><div><section class="card" id="broker-settings"><h2 class="panel-title">${H("Подключение T-Invest")}</h2>${brokerSettingsHTML()}</section><div id="recovery-settings">${recoveryPanelHTML()}</div><section class="card section-gap"><h2 class="panel-title">${H("Персональный ИИ")}</h2><p class="fine-print">${H("Статус и интерфейс ИИ находятся в отдельном разделе. История разговоров сохраняется в вашем аккаунте. Внешний провайдер включается отдельно.")}</p>${button(T("Открыть ИИ-помощника"), "assistant", {
+    }))}<div class="settings-layout"><div>${preferences}</div><div><section class="card" id="broker-settings"><h2 class="panel-title">${H("Подключение T-Invest")}</h2>${brokerSettingsHTML()}</section><section class="card section-gap"><h2 class="panel-title">${H("Персональный ИИ")}</h2><p class="fine-print">${H("Статус и интерфейс ИИ находятся в отдельном разделе. История разговоров сохраняется в вашем аккаунте. Внешний провайдер включается отдельно.")}</p>${button(T("Открыть ИИ-помощника"), "assistant", {
       route: true,
       small: true
     })}</section><section class="card section-gap"><h2 class="panel-title">${H("О приложении")}</h2>${infoRows([[T("Версия"), $("[data-release-version]").textContent], [T("Сборка"), window.OMNICIO_RELEASE?.build || T("Не получена")], [T("Язык интерфейса"), I.getLocale() === "en" ? T("Английский") : T("Русский")]])}<div class="form-actions">${button(T("Условия использования"), "legal", {
@@ -5096,13 +4667,13 @@
   const brokerSettingsHTML = () => {
     const connection = state.data.connection;
     if (!connection) return state.errors.connection ? dataError("connection") : U.loading(T("Проверяем подключение…"));
-    if (connection.connected) return `<div class="connection-state"><span class="provider-mark">T</span><div><strong>${esc(connection.account_name || T("Счёт T-Invest"))}</strong><small>${connection.environment === "sandbox" ? T("Тестовая среда") : T("Основной счёт")}</small></div><span class="status-dot"></span></div>${infoRows([[T("ID счёта"), connection.account_id], [T("Проверен"), connection.verified_at ? renderBrokerSettingsHTMLFragment(connection) : "—"]])}<p class="fine-print" data-news-monitor-status>${esc(workspaceNewsText(true))}</p><p class="fine-print section-gap">${esc(brokerDisconnectDescription())}</p><div class="form-actions">${button(T("Обновить данные"), "refresh", {
+    if (connection.connected) return `<div class="connection-state"><span class="broker-mark">T</span><div><strong>${esc(connection.account_name || T("Счёт T-Invest"))}</strong><small>${T("portfolio.readonly")}</small></div><span class="status-dot"></span></div>${infoRows([[T("ID счёта"), connection.account_id], [T("Проверен"), connection.verified_at ? renderBrokerSettingsHTMLFragment(connection) : "—"]])}<p class="fine-print" data-news-monitor-status>${esc(workspaceNewsText(true))}</p><p class="fine-print section-gap">${esc(brokerDisconnectDescription())}</p><div class="form-actions">${button(T("Обновить данные"), "refresh", {
       small: true
     })}${button(T("Отключить"), "disconnect-start", {
       small: true,
       extra: disconnectBlocked() ? " disabled" : ""
     })}</div>`;
-    return `<p class="fine-print">${H("Добавьте личный токен API T-Invest. Проверка покажет доступные счета; затем вы явно выберете нужный.")}</p><form id="broker-form" class="connection-steps"><label class="field"><span>${H("API-токен")} ${help(T("API-токен"), T("Создайте токен в личном кабинете T-Invest для чтения данных. Токен вводится только после входа в OMNICIO, проверяется сервером и хранится зашифрованным. Не передавайте его в переписке."))}</span><input type="password" name="credential" autocomplete="off" minlength="${C.formLimits.brokerCredentialCharactersMin}" maxlength="${C.formLimits.credentialCharactersMax}" required placeholder="${H("Вставьте токен")}" spellcheck="false"></label>${select("environment", T("Среда источника"), [["prod", T("Основной счёт")], ["sandbox", T("Тестовая среда")]], "prod")}<label class="check-field"><input type="checkbox" name="accept_personal_terms" required><span>${H("Подтверждаю доступ к своим данным на условиях")} <a href="/legal/terms.html">${H("использования сервиса")}</a>.</span></label><button class="button primary" type="submit">${H("Проверить токен")}</button><div id="broker-accounts"></div><output id="broker-message" class="form-message"></output></form>`;
+    return `<p class="fine-print">${H("Добавьте личный токен API T-Invest. Проверка покажет доступные счета; затем вы явно выберете нужный.")}</p><form id="broker-form" class="connection-steps"><label class="field"><span>${H("API-токен")} ${help(T("API-токен"), T("Создайте токен в личном кабинете T-Invest для чтения данных. Токен вводится только после входа в OMNICIO, проверяется сервером и хранится зашифрованным. Не передавайте его в переписке."))}</span><input type="password" name="credential" autocomplete="off" minlength="${C.formLimits.brokerCredentialCharactersMin}" maxlength="${C.formLimits.credentialCharactersMax}" required placeholder="${H("Вставьте токен")}" spellcheck="false"></label><input type="hidden" name="environment" value="prod"><label class="check-field"><input type="checkbox" name="accept_personal_terms" required><span>${H("Подтверждаю доступ к своим данным на условиях")} <a href="/legal/terms.html">${H("использования сервиса")}</a>.</span></label><button class="button primary" type="submit">${H("Проверить токен")}</button><div id="broker-accounts"></div><output id="broker-message" class="form-message"></output></form>`;
   };
   const assistantHealthLabel = status => {
     if (!status?.enabled) return T("Активация отложена");
@@ -5125,18 +4696,18 @@
     const conversationActions = selected ? `<div class="form-actions">${button(T("Обновить историю"), "assistant-history-reload", {small: true})}${button(T("Удалить разговор"), "chat-clear", {small: true, extra: state.assistantBusy ? "disabled" : ""})}</div>` : "";
     const quotaLabel = status?.quota ? esc(`${status.quota.used || 0} ${T("из")} ${status.quota.limit || 0}`) : T("Не получен");
     const quotaReset = status?.quota?.resets_at ? `${T("Обновление лимита:")} ${esc(date(status.quota.resets_at, true))} ${T("МСК")}` : "";
-    return `<aside class="card assistant-side"><h2 class="panel-title">${H("Ваши разговоры")}</h2>${button(T("Новый разговор"), "assistant-new", {small: true, extra: state.assistantBusy || state.tour ? "disabled" : ""})}<div class="assistant-history section-gap">${history || ("<p class=\"fine-print\">" + H("Сохранённых разговоров ещё нет.") + "</p>")}</div>${dataError("assistantConversations")}${conversationActions}<h3 class="panel-title section-gap">${H("Лимит запросов")}</h3><p>${quotaLabel}</p><p class="fine-print">${quotaReset}</p><h3 class="panel-title section-gap">${H("Начать с вопроса")}</h3><div class="assistant-prompts">${[T("Как читать структуру моего портфеля?"), T("Что означает просадка?"), T("Какие данные нужны для оценки стратегии?")].map(text => renderAssistantButton(text, enabled)).join("")}</div><p class="section-gap fine-print">${H("Ответ ИИ не изменяет настройки и не отправляет заявки брокеру.")}</p></aside>`;
+    return `<aside class="card assistant-side"><h2 class="panel-title">${H("Ваши разговоры")}</h2>${button(T("Новый разговор"), "assistant-new", {small: true, extra: state.assistantBusy || state.guest ? "disabled" : ""})}<div class="assistant-history section-gap">${history || ("<p class=\"fine-print\">" + H("Сохранённых разговоров ещё нет.") + "</p>")}</div>${dataError("assistantConversations")}${conversationActions}<h3 class="panel-title section-gap">${H("Лимит запросов")}</h3><p>${quotaLabel}</p><p class="fine-print">${quotaReset}</p><h3 class="panel-title section-gap">${H("Начать с вопроса")}</h3><div class="assistant-prompts">${[T("Как читать структуру моего портфеля?"), T("Что означает просадка?"), T("Какие данные нужны для оценки стратегии?")].map(text => renderAssistantButton(text, enabled)).join("")}</div><p class="section-gap fine-print">${H("Ответ ИИ не изменяет настройки и не отправляет заявки брокеру.")}</p></aside>`;
   };
   const renderAssistant = () => {
     captureScreenDrafts();
     const status = state.data.assistantStatus;
-    const enabled = Boolean(status?.enabled && status?.configured && !state.tour);
-    const selected = state.tour ? null : state.assistantConversation;
-    const draft = state.tour ? {message: "", context: "general"} : state.assistantDraft;
-    const rows = state.tour ? [] : state.data.assistantConversations?.items || [];
-    const runs = state.tour ? [] : state.data.assistantResearch?.items || [];
+    const enabled = Boolean(status?.enabled && status?.configured && !state.guest);
+    const selected = state.guest ? null : state.assistantConversation;
+    const draft = state.guest ? {message: "", context: "general"} : state.assistantDraft;
+    const rows = state.guest ? [] : state.data.assistantConversations?.items || [];
+    const runs = state.guest ? [] : state.data.assistantResearch?.items || [];
     const requestState = value => ({running: T("Запрос выполняется"), uncertain: T("Ответ не подтверждён. Автоматической повторной отправки нет."), cancelled: T("Запрос остановлен")})[value] || "";
-    const chat = (state.tour ? [] : state.chat).map(item => {
+    const chat = (state.guest ? [] : state.chat).map(item => {
       const requestNotice = requestState(item.request_status) ? `<p class="fine-print">${esc(requestState(item.request_status))}</p>` : "";
       return `<article class="chat-message ${item.role === "user" ? "user" : ""}"><small>${item.role === "user" ? T("Вы") : T("OMNICIO · ИИ")} · ${esc(date(item.created_at, true))} ${H("МСК")}</small>${esc(item.content)}${item.sources?.length ? renderAssistantSourceList(item) : ""}${requestNotice}</article>`;
     }).join("");
@@ -5325,7 +4896,7 @@
   };
 
   function assistantRequestHTML() {
-    const request = state.tour ? null : state.assistantRequest;
+    const request = state.guest ? null : state.assistantRequest;
     if (!request) return "";
     const running = request.status === "running";
     const status = {running: T("assistant.generating"), uncertain: T("assistant.incomplete"), cancelled: T("assistant.cancelled"), completed: T("assistant.completed")}[request.status] || T("assistant.incomplete");
@@ -5399,12 +4970,12 @@
     return `<label class="check-field"><input type="checkbox" data-memory-select="${esc(item.id)}"${checked}${disabled}><span>${esc(item.content)}</span></label>`;
   }
   function assistantMemoryChoices() {
-    const items = state.tour ? [] : state.data.assistantMemory?.items || [];
+    const items = state.guest ? [] : state.data.assistantMemory?.items || [];
     if (!items.length) return "";
     return `<details class="section-gap"><summary class="details-summary">${H("assistant.memory_selection")}</summary>${items.map(assistantMemoryChoice).join("")}<p class="fine-print">${H("assistant.memory_selection_help")}</p></details>`;
   }
   function assistantMemoryHTML() {
-    if (state.tour) return empty(T("assistant.memory"), T("assistant.memory_help"), "login", T("Войти"));
+    if (state.guest) return empty(T("assistant.memory"), T("assistant.memory_help"), "login", T("Войти"));
     const data = state.data.assistantMemory;
     const rows = (data?.items || []).map(item => `<article class="event-item"><div class="event-item-body"><p>${esc(item.content)}</p><p class="fine-print">${esc(item.category === "preference" ? T("assistant.preference") : T("assistant.context"))} · ${H("Версия")}: ${esc(item.version)}</p><div class="form-actions"><button class="button secondary small-button" data-memory-edit="${esc(item.id)}">${H("assistant.memory_edit")}</button><button class="button danger small-button" data-memory-delete="${esc(item.id)}">${H("Удалить")}</button></div></div></article>`).join("");
     const content = rows || `<p class="notice">${H("assistant.memory_empty")}</p>`;
@@ -5462,7 +5033,7 @@
     }
   }
   function assistantSourcesHTML() {
-    if (state.tour) return empty(T("assistant.sources"), T("assistant.sources_scope"), "login", T("Войти"));
+    if (state.guest) return empty(T("assistant.sources"), T("assistant.sources_scope"), "login", T("Войти"));
     const selection = state.assistantSourceSelection || {context: "general", query: ""};
     const runs = state.data.assistantResearch?.items || [];
     return `${cardHeader(T("assistant.sources"))}<p class="notice">${H("assistant.sources_scope")}</p><form id="assistant-sources-form">${select("context", T("Данные для этого вопроса"), [["general", T("Общий вопрос · без личных данных")], ["portfolio", T("Сводные показатели портфеля")], ["investment", T("Портфель, позиции, цели и стратегия")]], selection.context)}${select("research_run_id", T("Сохранённое исследование"), [["", T("Не передавать")], ...runs.map(item => [item.id, date(item.created_at, true)])], selection.research_run_id || "")}<label class="check-field"><input type="checkbox" name="include_news"${selection.include_news ? " checked" : ""}><span>${H("Добавить последние новости Банка России")}</span></label>${field({name: "query", label: T("Поиск"), value: selection.query || "", required: true})}<div class="form-actions"><button class="button primary" type="submit">${H("Найти")}</button></div><output id="assistant-sources-message" class="form-message"></output></form><div id="assistant-source-results" class="section-gap">${assistantSourcesResults()}</div>`;
@@ -5504,7 +5075,7 @@
     } catch (error) { if (generation === state.generation && sequence === state.eventRequest && !isCancelled(error)) openDialog(T("assistant.sources"), `<p class="notice error">${esc(humanError(error))}</p>`); }
   }
 
-  const dialogScreens = new Set(["goals/create", "goals/edit", "goals/plan", "events/detail", "events/news", "strategies/archive", "strategies/evidence", "strategies/result", "strategies/detail", "strategies/plan", "strategies/executions", "assistant/connection", "profile/plan"]);
+  const dialogScreens = new Set(["goals/create", "goals/edit", "goals/plan", "events/detail", "events/news", "strategies/archive", "strategies/evidence", "strategies/result", "strategies/detail", "assistant/connection", "profile/plan"]);
   const transientDialogs = new Map();
   let tableQuotesTimer = null;
   let tableQuotesBusy = false;
@@ -5564,15 +5135,13 @@
     "strategies/archive": () => openResearchArchive(),
     "strategies/evidence": () => openResearchEvidence(),
     "strategies/detail": route => openPublicStrategy(route.preset),
-    "strategies/plan": () => openExecutionPlanner(),
-    "strategies/executions": () => openExecutionHistory(),
     "strategies/result": openResearchResult,
     "assistant/connection": () => openAssistantConnection(),
     "profile/plan": () => openBilling(),
     "settings/support": () => loadSupport($("#workspace-support"))
   };
   async function openRouteScreen(route) {
-    if (route.mode !== "public" && route.mode !== "demo" && (!state.user || state.locked)) return;
+    if (route.mode !== "public" && route.mode !== "guest" && (!state.user || state.locked)) return;
     const sequence = state.navigationSequence;
     state.openingRoute = true;
     try {
@@ -5604,7 +5173,7 @@
   function restoreFormFields(form, draft) {
     if (form.id === "goal-form" && draft.kind) {
       form.elements.kind.value = draft.kind;
-      updateGoalFields(true);
+      updateGoalFields();
     }
     for (const [name, value] of Object.entries(draft)) {
       const control = form.elements.namedItem(name);
@@ -5618,7 +5187,7 @@
     form.dataset.draftRestored = "true";
   }
   function restoreScreenDrafts(root) {
-    if (state.tour) return;
+    if (state.guest) return;
     for (const form of draftForms(root)) {
       const key = draftKey(form);
       const draft = state.screenDrafts[key];
@@ -5729,44 +5298,36 @@
     if (item.left < container.left) menu.scrollLeft += item.left - container.left;
     else if (item.right > container.right) menu.scrollLeft += item.right - container.right;
   }
-  function layoutMarket({root, panes, attach}) {
-    panes.push(["", T("Обзор")]);
-    const columns = $$(":scope > .two-column > section", root);
-    attach("reference", T("market.reference_short"), [columns[0], $(".market-indicators", root)], true);
-    attach("watchlist", T("Избранное"), columns[1], !state.tour);
-    const sections = $$(":scope > section", root);
-    attach("positions", T("Мои активы"), sections[0], !state.tour && state.data.connection?.connected);
-    attach("news", T("Новости Банка России"), sections[1], true);
+  function layoutMarket({root,panes,attach}) {
+    panes.push(['',T('Обзор')]);
+    attach('catalog',T('market.catalog_title'),$('[data-market-catalog]',root),true);
+    attach('reference',T('market.reference_short'),[$('[data-market-reference]',root),$('.market-indicators',root)]);
+    attach('watchlist',T('Избранное'),$('[data-market-watchlist]',root));
+    attach('positions',T('Мои активы'),$('[data-market-positions]',root));
+    attach('news',T('Новости и события'),$('[data-market-news]',root),true);
   }
   function layoutPortfolio({root, screen, panes, attach}) {
     panes.push(["", T("Обзор")]);
     const summary = $("[data-portfolio-summary]", root);
     if (summary) summary.hidden = Boolean(screen);
-    attach("positions", T("Мои активы"), $("[data-portfolio-holdings]", root), !state.tour && (state.data.connection || state.data.workspace?.connection)?.connected !== false);
+    attach("positions", T("Мои активы"), $("[data-portfolio-holdings]", root), !state.guest && (state.data.connection || state.data.workspace?.connection)?.connected !== false);
     attach("history", T("portfolio.history_title"), $("[data-portfolio-history]", root));
     attach("structure", T("portfolio.structure_short"), $("[data-portfolio-structure]", root));
-    panes.push(["income", T("portfolio.income_short")], ["operations", T("portfolio.operations")]);
-    if (screen === "income") root.insertAdjacentHTML("beforeend", `<section class="card" data-screen-content="income">${cardHeader(T("Полученные выплаты"))}${incomePaneHTML()}</section>`);
-    if (screen === "operations") root.insertAdjacentHTML("beforeend", `<section id="ledger-screen" class="card" data-screen-content="operations">${ledgerHTML()}</section>`);
   }
-  function layoutAnalytics({root, panes, attach}) {
-    const groups = $$(":scope > .two-column", root);
-    if (!groups.length) return;
-    panes.push(["", T("Обзор")]);
-    attach("history", T("portfolio.history_title"), groups[0]?.children[0], true);
-    attach("performance", T("analytics.period_short"), groups[0]?.children[1], true);
-    attach("income", T("portfolio.income_short"), groups[1]?.children[0], true);
-    attach("risk", T("analytics.risk_short"), groups[1]?.children[1]);
+  function layoutAnalytics({root,panes,attach}) {
+    panes.push(["",T("Обзор")]);
+    attach("structure",T("Структура портфеля"),$("[data-analytics-allocation]",root),true);
+    attach("risk",T("analytics.risk_short"),$("[data-analytics-risk]",root),true);
+    attach("history",T("portfolio.history_title"),$("[data-analytics-history]",root));
   }
   function layoutSettings({root, screen, panes, attach}) {
-    if (state.tour) return;
+    if (state.guest) return;
     const form = $("#preferences-form", root);
     const sections = form ? $$(":scope > section", form) : [];
     attach("appearance", T("Оформление и приватность"), sections[0], true);
     attach("notifications", T("Уведомления"), [sections[1], $("#notification-settings", root)]);
     if (sections[0]) sections[0].insertAdjacentHTML("beforeend", `<div class="form-actions"><button class="button primary" type="submit">${H("Сохранить настройки")}</button></div>${saveErrorHTML("prefs")}`);
     attach("broker", T("Подключение T-Invest"), $("#broker-settings", root));
-    attach("recovery", T("Ранее начатые исполнения"), $("#recovery-settings", root));
     const right = $$(".settings-layout > div:last-child > section", root);
     for (const item of right.filter(item => !item.id)) {
       if ($('[data-action="legal"]', item)) attach("about", T("О приложении"), item);
@@ -5777,13 +5338,12 @@
     if (screen === "support") root.insertAdjacentHTML("beforeend", `<section id="workspace-support" class="card" data-screen-content="support">${supportHTML()}</section>`);
   }
   function layoutProfile({root, attach}) {
-    if (state.tour) return;
-    const sections = $$(".settings-layout > section", root);
-    attach("personal", T("Мой профиль"), sections[0], true);
-    attach("identities", T("Способы входа"), [sections[1], sections[4]]);
-    attach("delete", T("Удаление аккаунта"), sections[2]);
-    attach("sessions", T("Активные сессии"), sections[3]);
-    attach("plan", T("План и подписка"), sections[5]);
+    if (state.guest) return;
+    attach("personal",T("Мой профиль"),$("[data-profile-personal]",root),true);
+    attach("identities",T("auth.email.account_access"),$("[data-profile-identities]",root));
+    attach("delete",T("Удаление аккаунта"),$("[data-profile-delete]",root));
+    attach("sessions",T("Активные сессии"),$(".settings-layout > .card.wide:not([data-profile-delete])",root));
+    attach("plan",T("План и подписка"),$("[data-profile-plan]",root));
   }
   function layoutAssistant({root, screen, panes, attach}) {
     attach("conversation", T("assistant.chat"), $(".chat-card", root));
@@ -5799,9 +5359,8 @@
     attach("editor", T("Моя настройка"), editors[0]);
     attach("assessment", T("Проверка на вашем счёте"), editors[1]);
     attach("research", T("Исследование на истории"), editors[2]);
-    attach("plan", T("execution.title"), editors[3]);
-    panes.push(["archive", T("Архив исследований")], ["evidence", T("Дополнительные источники исследования")], ["executions", T("execution.history")]);
-    if (!state.tour && !state.strategy.draft && screen && screen !== "catalog") {
+    panes.push(["archive", T("Архив исследований")], ["evidence", T("Дополнительные источники исследования")]);
+    if (!state.guest && !state.strategy.draft && screen && screen !== "catalog") {
       const placeholder = $(".strategy-layout > section", root);
       if (placeholder) placeholder.hidden = false;
     }
@@ -5836,45 +5395,10 @@
     for (const anchor of $$('a[href^="/legal/"]', root)) { anchor.removeAttribute("target"); anchor.removeAttribute("rel"); }
     restoreScreenDrafts(root);
   }
-  function incomePaneHTML() {
-    const income = state.data.workspace?.income;
-    if (!income) return state.loading.has("workspace") ? U.loading(T("state.loading")) : dataError("workspace") || empty(T("История выплат пока недоступна"), T("Для расчёта нужны подтверждённые операции брокера."));
-    return infoRows([[T("Купоны"), money(income.coupons_rub)], [T("Дивиденды"), money(income.dividends_rub)], [T("Прочие доходы"), money(income.other_income_rub)], [T("Погашения капитала"), money(income.redemptions_rub)]]) + `<p class="fine-print">${esc(date(income.from))} — ${esc(date(income.to))}</p>`;
-  }
-  function ledgerRow(item, names) {
-    const instrument = item.instrument_uid ? `<button class="button secondary small-button" data-asset="${esc(item.instrument_uid)}">${esc(item.ticker || T("Инструмент"))}</button>` : "—";
-    const category = names[item.category] || T("portfolio.unclassified");
-    const amount = money(item.payment?.value, 2, String(item.payment?.currency || "").toUpperCase());
-    return `<tr><td>${esc(date(item.operation_date, true))}</td><td>${esc(item.name || item.description || item.operation_type)}<small class="fine-print">${esc(category)}</small></td><td>${esc(amount)}</td><td>${instrument}</td></tr>`;
-  }
-  function ledgerHTML() {
-    const data = state.data.ledger;
-    if (!data) return state.errors.ledger ? dataError("ledger") : U.loading(T("state.loading"));
-    const names = {contribution: T("portfolio.contribution"), withdrawal: T("portfolio.withdrawal"), fee: T("Комиссии за период"), tax: T("Налоги"), income: T("Полученные выплаты"), principal_return: T("Погашения капитала"), internal: T("portfolio.internal"), non_cash_transfer: T("portfolio.non_cash"), unclassified: T("portfolio.unclassified")};
-    const rows = (data.items || []).map(item => ledgerRow(item, names)).join("");
-    const table = rows ? `<div class="table-scroll"><table class="asset-table"><thead><tr><th>${H("Дата")}</th><th>${H("Операция")}</th><th>${H("Сумма")}</th><th>${H("Инструмент")}</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty(T("portfolio.no_operations"), T("portfolio.no_operations_details"));
-    const restart = state.errors.ledger?.code === "workspace_operation_history_changed";
-    const more = data.next_cursor && !restart ? button(T("Загрузить ещё"), "ledger-more", {small: true, extra: state.loading.has("ledger-more") || state.loading.has("ledger") ? " disabled" : ""}) : "";
-    return `${cardHeader(T("portfolio.operations"))}${freshness(data.source || "T-Invest", data.observed_at, data.status)}${dataError("ledger")}<p class="fine-print">${H("portfolio.operations_notice")}</p>${table}${more}`;
-  }
-  async function loadLedgerPage() {
-    const ledger = state.data.ledger;
-    if (!ledger?.next_cursor || state.loading.has("ledger-more") || state.loading.has("ledger") || state.errors.ledger?.code === "workspace_operation_history_changed") return;
-    const generation = state.generation;
-    const version = state.resourceVersions.get("ledger") || 0;
-    const current = () => generation === state.generation && state.data.ledger === ledger && version === (state.resourceVersions.get("ledger") || 0);
-    state.loading.add("ledger-more");
-    try {
-      const page = await api(`/api/workspace/operations?limit=${C.pagination.pageSize}&cursor=${encodeURIComponent(ledger.next_cursor)}`);
-      if (current()) { state.data.ledger = mergePage(ledger, page); delete state.errors.ledger; }
-    } catch (error) { if (current() && !isCancelled(error)) state.errors.ledger = error; }
-    finally {
-      if (generation === state.generation) {
-        state.loading.delete("ledger-more");
-        if (state.view === "portfolio") renderPortfolio();
-      }
-    }
-  }
+
+
+
+
   function supportAddress(value) {
     if (typeof value !== "string" || value.length > C.limits.emailCharacters || /[\s<>]/.test(value)) return "";
     const parts = value.split("@");
@@ -5946,7 +5470,7 @@
     if (Object.keys(state.screenDrafts).length) toast(T("pwa.drafts_restored"));
   }
   async function confirmUpdateReadback() {
-    const awaitingResult = researchPending() || state.assistantBusy || state.billingBusy || state.executionBusy || state.recovery.busy || state.prefs.busy || state.strategy.busy || [...state.requests].some(controller => controller.omnicioMutation);
+    const awaitingResult = researchPending() || state.assistantBusy || state.billingBusy || state.prefs.busy || state.strategy.busy || [...state.requests].some(controller => controller.omnicioMutation);
     if (awaitingResult) { toast(T("pwa.finish_work"), true); return false; }
     if ($("#goal-form")?.dataset.uncertain === "true") { toast(T("pwa.goal_readback"), true); return false; }
     if (!state.assistantRequest || !["running", "uncertain"].includes(state.assistantRequest.status)) return true;
@@ -6003,7 +5527,7 @@
   function stopTableQuotes() { clearTimeout(tableQuotesTimer); tableQuotesTimer = null; }
   function scheduleTableQuotes(delay = C.timing.quotePollMs) {
     stopTableQuotes();
-    if (state.mode !== "account" || !state.user || state.locked || document.visibilityState !== "visible" || !["home", "portfolio", "market", "search"].includes(state.view)) return;
+    if (!["account", "guest"].includes(state.mode) || state.locked || document.visibilityState !== "visible" || !["home", "portfolio", "market", "search"].includes(state.view)) return;
     tableQuotesTimer = setTimeout(() => void pollTableQuotes(), delay);
   }
   function adoptTableQuotes(items, uids) {
@@ -6032,7 +5556,7 @@
       for (let offset = 0; offset < uids.length; offset += C.pagination.quoteBatchSize) {
         const chunk = uids.slice(offset, offset + C.pagination.quoteBatchSize);
         const payload = await api(`/api/market/quotes?instrument_uids=${encodeURIComponent(chunk.join(","))}`);
-        if (generation !== state.generation || brokerContext !== (state.brokerContext || 0) || state.tour) return;
+        if (generation !== state.generation || brokerContext !== (state.brokerContext || 0)) return;
         adoptTableQuotes(payload.items, chunk);
       }
     } catch (error) {
@@ -6060,7 +5584,7 @@
     const current = () => context.generation === state.generation && currentEventRead(context.epoch);
     try {
       const summary = await api("/api/events/summary");
-      if (current() && !state.tour) { state.data.eventSummary = summary; delete state.errors.eventSummary; paintEventCounters(); }
+      if (current() && !state.guest) { state.data.eventSummary = summary; delete state.errors.eventSummary; paintEventCounters(); }
     } catch (error) {
       if (!isCancelled(error) && current()) { state.errors.eventSummary = error; paintEventCounters(); }
     } finally {
@@ -6075,11 +5599,11 @@
     if (!raw) { openDialog(T("Стратегии"), `<p class="notice">${H("navigation.not_found")}</p>`); return; }
     const preset = I.preset(raw);
     const sources = (state.data.catalog?.sources || []).filter(item => !preset.source_ids || preset.source_ids.includes(item.id));
-    openDialog(preset.title, `<p class="help-copy">${esc(preset.description || "")}</p><p class="notice">${esc(preset.risk || "")}</p><h3>${H("Методика и источники")}</h3><ul class="source-list">${sources.map(renderStrategiesLi).join("")}</ul><p class="fine-print">${H("strategy.demo_description")}</p>${button(T("Войти"), "login", {primary: true})}`);
+    openDialog(preset.title, `<p class="help-copy">${esc(preset.description || "")}</p><p class="notice">${esc(preset.risk || "")}</p><h3>${H("Методика и источники")}</h3><ul class="source-list">${sources.map(renderStrategiesLi).join("")}</ul><p class="fine-print">${H("strategy.public_description")}</p>${button(T("Войти"), "login", {primary: true})}`);
   }
 
   const renderCurrent = ({preserveAssetChart = false} = {}) => {
-    if ((state.locked || !state.user && !state.tour) && state.view !== "install") return;
+    if ((state.locked || !state.user && !state.guest) && state.view !== "install") return;
     const menuFocus = captureScreenMenuFocus();
     const overviewState = captureOverviewState();
     updateIdentity();
@@ -6113,7 +5637,7 @@
     }
   };
   const chooseLocale = locale => {
-    if (state.user && !state.tour) {
+    if (state.user && !state.guest) {
       if (!editPreferences(preferences => { preferences.locale = locale; })) return;
     } else {
       U.setLocale(locale);
@@ -6141,56 +5665,242 @@
       return `<button class="public-strategy-card" data-public-strategy="${esc(item.id)}">${icon(symbol)}<strong>${esc(item.title)}</strong><small>${esc(strategyTaglines()[item.id] || item.description)}</small></button>`;
     }).join("");
   };
+  let authResendTimer = null;
+  const authChallengeActive = () => Boolean(state.authChallenge?.challenge_id);
+  const authLegalFields = ['accept_privacy', 'accept_personal_data', 'accept_terms', 'confirm_age_18'];
+  const authScreenMessages = {
+    login: {title: 'auth.email.login_title', explanation: 'auth.email.explanation', submit: 'Войти', endpoint: 'login'},
+    register: {title: 'auth.email.register_title', explanation: 'auth.email.explanation', submit: 'auth.email.register', endpoint: 'register'},
+    enroll: {title: 'auth.email.enroll_title', explanation: 'auth.email.enroll_help', submit: 'auth.email.link', endpoint: 'enroll'},
+    verify: {title: 'auth.email.verify_title', explanation: 'auth.email.code_sent', submit: 'auth.email.verify', endpoint: 'verify'},
+    resetRequest: {title: 'auth.email.reset_title', explanation: 'auth.email.reset_help', submit: 'auth.email.send_code', endpoint: 'password-reset/request'},
+    resetConfirm: {title: 'auth.email.verify_title', explanation: 'auth.email.code_sent', submit: 'auth.email.save_password', endpoint: 'password-reset/confirm'}
+  };
+  const authScreen = () => {
+    const challenge = authChallengeActive();
+    const reset = state.authMode === 'reset';
+    const register = state.authMode === 'register' || state.authLink;
+    let phase = 'login';
+    if (challenge) phase = reset ? 'resetConfirm' : 'verify';
+    else if (reset) phase = 'resetRequest';
+    else if (state.authLink) phase = 'enroll';
+    else if (register) phase = 'register';
+    return {challenge, reset, register, phase};
+  };
+  const renderAuthFields = ({challenge, reset, register}) => {
+    const form = $('#auth-form');
+    const newPassword = register || reset && challenge;
+    $('#auth-email-row').hidden = challenge;
+    form.elements.email.required = !challenge;
+    form.elements.email.disabled = challenge;
+    $('#auth-code-row').hidden = !challenge;
+    form.elements.code.required = challenge;
+    form.elements.code.disabled = !challenge;
+    $('#auth-password-row').hidden = challenge ? !reset : reset;
+    form.elements.password.disabled = $('#auth-password-row').hidden;
+    form.elements.password.required = !form.elements.password.disabled;
+    form.elements.password.autocomplete = newPassword ? 'new-password' : 'current-password';
+    form.elements.password.minLength = newPassword ? state.config?.password_min_length || 15 : 1;
+    form.elements.password.maxLength = state.config?.password_max_length || 128;
+    $('#auth-consents').hidden = !register || challenge;
+    for (const name of authLegalFields) {
+      form.elements[name].required = register && !challenge;
+      form.elements[name].disabled = !register || challenge;
+    }
+  };
+  const renderAuthActions = ({challenge, reset, register}) => {
+    $('#auth-tabs').hidden = challenge || reset || state.authLink;
+    const needsEmail = !challenge && (reset || register);
+    const mailUnavailable = state.config?.email_enabled === false;
+    $('#email-auth-submit').disabled = state.authBusy || !state.config || needsEmail && mailUnavailable;
+    $('#auth-restart').hidden = !challenge && !reset;
+    $('#auth-dialog [data-action="auth-reset"]').hidden = challenge || reset || register;
+    for (const tab of $$('[data-auth-mode]')) {
+      tab.setAttribute('aria-selected', String(tab.dataset.authMode === state.authMode));
+      tab.disabled = state.authBusy;
+    }
+  };
+  const authAvailabilityMessage = () => {
+    if (!state.config) return T('Не удалось проверить доступность регистрации.');
+    if (state.config.email_enabled === false) return T('auth.email.mail_unavailable');
+    return T('auth.email.domains');
+  };
+  const renderAuthResend = challenge => {
+    $('#auth-resend').hidden = !challenge;
+    const remaining = Math.max(0, Math.ceil(((state.authChallenge?.resendAt || 0) - Date.now()) / 1000));
+    $('#auth-resend').disabled = state.authBusy || remaining > 0;
+    $('#auth-resend').textContent = remaining ? T('auth.email.resend_in', {seconds: remaining}) : T('auth.email.resend');
+    clearTimeout(authResendTimer);
+    if (remaining && $('#auth-dialog').open) authResendTimer = setTimeout(renderAuthConfig, 1000);
+  };
   const renderAuthConfig = () => {
-    const config = state.config;
-    const vkEnabled = Boolean(config?.vkid_enabled);
-    const tidEnabled = Boolean(config?.tid_enabled);
-    $("#tid-login").disabled = !tidEnabled;
-    $("#vkid-login").disabled = !vkEnabled;
-    $("#tid-state").textContent = tidEnabled ? "" : T("T-ID ещё не подключён на сервере");
-    $("#vkid-state").textContent = vkEnabled ? "" : T("VK ID временно недоступен");
-    const registration = !config ? T("Не удалось проверить доступность регистрации.") : renderAuthConfigValue(config);
-    $("#registration-state").textContent = registration;
-    $("#public-access-status").textContent = registration;
+    const screen = authScreen();
+    const messages = authScreenMessages[screen.phase];
+    renderAuthFields(screen);
+    renderAuthActions(screen);
+    $('#auth-title').textContent = T(messages.title);
+    $('#auth-explanation').textContent = T(messages.explanation);
+    $('#email-auth-submit').textContent = T(messages.submit);
+    $('#registration-state').textContent = authAvailabilityMessage();
+    $('#public-access-status').textContent = T('market.public_access');
+    renderAuthResend(screen.challenge);
   };
   function openAuth(mode = "login", linkCurrent = false) {
     closeDrawer(false);
-    state.authMode = mode;
+    state.authMode = ["login", "register", "reset"].includes(mode) ? mode : "login";
     state.authLink = Boolean(linkCurrent && state.user);
+    state.authChallenge = null;
+    state.authLegalVersions = structuredClone(state.config?.legal_versions || {});
+    state.authBusy = false;
+    state.authSequence += 1;
+    $("#auth-form").reset();
+    $("#auth-password").type = "password";
     for (const dialog of $$("dialog[open]")) if (dialog.id !== "auth-dialog" && dialog.id !== "session-dialog") dialog.close();
-    $("#auth-title").innerHTML = state.authLink ? (H("Подключите ещё один") + "<br>" + H("способ входа")) : renderOpenAuthValue(mode);
-    $("#auth-explanation").textContent = state.authLink ? T("Подтвердите вторую учётную запись у провайдера. Она будет связана с текущим профилем OMNICIO.") : renderOpenAuthValue2(mode);
-    for (const tab of $$("[data-auth-mode]")) tab.setAttribute("aria-selected", String(tab.dataset.authMode === mode));
-    renderAuthConfig();
     showMessage($("#auth-message"), "");
     if (state.route.overlay !== "auth") updateViewRoute({overlay: "auth"});
     if (!$("#auth-dialog").open) $("#auth-dialog").showModal();
+    renderAuthConfig();
+    $("#auth-email").focus();
   }
-  const startAuth = async (form, provider) => {
-    if (!["tid", "vkid"].includes(provider) || !form.reportValidity()) return;
-    const payload = Object.fromEntries(["accept_privacy", "accept_personal_data", "accept_terms", "confirm_age_18"].map(key => [key, form.elements[key].checked]));
-    if (!Object.values(payload).every(Boolean)) return;
-    const destination = state.authReturn || (state.mode === "public" ? {view: "portfolio"} : {...state.route, overlay: ""});
-    payload.return_to = "/" + U.routeHash({...destination, mode: "account"});
-    if (state.authLink) payload.link_current_account = true;
-    $("#tid-login").disabled = true;
-    $("#vkid-login").disabled = true;
-    showMessage($("#auth-message"), T("Переходим к подтверждению личности…"));
+  const authErrorMessages = new Map([
+    ['email_invalid', 'auth.email.invalid_address'],
+    ['email_domain_not_allowed', 'auth.email.invalid_address'],
+    ['password_length_invalid', 'auth.email.weak_password'],
+    ['password_too_short', 'auth.email.weak_password'],
+    ['password_compromised_or_common', 'auth.email.weak_password'],
+    ['email_or_password_invalid', 'auth.email.invalid_login'],
+    ['email_code_invalid_or_expired', 'auth.email.invalid_code'],
+    ['email_not_configured', 'auth.email.mail_unavailable'],
+    ['auth_rate_limited', 'auth.email.rate_limited'],
+    ['auth_busy', 'auth.email.rate_limited'],
+    ['auth_resend_unavailable', 'auth.email.rate_limited'],
+    ['email_already_enrolled', 'auth.email.already_enrolled'],
+    ['legal_versions_changed', 'auth.email.legal_changed'],
+    ['legal_acknowledgments_required', 'auth.email.legal_required'],
+    ['age_confirmation_required', 'auth.email.age_required'],
+    ['legal_versions_unavailable', 'auth.email.legal_unavailable']
+  ]);
+  const authError = error => {
+    const messageKey = authErrorMessages.get(error?.code || error?.message);
+    return messageKey ? T(messageKey) : humanError(error);
+  };
+  const acceptAuthChallenge = result => {
+    if (typeof result?.challenge_id !== "string" || !result.challenge_id || result.challenge_id.length > 128) throw new Error("invalid_server_response");
+    state.authChallenge = {...result, resendAt: Date.now() + Math.max(60, Number(result.resend_after_seconds) || 60) * 1000};
+    $("#auth-form").elements.password.value = "";
+    $("#auth-form").elements.code.value = "";
+  };
+  const authDestination = () => {
+    if (state.authReturn) return state.authReturn;
+    if (state.authLink) return {view: 'profile'};
+    if (state.mode === 'public') return {view: 'portfolio'};
+    return {...state.route, overlay: ''};
+  };
+  const invalidateAuthReads = () => {
+    state.authReadContext += 1;
+    for (const controller of state.requests) if (controller.omnicioAuthRead) controller.abort();
+    const names = new Set(['identities', 'sessions']);
+    for (const [name, request] of state.resourceRequests) if (privateRequest(request.path)) names.add(name);
+    for (const name of names) {
+      state.resourceVersions.set(name, (state.resourceVersions.get(name) || 0) + 1);
+      state.resourceRequests.delete(name);
+      state.loading.delete(name);
+      delete state.data[name];
+      delete state.errors[name];
+    }
+  };
+  const completeEmailLogin = async () => {
+    const destination = authDestination();
+    state.authReturn = null;
+    if (state.authLink) invalidateAuthReads();
+    else clearPrivateState();
+    $('#auth-dialog').close();
+    $('#session-dialog').close();
+    state.locked = false;
+    await bootstrap();
+    if (state.user && state.session.status === 'authenticated') navigate(destination.view || 'portfolio', {...destination, mode: 'account', overlay: ''}, {replace: true});
+    else {
+      openAuth();
+      showMessage($('#auth-message'), T('auth.email.session_retry'), true);
+    }
+  };
+  const emailAuthRequest = (form, screen) => {
+    const endpoint = authScreenMessages[screen.phase].endpoint;
+    if (screen.challenge) {
+      const payload = {challenge_id: state.authChallenge.challenge_id, code: form.elements.code.value};
+      if (screen.reset) payload.password = form.elements.password.value;
+      return {endpoint, payload};
+    }
+    const payload = {email: form.elements.email.value.trim()};
+    if (!screen.reset) payload.password = form.elements.password.value;
+    if (screen.register) {
+      for (const name of authLegalFields) payload[name] = form.elements[name].checked;
+      payload.legal_versions = state.authLegalVersions;
+    }
+    return {endpoint, payload};
+  };
+  const completePasswordReset = () => {
+    const pushDevice = detachedPushDevice();
+    clearPrivateState();
+    void detachPushDevice(pushDevice, state.generation);
+    state.session.status = 'guest';
+    state.session.error = null;
+    state.locked = false;
+    try { localStorage.removeItem('omnicio-last-route'); } catch { /* Optional navigation state. */ }
+    navigate('public/welcome', {}, {replace: true});
+    sessionChannel?.postMessage({type: 'session-cleared'});
+    openAuth('login');
+    showMessage($('#auth-message'), T('auth.email.password_updated'));
+    void bootstrap();
+  };
+  const completeEmailResponse = async (result, screen, endpoint) => {
+    if (screen.challenge && screen.reset) {
+      completePasswordReset();
+      return;
+    }
+    if (endpoint === 'login' || screen.challenge) {
+      await completeEmailLogin();
+      return;
+    }
+    acceptAuthChallenge(result);
+    showMessage($('#auth-message'), T('auth.email.code_sent'));
+  };
+  const startAuth = async form => {
+    if (state.authBusy || !form.reportValidity()) return;
+    const screen = authScreen();
+    const {endpoint, payload} = emailAuthRequest(form, screen);
+    state.authBusy = true;
+    const sequence = ++state.authSequence;
+    renderAuthConfig();
+    showMessage($('#auth-message'), T('auth.email.processing'));
     try {
-      const result = await api(`/api/auth/${provider}/start`, {
-        method: "POST",
-        body: payload
-      });
-      const url = new URL(result.authorize_url);
-      const host = provider === "tid" ? "id.tbank.ru" : "id.vk.ru";
-      if (url.protocol !== "https:" || url.hostname !== host || url.port && url.port !== "443" || url.username || url.password) throw new Error("invalid_authorization_url");
-      location.assign(url.href);
+      const result = await api(`/api/auth/email/${endpoint}`, {method: 'POST', body: payload, bootstrap: !state.authLink});
+      if (sequence !== state.authSequence) return;
+      await completeEmailResponse(result, screen, endpoint);
     } catch (error) {
-      if (!isCancelled(error)) {
+      if (sequence === state.authSequence && !isCancelled(error)) showMessage($('#auth-message'), authError(error), true);
+    } finally {
+      delete payload.password;
+      if (sequence === state.authSequence) {
+        state.authBusy = false;
         renderAuthConfig();
-        showMessage($("#auth-message"), error?.message === "invalid_authorization_url" ? T("Адрес авторизации не прошёл проверку. Вход остановлен.") : humanError(error), true);
+        if (authChallengeActive()) form.elements.code.focus();
       }
     }
+  };
+  const resendAuthCode = async () => {
+    if (!authChallengeActive() || state.authBusy || Date.now() < state.authChallenge.resendAt) return;
+    state.authBusy = true;
+    const sequence = state.authSequence;
+    renderAuthConfig();
+    try {
+      const result = await api("/api/auth/email/resend", {method: "POST", body: {challenge_id: state.authChallenge.challenge_id}, bootstrap: !state.authLink});
+      if (sequence !== state.authSequence) return;
+      acceptAuthChallenge(result);
+      showMessage($("#auth-message"), T("auth.email.code_sent"));
+    } catch (error) {
+      if (sequence === state.authSequence && !isCancelled(error)) showMessage($("#auth-message"), authError(error), true);
+    } finally { if (sequence === state.authSequence) { state.authBusy = false; renderAuthConfig(); } }
   };
   const verifySession = async () => {
     if (!state.user || state.locked || state.verifying || document.visibilityState !== "visible") return;
@@ -6213,22 +5923,7 @@
       state.verifying = false;
     }
   };
-  const callbackMessage = () => {
-    const params = new URLSearchParams(location.search);
-    const code = params.get("auth_error");
-    if (params.has("auth") || code) history.replaceState(history.state, "", `${location.pathname}${location.hash}`);
-    if (!code) return;
-    const labels = {
-      registration: T("Регистрация новых аккаунтов сейчас закрыта."),
-      capacity: T("Свободных мест для новых аккаунтов пока нет."),
-      provider: T("Провайдер входа временно недоступен. Повторите позже."),
-      account: T("Этот аккаунт сейчас недоступен."),
-      identity_conflict: T("Этот способ входа уже связан с другим аккаунтом."),
-      link_conflict: T("Эта учётная запись уже привязана к другому профилю.")
-    };
-    openAuth();
-    showMessage($("#auth-message"), labels[code] || T("Авторизация не завершена. Попробуйте ещё раз."), true);
-  };
+
   const bootstrap = async () => {
     const generation = state.generation;
     const sequence = ++state.session.sequence;
@@ -6239,6 +5934,7 @@
     const config = api("/api/auth/config", {bootstrap: true}).then(value => {
       if (!current()) return;
       state.config = value;
+      if (!state.authChallenge && !Object.keys(state.authLegalVersions || {}).length) state.authLegalVersions = structuredClone(value.legal_versions || {});
       renderAuthConfig();
     }).catch(error => { if (current() && !isCancelled(error)) renderAuthConfig(); });
     const catalog = loadResource("catalog", "/api/strategy/catalog", {bootstrap: true}).then(value => {
@@ -6267,13 +5963,12 @@
         else { state.mode = "account"; sessionSurface(); }
       } else if (state.mode === "account" && state.view !== "install") sessionSurface();
       if (error?.status !== 401) $("#public-access-status").textContent = T("session.retry_title");
-      // A failed verification does not turn a chosen demo/public screen into a login screen.
+      // A failed verification does not turn a chosen public market screen into a login screen.
       if (route.mode === "account" && error?.status === 401) state.user = null;
     });
     state.session.promise = session;
     await Promise.allSettled([config, catalog, session]);
     if (!current()) return;
-    callbackMessage();
   };
   const resetBrokerPreview = () => {
     state.brokerPreview = null;
@@ -6364,7 +6059,7 @@
     // does not cancel writes or discard this user's unsaved settings and forms.
     state.brokerContext = (state.brokerContext || 0) + 1;
     for (const controller of state.requests) if (controller.omnicioBrokerRead) controller.abort();
-    for (const name of ["workspace", "connection", "visualization", "analysis", "ledger", "refreshStatus", "executionCapabilities", "executions", "asset"]) {
+    for (const name of ["workspace", "connection", "visualization", "analysis", "refreshStatus", "asset"]) {
       state.resourceVersions.set(name, (state.resourceVersions.get(name) || 0) + 1);
       state.resourceRequests.delete(name);
       state.loading.delete(name);
@@ -6427,13 +6122,13 @@
     state.user = user;
     state.config = config;
     state.locked = false;
-    state.tour = false;
+    state.guest = false;
     showApp();
   };
-  const hasPending = () => researchPending() || state.assistantBusy || state.billingBusy || state.executionBusy || state.recovery.busy || state.prefs.dirty || state.prefs.busy || state.strategy.dirty || state.strategy.busy || hasFormDrafts();
+  const hasPending = () => researchPending() || state.assistantBusy || state.billingBusy || state.prefs.dirty || state.prefs.busy || state.strategy.dirty || state.strategy.busy || hasFormDrafts();
   const logout = async () => {
     if (!state.user) {
-      state.tour = false;
+      state.guest = false;
       clearPrivateState();
       $("#app-shell").hidden = true;
       $("#public-site").hidden = false;
@@ -6454,7 +6149,7 @@
       if (state.generation !== clearedGeneration || state.user) return;
       state.session.status = "guest";
       try { localStorage.removeItem("omnicio-last-route"); } catch { /* Optional navigation state. */ }
-      state.tour = false;
+      state.guest = false;
       state.locked = false;
       $("#app-shell").hidden = true;
       $("#public-site").hidden = false;
@@ -6728,8 +6423,18 @@
   };
   const actions = {
     login: () => openAuth(),
+    "auth-reset": () => openAuth("reset"),
+    "auth-restart": () => openAuth(state.authMode, state.authLink),
+    "auth-resend": () => resendAuthCode(),
+    "auth-password": () => {
+      const input = $("#auth-password");
+      input.type = input.type === "password" ? "text" : "password";
+      $('[data-action="auth-password"]').setAttribute("aria-pressed", String(input.type === "text"));
+    },
     register: () => openAuth("register"),
-    tour: () => navigate("portfolio", {mode: "demo"}),
+    "market-previous": () => changeMarketPage(-1),
+    "market-next": () => changeMarketPage(1),
+    "open-market": () => navigate("market", {mode: state.user ? "account" : "guest"}),
     "session-retry": bootstrap,
     "public-home": () => navigate("public/welcome"),
     "route-back": routeBack,
@@ -6739,7 +6444,7 @@
     "support": () => navigate(state.mode === "public" ? "public/support" : "settings", {screen: state.mode === "public" ? "" : "support"}),
     "leave-tour": () => navigate("public/welcome"),
     connect: () => {
-      if (!state.user || state.tour) { state.authReturn = {view: "settings", screen: "broker"}; openAuth(); return; }
+      if (!state.user || state.guest) { state.authReturn = {view: "settings", screen: "broker"}; openAuth(); return; }
       navigate("settings", {screen: "broker"});
     },
     refresh: async () => {
@@ -6752,21 +6457,6 @@
     "workspace-refresh": requestWorkspaceRefresh,
     "resource-retry": retryResource,
     "focus-search": () => { $("#global-search").focus(); },
-    "execution-plan": openExecutionPlanner,
-    "execution-confirm": confirmExecutionPlan,
-    "execution-history": openExecutionHistory,
-    "recovery-dispatch": dispatchExecutionLeg,
-    "recovery-open": openRecovery,
-    "recovery-reload": reloadRecovery,
-    "recovery-detail-reload": reloadRecoveryDetails,
-    "recovery-reconcile": () => mutateRecovery("reconcile"),
-    "recovery-cancel": askRecoveryCancellation,
-    "recovery-cancel-confirm": () => mutateRecovery("cancel"),
-    "recovery-cancel-dismiss": () => {
-      $("#recovery-confirmation").replaceChildren();
-    },
-    "mandate-revoke": askMandateRevoke,
-    "mandate-revoke-confirm": revokeMandate,
     language: () => {
       const russian = button(T("Русский"), "language-ru", {extra: `aria-pressed="${I.getLocale() === "ru"}"`});
       const english = button("English", "language-en", {extra: `aria-pressed="${I.getLocale() === "en"}"`});
@@ -6781,7 +6471,6 @@
     "events-read-all": readAllEvents,
     "events-more": () => loadEventPage(false),
     "news-more": () => loadEventPage(true),
-    "ledger-more": loadLedgerPage,
     "search-more-events": () => loadSearchPage("events"),
     "search-more-news": () => loadSearchPage("news"),
     "asset-news-more": loadAssetNewsPage,
@@ -6875,146 +6564,174 @@
     "assistant-history-more": () => state.assistantConversation && loadAssistantConversation(state.assistantConversation.id, true),
     "link-identity": () => openAuth("login", true)
   };
-  const clickHandlers = [{
+  const clickHandlers = [
+    {
     matches: ({control}) => control.dataset.assistantConversation,
     run: ({control}) => { navigate("assistant", {screen: "conversation", conversation: control.dataset.assistantConversation}); }
-  }, {
+  },
+    {
     matches: ({control}) => control.dataset.billingId,
     run: ({control}) => billingOperation(control)
-  }, {
+  },
+    {
     matches: ({control}) => control.dataset.researchAction,
     run: ({control}) => control.dataset.researchAction === "archive" ? openResearchArchive() : openResearchEvidence()
-  }, {
+  },
+    {
     matches: ({control}) => control.dataset.researchRun,
     run: ({control}) => researchArchiveAction(control)
-  }, {
+  },
+    {
     matches: ({control}) => control.dataset.sessionRevoke,
     run: ({control}) => revokeSession(control.dataset.sessionRevoke)
-  }, {
-    matches: ({control}) => control.dataset.identityUnlink,
-    run: ({control}) => unlinkIdentity(control.dataset.identityUnlink)
-  }, {
+  },
+    {
     matches: ({control}) => control.dataset.goalPlan,
     run: ({control}) => openGoalPlan(control.dataset.goalPlan)
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.closeDialog !== undefined,
     run: handleClickCloseDialog
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.help,
     run: handleClickHelp
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.themeChoice,
     run: handleClickTheme
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.publicOpen,
     run: handleClickPublicView
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.route,
     run: handleClickRoute
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.authMode,
     run: handleClickAuthMode
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.asset,
     run: handleClickAsset
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.assetTab,
     run: handleClickAssetTab
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.watch,
     run: handleClickWatchlist
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.assetFilter,
     run: handleClickAssetFilter
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.sort,
     run: handleClickSort
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.period,
     run: handleClickPeriod
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.eventFilter,
     run: handleClickEventFilter
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.eventOpen,
     run: handleClickEventOpen
-  }, {
+  },
+    {
     matches: ({control}) => control.dataset.newsOpen,
     run: async ({event, control}) => { event.preventDefault(); await openNews(control.dataset.newsOpen, "broker"); }
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.eventRead,
     run: handleClickEventRead
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.goalEdit,
     run: handleClickGoalEdit
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.goalDelete,
     run: handleClickGoalDelete
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.goalDeleteConfirm,
     run: handleClickGoalDeleteConfirm
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.selectStrategy,
     run: handleClickStrategy
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.publicStrategy,
     run: handleClickPublicStrategy
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.stepField,
     run: handleClickStep
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.chatPrompt,
     run: handleClickChatPrompt
-  }, {
+  },
+    {
     matches: ({
       control
     }) => control.dataset.action && actions[control.dataset.action],
     run: handleClickAction
-  }];
+  }
+  ];
   function openAssistantMemoryEditor(id) {
     const item = state.data.assistantMemory?.items?.find(row => row.id === id);
     if (!item) return;
@@ -7109,72 +6826,86 @@
       await handler.run(context);
     }
   });
-  const submitHandlers = [{matches: ({form}) => form.id === "assistant-memory-form", run: ({form}) => saveAssistantMemory(form)}, {matches: ({form}) => form.id === "assistant-sources-form", run: ({form}) => searchAssistantSources(form)}, {
+  const submitHandlers = [
+    {matches: ({form}) => form.id === "assistant-memory-form", run: ({form}) => saveAssistantMemory(form)},
+    {matches: ({form}) => form.id === "assistant-sources-form", run: ({form}) => searchAssistantSources(form)},
+    {
     matches: ({form}) => form.id === "assistant-connection-form",
     run: ({form}) => saveAssistantConnection(form)
-  }, {
+  },
+    {
     matches: ({form}) => form.id === "billing-checkout-form",
     run: ({form}) => checkoutBilling(form)
-  }, {
+  },
+    {
     matches: ({form}) => form.id === "research-evidence-form",
     run: ({form}) => saveResearchEvidence(form)
-  }, {
-    matches: ({form}) => form.id === "execution-plan-form",
-    run: ({form}) => calculateExecutionPlan(form)
-  }, {
+  },
+    {
     matches: ({form}) => form.id === "goal-plan-form",
     run: ({form}) => saveGoalPlan(form)
-  }, {
+  },
+    {
     matches: ({
       form
     }) => form.id === "auth-form",
     run: handleSubmitAuth
-  }, {
+  },
+    {
     matches: ({
       form
     }) => form.id === "global-search-form",
     run: handleSubmitSearch
-  }, {
+  },
+    {
     matches: ({
       form
     }) => form.id === "strategy-form",
     run: handleSubmitStrategy
-  }, {
+  },
+    {
     matches: ({
       form
     }) => form.id === "goal-form",
     run: handleSubmitGoal
-  }, {
+  },
+    {
     matches: ({
       form
     }) => form.id === "profile-form",
     run: handleSubmitProfile
-  }, {
+  },
+    {
     matches: ({
       form
     }) => form.id === "preferences-form",
     run: handleSubmitPreferences
-  }, {
+  },
+    {
     matches: ({
       form
     }) => form.id === "broker-form",
     run: handleSubmitBroker
-  }, {
+  },
+    {
     matches: ({
       form
     }) => form.id === "assistant-form",
     run: handleSubmitAssistant
-  }, {
+  },
+    {
     matches: ({
       form
     }) => form.id === "research-form",
     run: handleSubmitResearch
-  }, {
+  },
+    {
     matches: ({
       form
     }) => form.id === "delete-account-form",
     run: handleSubmitAccountDeletion
-  }];
+  }
+  ];
   document.addEventListener("submit", async event => {
     const form = event.target;
     const context = {form, event};
@@ -7220,7 +6951,13 @@
   });
   $("#session-dialog").addEventListener("cancel", event => event.preventDefault());
   $("#auth-dialog").addEventListener("close", () => {
+    if ($("#auth-dialog").open) return;
     $("#auth-form").reset();
+    state.authChallenge = null;
+    state.authBusy = false;
+    state.authSequence += 1;
+    clearTimeout(authResendTimer);
+    state.authLink = false;
   });
   document.addEventListener("pointerdown", event => {
     if (!event.target.closest("#profile-menu,#profile-button")) {
@@ -7251,7 +6988,7 @@
     const route = parseRoute();
     if (route.mode === "auto") {
       route.mode = state.mode;
-      if (state.mode === "public") route.mode = state.user ? "account" : "demo";
+      if (state.mode === "public") route.mode = state.user ? "account" : "guest";
     }
     if (U.routeHash(route) !== U.routeHash(activeRoute())) navigate(route.view, route, {fromHistory: true});
   };
@@ -7279,21 +7016,14 @@
   window.addEventListener("hashchange", historyNavigation);
   const refreshVisibleData = async () => {
     stopVisibleRefresh();
-    if (freshnessBusy || document.visibilityState !== "visible" || !navigator.onLine || !state.user || state.locked || state.mode !== "account") return;
-    const generation = state.generation;
-    const canRefresh = () => generation === state.generation && state.user && !state.locked && state.mode === "account" && document.visibilityState === "visible" && navigator.onLine && !(document.activeElement?.matches("input, textarea, select") || $("dialog[open]") || hasPending() || [...state.requests].some(controller => controller.omnicioMutation));
-    freshnessBusy = true;
+    if(freshnessBusy || document.visibilityState!=='visible' || !navigator.onLine || state.locked || !['account','guest'].includes(state.mode)) return;
+    const generation=state.generation;
+    const canRefresh=()=>generation===state.generation && !state.locked && ['account','guest'].includes(state.mode) && document.visibilityState==='visible' && navigator.onLine && !(document.activeElement?.matches('input, textarea, select') || $('dialog[open]') || hasPending() || [...state.requests].some(controller=>controller.omnicioMutation));
+    freshnessBusy=true;
     try {
-      await verifySession();
-      void refreshPushDevice();
-      if (canRefresh()) {
-        await loadForView(state.view, state.route, true, {background: true});
-        if (canRefresh()) await resumeWorkspaceRefresh(canRefresh);
-      }
-    } finally {
-      freshnessBusy = false;
-      scheduleVisibleRefresh();
-    }
+      if(state.mode==='account') {await verifySession(); void refreshPushDevice();}
+      if(canRefresh()) {await loadForView(state.view,state.route,true,{background:true});if(canRefresh() && state.mode==='account')await resumeWorkspaceRefresh(canRefresh);}
+    } finally {freshnessBusy=false;scheduleVisibleRefresh();}
   };
   window.addEventListener("focus", () => {
     void refreshVisibleData();
@@ -7476,17 +7206,11 @@
   function renderAssetsTableAssetTicker(item) {
     return `<small class="asset-ticker">${esc(item.ticker || item.instrument_type)}</small>`;
   }
-  function holdingReturnHTML(item) {
-    const currency = String(item.expected_yield_currency || "").toUpperCase();
-    const value = /^[A-Z]{3}$/.test(currency) ? signedMoney(item.expected_yield_amount, currency) : "—";
-    const daily = item.daily_yield;
-    const day = daily && /^[A-Z]{3}$/i.test(daily.currency) ? `<small class="holding-daily">${H("portfolio.today")}: ${esc(signedMoney(daily.value, daily.currency))}</small>` : "";
-    return `<span class="holding-mobile-label">${H("portfolio.since_purchase")}</span><strong class="${financialTone(item.expected_yield_amount)}">${esc(value)}</strong>${day}`;
-  }
+
   function renderAssetsTableAssetName(item, compact) {
     const quantity = T("portfolio.quantity_value", {quantity: format(item.quantity, C.display.quantityFractionDigits)});
     const extraColumns = compact ? "" : `<td class="holding-share"><span class="holding-mobile-label">${H("Доля")}</span>${esc(percent(item.nav_percent))}</td><td class="holding-watch">${watchButton(item)}</td>`;
-    return `<tr data-position="${esc(item.uid)}"><td class="holding-name"><button class="asset-name" data-asset="${esc(item.uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}${renderAssetsTableAssetTicker(item)}<small class="holding-quantity">${esc(quantity)}</small></span></button></td><td class="holding-quote" data-table-quote="${esc(item.uid)}">${tableQuoteHTML(item)}</td><td class="holding-return">${holdingReturnHTML(item)}</td><td class="holding-value"><span class="holding-mobile-label">${H("Стоимость в портфеле")}</span><strong>${esc(money(item.value_rub))}</strong></td>${extraColumns}</tr>`;
+    return `<tr data-position="${esc(item.uid)}"><td class="holding-name"><button class="asset-name" data-asset="${esc(item.uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}${renderAssetsTableAssetTicker(item)}<small class="holding-quantity">${esc(quantity)}</small></span></button></td><td class="holding-quote" data-table-quote="${esc(item.uid)}">${tableQuoteHTML(item)}</td><td class="holding-value"><span class="holding-mobile-label">${H("Стоимость в портфеле")}</span><strong>${esc(money(item.value_rub))}</strong></td>${extraColumns}</tr>`;
   }
   function renderHomeStrategyFragment(document) {
     return `${T("Просадка:")} ${esc(percent(document.profile.max_drawdown_percent))}`;
@@ -7518,35 +7242,18 @@
   function renderHomeGoalsGoalsPreviewList(goals) {
     return `<div class="goals-preview-list">${goals.slice(0, C.pagination.compactGoals).map(goalPreview).join("")}</div>`;
   }
-  function renderHomeValue(result) {
-    if (result >= 0) {
-      return "positive";
-    }
-    return "negative";
-  }
-  function renderHomeDataFootnote(overview) {
-    return `<p class="data-footnote">T-Invest · ${esc(date(overview.observed_at, true))} ${H("МСК")}</p>`;
-  }
-  function renderHomeFragment(performance) {
-    return `${esc(date(performance.from))} — ${esc(date(performance.to))}<br>${H("Modified Dietz · оценка за период с учётом времени пополнений и выводов. Не годовая ставка.")}`;
-  }
-  function renderHomeMetricNote(result) {
-    return `<p class="metric-note">${H("Результат:")} <span class="${renderHomeValue(result)}">${esc(money(result))}</span></p>`;
-  }
-  function renderHomeFragment2(latestMonth) {
-    return `${latestMonth.month}-01`;
-  }
-  function renderHomeFragment3(latestMonth) {
-    return `${T("Получено до налоговых списаний ·")} ${esc(date(renderHomeFragment2(latestMonth)))}`;
-  }
-  function renderHomeFragment4() {
-    return `T-Invest · ${esc(date(state.data.visualization.latest.captured_at, true))} ${T("МСК")}`;
-  }
+
+
+
+
+
+
+
   function renderEventFiltersFilterButton(key, title) {
     return `<button class="filter-button" data-event-filter="${key}" aria-pressed="${state.eventFilter === key}">${title}</button>`;
   }
   function renderNewsHTMLEventItem(item) {
-    return `<article class="event-item"><span class="event-icon">${icon("events", true)}</span><div class="event-item-body"><h3><button class="event-title-button" data-public-news="${esc(item.id)}">${esc(item.title)}</button></h3><span class="event-meta">${H("Банк России ·")} ${esc(date(item.published_at, true))}</span></div></article>`;
+    return `<article class="event-item"><span class="event-icon">${icon('events',true)}</span><div class="event-item-body"><h3>${U.sourceLink(item.source_url || item.url,item.title)}</h3><span class="event-meta">${esc(item.source || '')} · ${esc(date(item.published_at || item.occurred_at,true))}</span></div></article>`;
   }
   function renderIndicatorCardsValue(key) {
     if (key === "key_rate") {
@@ -7573,12 +7280,7 @@
   function renderMarketSearchResults() {
     return `<div class="search-results">${watchlist().map(item => renderMarketSearchResult(item)).join("")}</div>`;
   }
-  function renderMarketNotice() {
-    return `<div class="notice">${H("Для поиска инструментов и биржевых графиков подключите T-Invest.")}<div class="form-actions">${button(T("Подключить источник"), "connect", {
-      primary: true,
-      small: true
-    })}</div></div>`;
-  }
+
   function renderSearchSearchResult(item) {
     return `<button class="search-result" data-event-open="${esc(item.id)}">${icon("events")}<span><strong>${esc(item.title)}</strong><small>${H("Событие ·")} ${esc(date(item.occurred_at))}</small></span>${icon("chevron", true)}</button>`;
   }
@@ -7740,7 +7442,7 @@
     return `<button class="strategy-option" data-select-strategy="${esc(item.id)}" aria-pressed="${document?.base_preset_id === item.id && !document?.customized}"><span class="strategy-icon" data-preset="${esc(item.id)}">${icon(symbol)}</span><span class="strategy-option-body"><strong>${esc(item.title)}</strong><small>${esc(strategyTaglines()[item.id] || item.description)}</small></span>${icon(document?.base_preset_id === item.id && !document?.customized ? "check" : "chevron", true)}</button>`;
   }
   function renderStrategiesValue() {
-    if (state.tour) {
+    if (state.guest) {
       return "login";
     }
     return "";
@@ -7934,12 +7636,7 @@
     }
     return renderGoalsCard2();
   }
-  function renderUpdateGoalFieldsValue(kind) {
-    if (kind === "income") {
-      return T("Прогресс — фактически полученные выплаты с даты начала, до отдельных налоговых списаний, умноженные на выбранную долю.");
-    }
-    return T("Прогресс — выбранная доля наблюдаемой стоимости портфеля. Он меняется вместе с рынком и движением денег.");
-  }
+
   function renderEventsValue(data) {
     if (data.digest.frequency === "daily") {
       return T("Дневной");
@@ -7957,12 +7654,8 @@
   function renderAnalyticsCard(label, value) {
     return `<section class="card"><p class="card-label">${label}</p><p class="main-value">${esc(value)}</p></section>`;
   }
-  function renderAnalyticsFragment(performance) {
-    return `${esc(date(performance.from))} — ${esc(date(performance.to))}. `;
-  }
-  function renderAnalyticsFragment2(item) {
-    return `${item.month}-01`;
-  }
+
+
   function renderAnalyticsDetailsSummary(item) {
     return `<details><summary class="details-summary">${esc(item.title)}</summary><p class="fine-print">${esc(item.detail)}</p></details>`;
   }
@@ -7980,18 +7673,8 @@
   function renderProfileFragment() {
     return `${U.loading(T("Загружаем профиль…"))}${dataError("preferences")}`;
   }
-  function renderProfileValue() {
-    if (state.config?.tid_enabled) {
-      return T("Можно подключить");
-    }
-    return T("Не подключён на сервере");
-  }
-  function renderProfileValue2() {
-    if (state.config?.vkid_enabled) {
-      return T("Можно подключить");
-    }
-    return T("Не подключён на сервере");
-  }
+
+
   function renderSettingsValue() {
     if (state.errors.preferences) {
       return "preferences";
@@ -8017,24 +7700,6 @@
   }
   function renderAssistantButton(text, configured) {
     return `<button class="button secondary" data-chat-prompt="${esc(text)}"${!configured ? " disabled" : ""}>${esc(text)}</button>`;
-  }
-  function renderAuthConfigValue(config) {
-    if (config.registration_enabled) {
-      return T("Новый аккаунт создаётся после подтверждения личности, если регистрация доступна.");
-    }
-    return T("Регистрация новых аккаунтов сейчас закрыта. Существующие пользователи могут войти.");
-  }
-  function renderOpenAuthValue(mode) {
-    if (mode === "register") {
-      return (H("Добро пожаловать!") + "<br>" + H("Создайте аккаунт"));
-    }
-    return (H("Добро пожаловать!") + "<br>" + H("Войдите в аккаунт"));
-  }
-  function renderOpenAuthValue2(mode) {
-    if (mode === "register") {
-      return T("Подтвердите личность через T-ID или VK ID. Создание аккаунта зависит от доступности регистрации.");
-    }
-    return T("Используйте свой T-ID или VK ID, чтобы открыть личный кабинет.");
   }
   function renderPreviewBrokerFragment(item) {
     return `${item.name} · ${item.id}`;
@@ -8105,10 +7770,10 @@
     event.preventDefault();
     const choice = control.dataset.themeChoice;
     if (!["dark", "light", "system"].includes(choice)) return;
-    if (!state.user || state.tour || !state.prefs.server) {
+    if (!state.user || state.guest || !state.prefs.server) {
       state.pendingTheme = choice;
       applyTheme(choice);
-      if (state.user && !state.tour && !state.loading.has("preferences")) {
+      if (state.user && !state.guest && !state.loading.has("preferences")) {
         const generation = state.generation;
         await loadResource("preferences", "/api/preferences", {
           force: true
@@ -8139,7 +7804,7 @@
     control
   }) {
     event.preventDefault();
-    navigate(control.dataset.publicOpen, {mode: "demo"});
+    navigate(control.dataset.publicOpen, {mode: "guest"});
   }
   async function handleClickRoute({
     event,
@@ -8226,7 +7891,7 @@
     } else if (["home", "portfolio", "analytics"].includes(scope)) {
       state[`${scope}Period`] = control.dataset.period;
       renderCurrent();
-      if (!state.tour) {
+      if (!state.guest) {
         await loadResource("workspace", workspacePath(), {
           force: true
         });
@@ -8244,7 +7909,7 @@
     state.eventHistoryExtended = false;
     delete state.data.events;
     renderCurrent();
-    if (!state.tour && state.eventFilter !== "market") await loadResource("events", eventsPath(), {force: true});
+    if (!state.guest && state.eventFilter !== "market") await loadResource("events", eventsPath(), {force: true});
     renderCurrent();
   }
   async function handleClickEventOpen({
@@ -8310,12 +7975,12 @@
     control
   }) {
     event.preventDefault();
-    if (state.tour) { navigate("strategies", {screen: "detail", preset: control.dataset.selectStrategy}); return; }
+    if (state.guest) { navigate("strategies", {screen: "detail", preset: control.dataset.selectStrategy}); return; }
     chooseStrategy(control.dataset.selectStrategy);
   }
   async function handleClickPublicStrategy({event, control}) {
     event.preventDefault();
-    navigate("strategies", {mode: state.mode === "account" ? "account" : "demo", screen: "detail", preset: control.dataset.publicStrategy});
+    navigate("strategies", {mode: state.mode === "account" ? "account" : "guest", screen: "detail", preset: control.dataset.publicStrategy});
   }
   async function handleClickStep({
     event,
@@ -8372,10 +8037,8 @@
     documentChanged();
     renderStrategies();
   }
-  async function handleChangeGoalSource({
-    input
-  }) {
-    updateGoalFields(input.name === "kind");
+  function handleChangeGoalSource() {
+    updateGoalFields();
   }
   async function handleChangeBrokerEnvironment({}) {
     resetBrokerPreview();
@@ -8397,7 +8060,7 @@
     form,
     event
   }) {
-    await startAuth(form, event.submitter?.value || "vkid");
+    await startAuth(form);
   }
   async function handleSubmitSearch({
     form
@@ -8494,7 +8157,7 @@
       if (state.generation !== clearedGeneration || state.user) return;
       state.session.status = "guest";
       try { localStorage.removeItem("omnicio-last-route"); } catch { /* Optional navigation state. */ }
-      state.tour = false;
+      state.guest = false;
       state.locked = false;
       $("#app-shell").hidden = true;
       $("#public-site").hidden = false;

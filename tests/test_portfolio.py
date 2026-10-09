@@ -10,9 +10,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from omnicio.broker import AnalysisSource, BrokerAnalysisSnapshot, BrokerNotConnected
-from omnicio.db import ActiveLiveExecutionError, BrokerConnectionConflict, Database, UserRecord
+from omnicio.db import BrokerConnectionConflict, Database, UserRecord
 from omnicio.main import app
 from omnicio.market import (
+    PUBLIC_MARKET_SCOPE,
     CBRIndicator,
     CBRIndicatorSnapshot,
     InstrumentMarketCandle,
@@ -21,8 +22,6 @@ from omnicio.market import (
 from omnicio.portfolio import (
     PortfolioAnalysisError,
     analyze_portfolio,
-    broker_statistics,
-    broker_statistics_summary,
 )
 from omnicio.portfolio_store import (
     BalancingPolicyRecord,
@@ -94,54 +93,9 @@ def metadata(uid: str, sector: str, kind: str = "share") -> TBankInstrumentMetad
 
 
 def cash(value: str = "100", blocked: str = "20", loading: bool = False) -> TBankPositions:
-    return TBankPositions((money(value),), (money(blocked),), loading)
-
-
-def test_broker_statistics_keep_native_amounts_and_weighted_average_separate_from_fifo() -> None:
-    observed_at = datetime(2026, 10, 9, 8, 30, tzinfo=UTC)
-    item = replace(
-        position("foreign", "2", "100"), current_price=money("58.37", "USD"),
-        average_price=money("55.79", "USD"), average_price_fifo=money("52.13", "USD"),
-        expected_yield_amount="5.16", daily_yield=money("-0.07", "USD"),
+    return TBankPositions(
+        (money(value),), (money(blocked),), loading, withdraw_limits_available=True
     )
-    source = replace(
-        portfolio(item), expected_yield_percent="1.234", daily_yield=money("-0.56"),
-        daily_yield_percent="-0.0123",
-    )
-    statistics = broker_statistics(source, observed_at=observed_at)
-    summary = broker_statistics_summary({"broker_statistics": statistics})
-    assert summary["return_percent"] == "1.234"
-    assert summary["daily_yield"] == {"currency": "RUB", "value": "-0.56"}
-    assert summary["daily_yield_percent"] == "-0.0123"
-    assert summary["observed_at"] == observed_at.isoformat()
-    assert summary["method"] == "broker_open_positions"
-    assert "positions" not in summary
-    assert "investment_result_rub" not in summary
-    assert statistics["positions"]["foreign"] == {
-        "expected_yield_amount": "5.16", "expected_yield_currency": "USD",
-        "daily_yield": {"currency": "USD", "value": "-0.07"},
-        "average_price": {"currency": "USD", "value": "55.79"},
-    }
-
-
-def test_broker_statistics_do_not_guess_currency_or_fill_missing_metrics_with_zero() -> None:
-    unknown = replace(position("unknown", "1", "100"), current_price=None)
-    inconsistent = replace(position("mixed", "1", "100"), average_price=money("1", "USD"))
-    zero = replace(position("zero", "1", "100"), daily_yield=money("0"))
-    source = replace(
-        portfolio(unknown, inconsistent, zero), expected_yield_percent=None,
-        daily_yield_percent=None,
-    )
-    statistics = broker_statistics(source, observed_at=datetime.now(UTC))
-    assert statistics["return_percent"] is None
-    assert statistics["daily_yield_percent"] is None
-    assert statistics["daily_yield"] is None
-    for uid in ("unknown", "mixed"):
-        assert statistics["positions"][uid]["expected_yield_amount"] is None
-        assert statistics["positions"][uid]["expected_yield_currency"] is None
-    assert statistics["positions"]["zero"]["expected_yield_amount"] == "0"
-    assert statistics["positions"]["zero"]["daily_yield"] == {"currency": "RUB", "value": "0"}
-    assert broker_statistics_summary({"analysis": {"nav_rub": "1000"}}) is None
 
 
 def test_decimal_weights_cash_blocking_and_stable_sort() -> None:
@@ -323,7 +277,7 @@ def test_duplicate_identity_is_rejected_instead_of_double_counted() -> None:
         analyze_portfolio(duplicated, available_cash, ())
 
 
-def test_cbr_indicator_http_is_private_but_broker_independent() -> None:
+def test_cbr_indicator_http_is_public_and_broker_independent() -> None:
     snapshot = CBRIndicatorSnapshot(
         source="Bank of Russia",
         fetched_at="2026-10-03T07:00:00+00:00",
@@ -365,12 +319,11 @@ def test_cbr_indicator_http_is_private_but_broker_independent() -> None:
     assert body["key_rate"]["value"] == "14"
     assert body["usd_rub"]["value"] == "83.4839"
     assert body["eur_rub"]["value"] == "94.3201"
-    assert user.call_count == 2
-    assert user.call_args_list[0] == user.call_args_list[1]
+    user.assert_not_called()
     market.return_value.cbr_indicators.assert_called_once_with()
 
 
-def test_instrument_market_http_is_private_and_uses_session_tenant() -> None:
+def test_instrument_market_http_is_public_and_uses_shared_source() -> None:
     now = datetime.now(UTC)
     snapshot = InstrumentMarketSnapshot(
         instrument_uid="uid-1",
@@ -419,7 +372,7 @@ def test_instrument_market_http_is_private_and_uses_session_tenant() -> None:
     assert isinstance(candle, dict)
     assert candle["close"] == "101"
     market.return_value.instrument_snapshot.assert_called_once_with(
-        "server-user",
+        PUBLIC_MARKET_SCOPE,
         "uid-1",
         period="1m",
     )
@@ -470,7 +423,7 @@ def test_instrument_market_stream_stops_after_security_failure() -> None:
     assert 'event: status\ndata: {"state":"offline"}' in response.text
     assert "security-sensitive-provider-state" not in response.text
     market.return_value.instrument_live_state.assert_called_once_with(
-        "server-user",
+        PUBLIC_MARKET_SCOPE,
         "uid-1",
     )
 
@@ -484,9 +437,7 @@ def test_instrument_market_stream_stops_after_terminal_connection_state() -> Non
         user.return_value.id = "server-user"
         user.return_value.public_id = 101
         auth.return_value.refresh_session.return_value = user.return_value
-        market.return_value.instrument_live_state.side_effect = BrokerNotConnected(
-            "not connected"
-        )
+        market.return_value.instrument_live_state.side_effect = BrokerNotConnected("not connected")
         response = TestClient(app).get(
             "/api/market/instruments/uid-1/stream?profile_context=000000101",
         )
@@ -495,7 +446,7 @@ def test_instrument_market_stream_stops_after_terminal_connection_state() -> Non
     assert response.headers["cache-control"] == "private, no-store"
     assert 'event: status\ndata: {"state":"disconnected"}' in response.text
     market.return_value.instrument_live_state.assert_called_once_with(
-        "server-user",
+        PUBLIC_MARKET_SCOPE,
         "uid-1",
     )
 
@@ -791,85 +742,7 @@ def test_instrument_visualization_rejects_missing_or_invalid_identifier() -> Non
         assert invalid.status_code == 422
 
 
-def test_execution_history_uses_session_tenant_and_never_enables_new_orders() -> None:
-    run = type(
-        "Run",
-        (),
-        {
-            "id": UUID("00000000-0000-0000-0000-000000000901"),
-            "proposal_id": UUID("00000000-0000-0000-0000-000000000902"),
-            "proposal_version": 3,
-            "proposal_hash": b"h" * 32,
-            "account_id": "sandbox-account",
-            "mode": "shadow",
-            "provider_environment": None,
-            "live_mandate_id": None,
-            "status": "succeeded",
-            "error_code": "",
-            "created_at": datetime.now(UTC),
-            "updated_at": datetime.now(UTC),
-            "finished_at": datetime.now(UTC),
-        },
-    )()
-
-    with (
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.execution_store") as store,
-        patch("omnicio.main.settings") as cfg,
-    ):
-        user.return_value.id = "server-user"
-        store.return_value.executions.return_value = (run,)
-        store.return_value.live_mandate.return_value = None
-        store.return_value.has_active_live_execution.return_value = False
-        cfg.return_value.portfolio_live_execution_enabled = False
-        response = TestClient(app).get(
-            "/api/portfolio/executions?user_id=attacker"
-        )
-
-    assert response.status_code == 200
-    assert response.headers["cache-control"] == "private, no-store"
-    payload = response.json()
-    assert payload["recovery_only"] is True
-    assert payload["new_orders_enabled"] is False
-    assert payload["executions"][0]["account_id"] == "sandbox-account"
-    store.return_value.executions.assert_called_once_with("server-user")
-
-
-def test_execution_get_requires_session_before_touching_ledger() -> None:
-    with (
-        patch("omnicio.main.service") as auth,
-        patch("omnicio.main.execution_store") as store,
-    ):
-        auth.return_value.refresh_session.return_value = None
-        response = TestClient(app).get("/api/portfolio/executions")
-
-    assert response.status_code == 401
-    store.assert_not_called()
-
-
-def test_broker_disconnect_race_is_a_safe_conflict() -> None:
-    with (
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.execution_store") as ledger,
-        patch("omnicio.main.broker_service") as broker,
-    ):
-        user.return_value.id = "server-user"
-        ledger.return_value.has_active_live_execution.return_value = False
-        broker.return_value.disconnect.side_effect = ActiveLiveExecutionError(
-            "active live execution must be reconciled before broker disconnect"
-        )
-        response = TestClient(app).delete(
-            "/api/broker/tbank",
-            headers={"Origin": "https://omnicio.ru"},
-        )
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "active_live_execution_must_be_reconciled"
-    ledger.return_value.revoke_live_mandate.assert_called_once_with("server-user")
-
-
-@pytest.mark.parametrize("active", [False, True])
-def test_broker_replacement_conflict_is_private_and_uses_session_user(active: bool) -> None:
+def test_broker_replacement_conflict_is_private_and_uses_session_user() -> None:
     database = Mock(spec=Database)
     database.has_legal_versions.return_value = True
     with (
@@ -882,18 +755,16 @@ def test_broker_replacement_conflict_is_private_and_uses_session_user(active: bo
         user.return_value.id = UUID(int=101)
         auth.return_value.legal_versions.return_value = {"terms": "test"}
         configuration.return_value.terms_version = "test"
-        code = (
-            "active_live_execution_must_be_reconciled" if active else "broker_disconnect_required"
-        )
-        broker.return_value.connect.side_effect = (
-            ActiveLiveExecutionError(code) if active else BrokerConnectionConflict(code)
-        )
+        code = "broker_disconnect_required"
+        broker.return_value.connect.side_effect = BrokerConnectionConflict(code)
         response = TestClient(app).put(
             "/api/broker/tbank?user_id=attacker",
             headers={"Origin": "https://omnicio.ru"},
             json={
-                "credential": "synthetic-token-long-enough", "environment": "prod",
-                "account_id": "second-account", "accept_personal_terms": True,
+                "credential": "synthetic-token-long-enough",
+                "environment": "prod",
+                "account_id": "second-account",
+                "accept_personal_terms": True,
             },
         )
     assert response.status_code == 409
@@ -901,30 +772,6 @@ def test_broker_replacement_conflict_is_private_and_uses_session_user(active: bo
     assert response.headers["cache-control"] == "private, no-store"
     assert broker.return_value.connect.call_args.kwargs["user_id"] == UUID(int=101)
     database.has_legal_versions.assert_called_once_with(UUID(int=101), {"terms": "test"})
-
-
-def test_account_delete_race_is_a_safe_conflict() -> None:
-    with (
-        patch("omnicio.main.authenticated_user") as user,
-        patch("omnicio.main.execution_store") as ledger,
-        patch("omnicio.main.service") as auth,
-    ):
-        user.return_value.id = "server-user"
-        ledger.return_value.has_active_live_execution.return_value = False
-        auth.return_value.delete_account.side_effect = ActiveLiveExecutionError(
-            "active live execution must be reconciled before account deletion"
-        )
-        response = TestClient(app).post(
-            "/api/account/delete",
-            json={
-                "confirm_public_id": "000000001",
-                "confirm_irreversible": True,
-            },
-            headers={"Origin": "https://omnicio.ru"},
-        )
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "active_live_execution_must_be_reconciled"
 
 
 def test_anonymous_reference_is_broker_independent_and_validates_fixed_query() -> None:
@@ -945,72 +792,41 @@ def test_anonymous_reference_is_broker_independent_and_validates_fixed_query() -
     market.return_value.public_reference.assert_called_once_with("USD", "1m")
 
 
-@pytest.mark.parametrize("method,path,expected", [
-    ("GET", "/api/portfolio/balancing", 404),
-    ("POST", "/api/portfolio/proposals", 405),
-    ("POST", "/api/portfolio/proposals/00000000-0000-0000-0000-000000000001/decision", 404),
-    ("POST", "/api/portfolio/executions", 405),
-    ("PUT", "/api/portfolio/live-execution/mandate", 405),
-    ("PUT", "/api/profile/investment", 405),
-    ("PUT", "/api/profile/balancing", 405),
-    ("GET", "/api/portfolio/intelligence", 404),
-    ("GET", "/api/broker/tbank/portfolio", 404),
-    ("POST", "/api/portfolio/executions/00000000-0000-0000-0000-000000000001/advance", 404),
-])
+@pytest.mark.parametrize(
+    "method,path,expected",
+    [
+        ("GET", "/api/portfolio/balancing", 404),
+        ("POST", "/api/portfolio/proposals", 404),
+        ("POST", "/api/portfolio/proposals/00000000-0000-0000-0000-000000000001/decision", 404),
+        ("POST", "/api/portfolio/executions", 404),
+        ("PUT", "/api/portfolio/live-execution/mandate", 404),
+        ("PUT", "/api/profile/investment", 405),
+        ("PUT", "/api/profile/balancing", 405),
+        ("GET", "/api/portfolio/intelligence", 404),
+        ("GET", "/api/broker/tbank/portfolio", 404),
+        ("POST", "/api/portfolio/executions/00000000-0000-0000-0000-000000000001/advance", 404),
+    ],
+)
 def test_retired_endpoints_are_absent_without_accessing_broker_or_storage(method, path, expected):
     with (
         patch("omnicio.main.broker_service") as broker,
         patch("omnicio.main.portfolio_store") as store,
-        patch("omnicio.main.execution_service") as execution,
     ):
         response = TestClient(app).request(method, path, json={})
     assert response.status_code == expected
     broker.assert_not_called()
     store.assert_not_called()
-    execution.assert_not_called()
 
 
-@pytest.mark.parametrize("action", ["reconcile", "cancel"])
-def test_execution_recovery_uses_session_owner_and_rechecks_before_response(action):
-    from test_execution_service import RUN_ID, USER_ID, _leg, _run
-
+def test_broker_disconnect_uses_current_session_and_does_not_require_trade_reconciliation() -> None:
     with (
-        patch("omnicio.main.authenticated_user") as auth,
-        patch("omnicio.main._require_current_legal_consent"),
-        patch("omnicio.main.execution_service") as execution,
+        patch("omnicio.main.authenticated_user") as user,
+        patch("omnicio.main.broker_service") as broker,
     ):
-        auth.return_value.id = USER_ID
-        operation = getattr(execution.return_value, action)
-        operation.return_value = (_run(), (_leg(status="submitted"),))
-        response = TestClient(app).post(
-            f"/api/portfolio/executions/{RUN_ID}/{action}?user_id=attacker",
-            headers={"Origin": "https://omnicio.ru"},
+        user.return_value.id = UUID(int=101)
+        broker.return_value.disconnect.return_value = True
+        response = TestClient(app).delete(
+            "/api/broker/tbank?user_id=attacker", headers={"Origin": "https://omnicio.ru"}
         )
-    assert response.status_code == 200
-    assert response.headers["cache-control"] == "private, no-store"
-    assert response.json()["new_orders_enabled"] is False
-    assert response.json()["recovery_only"] is True
-    operation.assert_called_once_with(USER_ID, RUN_ID)
-    assert auth.call_count == 2
-    execution.return_value.start.assert_not_called()
-    execution.return_value.advance.assert_not_called()
-
-
-def test_execution_reconcile_cannot_release_data_after_the_session_changes():
-    from test_execution_service import RUN_ID, USER_ID, _leg, _run
-
-    with (
-        patch("omnicio.main.authenticated_user") as auth,
-        patch("omnicio.main._require_current_legal_consent"),
-        patch("omnicio.main.execution_service") as execution,
-    ):
-        auth.side_effect = [
-            type("User", (), {"id": USER_ID})(), type("Other", (), {"id": "other"})(),
-        ]
-        execution.return_value.reconcile.return_value = (_run(), (_leg(status="submitted"),))
-        response = TestClient(app).post(
-            f"/api/portfolio/executions/{RUN_ID}/reconcile",
-            headers={"Origin": "https://omnicio.ru"},
-        )
-    assert response.status_code == 409
-    assert "execution" not in response.json()
+    assert response.status_code == 204
+    broker.return_value.disconnect.assert_called_once_with(UUID(int=101))

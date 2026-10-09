@@ -9,9 +9,7 @@ from datetime import timedelta
 
 # Worker budgets are per process/run; database locks still serialize each owner.
 MAX_WORKERS = 2
-MAX_HISTORY_PAGES_PER_RUN = 20
 QUICK_REFRESH_BUDGET_SECONDS = 35
-HISTORY_CORRECTION_OVERLAP = timedelta(days=7)
 PROVIDER_READ_ATTEMPTS = 3
 REFRESH_ADMISSION_SLOTS = 2
 WORKER_POLL_SECONDS = 2

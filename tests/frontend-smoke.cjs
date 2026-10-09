@@ -43,6 +43,7 @@ const {version, build, assets: publicAssets} = JSON.parse(renderedResult.stdout)
 const configRealm = vm.createContext({});
 vm.runInContext(publicAssets["assets/config.js"], configRealm);
 const clientConfig = configRealm.OMNICIO_CONFIG;
+const generalNewsPath = `/api/news?limit=${clientConfig.pagination.publicNews}`;
 // Extracted production functions share the real config. Browser VMs model the
 // actual window/globalThis alias instead of maintaining two unrelated globals.
 const sourceContext = bindings => {
@@ -124,9 +125,19 @@ const makeFixture = mode => {
     mode,
     missingBundle: "",
     legacyHtml: false,
-    tidEnabled: true,
-    vkidEnabled: true,
+    emailEnabled: true,
+    email: "fixture@gmail.com",
+    emailVerified: mode === "signed",
+    emailPassword: mode === "signed" ? "synthetic-account-password" : null,
+    emailChallenge: null,
+    emailClockOffset: 0,
+    emailResendSeconds: 60,
+    emailSession: mode === "signed" ? randomUUID() : null,
+    emailStrictCookies: false,
+    emailCookiesInitialized: false,
+    emailResendError: false,
     user: "000000123",
+    role: "user",
     canViewOperationalMetrics: false,
     prefs: defaultPreferences(),
     selection: {
@@ -148,14 +159,13 @@ const makeFixture = mode => {
       occurred_at: stamp,
       read_at: null,
       target: "settings",
-      source: {type: "operation", amount: "125.50", currency: "RUB", expected_at: stamp, instrument_uid: "synthetic-a", state: "executed"},
+      source: {type: "risk", instrument_uid: "synthetic-a", status: "observed"},
       destination: {view: "asset", uid: "synthetic-a"}
     }],
     holdEventSummary: false,
     heldEventSummaries: [],
     holdEventReads: false,
     heldEventReads: [],
-    ledgerItems: [{id: "fixture-ledger-1", operation_date: stamp, name: "Контрольная выплата", category: "income", instrument_uid: "synthetic-a", ticker: "SYNA", payment: {value: "12.34", currency: "eur"}}],
     notificationChannels: [],
     notificationDeliveries: [],
     pushConfigured: true,
@@ -209,8 +219,6 @@ const makeFixture = mode => {
       cooldown_until: null,
       reason: null
     },
-    executions: [],
-    executionProposals: [],
     researchRuns: [],
     researchRequests: new Map(),
     researchPrerequisite: null,
@@ -221,10 +229,6 @@ const makeFixture = mode => {
     failResearchPage: false,
     heldResearchReads: [],
     holdResearchReads: false,
-    heldExecutionReads: [],
-    holdExecutionReads: false,
-    mandate: null,
-    recoveryLostAck: false,
     connected: true
   };
 };
@@ -300,31 +304,10 @@ const workspace = fixture => ({
     history: [],
     allocations: []
   },
-  performance: {
-    status: "available",
-    method: "nav_less_external_flows",
-    from: day(4),
-    to: stamp,
-    start_nav_rub: "148000.25",
-    end_nav_rub: "150000.25",
-    nav_change_rub: "2000",
-    net_contributions_rub: "1000",
-    investment_result_rub: "1000",
-    return_percent: null,
-    income_received_rub: "500",
-    fees_rub: "20",
-    taxes_rub: "13"
-  },
-  income: {
-    status: "available",
-    from: day(4),
-    to: stamp,
-    coupons_rub: "300",
-    dividends_rub: "200",
-    other_income_rub: "0",
-    total_rub: "500",
-    redemptions_rub: "0",
-    by_month: []
+  value_change: {
+    status: "available", method: "snapshot_value_change", from: day(4), to: stamp,
+    start_nav_rub: "148000.25", end_nav_rub: "150000.25", nav_change_rub: "2000",
+    limitation: "Изменение стоимости по наблюдениям, не доходность"
   },
   preferences: clone(fixture.prefs),
   goals: {
@@ -420,17 +403,37 @@ const testApiHandlers = [{
   matches: ({path}) => path.startsWith("/api/public/news/"),
   run: ({path,response}) => sendJSON(response,{id:path.split("/").at(-1),title:"Тестовая новость официального источника",content:"Подтверждённый текст изолированного официального источника.",url:"https://www.cbr.ru/press/",published_at:stamp,source:"Банк России",scope:"official_page_text",truncated:false})
 }, {
-  matches: ({
-    path
-  }) => /^\/api\/auth\/(tid|vkid)\/start$/.test(path),
-  run: serveTestGuard5
+  matches: ({path}) => path.startsWith("/api/auth/email/"),
+  run: serveTestEmailAuth
+}, {
+  matches: ({path}) => path === "/api/public/market-status",
+  run: ({response}) => sendJSON(response, clone(serverContracts.public_market_status))
+}, {
+  matches: ({path}) => path === "/api/public/market",
+  run: ({response}) => sendJSON(response, clone(serverContracts.public_market))
+}, {
+  matches: ({path}) => path === "/api/news" || path.startsWith("/api/news/"),
+  run: serveTestNews
+}, {
+  matches: ({path}) => path === "/api/market/instruments/search",
+  run: serveTestMarketSearch
+}, {
+  matches: ({path}) => path.startsWith("/api/market/instruments/") && path.endsWith("/facts"),
+  run: serveTestMarketInstruments
+}, {
+  matches: ({path}) => path.startsWith("/api/market/instruments/"),
+  run: serveTestMarketInstruments2
+}, {
+  matches: ({path}) => path === "/api/market/quotes",
+  run: ({url,response,fixture}) => {
+    const quote = fixture.precisionCase ? JSON.parse(fixture.precisionCase.market_event.split("\ndata: ")[1].trim()) : serverContracts.market_quotes.items[0];
+    return sendJSON(response,{items:(url.searchParams.get("instrument_uids") || "").split(",").filter(Boolean).map(uid=>({...quote,instrument_uid:uid,metadata_status:"available"})),source:"T-Invest",observed_at:stamp,refresh_after_seconds:10});
+  }
 }, {
   matches: ({path}) => path === "/api/me",
   run: serveTestMe
 }, {
-  matches: ({
-    fixture
-  }) => fixture.mode === "guest",
+  matches: ({fixture, request}) => fixture.mode === "guest" || fixture.emailStrictCookies && !emailFixtureSession(fixture, request),
   run: serveTestGuard6
 }, {
   matches: ({
@@ -478,19 +481,6 @@ const testApiHandlers = [{
   }) => path === "/api/workspace/refresh",
   run: serveTestRefresh
 }, {
-  matches: ({path}) => path === "/api/portfolio/execution-capabilities" || path.startsWith("/api/portfolio/proposals/"),
-  run: serveTestExecutionPlans
-}, {
-  matches: ({
-    path
-  }) => path.startsWith("/api/portfolio/executions"),
-  run: serveTestExecutions
-}, {
-  matches: ({
-    path
-  }) => path === "/api/portfolio/live-execution/mandate",
-  run: serveTestMandate
-}, {
   matches: ({
     path
   }) => path === "/api/preferences" || path === "/api/profile/strategy",
@@ -525,30 +515,6 @@ const testApiHandlers = [{
     path
   }) => path.startsWith("/api/portfolio/instruments/"),
   run: serveTestPortfolioInstruments
-}, {
-  matches: ({path}) => path === "/api/market/quotes",
-  run: ({url,response,fixture}) => {
-    const quote = fixture.precisionCase ? JSON.parse(fixture.precisionCase.market_event.split("\ndata: ")[1].trim()) : serverContracts.market_quotes.items[0];
-    return sendJSON(response,{items:(url.searchParams.get("instrument_uids") || "").split(",").filter(Boolean).map(uid=>({...quote,instrument_uid:uid,metadata_status:"available"})),source:"T-Invest",observed_at:stamp,refresh_after_seconds:10});
-  }
-}, {
-  matches: ({path}) => path === "/api/workspace/operations",
-  run: ({fixture,response}) => sendJSON(response,{items:clone(fixture.ledgerItems),next_cursor:null,status:"available",source:"T-Invest",observed_at:stamp})
-}, {
-  matches: ({
-    path
-  }) => path.startsWith("/api/market/instruments/") && path.endsWith("/facts"),
-  run: serveTestMarketInstruments
-}, {
-  matches: ({
-    path
-  }) => path.startsWith("/api/market/instruments/"),
-  run: serveTestMarketInstruments2
-}, {
-  matches: ({
-    path
-  }) => path === "/api/broker/tbank/instruments/search",
-  run: serveTestBrokerTbankInstrumentsSearch
 }, {
   matches: ({
     path
@@ -589,9 +555,6 @@ const testApiHandlers = [{
     path
   }) => path === "/api/events" || path.startsWith("/api/events/"),
   run: serveTestEvents
-}, {
-  matches: ({path}) => path === "/api/news" || path.startsWith("/api/news/"),
-  run: serveTestNews
 }, {
   matches: ({path}) => path === "/api/notifications" || path.startsWith("/api/notifications/"),
   run: serveTestNotifications
@@ -662,6 +625,13 @@ const server = createServer(async (request, response) => {
     if (publicNetworkUnavailable) { request.socket.destroy(); return; }
     const page = new URL(request.headers.referer || url.href);
     const fixture = fixtures.get((url.pathname === "/" ? url : page).searchParams.get("case"));
+    if (url.pathname === "/" && fixture?.emailStrictCookies && !fixture.emailCookiesInitialized) {
+      // Seed only this synthetic document's starting session. Production cookies
+      // and their HTTPS attributes are verified separately by the actual API tests.
+      fixture.emailCookiesInitialized = true;
+      emailFixtureCookie(response, "omnicio_session", fixture.emailSession, "/");
+      emailFixtureCookie(response, "omnicio_email_flow", null, "/api/auth/email");
+    }
     if (unavailablePublicAsset === url.pathname || fixture?.missingBundle === url.pathname) {
       response.statusCode = 404;
       return response.end();
@@ -749,44 +719,40 @@ const displayContracts = () => {
 };
 function portfolioExperienceContracts(ui, i18n) {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
-  const state = {mode: "account", data: {connection: clone(serverContracts.broker_workspace.connection)}, errors: {}, loading: new Set(), portfolioPeriod: "1y"};
+  const state = {mode: "account", guest: false, data: {connection: clone(serverContracts.broker_workspace.connection)}, errors: {}, loading: new Set(), portfolioPeriod: "1y"};
   const context = sourceContext({state, U: ui, T: i18n.t, H: i18n.html, esc: ui.escape, money: ui.money,
     percent: ui.percent, number: ui.number, empty: ui.empty, icon: ui.icon, freshness: ui.freshness, dataError: () => "read failed"});
-  const source = app.slice(app.indexOf("  const signedMoney ="), app.indexOf("  const renderPortfolio ="))
-    + app.slice(app.indexOf("  function holdingReturnHTML("), app.indexOf("  function renderAssetsTableAssetName("));
-  vm.runInContext(source + "\nglobalThis.summary=portfolioSummaryHTML;globalThis.holdingReturn=holdingReturnHTML;", context);
+  const source = app.slice(app.indexOf("  const portfolioEntryHTML ="), app.indexOf("  const renderPortfolio ="));
+  vm.runInContext(source + "\nglobalThis.summary=portfolioSummaryHTML;", context);
   assert.deepEqual(Array.from(ui.mobileNavigation, item => item[0]), ["portfolio", "market", "strategies", "profile"], "One navigation registry exposes Portfolio directly on mobile");
-  assert.equal(ui.parseRoute("").view, "portfolio", "An empty account route starts with the actual holdings overview");
+  assert.equal(ui.parseRoute("").view, "portfolio", "An empty account route starts with actual holdings");
   for (const locale of ["ru", "en"]) {
     ui.setLocale(locale);
     ui.setPrivacy(false);
     const observed = clone(serverContracts.broker_workspace.overview);
     const html = context.summary(observed);
-    assert.ok(html.includes(ui.escape(ui.money("1000.08"))), "The actual server total retains kopecks");
-    assert.ok(html.includes(ui.escape(ui.percent(observed.broker_statistics.return_percent, true))), "The summary consumes the provider's open-position return");
-    assert.ok(html.includes(ui.escape("+" + ui.money("0.42"))), "The daily amount comes from the provider in its native currency");
-    assert.ok(!html.includes(ui.percent(serverContracts.broker_workspace.performance.return_percent, true)), "Historical Dietz return cannot replace the current broker return");
-    assert.ok(html.includes(observed.broker_statistics.source_url), "The calculation has a directly inspectable source");
-    assert.ok(context.holdingReturn(serverContracts.broker_portfolio_visualization.latest.positions[0]).includes(ui.escape("+" + ui.money("10.32"))), "The holding uses a native monetary result, not a missing daily percentage");
+    assert.ok(html.includes(ui.escape(ui.money(observed.nav_rub))), "Current values retain kopecks from server-side valuation");
+    assert.ok(html.includes(ui.escape(ui.money(observed.free_cash_rub))), "Confirmed current cash is shown separately");
+    assert.ok(!html.includes("data-broker-return") && !html.includes("data-broker-daily"), "No acquisition or transaction returns are presented");
+    assert.ok(html.includes(i18n.html("portfolio.current_estimate")), "The current valuation method is explained");
     const older = {...observed, status: "stale", observed_at: "2025-01-06T11:12:00Z"};
     const stale = context.summary(older);
-    assert.ok(stale.includes(ui.escape(ui.date(older.observed_at, true))) && stale.includes(ui.escape(i18n.t("Данные устарели"))), "An old snapshot retains its actual timestamp and stale label");
-    const absent = {...observed, broker_statistics: undefined};
-    const missing = context.summary(absent);
-    assert.ok(missing.includes(ui.escape(i18n.t("portfolio.broker_result_missing"))) && !missing.includes("data-broker-return"), "Missing broker data is an explicit unknown, not a zero result");
-    const zero = {...observed, broker_statistics: {...observed.broker_statistics, return_percent: "0", daily_yield_percent: "0", daily_yield: {currency: "RUB", value: "0"}}};
-    assert.ok(context.summary(zero).includes("data-broker-return>0%</dd>"), "A reported zero remains visible");
+    assert.ok(stale.includes(ui.escape(ui.date(older.observed_at, true))) && stale.includes(ui.escape(i18n.t("Данные устарели"))), "Old observations retain their actual time and stale label");
+    const absent = {...observed, nav_rub: null, free_cash_rub: null};
+    assert.ok(context.summary(absent).includes("data-portfolio-value>—</p>"), "A missing valuation is unknown, not zero");
+    const zero = {...observed, nav_rub: "0", free_cash_rub: "0"};
+    assert.ok(context.summary(zero).includes(ui.escape(ui.money("0"))), "A known zero remains visible");
     ui.setPrivacy(true);
     const masked = context.summary(observed);
-    assert.ok(masked.includes("data-broker-return>••••••</dd>") && !masked.includes(ui.percent(observed.broker_statistics.return_percent, true)), "Personal percent and money share the privacy preference");
+    assert.ok(masked.includes("data-portfolio-value>••••••</p>") && !masked.includes(observed.nav_rub), "Privacy masking covers actual portfolio values");
     ui.setPrivacy(false);
   }
   state.data.connection = undefined;
   state.loading.add("workspace");
-  assert.ok(!context.summary({}).includes("account-context"), "A pending first workspace read cannot invent a connected account");
+  assert.ok(!context.summary({}).includes("account-context"), "A pending first read cannot invent a connected account");
   ui.setLocale("ru");
   assert.equal(ui.format("0.000000001", clientConfig.display.quantityFractionDigits), "0,000000001", "A nano-sized source quantity cannot turn into zero");
-  console.log("PASS portfolio experience: actual broker DTO, distinct result methods, money and quantity precision, zero/unknown/stale states, privacy and direct mobile navigation");
+  console.log("PASS current portfolio: quantity and cash precision, no history-derived returns, unknown/zero/stale states, privacy and mobile navigation");
 }
 function presetMathContracts(ui, i18n) {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
@@ -864,45 +830,14 @@ function researchMathContracts(ui, i18n) {
   assert.ok(panel.innerHTML.includes("data-assessment-expired"), "The assessment expires locally without a network refresh or form rerender");
   console.log("PASS research contracts: real calculator results, historical frequency limits, explicit cash model and expiring account assessment");
 }
-async function ledgerPaginationContracts() {
-  const app = readFileSync(join(root, "web", "app.js"), "utf8");
-  const source = app.slice(app.indexOf("  async function loadLedgerPage()"), app.indexOf("  function supportAddress("));
-  const state = {generation: 1, view: "portfolio", data: {ledger: {items: [{id: "old"}], next_cursor: "cursor-old"}}, errors: {}, loading: new Set(), resourceVersions: new Map([["ledger", 1]])};
-  let resolveRead, requests = 0, merges = 0;
-  const context = sourceContext({state, encodeURIComponent, isCancelled: () => false, renderPortfolio() {},
-    api: () => { requests += 1; return new Promise(resolve => { resolveRead = resolve; }); },
-    mergePage: (before, after) => { merges += 1; return {...after, items: [...before.items, ...after.items]}; }});
-  vm.runInContext(source + "\nglobalThis.load=loadLedgerPage;", context);
-  const pending = context.load();
-  const corrected = {items: [{id: "corrected"}], next_cursor: "cursor-new"};
-  state.data.ledger = corrected;
-  resolveRead({items: [{id: "stale-page"}], next_cursor: null});
-  await pending;
-  assert.equal(state.data.ledger, corrected, "A late page from the prior snapshot cannot replace a corrected first page");
-  assert.equal(merges, 0);
-  const oldMore = context.load();
-  state.resourceVersions.set("ledger", 2);
-  const newError = Object.assign(new Error("Newer first-page reload failed"), {code: "request_timeout"});
-  state.errors.ledger = newError;
-  resolveRead({items: [{id: "old-more"}], next_cursor: null});
-  await oldMore;
-  assert.equal(state.errors.ledger, newError, "An older page cannot erase a failed newer refresh and its recovery action");
-  assert.equal(merges, 0);
-  context.api = async () => { requests += 1; throw Object.assign(new Error("history changed"), {code: "workspace_operation_history_changed"}); };
-  await context.load();
-  assert.equal(state.errors.ledger.code, "workspace_operation_history_changed");
-  await context.load();
-  assert.equal(requests, 3, "A rejected frozen cursor requires a first-page reload instead of repeating it");
-  assert.equal(state.loading.has("ledger-more"), false);
-  console.log("PASS ledger pagination contracts: corrected snapshots and explicit cursor restart");
-}
+
 async function searchAndAssetPaginationContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const source = app.slice(app.indexOf("  const runSearch ="), app.indexOf("  const mergePage ="))
     + app.slice(app.indexOf("  const loadSearchPage ="), app.indexOf("  const archiveNewsItem ="))
     + app.slice(app.indexOf("  const loadAssetNewsPage ="), app.indexOf("  const assetSideHTML ="));
   const page = (id, cursor = "next") => ({items: [{id}], next_cursor: cursor});
-  const state = {generation: 1, view: "search", tour: false, searchSequence: 1, searchQuery: "old", route: {q: "old"},
+  const state = {generation: 1, view: "search", guest: false, user: {public_id: "000000123"}, searchSequence: 1, searchQuery: "old", route: {q: "old"},
     loading: new Set(), errors: {}, resourceVersions: new Map(), searchPages: {events: page("old-event"), news: null}, searchFailures: {}};
   const pending = [];
   const context = sourceContext({state, encodeURIComponent, safeSegment: encodeURIComponent, isCancelled: () => false,
@@ -1145,7 +1080,7 @@ async function payoutEventHistoryContracts() {
   const superseded = clone(serverContracts.payout_event_cases.superseded);
   const alias = {...normal, id: superseded.id, title: "Obsolete payout", detail: "Obsolete financial claim 777.77"};
   const valid = {...normal, title: "Another valid payout for the same instrument", occurred_at: "2026-09-01T00:00:00Z"};
-  const older = {...normal, id: "d".repeat(64), kind: "broker_operation", title: "Retained older operation", occurred_at: "2026-08-01T00:00:00Z", source: {type: "operation", amount: "42", currency: "RUB"}};
+  const older = {...normal, id: "d".repeat(64), kind: "risk_warning", title: "Retained earlier risk observation", occurred_at: "2026-08-01T00:00:00Z", source: {type: "risk", instrument_uid: "synthetic-a"}};
   const incoming = {items: [warning], next_cursor: null, read_all_before: 20, unread_count: 1};
   const state = {};
   const context = sourceContext({state, console, safeSegment: encodeURIComponent, T: value => value, H: value => value,
@@ -1172,7 +1107,7 @@ async function payoutEventHistoryContracts() {
     await context.more();
     assert.equal(state.eventHistoryExtended, true, "The regression starts with an actually appended event page");
     assert.ok(state.data.events.items.some(item => item.id === alias.id));
-    const retainedOperation = state.data.events.items.find(item => item.id === older.id);
+    const retainedObservation = state.data.events.items.find(item => item.id === older.id);
     collision = true;
     reads.length = 0;
     await context.load(resource, `/api/${resource}`, {force: true});
@@ -1181,7 +1116,7 @@ async function payoutEventHistoryContracts() {
     assert.ok(!items.some(item => item.id === alias.id), "An authoritative refresh removes the cached alias superseded by an ambiguity warning");
     assert.ok(items.some(item => item.id === warning.id));
     assert.equal(items.find(item => item.id === valid.id).read_at, freshValid.read_at, "A valid other-anchor payout for the same instrument survives with its authoritative read receipt");
-    assert.equal(items.find(item => item.id === older.id), retainedOperation, "Unrelated appended history and its read receipt remain intact");
+    assert.equal(items.find(item => item.id === older.id), retainedObservation, "Unrelated appended history and its read receipt remain intact");
     assert.equal(state.data.events.next_cursor, "still-older", "Reconciliation preserves the appended history continuation");
     assert.equal(state.data.events.read_all_before, 20, "Source-only supersession is reconciled even without a new revision ceiling");
     assert.deepEqual(reads.filter(path => /^\/api\/events\/[a-f0-9]{64}$/.test(path)).sort(), [alias.id, valid.id].map(id => `/api/events/${id}`).sort(), "Only omitted cached payouts need individual authoritative reads");
@@ -1452,6 +1387,96 @@ function dialogCloseContracts() {
   assert.equal(navigations.length, 3, "Closing for history navigation cannot trigger a second navigation");
   console.log("PASS dialog close lifecycle: queued old events preserve reopened editors, navigation markers are consumed, and current close, overlay, cancel and history paths remain effective");
 }
+async function authReadContextContracts() {
+  const app=readFileSync(join(root,"web","app.js"),"utf8");
+  const resources=[['identities','/api/auth/identities'],['sessions','/api/me/sessions'],['workspace','/api/workspace?history_period=1y'],['news',generalNewsPath]];
+  const state={generation:7,authReadContext:0,brokerContext:0,user:{public_id:"000000123"},locked:false,guest:false,
+    requests:new Set(),resourceVersions:new Map(resources.map(([name])=>[name,3])),
+    resourceRequests:new Map(resources.map(([name,path])=>[name,{path,promise:Promise.resolve()}])),
+    loading:new Set(resources.map(([name])=>name)),
+    data:Object.fromEntries(resources.map(([name])=>[name,{cached:name}])),
+    errors:Object.fromEntries(resources.map(([name])=>[name,{old_error:true}])),
+    prefs:{draft:{theme:"light"},dirty:true},strategy:{draft:{reserve_rub:"21.25"},dirty:true},
+    screenDrafts:{profile:{display_name:"Unsaved owner"}},formDrafts:{goal:{title:"Unsaved goal"}}};
+  const preserved={prefs:state.prefs,strategy:state.strategy,screenDrafts:state.screenDrafts,formDrafts:state.formDrafts};
+  const pending=[];
+  let locks=0;
+  const context=sourceContext({state,window:{setTimeout},clearTimeout,URL,Headers,AbortController,
+    navigator:{onLine:true},location:{origin:"https://isolated.test"},compiledBuild:"test",T:value=>value,
+    flagApplicationUpdate(){},lockSession(){locks+=1;state.locked=true;},
+    fetch:(url,options)=>new Promise(resolve=>{
+      const request={path:url.pathname,options};
+      request.headers=(status,payload)=>resolve({status,ok:status>=200&&status<300,headers:new Headers(),json:()=>new Promise(finish=>{request.body=()=>finish(payload);})});
+      // The transport deliberately permits a buffered response to complete after
+      // abort. The real epoch check must protect adoption and error side effects.
+      pending.push(request);
+    })});
+  const source=app.slice(app.indexOf("  const contextError ="),app.indexOf("  const humanError ="))
+    +app.slice(app.indexOf("  const invalidateAuthReads ="),app.indexOf("  const completeEmailLogin ="));
+  vm.runInContext(source+"\nglobalThis.authRequest=api;globalThis.rotateAuthReads=invalidateAuthReads;",context);
+  const observe=promise=>promise.then(value=>({value}),error=>({error}));
+  const old401=observe(context.authRequest("/api/auth/identities"));
+  const old200=observe(context.authRequest("/api/workspace?history_period=1y"));
+  const oldHead=observe(context.authRequest("/api/me/sessions",{method:"HEAD"}));
+  const publicRead=observe(context.authRequest(generalNewsPath));
+  const mutation=observe(context.authRequest("/api/preferences",{method:"PUT",body:{version:1,document:{theme:"light"}}}));
+  assert.equal(pending.length,5,"The actual api function dispatches private GET/HEAD, public GET and a mutation");
+  const [privateFailure,privateSuccess,privateHead,sharedNews,privateWrite]=pending;
+  privateFailure.headers(401,{detail:"authentication required"});
+  privateSuccess.headers(200,{overview:{nav_rub:"12345.67"}});
+  sharedNews.headers(200,{items:[{id:"public-news"}]});
+  privateWrite.headers(200,{version:2,document:{theme:"light"}});
+  await until(()=>[privateFailure,privateSuccess,sharedNews,privateWrite].every(request=>typeof request.body==="function"),"Real readApiResponse calls have started consuming their HTTP bodies");
+  // Resolve the old JSON promises before rotation, but rotate synchronously before
+  // the queued await continuations can run ensureResponseContext/apiFailure.
+  privateFailure.body();
+  privateSuccess.body();
+  context.rotateAuthReads();
+  assert.equal(state.authReadContext,1);
+  assert.equal(state.generation,7,"Email enrollment preserves the current owner's non-auth state");
+  for(const request of [privateFailure,privateSuccess,privateHead]) assert.equal(request.options.signal.aborted,true,"Pending private GET/HEAD is aborted: "+request.path);
+  for(const request of [sharedNews,privateWrite]) assert.equal(request.options.signal.aborted,false,"Public reads and mutations retain their transport: "+request.path);
+  for(const name of ['identities','sessions','workspace']) {
+    assert.equal(state.resourceVersions.get(name),4,"Pending old resource snapshots are superseded: "+name);
+    assert.equal(state.resourceRequests.has(name),false);
+    assert.equal(state.loading.has(name),false);
+    assert.equal(state.data[name],undefined);
+    assert.equal(state.errors[name],undefined);
+  }
+  assert.equal(state.resourceVersions.get('news'),3,"A public resource keeps its current request version");
+  assert.equal(state.resourceRequests.has('news'),true);
+  assert.equal(state.loading.has('news'),true);
+  assert.equal(state.data.news.cached,'news');
+  assert.equal(state.errors.news.old_error,true);
+  for(const [name,value] of Object.entries(preserved)) assert.equal(state[name],value,"Enrollment preserves the existing draft object: "+name);
+  assert.deepEqual(state.prefs,{draft:{theme:"light"},dirty:true});
+  assert.deepEqual(state.strategy,{draft:{reserve_rub:"21.25"},dirty:true});
+  assert.equal(state.screenDrafts.profile.display_name,"Unsaved owner");
+  assert.equal(state.formDrafts.goal.title,"Unsaved goal");
+  privateHead.headers(204,null);
+  sharedNews.body();
+  privateWrite.body();
+  const results=await Promise.all([old401,old200,oldHead,publicRead,mutation]);
+  for(const result of results.slice(0,3)) {
+    assert.equal(result.error?.code,"profile_context_changed","Old successful and failed private reads are rejected by the same epoch boundary");
+    assert.equal(result.value,undefined,"No old payload is returned for adoption");
+  }
+  assert.equal(locks,0,"A buffered 401 from the revoked session cannot call the real apiFailure lock path");
+  assert.equal(state.locked,false);
+  assert.equal(results[3].value.items[0].id,"public-news","Public context accepts its response across email enrollment");
+  assert.equal(results[4].value.version,2,"A mutation response remains authoritative across email enrollment");
+  const current401=observe(context.authRequest("/api/auth/identities"));
+  const current=pending.at(-1);
+  current.headers(401,{detail:"authentication required"});
+  await until(()=>typeof current.body==="function","A request under the new epoch reaches real readApiResponse");
+  current.body();
+  const rejected=await current401;
+  assert.equal(rejected.error?.code,"profile_context_changed");
+  assert.equal(locks,1,"A genuine 401 for the current epoch still locks the session");
+  assert.equal(state.locked,true);
+  assert.equal(state.requests.size,0,"All real request controllers finish and release their timers");
+  console.log("PASS actual auth read context: buffered old401 cannot lock, old200/HEAD ignored, current401 locks, private reads invalidated, public/mutation transports retained and unsaved preferences/strategy/forms preserved");
+}
 async function brokerConnectionReadContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const state = {generation: 1, brokerContext: 0, user: {public_id: "000000123"}, mode: "account", view: "settings", route: {}, data: {}, errors: {},
@@ -1471,7 +1496,7 @@ async function brokerConnectionReadContracts() {
     adoptPreferences() {}, adoptStrategy() {}});
   const invalidation = app.indexOf("  const invalidateBrokerReads =");
   context.loadForView = () => context.load("workspace", "/api/workspace?history_period=all", {force: true});
-  const source = app.slice(app.indexOf("  const contextError ="), app.indexOf("  const recoveryErrorReason ="))
+  const source = app.slice(app.indexOf("  const contextError ="), app.indexOf("  const humanError ="))
     + app.slice(app.indexOf("  const loadResource ="), app.indexOf("  const resourceSnapshot ="))
     + app.slice(app.indexOf("  const adoptWorkspace ="), app.indexOf("  const workspacePeriod ="))
     + app.slice(invalidation < 0 ? app.indexOf("  const adoptBrokerConnection =") : invalidation, app.indexOf("  const connectBroker ="));
@@ -1719,62 +1744,12 @@ async function newsMonitoringContracts() {
   finishRead(cases.unavailable);
   await pending;
   assert.equal(sourceStatus.textContent, accepted, "The actual status GET carries its live editing guard through the response");
-  state.tour = true;
+  state.guest = true;
   context.paint();
   assert.equal(banner.hidden, true, "Private monitoring status stays hidden in the public tour");
   console.log("PASS news monitoring: real refresh DTO, bilingual scope, partial/outage truthfulness, retained source time, in-place updates and session/draft boundaries");
 }
-function settingsRecoveryContracts() {
-  const app = readFileSync(join(root, "web", "app.js"), "utf8");
-  const context = sourceContext({window: {}, Intl, URLSearchParams});
-  vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
-  vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
-  const ui = context.window.OmniUI, i18n = context.window.OMNICIO_I18N;
-  const state = {view: "settings", route: {screen: "appearance"}, data: {}, formDrafts: {},
-    prefs: {server: defaultPreferences(), draft: defaultPreferences().document, dirty: true, busy: false, error: {status: 0, code: "request_interrupted"}}};
-  const notice = () => ({innerHTML: "", hidden: !state.prefs.error});
-  const sections = [0, 1].map(() => ({dataset: {}, notices: [], insertAdjacentHTML(position, html) {
-    if (html.includes('data-save-error="prefs"')) this.notices.push(notice());
-  }}));
-  const form = {id: "preferences-form"};
-  const status = {dataset: {}, textContent: "", closest: () => form};
-  const view = {classList: {toggle() {}}, set innerHTML(html) {
-    sections.forEach(section => { section.notices = []; });
-    if (html.includes('data-save-error="prefs"')) sections[1].notices.push(notice());
-  }};
-  Object.assign(context, {state, U: ui, I: i18n, T: i18n.t, H: i18n.html, esc: ui.escape, select: ui.select, field: ui.field, heading: ui.heading, button: ui.button, infoRows: ui.infoRows,
-    $: selector => ({"#view-settings": view, "#preferences-form": form, "[data-release-version]": {textContent: version}}[selector] || null),
-    $$: selector => selector === ":scope > section" ? sections : selector === '[data-save-status="prefs"]' ? [status] : selector === '[data-save-error="prefs"]' ? sections.flatMap(section => section.notices) : [],
-    humanError: error => error.code, captureScreenDrafts() {}, restoreEditableForm() {}, restoreScreenDrafts() {}, addScreenNavigation() {},
-    brokerSettingsHTML: () => "", recoveryPanelHTML: () => "", notificationContentsHTML: () => "", operationalMetricsHTML: () => ""});
-  const source = app.slice(app.indexOf("  const updateSaveStatus ="), app.indexOf("  const applySavedEffects ="))
-    + app.slice(app.indexOf("  const saveErrorHTML ="), app.indexOf("  const preservePersonal ="))
-    + app.slice(app.indexOf("  const renderSettings ="), app.indexOf("  const brokerSettingsHTML ="))
-    + app.slice(app.indexOf("  function layoutSettings("), app.indexOf("  function layoutProfile("))
-    + app.slice(app.indexOf("  function applyScreenLayout("), app.indexOf("  function incomePaneHTML("))
-    + app.slice(app.indexOf("  function renderUpdateSaveStatusValue("), app.indexOf("  function renderStrategiesStrategyOption("));
-  vm.runInContext(source + "\nconst screenLayoutHandlers={settings:layoutSettings}; globalThis.render=renderSettings;", context);
-  for (const locale of ["ru", "en"]) {
-    ui.setLocale(locale);
-    for (const error of [{status: 0, code: "request_interrupted"}, {status: 503, code: "source_unavailable"}, {status: 409, code: "settings_version_conflict"}]) {
-      state.prefs.error = error;
-      context.render();
-      const visible = sections[0].notices[0];
-      assert.equal(sections[0].hidden, false, "The appearance screen is the actual visible section");
-      assert.equal(status.dataset.state, error.status === 409 ? "conflict" : "error");
-      assert.ok(visible.innerHTML.includes('data-action="prefs-reload"'), "Rerendering unconfirmed settings keeps recovery controls in the visible Appearance section");
-      assert.equal(visible.innerHTML.includes('data-action="prefs-retry"'), error.status !== 409, "Interrupted writes retain readback; version conflicts require explicit reload");
-      assert.equal(visible.hidden, false);
-    }
-    state.prefs.error = null;
-    state.prefs.dirty = false;
-    context.render();
-    assert.equal(status.dataset.state, "saved");
-    assert.equal(sections[0].notices[0].hidden, true);
-    assert.equal(sections[0].notices[0].innerHTML, "", "Confirmed settings remove obsolete recovery actions");
-  }
-  console.log("PASS settings recovery: rerendered Appearance controls, interrupted/failed/conflicting writes and confirmed-state cleanup in both languages");
-}
+
 async function offlineQuoteContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const start = app.indexOf("  const quoteForConnection =");
@@ -2480,7 +2455,7 @@ function eventReadReceiptContracts() {
   assert.equal(newer.revision, 11);
   assert.equal(newer.read_at, null, "An older acknowledged source cannot replace the displayed newer unread fact");
   const counters = app.slice(app.indexOf("  const eventUnreadCount ="), app.indexOf("  const eventUnreadLabel ="));
-  const state = {tour: false, data: {events: {unread_count: 2, read_all_before: 10}}};
+  const state = {guest: false, data: {events: {unread_count: 2, read_all_before: 10}}};
   const counts = sourceContext({state, number: value => value == null ? null : Number(value)});
   vm.runInContext(counters + "\nglobalThis.count = eventUnreadCount;globalThis.boundary = eventReadBoundary;", counts);
   assert.equal(counts.count(), null, "A category-filtered page cannot establish the global unread count");
@@ -2773,7 +2748,7 @@ const styleContracts = () => {
     }
     assertTextContrast("#ffffff", resolveStyleTokens(palette["--blue"], palette), selector + " selected controls");
   }
-  for (const selector of [".button.primary", ".button.primary:hover", ".vk-provider", ".vk-provider:hover", ".strategy-option .strategy-icon"]) {
+  for (const selector of [".button.primary", ".button.primary:hover", ".strategy-option .strategy-icon"]) {
     const rule = cssRule(css, selector);
     for (const background of resolveStyleTokens(rule.background, base).match(/#[a-f0-9]{6}\b/gi) || []) assertTextContrast("#ffffff", background, selector);
   }
@@ -3437,6 +3412,7 @@ function assertChartLayout(charts, label) {
   }
 }
 const screenshotEvidenceNames = new Set(["portfolio-experience-1-320.png", "portfolio-experience-1-1440.png", "analytics-experience-1-320.png", "portfolio-2-320.png", "market-2-320.png", "strategies-2-390.png", "strategies-custom-2-390.png", "auth-2-390.png", "auth-2-320.png", "failure-state.png", "payout-source-normal-ru-320.png", "payout-source-ambiguous-ru-320.png", "payout-source-normal-en-320.png", "payout-source-ambiguous-en-320.png", "live-candles-1.png", "live-candles-2.png"]);
+for (const name of ["email-register-320.png", "email-register-1440.png", "email-verify-320.png", "email-reset-320.png", "email-reset-1440.png", "email-enroll-320.png"]) screenshotEvidenceNames.add(name);
 let screenshotEvidenceCharacters = 0;
 let screenshotEvidenceSequence = 0;
 function logScreenshotEvidence(name, png) {
@@ -3772,6 +3748,7 @@ const runBrowser = async base => {
     await exerciseInstallability({send, configureViewport, base, wait, evaluate});
     await exerciseInstallation({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot});
     await exercisePushLifecycle({send, configureViewport, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
+    await exerciseEmailAuthentication({send, configureViewport, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
     const widths = [1440, 1366, 768, 390, 320];
     for (const round of [1, 2]) {
       await exercisePortfolioExperience({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
@@ -3852,13 +3829,12 @@ const runBrowser = async base => {
     assetPayoutDisclosureContracts();
     dialogCloseContracts();
     await evidenceFileReadContracts();
+    await authReadContextContracts();
     await brokerConnectionReadContracts();
     await assetBackgroundChartContracts();
-    await ledgerPaginationContracts();
     await searchAndAssetPaginationContracts();
     await visibleRefreshContracts();
     await newsMonitoringContracts();
-    settingsRecoveryContracts();
     await offlineQuoteContracts();
     await assetMarketRefreshContracts();
     await searchQuoteContracts();
@@ -3885,17 +3861,11 @@ const runBrowser = async base => {
     server.close();
   }
 })();
-async function serveTestAuthConfig({
-  response,
-  fixture
-}) {
+async function serveTestAuthConfig({response, fixture}) {
   return sendJSON(response, {
-    login_enabled: fixture.tidEnabled || fixture.vkidEnabled,
-    vkid_enabled: fixture.vkidEnabled,
-    tid_enabled: fixture.tidEnabled,
-    tid_configured: fixture.tidEnabled,
-    auth_provider: "vkid",
-    registration_enabled: false
+    login_enabled: true, registration_enabled: true, auth_provider: "email",
+    email_enabled: fixture.emailEnabled, password_min_length: 15, password_max_length: 128,
+    legal_versions: {privacy_policy:"test", personal_data_consent:"test", terms:"test"}
   });
 }
 async function serveTestStrategyCatalog({
@@ -3909,10 +3879,8 @@ async function serveTestPublicMarketReference({
   return sendJSON(response, reference);
 }
 async function serveTestPublicNews({
-  fixture,
   response
 }) {
-  if (fixture.holdPublicNews) await new Promise(release => fixture.heldPublicNews.push(release));
   return sendJSON(response, {
     items: [{
       id: "news-fixture",
@@ -3926,12 +3894,135 @@ async function serveTestPublicNews({
     freshness: "fresh"
   });
 }
-async function serveTestGuard5({
-  response
-}) {
-  return sendJSON(response, {
-    authorize_url: "https://untrusted.invalid/authorize"
-  });
+// The HTTP double models browser transitions and DTO boundaries only. Real
+// password hashing, SMTP/outbox and PostgreSQL concurrency have separate tests.
+function emailFixtureCookie(response, name, value, path, maxAge = 3600) {
+  const previous = response.getHeader("Set-Cookie") || [];
+  const values = Array.isArray(previous) ? previous : [previous];
+  const sameSite = name === "omnicio_email_flow" ? "Strict" : "Lax";
+  response.setHeader("Set-Cookie", [...values, `${name}=${value || ""}; Path=${path}; HttpOnly; SameSite=${sameSite}; Max-Age=${value ? maxAge : 0}`]);
+}
+function emailFixtureCookies(request) {
+  return Object.fromEntries(String(request.headers.cookie || "").split(";").filter(item => item.includes("=")).map(item => {
+    const offset = item.indexOf("=");
+    return [item.slice(0, offset).trim(), item.slice(offset + 1)];
+  }));
+}
+function emailFixtureSession(fixture, request) {
+  return fixture.mode === "signed" && Boolean(fixture.emailSession) && emailFixtureCookies(request).omnicio_session === fixture.emailSession;
+}
+const emailFixtureNow = fixture => Date.now() + fixture.emailClockOffset;
+const emailFixtureLegalKeys = ["accept_privacy", "accept_personal_data", "accept_terms", "confirm_age_18"];
+const emailFixtureLegalVersions = {privacy_policy:"test", personal_data_consent:"test", terms:"test"};
+function emailFixtureDTO(body, keys) {
+  return body && !Array.isArray(body) && typeof body === "object" && JSON.stringify(Object.keys(body).sort()) === JSON.stringify([...keys].sort());
+}
+function emailFixtureAddress(value) {
+  if (typeof value !== "string") return null;
+  const match = /^([^@\s]+)@(gmail\.com|mail\.ru|xmail\.ru)$/i.exec(value.trim());
+  return match ? `${match[1]}@${match[2].toLowerCase()}` : null;
+}
+function emailFixtureChallengeReply(fixture) {
+  const challenge = fixture.emailChallenge;
+  return {status:"verification_required", challenge_id:challenge.id,
+    expires_in_seconds:Math.max(0, Math.ceil((challenge.expiresAt - emailFixtureNow(fixture)) / 1000)),
+    resend_after_seconds:Math.max(0, Math.ceil((challenge.resendAt - emailFixtureNow(fixture)) / 1000))};
+}
+function emailFixtureProof(fixture, request, body, purpose) {
+  const challenge = fixture.emailChallenge;
+  if (!challenge || !purpose.includes(challenge.purpose) || challenge.id !== body.challenge_id || emailFixtureCookies(request).omnicio_email_flow !== challenge.flow) return null;
+  if (challenge.purpose === "enroll" && (!emailFixtureSession(fixture, request) || fixture.emailSession !== challenge.session)) return null;
+  if (!challenge.eligible || emailFixtureNow(fixture) >= challenge.expiresAt || challenge.attempts >= 5) return null;
+  if (body.code !== challenge.code) { challenge.attempts += 1; return null; }
+  return challenge;
+}
+async function issueEmailFixtureChallenge({fixture, response, request, body, purpose}) {
+  const keys = purpose === "reset" ? ["email"] : ["email", "password", ...emailFixtureLegalKeys, "legal_versions"];
+  if (!emailFixtureDTO(body, keys)) return sendJSON(response,{detail:"invalid_auth_payload"},422);
+  if (!fixture.emailEnabled) return sendJSON(response,{detail:"email_not_configured"},503);
+  const email = emailFixtureAddress(body.email);
+  if (!email) return sendJSON(response,{detail:"email_domain_not_allowed"},422);
+  if (purpose !== "reset") {
+    if (typeof body.password !== "string" || body.password.length < 15 || body.password.length > 128) return sendJSON(response,{detail:"password_length_invalid"},422);
+    if (!emailFixtureLegalKeys.slice(0,3).every(key => body[key] === true)) return sendJSON(response,{detail:"legal_acknowledgments_required"},400);
+    if (body.confirm_age_18 !== true) return sendJSON(response,{detail:"age_confirmation_required"},400);
+    if (JSON.stringify(reorderJSON(body.legal_versions)) !== JSON.stringify(reorderJSON(emailFixtureLegalVersions))) return sendJSON(response,{detail:"legal_versions_changed"},409);
+  }
+  if (purpose === "enroll") {
+    if (!emailFixtureSession(fixture, request)) return sendJSON(response,{detail:"authentication required"},401);
+    const profile = request.headers["x-omnicio-profile"];
+    if (!profile) return sendJSON(response,{detail:"profile_context_required"},409);
+    if (profile !== fixture.user) return sendJSON(response,{detail:"profile_context_changed"},409);
+    if (fixture.emailVerified) return sendJSON(response,{detail:"email_already_enrolled"},422);
+  }
+  const now = emailFixtureNow(fixture);
+  fixture.emailChallenge = {id:randomUUID(), flow:randomUUID(), purpose, email,
+    password:purpose === "reset" ? null : body.password, owner:fixture.user,
+    session:fixture.emailSession, code:"12345678", generation:0, attempts:0,
+    expiresAt:now + 600000, resendAt:now + fixture.emailResendSeconds * 1000,
+    eligible:purpose === "reset" ? fixture.emailVerified && email === fixture.email : !fixture.emailVerified};
+  emailFixtureCookie(response,"omnicio_email_flow",fixture.emailChallenge.flow,"/api/auth/email",600);
+  if (fixture.holdEmailReply) await new Promise(release => {fixture.releaseEmailReply = release;});
+  return sendJSON(response,emailFixtureChallengeReply(fixture),202);
+}
+function completeEmailFixtureSession(fixture, response) {
+  fixture.emailSession = randomUUID();
+  fixture.mode = "signed";
+  fixture.emailChallenge = null;
+  emailFixtureCookie(response,"omnicio_session",fixture.emailSession,"/");
+  emailFixtureCookie(response,"omnicio_email_flow",null,"/api/auth/email");
+}
+async function serveTestEmailAuth({path, method, fixture, body, response, request}) {
+  if (method !== "POST" || request.headers.origin !== `http://${request.headers.host}`) return sendJSON(response,{detail:"origin rejected"},403);
+  const operation = path.slice("/api/auth/email/".length);
+  const purpose = {register:"register",enroll:"enroll","password-reset/request":"reset"}[operation];
+  if (purpose) return issueEmailFixtureChallenge({fixture,response,request,body,purpose});
+  if (operation === "login") {
+    if (!emailFixtureDTO(body,["email","password"]) || typeof body.password !== "string") return sendJSON(response,{detail:"invalid_auth_payload"},422);
+    if (!fixture.emailVerified || emailFixtureAddress(body.email) !== fixture.email || body.password !== fixture.emailPassword) return sendJSON(response,{detail:"email_or_password_invalid"},401);
+    completeEmailFixtureSession(fixture,response);
+    return sendJSON(response,{public_id:fixture.user,created:false});
+  }
+  if (operation === "resend") {
+    if (!emailFixtureDTO(body,["challenge_id"])) return sendJSON(response,{detail:"invalid_auth_payload"},422);
+    const challenge = fixture.emailChallenge;
+    if (!challenge || body.challenge_id !== challenge.id || emailFixtureCookies(request).omnicio_email_flow !== challenge.flow || emailFixtureNow(fixture) >= challenge.expiresAt) return sendJSON(response,{detail:"email_code_invalid_or_expired"},400);
+    if (emailFixtureNow(fixture) < challenge.resendAt) {
+      response.setHeader("Retry-After","60");
+      return sendJSON(response,{detail:"auth_resend_unavailable"},429);
+    }
+    if (fixture.emailResendError) { fixture.emailResendError = false; return sendJSON(response,{detail:"email_not_configured"},503); }
+    challenge.generation += 1;
+    challenge.code = String(12345678 + challenge.generation);
+    challenge.resendAt = emailFixtureNow(fixture) + 60000;
+    const result = emailFixtureChallengeReply(fixture);
+    emailFixtureCookie(response,"omnicio_email_flow",challenge.flow,"/api/auth/email",result.expires_in_seconds);
+    return sendJSON(response,result,202);
+  }
+  if (operation === "verify" || operation === "password-reset/confirm") {
+    const reset = operation === "password-reset/confirm";
+    const keys = reset ? ["challenge_id","code","password"] : ["challenge_id","code"];
+    if (!emailFixtureDTO(body,keys) || typeof body.challenge_id !== "string" || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(body.challenge_id) || typeof body.code !== "string" || !/^[0-9]{8}$/.test(body.code)) return sendJSON(response,{detail:"invalid_auth_payload"},422);
+    if (reset && (typeof body.password !== "string" || body.password.length < 15 || body.password.length > 128)) return sendJSON(response,{detail:"password_length_invalid"},422);
+    const challenge = emailFixtureProof(fixture,request,body,reset ? ["reset"] : ["register","enroll"]);
+    if (!challenge) return sendJSON(response,{detail:"email_code_invalid_or_expired"},400);
+    fixture.email = challenge.email;
+    fixture.emailPassword = reset ? body.password : challenge.password;
+    fixture.emailVerified = true;
+    if (reset) {
+      fixture.emailSession = null;
+      fixture.emailChallenge = null;
+      fixture.mode = "guest";
+      emailFixtureCookie(response,"omnicio_session",null,"/");
+      emailFixtureCookie(response,"omnicio_email_flow",null,"/api/auth/email");
+      return sendJSON(response,{status:"password_updated"});
+    }
+    const created = challenge.purpose === "register";
+    if (created) fixture.connected = false;
+    completeEmailFixtureSession(fixture,response);
+    return sendJSON(response,{public_id:fixture.user,created});
+  }
+  return sendJSON(response,{detail:"auth_test_endpoint_not_configured"},404);
 }
 async function serveTestGuard6({
   response
@@ -3956,15 +4047,17 @@ async function serveTestGuard8({
 }
 async function serveTestMe({
   response,
-  fixture
+  fixture,
+  request
 }) {
   if (fixture.holdMe) await new Promise(resolve => { fixture.releaseMe = resolve; });
   if (fixture.failMe) return sendJSON(response, {detail: "synthetic_session_unavailable"}, 503);
   if (fixture.mode === "guest") return sendJSON(response, {detail: "authentication required"}, 401);
+  if (fixture.emailStrictCookies && !emailFixtureSession(fixture, request)) return sendJSON(response, {detail: "authentication required"}, 401);
   return sendJSON(response, {
     public_id: fixture.user,
     status: "active",
-    role: "user",
+    role: fixture.role,
     can_view_operational_metrics: fixture.canViewOperationalMetrics
   });
 }
@@ -3980,16 +4073,10 @@ function serveTestOperationalMetrics({fixture,response}) {
     issues:["observer_stale","notifications_uncertain","portfolio_daily_worker_not_reported"]
   });
 }
-async function serveTestAuthIdentities({
-  response
-}) {
-  return sendJSON(response, {
-    providers: ["vkid"],
-    available_providers: {
-      tid: true,
-      vkid: true
-    }
-  });
+async function serveTestAuthIdentities({response, fixture}) {
+  return sendJSON(response, {email: fixture.emailVerified ? fixture.email : null,
+    email_verified: fixture.emailVerified, migration_required: !fixture.emailVerified,
+    providers: fixture.emailVerified ? ["email"] : [], available_providers: {email:true}});
 }
 async function serveTestWorkspace({
   fixture,
@@ -3999,7 +4086,6 @@ async function serveTestWorkspace({
   const period = url.searchParams.get("history_period") || "all";
   if (fixture.brokerContracts && period === "1y") return serveTestWorkspaceResult({fixture, response, result: clone(serverContracts.broker_workspace)});
   const result = workspace(fixture);
-  if (fixture.periodResults?.[period]) result.performance.investment_result_rub = fixture.periodResults[period];
   const stored = result.overview.history;
   const days = {
     "1d": 1,
@@ -4030,9 +4116,11 @@ async function serveTestWorkspace({
 }
 async function serveTestWorkspaceResult({fixture, response, result}) {
   if (fixture.holdWorkspace) await new Promise(release => fixture.heldWorkspace.push(release));
-  return sendJSON(response, fixture.failWorkspace ? {
+  const reply = sendJSON(response, fixture.failWorkspace ? {
     detail: "synthetic_failure"
   } : result, fixture.failWorkspace ? 503 : 200);
+  fixture.workspaceResponses = (fixture.workspaceResponses || 0) + 1;
+  return reply;
 }
 function serveTestRefresh({
   fixture,
@@ -4061,80 +4149,10 @@ function serveTestRefresh({
       finished_at: finished ? stamp : null,
       can_refresh: finished,
       snapshot_saved: finished,
-      history_status: finished ? "complete" : null
+      history_status: "not_collected"
     };
   }
   return sendJSON(response, fixture.refreshStatus);
-}
-const executionListDTO = fixture => ({
-  executions: fixture.executions.map(execution => ({
-    ...execution,
-    legs: []
-  })),
-  has_active_live_execution: fixture.executions.some(execution => execution.mode === "live" && ["created", "running", "reconciling"].includes(execution.status)),
-  live_mandate: fixture.mandate,
-  recovery_only: true,
-  new_orders_enabled: false
-});
-const executionDetailDTO = execution => ({
-  execution: clone(execution),
-  events: [],
-  recovery_only: true,
-  new_orders_enabled: false
-});
-async function serveTestExecutions({
-  path,
-  fixture,
-  response,
-  method,
-  body
-}) {
-  if (path === "/api/portfolio/executions") {
-    const saved = clone(executionListDTO(fixture));
-    if (fixture.holdExecutionReads) await new Promise(release => fixture.heldExecutionReads.push(release));
-    return sendJSON(response, saved);
-  }
-  const [,,,, id, action] = path.split("/");
-  const execution = fixture.executions.find(item => item.id === id);
-  if (!execution) return sendJSON(response, {
-    detail: "execution_not_found"
-  }, 404);
-  if (method === "POST") {
-    assert.ok(["reconcile", "cancel", "dispatch"].includes(action), "Only explicit execution actions are accepted");
-    if (action === "dispatch") {
-      assert.equal(execution.mode, "shadow", "The test UI must never submit a live broker order");
-      const leg = execution.legs.find(item => item.status === "pending");
-      if (!leg || leg.id !== body.expected_leg_id) return sendJSON(response, {detail: "execution_leg_changed"}, 409);
-      assert.match(body.expected_leg_id, /^[a-f0-9-]{36}$/);
-      leg.status = "shadow_filled";
-      leg.lots_executed = leg.lots_requested;
-      leg.last_checked_at = stamp;
-      leg.terminal_at = stamp;
-      execution.status = execution.legs.every(item => item.status === "shadow_filled") ? "succeeded" : "running";
-      return sendJSON(response, executionDetailDTO(execution));
-    }
-    if (action === "cancel") {
-      execution.status = "cancelled";
-      execution.legs[0].status = "cancelled";
-    } else execution.legs[0].last_checked_at = stamp;
-    if (fixture.recoveryLostAck) {
-      fixture.recoveryLostAck = false;
-      return sendJSON(response, {
-        detail: "synthetic_lost_ack"
-      }, 503);
-    }
-  }
-  return sendJSON(response, executionDetailDTO(execution));
-}
-function serveTestMandate({
-  fixture,
-  response,
-  method
-}) {
-  if (method === "DELETE") fixture.mandate = null;
-  return sendJSON(response, {
-    live_mandate: fixture.mandate
-  });
 }
 async function serveTestPreferences({
   path,
@@ -4357,7 +4375,7 @@ async function serveTestMarketInstruments2({
   if (fixture.marketHistoryStatus) market.history_status = fixture.marketHistoryStatus;
   return sendJSON(response, market);
 }
-async function serveTestBrokerTbankInstrumentsSearch({
+async function serveTestMarketSearch({
   response
 }) {
   return sendJSON(response, {
@@ -4511,6 +4529,9 @@ async function serveTestEvents({
 }
 async function serveTestNews({fixture, url, response}) {
   if (url.pathname !== "/api/news") { const item=fixture.news.find(row=>row.id===url.pathname.split("/").at(-1)); return sendJSON(response,item || {detail:"news_not_found"},item?200:404); }
+  if (fixture.holdPublicNews && url.pathname + url.search === generalNewsPath) {
+    await new Promise(release => fixture.heldPublicNews.push(release));
+  }
   const query = (url.searchParams.get("query") || "").toLowerCase();
   const uid = url.searchParams.get("instrument_uid");
   if (uid) await holdAssetEnrichment(fixture, "news");
@@ -4574,8 +4595,8 @@ async function exerciseEventArchive({fixture, click, fieldValue, wait, evaluate}
   await wait('document.querySelectorAll("#view-events [data-event-open]").length===115', "Full event archive beyond fifty");
   await exerciseDelayedEventList({fixture, click, wait, evaluate});
   await click(`#view-events [data-event-open="${fixture.events[114].id}"]`);
-  await wait('document.querySelector("#dialog-content").textContent.includes("Сумма операции")', "Structured event source details");
-  assert.ok(await evaluate('document.querySelector("#dialog-content").textContent.includes("125,50")'));
+  await wait('document.querySelector("#dialog-content").textContent.includes("Оценка инструмента")', "Structured event source details");
+  assert.ok(await evaluate('document.querySelector("#dialog-content").textContent.includes("synthetic-a")'));
   await click('#dialog-content [data-action="event-destination"]');
   await wait('!document.querySelector("#view-asset").hidden && location.hash.includes("synthetic-a")', "Exact source instrument deep link");
   await fieldValue("#global-search-form", "q", "Архивный контрольный");
@@ -4685,29 +4706,34 @@ async function exerciseNotificationRetry({fixture, click, fieldValue, wait, eval
   await wait('!document.querySelector("#notification-settings .notice.error")', "A second successful read removes the actual error");
 }
 async function exerciseAnalyticsReadConsistency({fixture, click, wait, evaluate, checkLayout, screenshot, round}) {
-  fixture.periodResults = {"1y": "123456", "1w": "7654"};
   await click('#sidebar-nav [data-route="analytics"]');
   await click('#view-analytics .screen-menu [data-screen="history"]');
   const metricValues = '[...document.querySelectorAll("#view-analytics .metric-grid .main-value")].map(item=>item.textContent)';
-  await wait('document.querySelector("#view-analytics [data-history-period=\\"1y\\"]") && document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("+123456,00")', "The initial year has its own financial result");
+  await wait('document.querySelector("#view-analytics [data-history-period]")?.dataset.historyPeriod === "1y" && document.querySelector("#view-analytics [data-analytics-history] .chart-svg")', "The selected year has its own saved valuation observations");
+  const currentValues = await evaluate(metricValues);
+  assert.equal(currentValues.length, 3, "Analytics shows current NAV, confirmed cash and instrument count");
+  assert.ok(currentValues[0].includes("150"));
   fixture.holdWorkspace = true;
   fixture.failWorkspace = true;
   await click('#view-analytics [data-period="1w"]');
   await until(() => fixture.heldWorkspace.length > 0, "The selected week is loading");
-  assert.deepEqual(await evaluate(metricValues), ["—", "—", "—", "—"], "The old year's totals cannot be displayed under the selected week");
-  assert.equal(await evaluate('document.querySelectorAll("#view-analytics .chart-svg").length'), 0, "Charts from another period stay out of the selected-period view");
+  assert.deepEqual(await evaluate(metricValues), currentValues, "The timestamped current portfolio state is independent of the selected historical window");
+  assert.equal(await evaluate('document.querySelectorAll("#view-analytics [data-analytics-history] .chart-svg").length'), 0, "A previous year's chart cannot stand in for the pending week");
   fixture.holdWorkspace = false;
   fixture.heldWorkspace.splice(0).forEach(release => release());
   await wait('document.querySelector("#view-analytics [data-resource=workspace]")', "The failed week read exposes a targeted retry");
-  assert.deepEqual(await evaluate(metricValues), ["—", "—", "—", "—"], "Failure does not relabel cached year totals as week data");
-  assert.equal(await evaluate('document.querySelector("#view-analytics [data-period=\\"1w\\"]").getAttribute("aria-pressed")'), "true");
+  assert.deepEqual(await evaluate(metricValues), currentValues, "A history read failure does not invent a new current valuation");
+  assert.equal(await evaluate('document.querySelectorAll("#view-analytics [data-analytics-history] .chart-svg").length'), 0);
+  assert.equal(await evaluate('document.querySelector("#view-analytics [data-period][aria-pressed=true]").dataset.period'), "1w");
   await screenshot(`analytics-period-error-${round}-390.png`);
   fixture.failWorkspace = false;
   const before = fixture.requests.length;
   await click('#view-analytics [data-resource="workspace"]');
-  await wait('document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("+7654,00") && document.querySelector("#view-analytics [data-history-period=\\"1w\\"]")', "The successful retry displays only the selected week's snapshot");
+  await wait('document.querySelector("#view-analytics [data-history-period]")?.dataset.historyPeriod === "1w" && document.querySelector("#view-analytics [data-analytics-history] .chart-svg")', "A successful retry displays observations for the selected week only");
+  assert.deepEqual(await evaluate(metricValues), currentValues);
   assert.ok(fixture.requests.slice(before).some(item => item.path === "/api/workspace" && new URLSearchParams(item.query).get("history_period") === "1w"));
   assert.equal(fixture.requests.slice(before).some(item => item.path === "/api/workspace/refresh" && item.method === "POST"), false);
+  assert.equal(await evaluate('document.querySelector("#view-analytics").textContent.includes("Modified Dietz")'), false, "Snapshot value changes never become transaction-derived investment returns");
   await checkLayout(`analytics-period-recovered-${round}-390`, {minCharts: 1});
 }
 async function exerciseSearchReadConsistency({fixture, click, fieldValue, wait, evaluate}) {
@@ -4715,17 +4741,18 @@ async function exerciseSearchReadConsistency({fixture, click, fieldValue, wait, 
   await fieldValue("#global-search-form", "q", "older-query");
   await evaluate('document.querySelector("#global-search-form").requestSubmit()');
   await until(() => fixture.heldPublicNews.length === 1, "The general news feed is deliberately waiting");
-  await until(() => fixture.requests.some(item => item.path === "/api/broker/tbank/instruments/search" && new URLSearchParams(item.query).get("q") === "older-query"), "The first query starts independently of that shared feed");
+  await until(() => fixture.requests.some(item => item.path === "/api/market/instruments/search" && new URLSearchParams(item.query).get("q") === "older-query"), "The first query starts independently of that shared feed");
   await fieldValue("#global-search-form", "q", "newer-query");
   await evaluate('document.querySelector("#global-search-form").requestSubmit()');
   await wait('document.querySelector("#view-search .view-header").textContent.includes("newer-query")', "The current route query is visible during loading");
   await wait('document.querySelector("#view-search .search-result") && !document.querySelector("#view-search .loading-panel")', "The newer query finishes while the unrelated feed is still pending");
-  const searches = fixture.requests.filter(item => item.path === "/api/broker/tbank/instruments/search");
+  const searches = fixture.requests.filter(item => item.path === "/api/market/instruments/search");
   assert.deepEqual(searches.map(item => new URLSearchParams(item.query).get("q")), ["older-query", "newer-query"], "Each explicit route starts its own search without a shared-data gate");
+  const completed = await evaluate(completedResourceCount(generalNewsPath));
   fixture.holdPublicNews = false;
   fixture.heldPublicNews.splice(0).forEach(release => release());
-  await wait(`${completedResourceCount("/api/public/news")} > 0`, "The shared feed finally completes");
-  assert.equal(fixture.requests.filter(item => item.path === "/api/broker/tbank/instruments/search").length, 2, "A late shared read cannot launch the old query again");
+  await wait(`${completedResourceCount(generalNewsPath)} > ${completed}`, "The shared feed finally completes");
+  assert.equal(fixture.requests.filter(item => item.path === "/api/market/instruments/search").length, 2, "A late shared read cannot launch the old query again");
   assert.equal(await evaluate('document.querySelector("#global-search").value'), "newer-query");
   assert.ok(await evaluate('document.querySelector("#view-search .view-header").textContent.includes("newer-query")'));
   await click('#sidebar-nav [data-route="goals"]');
@@ -5051,7 +5078,7 @@ async function exerciseReadConsistency(options) {
   console.log(`PASS read contracts round ${round}: resource retry, period isolation, search ordering, and source age from the real calculator`);
 }
 async function serveTestSessions({fixture, path, method, body, response}) {
-  fixture.sessions ||= [{id:"00000000-0000-0000-0000-000000000991", current:true, auth_provider:"vkid", created_at:stamp, last_seen_at:stamp, expires_at:new Date(Date.now()+86400000).toISOString()}, {id:"00000000-0000-0000-0000-000000000992", current:false, auth_provider:"tid", created_at:stamp, last_seen_at:stamp, expires_at:new Date(Date.now()+86400000).toISOString()}];
+  fixture.sessions ||= [{id:"00000000-0000-0000-0000-000000000991", current:true, auth_provider:"email", created_at:stamp, last_seen_at:stamp, expires_at:new Date(Date.now()+86400000).toISOString()}, {id:"00000000-0000-0000-0000-000000000992", current:false, auth_provider:"email", created_at:stamp, last_seen_at:stamp, expires_at:new Date(Date.now()+86400000).toISOString()}];
   if (method === "GET") return sendJSON(response, {sessions:clone(fixture.sessions), total:fixture.sessions.length, truncated:false});
   if (path.endsWith("/revoke-others")) fixture.sessions = fixture.sessions.filter(item=>item.current);
   else if (path.endsWith("/revoke")) fixture.sessions = fixture.sessions.filter(item=>item.id!==body.session_id || item.current);
@@ -5121,32 +5148,7 @@ function serveTestResearchRecord({fixture,path,method,response}) {
   if (path.endsWith("/replay")) return sendJSON(response, {verified: true});
   return sendJSON(response, item);
 }
-function serveTestExecutionPlans({fixture,path,body,response}) {
-  if (path.endsWith("execution-capabilities")) return sendJSON(response, {shadow_enabled:true,sandbox_enabled:false,live_enabled:false,max_order_notional_rub:"25000",max_daily_notional_rub:"100000"});
-  if (path.endsWith("/plan")) {
-    assert.equal(body.expected_version, fixture.selection.version);
-    assert.equal(body.mode, "shadow");
-    const research = fixture.researchRuns.find(item => item.id === body.research_run_id);
-    assert.ok(research, "The planner must use an owned research record");
-    assert.equal(research.strategy_version,fixture.selection.version,"Research must describe the exact saved strategy");
-    assert.ok(Date.now()-Date.parse(research.created_at)<86400000,"Research is within the 24-hour planning window");
-    assert.equal(fixture.selection.document.profile.reserve_rub,"5000","Execution fixture needs an explicit known reserve");
-    assert.equal(body.commission_bps, research.inputs.commission_bps);
-    assert.equal(body.slippage_bps, research.inputs.slippage_bps);
-    const payload={strategy_version:fixture.selection.version,nav_rub:"150000.25",cash_before_rub:"100000.25",cash_after_rub:"97998.25",reserve_rub:"5000",gross_turnover_rub:"2000",mode:"shadow",account_id:"synthetic-account",legs:[{action:"buy",instrument_uid:"synthetic-a",ticker:"SYNA",lots:2,lot_size:10,limit_price:"100",gross_amount_rub:"2000",commission_cap_rub:"2",tax_reserve_rub:"0"}]};
-    const proposal={id:require("node:crypto").randomUUID(),version:1,status:"proposed",proposal_hash:createHash("sha256").update(JSON.stringify(payload)).digest("hex"),payload,expires_at:new Date(Date.now()+120000).toISOString()};
-    fixture.executionProposals.push(proposal);
-    return sendJSON(response, proposal);
-  }
-  const id=path.split("/").at(-2), proposal=fixture.executionProposals.find(item=>item.id===id);
-  if(!proposal) return sendJSON(response,{detail:"execution_proposal_not_found"},404);
-  assert.equal(body.proposal_version,proposal.version);
-  assert.equal(body.proposal_hash,proposal.proposal_hash);
-  assert.equal(body.expected_strategy_version,proposal.payload.strategy_version);
-  let run=fixture.executions.find(item=>item.proposal_id===id);
-  if(!run){run={id:require("node:crypto").randomUUID(),proposal_id:id,account_id:"synthetic-account",mode:"shadow",provider_environment:"prod",status:"created",error_code:null,created_at:stamp,updated_at:stamp,finished_at:null,legs:proposal.payload.legs.map((leg,index)=>({id:require("node:crypto").randomUUID(),leg_index:index,action:leg.action,instrument_uid:leg.instrument_uid,lots_requested:leg.lots,lots_executed:0,request_id:require("node:crypto").randomUUID(),provider_order_id:null,provider_status:null,status:"pending",submitted_at:null,last_checked_at:null,terminal_at:null}))};fixture.executions.push(run);}
-  return sendJSON(response,{run:clone(run)});
-}
+
 async function serveTestBilling({fixture,path,method,body,response}) {
   fixture.billing ||= clone(serverContracts.billing_disabled);
   if(path==="/api/billing") return sendJSON(response,fixture.billing);
@@ -5412,68 +5414,7 @@ async function exerciseBillingInitializationRecovery({fixture,click,wait,evaluat
   await checkLayout("billing-initialization-recovery");
   await click('#workspace-dialog [data-close-dialog]');
 }
-async function exerciseExecutionPlanner({fixture,click,fieldValue,wait,evaluate,screenshot,checkLayout,round}) {
-  await fieldValue('#strategy-form','strategy.profile.reserve_rub','5000');
-  await wait('document.querySelector("#view-strategies [data-action=execution-plan]")?.disabled===true',"Planner is blocked while edited parameters are unsaved");
-  await until(()=>fixture.selection.document.profile.reserve_rub==="5000","Explicit reserve is saved before planning");
-  await wait('document.querySelector("[data-save-status=strategy]").dataset.state==="saved" && document.querySelector("#view-strategies [data-action=execution-plan]")?.disabled===false',"Planner becomes available after the same strategy version is acknowledged");
-  fixture.researchRuns=[{id:require("node:crypto").randomUUID(),strategy_version:fixture.selection.version,status:"computed",created_at:new Date().toISOString(),metrics:{net_return_percent:"1.25"},inputs:{commission_bps:"10",slippage_bps:"20"}}];
-  const prepare = async () => {
-    await click('#view-strategies .screen-menu [data-screen="plan"]');
-    await wait('document.querySelector("#execution-plan-form")', "Saved research and current account planning inputs");
-    await click('#execution-plan-form [type="submit"]');
-    await wait('document.querySelector("#execution-review-consent")', "Review exact plan before confirmation");
-  };
-  await prepare();
-  assert.equal(fixture.executions.length,0,"Calculating a plan cannot start execution");
-  await click('#dialog-content [data-action="execution-confirm"]');
-  await wait('document.querySelector("#execution-plan-message").classList.contains("error")',"Explicit review consent is required");
-  assert.equal(fixture.requests.filter(item=>item.path.endsWith("/confirm")).length,0,"Missing consent cannot send confirmation");
-  await screenshot(`execution-review-${round}-390.png`);
-  await click('#execution-review-consent');
-  await click('#dialog-content [data-action="execution-confirm"]');
-  await wait('document.querySelector("#dialog-content [data-action=recovery-dispatch]") && !document.querySelector("#dialog-content [data-action=recovery-dispatch]").disabled', "Confirmation opens the newly persisted execution ID");
-  assert.equal(fixture.executions.length,1);
-  const run=fixture.executions[0],leg=run.legs[0];
-  assert.equal(leg.lots_executed,0,"Confirmation alone cannot dispatch the first leg");
-  await checkLayout("shadow-execution-before-dispatch-390");
-  await click('#dialog-content [data-action="recovery-dispatch"]');
-  await until(()=>leg.status==="shadow_filled","Explicit shadow dispatch records a simulated fill");
-  assert.equal(run.status,"succeeded","Shadow completion uses the server terminal status");
-  await wait('!document.querySelector("#dialog-content [data-action=recovery-dispatch]") && document.querySelector("#dialog-content").textContent.includes("Завершено")',"The acknowledged terminal plan displays completion and has no next-step action");
-  const dispatched=fixture.requests.filter(item=>item.path.endsWith("/dispatch"));
-  assert.equal(dispatched.length,1);
-  assert.equal(dispatched[0].body.expected_leg_id,leg.id,"Dispatch carries the exact reviewed pending leg UUID");
-  assert.equal(leg.provider_order_id,null,"Shadow dispatch never invents a real broker order ID");
-  assert.equal(leg.lots_executed,leg.lots_requested);
-  const shadowDetails = await evaluate('document.querySelector("#dialog-content").textContent');
-  for (const label of ["ID заявки брокера", "Статус брокера", "Последняя сверка", "Запрошенная отмена подтверждается состоянием брокера"]) assert.ok(!shadowDetails.includes(label), "Shadow details do not imply broker state: " + label);
-  assert.ok(shadowDetails.includes("Уже записанные модельные исполнения сохранятся в журнале"), "Shadow cancellation explains the separate model ledger");
-  assert.ok(shadowDetails.includes(run.id) && shadowDetails.includes(leg.request_id), "Model execution and request IDs remain visible");
-  await screenshot(`execution-shadow-result-${round}-390.png`);
-  await click('#workspace-dialog [data-close-dialog]');
-  await prepare();
-  await click('#execution-review-consent');
-  await click('#dialog-content [data-action="execution-confirm"]');
-  await wait('document.querySelector("#dialog-content [data-action=recovery-cancel]") && !document.querySelector("#dialog-content [data-action=recovery-cancel]").disabled',"A second unfilled shadow plan can be cancelled");
-  await click('#dialog-content [data-action="recovery-cancel"]');
-  await click('#dialog-content [data-action="recovery-cancel-confirm"]');
-  await until(()=>fixture.executions[1].status==="cancelled","Cancel closes the unfilled shadow plan");
-  assert.equal(fixture.executions[1].legs[0].lots_executed,0);
-  assert.equal(fixture.requests.filter(item=>item.path.endsWith("/dispatch")).length,1,"Cancelling a pending shadow plan cannot execute it");
-  await click('#workspace-dialog [data-close-dialog]');
-  await click('#view-strategies .screen-menu [data-screen="executions"]');
-  await wait('document.querySelectorAll("#dialog-content [data-recovery-id]").length===2',"Both terminal plans remain in execution history");
-  await click('#workspace-dialog [data-close-dialog]');
-  fixture.holdResearchReads=true;
-  await click('#view-strategies .screen-menu [data-screen="plan"]');
-  await until(()=>fixture.heldResearchReads.length>0,"Delayed planner prerequisites are in flight");
-  await click('#workspace-dialog [data-close-dialog]');
-  fixture.holdResearchReads=false;
-  fixture.heldResearchReads.splice(0).forEach(release=>release());
-  await delay(250);
-  assert.equal(await evaluate('document.querySelector("#workspace-dialog").open'),false,"A late prerequisite response cannot reopen a dismissed planner");
-}
+
 async function exerciseEnglishLocale({send,configureViewport,round,base,wait,click,evaluate,fieldValue,checkLayout,screenshot}) {
   await configureViewport(390);
   const key=`signed-language-${round}`,fixture=makeFixture("signed");
@@ -5543,6 +5484,8 @@ async function serveTestAuthLogout({
     if (channel.kind === "push" && channel.current_session) Object.assign(channel, {status: "revoked", binding_id: null, current_session: false});
   }
   fixture.mode = "guest";
+  fixture.emailSession = null;
+  emailFixtureCookie(response, "omnicio_session", null, "/");
   response.statusCode = 204;
   return response.end();
 }
@@ -5550,22 +5493,22 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   await configureViewport(390);
   const guestKey = `guest-canonical-${round}`;
   fixtures.set(guestKey, makeFixture("guest"));
-  await send("Page.navigate", {url: `${base}?case=${guestKey}#demo/market/reference?currency=CNY&reference_period=1y`});
+  await send("Page.navigate", {url: `${base}?case=${guestKey}#guest/market/reference?currency=CNY&reference_period=1y`});
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await wait('!document.querySelector("#view-market").hidden && !document.querySelector("#app-shell").hidden && document.querySelector("[name=cbr_currency]")?.value === "CNY"', "Demo deep link survives repeated reload");
+    await wait('!document.querySelector("#view-market").hidden && !document.querySelector("#app-shell").hidden && document.querySelector("[name=cbr_currency]")?.value === "CNY"', "Public deep link survives repeated reload");
     assert.equal(await evaluate('document.querySelector("#public-site").hidden'), true);
     assert.equal(await evaluate('document.querySelector("[name=cbr_period]").value'), "1y");
-    assert.equal(await evaluate('location.hash'), "#demo/market/reference?currency=CNY&reference_period=1y");
-    if (attempt < 2) { const origin = await evaluate("performance.timeOrigin"); await send("Page.reload"); await wait(`performance.timeOrigin !== ${origin}`, "A new demo document loaded"); }
+    assert.equal(await evaluate('location.hash'), "#guest/market/reference?currency=CNY&reference_period=1y");
+    if (attempt < 2) { const origin = await evaluate("performance.timeOrigin"); await send("Page.reload"); await wait(`performance.timeOrigin !== ${origin}`, "A new public document loaded"); }
   }
-  await checkLayout(`canonical-demo-${round}`);
+  await checkLayout(`canonical-public-${round}`);
   await click('#view-market [data-screen="news"]');
-  await wait('location.hash === "#demo/market/news?currency=CNY&reference_period=1y" && document.querySelector("#view-market [data-screen-content=news]")?.getClientRects().length', "Market news is a standalone screen with the selected currency and period retained");
+  await wait('location.hash === "#guest/market/news?currency=CNY&reference_period=1y" && document.querySelector("#view-market [data-screen-content=news]")?.getClientRects().length', "Market news is a standalone screen with the selected currency and period retained");
   assert.equal(await evaluate('document.querySelector("#view-market [data-screen-content=reference]").getClientRects().length'), 0, "Unselected data panels are not visible");
   await evaluate("history.back()");
-  await wait('location.hash === "#demo/market/reference?currency=CNY&reference_period=1y" && document.querySelector("[name=cbr_currency]").value === "CNY" && document.querySelector("[name=cbr_period]").value === "1y"', "Back restores the exact reference route, currency and period");
-  await click('[data-action="leave-tour"]');
-  await wait('!document.querySelector("#public-site").hidden', "Leaving demo returns to the public root");
+  await wait('location.hash === "#guest/market/reference?currency=CNY&reference_period=1y" && document.querySelector("[name=cbr_currency]").value === "CNY" && document.querySelector("[name=cbr_period]").value === "1y"', "Back restores the exact reference route, currency and period");
+  await click('[data-action="public-home"]');
+  await wait('!document.querySelector("#public-site").hidden', "Leaving public returns to the public root");
   await click('.public-nav [data-public-page="features"]');
   await wait('location.hash === "#public/features"', "Public menu is a page route");
   assert.deepEqual(await evaluate('[...document.querySelectorAll("#public-content > section")].filter(element=>element.getClientRects().length).map(element=>element.id)'), ["features"]);
@@ -5575,28 +5518,28 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   for (const view of ["portfolio", "market", "assistant", "strategies"]) {
     const selector = `.public-mobile-nav [data-public-open="${view}"]`;
     const href = await evaluate(`document.querySelector(${JSON.stringify(selector)}).href`);
-    assert.equal(new URL(href).hash, `#demo/${view}`, "A public link advertises the same explicit demo mode as its click action");
+    assert.equal(new URL(href).hash, `#guest/${view}`, "A public link advertises the same explicit public mode as its click action");
     await click(selector);
-    await wait(`location.hash === ${JSON.stringify(`#demo/${view}`)} && document.querySelector(${JSON.stringify(`#view-${view}`)}).hidden === false`, "The public link opens its intended demo section");
+    await wait(`location.hash === ${JSON.stringify(`#guest/${view}`)} && document.querySelector(${JSON.stringify(`#view-${view}`)}).hidden === false`, "The public link opens its intended public section");
     assert.equal(await evaluate("location.href"), href, "An ordinary click and the copyable href reach exactly the same destination");
     const origin = await evaluate("performance.timeOrigin");
     await send("Page.reload");
-    await wait(`performance.timeOrigin !== ${origin} && location.href === ${JSON.stringify(href)} && !document.querySelector("#app-shell").hidden && !document.querySelector("#tour-notice").hidden`, "The public href retains demo in a fresh document");
-    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Знакомство", "Opening a public href in a new document cannot switch to a personal account");
-    await click('[data-action="leave-tour"]');
-    await wait('location.hash === "#public/welcome" && !document.querySelector("#public-site").hidden', "The demo section returns to its public entry point");
+    await wait(`performance.timeOrigin !== ${origin} && location.href === ${JSON.stringify(href)} && !document.querySelector("#app-shell").hidden && !document.querySelector("#public-market-notice").hidden`, "The public href retains public in a fresh document");
+    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Войти", "Opening a public href in a new document cannot switch to a personal account");
+    await click('[data-action="public-home"]');
+    await wait('location.hash === "#public/welcome" && !document.querySelector("#public-site").hidden', "The public section returns to its public entry point");
   }
   const lateKey = `signed-late-session-${round}`;
   const late = makeFixture("signed"); late.holdMe = true; fixtures.set(lateKey, late);
   await send("Page.navigate", {url: `${base}?case=${lateKey}#public/welcome`});
   await until(()=>typeof late.releaseMe === "function", "Session verification is deliberately pending");
-  await click('[data-action="tour"]');
+  await click('[data-action="open-market"]');
   await click('#sidebar-nav [data-route="market"]');
   await click('#view-market [data-screen="reference"]');
   late.holdMe = false; late.releaseMe();
   await delay(250);
-  assert.equal(await evaluate("location.hash"), "#demo/market/reference", "A late successful session response cannot override an explicit demo route");
-  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Знакомство", "Demo does not display the authenticated account's name");
+  assert.equal(await evaluate("location.hash"), "#guest/market/reference", "A late successful session response cannot override an explicit public route");
+  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Войти", "Public browsing does not display the authenticated account's name");
   const failureKey = `signed-session-retry-${round}`;
   const failure = makeFixture("signed"); failure.failMe = true; fixtures.set(failureKey, failure);
   await send("Page.navigate", {url: `${base}?case=${failureKey}#account/settings/broker`});
@@ -5613,6 +5556,7 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   await wait('document.querySelector("#goal-form") && document.querySelector("#workspace-dialog").open', "Goal creation is an addressable screen");
   await fieldValue("#goal-form", "title", "Unsubmitted navigation draft");
   await fieldValue("#goal-form", "kind", "income");
+  await fieldValue("#goal-form", "progress_source", "manual");
   assert.ok((await evaluate("location.hash")).startsWith("#account/goals/create"));
   await evaluate('document.querySelector("#workspace-dialog").scrollTop = 180');
   await wait('history.state.dialogScroll > 100', "The routed form records its own scroll position");
@@ -5621,14 +5565,15 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   await wait('!document.querySelector("#workspace-dialog").open && location.hash === "#account/goals"', "Back closes the form and restores the list");
   await evaluate("history.forward()");
   await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#goal-form")?.elements.title.value === "Unsubmitted navigation draft"', "Forward restores the unsaved draft");
-  assert.equal(await evaluate('document.querySelector("#goal-form").elements.progress_source.value'), "income", "Draft restoration rebuilds the source options for the restored goal kind");
+  assert.equal(await evaluate('document.querySelector("#goal-form").elements.progress_source.value'), "manual", "Draft restoration rebuilds the source options for the restored goal kind");
   await wait(`Math.abs(document.querySelector("#workspace-dialog").scrollTop - ${dialogScroll}) < 2`, "Forward restores the long form's own scroll position");
   await fieldValue("#goal-form", "title", "");
   await fieldValue("#goal-form", "kind", "capital");
+  await fieldValue("#goal-form", "progress_source", "portfolio");
   await click('#workspace-dialog [data-close-dialog]');
   await wait('!document.querySelector("#workspace-dialog").open', "Draft was returned to its initial state");
   assert.equal(failure.requests.filter(item=>item.method === "POST" && item.path === "/api/goals").length, 0, "Navigating and restoring a draft cannot create a goal");
-  console.log(`PASS canonical navigation round ${round}: repeated demo reload, public href/click/new-document agreement, public screens, Back, control restoration, late bootstrap, retry and draft history`);
+  console.log(`PASS canonical navigation round ${round}: repeated public reload, public href/click/new-document agreement, public screens, Back, control restoration, late bootstrap, retry and draft history`);
 }
 async function exerciseIndependentPageLoads({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
   await configureViewport(390);
@@ -5732,7 +5677,7 @@ async function exerciseAssetEnrichment({send, round, base, wait, evaluate, check
   await send("Input.dispatchKeyEvent", {type: "keyDown", key: "Home", code: "Home", windowsVirtualKeyCode: 36});
   const selected = await evaluate('document.querySelector("#view-asset .chart-readout").textContent');
   const aria = await evaluate('window.__enrichmentChart.getAttribute("aria-label")');
-  for (const [path, flag, pending] of [["/api/public/news", "holdPublicNews", "heldPublicNews"], ["/api/workspace", "holdWorkspace", "heldWorkspace"]]) {
+  for (const [path, flag, pending] of [[generalNewsPath, "holdPublicNews", "heldPublicNews"], ["/api/workspace", "holdWorkspace", "heldWorkspace"]]) {
     const completed = await evaluate(completedResourceCount(path));
     fixture[flag] = false;
     fixture[pending].splice(0).forEach(release => release());
@@ -5910,7 +5855,7 @@ async function pushContextContracts() {
   const subscription = {endpoint: "https://fcm.googleapis.com/fcm/send/fixture-owner-a", options: {applicationServerKey: bytes.buffer}, toJSON: () => ({endpoint: "https://fcm.googleapis.com/fcm/send/fixture-owner-a"})};
   const data = {vapid_public_key: pushFixtureKey, channels: []};
   for (const [boundary, changed] of ["subscription", "receipt"].flatMap(boundary => ["generation", "identity"].map(changed => [boundary, changed]))) {
-    const state = {generation: 1, user: {public_id: "000000123"}, locked: false, tour: false, devicePush: {status: "checking", channel: null, bindingId: null}};
+    const state = {generation: 1, user: {public_id: "000000123"}, locked: false, guest: false, devicePush: {status: "checking", channel: null, bindingId: null}};
     const writes = [], bindings = [];
     let releaseSubscription, releaseReceipt;
     const registration = {pushManager: {getSubscription: () => boundary === "subscription" ? new Promise(resolve => { releaseSubscription = resolve; }) : Promise.resolve(subscription)}, active: {postMessage: (...args) => bindings.push(args)}};
@@ -5946,7 +5891,7 @@ async function pushBindingReceiptContracts() {
     {bindingId: "invalid-binding", error: "notification_channel_invalid", status: "checking", messages: 0}
   ];
   for (const scenario of cases) {
-    const state = {generation: 1, user: {public_id: "000000123"}, locked: false, tour: false, devicePush: {status: "checking", channel: null, bindingId: null}};
+    const state = {generation: 1, user: {public_id: "000000123"}, locked: false, guest: false, devicePush: {status: "checking", channel: null, bindingId: null}};
     const messages = [];
     const registration = {active: {postMessage(message, ports) { messages.push(message); ports[0].postMessage({handled: true, ok: scenario.workerAccepted !== false, binding_id: scenario.matchingBinding === false ? "00000000-0000-4000-9000-000000000099" : message.binding_id}); ports[0].close(); }}};
     const context = sourceContext({state, I: {getLocale: () => "en"}, MessageChannel, setTimeout, clearTimeout, crypto: require("node:crypto").webcrypto, TextEncoder, URL});
@@ -6326,8 +6271,9 @@ async function exerciseSafeUpdate({send, configureViewport, round, base, wait, c
   await wait('document.querySelector("#workspace-dialog").open && document.querySelector("#goal-form") && !document.querySelector("#dialog-update-banner").hidden', "A changed server build is visible inside a routed form");
   await fieldValue("#goal-form", "title", "Typed update draft");
   await fieldValue("#goal-form", "kind", "income");
+  await fieldValue("#goal-form", "progress_source", "manual");
   await fieldValue("#goal-form", "target_amount_rub", "123456.789");
-  await fieldValue("#goal-form", "allocation_percent", "10");
+  await fieldValue("#goal-form", "manual_amount_rub", "10");
   await click('#goal-form [type="submit"]');
   await wait('document.querySelector("#goal-message").classList.contains("error")', "A stale client explains the blocked mutation");
   assert.equal(fixture.requests.filter(item=>item.path === "/api/goals" && item.method === "POST").length, 0, "A stale build cannot send a new goal write");
@@ -6341,12 +6287,12 @@ async function exerciseSafeUpdate({send, configureViewport, round, base, wait, c
   const saved = await evaluate('JSON.parse(sessionStorage.getItem("omnicio-update-drafts"))');
   assert.equal(saved.public_id, fixture.user);
   assert.ok(saved.expires_at > Date.now() && saved.expires_at <= Date.now() + 1800000);
-  assert.deepEqual(saved.drafts, {"goal-form:":{title:"Typed update draft",kind:"income",target_amount_rub:"123456.789",progress_source:"income",allocation_percent:"10"}}, "Only changed whitelisted inputs are stored; no saved snapshot or untouched API-backed field is included");
+  assert.deepEqual(saved.drafts, {"goal-form:":{title:"Typed update draft",kind:"income",target_amount_rub:"123456.789",progress_source:"manual",manual_amount_rub:"10"}}, "Only changed whitelisted inputs are stored; no saved snapshot or untouched API-backed field is included");
   assert.equal(await evaluate('Boolean(document.querySelector("#goal-form"))'), false, "Private forms are not restored before /api/me confirms the same profile");
   fixture.holdMe = false; fixture.releaseMe(); delete fixture.releaseMe;
   await wait('document.querySelector("#goal-form")?.elements.title.value === "Typed update draft"', "The verified profile receives its typed draft after update");
   assert.equal(await evaluate('document.querySelector("#goal-form").elements.target_amount_rub.value'), "123456.789");
-  assert.equal(await evaluate('document.querySelector("#goal-form").elements.progress_source.value'), "income", "Updated goal forms restore a valid type-specific source");
+  assert.equal(await evaluate('document.querySelector("#goal-form").elements.progress_source.value'), "manual", "Updated goal forms restore a valid type-specific source");
   assert.equal(await evaluate('location.hash'), "#account/goals/create");
   assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null, "The temporary stored copy is consumed once");
   assert.equal(fixture.goals.length, 0, "Restoring fields never saves a goal automatically");
@@ -6534,55 +6480,428 @@ async function exerciseQuotePrecisionCase({send, round, base, wait, click, evalu
   for (const [index, value] of [precision.expected.last_price, precision.expected.high, precision.expected.low].entries()) assert.equal(metrics[labels[index]], text(value), "Asset metrics preserve the source price for " + labels[index]);
   assert.equal(fixture.requests.filter(item => !["GET", "HEAD"].includes(item.method)).length, 0, "Reading precise market prices cannot write personal data");
 }
-async function exerciseGuestViewport({
-  send,
-  width,
-  round,
-  base,
-  wait,
-  checkLayout,
-  screenshot,
-  click,
-  evaluate
-}) {
+const nativeEmailRequests = (fixture, endpoint) => fixture.requests.filter(item => item.path === `/api/auth/email/${endpoint}`);
+function assertNativeEmailRequest(fixture, endpoint, expected, base, profile) {
+  const request = nativeEmailRequests(fixture, endpoint).at(-1);
+  assert.ok(request, `The native form sent ${endpoint}`);
+  assert.equal(request.method, "POST", endpoint + ": a native form mutation uses POST");
+  assert.equal(request.origin, new URL(base).origin, endpoint + ": the browser supplies the exact site Origin");
+  assert.equal(request.clientBuild, build, endpoint + ": the current frontend build accompanies the request");
+  assert.equal(request.profile, profile, endpoint + ": account context follows the current flow");
+  assert.deepEqual(request.body, expected, endpoint + ": only the required DTO fields are sent, with an untrimmed service password");
+}
+async function assertNativeEmailScreen({evaluate, checkLayout}, phase, width) {
+  const expected = {
+    login: [true, false, true, false, true, "current-password", 1],
+    register: [true, false, true, true, true, "new-password", 15],
+    enroll: [true, false, true, true, false, "new-password", 15],
+    verify: [false, true, false, false, false, "new-password", 15],
+    resetRequest: [true, false, false, false, false, "current-password", 1],
+    resetConfirm: [false, true, true, false, false, "new-password", 15]
+  }[phase];
+  const state = await evaluate(`(() => {
+    const form = document.querySelector('#auth-form');
+    const visible = element => Boolean(element.getClientRects().length);
+    const inputs = ['email','code','password'].map(name => form.elements[name]);
+    return {open:document.querySelector('#auth-dialog').open,
+      visible:inputs.map(visible), disabled:inputs.map(input=>input.disabled), required:inputs.map(input=>input.required),
+      consents:visible(document.querySelector('#auth-consents')), tabs:visible(document.querySelector('#auth-tabs')),
+      forgot:visible(document.querySelector('#auth-dialog [data-action="auth-reset"]')),
+      legal:[...document.querySelectorAll('#auth-consents input')].map(input=>({required:input.required,disabled:input.disabled})),
+      autocomplete:form.elements.password.autocomplete, minLength:form.elements.password.minLength, maxLength:form.elements.password.maxLength,
+      codePattern:form.elements.code.pattern, codeInputMode:form.elements.code.inputMode};
+  })()`);
+  assert.equal(state.open, true, phase + ": the native dialog is open");
+  assert.deepEqual(state.visible, expected.slice(0,3), phase + ": only the active flow's fields are visible");
+  assert.deepEqual(state.disabled, expected.slice(0,3).map(value=>!value), phase + ": hidden fields cannot be submitted");
+  assert.deepEqual(state.required, expected.slice(0,3), phase + ": visible credentials have native validity checks");
+  assert.equal(state.consents, expected[3]);
+  assert.equal(state.tabs, expected[4]);
+  assert.equal(state.forgot, phase === "login", phase + ": the password-reset action belongs only to ordinary login inside this dialog");
+  assert.deepEqual(state.legal, Array.from({length:4},()=>({required:expected[3],disabled:!expected[3]})));
+  assert.equal(state.autocomplete, expected[5]);
+  assert.equal(state.minLength, expected[6]);
+  assert.equal(state.maxLength, 128);
+  assert.equal(state.codePattern, "[0-9]{8}");
+  assert.equal(state.codeInputMode, "numeric");
+  await checkLayout(`native email ${phase}/${width}`);
+  const targets = await evaluate(`(() => {
+    const dialog=document.querySelector('#auth-dialog');
+    const controls=[...dialog.querySelectorAll('input,button')].filter(item=>!item.disabled&&item.getClientRects().length);
+    const results=controls.map(control=>{
+      control.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
+      const rect=control.getBoundingClientRect(), hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+      return {name:control.name||control.id||control.dataset.action||control.textContent.trim(),
+        visible:rect.width>0&&rect.height>0&&rect.left>=-1&&rect.right<=innerWidth+1&&rect.top>=-1&&rect.bottom<=innerHeight+1,
+        reachable:control===hit||control.contains(hit)};
+    });
+    dialog.scrollTop=0;
+    return results;
+  })()`);
+  assert.ok(targets.length >= 2, phase + ": actual controls are available");
+  for (const target of targets) {
+    assert.equal(target.visible, true, `${phase}/${width}: the full control can be scrolled into view: ${target.name}`);
+    assert.equal(target.reachable, true, `${phase}/${width}: the control has an unobscured hit target: ${target.name}`);
+  }
+}
+async function assertNativeEmailSecrets(evaluate, secrets, label) {
+  const result = await evaluate(`(() => {
+    const form=document.querySelector('#auth-form');
+    const stored=[...Object.keys(localStorage).map(key=>localStorage.getItem(key)),...Object.keys(sessionStorage).map(key=>sessionStorage.getItem(key))].join(' | ');
+    return {password:form.elements.password.value,code:form.elements.code.value,
+      secretsStored:${JSON.stringify(secrets)}.some(secret=>stored.includes(secret)),
+      cookieExposed:/omnicio_(?:email_flow|session)=/.test(document.cookie)};
+  })()`);
+  assert.equal(result.password, "", label + ": the service password is cleared");
+  assert.equal(result.code, "", label + ": the ownership code is cleared");
+  assert.equal(result.secretsStored, false, label + ": credentials never enter browser storage");
+  assert.equal(result.cookieExposed, false, label + ": the fixture's actual HttpOnly session and flow cookies are inaccessible to page JavaScript");
+}
+async function openNativeEmailLogin({click, wait}) {
+  await click('[data-action="open-market"]');
+  await wait('document.querySelector("#public-market-notice")?.getClientRects().length > 0', "An anonymous visitor can open the shared market");
+  await click('#public-market-notice [data-action="login"]');
+  await wait('document.querySelector("#auth-dialog").open && !document.querySelector("#email-auth-submit").disabled', "Email login is ready through a visible public control");
+}
+async function fillNativeEmailRegistration({fieldValue, click}, email, password) {
+  await fieldValue("#auth-form", "email", email);
+  await fieldValue("#auth-form", "password", password);
+  for (const name of emailFixtureLegalKeys) await click(`#auth-form [name="${name}"]`);
+}
+function nativeEmailRegistrationBody(email, password) {
+  return {email,password,accept_privacy:true,accept_personal_data:true,accept_terms:true,confirm_age_18:true,legal_versions:emailFixtureLegalVersions};
+}
+async function nativeEmailLogout({click,wait,evaluate}, fixture, base) {
+  await click('#profile-button');
+  await click('#profile-menu [data-action="logout"]');
+  await wait('!document.querySelector("#public-site").hidden && document.querySelector("#app-shell").hidden && !document.querySelector("#auth-dialog").open', "Logout completes through the native profile menu");
+  assert.equal(fixture.mode, "guest");
+  assert.equal(fixture.emailSession, null);
+  const request=fixture.requests.filter(item=>item.path==="/api/auth/logout").at(-1);
+  assert.equal(request.profile, fixture.user, "Logout confirms the current profile");
+  assert.equal(request.origin, new URL(base).origin, "Logout retains the browser Origin boundary");
+  assert.equal(await evaluate('document.querySelector("#main-content").textContent.includes("Тестовая компания")'), false, "Logout clears the previous private holdings");
+}
+async function submitNativeEmailCode({fieldValue,click,wait}, code, success) {
+  await fieldValue("#auth-form", "code", code);
+  await click('#email-auth-submit');
+  await wait(success ? '!document.querySelector("#auth-dialog").open && location.hash.startsWith("#account/") && document.querySelector("#public-market-notice").hidden' : 'document.querySelector("#auth-message").classList.contains("error") && !document.querySelector("#email-auth-submit").disabled', success ? "Verified email enters the session-backed account" : "An incorrect ownership code remains recoverable in the same form");
+}
+async function exerciseNativeEmailRegistration(context, width) {
+  const {send,base,wait,click,evaluate,fieldValue,screenshot}=context;
+  const key=`guest-email-registration-${width}`, fixture=makeFixture("guest");
+  Object.assign(fixture,{email:null,emailVerified:false,emailPassword:null,emailStrictCookies:true,connected:false,user:`000001${width===320 ? '320' : '440'}`});
+  fixtures.set(key,fixture);
+  const email=`Native.Register+${width}@GMAIL.COM`, normalized=email.replace('GMAIL.COM','gmail.com'), password=`  Synthetic registration ${width}!  `;
+  await send("Page.navigate",{url:`${base}?case=${key}#public/welcome`});
+  await wait('document.querySelectorAll(".public-strategy-card").length===10', "The new email case starts with real public pages");
+  await openNativeEmailLogin(context);
+  await assertNativeEmailScreen(context,"login",width);
+  await click('[data-auth-mode="register"]');
+  await assertNativeEmailScreen(context,"register",width);
+  await screenshot(`email-register-${width}.png`);
+  await fillNativeEmailRegistration(context,email,password);
+  fixture.holdEmailReply=true;
+  await click('#email-auth-submit');
+  await until(()=>typeof fixture.releaseEmailReply==="function", "The registration HTTP acknowledgement is deliberately held");
+  assert.equal(await evaluate('document.querySelector("#email-auth-submit").disabled'),true,"A pending registration has a disabled submit control");
+  await evaluate('document.querySelector("#auth-form").requestSubmit()');
+  assert.equal(nativeEmailRequests(fixture,"register").length,1,"Submitting the busy native form cannot duplicate registration");
+  assert.equal(fixture.mode,"guest");
+  assert.equal(fixture.email,null,"Issuing a challenge cannot enroll an unverified address");
+  fixture.holdEmailReply=false; fixture.releaseEmailReply();
+  await wait('!document.querySelector("#auth-code-row").hidden && !document.querySelector("#email-auth-submit").disabled',"Registration awaits an ownership code");
+  const challenge=clone(fixture.emailChallenge);
+  assertNativeEmailRequest(fixture,"register",nativeEmailRegistrationBody(email,password),base);
+  await assertNativeEmailScreen(context,"verify",width);
+  await assertNativeEmailSecrets(evaluate,[password,challenge.code],"Accepted registration challenge");
+  assert.equal(await evaluate('document.querySelector("#auth-resend").disabled'),true,"The server's resend cooldown is initially enforced by the native control");
+  await screenshot(`email-verify-${width}.png`);
+  await submitNativeEmailCode(context,"11111111",false);
+  assertNativeEmailRequest(fixture,"verify",{challenge_id:challenge.id,code:"11111111"},base);
+  assert.equal(fixture.emailChallenge.id,challenge.id);
+  assert.equal(fixture.mode,"guest","A wrong ownership code cannot create a session");
+  await submitNativeEmailCode(context,challenge.code,true);
+  assertNativeEmailRequest(fixture,"verify",{challenge_id:challenge.id,code:challenge.code},base);
+  assert.equal(fixture.emailChallenge,null,"The successful code is consumed");
+  assert.equal(fixture.email,normalized,"Domain normalization preserves local case, dots and the plus suffix");
+  assert.equal(fixture.connected,false,"A new account starts without a broker connection");
+  await assertNativeEmailSecrets(evaluate,[password,challenge.code],"Completed registration");
+  fixture.emailEnabled=false;
+  await nativeEmailLogout(context,fixture,base);
+  await openNativeEmailLogin(context);
+  await wait('document.querySelector("#registration-state").textContent===window.OMNICIO_I18N.t("auth.email.mail_unavailable")',"SMTP unavailability is explicit after the new bootstrap");
+  await assertNativeEmailScreen(context,"login",width);
+  await fieldValue("#auth-form","email",email);
+  await fieldValue("#auth-form","password","will-be-cleared-before-login");
+  await click('#auth-dialog [data-close-dialog]');
+  await wait('!document.querySelector("#auth-dialog").open',"The native close control dismisses the form");
+  await click('#public-market-notice [data-action="login"]');
+  await wait('document.querySelector("#auth-dialog").open',"The same public control reopens login");
+  await assertNativeEmailSecrets(evaluate,[password,"will-be-cleared-before-login"],"Closing and reopening login");
+  await fieldValue("#auth-form","email",email);
+  await fieldValue("#auth-form","password",password.trim());
+  await click('#email-auth-submit');
+  await wait('document.querySelector("#auth-message").classList.contains("error") && !document.querySelector("#email-auth-submit").disabled',"A wrong service password does not authenticate");
+  assertNativeEmailRequest(fixture,"login",{email,password:password.trim()},base);
+  assert.equal(await evaluate('document.querySelector("#auth-dialog").open && !document.querySelector("#session-dialog").open'),true,"A recoverable login error stays in the email form");
+  assert.equal(fixture.mode,"guest");
+  await fieldValue("#auth-form","password",password);
+  await click('#email-auth-submit');
+  await wait('!document.querySelector("#auth-dialog").open && location.hash.startsWith("#account/") && document.querySelector("#public-market-notice").hidden',"The exact password logs in despite the SMTP outage");
+  assertNativeEmailRequest(fixture,"login",{email,password},base);
+  await assertNativeEmailSecrets(evaluate,[password,challenge.code],"Ordinary email login");
+  assert.equal(fixture.email,normalized);
+  assert.equal(nativeEmailRequests(fixture,"register").length,1,"The completed HTTP lifecycle contains no late duplicate registration");
+  await click('#sidebar-nav [data-route="profile"]');
+  await wait(`document.querySelector("#view-profile [data-profile-personal]")?.textContent.includes(${JSON.stringify(fixture.user)})`,"Ordinary login restores the same server-issued public profile ID");
+  await nativeEmailLogout(context,fixture,base);
+  console.log(`PASS native email registration/login ${width}px: legal DTO, exact Origin, single-flight, pending proof, wrong/right OTP, HttpOnly cookies, close/reopen cleanup, logout, wrong/right untrimmed password and login without SMTP`);
+}
+async function exerciseNativeEmailSessionReadFailure(context) {
+  const {send,base,wait,click,evaluate,fieldValue}=context;
+  const key="signed-email-session-read-failure",fixture=makeFixture("signed");
+  const email="session-check@mail.ru",password="  Synthetic session check password!  ";
+  Object.assign(fixture,{email,emailPassword:password,emailStrictCookies:true,user:"000004320"});
+  fixture.prefs.document.display_name="Session verification owner";
+  fixtures.set(key,fixture);
+  const previousSession=fixture.emailSession;
+  const preserved={user:fixture.user,connected:fixture.connected,prefs:clone(fixture.prefs),selection:clone(fixture.selection)};
+  await send("Page.navigate",{url:`${base}?case=${key}#account/portfolio`});
+  await wait('document.querySelector("#view-portfolio .holding-quantity")?.textContent.includes("100")',"The session verification case first renders its connected private portfolio");
+  // This is a supported same-document route, as if entered in the address bar.
+  // It keeps the actual cached workspace while opening the ordinary login UI.
+  await send("Page.navigate",{url:`${base}?case=${key}#account/portfolio?overlay=auth`});
+  await wait('document.querySelector("#auth-dialog").open && !document.querySelector("#email-auth-submit").disabled',"The ordinary login overlay opens without logging out the cached account");
+  await assertNativeEmailScreen(context,"login",320);
+  assert.equal(await evaluate('document.querySelector("#main-content").textContent.includes("Тестовая компания")'),true,"The regression begins with actual private content in the same document");
+  await fieldValue("#auth-form","email",email);
+  await fieldValue("#auth-form","password",password);
+  fixture.failMe=true;
+  await click('#email-auth-submit');
+  await wait('document.querySelector("#auth-dialog").open && document.querySelector("#auth-message").classList.contains("error") && document.querySelector("#auth-message").textContent===window.OMNICIO_I18N.t("auth.email.session_retry") && !document.querySelector("#email-auth-submit").disabled',"A successful credential response with failed session verification remains an explicit login error");
+  assertNativeEmailRequest(fixture,"login",{email,password},base);
+  assert.notEqual(fixture.emailSession,previousSession,"The credential endpoint really rotated the server session before /api/me failed");
+  const loginIndex=fixture.requests.findLastIndex(item=>item.path==="/api/auth/email/login");
+  const meIndex=fixture.requests.findLastIndex(item=>item.path==="/api/me");
+  assert.ok(meIndex>loginIndex,"The failed ownership read occurs after the successful login POST");
+  assert.equal(await evaluate('document.querySelector("#app-shell").hidden && !document.querySelector("#main-content").textContent.includes("Тестовая компания")'),true,"A cached private workspace cannot remain authenticated after the new session fails verification");
+  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'),"Мой профиль","The old account label is cleared before a new session is proven");
+  await assertNativeEmailScreen(context,"login",320);
+  await assertNativeEmailSecrets(evaluate,[password],"Session verification failure");
+  fixture.failMe=false;
+  await fieldValue("#auth-form","email",email);
+  await fieldValue("#auth-form","password",password);
+  await click('#email-auth-submit');
+  await wait('!document.querySelector("#auth-dialog").open && !document.querySelector("#app-shell").hidden && document.querySelector("#view-portfolio .holding-quantity")?.textContent.includes("100")',"Ordinary retry with a verified server session reloads the saved connected account");
+  assertNativeEmailRequest(fixture,"login",{email,password},base);
+  assert.equal(nativeEmailRequests(fixture,"login").length,2,"Only the user's two login submissions were sent");
+  assert.deepEqual({user:fixture.user,connected:fixture.connected,prefs:fixture.prefs,selection:fixture.selection},preserved,"A verification outage cannot change the stored owner, portfolio connection or preferences");
+  await click('#sidebar-nav [data-route="profile"]');
+  await wait(`document.querySelector("#view-profile [data-profile-personal]")?.textContent.includes(${JSON.stringify(fixture.user)})`,"The recovered private workspace belongs to the same server-confirmed profile");
+  await assertNativeEmailSecrets(evaluate,[password],"Recovered session verification");
+  await nativeEmailLogout(context,fixture,base);
+  console.log("PASS native email session verification 320px: cached signed portfolio, ordinary login, subsequent /api/me503, cleared private DOM, explicit recovery and same-owner connection reload");
+}
+async function exerciseNativeEmailReset(context, width) {
+  const {send,base,wait,click,evaluate,fieldValue,screenshot}=context;
+  const key=`signed-email-reset-${width}`,fixture=makeFixture("signed");
+  const email=`reset-${width}@mail.ru`,oldPassword=`  Synthetic old password ${width}!  `,password=`  Synthetic replacement ${width}!  `;
+  Object.assign(fixture,{email,emailPassword:oldPassword,emailStrictCookies:true,user:`000002${width===320 ? '320' : '440'}`});
+  fixture.prefs.document.display_name=`Reset owner ${width}`;
+  fixtures.set(key,fixture);
+  const preserved={user:fixture.user,prefs:clone(fixture.prefs),selection:clone(fixture.selection),connected:fixture.connected};
+  await send("Page.navigate",{url:`${base}?case=${key}#account/portfolio`});
+  await wait('document.querySelector("#view-portfolio .holding-quantity")?.textContent.includes("100")',"The authenticated reset case first renders its real fixture holdings");
+  await click('#sidebar-nav [data-route="settings"]');
+  await wait('document.querySelector("#view-settings [data-action=refresh]")?.getClientRects().length > 0',"The existing account exposes its ordinary refresh control");
+  fixture.holdWorkspace=true;
+  await click('#view-settings [data-action="refresh"]');
+  await until(()=>fixture.heldWorkspace.length>0,"A previous account workspace response remains in flight before reset");
+  await click('#sidebar-nav [data-route="profile"]');
+  await wait('document.querySelector("#view-profile [data-profile-identities] [data-action=auth-reset]")',"Email identity exposes password reset in the signed profile");
+  await click('#view-profile [data-profile-identities] [data-action="auth-reset"]');
+  await assertNativeEmailScreen(context,"resetRequest",width);
+  await fieldValue("#auth-form","email",email);
+  await click('#email-auth-submit');
+  await wait('!document.querySelector("#auth-code-row").hidden && !document.querySelector("#auth-password-row").hidden && !document.querySelector("#email-auth-submit").disabled',"Reset request requires a code and a new service password");
+  assertNativeEmailRequest(fixture,"password-reset/request",{email},base);
+  const challenge=clone(fixture.emailChallenge), previousSession=fixture.emailSession;
+  assert.equal(fixture.mode,"signed","Requesting a reset cannot revoke the existing session before proof");
+  assert.equal(fixture.emailPassword,oldPassword);
+  await assertNativeEmailScreen(context,"resetConfirm",width);
+  await assertNativeEmailSecrets(evaluate,[oldPassword,password,challenge.code],"Accepted reset challenge");
+  await screenshot(`email-reset-${width}.png`);
+  await fieldValue("#auth-form","code",challenge.code);
+  await fieldValue("#auth-form","password",password);
+  await click('#email-auth-submit');
+  await wait('document.querySelector("#auth-dialog").open && !document.querySelector("#auth-email-row").hidden && document.querySelector("#auth-code-row").hidden && !document.querySelector("#email-auth-submit").disabled && !document.querySelector("#public-site").hidden && document.querySelector("#app-shell").hidden',"Successful signed reset immediately removes private presentation and opens ordinary login");
+  assertNativeEmailRequest(fixture,"password-reset/confirm",{challenge_id:challenge.id,code:challenge.code,password},base);
+  assert.equal(fixture.mode,"guest","Password reset does not create an authenticated session");
+  assert.equal(fixture.emailSession,null,"Password reset revokes the previous synthetic server session");
+  assert.ok(previousSession);
+  assert.equal(fixture.emailPassword,password);
+  assert.equal(fixture.emailChallenge,null);
+  await assertNativeEmailScreen(context,"login",width);
+  await assertNativeEmailSecrets(evaluate,[oldPassword,password,challenge.code],"Reset completion and queued dialog close");
+  assert.equal(await evaluate('document.querySelector("#main-content").textContent.includes("Тестовая компания")'),false,"The previously rendered private holdings are removed immediately");
+  const repliesBeforeRelease=fixture.workspaceResponses;
+  fixture.holdWorkspace=false;
+  fixture.heldWorkspace.splice(0).forEach(release=>release());
+  await until(()=>fixture.workspaceResponses>repliesBeforeRelease,"The fixture finishes the deliberately held old-profile response");
+  await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+  assert.equal(await evaluate('document.querySelector("#app-shell").hidden && !document.querySelector("#main-content").textContent.includes("Тестовая компания")'),true,"The released response from the revoked generation cannot restore old private content");
+  await fieldValue("#auth-form","email",email);
+  await fieldValue("#auth-form","password",oldPassword);
+  await click('#email-auth-submit');
+  await wait('document.querySelector("#auth-message").classList.contains("error") && !document.querySelector("#email-auth-submit").disabled',"The old password is rejected after reset");
+  assertNativeEmailRequest(fixture,"login",{email,password:oldPassword},base);
+  assert.equal(await evaluate('document.querySelector("#auth-dialog").open && !document.querySelector("#session-dialog").open && document.querySelector("#app-shell").hidden'),true,"A wrong post-reset login keeps a usable email form and no private workspace");
+  await fieldValue("#auth-form","password",password);
+  await click('#email-auth-submit');
+  await wait('!document.querySelector("#auth-dialog").open && document.querySelector("#view-portfolio .holding-quantity")?.textContent.includes("100")',"Ordinary login with the new password restores the retained account and portfolio");
+  assertNativeEmailRequest(fixture,"login",{email,password},base);
+  assert.deepEqual({user:fixture.user,prefs:fixture.prefs,selection:fixture.selection,connected:fixture.connected},preserved,"Reset changes only login credentials and sessions, preserving identity, connection and strategy");
+  assert.notEqual(fixture.emailSession,previousSession,"The subsequent login has a newly issued session");
+  await assertNativeEmailSecrets(evaluate,[oldPassword,password,challenge.code],"New-password login");
+  await nativeEmailLogout(context,fixture,base);
+  console.log(`PASS native email reset ${width}px: signed-account reset, precise request/confirm DTO, old private DOM cleared, late-response generation isolation, no auto-login, wrong old password, new login and retained ID/connection/settings/holdings`);
+}
+async function exerciseNativeEmailEnrollment(context, width) {
+  const {send,base,wait,click,evaluate,fieldValue,screenshot}=context;
+  const key=`signed-email-enrollment-${width}`,fixture=makeFixture("signed");
+  Object.assign(fixture,{email:null,emailVerified:false,emailPassword:null,emailStrictCookies:true,emailResendSeconds:120,canViewOperationalMetrics:true,user:`000003${width===320 ? '320' : '440'}`});
+  fixture.prefs.document.display_name=`Legacy owner ${width}`;
+  fixtures.set(key,fixture);
+  const email=`Legacy.Owner+${width}@xmail.ru`,password=`  Synthetic enrollment ${width}!  `;
+  const preserved={user:fixture.user,role:fixture.role,operator:fixture.canViewOperationalMetrics,connected:fixture.connected,prefs:clone(fixture.prefs),selection:clone(fixture.selection)};
+  const originalSession=fixture.emailSession;
+  await send("Page.navigate",{url:`${base}?case=${key}#account/profile/identities`});
+  await wait('document.querySelector("#view-profile [data-action=link-identity]")?.getClientRects().length > 0',"An existing session without email exposes enrollment on its own profile");
+  await click('#view-profile [data-action="link-identity"]');
+  await assertNativeEmailScreen(context,"enroll",width);
+  await fillNativeEmailRegistration(context,email,password);
+  // Advance only Date.now in this document to test server-advertised cooldowns.
+  // The application state, auth helpers and timers themselves stay untouched.
+  await evaluate('window.__nativeEmailClock={original:Date.now,offset:0};Date.now=()=>window.__nativeEmailClock.original()+window.__nativeEmailClock.offset');
+  try {
+    await click('#email-auth-submit');
+    await wait('!document.querySelector("#auth-code-row").hidden && !document.querySelector("#email-auth-submit").disabled',"Legacy enrollment waits for proof in the original session");
+    assertNativeEmailRequest(fixture,"enroll",nativeEmailRegistrationBody(email,password),base,fixture.user);
+    const challenge=clone(fixture.emailChallenge);
+    assert.equal(fixture.email,null,"Enrollment cannot attach the address before ownership proof");
+    assert.equal(fixture.emailSession,originalSession);
+    await assertNativeEmailScreen(context,"verify",width);
+    await assertNativeEmailSecrets(evaluate,[password,challenge.code],"Pending legacy enrollment");
+    await screenshot(`email-enroll-${width}.png`);
+    await submitNativeEmailCode(context,"11111111",false);
+    const attemptsBeforeResend=fixture.emailChallenge.attempts;
+    assert.equal(attemptsBeforeResend,1,"An incorrect enrollment proof consumes one attempt before resend");
+    await evaluate('document.querySelector("#auth-resend").click()');
+    assert.equal(nativeEmailRequests(fixture,"resend").length,0,"A disabled resend control cannot send an early request");
+    await evaluate('window.__nativeEmailClock.offset=61000');
+    await wait('Number(document.querySelector("#auth-resend").textContent.match(/[0-9]+/)?.[0]) > 0 && Number(document.querySelector("#auth-resend").textContent.match(/[0-9]+/)?.[0]) < 60',"The visible countdown follows the server's 120 seconds, not an assumed 60");
+    assert.equal(await evaluate('document.querySelector("#auth-resend").disabled'),true);
+    await evaluate('window.__nativeEmailClock.offset=121000');
+    await wait('!document.querySelector("#auth-resend").disabled',"Client-side cooldown expires through the normal timer callback");
+    await click('#auth-resend');
+    await wait('document.querySelector("#auth-message").classList.contains("error") && document.querySelector("#auth-message").textContent===window.OMNICIO_I18N.t("auth.email.rate_limited") && !document.querySelector("#email-auth-submit").disabled',"A server 429 rejects a client clock that is ahead");
+    assertNativeEmailRequest(fixture,"resend",{challenge_id:challenge.id},base,fixture.user);
+    assert.equal(fixture.emailChallenge.expiresAt,challenge.expiresAt);
+    assert.equal(fixture.emailChallenge.code,challenge.code);
+    fixture.emailClockOffset=121000;
+    fixture.emailResendError=true;
+    await click('#auth-resend');
+    await wait('document.querySelector("#auth-message").classList.contains("error") && document.querySelector("#auth-message").textContent===window.OMNICIO_I18N.t("auth.email.mail_unavailable") && !document.querySelector("#auth-resend").disabled',"A delivery outage leaves the same enrollment challenge retryable");
+    assert.equal(fixture.emailChallenge.id,challenge.id);
+    assert.equal(fixture.emailChallenge.expiresAt,challenge.expiresAt,"A failed resend cannot extend the proof deadline");
+    await fieldValue("#auth-form","code","11111111");
+    await click('#auth-resend');
+    await wait('!document.querySelector("#auth-message").classList.contains("error") && document.querySelector("#auth-resend").disabled && !document.querySelector("#email-auth-submit").disabled && document.querySelector("#auth-form").elements.code.value===""',"Successful resend replaces the code, clears its field and reinstates cooldown");
+    assert.equal(nativeEmailRequests(fixture,"resend").length,3,"The native path contains server cooldown, delivery error and successful retry");
+    assertNativeEmailRequest(fixture,"resend",{challenge_id:challenge.id},base,fixture.user);
+    assert.equal(fixture.emailChallenge.id,challenge.id);
+    assert.equal(fixture.emailChallenge.expiresAt,challenge.expiresAt,"Resend retains the original 10-minute expiry");
+    assert.equal(fixture.emailChallenge.attempts,attemptsBeforeResend,"Resend cannot reset the proof attempt budget");
+    assert.notEqual(fixture.emailChallenge.code,challenge.code);
+    assert.ok(emailFixtureChallengeReply(fixture).expires_in_seconds<480,"The response reports only the remaining challenge lifetime");
+    await submitNativeEmailCode(context,challenge.code,false);
+    assert.equal(fixture.email,null,"The previous code cannot enroll the account after resend");
+    const currentCode=fixture.emailChallenge.code;
+    const identityReads=fixture.requests.filter(item=>item.path==="/api/auth/identities").length;
+    const sessionReads=fixture.requests.filter(item=>item.path==="/api/me/sessions").length;
+    await submitNativeEmailCode(context,currentCode,true);
+    assertNativeEmailRequest(fixture,"verify",{challenge_id:challenge.id,code:currentCode},base,fixture.user);
+    assert.equal(fixture.email,email);
+    assert.notEqual(fixture.emailSession,originalSession,"Ownership proof rotates the original session");
+    assert.deepEqual({user:fixture.user,role:fixture.role,operator:fixture.canViewOperationalMetrics,connected:fixture.connected,prefs:fixture.prefs,selection:fixture.selection},preserved,"Enrollment preserves the existing owner, rights, connection, preferences and strategy");
+    await until(()=>fixture.requests.filter(item=>item.path==="/api/auth/identities").length>identityReads&&fixture.requests.filter(item=>item.path==="/api/me/sessions").length>sessionReads,"Confirmed enrollment reloads both identity and rotated-session metadata over HTTP");
+    await wait(`document.querySelector("#view-profile [data-profile-identities]")?.textContent.includes(${JSON.stringify(email)}) && !document.querySelector("#view-profile [data-action=link-identity]")`,"The same profile now displays its verified email identity");
+    await assertNativeEmailSecrets(evaluate,[password,challenge.code,currentCode],"Completed legacy enrollment");
+  } finally {
+    await evaluate('if(window.__nativeEmailClock){Date.now=window.__nativeEmailClock.original;delete window.__nativeEmailClock}');
+    fixture.emailClockOffset=0;
+  }
+  await click('#sidebar-nav [data-route="portfolio"]');
+  await wait('document.querySelector("#view-portfolio .holding-quantity")?.textContent.includes("100")',"Email enrollment retains the existing connected portfolio");
+  await click('#sidebar-nav [data-route="settings"]');
+  await wait('document.querySelector("#operations-settings")',"The retained operator capability still exposes its authorized settings");
+  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'),preserved.prefs.document.display_name);
+  await nativeEmailLogout(context,fixture,base);
+  console.log(`PASS native email enrollment/resend ${width}px: original session and profile context, preserved ID/rights/connection, server countdown, 429, delivery failure/retry, fixed TTL/attempt budget, replaced OTP and rotated session`);
+}
+async function exerciseEmailAuthentication(context) {
+  for (const width of [320,1440]) {
+    await context.configureViewport(width);
+    await exerciseNativeEmailRegistration(context,width);
+    if (width===320) await exerciseNativeEmailSessionReadFailure(context);
+    await exerciseNativeEmailReset(context,width);
+    await exerciseNativeEmailEnrollment(context,width);
+  }
+}
+async function exerciseGuestViewport({send, width, round, base, wait, checkLayout, screenshot, click, evaluate}) {
   const guestKey = `guest-${round}-${width}`;
-  fixtures.set(guestKey, makeFixture("guest"));
-  if (width === 320) fixtures.get(guestKey).vkidEnabled = false;
-  await send("Page.navigate", {
-    url: `${base}?case=${guestKey}`
-  });
+  const fixture = makeFixture("guest");
+  fixtures.set(guestKey, fixture);
+  await send("Page.navigate", {url: `${base}?case=${guestKey}`});
   await wait('document.querySelectorAll(".public-strategy-card").length===10', "Public canonical catalog");
   const publicVersions = await evaluate('({hero:document.querySelector(".hero-facts>div:last-child strong").textContent,footer:document.querySelector(".public-footer [data-release-version]").textContent})');
   assert.deepEqual(publicVersions, {hero: version, footer: version}, "The public release badge and footer show the current build version");
   await checkLayout(`public ${round}/${width}`);
   await screenshot(`public-${round}-${width}.png`);
-  await click('[data-action="tour"]');
-  await wait('!document.querySelector("#app-shell").hidden', "Product tour");
+  await click('[data-action="open-market"]');
+  await wait('!document.querySelector("#app-shell").hidden && document.querySelector("#view-market [data-screen-content=catalog]")', "Public shared market");
   assert.equal(await evaluate('document.querySelectorAll("#sidebar-nav a").length'), 10);
   assert.equal(await evaluate('document.querySelectorAll("#mobile-nav a").length'), 4);
-  await checkLayout(`tour ${round}/${width}`);
+  await checkLayout(`public-market ${round}/${width}`);
+  assert.ok(fixture.requests.some(item => item.path === "/api/public/market"), "The guest market uses the real public source contract");
+  assert.equal(fixture.requests.filter(item => item.path.startsWith("/api/broker/") || !["GET", "HEAD"].includes(item.method)).length, 0, "Guest browsing cannot read personal broker data or create records");
+  if (round !== 2) return;
+  await click('#public-market-notice [data-action="login"]');
+  await checkLayout(`auth ${round}/${width}`);
+  await screenshot(`auth-${round}-${width}.png`);
+  assert.equal(await evaluate('document.querySelectorAll("#auth-form input[type=password],#auth-form input[type=email]").length'), 2, "Email and a separate service password are the only login credentials");
+  assert.equal(await evaluate('Boolean(document.querySelector("#vkid-login,#tid-login"))'), false, "Retired identity providers have no controls");
+  assert.equal(await evaluate('document.querySelector("#auth-password").autocomplete'), "current-password");
+  await click('[data-auth-mode="register"]');
+  assert.equal(await evaluate('document.querySelector("#auth-password").autocomplete'), "new-password");
+  assert.equal(await evaluate('document.querySelector("#auth-password").minLength'), 15);
+  assert.equal(await evaluate('document.querySelectorAll("#auth-consents input[required]").length'), 4, "Registration requires current legal acknowledgments");
   if (width === 390) {
-    await click('#sidebar-nav [data-route="strategies"]');
-    await wait('document.querySelector("#strategy-tab-custom")', "Tour strategy catalog");
-    await click('#strategy-tab-custom');
-    assert.equal(await evaluate('document.querySelector("[data-action=strategy-apply-custom]").disabled'), true, "Tour can browse custom strategy information without enabling a writer");
-    await click('#sidebar-nav [data-route="home"]');
-  }
-  assert.equal(fixtures.get(guestKey).requests.filter(item => item.path.startsWith("/api/broker/") || !["GET", "HEAD"].includes(item.method)).length, 0, "Tour cannot read private broker data or mutate anything");
-  if (round === 2) {
-    await click('#tour-notice [data-action="login"]');
-    await checkLayout(`auth ${round}/${width}`);
-    await screenshot(`auth-${round}-${width}.png`);
-    assert.equal(await evaluate('document.querySelectorAll("#auth-form input[required]").length'), 4, "Both OAuth providers require the four consent choices");
-    assert.equal(await evaluate('document.querySelectorAll("#auth-form input[type=password],#auth-form input[type=email]").length'), 0, "Authentication cannot present an unsupported password flow");
-    assert.equal(await evaluate('document.querySelector("#vkid-login").disabled'), !fixtures.get(guestKey).vkidEnabled, "VK ID uses its own server availability, independently of T-ID");
-    assert.equal(await evaluate('document.querySelector("#tid-login").disabled'), !fixtures.get(guestKey).tidEnabled, "T-ID uses its own server availability");
-    await evaluate('for(const input of document.querySelectorAll("#auth-form input"))input.checked=true');
-    await click("#tid-login");
-    await wait('document.querySelector("#auth-message").textContent.includes("не прошёл проверку")', "OAuth redirect allowlist");
-    assert.ok((await evaluate("location.href")).startsWith(base), "Untrusted provider URL cannot navigate the page");
-    await click('#auth-dialog [data-close-dialog]');
-  }
+    await evaluate('(() => {const f=document.querySelector("#auth-form");f.elements.email.value="new-user@gmail.com";f.elements.password.value="synthetic-new-account-password";for(const name of ["accept_privacy","accept_personal_data","accept_terms","confirm_age_18"])f.elements[name].checked=true;f.requestSubmit();})()');
+    await wait('!document.querySelector("#auth-code-row").hidden && !document.querySelector("#email-auth-submit").disabled', "The new account waits for email ownership proof");
+    assert.equal(fixture.mode, "guest", "Issuing a code cannot authenticate an unverified email");
+    assert.equal(await evaluate('document.querySelector("#auth-password").value'), "", "The registration password is cleared after the server accepts the challenge");
+    assert.equal(await evaluate('document.querySelector("#auth-resend").disabled'), true, "The visible resend cooldown follows the server challenge");
+    await evaluate('(() => {const f=document.querySelector("#auth-form");f.elements.code.value="11111111";f.requestSubmit();})()');
+    await wait('document.querySelector("#auth-message").classList.contains("error")', "A wrong ownership code is rejected");
+    assert.equal(fixture.mode, "guest");
+    await evaluate('(() => {const f=document.querySelector("#auth-form");f.elements.code.value="12345678";f.requestSubmit();})()');
+    await wait('!document.querySelector("#auth-dialog").open && document.querySelector("#public-market-notice").hidden && location.hash.startsWith("#account/")', "A verified new account enters the real workspace");
+    assert.equal(fixture.emailChallenge, null, "The code is consumed once");
+    assert.equal(fixture.requests.filter(item => item.path === "/api/auth/email/register").length, 1);
+    assert.equal(await evaluate('Object.keys(localStorage).some(key=>String(localStorage.getItem(key)).includes("synthetic-new-account-password"))'), false, "The account password cannot enter local persistent storage");
+  } else await click('#auth-dialog [data-close-dialog]');
 }
 async function exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot}) {
   await configureViewport(1440);
@@ -6668,12 +6987,12 @@ async function exerciseShortDrawer({configureViewport, round, click, wait, evalu
   await wait('document.querySelector("#app-sidebar").dataset.open!=="true" && document.querySelector("#preferences-form")', "Final drawer item opens its page");
 }
 const screenPages = {
-  portfolio: [["history", 1, 0], ["structure", 0, 0], ["positions", 0, 1], ["income", 0, 0], ["operations", 0, 1]],
+  portfolio: [["history", 1, 0], ["structure", 0, 0], ["positions", 0, 1], ],
   market: [["reference", 1, 0], ["watchlist", 0, 0], ["positions", 0, 1], ["news", 0, 0]],
   strategies: [["catalog", 0, 0], ["editor", 0, 0], ["assessment", 0, 0], ["research", 0, 0]],
-  analytics: [["history", 1, 0], ["performance", 0, 0], ["income", 0, 0], ["risk", 0, 0]],
+  analytics: [["history", 1, 0], ["risk", 0, 0]],
   profile: [["personal", 0, 0], ["identities", 0, 0], ["sessions", 0, 0], ["delete", 0, 0]],
-  settings: [["appearance", 0, 0], ["notifications", 0, 0], ["broker", 0, 0], ["recovery", 0, 0], ["about", 0, 0], ["support", 0, 0]],
+  settings: [["appearance", 0, 0], ["notifications", 0, 0], ["broker", 0, 0], ["about", 0, 0], ["support", 0, 0]],
   assistant: [["conversation", 0, 0], ["history", 0, 0], ["memory", 0, 0], ["sources", 0, 0]]
 };
 async function exerciseCompactScreenMenu({send, configureViewport, round, click, wait, evaluate, checkLayout, screenshot, fixture}) {
@@ -6754,7 +7073,6 @@ async function exerciseScreenPages({view, label, click, wait, evaluate, checkLay
   }
 }
 async function exercisePortfolioExperience({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot}) {
-  const tabStripState = () => evaluate('(() => {const menu=document.querySelector(".view:not([hidden]) .screen-tabs");const box=menu.getBoundingClientRect();const selected=menu.querySelector("[aria-current=page]");const selectedBox=selected.getBoundingClientRect();const focused=document.activeElement;const focusBox=focused.getBoundingClientRect();return {height:box.height,rows:new Set([...menu.children].map(link=>Math.round(link.getBoundingClientRect().top))).size,scrollable:menu.scrollWidth>menu.clientWidth,selectedVisible:selectedBox.left>=box.left-1&&selectedBox.right<=box.right+1,focusVisible:menu.contains(focused)&&focusBox.left>=box.left-1&&focusBox.right<=box.right+1,hintVisible:Boolean(menu.nextElementSibling?.getClientRects().length)};})()');
   for (const width of [320, 1440]) {
     await configureViewport(width);
     const key = `portfolio-experience-${round}-${width}`;
@@ -6764,108 +7082,69 @@ async function exercisePortfolioExperience({send, configureViewport, round, base
     fixture.heldAssetParts = new Map();
     fixtures.set(key, fixture);
     await send("Page.navigate", {url: `${base}?case=${key}`});
-    await wait('document.querySelector("#view-portfolio:not([hidden]) [data-broker-return]")', "The default account page shows its actual summary independently of a slower holdings request");
-    await until(() => fixture.heldAssetParts.has("positions"), "Holdings arrive independently from the summary");
-    await evaluate('(() => {const summary=document.querySelector("#view-portfolio .portfolio-method summary");summary.focus();summary.click();})()');
+    await wait('document.querySelector("#view-portfolio:not([hidden]) [data-portfolio-value]")', "A current account summary loads independently from slower holdings");
+    await until(() => fixture.heldAssetParts.has("positions"), "Holdings arrive independently from the current summary");
     fixture.holdAssetParts.delete("positions");
     fixture.heldAssetParts.get("positions")();
-    await wait('document.querySelector("#view-portfolio .holding-quantity")?.getClientRects().length', "The default portfolio exposes its newly received holdings without an extra menu action");
-    assert.equal(await evaluate('document.querySelector("#view-portfolio .portfolio-method").open && document.activeElement.matches("#view-portfolio .portfolio-method summary")'), true, "A background holdings arrival preserves the open explanation and the user's keyboard focus");
-    await evaluate('(() => {const summary=document.querySelector("#view-portfolio .portfolio-method summary");summary.click();summary.blur();})()');
-    const summary = await evaluate('(() => {const root=document.querySelector("#view-portfolio");const text=selector=>root.querySelector(selector)?.textContent.replace(/\\s/g, "");return {value:text("[data-portfolio-value]"),day:text("[data-broker-daily]"),current:text("[data-broker-return]"),quantity:text(".holding-quantity"),holding:text(".holding-value"),result:text(".holding-return"),account:text(".account-context strong"),hiddenHistory:!root.querySelector("[data-portfolio-history]").getClientRects().length,emptyWrapper:!root.querySelector(".two-column").getClientRects().length,actions:[...root.querySelectorAll(".portfolio-actions a")].map(a=>({view:a.dataset.route,screen:a.dataset.screen,visible:Boolean(a.getClientRects().length)}))};})()');
-    assert.equal(summary.value, "1000,08₽", "The portfolio headline retains the provider total's kopecks");
-    assert.equal(summary.day, "+0,42₽·+0,04%", "The trading-day money and percent are separate from the open-position result");
-    assert.equal(summary.current, "+1,04%", "The headline uses GetPortfolio's actual open-position percentage");
-    assert.equal(summary.account, "Синтетическийсчёт", "The overview names its actual connected account");
-    assert.equal(summary.quantity, "Количество:2", "Quantity is visible and cannot be replaced by metadata lot size or a duplicate translation key");
-    assert.ok(summary.holding.includes("250,38₽") && summary.result.includes("+10,32₽"), "Each holding shows its monetary value and native result");
-    assert.equal(summary.hiddenHistory && summary.emptyWrapper, true, "Hidden subpages leave no empty layout card or padding in the overview");
-    assert.deepEqual(summary.actions, [{view: "portfolio", screen: "operations", visible: true}, {view: "analytics", screen: "", visible: true}, {view: "market", screen: "watchlist", visible: true}], "All quick actions are visible before any helper can open a hidden screen");
+    await wait('document.querySelector("#view-portfolio .holding-quantity")?.getClientRects().length', "Current quantities appear without an extra menu action");
+    const summary = await evaluate('(() => {const root=document.querySelector("#view-portfolio");const text=selector=>root.querySelector(selector)?.textContent.replace(/\\s/g, "");return {value:text("[data-portfolio-value]"),quantity:text(".holding-quantity"),holding:text(".holding-value"),forbidden:root.querySelectorAll("[data-broker-return],[data-broker-daily],.holding-return").length,actions:[...root.querySelectorAll(".portfolio-actions a")].map(a=>({view:a.dataset.route,screen:a.dataset.screen,visible:Boolean(a.getClientRects().length)}))};})()');
+    assert.equal(summary.value, "1000,08₽", "The current server valuation retains kopecks");
+    assert.equal(summary.quantity, "Количество:2", "Actual quantities cannot be replaced by metadata lot size");
+    assert.ok(summary.holding.includes("250,38₽"), "The holding shows its value from separate shared market prices");
+    assert.equal(summary.forbidden, 0, "Acquisition prices and historical returns are absent");
+    assert.deepEqual(summary.actions, [{view:"portfolio",screen:"positions",visible:true},{view:"analytics",screen:"",visible:true},{view:"market",screen:"watchlist",visible:true}], "Current holdings and analysis have direct visible actions");
     const primary = width < 961 ? "#mobile-nav" : "#sidebar-nav";
     if (width < 961) {
-      assert.deepEqual(await evaluate('[...document.querySelectorAll("#mobile-nav [data-route]")].map(a=>a.dataset.route)'), ["portfolio", "market", "strategies", "profile"]);
-      assert.equal(await evaluate('(() => {const table=document.querySelector("#view-portfolio .holdings-scroll");return table.scrollWidth<=table.clientWidth;})()'), true, "Mobile holdings keep value, quantity and return readable without horizontal scrolling");
+      assert.deepEqual(await evaluate('[...document.querySelectorAll("#mobile-nav [data-route]")].map(a=>a.dataset.route)'), ["portfolio","market","strategies","profile"]);
+      assert.equal(await evaluate('(() => {const t=document.querySelector("#view-portfolio .holdings-scroll");return t.scrollWidth<=t.clientWidth;})()'), true, "Mobile quantities and values fit without horizontal scrolling");
     }
-    await checkLayout(`portfolio-experience-${round}-${width}`, {minTables: 1});
-    if (width === 320) {
-      const strip = await tabStripState();
-      assert.equal(strip.rows, 1, "Mobile overview navigation occupies one line");
-      assert.ok(strip.height >= 44 && strip.height <= 66 && strip.scrollable && strip.hintVisible, "The compact strip retains touch targets and indicates horizontal scrolling");
-      assert.equal(strip.selectedVisible, true, "The current overview tab is visible initially");
-      assert.equal(await evaluate('(() => {const bottom=document.querySelector("#mobile-nav").getBoundingClientRect().top;return [...document.querySelectorAll("#view-portfolio .portfolio-actions a")].every(link=>link.getBoundingClientRect().bottom<=bottom);})()'), true, "All portfolio quick actions are visible above the bottom navigation at entry");
-    }
+    await checkLayout(`portfolio-experience-${round}-${width}`, {minTables:1});
     await screenshot(`portfolio-experience-${round}-${width}.png`);
+    await click('#view-portfolio .portfolio-actions [data-screen="positions"]');
+    await wait('document.querySelector("#view-portfolio [data-portfolio-holdings]")?.getClientRects().length', "The direct holdings action opens current positions");
     if (width === 320) {
-      assert.ok(await evaluate('document.querySelector("#view-portfolio [name=holdings_sort]")?.getClientRects().length'), "Mobile sorting is visible before any navigation helper runs");
-      await evaluate('(() => {const control=document.querySelector("#view-portfolio [name=holdings_sort]");control.value="value";control.dispatchEvent(new Event("change",{bubbles:true}));})()');
-      await wait('new URLSearchParams(location.hash.split("?")[1]).get("sort")==="value"', "The visible mobile selector uses the existing sort handler");
+      await evaluate('(() => {const c=document.querySelector("#view-portfolio [name=holdings_sort]");c.value="value";c.dispatchEvent(new Event("change",{bubbles:true}));})()');
+      await wait('new URLSearchParams(location.hash.split("?")[1]).get("sort")==="value"', "The mobile selector preserves actual sorting");
       await click('#view-portfolio .holdings-sort [data-sort="value"]');
-      await wait('new URLSearchParams(location.hash.split("?")[1]).get("direction")==="-1"', "Mobile sorting can reverse its direction");
-      await click('#view-portfolio .screen-menu [data-screen="history"]');
-      assert.equal(await evaluate('new URLSearchParams(location.hash.split("?")[1]).get("sort")'), "value", "Switching portfolio panes preserves its actual sort choice");
-      assert.equal(await evaluate('new URLSearchParams(location.hash.split("?")[1]).get("direction")'), "-1");
-      await click('#view-portfolio .screen-menu [data-screen=""]');
-      assert.equal(await evaluate('document.querySelector("#view-portfolio [name=holdings_sort]").value'), "value", "Returning to the overview restores the visible sort value");
+      await wait('new URLSearchParams(location.hash.split("?")[1]).get("direction")==="-1"', "The same selector can reverse order");
     }
-    await click('#view-portfolio .portfolio-actions [data-screen="operations"]');
-    await wait('document.querySelector("#ledger-screen")?.getClientRects().length', "A visible portfolio action opens the operation history");
-    assert.equal(await evaluate('new URLSearchParams(location.hash.split("?")[1]).get("period")'), "1y", "Opening operations retains the selected portfolio period");
-    if (width === 320) {
-      assert.equal((await tabStripState()).selectedVisible, true, "Selecting the last tab scrolls it into view without changing the page route");
-      fixture.holdWorkspace = true;
-      await click('#view-portfolio [data-action="refresh"]');
-      await until(() => fixture.heldWorkspace.length > 0, "A background workspace response is pending on the last tab");
-      await evaluate('window.__portfolioTabStrip=document.querySelector("#view-portfolio .screen-tabs");document.querySelector("#view-portfolio .screen-tabs [aria-current=page]").focus()');
-      fixture.holdWorkspace = false;
-      fixture.heldWorkspace.splice(0).forEach(release => release());
-      await wait('document.querySelector("#view-portfolio .screen-tabs")!==window.__portfolioTabStrip && document.activeElement.matches("#view-portfolio .screen-tabs [data-screen=operations]")', "The selected tab keeps keyboard focus after the pending response replaces the old markup");
-      const restored = await tabStripState();
-      assert.ok(restored.selectedVisible && restored.focusVisible && restored.rows === 1, "A rerender restores the focused active tab inside the horizontal strip");
-    }
-    await click('#view-portfolio .screen-menu [data-screen=""]');
-    await wait('document.querySelector("#view-portfolio [data-portfolio-summary]")?.getClientRects().length', "The compact overview tab returns to the account summary");
-    if (width === 320) assert.equal((await tabStripState()).selectedVisible, true, "Returning from the last tab reveals the first active tab");
+    await click('#view-portfolio .screen-menu [data-screen="history"]');
+    await wait('document.querySelector("#view-portfolio [data-portfolio-history] .chart-svg")?.getClientRects().length', "Our own observed values form the history chart");
+    assert.equal(await evaluate('Boolean(document.querySelector("#ledger-screen"))'), false);
+    await click(`${primary} [data-route="portfolio"]`);
     await click('#view-portfolio .portfolio-actions [data-route="analytics"]');
-    await wait('document.querySelector("#view-analytics:not([hidden]) .chart-svg")?.getClientRects().length && document.querySelector("#view-analytics [data-history-period=\\"1y\\"]")', "Analytics opens its actual history and period result without an extra menu selection");
-    const metrics = await evaluate('[...document.querySelectorAll("#view-analytics .metric-grid .main-value")].map(node=>node.textContent.replace(/\\s/g,""))');
-    assert.deepEqual(metrics.slice(0, 2), ["+200,00₽", "+25%"], "Saved-history return and money are distinct from broker current return");
-    assert.ok(await evaluate('document.querySelector("#view-analytics").textContent.includes("Modified Dietz")'), "Historical return explains its actual methodology");
-    await checkLayout(`analytics-experience-${round}-${width}`, {minCharts: 1});
+    await wait('document.querySelector("#view-analytics:not([hidden]) .metric-grid .main-value")?.textContent.replace(/\\s/g, "") === "1000,08₽"', "The analytics overview shows the same current portfolio valuation");
+    await click('#view-analytics .screen-menu [data-screen="history"]');
+    await wait('document.querySelector("#view-analytics [data-analytics-history] .chart-svg")?.getClientRects().length', "The explicit history page renders actual stored value observations");
+    assert.equal(await evaluate('document.querySelector("#view-analytics").textContent.includes("Modified Dietz")'), false, "Without transaction history the UI does not invent investment return");
+    await checkLayout(`analytics-experience-${round}-${width}`, {minCharts:1});
     if (width === 320) await screenshot(`analytics-experience-${round}-${width}.png`);
     await click(`${primary} [data-route="market"]`);
-    await wait('document.querySelector("#view-market [data-screen-content=watchlist]")?.getClientRects().length && document.querySelector("#view-market [data-screen-content=reference]")?.getClientRects().length', "Market starts with useful watchlist and sourced reference data");
-    await click('#view-market [data-action="focus-search"]');
-    assert.equal(await evaluate('document.activeElement.id'), "global-search", "Find an instrument focuses the existing working search");
+    await wait('document.querySelector("#view-market [data-screen-content=catalog]")?.getClientRects().length', "The same shared market catalog is available inside the account");
     await click(`${primary} [data-route="portfolio"]`);
-    await wait('document.querySelector("#view-portfolio .holding-name [data-asset]")?.getClientRects().length', "Portfolio is directly reachable from primary navigation");
     await click('#view-portfolio .holding-name [data-asset="synthetic-a"]');
-    await wait('document.querySelector("#view-asset [data-asset-sidebar]")?.textContent.includes("120,03") && document.querySelector("#view-asset .chart-svg")?.getClientRects().length', "A holding opens real candle data and its weighted purchase price");
-    const details = await evaluate('document.querySelector("#view-asset [data-asset-sidebar]").textContent.replace(/\\s/g, "")');
-    assert.ok(details.includes("120,03₽") && details.includes("+10,32₽") && !details.includes("119,07"), "The weighted average pairs with the provider result; FIFO is not substituted");
-    await checkLayout(`holding-experience-${round}-${width}`, {minCharts: 1});
+    await wait('document.querySelector("#view-asset .chart-svg")?.getClientRects().length', "The holding opens its independently sourced price chart");
+    assert.equal(await evaluate('document.querySelector("#view-asset [data-asset-sidebar]").textContent.includes("120,03")'), false, "The asset card does not expose acquisition prices");
+    await checkLayout(`holding-experience-${round}-${width}`, {minCharts:1});
     await click(`${primary} [data-route="profile"]`);
-    await wait('document.querySelector("#view-profile [data-screen-content=personal]")?.getClientRects().length', "Profile opens its real personal form immediately");
+    await wait('document.querySelector("#view-profile [data-screen-content=personal]")?.getClientRects().length', "Owned preferences remain available");
     await click(`${primary} [data-route="strategies"]`);
-    await wait('document.querySelector("#view-strategies .strategy-catalog")?.getClientRects().length', "Strategies opens the actual complete catalogue immediately");
-    assert.equal(await evaluate('document.querySelectorAll("#view-strategies .strategy-option").length'), 10, "The redesign retains all ten strategies");
-    await click('#sidebar-nav [data-route="settings"]');
-    await wait('document.querySelector("#view-settings [data-screen-content=appearance]")?.getClientRects().length', "Settings opens its existing appearance controls immediately");
-    await checkLayout(`default-settings-experience-${round}-${width}`);
+    await wait('document.querySelectorAll("#view-strategies .strategy-option").length===10', "All strategy choices remain available");
+    assert.equal(await evaluate('Boolean(document.querySelector("[data-action=execution-plan],[data-action=recovery-open]"))'), false);
     const brand = width === 320 ? "#app-shell .mobile-brand" : "#app-sidebar > .brand";
     const profileName = await evaluate('document.querySelector("#profile-name").textContent');
     await click(brand);
-    await wait('location.hash === "#account/portfolio" && document.querySelector("#view-portfolio [data-broker-return]")?.getClientRects().length', "The visible logo returns to the personal portfolio without entering demo");
-    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), profileName, "The logo preserves the signed-in identity");
-    assert.equal(await evaluate('document.querySelector("#tour-notice").hidden'), true, "Returning through the logo keeps the personal workspace active");
-    assert.equal(await evaluate('document.querySelector("#view-portfolio [data-portfolio-value]").textContent.replace(/\\s/g, "")'), "1000,08₽", "The same account's confirmed value remains available after logo navigation");
-    await evaluate('location.hash = "#demo/market"');
-    await wait('!document.querySelector("#view-market").hidden && !document.querySelector("#tour-notice").hidden', "An explicit route change opens demo in the same document");
+    await wait('location.hash === "#account/portfolio" && document.querySelector("#view-portfolio [data-portfolio-value]")?.getClientRects().length', "The visible logo preserves the account scope");
+    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), profileName);
+    await evaluate('location.hash = "#guest/market"');
+    await wait('!document.querySelector("#view-market").hidden && !document.querySelector("#public-market-notice").hidden', "Switching to public browsing clears personal presentation");
     await click(brand);
-    await wait('location.hash === "#demo/portfolio" && document.querySelector("#view-portfolio [data-portfolio-summary]")?.getClientRects().length', "The visible logo also preserves demo after an account-to-demo transition");
-    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Знакомство", "The demo logo cannot expose the signed-in name");
-    assert.equal(await evaluate('Boolean(document.querySelector("#view-portfolio [data-portfolio-value]"))'), false, "The demo overview cannot expose the signed-in portfolio value");
+    await wait('location.hash.startsWith("#guest/")', "The logo preserves public browsing scope");
+    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Войти");
+    assert.equal(await evaluate('Boolean(document.querySelector("#view-portfolio [data-portfolio-value]"))'), false, "Public browsing cannot restore the prior account's value");
+    assert.equal(fixture.requests.filter(item => /\/api\/(?:workspace\/operations|portfolio\/(?:executions|proposals|live-execution))/.test(item.path)).length, 0, "Browsing never requests private transaction history or execution");
   }
-  console.log(`PASS native portfolio experience round ${round}: visible default roots, broker/history separation, kopecks, quantity, mobile rows, quick actions, weighted purchase details and logo mode isolation`);
+  console.log(`PASS real portfolio round ${round}: delayed data, precision, private/public isolation, all screens, mobile layout and no execution`);
 }
 async function exerciseViewport({
   send,
@@ -6903,7 +7182,8 @@ async function exerciseViewport({
   await wait('!document.querySelector("#app-shell").hidden && document.querySelector("#profile-name").textContent.includes("Тестовый") && document.querySelector("#view-home .asset-table")', "Authenticated dashboard");
   await checkLayout(`dashboard ${round}/${width}`);
   await screenshot(`dashboard-${round}-${width}.png`);
-  assert.equal(await evaluate('document.querySelector("#view-home .metric-card .main-value").textContent'), "—", "Unknown return must not become zero or NAV-growth percentage");
+  assert.equal(await evaluate('document.querySelector("#view-home .metric-card .main-value").textContent.replace(/\\s/g, "")'), "100000,25₽", "The dashboard shows confirmed current cash from the owned snapshot");
+  assert.equal(await evaluate('document.querySelector("#view-home").textContent.includes("Modified Dietz")'), false, "The dashboard does not turn stored value changes into investment return");
   assert.ok(fixture.requests.filter(item => item.path === "/api/workspace").every(item => item.profile === fixture.user), "Private data requests carry the viewed server profile precondition");
   if (width <= 960) {
     await click("#app-menu-toggle");
@@ -7011,7 +7291,6 @@ async function exerciseViewport({
   if (width === 390) await screenshot(`strategies-custom-${round}-${width}.png`);
   await click('#strategy-tab-catalog');
   assert.equal(fixture.maxActiveWrites, 1, "Versioned autosave uses a single in-flight mutation");
-  if (width === 390) await exerciseExecutionPlanner({fixture, click, fieldValue, wait, evaluate, screenshot, checkLayout, round});
   configureGoalCases(fixture, round, width);
   await exerciseGoalCRUD({
     fixture,
@@ -7050,7 +7329,7 @@ async function exerciseViewport({
     wait,
     evaluate
   });
-  if (width === 390) await exerciseRefreshRecovery({
+  if (width === 390) await exerciseRefreshMonitoring({
     fixture,
     click,
     wait,
@@ -7096,7 +7375,11 @@ async function exerciseViewport({
   assert.deepEqual(await evaluate("window.__browserErrors"), [], "No browser errors after workflows");
   console.log(`PASS round ${round}, ${width}px: layout, navigation, search, real charts, strategies, goals, events, settings, session isolation`);
 }
-const completedResourceCount = path => `performance.getEntriesByType("resource").filter(entry=>new URL(entry.name).pathname===${JSON.stringify(path)}).length`;
+const completedResourceCount = path => {
+  const expected = new URL(path, "https://example.test");
+  const query = expected.search ? ` && url.search === ${JSON.stringify(expected.search)}` : "";
+  return `performance.getEntriesByType("resource").filter(entry=>{const url=new URL(entry.name);return url.pathname===${JSON.stringify(expected.pathname)}${query};}).length`;
+};
 const strategyWrites = fixture => fixture.requests.filter(item => item.path === "/api/profile/strategy" && !["GET", "HEAD"].includes(item.method)).length;
 async function assertStrategyPane(evaluate, pane, focused = false) {
   const state = await evaluate(`(() => ({
@@ -7514,115 +7797,18 @@ async function exerciseProfileDraft({
   await click('#sidebar-nav [data-route="settings"]');
   await wait('document.querySelector("#preferences-form")', "Return to settings");
 }
-async function exerciseInterruptedRecoveryRead({fixture, click, wait, evaluate}) {
-  fixture.holdExecutionReads = true;
-  await click('[data-action="recovery-reload"]');
-  await until(() => fixture.heldExecutionReads.length > 0, "Terminal history verification is in flight before pagehide");
-  try {
-    await evaluate('window.dispatchEvent(new PageTransitionEvent("pagehide",{persisted:true}))');
-    await wait('document.querySelector("#recovery-settings").textContent.includes("История исполнений недоступна") && !document.querySelector("#recovery-settings .loading-panel") && document.querySelector("#recovery-settings [data-action=recovery-reload]")?.disabled===false', "Aborted history readback ends loading with an explicit unknown state and retry");
-    assert.equal(await evaluate('Boolean(document.querySelector("#recovery-settings .recovery-row"))'), false, "Cancelled verification cannot restore the previous terminal history as authoritative");
-    assert.equal(await evaluate('document.querySelector("[data-action=disconnect-start]").disabled'), true, "Disconnect stays blocked after cancellation has finished, not only while loading");
-  } finally {
-    fixture.holdExecutionReads = false;
-    fixture.heldExecutionReads.splice(0).forEach(release => release());
-  }
-  const historyReadsBeforeResume = fixture.requests.filter(item => item.method === "GET" && item.path === "/api/portfolio/executions").length;
-  await evaluate('window.dispatchEvent(new PageTransitionEvent("pageshow",{persisted:true}))');
-  await until(() => fixture.requests.filter(item => item.method === "GET" && item.path === "/api/portfolio/executions").length > historyReadsBeforeResume, "Restored page starts a new execution readback");
-  await wait('document.querySelector("#recovery-settings [data-action=recovery-reload]")?.disabled===false && !document.querySelector("#recovery-settings .loading-panel")', "Automatic page restoration finishes before a manual history retry");
-  await click('[data-action="recovery-reload"]');
-  await wait('document.querySelector(\'#recovery-settings [data-recovery-id="synthetic-run"] strong\')?.textContent==="Отменено" && document.querySelector("[data-action=disconnect-start]").disabled===false', "Only a new successful terminal readback restores disconnect after cancellation");
-}
-async function exerciseRefreshRecovery({
-  fixture,
-  click,
-  wait,
-  evaluate,
-  checkLayout
-}) {
-  const creationCountBefore = fixture.requests.filter(item => item.method === "POST" && /proposals|advance|executions$/.test(item.path)).length;
+
+async function exerciseRefreshMonitoring({fixture, click, wait}) {
   await wait('document.querySelector("#view-settings [data-action=refresh]").disabled===false', "Refresh available");
   fixture.refreshQueued = true;
   const initialObservations = fixture.requests.filter(item => item.path === "/api/workspace").length;
   await click('#view-settings [data-action="refresh"]');
-  await wait('document.querySelector("#connection-banner").textContent.includes("поставлено в очередь")', "Durable refresh queue");
-  assert.equal(await evaluate('document.querySelector("#view-settings [data-action=refresh]").disabled'), true, "Repeated refresh stays disabled while the server job runs");
+  await wait('document.querySelector("#connection-banner").textContent.includes("поставлено в очередь")', "Durable current-portfolio refresh queue");
   await wait('document.querySelector("#view-settings [data-action=refresh]").disabled===false', "Completed refresh job");
   assert.ok(fixture.requests.filter(item => item.path === "/api/workspace").length > initialObservations, "A completed job reloads saved observations");
   assert.ok(fixture.requests.filter(item => item.path === "/api/workspace/refresh" && item.method === "GET").length >= 2, "Running refresh is polled from the server");
+  assert.equal(fixture.requests.filter(item => /\/api\/(?:workspace\/operations|portfolio\/(?:executions|proposals|live-execution))/.test(item.path)).length, 0, "Portfolio refresh cannot read history or trigger execution");
   fixture.refreshQueued = false;
-  fixture.executions = [{
-    id: "synthetic-run",
-    proposal_id: "synthetic-proposal",
-    account_id: "synthetic-account",
-    mode: "live",
-    provider_environment: "prod",
-    status: "running",
-    error_code: null,
-    created_at: stamp,
-    updated_at: stamp,
-    finished_at: null,
-    legs: [{
-      id: "synthetic-leg",
-      leg_index: 0,
-      action: "buy",
-      instrument_uid: "synthetic-uid",
-      lots_requested: 2,
-      lots_executed: 1,
-      request_id: "synthetic-request",
-      provider_order_id: "synthetic-order",
-      provider_status: "EXECUTION_REPORT_STATUS_PARTIALLYFILL",
-      status: "partially_filled",
-      submitted_at: stamp,
-      last_checked_at: null,
-      terminal_at: null
-    }]
-  }];
-  fixture.mandate = {
-    id: "synthetic-mandate",
-    account_id: "synthetic-account",
-    max_order_notional_rub: "1000",
-    max_daily_notional_rub: "2000",
-    created_at: stamp,
-    expires_at: day(-1),
-    revoked_at: null
-  };
-  fixture.holdExecutionReads = true;
-  await click('[data-action="recovery-reload"]');
-  await until(() => fixture.heldExecutionReads.length > 0, "Execution history readback is in flight");
-  try {
-    assert.equal(await evaluate('document.querySelector("[data-action=disconnect-start]").disabled'), true, "Pending history readback blocks disconnect even when the previous history was terminal");
-    assert.equal(await evaluate('Boolean(document.querySelector(\'[data-recovery-id="synthetic-run"]\'))'), false, "The active execution has not arrived before the held response");
-  } finally {
-    fixture.holdExecutionReads = false;
-    fixture.heldExecutionReads.splice(0).forEach(release => release());
-  }
-  await wait('document.querySelector(\'[data-recovery-id="synthetic-run"]\')', "Authoritative active execution history");
-  assert.equal(await evaluate('document.querySelector("[data-action=disconnect-start]").disabled'), true, "Active order blocks a simple broker disconnect");
-  await click('[data-action="recovery-open"]');
-  await wait('document.querySelector(".recovery-leg")', "Persisted execution details");
-  assert.ok(await evaluate('document.querySelector(".recovery-leg").textContent.includes("ID заявки брокера") && document.querySelector(".recovery-leg").textContent.includes("synthetic-order")'), "Live recovery still displays the persisted broker order");
-  await checkLayout("Recovery details at 390px");
-  await click('[data-action="recovery-reconcile"]');
-  await wait('document.querySelector("#recovery-message").textContent.includes("Состояние получено")', "Read-only reconciliation");
-  assert.equal(fixture.executions[0].legs[0].lots_executed, 1, "Reconciliation does not fabricate an execution");
-  fixture.recoveryLostAck = true;
-  await click('[data-action="recovery-cancel"]');
-  await click('[data-action="recovery-cancel-confirm"]');
-  await wait('document.querySelector("#recovery-message").classList.contains("error")', "Ambiguous cancellation is explicit");
-  assert.equal(await evaluate('document.querySelector("[data-action=recovery-cancel]").disabled'), true, "Unconfirmed cancellation cannot be repeated against the next leg");
-  await click('[data-action="recovery-detail-reload"]');
-  await wait('document.querySelector("#dialog-content").textContent.includes("Отменено") && !document.querySelector("[data-action=recovery-cancel]")', "Cancellation read back from ledger");
-  await click('#workspace-dialog [data-close-dialog]');
-  await click('[data-action="recovery-reload"]');
-  await wait('document.querySelector("[data-action=disconnect-start]").disabled===false', "Terminal order allows disconnect");
-  await exerciseInterruptedRecoveryRead({fixture, click, wait, evaluate});
-  await click('[data-action="mandate-revoke"]');
-  await click('[data-action="mandate-revoke-confirm"]');
-  await wait('!document.querySelector("#workspace-dialog").open && !document.querySelector("[data-action=mandate-revoke]")', "Server-side mandate revoked");
-  assert.equal(fixture.mandate, null);
-  assert.equal(fixture.requests.filter(item => item.method === "POST" && /proposals|advance|executions$/.test(item.path)).length, creationCountBefore, "Legacy recovery must never create or advance a plan");
 }
 async function serveTestSavedSettings({
   strategy,

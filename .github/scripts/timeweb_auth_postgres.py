@@ -26,19 +26,23 @@ from inplace_upgrade import (
     MODE as SINGLE_DATABASE_MODE,
 )
 from inplace_upgrade import (
+    OPERATIONS,
     UpgradeBlocked,
     load_plan,
     migration_bodies,
     render_remote_upgrade,
+    validate_operation,
 )
 from timeweb_addresses import network_addresses
 from timeweb_http import request_json
 from timeweb_recovery import (
     RecoveryBlocked,
     ensure_recovery_point,
+    get_schedule,
     inspect_provider_recovery,
     inspect_restore_capacity,
     load_policy,
+    validate_budget,
 )
 from timeweb_ssh_trust import (
     ssh_base_args,
@@ -64,6 +68,7 @@ DB_OWNERSHIP_MARKER = "Managed by GitHub Actions: omnicio-auth-postgres"
 SSH_READY_ATTEMPTS = 36
 SSH_READY_DELAY_SECONDS = 10
 STAGE_SCHEMA_MIGRATION = "schema_migration"
+INSPECTION_TIMEOUT_SECONDS = 180
 REMOTE_STAGES = frozenset({
     "remote_command", "private_network", "secret_bootstrap", "runtime_env", "psql_client",
     STAGE_SCHEMA_MIGRATION,
@@ -924,34 +929,115 @@ def run_schema_migration(
     )
 
 
-def run_inplace_upgrade(
-    ssh: EphemeralSsh, *, migration_sqls: list[str], release_sha: str,
-    endpoint: DatabaseEndpoint, desired: DesiredDatabase,
-) -> None:
-    cluster_id = load_policy().cluster_id
-    program = render_remote_upgrade(
-        migration_sqls, release_sha=release_sha,
-        database={"cluster_id": cluster_id, "host": endpoint.host, "port": endpoint.port,
-                  "database": desired.instance_name, "user": desired.admin_login},
+def _blocked_inspection_check(value: Any) -> bool:
+    return (isinstance(value, dict) and set(value) == {"status", "code"}
+            and value.get("status") == "blocked" and isinstance(value.get("code"), str)
+            and re.fullmatch(r"[a-z_]{1,64}", value["code"]) is not None)
+
+
+def _valid_inspected_configuration(value: Any) -> bool:
+    if _blocked_inspection_check(value):
+        return True
+    return (isinstance(value, dict) and set(value) == {
+        "status", "smtp_delivery_verified", "market_token_configured",
+        "market_distribution_approved",
+    } and value.get("status") == "configuration_ready"
+            and value.get("smtp_delivery_verified") is False
+            and type(value.get("market_token_configured")) is bool
+            and type(value.get("market_distribution_approved")) is bool)
+
+
+def _valid_inspected_probe(value: Any, operation: str, message_id: str) -> bool:
+    if not isinstance(value, dict) or set(value) != {"status", "code", "message_id"}:
+        return False
+    if operation != "email_probe":
+        return value == {"status": "not_requested", "code": "not_requested", "message_id": ""}
+    if value.get("message_id") == "":
+        return _blocked_inspection_check({key: value[key] for key in ("status", "code")})
+    if value.get("message_id") != message_id:
+        return False
+    return (value.get("status"), value.get("code")) in (
+        ("accepted", "email_provider_accepted"), ("queued", "email_temporary_rejection"),
+        ("failed", "email_provider_rejected"), ("failed", "email_recipient_rejected"),
+        ("uncertain", "email_result_unknown"),
     )
-    raw = ssh.run(
-        "/opt/omnicio/current/.venv/bin/python -I -", input_text=program,
-        stage=STAGE_SCHEMA_MIGRATION, migration_step=28,
-    )
+
+
+def _valid_inspection_result(result: dict[str, Any], operation: str, message_id: str) -> bool:
+    if (result.get("operation") != operation
+            or result.get("schema") not in ("source_ready", "target_ready")):
+        return False
+    recovery = result.get("recovery")
+    if (not isinstance(recovery, dict)
+            or (recovery != {"status": "ready", "code": "recovery_verified"}
+                and not _blocked_inspection_check(recovery))):
+        return False
+    configuration = result.get("configuration")
+    probe = result.get("email_probe")
+    if (not isinstance(configuration, dict) or not isinstance(probe, dict)
+            or not _valid_inspected_configuration(configuration)
+            or not _valid_inspected_probe(probe, operation, message_id)):
+        return False
+    ready = (recovery["status"] == "ready" and configuration["status"] == "configuration_ready"
+             and probe["status"] in ("not_requested", "accepted"))
+    return result.get("status") == ("preflight_ready" if ready else "preflight_blocked")
+
+
+def _read_upgrade_result(
+    raw: str, *, cluster_id: int, release_sha: str, operation: str, message_id: str,
+) -> dict[str, Any]:
     if len(raw) > 16384:
         raise InfraError(UNCONFIRMED_UPGRADE)
     try:
         result = json.loads(raw)
     except ValueError:
         raise InfraError(UNCONFIRMED_UPGRADE) from None
-    if (not isinstance(result, dict)
-            or set(result) != {"status", "cluster_id", "release_sha", "new_database_copies"}
-            or result.get("status") not in ("applied", "already_applied")
+    keys = {"status", "cluster_id", "release_sha", "new_database_copies"}
+    if operation != "apply":
+        keys.update({"operation", "schema", "recovery", "configuration", "email_probe"})
+    if (not isinstance(result, dict) or set(result) != keys
             or type(result.get("cluster_id")) is not int
             or result.get("cluster_id") != cluster_id or result.get("release_sha") != release_sha
             or type(result.get("new_database_copies")) is not int
             or result["new_database_copies"] != 0):
         raise InfraError(UNCONFIRMED_UPGRADE)
+    if operation == "apply":
+        valid = result.get("status") in ("applied", "already_applied")
+    else:
+        valid = _valid_inspection_result(result, operation, message_id)
+    if not valid:
+        raise InfraError(UNCONFIRMED_UPGRADE)
+    return result
+
+
+def run_inplace_upgrade(
+    ssh: EphemeralSsh, *, migration_sqls: list[str], release_sha: str,
+    endpoint: DatabaseEndpoint, desired: DesiredDatabase, operation: str = "preflight",
+) -> dict[str, Any]:
+    cluster_id = load_policy().cluster_id
+    program = render_remote_upgrade(
+        migration_sqls, release_sha=release_sha, operation=operation,
+        database={"cluster_id": cluster_id, "host": endpoint.host, "port": endpoint.port,
+                  "database": desired.instance_name, "user": desired.admin_login},
+    )
+    message_id = ""
+    if operation == "email_probe":
+        from timeweb_auth_app import DOMAIN, _smtp_probe_parameters
+
+        _, tag = _smtp_probe_parameters(release_sha)
+        message_id = f"<{tag}@{DOMAIN}>"
+    command = "/opt/omnicio/current/.venv/bin/python -I -"
+    timeout = 90
+    if operation != "apply":
+        # Prevent imported installed modules from creating bytecode caches. The
+        # server deadline survives a disconnected client and never retries mail.
+        command = (f"timeout --kill-after=5s {INSPECTION_TIMEOUT_SECONDS}s "
+                   "/opt/omnicio/current/.venv/bin/python -I -B -")
+        timeout = INSPECTION_TIMEOUT_SECONDS + 20
+    raw = ssh.run(command, input_text=program, stage=STAGE_SCHEMA_MIGRATION,
+                  migration_step=30, timeout=timeout)
+    return _read_upgrade_result(raw, cluster_id=cluster_id, release_sha=release_sha,
+                                operation=operation, message_id=message_id)
 
 
 def wait_for_database_endpoint(
@@ -980,10 +1066,14 @@ def wait_for_database_endpoint(
 
 def validate_migration_request(
     migration_sqls: list[str], *, backup_only: bool, release_sha: str | None,
+    operation: str = "preflight",
 ) -> bool:
+    validate_operation(operation, release_sha=release_sha, backup_only=backup_only)
     if backup_only and release_sha is not None:
         raise InfraError("Scheduled verification cannot authorize a pre-release copy")
     single_database = load_policy().mode == SINGLE_DATABASE_MODE
+    if not single_database and not backup_only and operation != "apply":
+        raise UpgradeBlocked("inspection_requires_single_existing_database")
     if single_database and not backup_only:
         if not isinstance(release_sha, str) or re.fullmatch(r"[0-9a-f]{40}", release_sha) is None:
             raise InfraError("In-place upgrade requires an exact accepted release")
@@ -997,7 +1087,7 @@ def apply_database_release(
 ) -> None:
     if single_database:
         run_inplace_upgrade(ssh, migration_sqls=migration_sqls, release_sha=release_sha or "",
-                            endpoint=endpoint, desired=desired)
+                            endpoint=endpoint, desired=desired, operation="apply")
         return
     ensure_server_private_network(ssh, private_cidr=server_private_cidr)
     secret_bundle = load_or_create_server_secrets(ssh)
@@ -1005,6 +1095,42 @@ def apply_database_release(
     for migration_step, migration_sql in enumerate(migration_sqls, start=1):
         run_schema_migration(ssh, migration_sql=migration_sql, migration_step=migration_step,
                              endpoint=endpoint, desired=desired)
+
+
+def reconcile_recovery_policy(
+    client: TimewebClient, ssh: EphemeralSsh, cluster: dict[str, Any], *,
+    cluster_id: int, single_database: bool, backup_only: bool, release_sha: str | None,
+) -> None:
+    """Keep release checks read-only; retain existing policy maintenance authority."""
+    if single_database and not backup_only:
+        policy = load_policy()
+        validate_budget(cluster, policy)
+        if get_schedule(client, cluster_id)["is_enabled"] is not False:
+            raise RecoveryBlocked("The single-database copy schedule is not disabled")
+        return
+    ensure_recovery_point(client, ssh, cluster, release_sha=release_sha)
+    if not single_database:
+        inspect_restore_capacity(client, ssh, cluster_id)
+
+
+def inspect_database_release(
+    ssh: EphemeralSsh, *, migration_sqls: list[str], release_sha: str,
+    endpoint: DatabaseEndpoint, desired: DesiredDatabase, operation: str,
+) -> int:
+    report = run_inplace_upgrade(
+        ssh, migration_sqls=migration_sqls, release_sha=release_sha,
+        endpoint=endpoint, desired=desired, operation=operation,
+    )
+    # Preserve both safe component outcomes before reporting a blocked job.
+    # SMTP provider acceptance remains distinct from receipt in the mailbox.
+    add_summary(json.dumps(report, sort_keys=True, ensure_ascii=True))
+    set_output("status", report["status"])
+    set_output("cluster_id", str(report["cluster_id"]))
+    if report["status"] != "preflight_ready":
+        print("::error::Live release preflight is blocked; inspect the component codes.",
+              file=sys.stderr)
+        return 1
+    return 0
 
 
 def reconcile(
@@ -1017,9 +1143,10 @@ def reconcile(
     migration_sqls: list[str],
     backup_only: bool = False,
     release_sha: str | None = None,
+    operation: str = "preflight",
 ) -> int:
     single_database = validate_migration_request(
-        migration_sqls, backup_only=backup_only, release_sha=release_sha,
+        migration_sqls, backup_only=backup_only, release_sha=release_sha, operation=operation,
     )
     add_summary("## OmniCIO auth PostgreSQL")
     add_summary(
@@ -1109,15 +1236,21 @@ def reconcile(
                 "Managed PostgreSQL cluster is not attached to approved VPC"
             )
 
-        ensure_recovery_point(client, ssh, cluster, release_sha=release_sha)
-        if not single_database:
-            inspect_restore_capacity(client, ssh, cluster_id)
+        reconcile_recovery_policy(
+            client, ssh, cluster, cluster_id=cluster_id, single_database=single_database,
+            backup_only=backup_only, release_sha=release_sha,
+        )
         if backup_only:
             status = "single_database_policy_ready" if single_database else "recovery_point_ready"
             set_output("status", status)
             add_summary(f"- Scheduled verification completed: {status}; "
                         "schema and runtime unchanged.")
             return 0
+        if operation != "apply":
+            return inspect_database_release(
+                ssh, migration_sqls=migration_sqls, release_sha=release_sha or "",
+                endpoint=endpoint, desired=desired, operation=operation,
+            )
         apply_database_release(
             ssh, single_database=single_database, migration_sqls=migration_sqls,
             release_sha=release_sha, endpoint=endpoint, desired=desired,
@@ -1151,6 +1284,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-disk-mb", type=int, required=True)
     parser.add_argument("--migration", action="append", required=True)
     parser.add_argument("--backup-only", action="store_true")
+    parser.add_argument("--operation", choices=OPERATIONS,
+                        default=os.environ.get("OMNICIO_POSTGRES_OPERATION", "preflight"))
     return parser.parse_args()
 
 
@@ -1183,6 +1318,7 @@ def main() -> int:
         if not args.backup_only:
             release_sha, _ = release_context()
             require_checkout(release_sha)
+        validate_operation(args.operation, release_sha=release_sha, backup_only=args.backup_only)
         client = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
         return reconcile(
             client,
@@ -1204,6 +1340,7 @@ def main() -> int:
             migration_sqls=migration_sqls,
             backup_only=args.backup_only,
             release_sha=release_sha,
+            operation=args.operation,
         )
     except (
         InfraError, TimewebApiError, AmbiguousProviderError, RecoveryBlocked, ReleaseBlocked,

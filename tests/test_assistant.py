@@ -421,7 +421,8 @@ def test_portfolio_context_is_an_allowlist_and_preserves_missing_values() -> Non
                 "token": "private-token",
                 "account_id": "private-account",
             },
-            "performance": {
+            "value_change": {
+                "nav_change_rub": None,
                 "return_percent": None,
                 "net_contributions_rub": "100",
                 "raw_operations": ["private"],
@@ -436,7 +437,9 @@ def test_portfolio_context_is_an_allowlist_and_preserves_missing_values() -> Non
         }
     )
     assert context["overview"] == {"status": "partial", "nav_rub": None}
-    assert context["performance"] == {"return_percent": None, "net_contributions_rub": "100"}
+    assert context["value_change"] == {"nav_change_rub": None}
+    assert "income" not in context
+    assert "performance" not in context
     assert "private" not in json.dumps(context).lower()
 
 

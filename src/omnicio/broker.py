@@ -1,4 +1,4 @@
-"""Owner-bound T-Invest reads and explicitly authorized execution adapter calls."""
+"""Private current positions and a separately credentialed shared market reader."""
 
 from __future__ import annotations
 
@@ -7,18 +7,19 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from .db import Database, TBankConnectionRecord
-from .portfolio import PortfolioAnalysis, analyze_portfolio
+from .portfolio import PortfolioAnalysis, analyze_portfolio, value_current_positions
 from .security import decrypt_secret, encrypt_secret
 from .tbank import (
     NEWS_MAX_PAGE_SIZE,
     OPERATIONS_MAX_PAGE_SIZE,
+    READ_ONLY_ACCESS,
     TBankAccount,
     TBankAccruedInterest,
     TBankAssetFundamental,
@@ -55,6 +56,8 @@ from .tbank import (
 # 0.31s keeps evidence reads below that ceiling with a small scheduling margin.
 INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS = 0.31
 STRATEGY_RATING_READ_LIMIT = 8
+_NOT_CONNECTED_MESSAGE = "T-Invest is not connected"
+_ACCOUNT_DISPLAY_NAME = "Брокерский счёт"
 
 
 class BrokerConnectionError(RuntimeError):
@@ -88,6 +91,13 @@ class BrokerConnectionStatus:
     account_id: str | None = None
     account_name: str | None = None
     verified_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSourceStatus:
+    connected: bool
+    source: str
+    configuration_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,16 +162,25 @@ class BrokerService:
         *,
         credential_key: str,
         tbank: TBankInvestClient,
+        market_credential: str = "",
+        market_tbank: TBankInvestClient | None = None,
     ) -> None:
         self.database = database
         self.credential_key = credential_key
         self.tbank = tbank
+        self._market_credential = market_credential.strip()
+        self.market_tbank = market_tbank or TBankInvestClient(purpose="market")
+        self._market_configuration_id = str(uuid4())
         self._instrument_evidence_lock = threading.Lock()
         self._next_instrument_evidence_at = 0.0
         self._metadata_lock = threading.Lock()
-        self._metadata_cache: OrderedDict[
-            tuple[UUID, str, str, datetime, str], tuple[float, TBankInstrumentMetadata, datetime]
-        ] = OrderedDict()
+        self._metadata_cache: OrderedDict[str, tuple[float, TBankInstrumentMetadata, datetime]] = (
+            OrderedDict()
+        )
+        self._news_lock = threading.Lock()
+        self._news_cache: OrderedDict[tuple[str | None, int], tuple[float, Any, datetime]] = (
+            OrderedDict()
+        )
 
     def preview_accounts(
         self,
@@ -169,7 +188,18 @@ class BrokerService:
         credential: str,
         environment: TBankEnvironment,
     ) -> list[TBankAccount]:
-        return self.tbank.get_accounts(credential, environment)
+        if environment != "prod":
+            raise BrokerAccountNotAccessible("only a real read-only broker account is supported")
+        accounts = self.tbank.get_accounts(credential, environment)
+        if not accounts or any(account.access_level != READ_ONLY_ACCESS for account in accounts):
+            raise BrokerAccountNotAccessible("all returned accounts must have read-only access")
+        if any(not account.id or not account.id.strip() for account in accounts) or len(
+            {account.id for account in accounts}
+        ) != len(accounts):
+            raise BrokerAccountNotAccessible("broker account identities are ambiguous")
+        return [
+            replace(account, name=_ACCOUNT_DISPLAY_NAME, opened_at=None) for account in accounts
+        ]
 
     def connect(
         self,
@@ -180,23 +210,13 @@ class BrokerService:
         account_id: str,
         terms_version: str,
     ) -> BrokerConnectionStatus:
-        accounts = self.tbank.get_accounts(credential, environment)
+        accounts = self.preview_accounts(credential=credential, environment=environment)
         selected = next(
             (account for account in accounts if account.id == account_id),
             None,
         )
         if selected is None or selected.status != "ACCOUNT_STATUS_OPEN":
-            raise BrokerAccountNotAccessible(
-                "selected T-Invest account is not accessible"
-            )
-        if selected.access_level not in {
-            "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS",
-            "ACCOUNT_ACCESS_LEVEL_READ_ONLY",
-        }:
-            raise BrokerAccountNotAccessible(
-                "selected T-Invest account has no verified read access"
-            )
-
+            raise BrokerAccountNotAccessible("selected T-Invest account is not accessible")
         encrypted = encrypt_secret(credential.strip(), self.credential_key)
         record = self.database.upsert_tbank_connection(
             user_id=user_id,
@@ -215,8 +235,15 @@ class BrokerService:
         return _status(record)
 
     def portfolio(self, user_id: UUID) -> BrokerPortfolioSnapshot:
-        record, credential, environment = self._connected_credential(user_id)
-        return self._read_portfolio(record, credential, environment)
+        bundle = self.observation_bundle(user_id)
+        return BrokerPortfolioSnapshot(
+            account_id=bundle.account_id,
+            account_name=bundle.account_name,
+            environment=bundle.environment,
+            portfolio=bundle.portfolio,
+            positions=bundle.positions,
+            refreshed_at=bundle.refreshed_at,
+        )
 
     def _read_portfolio(
         self,
@@ -225,8 +252,8 @@ class BrokerService:
         environment: TBankEnvironment,
     ) -> BrokerPortfolioSnapshot:
         with ThreadPoolExecutor(max_workers=2) as reads:
-            portfolio_read = reads.submit(
-                self.tbank.get_portfolio,
+            withdrawals_read = reads.submit(
+                self.tbank.get_withdraw_limits,
                 credential,
                 environment,
                 record.account_id,
@@ -237,13 +264,32 @@ class BrokerService:
                 environment,
                 record.account_id,
             )
-            portfolio = portfolio_read.result()
             positions = positions_read.result()
+            try:
+                withdrawals = withdrawals_read.result()
+            except TBankUnavailable:
+                # Positions remain visible, but cash cannot be called spendable
+                # while the broker's collateral reservations are unavailable.
+                withdrawals = None
+        if withdrawals is not None:
+            # Separate reads can cross a broker update. Preserve the holdings,
+            # but withhold a cash budget until both balance observations agree.
+            same_balances = sorted(positions.money, key=lambda value: value.currency) == sorted(
+                withdrawals.money, key=lambda value: value.currency
+            ) and sorted(positions.blocked_money, key=lambda value: value.currency) == sorted(
+                withdrawals.blocked_money, key=lambda value: value.currency
+            )
+            positions = replace(
+                positions,
+                blocked_guarantee_money=withdrawals.blocked_guarantee_money,
+                withdraw_limits_available=same_balances,
+            )
+        portfolio = value_current_positions(positions, (), ())
 
         self._require_current_connection(record)
         return BrokerPortfolioSnapshot(
             account_id=record.account_id,
-            account_name=record.account_name,
+            account_name=_ACCOUNT_DISPLAY_NAME,
             environment=environment,
             portfolio=portfolio,
             positions=positions,
@@ -252,64 +298,71 @@ class BrokerService:
 
     def candidate_bond_ratings(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
     ) -> tuple[TBankRating, ...]:
-        record, credential, environment = self._connected_credential(user_id)
+        credential, environment = self._market_credentials()
         result = cast(
             tuple[TBankRating, ...],
             self._paced_evidence_read(
-                self.tbank.get_bond_ratings,
+                self.market_tbank.get_bond_ratings,
                 credential,
                 environment,
                 instrument_uid,
             ),
         )
-        self._require_current_connection(record)
         return result
 
     def candidate_daily_exchange_candles(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         from_at: datetime,
         to_at: datetime,
     ) -> tuple[TBankHistoricCandle, ...]:
-        record, credential, environment = self._connected_credential(user_id)
+        credential, environment = self._market_credentials()
         result = self._paced_evidence_read(
-            self.tbank.get_daily_exchange_candles, credential, environment, instrument_uid,
-            from_at=from_at, to_at=to_at,
+            self.market_tbank.get_daily_exchange_candles,
+            credential,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
         )
-        self._require_current_connection(record)
         return cast(tuple[TBankHistoricCandle, ...], result)
 
-    def market_history_start(self, user_id: UUID, instrument_uid: str) -> datetime | None:
-        record, credential, environment = self._connected_credential(user_id)
-        first = self.tbank.first_daily_candle(credential, environment, instrument_uid)
-        self._require_current_connection(record)
+    def market_history_start(self, _user_id: UUID, instrument_uid: str) -> datetime | None:
+        credential, environment = self._market_credentials()
+        first = self.market_tbank.first_daily_candle(credential, environment, instrument_uid)
         return first
 
     def instrument_facts(
-        self, user_id: UUID, instrument_uid: str,
+        self,
+        _user_id: UUID,
+        instrument_uid: str,
     ) -> tuple[TBankInstrumentMetadata, TBankAssetFundamental | None]:
         """One exact instrument read and at most one asset statistics read."""
-        record, credential, environment = self._connected_credential(user_id)
-        metadata = self.tbank.get_instrument_overview(credential, environment, instrument_uid)
-        self._require_current_connection(record)
+        credential, environment = self._market_credentials()
+        metadata = self.market_tbank.get_instrument_overview(
+            credential,
+            environment,
+            instrument_uid,
+        )
         if metadata.uid != instrument_uid.strip():
             raise TBankUnavailable("instrument metadata identity mismatch")
         fundamentals: tuple[TBankAssetFundamental, ...] = ()
         if metadata.asset_uid:
             try:
-                fundamentals = self.tbank.get_asset_fundamentals(
-                    credential, environment, (metadata.asset_uid,),
+                fundamentals = self.market_tbank.get_asset_fundamentals(
+                    credential,
+                    environment,
+                    (metadata.asset_uid,),
                 )
             except TBankUnavailable:
                 # Keep the verified instrument card usable without supplying
                 # another asset's statistics or exposing provider error text.
                 fundamentals = ()
-        self._require_current_connection(record)
         if len(fundamentals) > 1 or any(
             value.asset_uid != metadata.asset_uid for value in fundamentals
         ):
@@ -317,87 +370,85 @@ class BrokerService:
         return metadata, next(iter(fundamentals), None)
 
     def market_instrument_metadata(
-        self, user_id: UUID, instrument_uid: str,
+        self,
+        _user_id: UUID,
+        instrument_uid: str,
     ) -> TBankInstrumentMetadata:
         """Typed quote units without coupling quote availability to fundamentals."""
-        record, credential, environment = self._connected_credential(user_id)
-        key = (user_id, record.account_id, environment, record.verified_at, instrument_uid)
+        credential, environment = self._market_credentials()
+        key = instrument_uid
         with self._metadata_lock:
             cached = self._metadata_cache.get(key)
             if cached is not None and time.monotonic() < cached[0]:
                 self._metadata_cache.move_to_end(key)
                 return cached[1]
         metadata = self._paced_evidence_read(
-            self.tbank.get_instrument_overview, credential, environment, instrument_uid,
+            self.market_tbank.get_instrument_overview,
+            credential,
+            environment,
+            instrument_uid,
         )
         metadata = cast(TBankInstrumentMetadata, metadata)
-        self._require_current_connection(record)
         if metadata.uid != instrument_uid.strip():
             raise TBankUnavailable("instrument metadata identity mismatch")
-        self._remember_metadata(record, (metadata,))
+        self._remember_metadata((metadata,))
         return metadata
 
     def _remember_metadata(
-        self, record: TBankConnectionRecord, metadata: tuple[TBankInstrumentMetadata, ...],
+        self,
+        metadata: tuple[TBankInstrumentMetadata, ...],
     ) -> None:
         with self._metadata_lock:
             for item in metadata:
-                key = (record.user_id, record.account_id, record.environment,
-                       record.verified_at, item.uid)
+                key = item.uid
                 self._metadata_cache[key] = (
-                    time.monotonic() + (60 if item.instrument_type == "bond" else 300), item,
+                    time.monotonic() + (60 if item.instrument_type == "bond" else 300),
+                    item,
                     datetime.now(UTC),
                 )
                 self._metadata_cache.move_to_end(key)
-            while len(self._metadata_cache) > 4096:
+            while len(self._metadata_cache) > 100_000:
                 self._metadata_cache.popitem(last=False)
 
     def execution_instrument(self, user_id: UUID, instrument_uid: str) -> TBankInstrumentMetadata:
-        record, credential, environment = self._connected_credential(user_id)
-        # The fallback adapter makes up to two InstrumentsService reads for a bond.
-        result = self._paced_evidence_read(
-            self.tbank.get_execution_instrument, credential, environment, instrument_uid,
-            _request_count=2,
-        )
-        self._require_current_connection(record)
-        return cast(TBankInstrumentMetadata, result)
+        raise BrokerConnectionError("broker_execution_disabled")
 
     def estimate_limit_order(
-        self, user_id: UUID, *, instrument_uid: str, lots: int, price: Decimal, action: str,
+        self,
+        user_id: UUID,
+        *,
+        instrument_uid: str,
+        lots: int,
+        price: Decimal,
+        action: str,
     ) -> TBankOrderEstimate:
-        record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.estimate_limit_order(credential, environment, record.account_id,
-            instrument_uid=instrument_uid, lots=lots, price=price, action=action)
-        self._require_current_connection(record)
-        return result
+        raise BrokerConnectionError("broker_execution_disabled")
 
     def submit_limit_order(
-        self, user_id: UUID, *, expected_account_id: str, expected_verified_at: datetime,
-        instrument_uid: str, lots: int, price: Decimal, action: str, request_id: str,
+        self,
+        user_id: UUID,
+        *,
+        expected_account_id: str,
+        expected_verified_at: datetime,
+        instrument_uid: str,
+        lots: int,
+        price: Decimal,
+        action: str,
+        request_id: str,
     ) -> TBankOrderState:
-        record, credential, environment = self._connected_credential(user_id)
-        if environment == "prod":
-            record, credential, environment = self._live_credential(user_id)
-        if record.account_id != expected_account_id or record.verified_at != expected_verified_at:
-            raise BrokerConnectionError("execution_account_changed")
-        self._require_current_connection(record)
-        result = self.tbank.submit_limit_order(credential, environment, record.account_id,
-            instrument_uid=instrument_uid, lots=lots, price=price, action=action,
-            request_id=request_id)
-        self._require_current_connection(record)
-        return result
+        raise BrokerConnectionError("broker_execution_disabled")
 
     def market_exchange_candles(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         from_at: datetime,
         to_at: datetime,
         interval: str,
     ) -> tuple[TBankHistoricCandle, ...]:
-        record, credential, environment = self._connected_credential(user_id)
-        candles = self.tbank.get_exchange_candles(
+        credential, environment = self._market_credentials()
+        candles = self.market_tbank.get_exchange_candles(
             credential,
             environment,
             instrument_uid,
@@ -405,36 +456,34 @@ class BrokerService:
             to_at=to_at,
             interval=interval,
         )
-        self._require_current_connection(record)
         return candles
 
     def market_trading_status(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
     ) -> TBankTradingStatus:
-        record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.get_trading_status(
+        credential, environment = self._market_credentials()
+        result = self.market_tbank.get_trading_status(
             credential,
             environment,
             instrument_uid,
         )
-        self._require_current_connection(record)
         return result
 
     def candidate_bond_coupons(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         from_at: datetime,
         to_at: datetime,
     ) -> tuple[TBankBondCoupon, ...]:
-        record, credential, environment = self._connected_credential(user_id)
+        credential, environment = self._market_credentials()
         result = cast(
             tuple[TBankBondCoupon, ...],
             self._paced_evidence_read(
-                self.tbank.get_bond_coupons,
+                self.market_tbank.get_bond_coupons,
                 credential,
                 environment,
                 instrument_uid,
@@ -442,67 +491,111 @@ class BrokerService:
                 to_at=to_at,
             ),
         )
-        self._require_current_connection(record)
         return result
 
     def candidate_accrued_interests(
-        self, user_id: UUID, instrument_uid: str, *, from_at: datetime, to_at: datetime,
+        self,
+        _user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
     ) -> tuple[TBankAccruedInterest, ...]:
-        record, credential, environment = self._connected_credential(user_id)
+        credential, environment = self._market_credentials()
         result = self._paced_evidence_read(
-            self.tbank.get_accrued_interests, credential, environment, instrument_uid,
-            from_at=from_at, to_at=to_at,
+            self.market_tbank.get_accrued_interests,
+            credential,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
         )
-        self._require_current_connection(record)
         return cast(tuple[TBankAccruedInterest, ...], result)
 
     def candidate_dividends(
-        self, user_id: UUID, instrument_uid: str, *, from_at: datetime, to_at: datetime,
+        self,
+        _user_id: UUID,
+        instrument_uid: str,
+        *,
+        from_at: datetime,
+        to_at: datetime,
     ) -> tuple[TBankDividend, ...]:
-        record, credential, environment = self._connected_credential(user_id)
-        result = self._paced_evidence_read(self.tbank.get_dividends, credential, environment,
-                                           instrument_uid, from_at=from_at, to_at=to_at)
-        self._require_current_connection(record)
+        credential, environment = self._market_credentials()
+        result = self._paced_evidence_read(
+            self.market_tbank.get_dividends,
+            credential,
+            environment,
+            instrument_uid,
+            from_at=from_at,
+            to_at=to_at,
+        )
         return cast(tuple[TBankDividend, ...], result)
 
-    def candidate_fund_profile(self, user_id: UUID, asset_uid: str) -> TBankFundProfile:
-        record, credential, environment = self._connected_credential(user_id)
-        result = self._paced_evidence_read(self.tbank.get_fund_profile, credential,
-                                           environment, asset_uid)
-        self._require_current_connection(record)
+    def candidate_fund_profile(self, _user_id: UUID, asset_uid: str) -> TBankFundProfile:
+        credential, environment = self._market_credentials()
+        result = self._paced_evidence_read(
+            self.market_tbank.get_fund_profile, credential, environment, asset_uid
+        )
         return cast(TBankFundProfile, result)
 
     def instrument_news(
-        self, user_id: UUID, instrument_uid: str | None = None, *,
-        cursor: str | None = None, limit: int = NEWS_MAX_PAGE_SIZE,
+        self,
+        _user_id: UUID,
+        instrument_uid: str | None = None,
+        *,
+        cursor: str | None = None,
+        limit: int = NEWS_MAX_PAGE_SIZE,
     ) -> dict[str, Any]:
         """Read one bounded page; exact provider UID links select company news."""
         if instrument_uid is not None and (not instrument_uid.strip() or len(instrument_uid) > 200):
             raise ValueError("instrument_uid_invalid")
-        record, credential, environment = self._connected_credential(user_id)
-        page = self.tbank.get_news(credential, environment, cursor=cursor, limit=limit)
-        self._require_current_connection(record)
-        items = [asdict(item) for item in page.items
-                 if instrument_uid is None or instrument_uid in item.instrument_uids]
-        return {"items": items, "next_cursor": page.next_cursor,
-                "scanned_items": len(page.items), "instrument_uid": instrument_uid,
-                "source": "T-Invest InstrumentsService.News",
-                "source_url": "https://developer.tbank.ru/invest/services/instruments/methods",
-                "observed_at": datetime.now(UTC).isoformat(), "status": "available"}
+        credential, environment = self._market_credentials()
+        key = (cursor, limit)
+        with self._news_lock:
+            cached = self._news_cache.get(key)
+            if cached is None or time.monotonic() >= cached[0]:
+                page = self.market_tbank.get_news(
+                    credential,
+                    environment,
+                    cursor=cursor,
+                    limit=limit,
+                )
+                observed_at = datetime.now(UTC)
+                self._news_cache[key] = (time.monotonic() + 30, page, observed_at)
+                while len(self._news_cache) > 128:
+                    self._news_cache.popitem(last=False)
+            else:
+                _deadline, page, observed_at = cached
+                self._news_cache.move_to_end(key)
+        items = [
+            asdict(item)
+            for item in page.items
+            if instrument_uid is None or instrument_uid in item.instrument_uids
+        ]
+        return {
+            "items": items,
+            "next_cursor": page.next_cursor,
+            "scanned_items": len(page.items),
+            "instrument_uid": instrument_uid,
+            "source": "T-Invest InstrumentsService.News",
+            "source_url": "https://developer.tbank.ru/invest/services/instruments/methods",
+            "observed_at": observed_at.isoformat(),
+            "status": "available",
+        }
 
     def candidate_bond_events(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         from_at: datetime,
         to_at: datetime,
     ) -> tuple[TBankBondEvent, ...]:
-        record, credential, environment = self._connected_credential(user_id)
+        credential, environment = self._market_credentials()
         result = cast(
             tuple[TBankBondEvent, ...],
             self._paced_evidence_read(
-                self.tbank.get_bond_events,
+                self.market_tbank.get_bond_events,
                 credential,
                 environment,
                 instrument_uid,
@@ -510,35 +603,32 @@ class BrokerService:
                 to_at=to_at,
             ),
         )
-        self._require_current_connection(record)
         return result
 
     def candidate_market_yields(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uids: tuple[str, ...],
     ) -> tuple[TBankMarketYield, ...]:
-        record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.get_market_yields(
+        credential, environment = self._market_credentials()
+        result = self.market_tbank.get_market_yields(
             credential,
             environment,
             instrument_uids,
         )
-        self._require_current_connection(record)
         return result
 
     def candidate_last_prices(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uids: tuple[str, ...],
     ) -> tuple[TBankLastPrice, ...]:
-        record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.get_last_prices(
+        credential, environment = self._market_credentials()
+        result = self.market_tbank.get_last_prices(
             credential,
             environment,
             instrument_uids,
         )
-        self._require_current_connection(record)
         return result
 
     def market_last_price(
@@ -550,51 +640,49 @@ class BrokerService:
         return next(iter(prices), None)
 
     def market_last_prices(
-        self, user_id: UUID, instrument_uids: tuple[str, ...],
+        self,
+        _user_id: UUID,
+        instrument_uids: tuple[str, ...],
     ) -> TBankLastPriceBatch:
         """Partial quote display never changes strict execution readers."""
-        record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.get_last_prices_batch(credential, environment, instrument_uids)
-        self._require_current_connection(record)
+        credential, environment = self._market_credentials()
+        result = self.market_tbank.get_last_prices_batch(credential, environment, instrument_uids)
         return result
 
     def candidate_fundamentals(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         asset_uids: tuple[str, ...],
     ) -> tuple[TBankAssetFundamental, ...]:
-        record, credential, environment = self._connected_credential(user_id)
+        credential, environment = self._market_credentials()
         unique = tuple(dict.fromkeys(value for value in asset_uids if value))
         result: list[TBankAssetFundamental] = []
         for start in range(0, len(unique), 100):
             result.extend(
                 self._paced_evidence_read(
-                    self.tbank.get_asset_fundamentals,
+                    self.market_tbank.get_asset_fundamentals,
                     credential,
                     environment,
                     unique[start : start + 100],
                 )
             )
-        self._require_current_connection(record)
         return tuple(result)
 
     def candidate_order_book(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         depth: int = 10,
     ) -> TBankOrderBook:
-        record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.get_order_book(
+        credential, environment = self._market_credentials()
+        result = self.market_tbank.get_order_book(
             credential,
             environment,
             instrument_uid,
             depth=depth,
         )
-        self._require_current_connection(record)
         return result
-
 
     def live_order_state(
         self,
@@ -603,21 +691,7 @@ class BrokerService:
         request_id: str,
         price_type: str,
     ) -> TBankOrderState:
-        record, credential, environment = self._prod_credential(
-            user_id,
-            require_full_access=False,
-        )
-        if price_type not in {"point", "currency"}:
-            raise ValueError("live order price type is invalid")
-        state = self.tbank.get_order_state(
-            credential,
-            environment,
-            record.account_id,
-            request_id=request_id,
-            price_type=cast(Any, price_type),
-        )
-        self._require_current_connection(record)
-        return state
+        raise BrokerConnectionError("broker_execution_disabled")
 
     def cancel_live_order(
         self,
@@ -625,14 +699,7 @@ class BrokerService:
         *,
         request_id: str,
     ) -> TBankCancelResult:
-        record, credential, environment = self._live_credential(user_id)
-        return self.tbank.cancel_order(
-            credential,
-            environment,
-            record.account_id,
-            request_id=request_id,
-        )
-
+        raise BrokerConnectionError("broker_execution_disabled")
 
     def sandbox_order_state(
         self,
@@ -641,18 +708,7 @@ class BrokerService:
         request_id: str,
         price_type: str,
     ) -> TBankSandboxOrderState:
-        record, credential, environment = self._sandbox_credential(user_id)
-        if price_type not in {"point", "currency"}:
-            raise ValueError("sandbox order price type is invalid")
-        state = self.tbank.get_sandbox_order_state(
-            credential,
-            environment,
-            record.account_id,
-            request_id=request_id,
-            price_type=cast(Any, price_type),
-        )
-        self._require_current_connection(record)
-        return state
+        raise BrokerConnectionError("broker_execution_disabled")
 
     def cancel_sandbox_order(
         self,
@@ -660,13 +716,7 @@ class BrokerService:
         *,
         request_id: str,
     ) -> TBankSandboxCancelResult:
-        record, credential, environment = self._sandbox_credential(user_id)
-        return self.tbank.cancel_sandbox_order(
-            credential,
-            environment,
-            record.account_id,
-            request_id=request_id,
-        )
+        raise BrokerConnectionError("broker_execution_disabled")
 
     def analysis(self, user_id: UUID) -> BrokerAnalysisSnapshot:
         bundle = self.observation_bundle(user_id)
@@ -679,6 +729,22 @@ class BrokerService:
             sources=bundle.sources,
         )
 
+    def _cached_portfolio_metadata(
+        self, positions: TBankPositions, observed_at: datetime,
+    ) -> tuple[tuple[TBankInstrumentMetadata, ...], datetime, str]:
+        with self._metadata_lock:
+            entries = tuple(
+                cached for position in positions.holdings
+                if (cached := self._metadata_cache.get(position.instrument_uid)) is not None
+                and time.monotonic() < cached[0]
+            )
+        metadata = tuple(entry[1] for entry in entries)
+        return (
+            metadata,
+            min((entry[2] for entry in entries), default=observed_at),
+            "cached" if metadata else "not_requested",
+        )
+
     def observation_bundle(
         self,
         user_id: UUID,
@@ -688,67 +754,87 @@ class BrokerService:
     ) -> BrokerObservationBundle:
         record, credential, environment = self._connected_credential(user_id)
         snapshot = self._read_portfolio(record, credential, environment)
-        catalog_methods: tuple[str, ...]
         catalog_observed_at = datetime.now(UTC)
-        if quick:
-            with self._metadata_lock:
-                entries = tuple(
-                    cached for position in snapshot.portfolio.positions
-                    if (cached := self._metadata_cache.get((
-                        user_id, record.account_id, environment, record.verified_at,
-                        position.instrument_uid,
-                    ))) is not None
+        catalog_methods: tuple[str, ...] = ()
+        catalog_status = "unavailable"
+        metadata: tuple[TBankInstrumentMetadata, ...] = ()
+        prices: tuple[TBankLastPrice, ...] = ()
+        if self._market_credential:
+            market_credential, market_environment = self._market_credentials()
+            if quick:
+                metadata, catalog_observed_at, catalog_status = self._cached_portfolio_metadata(
+                    snapshot.positions, catalog_observed_at,
                 )
-            metadata = tuple(entry[1] for entry in entries)
-            if entries:
-                catalog_observed_at = min(entry[2] for entry in entries)
-            catalog_methods, catalog_status = (), "cached" if metadata else "not_requested"
-        else:
-            metadata, catalog_methods, catalog_status = self._read_catalog(
-                credential, environment, snapshot.portfolio, full_catalog=full_catalog,
+            else:
+                metadata, catalog_methods, catalog_status = self._read_catalog(
+                    market_credential,
+                    market_environment,
+                    snapshot.portfolio,
+                    full_catalog=full_catalog,
+                )
+                self._remember_metadata(metadata)
+            uids = tuple(
+                dict.fromkeys(
+                    item.instrument_uid
+                    for item in snapshot.positions.holdings
+                    if item.instrument_uid
+                )
             )
-            self._remember_metadata(record, metadata)
+            if uids:
+                try:
+                    prices = self.market_tbank.get_last_prices_batch(
+                        market_credential,
+                        market_environment,
+                        uids,
+                    ).prices
+                except TBankUnavailable:
+                    prices = ()
+        portfolio = value_current_positions(snapshot.positions, metadata, prices)
         source_root = "https://developer.tbank.ru/invest/api/"
         sources = (
             AnalysisSource(
-                id="portfolio",
-                name="T-Invest: портфель",
-                url=source_root + "operations-service-get-portfolio",
-                methods=("OperationsService/GetPortfolio",),
-                retrieved_at=snapshot.refreshed_at,
-                status="received",
+                "portfolio",
+                "T-Invest: текущие активы",
+                source_root + "operations-service-get-positions",
+                ("OperationsService/GetPositions",),
+                snapshot.refreshed_at,
+                "received",
             ),
             AnalysisSource(
-                id="positions",
-                name="T-Invest: деньги и блокировки",
-                url=source_root + "operations-service-get-positions",
-                methods=("OperationsService/GetPositions",),
-                retrieved_at=snapshot.refreshed_at,
-                status="received",
+                "positions",
+                "T-Invest: деньги и блокировки",
+                source_root + "operations-service-get-withdraw-limits",
+                ("OperationsService/GetPositions", "OperationsService/GetWithdrawLimits"),
+                snapshot.refreshed_at,
+                "received" if snapshot.positions.withdraw_limits_available else "partial",
             ),
             AnalysisSource(
-                id="catalog",
-                name="T-Invest: справочники инструментов",
-                url=source_root + "instruments-service",
-                methods=catalog_methods,
-                retrieved_at=catalog_observed_at,
-                status=catalog_status,
+                "catalog",
+                "Общие справочники инструментов",
+                source_root + "instruments-service",
+                catalog_methods,
+                catalog_observed_at,
+                catalog_status,
+            ),
+            AnalysisSource(
+                "market_prices",
+                "Общие рыночные цены",
+                source_root + "market-data-service-get-last-prices",
+                ("MarketDataService/GetLastPrices",),
+                min((price.time for price in prices), default=snapshot.refreshed_at),
+                "received" if prices else "unavailable",
             ),
         )
         self._require_current_connection(record)
         return BrokerObservationBundle(
             account_id=record.account_id,
-            account_name=record.account_name,
+            account_name=_ACCOUNT_DISPLAY_NAME,
             environment=environment,
             refreshed_at=snapshot.refreshed_at,
-            portfolio=snapshot.portfolio,
+            portfolio=portfolio,
             positions=snapshot.positions,
             metadata=metadata,
-            analysis=analyze_portfolio(
-                snapshot.portfolio,
-                snapshot.positions,
-                metadata,
-            ),
+            analysis=analyze_portfolio(portfolio, snapshot.positions, metadata),
             sources=sources,
         )
 
@@ -762,23 +848,26 @@ class BrokerService:
             return self._strategy_observation(user_id)
 
     def _strategy_observation(
-        self, user_id: UUID,
+        self,
+        user_id: UUID,
     ) -> tuple[BrokerObservationBundle, dict[str, tuple[TBankRating, ...]]]:
-        record, credential, environment = self._connected_credential(user_id)
+        record = self.database.tbank_connection(user_id)
+        if record is None:
+            raise BrokerNotConnected(_NOT_CONNECTED_MESSAGE)
         bundle = self.observation_bundle(user_id)
         self._require_current_connection(record)
         ratings: dict[str, tuple[TBankRating, ...]] = {}
+        if not self._market_credential:
+            return bundle, ratings
         started = time.monotonic()
-        ids = sorted({item.uid for item in bundle.analysis.securities
-                      if item.instrument_type == "bond"})
+        ids = sorted(
+            {item.uid for item in bundle.analysis.securities if item.instrument_type == "bond"}
+        )
         for uid in ids[:STRATEGY_RATING_READ_LIMIT]:
             if time.monotonic() - started >= 8:
                 break
-            self._require_current_connection(record)
             try:
-                ratings[uid] = cast(tuple[TBankRating, ...], self._paced_evidence_read(
-                    self.tbank.get_bond_ratings, credential, environment, uid,
-                ))
+                ratings[uid] = self.candidate_bond_ratings(user_id, uid)
             except TBankUnavailable:
                 ratings[uid] = ()
         self._require_current_connection(record)
@@ -793,20 +882,24 @@ class BrokerService:
         full_catalog: bool,
     ) -> tuple[tuple[TBankInstrumentMetadata, ...], tuple[str, ...], str]:
         metadata: list[TBankInstrumentMetadata] = []
-        methods = {"share": "Shares", "bond": "Bonds", "etf": "Etfs"}
+        methods = {
+            "share": "Shares",
+            "bond": "Bonds",
+            "etf": "Etfs",
+            "currency": "Currencies",
+            "future": "Futures",
+        }
         requested: list[str] = []
         failed: list[str] = []
         kinds = (
-            set(methods)
-            if full_catalog
-            else {item.instrument_type for item in portfolio.positions}
+            set(methods) if full_catalog else {item.instrument_type for item in portfolio.positions}
         )
 
         with ThreadPoolExecutor(max_workers=3) as catalog_reads:
             pending = {
                 kind: catalog_reads.submit(
                     self._paced_evidence_read,
-                    self.tbank.get_instrument_metadata,
+                    self.market_tbank.get_instrument_metadata,
                     credential,
                     environment,
                     kind,
@@ -858,7 +951,7 @@ class BrokerService:
             try:
                 fundamentals.extend(
                     self._paced_evidence_read(
-                        self.tbank.get_asset_fundamentals,
+                        self.market_tbank.get_asset_fundamentals,
                         credential,
                         environment,
                         asset_uids[start : start + 100],
@@ -884,7 +977,7 @@ class BrokerService:
                 tasks[
                     reads.submit(
                         self._paced_evidence_read,
-                        self.tbank.get_dividends,
+                        self.market_tbank.get_dividends,
                         credential,
                         environment,
                         item.uid,
@@ -893,14 +986,19 @@ class BrokerService:
                     )
                 ] = ("GetDividends", item.uid)
             if item.instrument_type == "bond":
-                tasks[reads.submit(
-                    self._paced_evidence_read, self.tbank.get_bond_ratings,
-                    credential, environment, item.uid,
-                )] = ("BondBy", item.uid)
                 tasks[
                     reads.submit(
                         self._paced_evidence_read,
-                        self.tbank.get_bond_coupons,
+                        self.market_tbank.get_bond_ratings,
+                        credential,
+                        environment,
+                        item.uid,
+                    )
+                ] = ("BondBy", item.uid)
+                tasks[
+                    reads.submit(
+                        self._paced_evidence_read,
+                        self.market_tbank.get_bond_coupons,
                         credential,
                         environment,
                         item.uid,
@@ -911,7 +1009,7 @@ class BrokerService:
                 tasks[
                     reads.submit(
                         self._paced_evidence_read,
-                        self.tbank.get_bond_events,
+                        self.market_tbank.get_bond_events,
                         credential,
                         environment,
                         item.uid,
@@ -923,7 +1021,7 @@ class BrokerService:
                 tasks[
                     reads.submit(
                         self._paced_evidence_read,
-                        self.tbank.get_asset_reports,
+                        self.market_tbank.get_asset_reports,
                         credential,
                         environment,
                         item.uid,
@@ -977,8 +1075,11 @@ class BrokerService:
         *,
         now: datetime | None = None,
     ) -> BrokerEvidenceSnapshot:
-        record, credential, environment = self._connected_credential(user_id)
-        if (bundle.account_id != record.account_id or bundle.environment != environment):
+        record = self.database.tbank_connection(user_id)
+        if record is None:
+            raise BrokerNotConnected(_NOT_CONNECTED_MESSAGE)
+        credential, environment = self._market_credentials()
+        if bundle.account_id != record.account_id or bundle.environment != environment:
             raise BrokerConnectionError("evidence_account_changed")
         observed_at = (now or datetime.now(UTC)).astimezone(UTC)
         deadline = time.monotonic() + 180
@@ -988,13 +1089,10 @@ class BrokerService:
         held_positions = tuple(
             position
             for position in bundle.portfolio.positions
-            if position.instrument_type != "currency"
-            and Decimal(position.quantity) != 0
+            if position.instrument_type != "currency" and Decimal(position.quantity) != 0
         )
         held_uids = {
-            position.instrument_uid
-            for position in held_positions
-            if position.instrument_uid
+            position.instrument_uid for position in held_positions if position.instrument_uid
         }
         held_figis = {position.figi for position in held_positions if position.figi}
         metadata = tuple(
@@ -1081,23 +1179,10 @@ class BrokerService:
         )
 
     def user_info(self, user_id: UUID) -> TBankUserInfo:
-        record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.get_user_info(credential, environment)
-        self._require_current_connection(record)
-        return result
+        raise BrokerConnectionError("broker_data_scope_restricted")
 
     def revalidate_account(self, user_id: UUID) -> TBankAccount:
-        record, credential, environment = self._connected_credential(user_id)
-        accounts = self.tbank.get_accounts(credential, environment)
-        account = next((item for item in accounts if item.id == record.account_id), None)
-        if account is None or account.status != "ACCOUNT_STATUS_OPEN":
-            raise BrokerAccountNotAccessible("selected T-Invest account is no longer open")
-        if account.access_level not in {
-            "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS",
-            "ACCOUNT_ACCESS_LEVEL_READ_ONLY",
-        }:
-            raise BrokerAccountNotAccessible("T-Invest read access could not be verified")
-        self._require_current_connection(record)
+        _record, _credential, account = self._validated_connection(user_id)
         return account
 
     def history_page(
@@ -1109,115 +1194,88 @@ class BrokerService:
         cursor: str = "",
         limit: int = OPERATIONS_MAX_PAGE_SIZE,
     ) -> TBankOperationsPage:
-        record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.get_operations_by_cursor(
-            credential,
-            environment,
-            record.account_id,
-            from_at=from_at,
-            to_at=to_at,
-            cursor=cursor,
-            limit=limit,
-        )
-        self._require_current_connection(record)
-        return result
+        raise BrokerConnectionError("broker_data_scope_restricted")
 
-    def usd_rub_quote(self, user_id: UUID) -> TBankFxQuote:
-        record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.get_usd_rub_quote(credential, environment)
-        self._require_current_connection(record)
+    def usd_rub_quote(self, _user_id: UUID) -> TBankFxQuote:
+        credential, environment = self._market_credentials()
+        result = self.market_tbank.get_usd_rub_quote(credential, environment)
         return result
 
     def search_instruments(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         *,
         query: str,
         limit: int = 20,
     ) -> tuple[TBankInstrument, ...]:
-        record, credential, environment = self._connected_credential(user_id)
-        result = self.tbank.find_instruments(
+        credential, environment = self._market_credentials()
+        result = self.market_tbank.find_instruments(
             credential,
             environment,
             query,
             limit=limit,
         )
-        self._require_current_connection(record)
         return result
 
     def disconnect(self, user_id: UUID) -> bool:
         return self.database.delete_tbank_connection(user_id)
 
     def live_account(self, user_id: UUID) -> TBankAccount:
-        record, _credential, _environment = self._prod_credential(
-            user_id,
-            require_full_access=True,
-        )
-        account = self.revalidate_account(user_id)
-        if (
-            account.id != record.account_id
-            or account.access_level != "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS"
-        ):
-            raise BrokerLiveRequired(
-                "R7 live execution requires an open account with full access"
-            )
-        return account
-
-    def _live_credential(
-        self,
-        user_id: UUID,
-    ) -> tuple[TBankConnectionRecord, str, TBankEnvironment]:
-        return self._prod_credential(user_id, require_full_access=True)
-
-    def _prod_credential(
-        self,
-        user_id: UUID,
-        *,
-        require_full_access: bool,
-    ) -> tuple[TBankConnectionRecord, str, TBankEnvironment]:
-        record, credential, environment = self._connected_credential(user_id)
-        if environment != "prod":
-            raise BrokerLiveRequired(
-                "R7 live execution requires the exact production broker connection"
-            )
-        accounts = self.tbank.get_accounts(credential, environment)
-        selected = next(
-            (account for account in accounts if account.id == record.account_id),
-            None,
-        )
-        if selected is None or selected.status != "ACCOUNT_STATUS_OPEN":
-            raise BrokerLiveRequired("R7 production account is no longer open")
-        allowed = {"ACCOUNT_ACCESS_LEVEL_FULL_ACCESS"}
-        if not require_full_access:
-            allowed.add("ACCOUNT_ACCESS_LEVEL_READ_ONLY")
-        if selected.access_level not in allowed:
-            raise BrokerLiveRequired("R7 production account access is not sufficient")
-        self._require_current_connection(record)
-        return record, credential, environment
-
-    def _sandbox_credential(
-        self,
-        user_id: UUID,
-    ) -> tuple[TBankConnectionRecord, str, TBankEnvironment]:
-        record, credential, environment = self._connected_credential(user_id)
-        if environment != "sandbox":
-            raise BrokerSandboxRequired(
-                "R6 sandbox execution requires a sandbox broker connection"
-            )
-        return record, credential, environment
+        raise BrokerConnectionError("broker_execution_disabled")
 
     def _connected_credential(
         self,
         user_id: UUID,
     ) -> tuple[TBankConnectionRecord, str, TBankEnvironment]:
+        record, credential, _account = self._validated_connection(user_id)
+        return record, credential, "prod"
+
+    def _validated_connection(
+        self,
+        user_id: UUID,
+    ) -> tuple[TBankConnectionRecord, str, TBankAccount]:
         record = self.database.tbank_connection(user_id)
         if record is None:
-            raise BrokerNotConnected("T-Invest is not connected")
-        if record.environment not in {"prod", "sandbox"}:
-            raise BrokerConnectionError("stored T-Invest environment is invalid")
-        environment = cast(TBankEnvironment, record.environment)
+            raise BrokerNotConnected(_NOT_CONNECTED_MESSAGE)
+        if record.environment != "prod":
+            raise BrokerAccountNotAccessible("only a real read-only broker account is supported")
         credential = decrypt_secret(record.encrypted_credential, self.credential_key)
-        return record, credential, environment
+        accounts = self.preview_accounts(credential=credential, environment="prod")
+        account = next((item for item in accounts if item.id == record.account_id), None)
+        if account is None or account.status != "ACCOUNT_STATUS_OPEN":
+            raise BrokerAccountNotAccessible("selected T-Invest account is no longer open")
+        self._require_current_connection(record)
+        return record, credential, account
+
+    def _market_credentials(self) -> tuple[str, TBankEnvironment]:
+        if not self._market_credential:
+            raise TBankUnavailable("shared_market_source_unavailable")
+        return self._market_credential, "prod"
+
+    def market_status(self) -> MarketSourceStatus:
+        return MarketSourceStatus(
+            bool(self._market_credential),
+            "tbank",
+            self._market_configuration_id,
+        )
+
+    def market_catalog(self) -> tuple[TBankInstrumentMetadata, ...]:
+        credential, environment = self._market_credentials()
+        empty = TBankPortfolio(None, None, None, None, (), ())
+        metadata, _methods, status = self._read_catalog(
+            credential,
+            environment,
+            empty,
+            full_catalog=True,
+        )
+        if status != "received":
+            raise TBankUnavailable("shared_market_catalog_incomplete")
+        self._remember_metadata(metadata)
+        return metadata
+
+    def market_all_last_prices(self) -> TBankLastPriceBatch:
+        credential, environment = self._market_credentials()
+        return self.market_tbank.get_all_last_prices(credential, environment)
 
     def _require_current_connection(self, expected: TBankConnectionRecord) -> None:
         if self.database.tbank_connection(expected.user_id) != expected:
@@ -1229,6 +1287,6 @@ def _status(record: TBankConnectionRecord) -> BrokerConnectionStatus:
         connected=True,
         environment=record.environment,
         account_id=record.account_id,
-        account_name=record.account_name,
+        account_name=_ACCOUNT_DISPLAY_NAME,
         verified_at=record.verified_at,
     )

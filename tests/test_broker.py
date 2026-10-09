@@ -6,7 +6,7 @@ import socket
 import ssl
 import urllib.error
 from contextlib import contextmanager
-from dataclasses import asdict, replace
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from functools import partial
@@ -21,7 +21,6 @@ from omnicio.broker import (
     BrokerAccountNotAccessible,
     BrokerConnectionError,
     BrokerNotConnected,
-    BrokerSandboxRequired,
     BrokerService,
 )
 from omnicio.db import TBankConnectionRecord
@@ -29,7 +28,6 @@ from omnicio.market import MarketService
 from omnicio.tbank import (
     TBankAccount,
     TBankAccruedInterest,
-    TBankAssetTotal,
     TBankFxQuote,
     TBankHistoricCandle,
     TBankInstrument,
@@ -38,20 +36,16 @@ from omnicio.tbank import (
     TBankLastPrice,
     TBankMarketYield,
     TBankMoney,
-    TBankNewsItem,
-    TBankNewsPage,
     TBankNotFound,
     TBankOrderBook,
     TBankOrderLevel,
-    TBankPortfolio,
     TBankPortfolioPosition,
     TBankPositions,
     TBankRating,
-    TBankSandboxCancelResult,
     TBankTokenRejected,
     TBankTradingStatus,
     TBankUnavailable,
-    TBankUserInfo,
+    TBankWithdrawLimits,
 )
 
 
@@ -107,7 +101,7 @@ def test_fund_profile_reads_explicit_expense_percent_and_preserves_provider_iden
             },
         }
     }
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     with patch.object(TBankInvestClient, "_post", return_value=payload) as post:
         value = client.get_fund_profile("test-fixture", "prod", "fund-asset")
     assert value.total_expense_percent == "0.75"
@@ -136,7 +130,7 @@ def test_provider_news_keeps_exact_instrument_links_cursor_and_untrusted_text():
             }
         ],
     }
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     with patch.object(TBankInvestClient, "_post", return_value=payload) as post:
         page = client.get_news("test-fixture", "prod", cursor="20", limit=3)
     assert page.next_cursor == "15"
@@ -158,7 +152,7 @@ def test_provider_news_keeps_exact_instrument_links_cursor_and_untrusted_text():
 def test_news_default_page_and_validation_share_the_provider_ceiling() -> None:
     from omnicio.tbank import NEWS_MAX_PAGE_SIZE
 
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     over_limit = NEWS_MAX_PAGE_SIZE + 1
     with patch.object(TBankInvestClient, "_post", return_value={"nextCursor": "0"}) as post:
         assert client.get_news("test-fixture", "prod").items == ()
@@ -177,29 +171,32 @@ def test_provider_news_terminal_flag_overrides_remaining_cursor(has_next: bool |
     if has_next is not None:
         payload["hasNext"] = has_next
     with patch.object(TBankInvestClient, "_post", return_value=payload):
-        page = TBankInvestClient().get_news("test-fixture", "prod", cursor="20")
+        page = TBankInvestClient(purpose="market").get_news("test-fixture", "prod", cursor="20")
     assert page.next_cursor is None
     assert len(page.items) == 1
 
 
 def test_provider_news_accepts_empty_protojson_terminal_page() -> None:
     with patch.object(TBankInvestClient, "_post", return_value={}):
-        page = TBankInvestClient().get_news("test-fixture", "prod")
+        page = TBankInvestClient(purpose="market").get_news("test-fixture", "prod")
     assert page.items == ()
     assert page.next_cursor is None
 
 
-@pytest.mark.parametrize("payload", [
-    {"hasNext": "false", "nextCursor": "15"},
-    {"hasNext": 1, "nextCursor": "15"},
-    {"hasNext": True},
-    {"hasNext": True, "nextCursor": "0"},
-    {"hasNext": True, "nextCursor": "020"},
-    {"hasNext": True, "nextCursor": "9223372036854775808"},
-    {"hasNext": True, "nextCursor": "-1"},
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"hasNext": "false", "nextCursor": "15"},
+        {"hasNext": 1, "nextCursor": "15"},
+        {"hasNext": True},
+        {"hasNext": True, "nextCursor": "0"},
+        {"hasNext": True, "nextCursor": "020"},
+        {"hasNext": True, "nextCursor": "9223372036854775808"},
+        {"hasNext": True, "nextCursor": "-1"},
+    ],
+)
 def test_provider_news_rejects_invalid_flag_or_nonadvancing_continuation(payload: dict) -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     with (
         patch.object(TBankInvestClient, "_post", return_value={**payload, "items": []}),
         pytest.raises(TBankUnavailable),
@@ -231,52 +228,20 @@ def test_tbank_get_accounts_uses_bearer_without_exposing_token() -> None:
     assert accounts == [
         TBankAccount(
             id="account-1",
-            name="Основной",
+            name="Брокерский счёт",
             type="ACCOUNT_TYPE_TINKOFF",
             status="ACCOUNT_STATUS_OPEN",
-            opened_at=datetime(2024, 1, 2, 3, 4, 5, tzinfo=UTC),
             access_level="ACCOUNT_ACCESS_LEVEL_READ_ONLY",
         )
     ]
     request = urlopen.call_args.args[0]
     assert request.full_url.endswith("UsersService/GetAccounts")
     assert request.get_header("Authorization") == f"Bearer {credential}"
-    assert json.loads(request.data.decode()) == {"status": "ACCOUNT_STATUS_OPEN"}
-
-
-def test_tbank_get_user_info_parses_qualification_context() -> None:
-    credential = "t.fake-owner-credential-1234567890"
-    client = TBankInvestClient()
-    response = FakeResponse(
-        {
-            "premStatus": False,
-            "qualStatus": True,
-            "qualifiedForWorkWith": ["bond", "russian_shares"],
-            "tariff": "Investor",
-            "riskLevelCode": "CONSERVATIVE",
-            "userId": "provider-user-id",
-        }
-    )
-
-    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
-        info = client.get_user_info(credential, "prod")
-
-    assert info == TBankUserInfo(
-        premium=False,
-        qualified=True,
-        qualified_for_work_with=("bond", "russian_shares"),
-        tariff="Investor",
-        risk_level_code="CONSERVATIVE",
-    )
-    request = urlopen.call_args.args[0]
-    assert request.full_url.endswith("UsersService/GetInfo")
-    assert request.get_header("Authorization") == f"Bearer {credential}"
-    assert json.loads(request.data.decode()) == {}
-    assert "provider-user-id" not in repr(info)
+    assert json.loads(request.data.decode()) == {"status": "ACCOUNT_STATUS_ALL"}
 
 
 def test_tbank_bond_ratings_are_read_only_and_keep_agency_metadata() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "instrument": {
@@ -333,7 +298,7 @@ def test_tbank_bond_ratings_are_read_only_and_keep_agency_metadata() -> None:
 
 
 def test_tbank_market_yields_are_batched_read_only_shortlist_signals() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "instruments": [
@@ -384,7 +349,7 @@ def test_tbank_market_yields_are_batched_read_only_shortlist_signals() -> None:
 
 
 def test_tbank_order_book_preserves_lot_depth_and_consistency() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "instrumentUid": "bond-uid",
@@ -417,210 +382,9 @@ def test_tbank_order_book_preserves_lot_depth_and_consistency() -> None:
     }
 
 
-def test_sandbox_mutation_rejects_production_environment_before_network() -> None:
-    client = TBankInvestClient()
-    with (
-        patch("urllib.request.OpenerDirector.open") as urlopen,
-        pytest.raises(ValueError, match="sandbox environment"),
-    ):
-        client.cancel_sandbox_order(
-            "t.fake-owner-credential-1234567890",
-            "prod",
-            "account-1",
-            request_id="00000000-0000-0000-0000-000000000702",
-        )
-    urlopen.assert_not_called()
-
-
-def test_get_sandbox_order_state_reconciles_by_request_id() -> None:
-    client = TBankInvestClient()
-    request_id = "00000000-0000-0000-0000-000000000703"
-    response = FakeResponse(
-        {
-            "orderId": "exchange-order-2",
-            "orderRequestId": request_id,
-            "instrumentUid": "bond-uid",
-            "executionReportStatus": "EXECUTION_REPORT_STATUS_PARTIALLYFILL",
-            "lotsRequested": "3",
-            "lotsExecuted": "1",
-            "totalOrderAmount": {"currency": "rub", "units": "1000", "nano": 0},
-            "executedCommission": {"currency": "rub", "units": "2", "nano": 0},
-            "direction": "ORDER_DIRECTION_SELL",
-            "orderType": "ORDER_TYPE_LIMIT",
-        }
-    )
-    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
-        state = client.get_sandbox_order_state(
-            "t.fake-owner-credential-1234567890",
-            "sandbox",
-            "account-1",
-            request_id=request_id,
-            price_type="point",
-        )
-
-    assert state.lots_executed == 1
-    request = urlopen.call_args.args[0]
-    assert request.full_url.endswith("SandboxService/GetSandboxOrderState")
-    assert json.loads(request.data.decode()) == {
-        "accountId": "account-1",
-        "orderId": request_id,
-        "priceType": "PRICE_TYPE_POINT",
-        "orderIdType": "ORDER_ID_TYPE_REQUEST",
-    }
-
-
-def test_cancel_sandbox_order_uses_request_id_not_exchange_guess() -> None:
-    client = TBankInvestClient()
-    request_id = "00000000-0000-0000-0000-000000000704"
-    response = FakeResponse({"time": "2026-10-03T09:30:00Z"})
-    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
-        result = client.cancel_sandbox_order(
-            "t.fake-owner-credential-1234567890",
-            "sandbox",
-            "account-1",
-            request_id=request_id,
-        )
-
-    assert result == TBankSandboxCancelResult(cancelled_at=datetime(2026, 10, 3, 9, 30, tzinfo=UTC))
-    request = urlopen.call_args.args[0]
-    assert json.loads(request.data.decode()) == {
-        "accountId": "account-1",
-        "orderId": request_id,
-        "orderIdType": "ORDER_ID_TYPE_REQUEST",
-    }
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"premStatus": "false", "qualStatus": False},
-        {"premStatus": False, "qualStatus": "false"},
-        {"premStatus": None, "qualStatus": False},
-        {"premStatus": False, "qualStatus": None},
-        {"premStatus": False, "qualStatus": False, "qualifiedForWorkWith": "bond"},
-    ],
-)
-def test_tbank_get_user_info_rejects_malformed_capabilities(
-    payload: dict[str, object],
-) -> None:
-    client = TBankInvestClient()
-    with (
-        patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(payload)),
-        pytest.raises(TBankUnavailable),
-    ):
-        client.get_user_info("t.fake-owner-credential-1234567890", "prod")
-
-
-def test_tbank_get_user_info_accepts_omitted_implicit_false_flags() -> None:
-    with patch.object(TBankInvestClient, "_post", return_value={"tariff": "Investor"}):
-        result = TBankInvestClient().get_user_info("synthetic-token", "prod")
-    assert result.premium is False
-    assert result.qualified is False
-    assert result.qualified_for_work_with == ()
-    assert result.tariff == "Investor"
-
-
-def test_tbank_operation_history_uses_cursor_without_write_methods() -> None:
-    credential = "t.fake-owner-credential-1234567890"
-    client = TBankInvestClient()
-    response = FakeResponse(
-        {
-            "hasNext": True,
-            "nextCursor": "cursor-2",
-            "items": [
-                {
-                    "cursor": "cursor-1",
-                    "brokerAccountId": "account-1",
-                    "id": "operation-1",
-                    "parentOperationId": "",
-                    "name": "Покупка",
-                    "date": "2026-10-01T12:00:00Z",
-                    "type": "OPERATION_TYPE_BUY",
-                    "description": "Исполненная покупка",
-                    "state": "OPERATION_STATE_EXECUTED",
-                    "instrumentUid": "uid-1",
-                    "figi": "figi-1",
-                    "instrumentType": "share",
-                    "positionUid": "position-1",
-                    "ticker": "TEST",
-                    "classCode": "TQBR",
-                    "payment": {"currency": "rub", "units": "-100", "nano": 0},
-                    "price": {"currency": "rub", "units": "10", "nano": 0},
-                    "commission": {"currency": "rub", "units": "-1", "nano": 0},
-                    "accruedInt": {"currency": "rub", "units": "0", "nano": 0},
-                    "quantity": "10",
-                    "quantityRest": "0",
-                    "quantityDone": "10",
-                    "assetUid": "asset-1",
-                    "tradesInfo": {
-                        "trades": [
-                            {
-                                "num": "trade-1",
-                                "date": "2026-10-01T12:00:01Z",
-                                "quantity": "10",
-                                "price": {"currency": "rub", "units": "10", "nano": 0},
-                            }
-                        ]
-                    },
-                }
-            ],
-        }
-    )
-
-    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
-        page = client.get_operations_by_cursor(
-            credential,
-            "prod",
-            "account-1",
-            from_at=datetime(2026, 9, 1, tzinfo=UTC),
-            to_at=datetime(2026, 10, 2, tzinfo=UTC),
-            cursor="cursor-1",
-            limit=1000,
-        )
-
-    assert page.has_next is True
-    assert page.next_cursor == "cursor-2"
-    assert page.items[0].id == "operation-1"
-    assert page.items[0].quantity_done == "10"
-    assert page.items[0].trades[0].num == "trade-1"
-    request = urlopen.call_args.args[0]
-    assert request.full_url.endswith("OperationsService/GetOperationsByCursor")
-    assert "OrdersService" not in request.full_url
-    assert json.loads(request.data.decode()) == {
-        "accountId": "account-1",
-        "from": "2026-09-01T00:00:00Z",
-        "to": "2026-10-02T00:00:00Z",
-        "limit": 1000,
-        "state": "OPERATION_STATE_UNSPECIFIED",
-        "withoutCommissions": False,
-        "withoutTrades": False,
-        "withoutOvernights": False,
-        "cursor": "cursor-1",
-    }
-
-
-def test_tbank_operation_history_uses_operations_service_on_sandbox_host() -> None:
-    client = TBankInvestClient()
-    response = FakeResponse({"hasNext": False, "nextCursor": "", "items": []})
-
-    with patch("urllib.request.OpenerDirector.open", return_value=response) as urlopen:
-        client.get_operations_by_cursor(
-            "t.fake-owner-credential-1234567890",
-            "sandbox",
-            "account-1",
-            from_at=datetime(2026, 10, 1, tzinfo=UTC),
-            to_at=datetime(2026, 10, 2, tzinfo=UTC),
-        )
-
-    request = urlopen.call_args.args[0]
-    assert request.full_url.startswith("https://sandbox-invest-public-api.tbank.ru/rest/")
-    assert request.full_url.endswith("OperationsService/GetOperationsByCursor")
-    assert "SandboxService" not in request.full_url
-
-
 def test_tbank_find_instruments_filters_to_api_trade_available_results() -> None:
     credential = "t.fake-owner-credential-1234567890"
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "instruments": [
@@ -682,7 +446,7 @@ def test_tbank_find_instruments_filters_to_api_trade_available_results() -> None
 
 
 def test_tbank_find_instruments_rejects_blank_query_before_network_call() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
 
     with (
         patch("urllib.request.OpenerDirector.open") as urlopen,
@@ -699,7 +463,7 @@ def test_tbank_find_instruments_rejects_blank_query_before_network_call() -> Non
 
 def test_tbank_reads_latest_usd_rub_quote_without_hardcoded_instrument_id() -> None:
     credential = "t.fake-owner-credential-1234567890"
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     instruments_response = FakeResponse(
         {
             "instruments": [
@@ -799,108 +563,8 @@ def test_tbank_reads_latest_usd_rub_quote_without_hardcoded_instrument_id() -> N
     }
 
 
-def test_tbank_reads_portfolio_and_positions() -> None:
-    credential = "t.fake-owner-credential-1234567890"
-    client = TBankInvestClient()
-
-    portfolio_response = FakeResponse(
-        {
-            "totalAmountPortfolio": {"currency": "rub", "units": "125000", "nano": 500000000},
-            "totalAmountShares": {"currency": "rub", "units": "100000", "nano": 0},
-            "totalAmountCurrencies": {"currency": "rub", "units": "25000", "nano": 500000000},
-            "expectedYield": {"units": "12", "nano": 340000000},
-            "dailyYield": {"currency": "rub", "units": "540", "nano": 120000000},
-            "dailyYieldRelative": {"units": "0", "nano": 430000000},
-            "positions": [
-                {
-                    "ticker": "TEST",
-                    "figi": "BBG000TEST",
-                    "instrumentUid": "uid-1",
-                    "instrumentType": "share",
-                    "quantity": {"units": "10", "nano": 0},
-                    "currentPrice": {"currency": "rub", "units": "10000", "nano": 0},
-                    "averagePositionPrice": {"currency": "rub", "units": "9000", "nano": 0},
-                    "averagePositionPriceFifo": {"currency": "rub", "units": "8900", "nano": 0},
-                    "quantityLots": {"units": "1", "nano": 0},
-                    "expectedYield": {"units": "11", "nano": 110000000},
-                    "dailyYield": {"currency": "rub", "units": "100", "nano": 0},
-                    "currentNkd": {"currency": "rub", "units": "12", "nano": 500000000},
-                    "blocked": False,
-                    "blockedLots": {"units": "2", "nano": 0},
-                }
-            ],
-        }
-    )
-    positions_response = FakeResponse(
-        {
-            "money": [{"currency": "rub", "units": "25000", "nano": 500000000}],
-            "blocked": [{"currency": "rub", "units": "100", "nano": 0}],
-            "limitsLoadingInProgress": False,
-        }
-    )
-    with patch(
-        "urllib.request.OpenerDirector.open",
-        side_effect=[portfolio_response, positions_response],
-    ) as urlopen:
-        portfolio = client.get_portfolio(credential, "prod", "account-1")
-        positions = client.get_positions(credential, "prod", "account-1")
-
-    assert portfolio.total == TBankMoney(currency="RUB", value="125000.5")
-    assert portfolio.expected_yield_percent == "12.34"
-    assert portfolio.asset_totals[0] == TBankAssetTotal(
-        kind="shares",
-        money=TBankMoney(currency="RUB", value="100000"),
-    )
-    assert portfolio.positions[0].ticker == "TEST"
-    assert portfolio.positions[0].quantity == "10"
-    assert portfolio.positions[0].expected_yield_amount == "11.11"
-    assert portfolio.positions[0].current_nkd == TBankMoney(currency="RUB", value="12.5")
-    assert portfolio.positions[0].blocked_lots == "2"
-    assert positions.money == (TBankMoney(currency="RUB", value="25000.5"),)
-    assert positions.blocked_money == (TBankMoney(currency="RUB", value="100"),)
-    portfolio_request = urlopen.call_args_list[0].args[0]
-    positions_request = urlopen.call_args_list[1].args[0]
-    assert portfolio_request.full_url.endswith("OperationsService/GetPortfolio")
-    assert json.loads(portfolio_request.data.decode()) == {
-        "accountId": "account-1",
-        "currency": "RUB",
-    }
-    assert positions_request.full_url.endswith("OperationsService/GetPositions")
-
-
-@pytest.mark.parametrize(
-    ("position_fields", "expected_amount"),
-    [
-        ({}, None),
-        ({"expectedYield": None}, None),
-        ({"expectedYield": {"units": "0", "nano": 0}}, "0"),
-        ({"expectedYield": {"units": "-12", "nano": -500000000}}, "-12.5"),
-    ],
-)
-def test_position_yield_is_nullable_money_not_percent(
-    position_fields: dict[str, object], expected_amount: str | None
-) -> None:
-    response = FakeResponse(
-        {
-            "totalAmountPortfolio": {"currency": "rub", "units": "1000", "nano": 0},
-            "expectedYield": {"units": "5", "nano": 0},
-            "positions": [{"instrumentUid": "position-1", **position_fields}],
-        }
-    )
-    with patch("urllib.request.OpenerDirector.open", return_value=response):
-        portfolio = TBankInvestClient().get_portfolio(
-            "t.fake-owner-credential-1234567890", "prod", "account-1"
-        )
-
-    assert portfolio.expected_yield_percent == "5"
-    assert portfolio.positions[0].expected_yield_amount == expected_amount
-    position_document = asdict(portfolio.positions[0])
-    assert position_document["expected_yield_amount"] == expected_amount
-    assert "expected_yield_percent" not in position_document
-
-
 def test_metadata_adapter_preserves_unknown_qualification_and_all_status_records() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "instruments": [
@@ -945,7 +609,7 @@ def test_metadata_adapter_preserves_unknown_qualification_and_all_status_records
 
 
 def test_bond_metadata_preserves_structure_required_for_r4_screening() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "instruments": [
@@ -993,7 +657,7 @@ def test_bond_metadata_preserves_structure_required_for_r4_screening() -> None:
 
 
 def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
     response = FakeResponse(
         {
@@ -1048,19 +712,25 @@ def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> 
 @pytest.mark.parametrize(
     "source_fields",
     [
-        {}, {"candleSource": None}, {"candleSource": "CANDLE_SOURCE_DEALER_WEEKEND"},
+        {},
+        {"candleSource": None},
+        {"candleSource": "CANDLE_SOURCE_DEALER_WEEKEND"},
         {"candleSource": "CANDLE_SOURCE_EXCHANGE", "candleSourceType": None},
-        {"candleSource": "CANDLE_SOURCE_EXCHANGE",
-         "candleSourceType": "CANDLE_SOURCE_DEALER_WEEKEND"},
-        {"candleSource": "CANDLE_SOURCE_DEALER_WEEKEND",
-         "candleSourceType": "CANDLE_SOURCE_EXCHANGE"},
+        {
+            "candleSource": "CANDLE_SOURCE_EXCHANGE",
+            "candleSourceType": "CANDLE_SOURCE_DEALER_WEEKEND",
+        },
+        {
+            "candleSource": "CANDLE_SOURCE_DEALER_WEEKEND",
+            "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+        },
     ],
 )
 def test_tbank_daily_candles_require_confirmed_exchange_source(
     source_fields: dict[str, str | None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
     candle: dict[str, object] = {
         "open": {"units": "100", "nano": 0},
@@ -1090,7 +760,7 @@ def test_tbank_daily_candles_require_confirmed_exchange_source(
 
 
 def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "lastPrices": [
@@ -1136,79 +806,50 @@ def test_tbank_last_prices_are_read_only_batched_quote_evidence() -> None:
     }
 
 
-@pytest.mark.parametrize("parts,expected", [
-    ({"units": "9223372036854775807", "nano": 999999999}, "9223372036854775807.999999999"),
-    ({"units": "-9223372036854775808", "nano": -999999999}, "-9223372036854775808.999999999"),
-    ({"units": "10", "nano": 2147483647}, "12.147483647"),
-    ({"units": "10", "nano": -2147483648}, "7.852516352"),
-    ({"units": "1e2", "nano": "1.0"}, "100.000000001"),
-    ({"units": 1.0, "nano": 1.0}, "1.000000001"),
-    ({"units": None, "nano": 1}, "0.000000001"),
-    ({"units": "1", "nano": None}, "1"),
-    ({"units": None, "nano": None}, "0"),
-    ({}, "0"),
-])
+@pytest.mark.parametrize(
+    "parts,expected",
+    [
+        ({"units": "9223372036854775807", "nano": 999999999}, "9223372036854775807.999999999"),
+        ({"units": "-9223372036854775808", "nano": -999999999}, "-9223372036854775808.999999999"),
+        ({"units": "10", "nano": 2147483647}, "12.147483647"),
+        ({"units": "10", "nano": -2147483648}, "7.852516352"),
+        ({"units": "1e2", "nano": "1.0"}, "100.000000001"),
+        ({"units": 1.0, "nano": 1.0}, "1.000000001"),
+        ({"units": None, "nano": 1}, "0.000000001"),
+        ({"units": "1", "nano": None}, "1"),
+        ({"units": None, "nano": None}, "0"),
+        ({}, "0"),
+    ],
+)
 def test_tbank_money_preserves_protojson_integer_edges_and_defaults(parts, expected) -> None:
     client = TBankInvestClient()
-    response = FakeResponse({"totalAmountPortfolio": {"currency": "RUB", **parts}})
+    response = FakeResponse({"money": [{"currency": "RUB", **parts}]})
     with patch("urllib.request.OpenerDirector.open", return_value=response):
-        portfolio = client.get_portfolio("synthetic-test-credential", "prod", "synthetic-account")
-    assert portfolio.total.value == expected
+        positions = client.get_positions("synthetic-test-credential", "prod", "synthetic-account")
+    assert positions.money[0].value == expected
 
 
-@pytest.mark.parametrize("quantity,expected", [
-    ("1e2", "100"), ("1.0", "1"), (1.0, "1"), (None, "0"),
-    ("9223372036854775807", "9223372036854775807"),
-])
-def test_tbank_all_operation_quantities_reuse_bounded_protojson_integer(quantity, expected) -> None:
-    now = datetime.now(UTC)
-    item = {"id": "operation-1", "date": now.isoformat(), "quantity": quantity,
-            "quantityRest": quantity, "quantityDone": quantity,
-            "tradesInfo": {"trades": [{"date": now.isoformat(), "quantity": quantity}]}}
-    client = TBankInvestClient()
-    with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse({"items": [item]})):
-        page = client.get_operations_by_cursor(
-            "synthetic-test-credential", "prod", "synthetic-account",
-            from_at=now - timedelta(days=1), to_at=now,
-        )
-    row = page.items[0]
-    assert (row.quantity, row.quantity_rest, row.quantity_done, row.trades[0].quantity) == (
-        expected, expected, expected, expected,
-    )
-
-
-def test_operation_history_cannot_attribute_another_accounts_operations_to_requested_account():
-    now = datetime.now(UTC)
-    start = now - timedelta(days=1)
-    client = TBankInvestClient()
-    body = {"items": [{"id": "operation", "date": now.isoformat(),
-                       "brokerAccountId": "other-account"}]}
-    with (
-        patch.object(TBankInvestClient, "_post", return_value=body),
-        pytest.raises(TBankUnavailable, match="different account"),
-    ):
-        client.get_operations_by_cursor(
-            "synthetic-test-credential", "prod", "requested-account",
-            from_at=start, to_at=now,
-        )
-
-
-@pytest.mark.parametrize("parts", [
-    {"units": "9223372036854775808"}, {"units": "-9223372036854775809"},
-    {"nano": 2147483648}, {"nano": -2147483649},
-])
+@pytest.mark.parametrize(
+    "parts",
+    [
+        {"units": "9223372036854775808"},
+        {"units": "-9223372036854775809"},
+        {"nano": 2147483648},
+        {"nano": -2147483649},
+    ],
+)
 def test_tbank_money_rejects_parts_outside_signed_wire_types(parts) -> None:
     client = TBankInvestClient()
-    response = FakeResponse({"totalAmountPortfolio": {"currency": "RUB", **parts}})
+    response = FakeResponse({"money": [{"currency": "RUB", **parts}]})
     with (
         patch("urllib.request.OpenerDirector.open", return_value=response),
         pytest.raises(TBankUnavailable),
     ):
-        client.get_portfolio("synthetic-test-credential", "prod", "synthetic-account")
+        client.get_positions("synthetic-test-credential", "prod", "synthetic-account")
 
 
 def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
     response = FakeResponse(
         {
@@ -1264,24 +905,33 @@ def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> 
     }
 
 
-@pytest.mark.parametrize("source_fields", [
-    {"candleSource": "CANDLE_SOURCE_EXCHANGE"},
-    {"candleSourceType": "CANDLE_SOURCE_EXCHANGE"},
-    {"candleSource": "CANDLE_SOURCE_EXCHANGE", "candleSourceType": "CANDLE_SOURCE_EXCHANGE"},
-])
+@pytest.mark.parametrize(
+    "source_fields",
+    [
+        {"candleSource": "CANDLE_SOURCE_EXCHANGE"},
+        {"candleSourceType": "CANDLE_SOURCE_EXCHANGE"},
+        {"candleSource": "CANDLE_SOURCE_EXCHANGE", "candleSourceType": "CANDLE_SOURCE_EXCHANGE"},
+    ],
+)
 def test_tbank_live_candle_defaults_preserve_unfinished_zero_volume(source_fields) -> None:
     # HistoricCandle.candle_source is a response field; the request's source
     # field differs. Proto3 omits implicit false/zero scalars from JSON.
     row = {
-        "open": {"units": "100"}, "high": {"units": "102"},
-        "low": {"units": "99"}, "close": {"units": "101"},
-        "time": "2026-10-09T06:30:00Z", **source_fields,
+        "open": {"units": "100"},
+        "high": {"units": "102"},
+        "low": {"units": "99"},
+        "close": {"units": "101"},
+        "time": "2026-10-09T06:30:00Z",
+        **source_fields,
     }
     with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse({"candles": [row]})):
-        result = TBankInvestClient().get_exchange_candles(
-            "synthetic-test-credential", "prod", "uid-1",
+        result = TBankInvestClient(purpose="market").get_exchange_candles(
+            "synthetic-test-credential",
+            "prod",
+            "uid-1",
             from_at=datetime(2026, 10, 8, 7, tzinfo=UTC),
-            to_at=datetime(2026, 10, 9, 7, tzinfo=UTC), interval="CANDLE_INTERVAL_5_MIN",
+            to_at=datetime(2026, 10, 9, 7, tzinfo=UTC),
+            interval="CANDLE_INTERVAL_5_MIN",
         )
     assert len(result) == 1
     assert result[0].source == "CANDLE_SOURCE_EXCHANGE"
@@ -1293,16 +943,22 @@ def test_tbank_live_candle_defaults_preserve_unfinished_zero_volume(source_field
 @pytest.mark.parametrize("field", ["isComplete", "volume", "candleSource"])
 def test_tbank_candle_explicit_null_never_becomes_a_proto_default(field: str) -> None:
     row = {
-        "open": {"units": "100"}, "high": {"units": "102"},
-        "low": {"units": "99"}, "close": {"units": "101"},
-        "time": "2026-10-09T06:30:00Z", "candleSource": "CANDLE_SOURCE_EXCHANGE",
+        "open": {"units": "100"},
+        "high": {"units": "102"},
+        "low": {"units": "99"},
+        "close": {"units": "101"},
+        "time": "2026-10-09T06:30:00Z",
+        "candleSource": "CANDLE_SOURCE_EXCHANGE",
         field: None,
     }
     read = partial(
-        TBankInvestClient().get_exchange_candles,
-        "synthetic-test-credential", "prod", "uid-1",
+        TBankInvestClient(purpose="market").get_exchange_candles,
+        "synthetic-test-credential",
+        "prod",
+        "uid-1",
         from_at=datetime(2026, 10, 8, 7, tzinfo=UTC),
-        to_at=datetime(2026, 10, 9, 7, tzinfo=UTC), interval="CANDLE_INTERVAL_5_MIN",
+        to_at=datetime(2026, 10, 9, 7, tzinfo=UTC),
+        interval="CANDLE_INTERVAL_5_MIN",
     )
     with (
         patch("urllib.request.OpenerDirector.open", return_value=FakeResponse({"candles": [row]})),
@@ -1311,24 +967,36 @@ def test_tbank_candle_explicit_null_never_becomes_a_proto_default(field: str) ->
         read()
 
 
-@pytest.mark.parametrize("method, field", [("GetCandles", "candles"),
-                                           ("GetLastPrices", "lastPrices")])
+@pytest.mark.parametrize(
+    "method, field", [("GetCandles", "candles"), ("GetLastPrices", "lastPrices")]
+)
 @pytest.mark.parametrize("explicit_null", [False, True])
 def test_tbank_market_empty_repeated_fields_are_distinct_from_malformed_null(
-    method: str, field: str, explicit_null: bool,
+    method: str,
+    field: str,
+    explicit_null: bool,
 ) -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     read = (
-        partial(client.get_exchange_candles, "synthetic-test-credential", "prod", "uid-1",
-                from_at=datetime(2026, 10, 8, tzinfo=UTC),
-                to_at=datetime(2026, 10, 9, tzinfo=UTC), interval="CANDLE_INTERVAL_5_MIN")
-        if method == "GetCandles" else
-        partial(client.get_last_prices, "synthetic-test-credential", "prod", ("uid-1",))
+        partial(
+            client.get_exchange_candles,
+            "synthetic-test-credential",
+            "prod",
+            "uid-1",
+            from_at=datetime(2026, 10, 8, tzinfo=UTC),
+            to_at=datetime(2026, 10, 9, tzinfo=UTC),
+            interval="CANDLE_INTERVAL_5_MIN",
+        )
+        if method == "GetCandles"
+        else partial(client.get_last_prices, "synthetic-test-credential", "prod", ("uid-1",))
     )
-    with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(
-        {field: None} if explicit_null else {},
-    )):
-        if explicit_null:
+    with patch(
+        "urllib.request.OpenerDirector.open",
+        return_value=FakeResponse(
+            {field: None} if explicit_null else {},
+        ),
+    ):
+        if explicit_null or method == "GetLastPrices":
             with pytest.raises(TBankUnavailable):
                 read()
         else:
@@ -1339,7 +1007,7 @@ def test_tbank_market_empty_repeated_fields_are_distinct_from_malformed_null(
 def test_tbank_exchange_candles_reject_too_short_window_before_network(
     urlopen: Mock,
 ) -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     now = datetime(2026, 10, 3, 5, 0, tzinfo=UTC)
     from_at = now - timedelta(minutes=4, seconds=59)
 
@@ -1357,7 +1025,7 @@ def test_tbank_exchange_candles_reject_too_short_window_before_network(
 
 
 def test_tbank_trading_status_is_bound_to_requested_instrument() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "instrumentUid": "uid-1",
@@ -1398,13 +1066,18 @@ def test_tbank_trading_status_is_bound_to_requested_instrument() -> None:
 def test_tbank_trading_status_implicit_false_cannot_enable_missing_permissions(
     explicit_null: bool,
 ) -> None:
-    payload = {"instrumentUid": "uid-1",
-               "tradingStatus": "SECURITY_TRADING_STATUS_NORMAL_TRADING",
-               "apiTradeAvailableFlag": True}
+    payload = {
+        "instrumentUid": "uid-1",
+        "tradingStatus": "SECURITY_TRADING_STATUS_NORMAL_TRADING",
+        "apiTradeAvailableFlag": True,
+    }
     if explicit_null:
         payload["onlyBestPrice"] = None
     read = partial(
-        TBankInvestClient().get_trading_status, "synthetic-test-credential", "prod", "uid-1",
+        TBankInvestClient(purpose="market").get_trading_status,
+        "synthetic-test-credential",
+        "prod",
+        "uid-1",
     )
     with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(payload)):
         if explicit_null:
@@ -1414,12 +1087,18 @@ def test_tbank_trading_status_implicit_false_cannot_enable_missing_permissions(
             result = read()
             assert result.trading_status == "SECURITY_TRADING_STATUS_NORMAL_TRADING"
             assert result.api_trade_available is True
-            assert not any((result.limit_order_available, result.market_order_available,
-                            result.best_price_order_available, result.only_best_price))
+            assert not any(
+                (
+                    result.limit_order_available,
+                    result.market_order_available,
+                    result.best_price_order_available,
+                    result.only_best_price,
+                )
+            )
 
 
 def test_tbank_accrued_interest_preserves_value_and_timestamp() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "accruedInterests": [
@@ -1473,7 +1152,7 @@ def test_accrued_interest_never_accepts_invalid_money_or_ambiguous_observations(
     if invalid == "zero_nominal":
         row["nominal"] = {"units": "0", "nano": 0}
     payload = {"accruedInterests": [row, row] if invalid == "duplicate_date" else [row]}
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     begin, end = datetime(2026, 10, 2, tzinfo=UTC), datetime(2026, 10, 3, tzinfo=UTC)
     with (
         patch.object(TBankInvestClient, "_post", return_value=payload),
@@ -1493,7 +1172,7 @@ def test_accrued_interest_never_accepts_invalid_money_or_ambiguous_observations(
 def test_malformed_metadata_cannot_look_like_a_valid_catalog(
     payload: dict[str, object],
 ) -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(payload)
 
     with (
@@ -1509,7 +1188,7 @@ def test_malformed_metadata_cannot_look_like_a_valid_catalog(
 
 @pytest.mark.parametrize("units", ["NaN", "Infinity"])
 def test_non_finite_broker_money_fails_at_provider_boundary(units: str) -> None:
-    payload = {"totalAmountPortfolio": {"currency": "rub", "units": units}}
+    payload = {"money": [{"currency": "rub", "units": units}]}
     client = TBankInvestClient()
     response = FakeResponse(payload)
 
@@ -1517,7 +1196,7 @@ def test_non_finite_broker_money_fails_at_provider_boundary(units: str) -> None:
         patch("urllib.request.OpenerDirector.open", return_value=response),
         pytest.raises(TBankUnavailable),
     ):
-        client.get_portfolio(
+        client.get_positions(
             "t.fake-owner-credential-1234567890",
             "prod",
             "account-1",
@@ -1560,18 +1239,28 @@ def test_tbank_preserves_http_error_authority_without_response_body(
 
 
 @pytest.mark.parametrize("failure", ["truncated", "invalid_utf8"])
-@pytest.mark.parametrize("consumer", ["quote_client", "market", "order_client"])
+@pytest.mark.parametrize("consumer", ["quote_client", "market"])
 def test_tbank_real_response_failure_is_safe_and_never_replays(failure, consumer, caplog) -> None:
     credential = "synthetic-credential-must-not-leak"
     body = b'{"lastPrices":[' if failure == "truncated" else b'{"secret":"\xff"}'
     length = len(body) + (200 if failure == "truncated" else 0)
-    client, broker = TBankInvestClient(), Mock()
+    client, broker = TBankInvestClient(purpose="market"), Mock()
     broker.status.return_value = "synthetic-account"
     broker.market_last_prices.side_effect = lambda owner, uids: client.get_last_prices_batch(
-        credential, "prod", uids,
+        credential,
+        "prod",
+        uids,
     )
     broker.market_instrument_metadata.return_value = TBankInstrumentMetadata(
-        "uid-1", "Synthetic share", "SYN", "", "share", "", "RU", False, currency="RUB",
+        "uid-1",
+        "Synthetic share",
+        "SYN",
+        "",
+        "share",
+        "",
+        "RU",
+        False,
+        currency="RUB",
     )
     service = MarketService(broker=broker, cbr=Mock())
     receiver, sender = socket.socketpair()
@@ -1588,13 +1277,26 @@ def test_tbank_real_response_failure_is_safe_and_never_replays(failure, consumer
                     assert item["last_price"] is None
                     assert item["errors"]["quote"] == "source_unavailable"
                 else:
-                    operation = (partial(
-                        client.get_last_prices_batch, credential, "prod", ("uid-1",),
-                    ) if consumer == "quote_client" else partial(
-                        client.submit_limit_order, credential, "sandbox", "synthetic-account",
-                        instrument_uid="uid-1", lots=1, price=Decimal("10"),
-                        action="buy", request_id=str(UUID(int=2)),
-                    ))
+                    operation = (
+                        partial(
+                            client.get_last_prices_batch,
+                            credential,
+                            "prod",
+                            ("uid-1",),
+                        )
+                        if consumer == "quote_client"
+                        else partial(
+                            client.submit_limit_order,
+                            credential,
+                            "sandbox",
+                            "synthetic-account",
+                            instrument_uid="uid-1",
+                            lots=1,
+                            price=Decimal("10"),
+                            action="buy",
+                            request_id=str(UUID(int=2)),
+                        )
+                    )
                     with pytest.raises(TBankUnavailable) as failure_result:
                         operation()
                     assert credential not in str(failure_result.value)
@@ -1632,7 +1334,7 @@ class FakeTBank:
         return self.accounts
 
     def get_usd_rub_quote(self, credential: str, environment: str):
-        assert credential == "t.fake-owner-credential-1234567890"
+        assert credential == "synthetic-shared-market-token"
         assert environment == "prod"
         return TBankFxQuote(
             instrument_uid="uid-usd-rub",
@@ -1654,7 +1356,7 @@ class FakeTBank:
         *,
         limit: int = 20,
     ):
-        assert credential == "t.fake-owner-credential-1234567890"
+        assert credential == "synthetic-shared-market-token"
         assert environment == "prod"
         assert query == "SBER"
         assert limit == 20
@@ -1674,17 +1376,7 @@ class FakeTBank:
         )
 
     def get_portfolio(self, credential: str, environment: str, account_id: str):
-        assert credential == "t.fake-owner-credential-1234567890"
-        assert environment == "prod"
-        assert account_id == "account-1"
-        return TBankPortfolio(
-            total=TBankMoney(currency="RUB", value="1000"),
-            expected_yield_percent="5",
-            daily_yield=TBankMoney(currency="RUB", value="10"),
-            daily_yield_percent="1",
-            asset_totals=(),
-            positions=(),
-        )
+        raise AssertionError("private portfolio statistics are forbidden")
 
     def get_positions(self, credential: str, environment: str, account_id: str):
         assert credential == "t.fake-owner-credential-1234567890"
@@ -1695,6 +1387,12 @@ class FakeTBank:
             blocked_money=(),
             limits_loading_in_progress=False,
         )
+
+    def get_withdraw_limits(self, credential: str, environment: str, account_id: str):
+        assert credential == "t.fake-owner-credential-1234567890"
+        assert environment == "prod"
+        assert account_id == "account-1"
+        return TBankWithdrawLimits((TBankMoney("RUB", "100"),), (), ())
 
 
 class FakeDatabase:
@@ -1746,7 +1444,7 @@ def test_broker_sandbox_mutation_guard_rejects_prod_connection() -> None:
         terms_version="2026-10-01-v2",
     )
 
-    with pytest.raises(BrokerSandboxRequired):
+    with pytest.raises(BrokerConnectionError, match="broker_execution_disabled"):
         service.cancel_sandbox_order(
             owner_id,
             request_id="00000000-0000-0000-0000-000000000705",
@@ -1771,29 +1469,6 @@ def test_evidence_reads_are_paced_across_concurrent_users() -> None:
     assert second == "second"
     sleep_mock.assert_called_once()
     assert sleep_mock.call_args.args[0] == pytest.approx(0.21)
-
-
-def test_research_accrual_read_uses_only_owner_credential_and_rechecks_replacement():
-    database, adapter, owner = FakeDatabase(), FakeTBank(), UUID(int=1)
-    broker = BrokerService(database, credential_key=Fernet.generate_key().decode(), tbank=adapter)
-    broker.connect(user_id=owner, credential="t.fake-owner-credential-1234567890",
-                   environment="prod", account_id="account-1", terms_version="2026-10-01-v2")
-    begin, end = datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 10, 2, tzinfo=UTC)
-    other = UUID(int=2)
-
-    def changed_connection(*args, **kwargs):
-        database.delete_tbank_connection(owner)
-        return ()
-
-    with patch.object(adapter, "get_accrued_interests", create=True) as read:
-        with pytest.raises(BrokerNotConnected):
-            broker.candidate_accrued_interests(other, "bond-uid", from_at=begin, to_at=end)
-        read.assert_not_called()
-        read.side_effect = changed_connection
-        with pytest.raises(BrokerConnectionError, match="changed during the read"):
-            broker.candidate_accrued_interests(owner, "bond-uid", from_at=begin, to_at=end)
-        read.assert_called_once_with("t.fake-owner-credential-1234567890", "prod", "bond-uid",
-                                     from_at=begin, to_at=end)
 
 
 def test_broker_service_encrypts_credential_and_returns_safe_status() -> None:
@@ -1826,7 +1501,14 @@ def test_broker_service_decrypts_saved_credential_only_for_read_calls() -> None:
     owner_id = UUID("00000000-0000-0000-0000-000000000001")
     credential = "t.fake-owner-credential-1234567890"
     key = Fernet.generate_key().decode("ascii")
-    service = BrokerService(database, credential_key=key, tbank=FakeTBank())
+    provider = FakeTBank()
+    service = BrokerService(
+        database,
+        credential_key=key,
+        tbank=provider,
+        market_credential="synthetic-shared-market-token",
+        market_tbank=provider,
+    )
 
     service.connect(
         user_id=owner_id,
@@ -1840,7 +1522,7 @@ def test_broker_service_decrypts_saved_credential_only_for_read_calls() -> None:
     instruments = service.search_instruments(owner_id, query="SBER")
     quote = service.usd_rub_quote(owner_id)
 
-    assert portfolio.portfolio.total.value == "1000"
+    assert portfolio.portfolio.total.value == "100"
     assert portfolio.positions.money[0].value == "100"
     assert instruments[0].ticker == "SBER"
     assert quote.price == "92.25"
@@ -1881,8 +1563,13 @@ def test_broker_read_discards_result_after_connection_changes(operation: str) ->
         read(user_id)
 
 
-@pytest.mark.parametrize("operation", ["market_instrument_metadata", "instrument_news"])
-def test_new_source_reads_recheck_original_connection_after_provider_io(operation):
+@pytest.mark.parametrize(
+    "operation,provider_method",
+    [
+        ("revalidate_account", "get_accounts"),
+    ],
+)
+def test_account_evidence_is_discarded_after_credentials_change(operation, provider_method):
     database, provider, user_id = FakeDatabase(), FakeTBank(), UUID(int=1)
     service = BrokerService(database, credential_key=Fernet.generate_key().decode(), tbank=provider)
     service.connect(
@@ -1891,36 +1578,6 @@ def test_new_source_reads_recheck_original_connection_after_provider_io(operatio
         environment="prod",
         account_id="account-1",
         terms_version="2026-10-01-v2",
-    )
-    item = TBankNewsItem(
-        "1", "Fixture", "", "", "Publisher", None, datetime.now(UTC), ("uid",), False
-    )
-    page = TBankNewsPage((item,), None)
-    method = "get_news" if operation == "instrument_news" else "get_instrument_overview"
-
-    def revoke(*args, **kwargs):
-        database.delete_tbank_connection(user_id)
-        return page if operation == "instrument_news" else Mock(uid="uid")
-
-    read_source = getattr(service, operation)
-    with (
-        patch.object(provider, method, side_effect=revoke, create=True),
-        pytest.raises(BrokerConnectionError, match="connection changed"),
-    ):
-        read_source(user_id, "uid")
-
-
-@pytest.mark.parametrize("operation,provider_method", [
-    ("history_page", "get_operations_by_cursor"),
-    ("user_info", "get_user_info"),
-    ("revalidate_account", "get_accounts"),
-])
-def test_account_evidence_is_discarded_after_credentials_change(operation, provider_method):
-    database, provider, user_id = FakeDatabase(), FakeTBank(), UUID(int=1)
-    service = BrokerService(database, credential_key=Fernet.generate_key().decode(), tbank=provider)
-    service.connect(
-        user_id=user_id, credential="t.fake-owner-credential-1234567890", environment="prod",
-        account_id="account-1", terms_version="2026-10-01-v2",
     )
     replacement_credential = Fernet(service.credential_key.encode()).encrypt(
         b"synthetic-replacement-credential"
@@ -1931,8 +1588,11 @@ def test_account_evidence_is_discarded_after_credentials_change(operation, provi
         database.record = replace(database.record, encrypted_credential=replacement_credential)
         return provider.accounts if operation == "revalidate_account" else Mock()
 
-    arguments = ({"from_at": datetime(2026, 1, 1, tzinfo=UTC), "to_at": datetime.now(UTC)}
-                 if operation == "history_page" else {})
+    arguments = (
+        {"from_at": datetime(2026, 1, 1, tzinfo=UTC), "to_at": datetime.now(UTC)}
+        if operation == "history_page"
+        else {}
+    )
     read_source = getattr(service, operation)
     with (
         patch.object(provider, provider_method, side_effect=replace_credential, create=True),
@@ -1974,6 +1634,7 @@ def test_broker_service_keeps_two_users_strictly_isolated() -> None:
     [
         ("ACCOUNT_STATUS_CLOSED", "ACCOUNT_ACCESS_LEVEL_READ_ONLY"),
         ("ACCOUNT_STATUS_OPEN", "ACCOUNT_ACCESS_LEVEL_NO_ACCESS"),
+        ("ACCOUNT_STATUS_OPEN", "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS"),
         ("ACCOUNT_STATUS_OPEN", ""),
         ("ACCOUNT_STATUS_OPEN", "ACCOUNT_ACCESS_LEVEL_UNSPECIFIED"),
     ],
@@ -2000,6 +1661,23 @@ def test_broker_connect_fails_closed_without_verified_read_access(
             terms_version="2026-10-02-v6",
         )
 
+    assert database.record is None
+
+
+@pytest.mark.parametrize("identity", ["", "   "])
+def test_broker_rejects_missing_account_identity_before_connect(identity: str) -> None:
+    database = FakeDatabase()
+    fake = FakeTBank()
+    fake.accounts = [replace(fake.accounts[0], id=identity)]
+    service = BrokerService(
+        database,
+        credential_key=Fernet.generate_key().decode("ascii"),
+        tbank=fake,
+    )
+    with pytest.raises(BrokerAccountNotAccessible):
+        service.preview_accounts(
+            credential="t.fake-owner-credential-1234567890", environment="prod"
+        )
     assert database.record is None
 
 
@@ -2048,98 +1726,8 @@ def test_broker_service_refuses_account_outside_credential_scope() -> None:
     assert database.record is None
 
 
-def test_daily_observation_can_refresh_all_supported_catalog_kinds() -> None:
-    database = FakeDatabase()
-    user_id = UUID("00000000-0000-0000-0000-000000000001")
-    fake = FakeTBank()
-    service = BrokerService(
-        database,
-        credential_key=Fernet.generate_key().decode("ascii"),
-        tbank=fake,
-    )
-    service.connect(
-        user_id=user_id,
-        credential="t.fake-owner-credential-1234567890",
-        environment="prod",
-        account_id="account-1",
-        terms_version="2026-10-01-v2",
-    )
-
-    with patch.object(
-        fake,
-        "get_instrument_metadata",
-        create=True,
-        return_value=(),
-    ) as catalog:
-        snapshot = service.observation_bundle(user_id, full_catalog=True)
-
-    assert catalog.call_count == 3
-    assert {call.args[2] for call in catalog.call_args_list} == {"share", "bond", "etf"}
-    assert snapshot.sources[-1].status == "received"
-
-
-def test_analysis_metadata_outage_is_partial_and_calls_are_bounded_by_kind() -> None:
-    database = FakeDatabase()
-    user_id = UUID("00000000-0000-0000-0000-000000000001")
-    fake = FakeTBank()
-    baseline = fake.get_portfolio(
-        "t.fake-owner-credential-1234567890",
-        "prod",
-        "account-1",
-    )
-    holdings = tuple(
-        TBankPortfolioPosition(
-            ticker=str(index),
-            figi=str(index),
-            instrument_uid=str(index),
-            instrument_type="share",
-            quantity="1",
-            current_price=TBankMoney("RUB", "1"),
-            average_price=None,
-            expected_yield_amount="0",
-            daily_yield=None,
-            blocked=False,
-        )
-        for index in range(200)
-    )
-    service = BrokerService(
-        database,
-        credential_key=Fernet.generate_key().decode("ascii"),
-        tbank=fake,
-    )
-    service.connect(
-        user_id=user_id,
-        credential="t.fake-owner-credential-1234567890",
-        environment="prod",
-        account_id="account-1",
-        terms_version="2026-10-01-v2",
-    )
-
-    with (
-        patch.object(
-            fake,
-            "get_portfolio",
-            return_value=replace(baseline, positions=holdings),
-        ),
-        patch.object(
-            fake,
-            "get_instrument_metadata",
-            create=True,
-            side_effect=TBankUnavailable("unavailable"),
-        ) as catalog,
-    ):
-        snapshot = service.analysis(user_id)
-
-    assert catalog.call_count == 1
-    assert snapshot.analysis.security_count == 200
-    assert snapshot.analysis.status == "partial"
-    assert snapshot.sources[-1].status == "partial"
-    assert snapshot.analysis.rub_cash_unblocked == "100"
-    assert "t.fake" not in repr(snapshot)
-
-
 def test_tbank_asset_fundamentals_are_batched_and_finite() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "fundamentals": [
@@ -2184,7 +1772,7 @@ def test_tbank_asset_fundamentals_are_batched_and_finite() -> None:
 
 
 def test_tbank_bond_events_preserve_documented_default_date() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "events": [
@@ -2232,7 +1820,7 @@ def test_tbank_bond_events_preserve_documented_default_date() -> None:
 
 
 def test_tbank_asset_reports_reject_mismatched_instrument_subject() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "events": [
@@ -2264,7 +1852,7 @@ def test_tbank_asset_reports_reject_mismatched_instrument_subject() -> None:
 
 
 def test_tbank_fundamentals_reject_non_finite_provider_values() -> None:
-    client = TBankInvestClient()
+    client = TBankInvestClient(purpose="market")
     response = FakeResponse(
         {
             "fundamentals": [
@@ -2296,6 +1884,8 @@ def _strategy_broker():
         database,
         credential_key=Fernet.generate_key().decode("ascii"),
         tbank=broker,
+        market_credential="synthetic-shared-market-token",
+        market_tbank=broker,
     )
     service.connect(
         user_id=user_id,
@@ -2332,7 +1922,7 @@ def test_strategy_rating_reads_are_bounded_and_connection_checked(monkeypatch):
 
     def read(credential, environment, uid):
         calls.append(uid)
-        assert credential == "t.fake-owner-credential-1234567890"
+        assert credential == "synthetic-shared-market-token"
         assert environment == "prod"
         return ()
 
@@ -2399,26 +1989,260 @@ def test_strategy_read_uses_shared_admission_and_releases_on_error(monkeypatch):
     read.assert_called_once_with(owner)
 
 
-def test_missing_portfolio_return_is_unknown_instead_of_a_fabricated_zero() -> None:
-    payload = {
-        "positions": [],
-        "totalAmountPortfolio": {"currency": "rub", "units": "100", "nano": 0},
-    }
-    with patch.object(TBankInvestClient, "_post", return_value=payload):
-        result = TBankInvestClient().get_portfolio("synthetic-token", "prod", "synthetic-account")
-    assert result.expected_yield_percent is None
-    assert result.daily_yield_percent is None
+@pytest.mark.parametrize(
+    "purpose,service,method",
+    [
+        ("portfolio", "UsersService", "GetInfo"),
+        ("portfolio", "OperationsService", "GetPortfolio"),
+        ("portfolio", "OperationsService", "GetOperationsByCursor"),
+        ("portfolio", "InstrumentsService", "News"),
+        ("portfolio", "MarketDataService", "GetLastPrices"),
+        ("market", "UsersService", "GetAccounts"),
+        ("market", "OperationsService", "GetPositions"),
+        ("market", "OrdersService", "PostOrder"),
+        ("market", "UsersService", "PayIn"),
+        ("portfolio", "UsersService", "FutureUnknownMethod"),
+    ],
+)
+def test_credential_scopes_deny_disallowed_methods_before_any_network(purpose, service, method):
+    client = TBankInvestClient(purpose=purpose)
+    with (
+        patch("urllib.request.OpenerDirector.open") as network,
+        pytest.raises(TBankTokenRejected, match="permitted data scope"),
+    ):
+        client._post(
+            token="synthetic-private-bearer", environment="prod",
+            service=service, method=method, body={},
+        )
+    network.assert_not_called()
 
 
-def test_present_zero_portfolio_returns_keep_the_provider_zero() -> None:
+@pytest.mark.parametrize("environment", ["prod", "sandbox"])
+def test_trade_and_history_adapters_have_no_executable_provider_requests(environment):
+    client = TBankInvestClient()
+    now = datetime.now(UTC)
+    operations = (
+        lambda: client.submit_limit_order(
+            "synthetic-bearer",
+            environment,
+            "account-1",
+            instrument_uid="uid",
+            lots=1,
+            price=Decimal(10),
+            action="buy",
+            request_id=str(UUID(int=1)),
+        ),
+        lambda: client.get_portfolio("synthetic-bearer", environment, "account-1"),
+        lambda: client.get_user_info("synthetic-bearer", environment),
+        lambda: client.get_operations_by_cursor(
+            "synthetic-bearer", environment, "account-1", from_at=now, to_at=now
+        ),
+    )
+    with patch.object(TBankInvestClient, "_post") as network:
+        for operation in operations:
+            with pytest.raises(TBankTokenRejected):
+                operation()
+    network.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "access",
+    [
+        "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS",
+        "ACCOUNT_ACCESS_LEVEL_NO_ACCESS",
+        "ACCOUNT_ACCESS_LEVEL_UNSPECIFIED",
+        "",
+        None,
+        1,
+        99,
+        True,
+    ],
+)
+def test_account_verification_rejects_every_non_readonly_scope(access):
     payload = {
-        "totalAmountPortfolio": {"currency": "rub", "units": "100"},
-        "expectedYield": {},
-        "dailyYield": {"currency": "rub"},
-        "dailyYieldRelative": {},
+        "accounts": [{"id": "account-1", "status": "ACCOUNT_STATUS_OPEN", "accessLevel": access}]
     }
-    with patch.object(TBankInvestClient, "_post", return_value=payload):
-        result = TBankInvestClient().get_portfolio("synthetic-token", "prod", "synthetic-account")
-    assert result.expected_yield_percent == "0"
-    assert result.daily_yield == TBankMoney("RUB", "0")
-    assert result.daily_yield_percent == "0"
+    client = TBankInvestClient()
+    with (
+        patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(payload)),
+        pytest.raises(TBankTokenRejected),
+    ):
+        client.get_accounts("synthetic-private-credential", "prod")
+
+
+def test_account_validation_checks_nonselected_accounts_again_on_every_refresh():
+    database, provider, owner = FakeDatabase(), FakeTBank(), UUID(int=1)
+    broker = BrokerService(database, credential_key=Fernet.generate_key().decode(), tbank=provider)
+    broker.connect(
+        user_id=owner,
+        credential="t.fake-owner-credential-1234567890",
+        environment="prod",
+        account_id="account-1",
+        terms_version="2026-10-01-v2",
+    )
+    provider.accounts.append(
+        replace(
+            provider.accounts[0],
+            id="another-account",
+            access_level="ACCOUNT_ACCESS_LEVEL_FULL_ACCESS",
+        )
+    )
+    with (
+        patch.object(provider, "get_positions") as positions,
+        pytest.raises(BrokerAccountNotAccessible),
+    ):
+        broker.portfolio(owner)
+    positions.assert_not_called()
+    provider.accounts = []
+    with pytest.raises(BrokerAccountNotAccessible):
+        broker.revalidate_account(owner)
+
+
+def test_current_positions_have_quantities_cash_and_no_purchase_statistics():
+    payload = {
+        "accountId": "account-1",
+        "money": [{"currency": "RUB", "units": "100"}],
+        "securities": [
+            {
+                "instrumentUid": "share-1",
+                "figi": "FIGI1",
+                "ticker": "SHARE",
+                "instrumentType": "share",
+                "balance": "5",
+                "blocked": "2",
+                "averagePositionPrice": {"currency": "RUB", "units": "1000"},
+            }
+        ],
+        "futures": [{"instrumentUid": "future-1", "balance": "3"}],
+        "options": [{"instrumentUid": "option-1", "balance": "1"}],
+    }
+    with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(payload)) as network:
+        positions = TBankInvestClient().get_positions(
+            "synthetic-private-token", "prod", "account-1"
+        )
+    assert [item.quantity for item in positions.holdings] == ["7", "3", "1"]
+    assert positions.holdings[0].blocked_lots == "2"
+    assert all(
+        item.current_price is None
+        and item.average_price is None
+        and item.expected_yield_amount is None
+        for item in positions.holdings
+    )
+    assert positions.money == (TBankMoney("RUB", "100"),)
+    assert network.call_args.args[0].full_url.endswith("OperationsService/GetPositions")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"accountId": "other-account"},
+        {"securities": [{"instrumentUid": "uid"}, {"instrumentUid": "uid"}]},
+        {"securities": [{"instrumentUid": "uid", "blocked": "-1"}]},
+        {"securities": [{"instrumentUid": "uid", "balance": "9223372036854775808"}]},
+        {"securities": [{"balance": "1"}]},
+        {"limitsLoadingInProgress": "false"},
+    ],
+)
+def test_current_positions_reject_ambiguous_identity_or_malformed_values(payload):
+    client = TBankInvestClient()
+    with (
+        patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(payload)),
+        pytest.raises(TBankUnavailable),
+    ):
+        client.get_positions("synthetic-private-token", "prod", "account-1")
+
+
+def test_public_market_reads_never_look_up_user_connections_or_fall_back_to_their_token():
+    database = Mock()
+    database.tbank_connection.side_effect = AssertionError("market read used private connection")
+    private, market = Mock(), Mock()
+    market.get_last_prices.return_value = (TBankLastPrice("uid", "10", datetime.now(UTC)),)
+    broker = BrokerService(
+        database,
+        credential_key=Fernet.generate_key().decode(),
+        tbank=private,
+        market_tbank=market,
+        market_credential="synthetic-shared-market-token",
+    )
+    assert broker.market_last_price(UUID(int=1), "uid").price == "10"
+    assert broker.market_last_price(UUID(int=2), "uid").price == "10"
+    assert all(
+        call.args[0] == "synthetic-shared-market-token"
+        for call in market.get_last_prices.call_args_list
+    )
+    private.assert_not_called()
+    no_source = BrokerService(
+        database, credential_key=Fernet.generate_key().decode(), tbank=private
+    )
+    with pytest.raises(TBankUnavailable, match="shared_market_source_unavailable"):
+        no_source.market_last_price(UUID(int=1), "uid")
+    database.tbank_connection.assert_not_called()
+
+
+def test_unknown_market_price_preserves_real_holding_without_zero_nav_or_return():
+    from omnicio.portfolio import analyze_portfolio, value_current_positions
+
+    holding = TBankPortfolioPosition(
+        "SHARE", "figi", "uid", "share", "7", None, None, None, None, False
+    )
+    positions = TBankPositions((TBankMoney("RUB", "100"),), (), False, holdings=(holding,))
+    portfolio = value_current_positions(positions, (), ())
+    analysis = analyze_portfolio(portfolio, positions, ())
+    assert portfolio.positions[0].quantity == "7"
+    assert portfolio.total is None
+    assert analysis.nav_rub is None
+    assert analysis.rub_cash_unblocked is None
+    assert analysis.rub_cash_blocked is None
+    assert analysis.rub_cash_total == "100"
+    assert portfolio.expected_yield_percent is None
+    assert portfolio.daily_yield is None
+    assert portfolio.positions[0].quantity_lots is None
+
+
+def test_shared_market_value_converts_bond_quote_percent_and_never_recovers_purchase_prices():
+    from omnicio.portfolio import value_current_positions
+
+    holding = TBankPortfolioPosition(
+        "BOND", "figi", "bond", "bond", "2", None, TBankMoney("RUB", "10"), "55", None, False
+    )
+    positions = TBankPositions((TBankMoney("RUB", "100"),), (), False, holdings=(holding,))
+    metadata = TBankInstrumentMetadata(
+        "bond",
+        "Bond",
+        "BOND",
+        "",
+        "bond",
+        "finance",
+        "RU",
+        False,
+        currency="RUB",
+        nominal=TBankMoney("RUB", "1000"),
+        accrued_interest=TBankMoney("RUB", "20"),
+        lot=1,
+    )
+    portfolio = value_current_positions(
+        positions, (metadata,), (TBankLastPrice("bond", "95", datetime.now(UTC)),)
+    )
+    assert portfolio.total == TBankMoney("RUB", "2040")
+    assert portfolio.positions[0].current_price == TBankMoney("RUB", "950")
+    assert portfolio.positions[0].average_price is None
+    assert portfolio.positions[0].expected_yield_amount is None
+
+
+def test_all_quotes_is_explicit_and_an_empty_requested_batch_performs_no_io():
+    client = TBankInvestClient(purpose="market")
+    payload = {
+        "lastPrices": [
+            {
+                "instrumentUid": "not-individually-requested",
+                "price": {"units": "5"},
+                "time": datetime.now(UTC).isoformat(),
+            }
+        ]
+    }
+    with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(payload)) as network:
+        assert client.get_last_prices_batch("synthetic-shared-token", "prod", ()).prices == ()
+        network.assert_not_called()
+        result = client.get_all_last_prices("synthetic-shared-token", "prod")
+    assert result.prices[0].instrument_uid == "not-individually-requested"
+    assert json.loads(network.call_args.args[0].data)["instrumentId"] == []

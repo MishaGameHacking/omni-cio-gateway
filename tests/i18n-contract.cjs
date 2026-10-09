@@ -139,24 +139,24 @@ const workerContext = {};
 for (const file of ["config.js", "i18n.js"]) vm.runInNewContext(readFileSync(join(__dirname, "../web", file), "utf8"), workerContext);
 assert.equal(workerContext.OMNICIO_I18N.t("push.notification.test", {}, "en"), "This is an OMNICIO test notification.", "The public text catalog initializes without window or document in a worker");
 assert.equal(workerContext.OMNICIO_I18N.t("push.notification.update", {}, "ru"), "В кабинете появились новые сведения. Откройте приложение, чтобы посмотреть подробности.");
-for (const hash of ["#demo/market/reference?currency=CNY&reference_period=1y", "#account/portfolio/positions?assets=bond&sort=price&direction=-1", "#account/goals/plan?goal=00000000-0000-4000-8000-000000000001", "#public/features", "#public/install", "#demo/install", "#account/install"]) {
+for (const hash of ["#guest/market/reference?currency=CNY&reference_period=1y", "#account/portfolio/positions?assets=bond&sort=price&direction=-1", "#account/goals/plan?goal=00000000-0000-4000-8000-000000000001", "#public/features", "#public/install", "#guest/install", "#account/install"]) {
   const route = U.parseRoute(hash);
   assert.equal(route.invalid, false, "A supported nested screen is a valid bookmark");
   assert.equal(U.routeHash(route), hash, "Mode, screen and controls survive a URL round trip");
 }
 assert.equal(U.parseRoute("#public-strategies").mode, "public");
 assert.equal(U.parseRoute("#asset?uid=synthetic-a").uid, "synthetic-a");
-assert.equal(U.parseRoute("#demo/unsupported").invalid, true);
+assert.equal(U.parseRoute("#guest/unsupported").invalid, true);
 assert.equal(U.parseRoute("#account/settings/unknown").invalid, true);
 assert.equal(U.parseRoute("#public/features/unknown").invalid, true);
 assert.equal(U.parseRoute("#account/home?user_id=other").user_id, undefined, "Navigation never accepts tenant authority fields");
 for (const [hash, expected] of [
   ["#account/asset?uid=private-instrument", "#account/market"],
-  ["#demo/search?q=private-search", "#demo/market"],
+  ["#guest/search?q=private-search", "#guest/market"],
   ["#account/goals/edit?goal=private-goal", "#account/goals"],
   ["#account/goals/plan?goal=private-goal", "#account/goals"],
   ["#account/events/detail?event=private-event", "#account/events"],
-  ["#demo/events/news?news=private-news", "#demo/events"],
+  ["#guest/events/news?news=private-news", "#guest/events"],
   ["#account/strategies/detail?preset=private-preset", "#account/strategies"],
   ["#account/strategies/result?run=private-run", "#account/strategies"],
   ["#account/portfolio/positions?assets=bond&sort=price&overlay=private-overlay", "#account/portfolio/positions"],

@@ -222,6 +222,18 @@ def push_public_key(private_key: str) -> str:
     ))
 
 
+def validate_push_configuration(private_key: str, subject: str) -> None:
+    """Check a configured VAPID key and subject without contacting a provider."""
+    if not private_key:
+        return
+    push_public_key(private_key)
+    if (any(ord(char) < 33 or ord(char) > 126 for char in subject)
+            or not subject.startswith((_MAILTO_SCHEME, _HTTPS_SCHEME))):
+        raise ValueError("notification_vapid_subject_invalid")
+    if subject.startswith(_MAILTO_SCHEME):
+        normalize_email(subject.removeprefix(_MAILTO_SCHEME))
+
+
 def encrypt_push(
     subscription: Mapping[str, Any], message: bytes, *,
     salt: bytes | None = None, sender_private: ec.EllipticCurvePrivateKey | None = None,
@@ -507,14 +519,7 @@ class NotificationService:
             raise ValueError("notification_smtp_invalid")
         if config.email_enabled and config.smtp_sender:
             normalize_email(config.smtp_sender)
-        if config.vapid_private_key:
-            push_public_key(config.vapid_private_key)
-            subject = config.vapid_subject
-            if (any(ord(char) < 33 or ord(char) > 126 for char in subject)
-                    or not subject.startswith((_MAILTO_SCHEME, _HTTPS_SCHEME))):
-                raise ValueError("notification_vapid_subject_invalid")
-            if subject.startswith(_MAILTO_SCHEME):
-                normalize_email(subject.removeprefix(_MAILTO_SCHEME))
+        validate_push_configuration(config.vapid_private_key, config.vapid_subject)
 
     @property
     def push_configured(self) -> bool:

@@ -78,7 +78,7 @@ jobs:
           "%OMNICIO_PYTHON%" -m pip install --no-deps --no-build-isolation --no-index --only-binary=:all: -e .
           if errorlevel 1 exit /b 1
 
-      - name: Run ${{ matrix.name }}
+      - name: Run ${{ matrix.name }} for public market and email authentication
         shell: cmd
         run: ${{ matrix.command }}
 

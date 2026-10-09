@@ -6,7 +6,6 @@ import io
 import os
 import urllib.request
 import urllib.response
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.message import Message
 from unittest.mock import Mock, patch
@@ -18,7 +17,8 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import ClientDisconnect, Request
 
-from omnicio.config import ConfigurationError, load_settings, optional_uuid, positive_numeric_id
+from omnicio.assistant import AssistantService
+from omnicio.config import ConfigurationError, load_settings, optional_uuid
 from omnicio.db import Database, UserRecord
 from omnicio.main import (
     CANONICAL_ORIGIN,
@@ -29,54 +29,30 @@ from omnicio.main import (
 )
 from omnicio.market import MarketService, MarketStreamLimit
 from omnicio.security import (
-    OAuthFlow,
     SecurityValueError,
     client_ip_digest,
     decrypt_secret,
     encrypt_secret,
     format_public_id,
-    generate_oauth_state,
-    generate_pkce_verifier,
-    open_oauth_flow,
     parse_public_id,
-    pkce_challenge,
-    seal_oauth_flow,
-    validate_auth_return_to,
 )
 from omnicio.tbank import TBankInvestClient, TBankUnavailable
-from omnicio.vkid import VKIDClient, VKIDUnavailable
 
 
-@pytest.mark.parametrize("provider", ["broker", "vkid"])
 @pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
-def test_credentialed_provider_requests_never_follow_redirects(provider, status) -> None:
+def test_credentialed_provider_requests_never_follow_redirects(status) -> None:
     headers = Message()
     headers["Location"] = "https://untrusted.invalid/collect"
     response = urllib.response.addinfourl(io.BytesIO(), headers, "https://provider.invalid", status)
     response.msg = "redirect"
     with patch.object(urllib.request.HTTPSHandler, "https_open", return_value=response) as request:
-        if provider == "broker":
-            broker_client = TBankInvestClient()
-            with pytest.raises(TBankUnavailable):
-                broker_client.get_accounts("synthetic-credential-must-not-leak", "prod")
-        else:
-            identity_client = VKIDClient("123", "https://omnicio.ru/api/auth/vkid/callback")
-            with pytest.raises(VKIDUnavailable):
-                identity_client.exchange_code(
-                    code="synthetic-code", device_id="device", code_verifier="v" * 64,
-                    expected_state="state",
-                )
+        broker_client = TBankInvestClient()
+        with pytest.raises(TBankUnavailable):
+            broker_client.get_accounts("synthetic-credential-must-not-leak", "prod")
     request.assert_called_once()
     assert response.closed
 
 
-@pytest.mark.parametrize(
-    "value", ["²", "１２３", "١٢٣", "0", "9" * 129, "9" * 5000],
-    ids=["superscript", "fullwidth", "arabic", "zero", "overlong-id", "oversized-integer"],
-)
-def test_provider_numeric_ids_are_bounded_ascii_without_conversion_errors(value) -> None:
-    assert not positive_numeric_id(value)
-    assert positive_numeric_id("123456789")
 
 
 def test_operator_configuration_is_explicit_and_credentials_preserve_exact_bytes() -> None:
@@ -84,15 +60,14 @@ def test_operator_configuration_is_explicit_and_credentials_preserve_exact_bytes
         "DATABASE_URL": "postgresql://synthetic.invalid/example",
         "CLIENT_IP_KEY": "synthetic-client-key",
         "BROKER_TOKEN_CRYPTO_KEY": "synthetic-broker-key",
-        "VKID_FLOW_CRYPTO_KEY": "synthetic-flow-key",
-        "TID_CLIENT_SECRET": "  synthetic-tid-secret  ",
+        "AUTH_SMTP_PASSWORD": "  synthetic-smtp-secret  ",
         "ASSISTANT_API_KEY": "  synthetic-assistant-key  ",
         "OPERATOR_USER_ID": str(UUID(int=501)),
     }
     with patch.dict(os.environ, environment, clear=True):
         cfg = load_settings()
     assert cfg.operator_user_id == UUID(int=501)
-    assert cfg.tid_client_secret == environment["TID_CLIENT_SECRET"]
+    assert cfg.auth_smtp_password == environment["AUTH_SMTP_PASSWORD"]
     assert cfg.assistant_api_key == environment["ASSISTANT_API_KEY"]
     with patch.dict(os.environ, {}, clear=True):
         assert optional_uuid("OPERATOR_USER_ID") is None
@@ -103,7 +78,6 @@ def test_disabled_email_ignores_legacy_smtp_environment_but_enabled_remains_stri
         "DATABASE_URL": "postgresql://synthetic.invalid/example",
         "CLIENT_IP_KEY": "synthetic-client-key",
         "BROKER_TOKEN_CRYPTO_KEY": "synthetic-broker-key",
-        "VKID_FLOW_CRYPTO_KEY": "synthetic-flow-key",
         "NOTIFICATIONS_ENABLED": "true", "NOTIFICATION_EMAIL_ENABLED": "false",
         "NOTIFICATION_SMTP_PORT": "invalid", "NOTIFICATION_SMTP_MODE": "invalid",
         "NOTIFICATION_SMTP_SENDER": "invalid\r\nheader",
@@ -123,16 +97,43 @@ def test_disabled_email_ignores_legacy_smtp_environment_but_enabled_remains_stri
         load_settings()
 
 
-def test_install_route_survives_authenticated_oauth_round_trip() -> None:
-    destination = "/#account/install"
-    key = Fernet.generate_key().decode()
-    token = seal_oauth_flow(state="state", code_verifier="v" * 64, legal_versions={},
-                           crypto_key=key, return_to=destination)
-    assert open_oauth_flow(token, crypto_key=key, ttl_seconds=600).return_to == destination
-    for invalid in ("https://example.org/#account/install", "/#account/install\\other",
-                    "/#account/install?next=%0d%0aX-Test:bad"):
-        with pytest.raises(SecurityValueError, match="oauth_return_to_invalid"):
-            validate_auth_return_to(invalid)
+@pytest.mark.parametrize("enabled", ["false", "true"])
+@pytest.mark.parametrize("limit", [1, 200])
+def test_assistant_limit_boundaries_are_usable_by_the_service(enabled: str, limit: int) -> None:
+    environment = {
+        "DATABASE_URL": "postgresql://synthetic.invalid/example",
+        "CLIENT_IP_KEY": "synthetic-client-key",
+        "BROKER_TOKEN_CRYPTO_KEY": "synthetic-broker-key",
+        "ASSISTANT_ENABLED": enabled, "ASSISTANT_DAILY_REQUEST_LIMIT": str(limit),
+    }
+    with patch.dict(os.environ, environment, clear=True):
+        cfg = load_settings()
+    service = AssistantService(
+        Mock(spec=Database), credential_key=cfg.broker_token_crypto_key,
+        enabled=cfg.assistant_enabled, daily_request_limit=cfg.assistant_daily_request_limit,
+    )
+    assert service.daily_limit == limit
+    assert service.enabled is (enabled == "true")
+
+
+@pytest.mark.parametrize("enabled", ["false", "true"])
+@pytest.mark.parametrize("limit", [0, 201])
+def test_invalid_assistant_limit_is_rejected_before_startup_even_when_disabled(
+    enabled: str, limit: int,
+) -> None:
+    environment = {
+        "DATABASE_URL": "postgresql://synthetic.invalid/example",
+        "CLIENT_IP_KEY": "synthetic-client-key",
+        "BROKER_TOKEN_CRYPTO_KEY": "synthetic-broker-key",
+        "ASSISTANT_ENABLED": enabled, "ASSISTANT_DAILY_REQUEST_LIMIT": str(limit),
+    }
+    with (
+        patch.dict(os.environ, environment, clear=True),
+        pytest.raises(ConfigurationError, match="ASSISTANT_DAILY_REQUEST_LIMIT"),
+    ):
+        load_settings()
+
+
 
 
 @pytest.mark.parametrize("raw", ("owner", "000000501", str(UUID(int=0))))
@@ -184,43 +185,8 @@ def test_secret_encryption_round_trip() -> None:
         decrypt_secret(encrypted, wrong_key)
 
 
-def test_pkce_challenge_is_stable_and_urlsafe() -> None:
-    verifier = generate_pkce_verifier()
-    challenge = pkce_challenge(verifier)
-
-    assert 43 <= len(verifier) <= 128
-    assert "=" not in challenge
-    assert challenge == pkce_challenge(verifier)
 
 
-def test_vkid_flow_round_trip_and_tamper_rejection() -> None:
-    key = Fernet.generate_key().decode("ascii")
-    state = generate_oauth_state()
-    verifier = generate_pkce_verifier()
-    versions = {
-        "privacy_policy": "2026-10-02-v3",
-        "personal_data_consent": "2026-10-02-v3",
-        "terms": "2026-10-02-v3",
-    }
-    token = seal_oauth_flow(
-        state=state,
-        code_verifier=verifier,
-        legal_versions=versions,
-        crypto_key=key,
-    )
-
-    assert open_oauth_flow(
-        token,
-        crypto_key=key,
-        ttl_seconds=600,
-    ) == OAuthFlow(state, verifier, versions)
-
-    with pytest.raises(SecurityValueError):
-        open_oauth_flow(
-            token[:-1] + ("A" if token[-1] != "A" else "B"),
-            crypto_key=key,
-            ttl_seconds=600,
-        )
 
 
 def test_client_ip_digest_is_keyed() -> None:
@@ -233,23 +199,6 @@ def test_client_ip_digest_is_keyed() -> None:
     )
 
 
-def test_auth_route_validator_preserves_filters_and_rejects_injected_flow_payload() -> None:
-    import json
-
-    destination = "/#account/market/news?q=%D0%A6%D0%91&filter=all"
-    assert validate_auth_return_to(destination) == destination
-    key = Fernet.generate_key().decode("ascii")
-    token = seal_oauth_flow(state="state", code_verifier="v" * 64, legal_versions={},
-                            crypto_key=key, return_to=destination)
-    cipher = Fernet(key.encode())
-    document = json.loads(cipher.decrypt(token.encode()))
-    document["return_to"] = "https://untrusted.invalid"
-    injected = cipher.encrypt(json.dumps(document).encode()).decode()
-    with pytest.raises(SecurityValueError, match="oauth_return_to_invalid"):
-        open_oauth_flow(injected, crypto_key=key, ttl_seconds=600)
-    del document["return_to"]
-    legacy = cipher.encrypt(json.dumps(document).encode()).decode()
-    assert open_oauth_flow(legacy, crypto_key=key, ttl_seconds=600).return_to == "/#account/home"
 
 
 def _request(client_host: str, headers: dict[str, str]) -> Request:
@@ -341,7 +290,7 @@ def test_private_errors_have_unique_server_traces_without_secret_leaks(
     assert secret not in caplog.text
 
 
-@pytest.mark.parametrize("path", ["/api/me", "/api/me/activity", "/api/portfolio/executions"])
+@pytest.mark.parametrize("path", ["/api/me", "/api/me/activity"])
 def test_private_unauthorized_responses_cannot_be_cached(path: str) -> None:
     with patch("omnicio.main.service") as auth:
         auth.return_value.refresh_session.return_value = None
@@ -415,7 +364,6 @@ def test_stale_tab_cannot_attach_its_broker_token_to_another_session_user(expect
 
 @pytest.mark.parametrize("method,path,payload", [
     ("GET", "/api/me/activity", None),
-    ("GET", "/api/portfolio/executions", None),
     ("POST", "/api/broker/tbank/accounts", {
         "credential": "synthetic-token-from-tab-a", "environment": "prod",
         "accept_personal_terms": True,
@@ -429,7 +377,6 @@ def test_profile_header_never_selects_a_different_tenant(method, path, payload) 
     with (
         patch("omnicio.main.service") as auth,
         patch("omnicio.main.broker_service") as broker,
-        patch("omnicio.main.execution_store") as ledger,
         patch.object(app.state, "database", database, create=True),
     ):
         auth.return_value.refresh_session.return_value = active_user
@@ -442,7 +389,6 @@ def test_profile_header_never_selects_a_different_tenant(method, path, payload) 
     assert response.headers["cache-control"] == "private, no-store"
     assert "set-cookie" not in response.headers
     broker.assert_not_called()
-    ledger.assert_not_called()
     database.recent_activity.assert_not_called()
     auth.return_value.logout.assert_not_called()
 
@@ -453,15 +399,12 @@ def test_matching_view_allows_only_session_user_and_expired_logout_still_clears_
     with (
         patch("omnicio.main.service") as auth,
         patch("omnicio.main.broker_service") as broker,
-        patch("omnicio.main.execution_store") as ledger,
     ):
         auth.return_value.refresh_session.return_value = active_user
-        ledger.return_value.has_active_live_execution.return_value = False
         client = TestClient(app, cookies={"omnicio_session": "session-b"})
         disconnected = client.delete("/api/broker/tbank?user_id=other", headers=headers)
         assert disconnected.status_code == 204
         broker.return_value.disconnect.assert_called_once_with(active_user.id)
-        ledger.return_value.revoke_live_mandate.assert_called_once_with(active_user.id)
         logged_out = client.post("/api/auth/logout", headers=headers)
         assert logged_out.status_code == 204
         assert "Max-Age=0" in logged_out.headers["set-cookie"]
@@ -475,40 +418,6 @@ def test_matching_view_allows_only_session_user_and_expired_logout_still_clears_
         assert broker.return_value.disconnect.call_count == 1
 
 
-@pytest.mark.parametrize("path", [
-    "/api/market/instruments/uid-1/stream", "/api/market/usd-rub/stream",
-])
-@pytest.mark.parametrize("revoked_during_read", [False, True])
-def test_market_stream_suppresses_data_after_session_revocation(path, revoked_during_read) -> None:
-    @dataclass
-    class PrivateMarketData:
-        marker: str = "synthetic-private-market-data"
-
-    active_user = UserRecord(UUID(int=102), 102, "active", "user")
-    with (
-        patch("omnicio.main.service") as auth,
-        patch("omnicio.main.market_service") as market,
-    ):
-        auth.return_value.refresh_session.return_value = active_user
-        client = TestClient(app, cookies={"omnicio_session": "session-b"})
-        for query in ("", "?profile_context=000000101"):
-            rejected = client.get(path + query)
-            assert rejected.status_code == 409
-        market.assert_not_called()
-        auth.return_value.refresh_session.side_effect = (
-            [active_user, active_user, None] if revoked_during_read else [active_user, None]
-        )
-        market.return_value.instrument_live_state.return_value = PrivateMarketData()
-        market.return_value.usd_rub.return_value = PrivateMarketData()
-        response = client.get(path + "?profile_context=000000102")
-        reads = (market.return_value.instrument_live_state.call_count
-                 + market.return_value.usd_rub.call_count)
-    assert response.status_code == 200
-    assert "profile_context_changed" in response.text
-    assert "synthetic-private-market-data" not in response.text
-    assert "event: market" not in response.text
-    assert "event: quote" not in response.text
-    assert reads == int(revoked_during_read)
 
 
 @pytest.mark.parametrize("disconnect_at", [1, 2])
@@ -552,3 +461,51 @@ def test_market_stream_releases_its_slot_even_if_disconnect_precedes_first_chunk
         market.release_stream(other, other_lease)
     finally:
         market.close()
+
+
+def test_argon2_password_verifiers_are_salted_normalized_and_never_recoverable():
+    from omnicio.security import hash_password, validate_new_password, verify_password
+
+    password = "Кофе и море: Cafe\u0301 37"
+    validate_new_password(password, "person@gmail.com")
+    first, second = hash_password(password), hash_password(password)
+    assert first != second
+    assert first.startswith("$argon2id$v=19$m=19456,t=2,p=1$")
+    assert password not in first
+    assert verify_password("Кофе и море: Café 37", first)
+    assert not verify_password("Кофе и море: Café 38", first)
+    assert not verify_password("", first)
+    assert not verify_password("x" * 129, first)
+
+
+def test_password_policy_allows_spaces_and_unicode_without_composition_rules():
+    from omnicio.security import hash_password, validate_new_password, verify_password
+
+    for password in ("длинная фраза без цифр", "a long simple phrase", " " + "moss river " * 5):
+        validate_new_password(password, "person@gmail.com")
+        verifier = hash_password(password)
+        assert verify_password(password, verifier)
+        assert not verify_password(password + " ", verifier)
+
+
+@pytest.mark.parametrize("password", [
+    "short", "passwordpassword", "123456789012345", "omnicioomnicioomnicio",
+    "ownerownerownerowner", "x" * 15, "x" * 129,
+])
+def test_weak_or_oversized_passwords_are_rejected(password):
+    from omnicio.security import validate_new_password
+
+    with pytest.raises(SecurityValueError):
+        validate_new_password(password, "owner@gmail.com")
+
+
+def test_otp_digest_requires_server_key_and_is_bound_to_challenge():
+    from omnicio.security import auth_rate_digest, email_code_digest
+
+    key = base64.urlsafe_b64encode(os.urandom(32)).decode()
+    other = base64.urlsafe_b64encode(os.urandom(32)).decode()
+    digest = email_code_digest("challenge-a", "00000000", key)
+    assert digest != email_code_digest("challenge-b", "00000000", key)
+    assert digest != email_code_digest("challenge-a", "00000001", key)
+    assert digest != email_code_digest("challenge-a", "00000000", other)
+    assert digest != auth_rate_digest("challenge-a", "00000000", key)

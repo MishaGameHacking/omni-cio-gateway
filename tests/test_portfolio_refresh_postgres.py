@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
@@ -26,8 +27,9 @@ from omnicio.broker import BrokerService
 from omnicio.db import Database
 from omnicio.intelligence import build_news_evidence
 from omnicio.observer import PortfolioObserver, PortfolioRefreshCoordinator
+from omnicio.portfolio import analyze_portfolio, value_current_positions
 from omnicio.portfolio_store import ObservationCancelled, PortfolioStore
-from omnicio.tbank import TBankOperationsPage, TBankUnavailable
+from omnicio.tbank import TBankInvestClient, TBankUnavailable
 from omnicio.workspace_store import WorkspaceStore
 
 pytestmark = pytest.mark.skipif(
@@ -557,24 +559,92 @@ def test_native_refresh_concurrency_and_rls_allow_only_one_pending_owner_job(
         assert hidden is None
 
 
-def test_native_restart_uses_new_snapshot_lineage_and_resumes_history_cursor(
+
+def test_native_unknown_valuation_preserves_real_quantity_sql_nulls_and_tenant_isolation(
+    workspace_database: tuple[Database, str, str],
+) -> None:
+    database = workspace_database[0]
+    store, ident, other = PortfolioStore(database), owner(database), owner(database)
+    # A real current-position response can precede both price discovery and
+    # completion of the broker's cash limits; that is not an empty portfolio.
+    payload = {
+        "accountId": str(ident),
+        "limitsLoadingInProgress": True,
+        "money": [],
+        "blocked": [],
+        "securities": [{
+            "instrumentUid": "native-unpriced-share", "instrumentType": "share",
+            "balance": "17", "blocked": "3", "exchangeBlocked": False,
+        }],
+    }
+    with patch.object(TBankInvestClient, "_post", return_value=payload):
+        positions = TBankInvestClient().get_positions("synthetic-token", "prod", str(ident))
+    portfolio = value_current_positions(positions, (), ())
+    observation = replace(
+        bundle(), account_id=str(ident), refreshed_at=datetime.now(UTC),
+        portfolio=portfolio, positions=positions,
+        analysis=analyze_portfolio(portfolio, positions, ()), metadata=(), sources=(),
+    )
+    job = store.claim_daily_job(
+        ident, job_type="portfolio_daily", scheduled_for=date.today(),
+        legal_versions=LEGAL_VERSIONS,
+    )
+    assert job is not None
+    snapshot_id = store.save_snapshot(ident, job_run_id=job.id, bundle=observation)
+    with pytest.raises(ObservationCancelled):
+        store.save_snapshot(other, job_run_id=job.id, bundle=observation)
+    assert store.finish_job(ident, job.id, status="degraded", details={})
+
+    with database.pool.connection() as connection, connection.transaction():
+        connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(ident),))
+        row = connection.execute(
+            "SELECT s.nav_rub, s.rub_cash_total, s.rub_cash_blocked, s.rub_cash_unblocked, "
+            "p.quantity, p.quantity_lots, p.blocked_lots, p.current_price_value, p.value_rub "
+            "FROM portfolio_snapshots s JOIN portfolio_snapshot_positions p "
+            "ON p.snapshot_id = s.id WHERE s.id = %s", (snapshot_id,),
+        ).fetchone()
+        assert row is not None
+        assert row["quantity"] == Decimal("20")
+        assert row["blocked_lots"] == Decimal("3")
+        assert all(row[key] is None for key in (
+            "nav_rub", "rub_cash_total", "rub_cash_blocked", "rub_cash_unblocked",
+            "quantity_lots", "current_price_value", "value_rub",
+        ))
+        # Use the same restricted runtime connection, without a user_id WHERE
+        # clause, so these reads demonstrate PostgreSQL RLS itself.
+        connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(other),))
+        assert connection.execute(
+            "SELECT id FROM portfolio_snapshots WHERE id = %s", (snapshot_id,),
+        ).fetchall() == []
+        assert connection.execute(
+            "SELECT quantity FROM portfolio_snapshot_positions WHERE snapshot_id = %s",
+            (snapshot_id,),
+        ).fetchall() == []
+
+    latest = store.portfolio_visualization(ident)["latest"]
+    assert latest is not None
+    assert latest["nav_rub"] is None
+    assert latest["rub_cash_unblocked"] is None
+    assert latest["positions"][0]["quantity"] == Decimal("20")
+    assert latest["positions"][0]["value_rub"] is None
+    assert store.portfolio_visualization(other) == {
+        "status": "pending", "history": [], "latest": None,
+    }
+
+
+def test_native_restart_uses_new_snapshot_lineage_without_broker_history(
     workspace_database: tuple[Database, str, str],
 ) -> None:
     database = workspace_database[0]
     store, ident = PortfolioStore(database), owner(database)
     requested = store.request_refresh(ident, LEGAL_VERSIONS)
-    now, opened = datetime.now(UTC), datetime(2024, 1, 1, tzinfo=UTC)
+    now = datetime.now(UTC)
     observation = replace(bundle(), account_id=str(ident), refreshed_at=now)
     with store.observer_lock() as locked:
         assert locked
         first = store.claim_refresh_job(ident, LEGAL_VERSIONS)
         assert first is not None
         old_snapshot = store.save_snapshot(ident, job_run_id=first.id, bundle=observation)
-        store.save_history_page(
-            ident, job_run_id=first.id, account_id=str(ident), environment="prod",
-            window_from=opened, window_to=now, observed_at=now,
-            page=TBankOperationsPage(True, "durable-cursor", ()),
-        )
     # Simulate process loss after persisted facts but before finish_job.
     restarted = PortfolioStore(database)
     with restarted.observer_lock() as locked:
@@ -583,23 +653,12 @@ def test_native_restart_uses_new_snapshot_lineage_and_resumes_history_cursor(
         assert second is not None
         assert second.id != first.id
         assert second.attempt == 2
-        cursor = restarted.sync_state(ident, str(ident))
-        assert cursor is not None
-        assert cursor.pending_cursor == "durable-cursor"
         new_snapshot = restarted.save_snapshot(
-            ident, job_run_id=second.id,
+            ident,
+            job_run_id=second.id,
             bundle=replace(observation, refreshed_at=now + timedelta(seconds=1)),
         )
         assert new_snapshot != old_snapshot
-        restarted.save_history_page(
-            ident, job_run_id=second.id, account_id=str(ident), environment="prod",
-            window_from=opened, window_to=now, observed_at=now + timedelta(seconds=1),
-            page=TBankOperationsPage(False, "", ()),
-        )
-        completed = restarted.sync_state(ident, str(ident))
-        assert completed is not None
-        assert completed.pending_cursor == ""
-        assert completed.last_complete_watermark == now
         third = restarted.claim_refresh_job(ident, LEGAL_VERSIONS)
         assert third is not None
         assert third.attempt == 3
@@ -611,7 +670,8 @@ def test_native_restart_uses_new_snapshot_lineage_and_resumes_history_cursor(
     with database.pool.connection() as connection:
         connection.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(ident),))
         snapshots = connection.execute(
-            "SELECT id FROM portfolio_snapshots WHERE user_id = %s", (ident,),
+            "SELECT id FROM portfolio_snapshots WHERE user_id = %s",
+            (ident,),
         ).fetchall()
     assert {row["id"] for row in snapshots} == {old_snapshot, new_snapshot}
 
@@ -619,16 +679,21 @@ def test_native_restart_uses_new_snapshot_lineage_and_resumes_history_cursor(
 def _monitoring_broker(ident: UUID) -> Mock:
     fake, broker = FakeBroker(), Mock(spec=BrokerService)
     broker.revalidate_account.return_value = replace(
-        fake.revalidate_account(USER_ID), id=str(ident),
+        fake.revalidate_account(USER_ID),
+        id=str(ident),
     )
-    broker.user_info.return_value = fake.user_info(USER_ID)
+    broker.user_info.side_effect = AssertionError("broker profile is outside read scope")
     broker.observation_bundle.side_effect = lambda *_args, **_kwargs: replace(
-        bundle(), account_id=str(ident), refreshed_at=datetime.now(UTC),
+        bundle(),
+        account_id=str(ident),
+        refreshed_at=datetime.now(UTC),
     )
     broker.evidence.side_effect = lambda _user, value, **kwargs: fake.evidence(
-        USER_ID, replace(value, account_id="account-1"), **kwargs,
+        USER_ID,
+        replace(value, account_id="account-1"),
+        **kwargs,
     )
-    broker.history_page.return_value = TBankOperationsPage(False, "", ())
+    broker.history_page.side_effect = AssertionError("broker history is outside read scope")
     return broker
 
 
@@ -751,67 +816,42 @@ def test_native_explicit_full_refresh_upgrades_queued_quick_without_duplicate_jo
             assert not competing
 
 
-def test_native_resumed_history_catches_up_to_the_actual_snapshot_watermark(
+def test_native_refresh_never_resumes_legacy_broker_history(
     workspace_database: tuple[Database, str, str],
 ) -> None:
     database = workspace_database[0]
     store, ident = PortfolioStore(database), owner(database)
-    started = datetime.now(UTC) - timedelta(minutes=1)
-    old_end, captured = started - timedelta(hours=1), started + timedelta(seconds=1)
-    fake, broker = FakeBroker(), Mock(spec=BrokerService)
-    broker.revalidate_account.return_value = replace(
-        fake.revalidate_account(USER_ID), id=str(ident),
+    captured = datetime.now(UTC) - timedelta(seconds=1)
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(ident),))
+        conn.execute(
+            "INSERT INTO broker_sync_state (user_id, account_id, pending_cursor, "
+            "history_window_from, history_window_to) VALUES (%s, %s, 'legacy-cursor', %s, %s)",
+            (ident, str(ident), captured - timedelta(days=1), captured),
+        )
+    broker = _monitoring_broker(ident)
+    broker.observation_bundle.side_effect = lambda *_args, **_kwargs: replace(
+        bundle(), account_id=str(ident), refreshed_at=captured
     )
-    broker.user_info.return_value = fake.user_info(USER_ID)
-    broker.observation_bundle.return_value = replace(
-        bundle(), account_id=str(ident), refreshed_at=captured,
-    )
-    broker.evidence.return_value = fake.evidence(USER_ID, bundle(), now=captured)
-    broker.history_page.return_value = TBankOperationsPage(False, "", ())
     observer = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS)
     store.request_refresh(ident, LEGAL_VERSIONS)
     with store.observer_lock() as locked:
         assert locked
-        first = store.claim_refresh_job(ident, LEGAL_VERSIONS)
-        assert first is not None
-        store.save_history_page(
-            ident, job_run_id=first.id, account_id=str(ident), environment="prod",
-            window_from=datetime(2024, 1, 1, tzinfo=UTC), window_to=old_end,
-            observed_at=started, page=TBankOperationsPage(True, "old-cursor", ()),
+        job = store.claim_refresh_job(ident, LEGAL_VERSIONS)
+        assert job is not None
+        outcome = observer.run_job(job, now=datetime.now(UTC))
+    assert outcome.snapshot_saved
+    broker.user_info.assert_not_called()
+    broker.history_page.assert_not_called()
+    assert store.refresh_status(ident)["history_status"] == "not_collected"
+    with database.pool.connection() as conn:
+        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(ident),))
+        assert (
+            conn.execute(
+                "SELECT pending_cursor FROM broker_sync_state WHERE user_id=%s", (ident,)
+            ).fetchone()["pending_cursor"]
+            == "legacy-cursor"
         )
-        with patch("omnicio.observer.MAX_HISTORY_PAGES_PER_RUN", 1):
-            partial = observer.run_job(first, now=started)
-        assert partial.status == "degraded"
-        assert partial.snapshot_saved is True
-        state = store.sync_state(ident, str(ident))
-        assert state is not None
-        assert state.pending_cursor == ""
-        assert state.last_complete_watermark == old_end
-        assert store.refresh_status(ident)["history_status"] == "continuation_pending"
-    first_read = broker.history_page.call_args_list[0].kwargs
-    assert first_read["cursor"] == "old-cursor"
-    assert first_read["to_at"] == old_end
-
-    age_request(database, ident)
-    store.request_refresh(ident, LEGAL_VERSIONS)
-    next_capture = captured + timedelta(seconds=1)
-    broker.observation_bundle.return_value = replace(
-        bundle(), account_id=str(ident), refreshed_at=next_capture,
-    )
-    with store.observer_lock() as locked:
-        assert locked
-        second = store.claim_refresh_job(ident, LEGAL_VERSIONS)
-        assert second is not None
-        finished = observer.run_job(second, now=started)
-        assert finished.status == "succeeded"
-    final = store.sync_state(ident, str(ident))
-    assert final is not None
-    assert final.last_complete_watermark == next_capture
-    assert broker.history_page.call_count == 2
-    assert broker.history_page.call_args.kwargs["to_at"] == next_capture
-    dashboard = WorkspaceStore(database).dashboard(ident)
-    assert dashboard["performance"]["status"] == "available"
-    assert datetime.fromisoformat(dashboard["performance"]["to"]) == next_capture
 
 
 @pytest.mark.parametrize("change", ["credential", "consent", "disconnect", "delete"])

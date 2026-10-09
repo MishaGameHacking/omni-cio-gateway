@@ -26,20 +26,20 @@
   const navigation = (mobile = false) => navigationItems.filter(item => !mobile || item[2]).map(([key, label]) => [key, T(label)]);
   const publicPages = Object.freeze(["welcome", "features", "how-it-works", "strategies", "technology", "pricing", "about", "support", "install"]);
   const routeScreens = Object.freeze({
-    home: [], portfolio: ["positions", "history", "structure", "income", "operations"],
-    market: ["reference", "watchlist", "positions", "news"],
-    strategies: ["catalog", "editor", "assessment", "research", "archive", "evidence", "result", "detail", "plan", "executions"],
+    home: [], portfolio: ["positions", "history", "structure"],
+    market: ["catalog", "reference", "watchlist", "positions", "news"],
+    strategies: ["catalog", "editor", "assessment", "research", "archive", "evidence", "result", "detail"],
     assistant: ["connection", "conversation", "history", "memory", "sources"], goals: ["archive", "create", "edit", "plan"],
-    analytics: ["history", "performance", "income", "risk"], events: ["detail", "news"],
+    analytics: ["history", "structure", "risk"], events: ["detail", "news"],
     profile: ["personal", "identities", "sessions", "plan", "delete"],
-    settings: ["appearance", "notifications", "broker", "recovery", "about", "operations", "support"],
+    settings: ["appearance", "notifications", "broker", "about", "operations", "support"],
     asset: [], search: [], install: []
   });
   const routeFields = Object.freeze({uid: "uid", q: "q", event: "event", goal_id: "goal", run: "run", news: "news", news_source: "news_source", preset: "preset", period: "period", tab: "tab", filter: "filter", asset_filter: "assets", event_filter: "events", currency: "currency", reference_period: "reference_period", strategy_pane: "strategy_pane", sort: "sort", direction: "direction", conversation: "conversation", overlay: "overlay"});
   const parseRoute = (hash = "", fallbackMode = "auto") => {
     const [path, query = ""] = String(hash).replace(/^#/, "").split("?");
     const parts = path.split("/").filter(Boolean);
-    const explicitMode = ["public", "demo", "account"].includes(parts[0]);
+    const explicitMode = ["public", "guest", "account"].includes(parts[0]);
     const mode = explicitMode ? parts.shift() : fallbackMode;
     const alias = {features: "features", "how-it-works": "how-it-works", "public-strategies": "strategies", technology: "technology", pricing: "pricing", about: "about", welcome: "welcome"};
     if (!explicitMode && Object.hasOwn(alias, parts[0])) return {mode: "public", view: alias[parts[0]], screen: ""};
@@ -55,7 +55,7 @@
     return result;
   };
   const routeHash = route => {
-    const mode = ["public", "demo", "account"].includes(route.mode) ? route.mode : "account";
+    const mode = ["public", "guest", "account"].includes(route.mode) ? route.mode : "account";
     const query = new URLSearchParams();
     for (const [field, key] of Object.entries(routeFields)) if (route[field] !== undefined && route[field] !== null && String(route[field]) !== "") query.set(key, String(route[field]));
     return `#${mode}/${route.view || (mode === "public" ? "welcome" : "portfolio")}${route.screen ? "/" + route.screen : ""}${query.size ? "?" + query.toString() : ""}`;

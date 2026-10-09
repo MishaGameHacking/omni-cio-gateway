@@ -29,6 +29,7 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from test_postgres_migrations import _assert_email_readiness
 
 from omnicio.db import Database, UserRecord
 from omnicio.main import app
@@ -128,7 +129,7 @@ def _verify_restored(dsn: str, role: str, password: str, key: str, expected, gua
         assert database_guards(admin) == guards
         encrypted = admin.execute("SELECT token_ciphertext FROM tbank_connection").fetchone()[0]
         assert decrypt_secret(bytes(encrypted), key) == "synthetic-broker-token"
-        assert admin.execute(READINESS_QUERY).fetchone()[0]
+        _assert_email_readiness(admin)
         for incomplete_schema in (
             "ALTER TABLE portfolio_execution_legs DISABLE TRIGGER strategy_submission_authority",
             "ALTER TABLE billing_payments RENAME cancel_attempted_at TO missing_cancel_receipt",
@@ -280,6 +281,7 @@ def test_dump_restore_preserves_settings_and_tenant_isolation(
                 assert len(db.recent_activity(B)) == 1
             with psycopg.connect(source_dsn, autocommit=True) as admin:
                 admin.execute("ALTER TABLE strategy_drafts DROP CONSTRAINT synthetic_draft_failure")
+                _assert_email_readiness(admin)
                 expected, guards = table_fingerprints(admin), database_guards(admin)
             archive = tmp_path / "synthetic.dump"
             started = time.monotonic()

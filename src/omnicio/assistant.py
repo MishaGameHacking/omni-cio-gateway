@@ -23,6 +23,7 @@ from uuid import UUID, uuid4
 
 from .assistant_store import AssistantQuotaExceeded as AssistantQuotaExceeded
 from .assistant_store import AssistantRequestConflict, AssistantStore, assistant_sources_json
+from .config import DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT, MAX_ASSISTANT_DAILY_REQUEST_LIMIT
 from .db import Database
 from .security import decrypt_secret, encrypt_secret
 from .workspace_store import WorkspaceNotFound
@@ -287,8 +288,7 @@ def _snapshot_sources(context: Mapping[str, Any]) -> list[dict[str, Any]]:
     result = []
     sections = {
         "overview": ("portfolio_snapshot", "Стоимость портфеля"),
-        "performance": ("portfolio_performance", "Расчёт доходности портфеля"),
-        "income": ("portfolio_income", "Подтверждённые выплаты"),
+        "value_change": ("portfolio_value_change", "Изменение стоимости по наблюдениям"),
         "positions": ("portfolio_positions", "Позиции портфеля"),
         "goals": ("user_goals", "Цели пользователя"),
         "strategy": ("user_strategy", "Выбранная стратегия"),
@@ -552,77 +552,18 @@ def portfolio_context(workspace: Mapping[str, Any]) -> dict[str, Any]:
     fields = {
         "overview": {"status", "nav_rub", "observed_at", "reason", "cash_rub", "valid_until",
                      "valuation_status", "positions_valuation_status", "sector_status"},
-        "performance": {
-            "status",
-            "method",
-            "investment_result_rub",
-            "net_contributions_rub",
-            "return_percent",
-            "reason",
-            "from",
-            "to",
-            "fees_rub",
-            "taxes_rub",
-            "start_nav_rub",
-            "end_nav_rub",
-            "income_received_rub",
-            "nav_status",
-            "return_status",
-            "return_reason",
-            "return_method",
-            "return_denominator_rub",
-            "return_is_estimate",
-            "return_is_annualized",
-            "return_time_basis",
-            "return_limitations",
-        },
-        "income": {
-            "status",
-            "total_rub",
-            "dividends_rub",
-            "coupons_rub",
-            "other_income_rub",
-            "redemptions_rub",
-            "reason",
-            "from",
-            "to",
-            "tax_basis",
+        "value_change": {
+            "status", "reason", "method", "label", "limitation", "from", "to",
+            "start_nav_rub", "end_nav_rub", "nav_change_rub",
         },
     }
     for section, allowed in fields.items():
         value = workspace.get(section)
         if isinstance(value, dict):
             result[section] = {key: value[key] for key in allowed if key in value}
-            if section in {"performance", "income"}:
-                result[section].update(_payment_context(value))
     return result
 
 
-def _payment_context(value: Mapping[str, Any]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    fields = {"net_contributions_rub", "coupons_rub", "dividends_rub", "other_income_rub",
-              "redemptions_rub", "fees_rub", "taxes_rub", "total_rub"}
-    coverage = value.get("metric_coverage")
-    if isinstance(coverage, Mapping):
-        result["metric_coverage"] = {
-            key: {name: item[name] for name in ("status", "value_rub", "observed_rub", "reason")
-                  if name in item
-                  and (item[name] is None or isinstance(item[name], (str, int, float)))}
-            for key, item in coverage.items() if key in fields and isinstance(item, Mapping)
-        }
-    native = value.get("native_payment_sums")
-    if isinstance(native, Mapping):
-        currencies = native.get("currencies", native)
-        if isinstance(currencies, Mapping):
-            result["native_payment_sums"] = {
-                "basis": "observed_executed_payments_without_fx_conversion",
-                "currencies": {currency: {
-                    key: amount for key, amount in amounts.items()
-                    if key + "_rub" in fields and isinstance(amount, (str, int, float))
-                } for currency, amounts in currencies.items()
-                    if currency in _CURRENCIES and isinstance(amounts, Mapping)},
-            }
-    return result
 
 
 def _openai_response(payload: Mapping[str, Any]) -> tuple[Any, dict[str, Any]]:
@@ -1170,10 +1111,10 @@ class AssistantService:
         credential_key: str,
         enabled: bool = False,
         allowed_endpoints: Sequence[str] = (),
-        daily_request_limit: int = 30,
+        daily_request_limit: int = DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT,
         default_client: AssistantClient | None = None,
     ) -> None:
-        if not 1 <= daily_request_limit <= 200:
+        if not 1 <= daily_request_limit <= MAX_ASSISTANT_DAILY_REQUEST_LIMIT:
             raise ValueError("assistant_daily_limit_invalid")
         self.store = AssistantStore(database)
         self.credential_key = credential_key

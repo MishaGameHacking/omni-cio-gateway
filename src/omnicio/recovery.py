@@ -21,6 +21,7 @@ BACKUP_MAX_AGE = timedelta(hours=24)
 BACKUP_TIMEZONE = timezone(timedelta(hours=3))
 RESTORE_MAX_AGE = timedelta(days=30)
 RESTORE_CHECKS = frozenset({"content", "schema", "foreign_keys", "tenant_isolation"})
+SHA256_PATTERN = r"[0-9a-f]{64}"
 
 
 def sign_recovery_evidence(payload: dict[str, Any], key: str) -> dict[str, Any]:
@@ -38,7 +39,7 @@ def verified_recovery_evidence(envelope: object, key: str) -> dict[str, Any] | N
     if (not isinstance(envelope, dict) or set(envelope) != {"payload", "signature"}
             or not isinstance(envelope["payload"], dict)
             or not isinstance(envelope["signature"], str)
-            or re.fullmatch(r"[0-9a-f]{64}", envelope["signature"]) is None):
+            or re.fullmatch(SHA256_PATTERN, envelope["signature"]) is None):
         return None
     try:
         expected = sign_recovery_evidence(envelope["payload"], key)["signature"]
@@ -90,9 +91,12 @@ def evidence_digest(value: object) -> str:
     ).encode()).hexdigest()
 
 
-def _restore_verification(payload: dict[str, object], now: datetime) -> dict[str, object]:
+def _restore_verification(
+    payload: dict[str, object], now: datetime, *, signing_key: str | None = None,
+) -> dict[str, object]:
     proof = verified_recovery_evidence(
-        payload.get("restore_verification"), os.environ.get("OMNICIO_RESTORE_RECEIPT_KEY", ""),
+        payload.get("restore_verification"),
+        os.environ.get("OMNICIO_RESTORE_RECEIPT_KEY", "") if signing_key is None else signing_key,
     )
     absent: dict[str, object] = {"status": "not_verified", "physical_snapshot_verified": False}
     if proof is None:
@@ -110,7 +114,7 @@ def _restore_verification(payload: dict[str, object], now: datetime) -> dict[str
             or not isinstance(proof.get("release_sha"), str)
             or re.fullmatch(r"[0-9a-f]{40}", proof["release_sha"]) is None
             or not isinstance(proof.get("archive_sha256"), str)
-            or re.fullmatch(r"[0-9a-f]{64}", proof["archive_sha256"]) is None
+            or re.fullmatch(SHA256_PATTERN, proof["archive_sha256"]) is None
             or not isinstance(proof.get("source_system_id"), str)
             or not isinstance(proof.get("target_system_id"), str)
             or not proof["source_system_id"].isdigit() or not proof["target_system_id"].isdigit()
@@ -124,6 +128,80 @@ def _restore_verification(payload: dict[str, object], now: datetime) -> dict[str
         "verified_at": verified_at, "source_at": source_at,
         "release_sha": proof["release_sha"], "duration_seconds": proof["duration_seconds"],
     }
+
+
+def require_upgrade_recovery(
+    state: object, signing_key: str, *, cluster_id: int, source_release: str,
+    source_system_id: str, now: datetime, manifest: object,
+    encrypted_archive_sha256: str, decrypted_archive_sha256: str,
+) -> dict[str, Any]:
+    """Authenticate a fresh restore point for the observed production source.
+
+    The accepted controller reads private files and both keys on the existing
+    server. It hashes the encrypted archive and its bounded, authenticated
+    PostgreSQL plaintext in memory; neither rows nor keys leave that server.
+    This verifier performs no I/O and cannot create or restore a database.
+    """
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("recovery_clock_unavailable")
+    if (type(cluster_id) is not int or cluster_id <= 0
+            or not isinstance(source_release, str)
+            or re.fullmatch(r"[0-9a-f]{40}", source_release) is None
+            or not isinstance(source_system_id, str)
+            or re.fullmatch(r"[1-9]\d{0,19}", source_system_id, flags=re.ASCII) is None):
+        raise ValueError("recovery_source_identity_invalid")
+    if (not isinstance(state, dict) or type(state.get("schema_version")) is not int
+            or state["schema_version"] != 1 or type(state.get("cluster_id")) is not int
+            or state["cluster_id"] != cluster_id):
+        raise ValueError("recovery_state_mismatch")
+    proof = verified_recovery_evidence(state.get("restore_verification"), signing_key)
+    required = {"kind", "source_kind", "cluster_id", "release_sha", "source_at",
+                "source_system_id", "target_system_id", "archive_sha256", "verified_at",
+                "duration_seconds", "checks"}
+    if (proof is None or set(proof) != required
+            or _restore_verification(state, now, signing_key=signing_key)["status"] != "verified"
+            or re.fullmatch(r"[1-9]\d{0,19}", proof["target_system_id"], flags=re.ASCII) is None):
+        raise ValueError("recovery_proof_unverified")
+    if (proof["release_sha"] != source_release
+            or proof["source_system_id"] != source_system_id):
+        raise ValueError("recovery_source_mismatch")
+    source_at = _timestamp(proof["source_at"])
+    if source_at is None or not timedelta(0) <= now - source_at <= BACKUP_MAX_AGE:
+        raise ValueError("recovery_source_stale")
+    _require_upgrade_archive(
+        proof, manifest, signing_key, encrypted_archive_sha256=encrypted_archive_sha256,
+        decrypted_archive_sha256=decrypted_archive_sha256,
+    )
+    return proof
+
+
+def _require_upgrade_archive(
+    proof: dict[str, Any], manifest: object, signing_key: str, *,
+    encrypted_archive_sha256: str, decrypted_archive_sha256: str,
+) -> None:
+    """Bind the observed encrypted and decrypted bytes to the signed restore proof."""
+    exported = verified_recovery_evidence(manifest, signing_key)
+    export_fields = {"kind", "source_kind", "cluster_id", "release_sha", "source_at",
+                     "source_system_id", "archive_sha256", "encrypted_sha256",
+                     "content_digest", "schema_digest"}
+    if (exported is None or set(exported) != export_fields
+            or exported["kind"] != "logical_export_v1"
+            or exported["source_kind"] != "runtime_pg_dump"
+            or type(exported["cluster_id"]) is not int
+            or any(exported[name] != proof[name] for name in (
+                "cluster_id", "release_sha", "source_at", "source_system_id", "archive_sha256",
+            ))
+            or any(not isinstance(exported[name], str)
+                   or re.fullmatch(SHA256_PATTERN, exported[name]) is None
+                   for name in ("encrypted_sha256", "content_digest", "schema_digest"))):
+        raise ValueError("recovery_manifest_unverified")
+    if (not isinstance(encrypted_archive_sha256, str)
+            or re.fullmatch(SHA256_PATTERN, encrypted_archive_sha256) is None
+            or not isinstance(decrypted_archive_sha256, str)
+            or re.fullmatch(SHA256_PATTERN, decrypted_archive_sha256) is None
+            or not hmac.compare_digest(exported["encrypted_sha256"], encrypted_archive_sha256)
+            or not hmac.compare_digest(proof["archive_sha256"], decrypted_archive_sha256)):
+        raise ValueError("recovery_archive_mismatch")
 
 
 def _timestamp(value: object) -> datetime | None:

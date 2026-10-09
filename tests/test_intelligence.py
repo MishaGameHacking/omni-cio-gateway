@@ -11,6 +11,7 @@ from omnicio.intelligence import (
     build_news_evidence,
     build_tbank_evidence,
     held_news_instrument_uids,
+    market_price_changes,
 )
 from omnicio.portfolio import PortfolioAnalysis
 from omnicio.tbank import (
@@ -18,6 +19,7 @@ from omnicio.tbank import (
     TBankAssetReport,
     TBankBondEvent,
     TBankInstrumentMetadata,
+    TBankLastPrice,
     TBankMoney,
     TBankNewsItem,
     TBankPortfolio,
@@ -25,6 +27,32 @@ from omnicio.tbank import (
     TBankPositions,
     TBankRating,
 )
+
+
+def test_public_price_changes_use_exact_observed_prices_and_reject_false_time_comparisons() -> None:
+    now = datetime(2026, 10, 9, 12, tzinfo=UTC)
+    previous = {
+        uid: TBankLastPrice(uid, "100.000000001", now - timedelta(seconds=10))
+        for uid in ("rise", "fall", "same-time", "future", "invalid", "unchanged")
+    }
+    current = (
+        TBankLastPrice("rise", "110.0000000011", now),
+        TBankLastPrice("fall", "80.0000000008", now),
+        TBankLastPrice("same-time", "200", now - timedelta(seconds=10)),
+        TBankLastPrice("future", "200", now + timedelta(seconds=1)),
+        TBankLastPrice("invalid", "NaN", now),
+        TBankLastPrice("unchanged", "100.000000001", now),
+        TBankLastPrice("new", "200", now),
+    )
+    changes = market_price_changes(current, previous, observed_at=now)
+    assert [(item.instrument_uid, item.change_percent) for item in changes] == [
+        ("fall", "-20.0"), ("rise", "10.0"),
+    ]
+    assert changes[0].from_time == previous["fall"].time.isoformat()
+    assert changes[0].to_time == now.isoformat()
+    naive_observation = now.replace(tzinfo=None)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        market_price_changes(current, previous, observed_at=naive_observation)
 
 
 def _bundle() -> BrokerObservationBundle:

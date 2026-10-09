@@ -1,4 +1,4 @@
-"""The manual observation worker reuses read-only evidence and bounded history."""
+"""The observation worker refreshes holdings without reading personal history."""
 
 from __future__ import annotations
 
@@ -70,13 +70,14 @@ def test_refresh_reuses_full_read_only_observation_and_keeps_daily_identity_sepa
     assert not store.claimed  # Manual refresh does not claim/relabel a daily result.
     assert store.saved_snapshots == 1
     assert store.saved_evidence == 1
-    assert broker.seen_cursors == ["", "cursor-2"]
+    assert broker.seen_cursors == []
     status, details = store.finished[0]
     assert status == "succeeded"
     assert details["job"] == "portfolio_refresh"
     assert details["scheduled_for"] is None
-    assert details["history_status"] == "complete"
-    assert details["history_pages"] == 2
+    assert details["history_status"] == "not_collected"
+    assert details["history_pages"] == 0
+    assert details["broker_user_info_status"] == "not_collected"
     assert not coordinator.run_pending()
 
 
@@ -137,20 +138,28 @@ def test_manual_worker_completes_dated_request_after_daily_lock_contention() -> 
     assert store.saved_snapshots == 1
 
 
-def test_refresh_history_limit_is_partial_and_retains_the_continuation_cursor() -> None:
+@pytest.mark.parametrize("scope", ["full", "quick"])
+def test_refresh_never_reads_or_persists_personal_profile_or_operations(scope: str) -> None:
     store, broker = RefreshStore(), FakeBroker()
+    store.jobs = [replace(store.jobs[0], refresh_scope=scope)]
+    broker.observation_bundle = Mock(return_value=bundle("observed"))
+    broker.user_info = Mock(side_effect=AssertionError("personal profile read is forbidden"))
+    broker.history_page = Mock(side_effect=AssertionError("operation history read is forbidden"))
     coordinator = PortfolioRefreshCoordinator(store, broker, legal_versions=LEGAL_VERSIONS)
-    with patch("omnicio.observer.MAX_HISTORY_PAGES_PER_RUN", 1):
-        assert coordinator.run_pending()
-    assert broker.seen_cursors == [""]
-    assert store.saved_pages == ["cursor-2"]
-    status, details = store.finished[0]
-    assert status == "degraded"
-    assert details["history_status"] == "continuation_pending"
+    assert coordinator.run_pending()
+    broker.user_info.assert_not_called()
+    broker.history_page.assert_not_called()
+    assert store.saved_pages == []
+    assert store.saved_windows == []
+    _, details = store.finished[0]
+    assert details["history_status"] == "not_collected"
+    assert details["history_pages"] == 0
+    assert details["history_new_observations"] == 0
+    assert details["broker_user_info_status"] == "not_collected"
     assert details["snapshot_saved"] is True
 
 
-def test_quick_refresh_saves_nav_and_bounded_history_without_full_enrichment() -> None:
+def test_quick_refresh_saves_nav_without_history_or_full_enrichment() -> None:
     store, broker = RefreshStore(), FakeBroker()
     store.jobs = [replace(store.jobs[0], refresh_scope="quick")]
     observed = bundle("partial")
@@ -163,11 +172,12 @@ def test_quick_refresh_saves_nav_and_bounded_history_without_full_enrichment() -
     broker.observation_bundle.assert_called_once_with(USER_ID, quick=True)
     assert store.saved_snapshots == 1
     assert store.saved_evidence == 0
-    assert broker.seen_cursors == [""]
+    assert broker.seen_cursors == []
     status, details = store.finished[0]
-    assert status == "degraded"
+    assert status == "succeeded"
+    assert details["analysis_status"] == "partial"
     assert details["valuation_status"] == "complete"
-    assert details["history_status"] == "continuation_pending"
+    assert details["history_status"] == "not_collected"
     assert details["evidence_status"] == "deferred_to_full_refresh"
 
 

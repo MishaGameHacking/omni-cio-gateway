@@ -18,11 +18,13 @@ import subprocess
 import sys
 import tarfile
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from collections.abc import Iterable
 from email.message import Message
 
+from inplace_upgrade import UpgradeBlocked, validate_operation
 from timeweb_auth_postgres import (
     AmbiguousProviderError,
     EphemeralSsh,
@@ -55,7 +57,6 @@ LEGAL_DOCUMENT_KEYS = {
 }
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
-LEGACY_RESET_MARKER = "/etc/omnicio/legacy-profile-reset-v1.done"
 DEPLOY_LOCK = "/run/omnicio-auth-deploy.lock"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
 INVALID_RELEASE_SHA = "Release SHA must be a full lowercase 40-character SHA"
@@ -71,10 +72,6 @@ BRAND_RUNTIME_FILES = (
 BRAND_PUBLIC_MARK = "/assets/brand/omnicio-logo.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
-CALLBACK_PUBLIC_PATHS = (
-    "/api/auth/tid/callback?error=access_denied",
-    "/api/auth/vkid/callback?error=access_denied",
-)
 JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
 PNG_CONTENT_TYPE = "image/png"
 # version.js holds only a bounded version/build object, never a runtime bundle.
@@ -90,22 +87,23 @@ PUBLIC_SECURITY_HEADERS = {
     ),
 }
 OPTIONAL_INTEGRATION_KEYS = (
-    "TID_CLIENT_ID", "TID_CLIENT_SECRET", "TID_LOGIN_ENABLED", "TID_PKCE_ENABLED",
+    "AUTH_SMTP_HOST", "AUTH_SMTP_PORT", "AUTH_SMTP_USERNAME", "AUTH_SMTP_PASSWORD",
+    "AUTH_SMTP_SENDER", "AUTH_SMTP_MODE", "MARKET_DATA_TOKEN",
     "ASSISTANT_BASE_URL", "ASSISTANT_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_ENABLED",
     "ASSISTANT_ALLOWED_ENDPOINTS", "ASSISTANT_DAILY_REQUEST_LIMIT",
     "NOTIFICATIONS_ENABLED", "NOTIFICATION_EMAIL_ENABLED", "NOTIFICATION_CRYPTO_KEY",
     "NOTIFICATION_VAPID_PRIVATE_KEY",
     "NOTIFICATION_VAPID_SUBJECT", "NOTIFICATION_SMTP_HOST", "NOTIFICATION_SMTP_PORT",
     "NOTIFICATION_SMTP_USERNAME", "NOTIFICATION_SMTP_PASSWORD", "NOTIFICATION_SMTP_SENDER",
-    "NOTIFICATION_SMTP_MODE", "OMNICIO_RESTORE_RECEIPT_KEY",
+    "NOTIFICATION_SMTP_MODE", "OMNICIO_RESTORE_RECEIPT_KEY", "OMNICIO_RESTORE_ARCHIVE_KEY",
     "BILLING_ENABLED", "BILLING_TERMINAL_KEY", "BILLING_PASSWORD", "BILLING_AMOUNT_KOPECKS",
     "BILLING_PERIOD_DAYS", "BILLING_OFFER_VERSION", "BILLING_DESCRIPTION", "BILLING_TAXATION",
     "BILLING_TAX",
 )
 OPTIONAL_SECRET_KEYS = frozenset({
-    "TID_CLIENT_SECRET", "ASSISTANT_API_KEY", "NOTIFICATION_CRYPTO_KEY",
+    "AUTH_SMTP_PASSWORD", "MARKET_DATA_TOKEN", "ASSISTANT_API_KEY", "NOTIFICATION_CRYPTO_KEY",
     "NOTIFICATION_VAPID_PRIVATE_KEY", "NOTIFICATION_SMTP_PASSWORD",
-    "OMNICIO_RESTORE_RECEIPT_KEY", "BILLING_PASSWORD",
+    "OMNICIO_RESTORE_RECEIPT_KEY", "OMNICIO_RESTORE_ARCHIVE_KEY", "BILLING_PASSWORD",
 })
 
 
@@ -166,42 +164,22 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
     command = (
         f"test -s {RUNTIME_ENV} && "
         f"grep -q '^DATABASE_URL=' {RUNTIME_ENV} && "
-        f"grep -q '^VKID_FLOW_CRYPTO_KEY=' {RUNTIME_ENV} && "
+        f"grep -q '^CLIENT_IP_KEY=' {RUNTIME_ENV} && "
         f"grep -q '^BROKER_TOKEN_CRYPTO_KEY=' {RUNTIME_ENV} && "
         "command -v psql >/dev/null 2>&1 && "
         "set -a && "
         f". {RUNTIME_ENV} && "
         "set +a && "
-        f'test "$(psql "$DATABASE_URL" -Atqc "{schema_query}" 2>/dev/null)" = "ready"'
+        'test "$(PGCONNECT_TIMEOUT=10 psql "$DATABASE_URL" -X '
+        '-v ON_ERROR_STOP=1 -Atqf - 2>/dev/null)" = "ready"'
     )
     try:
-        ssh.run(command)
+        # SQL is literal stdin: shell substitutions cannot alter its checks, and
+        # the Windows SSH command line stays bounded as the schema grows.
+        ssh.run(command, input_text=schema_query, timeout=45)
         return True
     except InfraError:
         return False
-
-
-def registration_occupancy(ssh: EphemeralSsh) -> tuple[int, int]:
-    command = (
-        "set -a && "
-        f". {RUNTIME_ENV} && "
-        "set +a && "
-        'psql "$DATABASE_URL" -AtF "|" -v ON_ERROR_STOP=1 -c '
-        '"SELECT count(*) FILTER (WHERE status <> \'deleted\'), '
-        'count(*) FILTER (WHERE status = \'active\') FROM users;"'
-    )
-    raw = ssh.run(command).strip()
-    parts = raw.split("|")
-    if len(parts) != 2:
-        raise InfraError("Registration occupancy query returned an invalid result")
-    try:
-        used_slots = int(parts[0])
-        active_users = int(parts[1])
-    except ValueError as exc:
-        raise InfraError("Registration occupancy query returned non-integer values") from exc
-    if used_slots < 0 or active_users < 0 or active_users > used_slots:
-        raise InfraError("Registration occupancy query returned impossible values")
-    return used_slots, active_users
 
 
 def _environment_value(value: str) -> str:
@@ -210,10 +188,6 @@ def _environment_value(value: str) -> str:
     escaped = (value.replace("\\", "\\\\").replace('"', '\\"')
                .replace("$", "\\$").replace("`", "\\`"))
     return f'"{escaped}"'
-
-
-def _positive_numeric_id(value: str) -> bool:
-    return value.isdigit() and int(value) > 0
 
 
 def _strict_boolean_environment(name: str, default: bool = False) -> bool:
@@ -226,105 +200,6 @@ def _strict_boolean_environment(name: str, default: bool = False) -> bool:
     if normalized == "false":
         return False
     raise InfraError(f"{name} must be true or false")
-
-
-def registration_enabled() -> bool:
-    return _strict_boolean_environment("REGISTRATION_ENABLED", False)
-
-
-def registration_max_users() -> int:
-    raw = os.environ.get("REGISTRATION_MAX_USERS", "1").strip()
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise InfraError("REGISTRATION_MAX_USERS must be an integer") from exc
-    if value <= 0:
-        raise InfraError("REGISTRATION_MAX_USERS must be positive")
-    return value
-
-
-def vkid_configuration_ready() -> bool:
-    return _positive_numeric_id(os.environ.get("VKID_APP_ID", "").strip())
-
-
-CONTROLLED_LIVE_TEST_MAX_USERS = 2
-
-
-def controlled_live_test_mode() -> bool:
-    return _strict_boolean_environment("CONTROLLED_LIVE_TEST_MODE", False)
-
-
-def regulatory_gate_satisfied() -> bool:
-    return _strict_boolean_environment("RKN_NOTIFICATION_CONFIRMED", False)
-
-
-def legacy_profile_reset_enabled() -> bool:
-    return (
-        registration_enabled()
-        and (regulatory_gate_satisfied() or controlled_live_test_mode())
-        and _strict_boolean_environment("LEGACY_PROFILE_RESET_ENABLED", False)
-    )
-
-
-def portfolio_live_execution_enabled() -> bool:
-    return _strict_boolean_environment("PORTFOLIO_LIVE_EXECUTION_ENABLED", False)
-
-
-def portfolio_live_caps() -> tuple[int, int]:
-    values: list[int] = []
-    for name, default in (
-        ("PORTFOLIO_LIVE_MAX_ORDER_RUB", "10000"),
-        ("PORTFOLIO_LIVE_MAX_DAILY_RUB", "20000"),
-    ):
-        raw = os.environ.get(name, default).strip()
-        try:
-            value = int(raw)
-        except ValueError as exc:
-            raise InfraError(f"{name} must be an integer") from exc
-        if value <= 0:
-            raise InfraError(f"{name} must be positive")
-        values.append(value)
-    order_cap, daily_cap = values
-    if daily_cap < order_cap:
-        raise InfraError(
-            "PORTFOLIO_LIVE_MAX_DAILY_RUB must be >= PORTFOLIO_LIVE_MAX_ORDER_RUB"
-        )
-    return order_cap, daily_cap
-
-
-def _validate_registration_environment() -> None:
-    if not _strict_boolean_environment("MULTIUSER_LEGAL_APPROVED", False):
-        raise InfraError(
-            "Registration requires an explicit reviewed legal approval gate"
-        )
-
-    capacity = registration_max_users()
-    regulatory_ready = regulatory_gate_satisfied()
-    live_test = controlled_live_test_mode()
-    if not regulatory_ready and not live_test:
-        raise InfraError(
-            "Registration requires either confirmed regulatory readiness "
-            "or an explicit controlled live-test exception"
-        )
-    if live_test and capacity > CONTROLLED_LIVE_TEST_MAX_USERS:
-        raise InfraError(
-            "CONTROLLED_LIVE_TEST_MODE allows at most "
-            f"{CONTROLLED_LIVE_TEST_MAX_USERS} users"
-        )
-    if live_test and regulatory_ready:
-        raise InfraError(
-            "Disable CONTROLLED_LIVE_TEST_MODE after regulatory readiness is confirmed"
-        )
-
-    operator_name = os.environ.get("LEGAL_OPERATOR_NAME", "").strip()
-    operator_email = os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip()
-    if not 3 <= len(operator_name) <= 200:
-        raise InfraError("LEGAL_OPERATOR_NAME must contain 3-200 characters")
-    if not re.fullmatch(
-        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}",
-        operator_email,
-    ):
-        raise InfraError("LEGAL_OPERATOR_EMAIL must be a valid email address")
 
 
 def validate_product_environment() -> None:
@@ -344,18 +219,24 @@ def validate_product_environment() -> None:
             + ", ".join(missing)
         )
 
-    if not vkid_configuration_ready():
-        raise InfraError("VKID_APP_ID must be a positive numeric value")
-
-    if registration_enabled():
-        _validate_registration_environment()
-
-    portfolio_live_caps()
-    if portfolio_live_execution_enabled():
-        raise InfraError(
-            "Production live execution requires a newer reviewed legal publication "
-            "than 2026-10-02-v6; keep PORTFOLIO_LIVE_EXECUTION_ENABLED=false"
-        )
+    operator_name = os.environ.get("LEGAL_OPERATOR_NAME", "").strip()
+    operator_email = os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip()
+    if not 3 <= len(operator_name) <= 200:
+        raise InfraError("LEGAL_OPERATOR_NAME must contain 3-200 characters")
+    if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}", operator_email):
+        raise InfraError("LEGAL_OPERATOR_EMAIL must be a valid email address")
+    # Missing SMTP values may already be installed on the server. Verification
+    # of the rendered auth config is the final deployment gate for registration.
+    host = os.environ.get("AUTH_SMTP_HOST", "").strip()
+    if host and not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host):
+        raise InfraError("AUTH_SMTP_HOST must be a hostname")
+    raw_port = os.environ.get("AUTH_SMTP_PORT", "465").strip() or "465"
+    if not raw_port.isascii() or not raw_port.isdecimal() or not 1 <= int(raw_port) <= 65535:
+        raise InfraError("AUTH_SMTP_PORT must be between 1 and 65535")
+    mode = os.environ.get("AUTH_SMTP_MODE", "tls").strip() or "tls"
+    if mode not in {"tls", "starttls"}:
+        raise InfraError("AUTH_SMTP_MODE must use tls or starttls")
+    _strict_boolean_environment("MARKET_DATA_DISTRIBUTION_APPROVED", False)
 
 
 def verify_legal_document_version(body: str, path: str) -> None:
@@ -387,24 +268,18 @@ def build_product_environment(*, release_sha: str = "") -> str:
         raise InfraError(INVALID_RELEASE_SHA)
     values = {
         "OMNICIO_RECOVERY_STATUS_PATH": REMOTE_STATUS_PATH,
+        # Publication authority is always explicit and never inherited from a prior release.
+        "MARKET_DATA_DISTRIBUTION_APPROVED": (
+            "true" if _strict_boolean_environment("MARKET_DATA_DISTRIBUTION_APPROVED") else "false"
+        ),
         # Authority must be explicitly revoked when the workflow variable is cleared.
         "OPERATOR_USER_ID": os.environ.get("OPERATOR_USER_ID", "").strip(),
-        "VKID_APP_ID": os.environ.get("VKID_APP_ID", "").strip(),
-        "VKID_LOGIN_ENABLED": "true" if vkid_configuration_ready() else "false",
-        "REGISTRATION_ENABLED": "true" if registration_enabled() else "false",
-        "REGISTRATION_MAX_USERS": str(registration_max_users()),
         "LEGAL_OPERATOR_NAME": os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
         "LEGAL_OPERATOR_EMAIL": os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip(),
         "LEGAL_PRIVACY_VERSION": os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         "LEGAL_CONSENT_VERSION": os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         "LEGAL_TERMS_VERSION": os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
-        "VKID_FLOW_TTL_SECONDS": os.environ.get("VKID_FLOW_TTL_SECONDS", "600").strip(),
         "SESSION_TTL_SECONDS": os.environ.get("SESSION_TTL_SECONDS", "34560000").strip(),
-        "PORTFOLIO_LIVE_EXECUTION_ENABLED": (
-            "true" if portfolio_live_execution_enabled() else "false"
-        ),
-        "PORTFOLIO_LIVE_MAX_ORDER_RUB": str(portfolio_live_caps()[0]),
-        "PORTFOLIO_LIVE_MAX_DAILY_RUB": str(portfolio_live_caps()[1]),
     }
     if release_sha:
         values["OMNICIO_RELEASE_BUILD"] = release_sha[:12]
@@ -418,6 +293,213 @@ def build_product_environment(*, release_sha: str = "") -> str:
         f"{name}={_environment_value(value)}\n"
         for name, value in values.items()
     )
+
+
+_PRODUCT_PREFLIGHT_PROGRAM = r'''
+def _load_upgrade_product_settings() -> Settings:
+    import pathlib
+
+    environments = {}
+    for name in ("runtime.env", "product.env"):
+        path = pathlib.Path("/etc/omnicio") / name
+        try:
+            text = _private_file(path, 65536)
+        except FileNotFoundError:
+            if name == "runtime.env":
+                raise UpgradeBlocked("runtime_environment_missing") from None
+            text = ""
+        environments[name] = parse_environment(text)
+    # Match the writer: explicit values replace base settings; only optional
+    # integration keys absent from the new file survive from product.env.
+    existing = environments["product.env"]
+    desired = parse_environment(__OMNICIO_PRODUCT_ENVIRONMENT__)
+    for name in __OMNICIO_PRESERVED_KEYS__:
+        if name in existing:
+            desired.setdefault(name, existing[name])
+    for name in ("OMNICIO_RESTORE_RECEIPT_KEY", "OMNICIO_RESTORE_ARCHIVE_KEY"):
+        if existing.get(name) and desired.get(name) != existing[name]:
+            raise UpgradeBlocked("recovery_key_rotation_requires_separate_procedure")
+    effective = {**environments["runtime.env"], **desired}
+    previous = dict(os.environ)
+    try:
+        os.environ.clear()
+        os.environ.update(effective)
+        settings = load_settings()
+        validate_auth_email_configuration(settings)
+        validate_push_configuration(
+            settings.notification_vapid_private_key, settings.notification_vapid_subject,
+        )
+    finally:
+        os.environ.clear()
+        os.environ.update(previous)
+    if not settings.auth_email_ready:
+        raise UpgradeBlocked("auth_email_configuration_required")
+    return settings
+
+
+def require_upgrade_product_configuration() -> dict[str, object]:
+    settings = _load_upgrade_product_settings()
+    return {
+        "status": "configuration_ready",
+        "smtp_delivery_verified": False,
+        "market_token_configured": bool(settings.market_data_token),
+        "market_distribution_approved": settings.market_data_distribution_approved,
+    }
+'''
+
+
+_SMTP_PROBE_PROGRAM = r'''
+def send_upgrade_control_email() -> dict[str, str]:
+    settings = _load_upgrade_product_settings()
+    recipient = normalize_login_email(__OMNICIO_SMTP_PROBE_RECIPIENT__)
+    tag = __OMNICIO_SMTP_PROBE_TAG__
+    domain = __OMNICIO_SMTP_PROBE_DOMAIN__
+    # The accepted 1.3 runtime already provides this transport. Do not import
+    # the candidate's AuthService or start a database-backed delivery worker.
+    from omnicio.notifications import NotificationConfig, NotificationTransport
+
+    transport = NotificationTransport(NotificationConfig(
+        crypto_key=validate_auth_email_configuration(settings),
+        public_origin="https://" + domain,
+        email_enabled=True,
+        smtp_host=settings.auth_smtp_host,
+        smtp_port=settings.auth_smtp_port,
+        smtp_username=settings.auth_smtp_username,
+        smtp_password=settings.auth_smtp_password,
+        smtp_sender=settings.auth_smtp_sender,
+        smtp_mode=settings.auth_smtp_mode,
+    ))
+    result = transport.send_email({"email": recipient}, {
+        "title": "OMNICIO — проверка доставки перед обновлением 1.4 [" + tag + "]",
+        "body": (
+            "Это контрольное письмо с рабочего сервера OMNICIO, отправленное "
+            "по вашему разрешению перед обновлением 1.4. Действий с вашим "
+            "аккаунтом не выполняется. Идентификатор проверки: " + tag
+        ),
+        "tag": tag,
+    })
+    # A queued or uncertain outcome is reported once, never retried here.
+    # Provider acceptance does not claim receipt in the destination mailbox.
+    return {
+        "message_id": "<" + tag + "@" + domain + ">",
+        "status": result.status,
+        "code": result.code,
+    }
+'''
+
+
+def _smtp_probe_parameters(release_sha: str) -> tuple[str, str]:
+    if (not RELEASE_RE.fullmatch(release_sha)
+            or os.environ.get("GITHUB_SHA") != release_sha
+            or os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
+            or os.environ.get("GITHUB_REF") != "refs/heads/main"
+            or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"):
+        raise InfraError("SMTP probe requires the first manual accepted-main attempt")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    if re.fullmatch(r"[1-9]\d{0,19}", run_id, flags=re.ASCII) is None:
+        raise InfraError("SMTP probe requires a valid workflow run ID")
+    recipient = os.environ.get("OMNICIO_SMTP_PROBE_RECIPIENT", "")
+    if not recipient.strip():
+        raise InfraError("SMTP probe requires an explicitly selected recipient")
+    return recipient, "smtp-probe-1.4-" + release_sha[:12] + "-" + run_id
+
+
+def render_product_preflight(
+    *, smtp_probe: bool = False, release_sha: str = "",
+    capture_configuration_errors: bool = False,
+) -> str:
+    """Append the candidate's config reader to the reviewed upgrade program.
+
+    Production secrets travel only over the existing SSH stdin. Normal checks
+    neither change files nor send mail. The manual probe adds a separate callable
+    for one explicitly authorized send; rendering never invokes it. The caller
+    supplies UpgradeBlocked, _private_file and parse_environment.
+    """
+    from inplace_upgrade import render_source_definitions
+
+    # Apply the same local checks as the app job before a database cutover can
+    # start; runtime-only validation alone does not cover publication settings.
+    probe = _smtp_probe_parameters(release_sha) if smtp_probe else None
+    try:
+        validate_product_environment()
+        product_environment = build_product_environment(release_sha=release_sha)
+    except (InfraError, ValueError):
+        if not capture_configuration_errors:
+            raise
+        callbacks = ["require_upgrade_product_configuration"]
+        if smtp_probe:
+            callbacks.append("send_upgrade_control_email")
+        return "\n".join(
+            f'\ndef {name}() -> dict[str, object]:\n'
+            '    raise UpgradeBlocked("product_configuration_invalid")\n'
+            for name in callbacks
+        )
+    package = pathlib.Path(__file__).resolve().parents[2] / "src/omnicio"
+    contract = package / "config.py"
+    source = contract.read_text(encoding="utf-8").replace(
+        "from __future__ import annotations\n", "", 1,
+    )
+    source += (
+        "\nimport base64\nimport re\nfrom cryptography.fernet import Fernet, InvalidToken\n"
+        "from cryptography.hazmat.primitives import serialization\n"
+        "from cryptography.hazmat.primitives.asymmetric import ec\n"
+    )
+    source += render_source_definitions(package / "notifications.py", {
+        "_EMAIL", "_MAILTO_SCHEME", "_HTTPS_SCHEME", "normalize_email", "_decode", "_b64",
+        "push_public_key", "validate_push_configuration",
+    })
+    security_names = {"SecurityValueError", "encrypt_secret", "decrypt_secret"}
+    service_names = {"validate_auth_email_configuration"}
+    if smtp_probe:
+        security_names.add("EMAIL_DOMAINS")
+        service_names.add("normalize_login_email")
+    source += render_source_definitions(package / "security.py", security_names)
+    source += render_source_definitions(package / "service.py", service_names)
+    source += "\n" + _PRODUCT_PREFLIGHT_PROGRAM.replace(
+        "__OMNICIO_PRESERVED_KEYS__", repr(OPTIONAL_INTEGRATION_KEYS),
+    ).replace(
+        "__OMNICIO_PRODUCT_ENVIRONMENT__", repr(product_environment),
+    )
+    if probe is not None:
+        recipient, tag = probe
+        source += "\n" + _SMTP_PROBE_PROGRAM.replace(
+            "__OMNICIO_SMTP_PROBE_TAG__", repr(tag),
+        ).replace(
+            "__OMNICIO_SMTP_PROBE_DOMAIN__", repr(DOMAIN),
+        ).replace(
+            "__OMNICIO_SMTP_PROBE_RECIPIENT__", repr(recipient),
+        )
+    return source
+
+
+def preflight_product_environment(ssh: EphemeralSsh) -> None:
+    """Reject missing future config before upload, environment writes or rollback."""
+    source = pathlib.Path(__file__).with_name("inplace_upgrade.py").read_text(encoding="utf-8")
+    program = source + "\n" + render_product_preflight() + r'''
+try:
+    print(json.dumps(require_upgrade_product_configuration(), sort_keys=True))
+except Exception:
+    # This boundary handles secret-bearing input: no traceback or values escape.
+    print("OMNICIO_PREFLIGHT: product_configuration_not_ready", file=sys.stderr)
+    raise SystemExit(1) from None
+'''
+    raw = ssh.run(
+        f"flock -n {DEPLOY_LOCK} timeout --kill-after=5s 45s "
+        "/opt/omnicio/current/.venv/bin/python -I -",
+        input_text=program, timeout=60,
+    )
+    try:
+        result = json.loads(raw) if len(raw) <= 2048 else None
+    except ValueError:
+        result = None
+    if (not isinstance(result, dict) or set(result) != {
+        "status", "smtp_delivery_verified", "market_token_configured",
+        "market_distribution_approved",
+    } or result.get("status") != "configuration_ready"
+            or result.get("smtp_delivery_verified") is not False
+            or type(result.get("market_token_configured")) is not bool
+            or type(result.get("market_distribution_approved")) is not bool):
+        raise InfraError("Effective product configuration was not confirmed")
 
 
 def product_environment_backup_paths(release_sha: str) -> tuple[str, str]:
@@ -465,8 +547,106 @@ def commit_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
         ssh.run(f"rm -f {backup} {state}")
     except InfraError:
         # Backup cleanup is housekeeping after a proven healthy release. It must
-        # never roll back a release after a destructive account cutover.
+        # never turn a proven healthy release into a failed deployment.
         add_summary("- Warning: stale product environment rollback backup remains.")
+
+
+def release_rollback_contract() -> str:
+    """Read the compatibility contract from this exact reviewed checkout."""
+    project = pathlib.Path(__file__).resolve().parents[2] / "pyproject.toml"
+    with project.open("rb") as handle:
+        contract = tomllib.load(handle)["tool"]["omnicio"]["runtime"]["rollback_contract"]
+    if not isinstance(contract, str) or re.fullmatch(r"[a-z][a-z0-9-]{0,63}", contract) is None:
+        raise ValueError("The reviewed runtime rollback contract is invalid")
+    return contract
+
+
+# Do not import either release's Python modules or ask the old application to
+# certify itself. Only root-owned static metadata under the release tree may
+# declare compatibility with the contract accepted in this reviewed checkout.
+_ROLLBACK_COMPATIBILITY_PROGRAM = r"""import os
+import pathlib
+import re
+import stat
+import sys
+import tomllib
+
+EXPECTED_CONTRACT = __OMNICIO_ROLLBACK_CONTRACT__
+MAX_METADATA_BYTES = 65536
+
+
+def trusted_metadata(info: os.stat_result, *, directory: bool) -> bool:
+    expected_type = stat.S_ISDIR if directory else stat.S_ISREG
+    return info.st_uid == 0 and not info.st_mode & 0o022 and expected_type(info.st_mode)
+
+
+def read_contract(release: pathlib.Path, releases_root: pathlib.Path) -> str:
+    if (release.parent != releases_root or not release.is_absolute()
+            or re.fullmatch(r"[0-9a-f]{40}", release.name) is None
+            or release.resolve(strict=True) != release):
+        raise ValueError("untrusted_release_path")
+    for directory in (release, *release.parents):
+        if not trusted_metadata(directory.lstat(), directory=True):
+            raise ValueError("untrusted_release_directory")
+    metadata = release / "pyproject.toml"
+    info = metadata.lstat()
+    if (not trusted_metadata(info, directory=False)
+            or not 0 < info.st_size <= MAX_METADATA_BYTES):
+        raise ValueError("untrusted_release_metadata")
+    with metadata.open("rb") as handle:
+        body = handle.read(MAX_METADATA_BYTES + 1)
+    if len(body) > MAX_METADATA_BYTES:
+        raise ValueError("release_metadata_too_large")
+    project = tomllib.loads(body.decode("utf-8"))
+    if project["project"]["name"] != "omnicio-gateway":
+        raise ValueError("unexpected_release_project")
+    contract = project["tool"]["omnicio"]["runtime"]["rollback_contract"]
+    if not isinstance(contract, str):
+        raise ValueError("invalid_release_contract")
+    return contract
+
+
+def compatible(
+    candidate: str | pathlib.Path, previous: str | pathlib.Path,
+    releases_root: pathlib.Path = pathlib.Path("/opt/omnicio/releases"),
+) -> bool:
+    try:
+        return (read_contract(pathlib.Path(candidate), releases_root) == EXPECTED_CONTRACT
+                and read_contract(pathlib.Path(previous), releases_root) == EXPECTED_CONTRACT)
+    except (OSError, UnicodeError, ValueError, KeyError, TypeError, RuntimeError):
+        return False
+
+
+if __name__ == "__main__":
+    sys.exit(0 if len(sys.argv) == 3 and compatible(sys.argv[1], sys.argv[2]) else 45)
+""".replace("__OMNICIO_ROLLBACK_CONTRACT__", json.dumps(release_rollback_contract()))
+
+_ROLLBACK_COMPATIBILITY_GUARD = r"""require_compatible_rollback() {
+    if ! python3 -I - "$RELEASE" "${PREVIOUS_APP:-}" <<'OMNICIO_ROLLBACK_PY'
+__OMNICIO_ROLLBACK_PROGRAM__
+OMNICIO_ROLLBACK_PY
+    then
+        # Stop the candidate too: neither unavailable service nor an unknown
+        # old runtime may continue writing after compatibility becomes unknown.
+        STOP_CONFIRMED=1
+        systemctl stop omnicio-auth.service omnicio-observer.timer omnicio-observer.service \
+            || STOP_CONFIRMED=0
+        systemctl disable omnicio-auth.service omnicio-observer.timer omnicio-observer.service \
+            || STOP_CONFIRMED=0
+        if [ "$STOP_CONFIRMED" != "1" ]; then
+            printf '%s\n' 'rollback_blocked_shutdown_unconfirmed' \
+                > "/run/omnicio-auth-deploy-$SHA.rollback-blocked"
+            printf '%s\n' 'Rollback blocked; service shutdown was not confirmed.' >&2
+            exit 46
+        fi
+        printf '%s\n' 'rollback_blocked_incompatible_runtime_contract' \
+            > "/run/omnicio-auth-deploy-$SHA.rollback-blocked"
+        printf '%s\n' 'Rollback blocked: incompatible or unknown runtime contract.' \
+            'Services stopped; candidate and environment retained.' >&2
+        exit 45
+    fi
+}
+""".replace("__OMNICIO_ROLLBACK_PROGRAM__", _ROLLBACK_COMPATIBILITY_PROGRAM)
 
 
 _REMOTE_DEPLOY_TEMPLATE = r"""set -euo pipefail
@@ -482,6 +662,8 @@ OBSERVER_SERVICE="/etc/systemd/system/omnicio-observer.service"
 OBSERVER_TIMER="/etc/systemd/system/omnicio-observer.timer"
 NGINX_SITE="/etc/nginx/sites-available/omnicio.ru"
 STATE="/run/omnicio-auth-deploy-$SHA.state"
+
+__OMNICIO_ROLLBACK_GUARD__
 
 test -s /etc/omnicio/runtime.env
 test -s /etc/letsencrypt/live/omnicio.ru/fullchain.pem
@@ -569,7 +751,7 @@ python3 -m venv "$RELEASE/.venv"
 
 # Keep the signing identity outside product.env rollback and release cleanup.
 # The helper preserves an existing key, writes private files atomically, and
-# exposes only a readiness status. SMTP remains separately disabled.
+# exposes only a readiness status. Auth SMTP is configured separately.
 "$RELEASE/.venv/bin/python" -m omnicio.notification_setup
 
 install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
@@ -632,7 +814,7 @@ EnvironmentFile=/etc/omnicio/product.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ExecStart=/opt/omnicio/current/.venv/bin/uvicorn omnicio.main:app \
-    --host 127.0.0.1 --port 8001 --workers 2 --limit-concurrency 64 \
+    --host 127.0.0.1 --port 8001 --workers 1 --limit-concurrency 64 \
     --backlog 128 --timeout-keep-alive 5 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=3
@@ -735,6 +917,7 @@ for _ in $(seq 1 20); do
 done
 
 if [ "$READY" != "1" ]; then
+    require_compatible_rollback
     if [ -n "$PREVIOUS_APP" ] && [ -d "$PREVIOUS_APP" ]; then
         ln -sfn "$PREVIOUS_APP" "$APP_CURRENT"
         systemctl restart omnicio-auth.service || true
@@ -748,7 +931,6 @@ fi
 
 cat > "$NGINX_SITE.new" <<'EOF'
 limit_req_zone $binary_remote_addr zone=omnicio_auth_start:10m rate=10r/m;
-limit_req_zone $binary_remote_addr zone=omnicio_auth_callback:10m rate=30r/m;
 limit_req_zone $binary_remote_addr zone=omnicio_api:10m rate=120r/m;
 limit_conn_zone $binary_remote_addr zone=omnicio_conn:10m;
 
@@ -807,50 +989,9 @@ server {
     proxy_hide_header Referrer-Policy;
 __OMNICIO_SERVER_SECURITY_HEADERS__
 
-    location = /api/auth/vkid/start {
+    location ^~ /api/auth/email/ {
+        client_max_body_size 4k;
         limit_req zone=omnicio_auth_start burst=5 nodelay;
-        limit_req_status 429;
-        proxy_pass http://127.0.0.1:8001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 30s;
-        proxy_send_timeout 30s;
-    }
-
-    location = /api/auth/vkid/callback {
-        limit_req zone=omnicio_auth_callback burst=10 nodelay;
-        limit_req_status 429;
-        proxy_pass http://127.0.0.1:8001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 30s;
-        proxy_send_timeout 30s;
-    }
-
-    location = /api/auth/tid/start {
-        limit_req zone=omnicio_auth_start burst=5 nodelay;
-        limit_req_status 429;
-        proxy_pass http://127.0.0.1:8001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 30s;
-        proxy_send_timeout 30s;
-    }
-
-    location = /api/auth/tid/callback {
-        limit_req zone=omnicio_auth_callback burst=10 nodelay;
         limit_req_status 429;
         proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
@@ -935,20 +1076,6 @@ __OMNICIO_SERVER_SECURITY_HEADERS__
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_connect_timeout 5s;
         proxy_read_timeout 120s;
-        proxy_send_timeout 30s;
-    }
-
-    location = /api/portfolio/proposals/plan {
-        limit_req zone=omnicio_api burst=60 nodelay;
-        limit_req_status 429;
-        proxy_pass http://127.0.0.1:8001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 60s;
         proxy_send_timeout 30s;
     }
 
@@ -1058,6 +1185,7 @@ rm -f /etc/nginx/sites-enabled/default
 ln -sfn "$WEB_RELEASE" "$WEB_CURRENT"
 
 if ! nginx -t; then
+    require_compatible_rollback
     if [ -f "$NGINX_SITE.pre-auth" ]; then
         mv "$NGINX_SITE.pre-auth" "$NGINX_SITE"
     fi
@@ -1075,6 +1203,8 @@ systemctl is-enabled omnicio-observer.timer >/dev/null
 systemctl is-active omnicio-observer.timer >/dev/null
 """
 REMOTE_DEPLOY_SCRIPT = _REMOTE_DEPLOY_TEMPLATE.replace(
+    "__OMNICIO_ROLLBACK_GUARD__", _ROLLBACK_COMPATIBILITY_GUARD,
+).replace(
     "__OMNICIO_SERVER_SECURITY_HEADERS__", nginx_security_headers(4),
 ).replace(
     "__OMNICIO_LOCATION_SECURITY_HEADERS__", nginx_security_headers(8)
@@ -1087,11 +1217,28 @@ REMOTE_DEPLOY_SCRIPT = _REMOTE_DEPLOY_TEMPLATE.replace(
 REMOTE_ROLLBACK_SCRIPT = r"""set -euo pipefail
 
 SHA="$1"
+RELEASE="/opt/omnicio/releases/$SHA"
 STATE="/run/omnicio-auth-deploy-$SHA.state"
 NGINX_SITE="/etc/nginx/sites-available/omnicio.ru"
 PRODUCT_ENV="/etc/omnicio/product.env"
 PRODUCT_ENV_BACKUP="$PRODUCT_ENV.pre-$SHA"
 PRODUCT_ENV_STATE="$PRODUCT_ENV.pre-$SHA.state"
+
+__OMNICIO_ROLLBACK_GUARD__
+
+if [ -s "$STATE" ]; then
+    . "$STATE"
+elif [ ! -e "$STATE" ]; then
+    # product.env can fail before deploy_remote creates its state. Only the
+    # still-active, distinct, independently compatible release is safe here.
+    PREVIOUS_APP="$(readlink -f /opt/omnicio/current 2>/dev/null || true)"
+    if [ "$PREVIOUS_APP" = "$RELEASE" ]; then
+        PREVIOUS_APP=""
+    fi
+fi
+# Check before restoring even product.env: it may re-enable retired readers.
+# Missing or untrusted state is not evidence that the old runtime is safe.
+require_compatible_rollback
 
 if [ -f "$PRODUCT_ENV_STATE" ]; then
     PRODUCT_ENV_PREVIOUS="$(cat "$PRODUCT_ENV_STATE")"
@@ -1105,33 +1252,42 @@ if [ -f "$PRODUCT_ENV_STATE" ]; then
     fi
 fi
 
+# An environment-only failure never began an app/web/timer switch. Do not
+# restore an unrelated nginx backup or restart the unchanged compatible app.
+if [ ! -s "$STATE" ]; then
+    exit 0
+fi
+
+RESTORE_CONFIRMED=1
 if [ -s "$STATE" ]; then
-    . "$STATE"
     if [ -n "$PREVIOUS_APP" ] && [ -d "$PREVIOUS_APP" ]; then
         ln -sfn "$PREVIOUS_APP" /opt/omnicio/current
-        systemctl restart omnicio-auth.service || true
+        systemctl restart omnicio-auth.service || RESTORE_CONFIRMED=0
     fi
     if [ -n "$PREVIOUS_WEB" ] && [ -d "$PREVIOUS_WEB" ]; then
         ln -sfn "$PREVIOUS_WEB" /var/www/omnicio.ru/current
     fi
 
     if [ "${OBSERVER_TIMER_WAS_ENABLED:-0}" = "1" ]; then
-        systemctl enable omnicio-observer.timer >/dev/null 2>&1 || true
+        systemctl enable omnicio-observer.timer >/dev/null 2>&1 || RESTORE_CONFIRMED=0
     else
-        systemctl disable omnicio-observer.timer >/dev/null 2>&1 || true
+        systemctl disable omnicio-observer.timer >/dev/null 2>&1 || RESTORE_CONFIRMED=0
     fi
     if [ "${OBSERVER_TIMER_WAS_ACTIVE:-0}" = "1" ]; then
-        systemctl restart omnicio-observer.timer >/dev/null 2>&1 || true
+        systemctl restart omnicio-observer.timer >/dev/null 2>&1 || RESTORE_CONFIRMED=0
     else
-        systemctl stop omnicio-observer.timer >/dev/null 2>&1 || true
+        systemctl stop omnicio-observer.timer >/dev/null 2>&1 || RESTORE_CONFIRMED=0
     fi
 fi
 
 if [ -f "$NGINX_SITE.pre-auth" ]; then
     mv "$NGINX_SITE.pre-auth" "$NGINX_SITE"
 fi
-nginx -t && systemctl reload nginx || true
-"""
+nginx -t && systemctl reload nginx || RESTORE_CONFIRMED=0
+if [ "$RESTORE_CONFIRMED" != "1" ]; then
+    exit 47
+fi
+""".replace("__OMNICIO_ROLLBACK_GUARD__", _ROLLBACK_COMPATIBILITY_GUARD)
 
 
 def upload_release(
@@ -1154,9 +1310,18 @@ def upload_release(
         f'test "$(readlink -f /opt/omnicio/current 2>/dev/null || true)" != {release}; '
         f"rm -rf {release}; "
         f"install -d -m 0755 {release}; "
-        f"base64 -d | tar -xzf - -C {release}"
+        f"base64 -d | tar --no-same-owner --no-same-permissions -xzf - -C {release}; "
+        f"chmod 0644 {release}/pyproject.toml; "
+        # A retry of the same SHA must not consume a previous attempt's rollback
+        # target if product.env fails before deploy_remote records new state.
+        f"rm -f /run/omnicio-auth-deploy-{release_sha}.state "
+        f"/run/omnicio-auth-deploy-{release_sha}.rollback-blocked"
     )
-    ssh.run(command, input_text=archive_b64)
+    ssh.run(
+        f"flock -w 855 {DEPLOY_LOCK} timeout --kill-after=5s 60s "
+        f"bash -c {shlex.quote(command)}",
+        input_text=archive_b64, timeout=960,
+    )
 
 
 def deploy_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
@@ -1173,98 +1338,28 @@ def deploy_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
     )
 
 
-def retire_legacy_profile(ssh: EphemeralSsh) -> None:
-    if not legacy_profile_reset_enabled():
-        return
-
-    try:
-        ssh.run(f"test -f {LEGACY_RESET_MARKER}")
-        return
-    except InfraError:
-        pass
-
-    sql = """
-BEGIN;
-SELECT pg_advisory_xact_lock(hashtextextended('omnicio-legacy-profile-reset', 0));
-
-DO $$
-DECLARE
-    reset_done boolean;
-    total_users bigint;
-    legacy_users bigint;
-    legacy_user_id uuid;
-BEGIN
-    SELECT EXISTS (
-        SELECT 1
-        FROM audit_events
-        WHERE event_type = 'legacy_profile_retired'
-          AND metadata ->> 'reason' = 'limited_user_cutover'
-    ) INTO reset_done;
-
-    IF reset_done THEN
-        RETURN;
-    END IF;
-
-    SELECT count(*) INTO total_users FROM users;
-    SELECT count(*) INTO legacy_users FROM users WHERE public_id = 1;
-
-    IF total_users > 1 THEN
-        RAISE EXCEPTION 'legacy reset refuses a database containing multiple users';
-    END IF;
-    IF total_users = 1 AND legacy_users <> 1 THEN
-        RAISE EXCEPTION 'legacy reset refuses to delete a non-legacy user';
-    END IF;
-
-    SELECT id INTO legacy_user_id
-    FROM users
-    WHERE public_id = 1
-    FOR UPDATE;
-
-    INSERT INTO audit_events (user_id, event_type, metadata)
-    VALUES (
-        legacy_user_id,
-        'legacy_profile_retired',
-        '{"reason":"limited_user_cutover"}'::jsonb
-    );
-
-    IF legacy_user_id IS NOT NULL THEN
-        DELETE FROM users WHERE id = legacy_user_id;
-    END IF;
-END
-$$;
-
-COMMIT;
-"""
-    command = (
-        "set -a && "
-        f". {RUNTIME_ENV} && "
-        "set +a && "
-        'export PGCONNECT_TIMEOUT=10; '
-        'export PGOPTIONS="-c statement_timeout=30000 -c lock_timeout=5000"; '
-        'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q'
-    )
-    ssh.run(command, input_text=sql)
-    try:
-        ssh.run(
-            f"umask 077; install -d -m 0700 /etc/omnicio; "
-            f"touch {LEGACY_RESET_MARKER}; chmod 0600 {LEGACY_RESET_MARKER}"
-        )
-    except InfraError:
-        # The database audit marker is authoritative. A filesystem marker is
-        # only an optimization to avoid the no-op database transaction later.
-        add_summary("- Warning: legacy reset filesystem marker could not be persisted.")
-
-
 def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
     if not RELEASE_RE.fullmatch(release_sha):
         raise InfraError(INVALID_RELEASE_SHA)
     try:
         ssh.run(
-            f"flock -w 855 {DEPLOY_LOCK} timeout --kill-after=5s 30s bash -s -- {release_sha}",
-            input_text=REMOTE_ROLLBACK_SCRIPT, timeout=900,
+            f"flock -w 855 {DEPLOY_LOCK} timeout --kill-after=5s 60s bash -s -- {release_sha}",
+            input_text=REMOTE_ROLLBACK_SCRIPT, timeout=960,
         )
-    except InfraError:
-        add_summary("- Warning: application rollback was not confirmed; inspect release state.")
+    except InfraError as exc:
+        if "exit_code=45)" in str(exc):
+            add_summary(
+                "- Rollback blocked: incompatible or unknown runtime contract. "
+                "Auth and observer were stopped; candidate and environment retained. "
+                "An accepted recovery decision is required before restarting services."
+            )
+        elif "exit_code=46)" in str(exc):
+            add_summary(
+                "- Rollback blocked: service shutdown could not be confirmed. "
+                "Candidate and environment retained; inspect auth and observer state immediately."
+            )
+        else:
+            add_summary("- Warning: application rollback was not confirmed; inspect release state.")
 
 
 def verify_public_security_headers(
@@ -1295,32 +1390,6 @@ def fetch_public(
         if len(body) > 4 * 1024 * 1024:
             raise InfraError(f"Public application response is too large: {path}")
         return body, response.headers.get_content_type()
-
-
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(
-        self, req: object, fp: object, code: int, msg: str, headers: Message, newurl: str,
-    ) -> None:
-        return None
-
-
-def verify_public_callbacks(context: ssl.SSLContext) -> None:
-    # No cookie processor, auth flow or redirect follow: inspect only rejection responses.
-    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect())
-    for path in CALLBACK_PUBLIC_PATHS:
-        request = urllib.request.Request(
-            f"https://{DOMAIN}{path}",
-            headers={"User-Agent": release_user_agent("omnicio-auth-deploy")},
-        )
-        try:
-            response = opener.open(request, timeout=15)
-        except urllib.error.HTTPError as exc:
-            response = exc
-        with response:
-            if (response.status != 303
-                    or response.headers.get_all("Location", []) != ["/?auth_error=flow"]):
-                raise InfraError(f"Public auth callback rejection invalid: {path}")
-            verify_public_security_headers(response.headers, path, referrer_policy="no-referrer")
 
 
 def verify_public_root(body: bytes, release_sha: str) -> None:
@@ -1365,27 +1434,23 @@ def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
     ):
         raise InfraError("Public API version or build does not match the frontend release")
 
-    expected_registration = registration_enabled()
-    if payload.get("registration_enabled") is not expected_registration:
-        raise InfraError("Public registration mode does not match deployment config")
-    expected_mode = "limited_registration" if expected_registration else "closed"
-    if payload.get("mode") != expected_mode:
-        raise InfraError("Public access mode does not match deployment config")
-    if payload.get("registration_max_users") != registration_max_users():
-        raise InfraError("Public registration capacity does not match deployment config")
-    if payload.get("auth_provider") != "vkid":
-        raise InfraError("Public auth provider is not VK ID")
-    if payload.get("auth_providers") != ["tid", "vkid"]:
-        raise InfraError("Public auth providers do not match the release contract")
-
-    expected_vkid = vkid_configuration_ready()
-    if payload.get("vkid_enabled") is not expected_vkid:
-        raise InfraError("Public VK ID readiness does not match deployment config")
-    tid_ready = payload.get("tid_enabled")
-    if not isinstance(tid_ready, bool):
-        raise InfraError("Public T-ID readiness is not a boolean")
-    if payload.get("login_enabled") is not (expected_vkid or tid_ready):
-        raise InfraError("Public login readiness does not match available providers")
+    if payload.get("mode") != "public" or payload.get("registration_enabled") is not True:
+        raise InfraError("Public access mode does not match the email release contract")
+    if "registration_max_users" in payload:
+        raise InfraError("Public registration must not have a user capacity limit")
+    if payload.get("auth_provider") != "email" or payload.get("auth_providers") != ["email"]:
+        raise InfraError("Public auth provider must be email only")
+    if payload.get("login_enabled") is not True:
+        raise InfraError("Verified account login must remain enabled independently of SMTP")
+    if (payload.get("email_domains") != ["gmail.com", "mail.ru", "xmail.ru"]
+            or payload.get("password_min_length") != 15
+            or payload.get("password_max_length") != 128
+            or payload.get("email_code_digits") != 8):
+        raise InfraError("Public email verification policy does not match the release contract")
+    if any(payload.get(name) is not True for name in (
+        "email_enabled", "registration_available", "password_reset_available",
+    )):
+        raise InfraError("Auth SMTP must be configured for public registration and recovery")
 
 
 def verify_public_version_script(body: bytes, release_sha: str) -> None:
@@ -1451,7 +1516,6 @@ def verify_public(release_sha: str) -> None:
         verify_public_assets(context, release_sha)
         config, _ = fetch_public("/api/auth/config", context)
         verify_public_config(config, release_sha=release_sha)
-        verify_public_callbacks(context)
         for path, marker in LEGAL_PAGES.items():
             body, content_type = fetch_public(path, context, expected_build=release_sha[:12])
             rendered = body.decode(errors="replace")
@@ -1519,8 +1583,6 @@ def reconcile(
 
     archive_b64 = build_release_archive(repository_root)
 
-    used_slots = 0
-    active_users = 0
     with EphemeralSsh(
         client=client,
         server_id=server_id,
@@ -1534,6 +1596,7 @@ def reconcile(
             set_output("status", "pending_database")
             return 0
 
+        preflight_product_environment(ssh)
         upload_release(ssh, archive_b64=archive_b64, release_sha=release_sha)
 
         try:
@@ -1548,29 +1611,16 @@ def reconcile(
             else:
                 raise InfraError("Public verification did not become healthy")
 
-            # The legacy account is removed only after the replacement release
-            # is already healthy. The reset itself is one transaction and
-            # refuses to touch a database containing more than one user.
-            retire_legacy_profile(ssh)
-            used_slots, active_users = registration_occupancy(ssh)
             commit_product_environment(ssh, release_sha=release_sha)
         except InfraError:
             rollback_remote(ssh, release_sha=release_sha)
             raise
 
-    vkid_ready = vkid_configuration_ready()
-    login_state = "enabled" if vkid_ready else "fail-closed pending VK ID configuration"
-    if registration_enabled():
-        registration_state = f"open with capacity {registration_max_users()}"
-        if controlled_live_test_mode():
-            registration_state += " (controlled live-test exception)"
-    else:
-        registration_state = "closed"
     add_summary(
         f"- Result: app_ready. Release {release_sha[:12]} is healthy over HTTPS; "
-        f"VK ID login is {login_state}; registration is {registration_state}; "
-        f"occupancy is {used_slots}/{registration_max_users()} slots "
-        f"with {active_users} active user(s)."
+        "public access is open, email/password login and SMTP configuration are ready. "
+        "Existing profiles are preserved; legacy owners enroll from their active session. "
+        "SMTP delivery and market-source coverage must be monitored separately."
     )
     set_output("status", "app_ready")
     return 0
@@ -1592,6 +1642,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
+        validate_operation("apply", release_sha=args.release_sha)
         client = TimewebClient(os.environ.get("TIMEWEB_CLOUD_TOKEN", ""))
         return reconcile(
             client,
@@ -1606,6 +1657,7 @@ def main() -> int:
         )
     except (
         InfraError,
+        UpgradeBlocked,
         TimewebApiError,
         AmbiguousProviderError,
         subprocess.SubprocessError,

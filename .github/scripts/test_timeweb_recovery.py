@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
 
+import inplace_upgrade
 import timeweb_auth_postgres as postgres
 import timeweb_recovery as recovery
 
@@ -721,6 +722,27 @@ class SingleDatabaseTests(ControllerFixture):
 
 
 class MigrationGateTests(unittest.TestCase):
+    def test_unreviewed_migration_is_rejected_before_provider_or_ssh_access(self) -> None:
+        client = Mock()
+        desired = postgres.DesiredDatabase(
+            "managed", "omnicio", "app", "18", "ru-3", "msk-1", Decimal(1110), 1, 2048, 20480
+        )
+        with (
+            patch.object(postgres, "load_policy", return_value=replace(
+                recovery.load_policy(), mode=recovery.SINGLE_DATABASE_MODE,
+            )),
+            patch.object(postgres, "EphemeralSsh") as ssh,
+            self.assertRaisesRegex(
+                inplace_upgrade.UpgradeBlocked, "^unreviewed_migration_count$",
+            ),
+        ):
+            postgres.reconcile(
+                client, desired=desired, server_name="server", server_comment="managed",
+                vpc_name="private", migration_sqls=["SELECT 1;"], release_sha=RELEASE_SHA,
+            )
+        self.assertEqual(client.mock_calls, [])
+        ssh.assert_not_called()
+
     def test_database_policy_guards_migrations_and_scheduled_checks_keep_runtime(self) -> None:
         desired = postgres.DesiredDatabase(
             "managed", "omnicio", "app", "18", "ru-3", "msk-1", Decimal(1110), 1, 2048, 20480
@@ -728,14 +750,21 @@ class MigrationGateTests(unittest.TestCase):
         cases = [(single, scheduled, rejected) for single in (False, True)
                  for scheduled, rejected in ((False, True), (True, False), (False, False))]
         root = Path(__file__).resolve().parents[2]
-        reviewed = [path.read_text(encoding="utf-8")
-                    for path in sorted((root / "migrations").glob("*.sql"))[-2:]]
+        reviewed_plan = inplace_upgrade.load_plan()
+        reviewed = [(root / "migrations" / name).read_text(encoding="utf-8") for name in (
+            "0029_email_auth.sql", "0030_portfolio_read_only.sql",
+        )]
         for single, backup_only, rejected in cases:
             with (self.subTest(single=single, scheduled=backup_only, rejected=rejected),
                   ExitStack() as stack):
+                stack.enter_context(patch.dict(postgres.os.environ, {
+                    "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/main",
+                    "GITHUB_SHA": RELEASE_SHA,
+                }, clear=True))
                 client = Mock()
                 mocks: dict[str, Any] = {}
                 values = {
+                    "load_plan": reviewed_plan,
                     "load_policy": replace(recovery.load_policy(), mode=(
                         recovery.SINGLE_DATABASE_MODE if single else "managed_backups")),
                     "find_managed_server": {"id": 9235089},
@@ -757,6 +786,8 @@ class MigrationGateTests(unittest.TestCase):
                     "add_summary": None,
                     "set_output": None,
                     "ensure_recovery_point": None,
+                    "get_schedule": {"is_enabled": False},
+                    "validate_budget": None,
                     "inspect_provider_recovery": {"complete": False, "recovery_verified": False},
                     "inspect_restore_capacity": None,
                 }
@@ -768,10 +799,14 @@ class MigrationGateTests(unittest.TestCase):
                 order = Mock()
                 order.attach_mock(mocks["inspect_provider_recovery"], "inspect")
                 order.attach_mock(ssh.return_value.__enter__, "ssh")
-                order.attach_mock(mocks["ensure_recovery_point"], "guard")
+                guard = "get_schedule" if single and not backup_only else "ensure_recovery_point"
+                order.attach_mock(mocks[guard], "guard")
                 client.get_vpc_services.return_value = [{}]
                 if rejected:
-                    mocks["ensure_recovery_point"].side_effect = recovery.RecoveryBlocked("no copy")
+                    if guard == "get_schedule":
+                        mocks[guard].return_value = {"is_enabled": True}
+                    else:
+                        mocks[guard].side_effect = recovery.RecoveryBlocked("no copy")
                 kwargs = dict(
                     desired=desired,
                     server_name="server",
@@ -780,6 +815,7 @@ class MigrationGateTests(unittest.TestCase):
                     migration_sqls=reviewed if single else ["SELECT 1"],
                     backup_only=backup_only,
                     release_sha=None if backup_only else RELEASE_SHA,
+                    operation="preflight" if backup_only else "apply",
                 )
                 if rejected:
                     with self.assertRaises(recovery.RecoveryBlocked):
@@ -796,16 +832,24 @@ class MigrationGateTests(unittest.TestCase):
                                      int(not single and not backup_only and not rejected))
                 self.assertEqual(mocks["run_inplace_upgrade"].call_count,
                                  int(single and not backup_only and not rejected))
+                if single and not backup_only and not rejected:
+                    self.assertEqual(mocks["run_inplace_upgrade"].call_args.kwargs["operation"],
+                                     "apply")
                 self.assertEqual(mocks["inspect_restore_capacity"].call_count,
                                  int(not single and not rejected))
                 self.assertEqual(
                     [entry[0] for entry in order.mock_calls], ["inspect", "ssh", "guard"],
                 )
                 mocks["inspect_provider_recovery"].assert_called_once_with(client)
-                self.assertEqual(
-                    mocks["ensure_recovery_point"].call_args.kwargs,
-                    {"release_sha": None if backup_only else RELEASE_SHA},
-                )
+                if single and not backup_only:
+                    mocks["ensure_recovery_point"].assert_not_called()
+                    mocks["validate_budget"].assert_called_once()
+                    mocks["get_schedule"].assert_called_once_with(client, CLUSTER_ID)
+                else:
+                    self.assertEqual(
+                        mocks["ensure_recovery_point"].call_args.kwargs,
+                        {"release_sha": None if backup_only else RELEASE_SHA},
+                    )
                 if rejected:
                     mocks["set_output"].assert_not_called()
                 elif backup_only:

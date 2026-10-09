@@ -61,7 +61,8 @@ def test_upgrade_requires_explicit_existing_database_credentials(
                         password=runtime_password)
     keys = "CLIENT_IP_KEY=synthetic-ip\nBROKER_TOKEN_CRYPTO_KEY=synthetic-broker\n"
     keys += "VKID_FLOW_CRYPTO_KEY=synthetic-flow\n"
-    environment = "DATABASE_URL=" + dsn + "\n" + keys
+    deployer = importlib.import_module("timeweb_auth_app")
+    environment = f"DATABASE_URL={deployer._environment_value(dsn)}\n{keys}"
     secrets_file = keys + ("OMNICIO_DB_ADMIN_PASSWORD=" + stored_password + "\n"
                            if stored_password is not None else "")
     monkeypatch.setattr(upgrade, "_private_file", lambda path, _maximum:
@@ -102,7 +103,10 @@ def test_connected_database_guard_requires_an_observation():
 def test_upgrade_receipt_keeps_actual_installation_trusted_after_failed_deploy(
     monkeypatch, tmp_path,
 ):
-    plan = upgrade.load_plan()
+    fixture = SCRIPTS.parents[1] / "tests/fixtures/accepted_upgrade_1_3.json"
+    document = json.loads(fixture.read_text(encoding="utf-8"))
+    plan = upgrade.validate_plan(document["plan"])
+    upgrade.schema_query(document["source_schema"], plan["source_schema_sha256"])
     source = "READINESS_QUERY = 'SELECT true'\n"
     plan = plan | {"source_schema_sha256": upgrade._digest(source)}
     baseline = tmp_path / plan["source_release"] / "src/omnicio/schema.py"

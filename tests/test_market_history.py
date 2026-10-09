@@ -1,4 +1,4 @@
-"""All available history stays source-bound, time-bounded, and account-consistent."""
+"""All available history stays source-bound, time-bounded, and source-consistent."""
 
 from __future__ import annotations
 
@@ -11,18 +11,23 @@ from unittest.mock import Mock, patch
 from uuid import UUID
 
 import pytest
-from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from test_market import _finish_market_reads
 from test_workspace_api import OWNER
 from test_workspace_api import workspace_http as workspace_http
 
-from omnicio.broker import BrokerConnectionError, BrokerConnectionStatus, BrokerService
+from omnicio.broker import BrokerConnectionError, BrokerService, MarketSourceStatus
 from omnicio.cbr import CBRClient
-from omnicio.db import Database, TBankConnectionRecord
+from omnicio.db import Database
 from omnicio.main import app
-from omnicio.market import CBRIndicator, CBRIndicatorSnapshot, MarketService, UsdRubSnapshot
-from omnicio.security import encrypt_secret
+from omnicio.market import (
+    PUBLIC_MARKET_SCOPE,
+    CBRIndicator,
+    CBRIndicatorSnapshot,
+    MarketService,
+    UsdRubSnapshot,
+)
+from omnicio.news import NewsClient, NewsNotFound, NewsUnavailable
 from omnicio.tbank import (
     TBankHistoricCandle,
     TBankInstrumentMetadata,
@@ -59,7 +64,7 @@ def candle(at: datetime) -> TBankHistoricCandle:
 
 def history_broker(first: datetime | None = None) -> Mock:
     broker = Mock(spec=BrokerService)
-    broker.status.return_value = BrokerConnectionStatus(True, "prod", "account-a", verified_at=NOW)
+    broker.market_status.return_value = MarketSourceStatus(True, "tbank", "source-a")
     broker.market_history_start.return_value = first
     broker.market_exchange_candles.return_value = ()
     broker.market_last_price.return_value = TBankLastPrice(UID, "101", NOW)
@@ -127,11 +132,13 @@ def test_all_history_uses_real_first_date_ten_year_chunks_and_unique_sorted_mont
     broker = history_broker(first)
 
     def read(owner: UUID, instrument: str, **window: Any) -> tuple[TBankHistoricCandle, ...]:
-        assert owner == OWNER.id
+        assert owner == PUBLIC_MARKET_SCOPE
         assert instrument == UID
         # Exercise the real adapter window guard without any provider access.
         with patch.object(TBankInvestClient, "_post", return_value={"candles": []}):
-            TBankInvestClient().get_exchange_candles("test-token", "prod", UID, **window)
+            TBankInvestClient(purpose="market").get_exchange_candles(
+                "test-token", "prod", UID, **window,
+            )
         begin, end = window["from_at"], window["to_at"]
         last_month = end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         return (candle(last_month), candle(begin), candle(NOW + timedelta(days=1)))
@@ -268,13 +275,15 @@ def test_history_refresh_keeps_old_candles_and_source_time_until_real_recovery()
 
 def test_busy_history_period_never_returns_another_periods_candles() -> None:
     broker = history_broker(NOW - timedelta(days=400))
-    entered, release = Event(), Event()
+    entered, short_entered, release = Event(), Event(), Event()
 
     def read(user, uid, **kwargs):
         if kwargs["interval"] == "CANDLE_INTERVAL_MONTH":
             entered.set()
             assert release.wait(timeout=5)
             return (replace(candle(NOW - timedelta(days=30)), close="100"),)
+        short_entered.set()
+        assert release.wait(timeout=5)
         return (replace(candle(NOW - timedelta(minutes=5)), close="102"),)
 
     broker.market_exchange_candles.side_effect = read
@@ -285,12 +294,13 @@ def test_busy_history_period_never_returns_another_periods_candles() -> None:
             assert entered.wait(timeout=5)
             assert first.history_status == "loading"
             another_period = service.instrument_snapshot(OWNER.id, UID, period="1d")
+            assert short_entered.wait(timeout=5)
             assert another_period.history_status == "loading"
             assert another_period.candles == ()
             assert another_period.history_observed_at is None
             assert another_period.interval == "CANDLE_INTERVAL_5_MIN"
             assert another_period.last_price == "101"
-            assert broker.market_exchange_candles.call_count == 1
+            assert broker.market_exchange_candles.call_count == 2
             release.set()
             _finish_market_reads(service)
             service.instrument_snapshot(OWNER.id, UID, period="1d")
@@ -325,18 +335,20 @@ def test_unknown_future_naive_or_over_budget_first_date_fails_before_candle_read
     assert result.errors["history"] == "source_unavailable"
     assert result.last_price is not None
     broker.market_exchange_candles.assert_not_called()
-    assert broker.market_last_price.call_count == 2
+    assert broker.market_last_price.call_count == 1
 
 
 @pytest.mark.parametrize("surface", ["all", "1m", "live"])
-def test_market_discards_every_result_if_account_changes_during_last_read(surface: str) -> None:
+def test_market_discards_every_result_if_shared_source_changes_during_last_read(
+    surface: str,
+) -> None:
     broker = history_broker(datetime(2025, 1, 1, tzinfo=UTC))
     original = broker.market_trading_status.return_value
     original_price = broker.market_last_price.return_value
     connection_changed = Event()
 
     def changed(*args: Any) -> TBankTradingStatus:
-        broker.status.return_value = BrokerConnectionStatus(True, "sandbox", "new-account")
+        broker.market_status.return_value = MarketSourceStatus(True, "tbank", "new-source")
         connection_changed.set()
         return original
 
@@ -368,7 +380,7 @@ def test_first_daily_candle_uses_verified_uid_and_typed_lookup_only_when_needed(
     with patch.object(
         TBankInvestClient, "_post", side_effect=[initial, dated] if fallback else [dated]
     ) as read:
-        result = TBankInvestClient().first_daily_candle("test-token", "prod", UID)
+        result = TBankInvestClient(purpose="market").first_daily_candle("test-token", "prod", UID)
     assert result == datetime(2004, 2, 1, tzinfo=UTC)
     assert [call.kwargs["method"] for call in read.call_args_list] == (
         ["GetInstrumentBy", "ShareBy"] if fallback else ["GetInstrumentBy"]
@@ -389,7 +401,7 @@ def test_first_daily_candle_rejects_wrong_instrument_in_both_lookup_responses(
     values = (
         [{"instrument": {"uid": UID, "instrumentType": "bond"}}, wrong] if fallback else [wrong]
     )
-    tbank = TBankInvestClient()
+    tbank = TBankInvestClient(purpose="market")
     with (
         patch.object(TBankInvestClient, "_post", side_effect=values),
         pytest.raises(TBankUnavailable, match="identity"),
@@ -403,9 +415,11 @@ def test_first_candle_unknown_metadata_stays_unknown_and_month_window_limits_are
         "_post",
         return_value={"instrument": {"uid": UID, "instrumentType": "future-new-kind"}},
     ) as read:
-        assert TBankInvestClient().first_daily_candle("test-token", "prod", UID) is None
+        assert TBankInvestClient(purpose="market").first_daily_candle(
+            "test-token", "prod", UID,
+        ) is None
     read.assert_called_once()
-    tbank = TBankInvestClient()
+    tbank = TBankInvestClient(purpose="market")
     for window in (timedelta(days=27), timedelta(days=3661)):
         with patch.object(TBankInvestClient, "_post") as read, pytest.raises(ValueError):
             tbank.get_exchange_candles(
@@ -420,40 +434,17 @@ def test_first_candle_unknown_metadata_stays_unknown_and_month_window_limits_are
 
 
 @pytest.mark.parametrize("surface", ["first", "candles"])
-@pytest.mark.parametrize("change", ["account", "credential", "disconnect"])
-def test_broker_history_reads_revalidate_saved_connection_after_provider_io(
-    surface: str, change: str
+def test_broker_history_reads_use_service_credentials_without_a_user_connection(
+    surface: str,
 ) -> None:
-    key = Fernet.generate_key().decode()
-    record = TBankConnectionRecord(
-        OWNER.id,
-        "prod",
-        "account-a",
-        "Account",
-        encrypt_secret("test-credential", key),
-        NOW,
-        NOW,
+    database, private, shared = (
+        Mock(spec=Database), Mock(spec=TBankInvestClient), Mock(spec=TBankInvestClient)
     )
-    database, tbank = Mock(spec=Database), Mock(spec=TBankInvestClient)
-    database.tbank_connection.return_value = record
-
-    def changed(*args: Any, **kwargs: Any) -> Any:
-        database.tbank_connection.return_value = (
-            None
-            if change == "disconnect"
-            else replace(
-                record,
-                **(
-                    {"account_id": "new-account"}
-                    if change == "account"
-                    else {"encrypted_credential": b"new-ciphertext"}
-                ),
-            )
-        )
-        return NOW - timedelta(days=100) if surface == "first" else ()
-
-    tbank.first_daily_candle.side_effect = tbank.get_exchange_candles.side_effect = changed
-    broker = BrokerService(database, credential_key=key, tbank=tbank)
+    database.tbank_connection.side_effect = AssertionError("private credentials are forbidden")
+    shared.first_daily_candle.return_value = NOW - timedelta(days=100)
+    shared.get_exchange_candles.return_value = ()
+    broker = BrokerService(database, credential_key="unused", tbank=private,
+                           market_credential="service-fixture", market_tbank=shared)
     if surface == "first":
         operation = partial(broker.market_history_start, OWNER.id, UID)
     else:
@@ -461,11 +452,14 @@ def test_broker_history_reads_revalidate_saved_connection_after_provider_io(
             broker.market_exchange_candles, OWNER.id, UID,
             from_at=NOW - timedelta(days=100), to_at=NOW, interval="CANDLE_INTERVAL_MONTH",
         )
-    with pytest.raises(BrokerConnectionError, match="connection changed"):
-        operation()
+    assert operation() == (NOW - timedelta(days=100) if surface == "first" else ())
+    assert not database.mock_calls
+    assert not private.mock_calls
+    read = shared.first_daily_candle if surface == "first" else shared.get_exchange_candles
+    assert read.call_args.args[:3] == ("service-fixture", "prod", UID)
 
 
-def test_all_history_http_is_valid_owner_bound_and_discards_revoked_session(
+def test_all_history_http_is_public_and_independent_of_revoked_sessions(
     workspace_http: tuple[TestClient, Mock, Mock, Mock],
 ) -> None:
     client, auth, _, _ = workspace_http
@@ -483,16 +477,20 @@ def test_all_history_http_is_valid_owner_bound_and_discards_revoked_session(
             assert result.json()["period"] == "all"
             assert result.json()["history_status"] == "empty"
             assert result.headers["cache-control"] == "private, no-store"
-            broker.market_history_start.assert_called_once_with(OWNER.id, UID)
-            auth.refresh_session.side_effect = [OWNER, None]
+            broker.market_history_start.assert_called_once_with(PUBLIC_MARKET_SCOPE, UID)
+            client.cookies.clear()
+            auth.refresh_session.side_effect = AssertionError(
+                "public history does not read sessions",
+            )
             revoked = client.get(f"/api/market/instruments/{UID}?period=all")
-            assert revoked.status_code == 401
-            assert "candles" not in revoked.json()
+            assert revoked.status_code == 200
+            assert revoked.json()["history_status"] == "empty"
+            auth.refresh_session.assert_not_called()
     finally:
         service.close()
 
 
-def test_instrument_facts_http_keeps_owner_precondition_and_discards_revoked_response(
+def test_instrument_facts_http_uses_shared_source_for_guests_and_registered_users(
     workspace_http: tuple[TestClient, Mock, Mock, Mock],
 ) -> None:
     client, auth, _, _ = workspace_http
@@ -506,22 +504,23 @@ def test_instrument_facts_http_keeps_owner_precondition_and_discards_revoked_res
         assert response.status_code == 200
         assert response.json() == payload
         assert response.headers["cache-control"] == "private, no-store"
-        read.assert_called_once_with(user_id=OWNER.id, instrument_uid=UID, broker=broker)
+        read.assert_called_once_with(user_id=PUBLIC_MARKET_SCOPE, instrument_uid=UID, broker=broker)
         stale = client.get(
             f"/api/market/instruments/{UID}/facts", headers={"X-Omnicio-Profile": "000000502"},
         )
-        assert stale.status_code == 409
-        assert read.call_count == 1
-        auth.refresh_session.side_effect = [OWNER, None]
+        assert stale.status_code == 200
+        assert read.call_count == 2
+        client.cookies.clear()
+        auth.refresh_session.side_effect = AssertionError("public facts do not read sessions")
         revoked = client.get(f"/api/market/instruments/{UID}/facts")
-        assert revoked.status_code == 401
-        assert "metrics" not in revoked.json()
+        assert revoked.status_code == 200
+        assert revoked.json() == payload
+        auth.refresh_session.assert_not_called()
 
 
 @pytest.mark.parametrize("endpoint", ["usd-rub", "cbr-indicators"])
-@pytest.mark.parametrize("change", ["revoked", "replaced"])
-def test_legacy_market_http_discards_results_after_session_changes(
-    workspace_http: tuple[TestClient, Mock, Mock, Mock], endpoint: str, change: str,
+def test_market_http_returns_the_same_public_data_without_an_account(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock], endpoint: str,
 ) -> None:
     client, auth, _, _ = workspace_http
     source = Mock(spec=MarketService)
@@ -537,14 +536,86 @@ def test_legacy_market_http_discards_results_after_session_changes(
         available = client.get(f"/api/market/{endpoint}")
         assert available.status_code == 200
         assert available.headers["cache-control"] == "private, no-store"
-        auth.refresh_session.side_effect = [
-            OWNER, None if change == "revoked" else replace(OWNER, id=UUID(int=999)),
-        ]
+        client.cookies.clear()
+        auth.refresh_session.side_effect = AssertionError("public market does not read sessions")
         response = client.get(f"/api/market/{endpoint}")
-    assert response.status_code == (401 if change == "revoked" else 409)
-    body = response.json()
-    assert "price" not in body
-    assert "key_rate" not in body
+    assert response.status_code == 200
+    assert response.json() == available.json()
+    auth.refresh_session.assert_not_called()
+
+
+def test_news_bookmark_http_is_public_cache_only_and_keeps_original_observation(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+) -> None:
+    client, auth, _, _ = workspace_http
+    broker, news = history_broker(), Mock(spec=NewsClient)
+    news.cached_headline.return_value = {
+        "id": "a" * 64, "title": "Cached official headline", "source": "CBR",
+        "url": "https://www.cbr.ru/press/event/1",
+        "published_at": (NOW - timedelta(hours=1)).isoformat(),
+        "fetched_at": (NOW - timedelta(minutes=6)).isoformat(), "freshness": "cached",
+        "content": "A full article must not be exposed", "private_field": "not public",
+    }
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient), news=news)
+    client.cookies.clear()
+    auth.refresh_session.side_effect = AssertionError("public news must not read sessions")
+    try:
+        with (
+            patch.object(app.state, "market_service", service, create=True),
+            patch("omnicio.market.datetime", FixedDatetime),
+        ):
+            response = client.get(f"/api/news/{'a' * 64}", params={"user_id": "another-owner"})
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["id"] == "a" * 64
+        assert payload["observed_at"] == (NOW - timedelta(minutes=6)).isoformat()
+        assert payload["freshness"] == "stale"
+        assert payload["content_scope"] == "headline"
+        assert payload["full_content_available"] is False
+        assert payload["content"] is None
+        assert "private_field" not in payload
+        assert "full article" not in response.text
+        assert payload["web_search"] is False
+        assert response.headers["cache-control"] == "private, no-store"
+        auth.refresh_session.assert_not_called()
+        news.headlines.assert_not_called()
+        news.read_source.assert_not_called()
+        assert not broker.mock_calls
+    finally:
+        service.close()
+
+
+@pytest.mark.parametrize(
+    ("source_id", "error", "status", "detail"),
+    [
+        ("a" * 64, NewsNotFound("private provider detail"), 404, "news_source_not_found"),
+        ("a" * 64, NewsUnavailable("private provider detail"), 503, "news_source_unavailable"),
+        ("invalid", None, 422, "news_source_id_invalid"),
+    ],
+)
+def test_news_bookmark_http_reports_sanitized_cache_errors_without_network(
+    workspace_http: tuple[TestClient, Mock, Mock, Mock],
+    source_id: str, error: Exception | None, status: int, detail: str,
+) -> None:
+    client, auth, _, _ = workspace_http
+    news, broker = Mock(spec=NewsClient), history_broker()
+    news.cached_headline.side_effect = error
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient), news=news)
+    client.cookies.clear()
+    try:
+        with patch.object(app.state, "market_service", service, create=True):
+            response = client.get(f"/api/news/{source_id}")
+        assert response.status_code == status
+        assert response.json() == {"detail": detail}
+        assert "private provider detail" not in response.text
+        assert not broker.mock_calls
+        auth.refresh_session.assert_not_called()
+        news.headlines.assert_not_called()
+        news.read_source.assert_not_called()
+        if error is None:
+            news.cached_headline.assert_not_called()
+    finally:
+        service.close()
 
 
 @pytest.mark.parametrize(

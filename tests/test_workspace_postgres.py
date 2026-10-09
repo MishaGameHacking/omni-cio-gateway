@@ -41,13 +41,11 @@ from omnicio.notifications import (
 from omnicio.portfolio_store import (
     PortfolioStore,
     SettingsVersionConflict,
-    _save_operation_observation,
     _save_payout_event,
     _save_source_retrieval,
     _source_document_id,
 )
-from omnicio.tbank import TBankMoney, TBankOperation
-from omnicio.workspace import cashflow_summary, default_preferences, event_id
+from omnicio.workspace import default_preferences, event_id
 from omnicio.workspace_store import WorkspaceNotFound, WorkspaceStore
 
 DATABASE_URL = os.environ.get("OMNICIO_TEST_DATABASE_URL", "")
@@ -1568,7 +1566,7 @@ def test_workspace_database_rls_and_user_cascade_are_enforced(
             )
 
 
-def test_dashboard_uses_latest_operation_correction_and_complete_ledger(
+def test_dashboard_uses_only_snapshots_and_hides_legacy_transaction_alerts(
     workspace_database: tuple[Database, str, str],
 ) -> None:
     database = workspace_database[0]
@@ -1609,49 +1607,73 @@ def test_dashboard_uses_latest_operation_correction_and_complete_ledger(
                     end + timedelta(minutes=index),
                 ),
             )
-    dashboard = WorkspaceStore(database).dashboard(owner)
-    assert dashboard["performance"]["status"] == "available"
-    assert dashboard["performance"]["net_contributions_rub"] == "0"
-    assert Decimal(dashboard["performance"]["investment_result_rub"]) == 500
-    assert Decimal(dashboard["performance"]["return_percent"]) == 5
-    assert dashboard["performance"]["return_method"] == "modified_dietz"
-    assert dashboard["income"]["total_rub"] == "0"
-
-    def insert_coupon(state: str, byte: int) -> None:
-        with database.pool.connection() as conn:
-            conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
-            conn.execute(
-                "INSERT INTO operation_observations (user_id, account_id, observation_hash, "
-                "semantic_hash, provider_operation_id, operation_date, operation_type, "
-                "operation_state, payment_value, payment_currency, normalized, observed_at) "
-                "VALUES (%s, %s, %s, %s, 'corrected-coupon', %s, 'OPERATION_TYPE_COUPON', %s, "
-                "300, 'RUB', '{}'::jsonb, %s)",
-                (
-                    owner,
-                    str(owner),
-                    bytes([byte]) * 32,
-                    bytes([byte]) * 32,
-                    begin + timedelta(days=1),
-                    state,
-                    now - timedelta(minutes=10 - byte),
-                ),
-            )
-
     store = WorkspaceStore(database)
-    insert_coupon("OPERATION_STATE_EXECUTED", 3)
-    paid = next(
-        item for item in store.events(owner)["items"] if item["kind"] == "payment_operation"
-    )
-    store.mark_events_read(owner, [paid["id"]])
-    insert_coupon("OPERATION_STATE_CANCELED", 4)
-    corrected = [
-        item for item in store.events(owner)["items"] if item["kind"] == "payment_operation"
-    ]
-    assert len(corrected) == 1
-    assert corrected[0]["id"] == paid["id"]
-    assert corrected[0]["read_at"] is None
-    assert corrected[0]["source"]["state"] == "OPERATION_STATE_CANCELED"
-    assert store.dashboard(owner)["income"]["total_rub"] == "0"
+    with store._transaction(owner) as cur:
+        store._insert_event(
+            cur,
+            owner,
+            identity="legacy-payment",
+            category="payments",
+            kind="payment_operation",
+            title="Legacy transaction",
+            occurred_at=now,
+            target="income",
+            source={"type": "operation", "amount": "300"},
+        )
+        store._insert_event(
+            cur,
+            owner,
+            identity="legacy-operation-source",
+            category="system",
+            kind="legacy_fact",
+            title="Legacy account operation",
+            occurred_at=now,
+            target="portfolio",
+            source={"type": "operation", "amount": "400"},
+        )
+    hidden = event_id("payment_operation", "legacy-payment")
+    hidden_source = event_id("legacy_fact", "legacy-operation-source")
+    # Removing runtime privileges proves dashboard/event reads no longer depend
+    # on account transaction history even when valid legacy rows remain at rest.
+    with database.pool.connection() as conn:
+        runtime_role = conn.execute("SELECT current_user AS name").fetchone()["name"]
+    with psycopg.connect(workspace_database[1], autocommit=True) as admin:
+        statement = sql.SQL("{} SELECT ON {}.operation_observations, {}.broker_sync_state {} {}")
+        admin.execute(
+            statement.format(
+                sql.SQL("REVOKE"),
+                sql.Identifier(workspace_database[2]),
+                sql.Identifier(workspace_database[2]),
+                sql.SQL("FROM"),
+                sql.Identifier(runtime_role),
+            )
+        )
+        try:
+            dashboard = store.dashboard(owner)
+            assert dashboard["value_change"]["status"] == "available"
+            assert Decimal(dashboard["value_change"]["nav_change_rub"]) == 500
+            assert "income" not in dashboard
+            assert "performance" not in dashboard
+            assert "broker_statistics" not in dashboard["overview"]
+            assert all(item["kind"] != "payment_operation" for item in store.events(owner)["items"])
+            assert all(
+                item["source"].get("type") != "operation" for item in store.events(owner)["items"]
+            )
+            for hidden_id in (hidden, hidden_source):
+                with pytest.raises(WorkspaceNotFound):
+                    store.get_event(owner, hidden_id)
+                with pytest.raises(WorkspaceNotFound):
+                    store.mark_events_read(owner, [hidden_id])
+        finally:
+            admin.execute(
+                statement.format(
+                    sql.SQL("GRANT"),
+                    sql.Identifier(workspace_database[2]),
+                    sql.Identifier(workspace_database[2]),
+                    sql.SQL("TO"),
+                    sql.Identifier(runtime_role),
+                )
+            )
 
 
 @pytest.mark.parametrize("event_type", ["coupon", "dividend"])
@@ -2130,27 +2152,9 @@ def _long_history(database: Database, owner: UUID, begin: datetime) -> None:
             "FROM generate_series(0, 999) AS history(n)",
             (owner, str(owner), begin, (begin - timedelta(days=1)).isoformat()),
         )
-        conn.execute(
-            "INSERT INTO broker_sync_state (user_id, account_id, last_complete_watermark) "
-            "VALUES (%s, %s, %s)",
-            (owner, str(owner), begin + timedelta(hours=800 * 12)),
-        )
-        for number, kind, value, offset in (
-            (1, "COUPON", "250", 400), (2, "INPUT", "3000", 500),
-        ):
-            conn.execute(
-                "INSERT INTO operation_observations (user_id, account_id, observation_hash, "
-                "semantic_hash, provider_operation_id, operation_date, operation_type, "
-                "operation_state, payment_value, payment_currency, normalized, observed_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, 'OPERATION_STATE_EXECUTED', "
-                "%s, 'RUB', '{}'::jsonb, %s)",
-                (owner, str(owner), bytes([number]) * 32, bytes([number]) * 32, str(number),
-                 begin + timedelta(hours=offset * 12), "OPERATION_TYPE_" + kind, value,
-                 datetime.now(UTC)),
-            )
 
 
-def test_full_range_nav_sampling_keeps_exact_covered_performance_endpoints(
+def test_full_range_nav_sampling_preserves_exact_valued_observation_endpoints(
     workspace_database: tuple[Database, str, str],
 ) -> None:
     database = workspace_database[0]
@@ -2173,21 +2177,20 @@ def test_full_range_nav_sampling_keeps_exact_covered_performance_endpoints(
     assert datetime.fromisoformat(coverage["returned_to"]) == begin + timedelta(hours=999 * 12)
     assert datetime.fromisoformat(coverage["available_from"]) == begin
     expected = {(begin + timedelta(hours=n * 12), Decimal(10000 + n * 10)) for n in range(1000)}
-    actual = {(datetime.fromisoformat(row["captured_at"]), Decimal(row["nav_rub"]))
-              for row in history}
+    actual = {
+        (datetime.fromisoformat(row["captured_at"]), Decimal(row["nav_rub"])) for row in history
+    }
     assert actual <= expected
     assert len(actual) == len(history)
-    # Both covered endpoints lie between sampled points. P&L must come from the
-    # full underlying observations, not whichever chart points survived sampling.
-    performance = result["performance"]
-    assert datetime.fromisoformat(performance["from"]) == begin + timedelta(hours=12)
-    assert datetime.fromisoformat(performance["to"]) == begin + timedelta(hours=800 * 12)
-    assert datetime.fromisoformat(performance["from"]) not in {point[0] for point in actual}
-    assert datetime.fromisoformat(performance["to"]) not in {point[0] for point in actual}
-    assert Decimal(performance["investment_result_rub"]) == 4990
-    assert Decimal(performance["net_contributions_rub"]) == 3000
+    # Change is computed from the exact first and last valued observations,
+    # independently of chart sampling, and is never labelled investment profit.
+    change = result["value_change"]
+    assert datetime.fromisoformat(change["from"]) == begin + timedelta(hours=12)
+    assert datetime.fromisoformat(change["to"]) == begin + timedelta(hours=999 * 12)
+    assert Decimal(change["nav_change_rub"]) == 9980
     assert Decimal(result["overview"]["nav_rub"]) == 19990
-    assert Decimal(result["income"]["total_rub"]) == 250
+    assert "investment_result_rub" not in change
+    assert "income" not in result
 
     yearly = store.dashboard(owner, history_period="1y")
     year_coverage = yearly["overview"]["history_coverage"]
@@ -2196,9 +2199,8 @@ def test_full_range_nav_sampling_keeps_exact_covered_performance_endpoints(
     assert year_coverage["total_stored_observations"] == 1000
     year_begin = begin + timedelta(hours=270 * 12)
     assert datetime.fromisoformat(year_coverage["returned_from"]) == year_begin
-    assert datetime.fromisoformat(yearly["performance"]["from"]) == year_begin
-    assert Decimal(yearly["performance"]["investment_result_rub"]) == 2300
-    assert Decimal(yearly["income"]["total_rub"]) == 250
+    assert datetime.fromisoformat(yearly["value_change"]["from"]) == year_begin
+    assert Decimal(yearly["value_change"]["nav_change_rub"]) == 7290
 
     daily = store.dashboard(owner, history_period="1d")
     day_coverage = daily["overview"]["history_coverage"]
@@ -2208,24 +2210,9 @@ def test_full_range_nav_sampling_keeps_exact_covered_performance_endpoints(
     assert datetime.fromisoformat(day_coverage["requested_to"]) == datetime.fromisoformat(
         daily["generated_at"]
     )
-    assert daily["performance"]["reason"] == "insufficient_covered_snapshots"
-    assert daily["performance"]["investment_result_rub"] is None
-    assert daily["income"]["total_rub"] is None
-    assert daily["income"]["reason"] == "history_incomplete"
-
-    with database.pool.connection() as conn:
-        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
-        conn.execute(
-            "UPDATE broker_sync_state SET pending_cursor = 'unread-page', "
-            "history_window_from = %s, history_window_to = %s WHERE user_id = %s",
-            (begin, datetime.now(UTC), owner),
-        )
-    partial = store.dashboard(owner)
-    assert partial["overview"]["history_coverage"]["status"] == "sampled"
-    # A new pending window does not erase the independently completed watermark.
-    assert partial["performance"]["status"] == "available"
-    assert partial["performance"]["investment_result_rub"] == performance["investment_result_rub"]
-    assert partial["income"]["total_rub"] == result["income"]["total_rub"]
+    assert daily["value_change"]["status"] == "available"
+    assert Decimal(daily["value_change"]["nav_change_rub"]) == 10
+    assert "return_percent" not in daily["value_change"]
 
 
 def test_nav_history_empty_single_zero_and_replaced_account_are_explicit(
@@ -2252,258 +2239,21 @@ def test_nav_history_empty_single_zero_and_replaced_account_are_explicit(
     assert single["overview"]["history_coverage"]["status"] == "complete"
     assert single["overview"]["history_coverage"]["total_observations"] == 1
     assert Decimal(single["overview"]["nav_rub"]) == 0
-    assert single["performance"]["investment_result_rub"] is None
-    assert single["income"]["total_rub"] is None
+    assert single["value_change"]["nav_change_rub"] is None
+    assert "income" not in single
     with database.pool.connection() as conn:
         conn.execute(
-            "UPDATE tbank_connection SET account_id = 'other' WHERE user_id = %s", (owner,),
+            "UPDATE tbank_connection SET account_id = 'other' WHERE user_id = %s",
+            (owner,),
         )
     switched = store.dashboard(owner)
     assert switched["overview"]["history"] == []
     assert switched["overview"]["history_coverage"]["total_stored_observations"] == 0
     assert switched["overview"]["nav_rub"] is None
-    assert switched["performance"]["investment_result_rub"] is None
+    assert switched["value_change"]["nav_change_rub"] is None
 
 
-def _ledger_fact(
-    database: Database, owner: UUID, ident: str, at: datetime, *, observed: datetime | None = None,
-    kind: str = "INPUT", value: str = "100",
-) -> None:
-    operation_type = "OPERATION_TYPE_" + kind
-    payload = {"provider_operation_id": ident, "operation_type": operation_type,
-               "state": "OPERATION_STATE_EXECUTED", "name": ident,
-               "payment": {"value": value, "currency": "RUB"}}
-    digest = hashlib.sha256(f"{ident}:{at}:{kind}:{value}".encode()).digest()
-    with database.pool.connection() as conn:
-        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
-        conn.execute(
-            "INSERT INTO operation_observations (user_id, account_id, observation_hash, "
-            "semantic_hash, provider_operation_id, operation_date, operation_type, "
-            "operation_state, "
-            "payment_value, payment_currency, normalized, observed_at) VALUES "
-            "(%s, %s, %s, %s, %s, %s, %s, 'OPERATION_STATE_EXECUTED', "
-            "%s, 'RUB', %s::jsonb, %s)",
-            (owner, str(owner), digest, digest, ident, at, operation_type, value,
-             json.dumps(payload), observed or datetime.now(UTC)),
-        )
-
-
-def test_parent_trade_and_fee_keep_distinct_lineages_in_totals_and_paginated_history(
-    workspace_database: tuple[Database, str, str],
-) -> None:
-    database = workspace_database[0]
-    owner, other = user(database, account=True), user(database, account=True)
-    store = WorkspaceStore(database)
-    now = datetime.now(UTC)
-    at = now - timedelta(hours=1)
-    _ledger_fact(database, owner, "shared-parent", at, kind="BUY", value="-5000")
-    _ledger_fact(database, owner, "shared-parent", at, kind="BROKER_FEE", value="-10")
-    _ledger_fact(database, owner, "shared-parent", at, kind="BROKER_FEE", value="-12")
-    _ledger_fact(database, owner, "contribution", at, value="1000")
-    # ID-less observations use their own semantic identity. A literal provider
-    # ID equal to that digest must not share the fallback's namespace.
-    _ledger_fact(database, owner, "", at, kind="COUPON", value="100")
-    _ledger_fact(database, owner, "", at, kind="COUPON", value="200")
-    fallback_hash = hashlib.sha256(f":{at}:COUPON:100".encode()).hexdigest()
-    _ledger_fact(database, owner, fallback_hash, at, kind="COUPON", value="300")
-    _ledger_fact(database, other, "shared-parent", at, kind="BROKER_FEE", value="-999")
-    with database.pool.connection() as conn:
-        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
-        conn.execute(
-            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
-            "VALUES(%s, %s, %s)", (owner, str(owner), now),
-        )
-    with store._transaction(owner) as cur:
-        basis = store._basis(cur, owner)
-    assert basis.complete
-    assert len(basis.operations) == 6
-    flow = cashflow_summary(basis.operations, from_at=at - timedelta(seconds=1),
-                            to_at=now, complete=basis.complete)
-    assert Decimal(flow["net_contributions_rub"]) == Decimal("1000")
-    assert Decimal(flow["fees_rub"]) == Decimal("12")
-    assert Decimal(flow["income"]["total_rub"]) == Decimal("600")
-    rows: list[dict[str, Any]] = []
-    cursor = None
-    for _ in range(3):
-        page = store.operations(owner, limit=2, cursor=cursor)
-        rows.extend(page["items"])
-        cursor = page["next_cursor"]
-    assert cursor is None
-    assert len({row["id"] for row in rows}) == 6
-    fees = [row for row in rows if row["category"] == "fee"]
-    assert len(fees) == 1
-    assert fees[0]["payment"]["value"] == "-12"
-    assert sum(row["category"] == "internal" for row in rows) == 1
-
-
-def test_reconfirmed_prior_operation_changes_current_totals_and_invalidates_old_page(
-    workspace_database: tuple[Database, str, str],
-) -> None:
-    database = workspace_database[0]
-    owner, other = user(database, account=True), user(database, account=True)
-    store = WorkspaceStore(database)
-    began = datetime.now(UTC) - timedelta(seconds=20)
-    source_at = began - timedelta(hours=1)
-    original = TBankOperation(
-        cursor="", broker_account_id=str(owner), id="fee", parent_operation_id="trade",
-        name="Broker fee", date=source_at, operation_type="OPERATION_TYPE_BROKER_FEE",
-        description="", state="OPERATION_STATE_EXECUTED", instrument_uid="", figi="",
-        instrument_type="", position_uid="", ticker="", class_code="",
-        payment=TBankMoney("RUB", "-10"), price=None, commission=None, accrued_int=None,
-        quantity="0", quantity_rest="0", quantity_done="0", asset_uid="", trades=(),
-    )
-
-    def observe(tenant: UUID, value: str, second: int, *, ident: str = "fee") -> bool:
-        item = replace(original, broker_account_id=str(tenant), id=ident,
-                       payment=TBankMoney("RUB", value))
-        with store._transaction(tenant) as cur:
-            return _save_operation_observation(
-                cur, user_id=tenant, account_id=str(tenant), operation=item,
-                observed_at=began + timedelta(seconds=second),
-            )
-
-    assert observe(owner, "-10", 0)
-    assert observe(other, "-12", 0)
-    _ledger_fact(database, owner, "deposit", source_at, observed=began)
-    assert observe(owner, "-12", 1)
-    with patch("omnicio.workspace_store.datetime") as clock:
-        clock.now.return_value = began + timedelta(seconds=2)
-        first = store.operations(owner, limit=1)
-        assert first["items"][0]["payment"]["value"] == "-12"
-        assert first["next_cursor"] is not None
-        # Re-reading the already-current fact does not move its timestamp or
-        # invalidate an otherwise consistent page snapshot.
-        assert not observe(owner, "-12", 3)
-        clock.now.return_value = began + timedelta(seconds=4)
-        second = store.operations(owner, limit=1, cursor=first["next_cursor"])
-        assert second["items"][0]["category"] == "contribution"
-        assert second["next_cursor"] is None
-        assert not observe(owner, "-10", 5)
-        # A delayed older read must not undo the newer confirmation.
-        assert not observe(owner, "-12", 4)
-        clock.now.return_value = began + timedelta(seconds=6)
-        with pytest.raises(ValueError, match="workspace_operation_history_changed"):
-            store.operations(owner, limit=1, cursor=first["next_cursor"])
-        fresh = store.operations(owner)
-        fees = [row for row in fresh["items"] if row["category"] == "fee"]
-        assert len(fees) == 1
-        assert fees[0]["payment"]["value"] == "-10"
-        assert datetime.fromisoformat(fees[0]["operation_date"]) == source_at
-        assert datetime.fromisoformat(fees[0]["observed_at"]) == began + timedelta(seconds=5)
-        assert store.operations(other)["items"][0]["payment"]["value"] == "-12"
-    # An exact semantic replay after a provider-ID rotation remains idempotent;
-    # this does not infer a relation between different financial facts.
-    assert not observe(owner, "-10", 7, ident="renamed-provider-id")
-    with store._transaction(owner) as cur:
-        basis = store._basis(cur, owner)
-        cur.execute("SELECT count(*) AS count FROM operation_observations WHERE user_id = %s",
-                    (owner,))
-        assert cur.fetchone()["count"] == 3
-    totals = cashflow_summary(basis.operations, from_at=source_at - timedelta(seconds=1),
-                              to_at=began, complete=True)
-    assert Decimal(totals["fees_rub"]) == Decimal("10")
-
-
-def test_operations_pages_freeze_ingestion_and_bind_account_filters(
-    workspace_database: tuple[Database, str, str],
-) -> None:
-    database = workspace_database[0]
-    owner, other = user(database, account=True), user(database, account=True)
-    store = WorkspaceStore(database)
-    now = datetime.now(UTC)
-    _ledger_fact(database, owner, "alpha", now - timedelta(hours=36),
-                 observed=now - timedelta(hours=2))
-    _ledger_fact(database, owner, "beta", now - timedelta(hours=24),
-                 observed=now - timedelta(hours=2))
-    _ledger_fact(database, owner, "gamma", now - timedelta(hours=6),
-                 observed=now - timedelta(hours=2))
-    lower = now - timedelta(days=2)
-    first = store.operations(owner, limit=1, from_at=lower)
-    assert first["items"][0]["provider_operation_id"] == "gamma"
-    assert first["items"][0]["category"] == "contribution"
-    _ledger_fact(database, owner, "beta", now - timedelta(days=10),
-                 observed=now - timedelta(hours=1))
-    second = store.operations(owner, limit=1, from_at=lower, cursor=first["next_cursor"])
-    assert second["items"][0]["provider_operation_id"] == "beta"
-    third = store.operations(owner, limit=1, from_at=lower, cursor=second["next_cursor"])
-    assert third["items"][0]["provider_operation_id"] == "alpha"
-    assert third["next_cursor"] is None
-    # A fresh read sees the corrected date outside the selected interval.
-    assert {item["provider_operation_id"] for item in store.operations(
-        owner, from_at=lower,
-    )["items"]} == {"alpha", "gamma"}
-    with pytest.raises(ValueError, match="cursor_invalid"):
-        store.operations(other, from_at=lower, cursor=first["next_cursor"])
-    changed_lower = lower - timedelta(days=1)
-    with pytest.raises(ValueError, match="cursor_invalid"):
-        store.operations(owner, from_at=changed_lower, cursor=first["next_cursor"])
-
-
-def test_selected_history_limit_is_applied_after_corrections_and_before_old_lifetime_rows(
-    workspace_database: tuple[Database, str, str],
-) -> None:
-    database = workspace_database[0]
-    owner = user(database, account=True)
-    store = WorkspaceStore(database)
-    now = datetime.now(UTC)
-    for index in range(5):
-        _ledger_fact(database, owner, str(index), now - timedelta(days=10 + index))
-    _ledger_fact(database, owner, "moved", now - timedelta(hours=12))
-    _ledger_fact(database, owner, "moved", now - timedelta(days=20))
-    _ledger_fact(database, owner, "current", now - timedelta(minutes=10))
-    with database.pool.connection() as conn:
-        conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
-        conn.execute(
-            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
-            "VALUES(%s, %s, %s)", (owner, str(owner), now),
-        )
-    with patch("omnicio.workspace_store._MAX_OPERATIONS", 2), store._transaction(owner) as cur:
-        all_time = store._basis(cur, owner)
-        selected = store._basis(cur, owner, operations_from=now - timedelta(days=1))
-    assert not all_time.complete
-    assert selected.complete
-    assert [row["provider_operation_id"] for row in selected.operations] == ["current"]
-
-
-def test_income_goals_keep_separate_corrected_periods_before_history_limit(
-    workspace_database: tuple[Database, str, str],
-) -> None:
-    database = workspace_database[0]
-    owner, another = user(database, account=True), user(database, account=True)
-    store = WorkspaceStore(database)
-    now = datetime.now(UTC)
-    for index in range(5):
-        _ledger_fact(database, owner, str(index), now - timedelta(days=10 + index), kind="COUPON")
-    _ledger_fact(database, owner, "moved", now - timedelta(minutes=20), kind="COUPON")
-    _ledger_fact(database, owner, "moved", now - timedelta(days=20), kind="COUPON")
-    _ledger_fact(database, owner, "current", now - timedelta(minutes=10), kind="COUPON")
-    _ledger_fact(database, another, "other", now - timedelta(minutes=10), kind="COUPON")
-    with store._transaction(owner) as cur:
-        cur.execute(
-            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
-            "VALUES(%s, %s, %s)", (owner, str(owner), now),
-        )
-    with patch("omnicio.workspace_store._MAX_OPERATIONS", 2):
-        earlier = store.create_goal(owner, goal_document(
-            title="Earlier income", kind="income", progress_source="income",
-            allocation_percent="50", manual_amount_rub=None,
-            start_date=(now - timedelta(days=40)).date().isoformat(),
-        ))
-        recent = store.create_goal(owner, goal_document(
-            title="Recent income", kind="income", progress_source="income",
-            allocation_percent="50", manual_amount_rub=None,
-            start_date=(now - timedelta(days=1)).date().isoformat(),
-        ))
-        assert earlier["progress"]["status"] == "unavailable"
-        assert recent["progress"]["status"] == "available"
-        assert Decimal(recent["progress"]["amount_rub"]) == 50
-        for result in (store.goals(owner), store.dashboard(owner)["goals"]):
-            progress = {row["id"]: row["progress"] for row in result["items"]}
-            assert progress[earlier["id"]]["status"] == "unavailable"
-            assert Decimal(progress[recent["id"]]["amount_rub"]) == 50
-
-
-def test_fund_nav_coverage_enables_intraday_return_and_goal_without_sector_guess(
+def test_fund_nav_coverage_enables_value_change_and_goal_without_sector_guess(
     workspace_database: tuple[Database, str, str],
 ) -> None:
     database = workspace_database[0]
@@ -2513,8 +2263,10 @@ def test_fund_nav_coverage_enables_intraday_return_and_goal_without_sector_guess
     with database.pool.connection() as conn:
         conn.execute("SELECT set_config('omnicio.user_id', %s, true)", (str(owner),))
         for at, nav in ((now - timedelta(hours=2), "1000"), (now - timedelta(minutes=1), "1100")):
-            evidence = {"analysis": {"valuation_status": "complete", "sector_status": "partial"},
-                        "account": {"opened_at": (now - timedelta(days=30)).isoformat()}}
+            evidence = {
+                "analysis": {"valuation_status": "complete", "sector_status": "partial"},
+                "account": {"opened_at": (now - timedelta(days=30)).isoformat()},
+            }
             conn.execute(
                 "INSERT INTO portfolio_snapshots (user_id, account_id, environment, captured_at, "
                 "analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, rub_cash_unblocked, "
@@ -2522,18 +2274,20 @@ def test_fund_nav_coverage_enables_intraday_return_and_goal_without_sector_guess
                 "VALUES(%s, %s, 'prod', %s, 'partial', %s, 0, 0, 0, false, %s::jsonb)",
                 (owner, str(owner), at, nav, json.dumps(evidence)),
             )
-        conn.execute(
-            "INSERT INTO broker_sync_state(user_id, account_id, last_complete_watermark) "
-            "VALUES(%s, %s, %s)", (owner, str(owner), now),
-        )
-    goal = store.create_goal(owner, goal_document(
-        progress_source="portfolio", allocation_percent="100", manual_amount_rub=None,
-    ))
+    goal = store.create_goal(
+        owner,
+        goal_document(
+            progress_source="portfolio",
+            allocation_percent="100",
+            manual_amount_rub=None,
+        ),
+    )
     result = store.dashboard(owner, history_period="1d")
     assert result["overview"]["status"] == "observed"
     assert result["overview"]["sector_status"] == "partial"
     assert len(result["overview"]["history"]) == 2
-    assert Decimal(result["performance"]["return_percent"]) == 10
+    assert Decimal(result["value_change"]["nav_change_rub"]) == 100
+    assert "return_percent" not in result["value_change"]
     assert Decimal(goal["progress"]["amount_rub"]) == 1100
 
 

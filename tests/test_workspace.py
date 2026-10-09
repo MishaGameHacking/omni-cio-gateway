@@ -10,18 +10,17 @@ from uuid import uuid4
 import pytest
 
 from omnicio.workspace import (
-    cashflow_summary,
     default_preferences,
     event_digest,
     event_id,
     goal_progress,
-    income_goal_start,
     normalize_goal,
     normalize_preferences,
-    portfolio_performance,
+    portfolio_value_change,
     quiet_now,
+    snapshot_valuation_complete,
 )
-from omnicio.workspace_store import WorkspaceStore, _Basis
+from omnicio.workspace_store import WorkspaceStore, _History
 
 START = datetime(2026, 1, 1, tzinfo=UTC)
 END = START + timedelta(days=30)
@@ -42,42 +41,29 @@ def goal_document(**changes: Any) -> dict[str, Any]:
     }
 
 
-def operation(
-    kind: str,
-    payment: str,
-    *,
-    day: int = 10,
-    currency: str = "RUB",
-    **changes: Any,
-) -> dict[str, Any]:
-    return {
-        "operation_date": START + timedelta(days=day),
-        "operation_type": "OPERATION_TYPE_" + kind,
-        "operation_state": "OPERATION_STATE_EXECUTED",
-        "payment_value": Decimal(payment),
-        "payment_currency": currency,
-        **changes,
-    }
-
-
-@pytest.mark.parametrize(("target", "payment", "reached"), (
-    ("100000.00", "100.000000000", False),
-    ("3.00", "2.000000000", False),
-    ("100.00", "200.000000000", True),
-))
+@pytest.mark.parametrize(
+    ("target", "current", "reached"),
+    (
+        ("100000.00", "50.000000000", False),
+        ("3.00", "1.000000000", False),
+        ("100.00", "100.000000000", True),
+    ),
+)
 def test_goal_events_accept_calculated_percent_precision_from_stored_money(
-    target: str, payment: str, reached: bool,
+    target: str,
+    current: str,
+    reached: bool,
 ) -> None:
     owner = uuid4()
     goal = goal_document(
-        id=str(uuid4()), version=1, kind="income", progress_source="income",
-        target_amount_rub=Decimal(target), allocation_percent=Decimal("50.00"),
-        manual_amount_rub=None, target_date=None, account_id="account", environment="prod",
+        id=str(uuid4()),
+        version=1,
+        target_amount_rub=Decimal(target),
+        manual_amount_rub=Decimal(current),
+        target_date=None,
+        updated_at=END,
     )
-    goal["progress"] = goal_progress(
-        goal, connection={"account_id": "account", "environment": "prod"}, snapshot=None,
-        operations=[operation("COUPON", payment)], watermark=END, history_complete=True, now=END,
-    )
+    goal["progress"] = goal_progress(goal, connection=None, snapshot=None, now=END)
     assert goal["progress"]["status"] == "available"
     store = WorkspaceStore(Mock())
     with patch.object(store, "_insert_event") as insert:
@@ -85,30 +71,6 @@ def test_goal_events_accept_calculated_percent_precision_from_stored_money(
     assert insert.call_count == int(reached)
     if reached:
         assert insert.call_args.kwargs["kind"] == "goal_reached"
-
-
-def test_income_uses_selected_period_and_keeps_principal_separate() -> None:
-    basis = _Basis(
-        connection=None,
-        latest={"evidence": {"account": {"opened_at": START.isoformat()}}},
-        operations=[
-            operation("DIVIDEND", "100", day=5),
-            operation("COUPON", "50", day=20),
-            operation("BOND_REPAYMENT", "1000", day=25),
-        ],
-        watermark=END, complete=True,
-    )
-    all_time = WorkspaceStore._income(basis, END)
-    selected = WorkspaceStore._income(basis, END, from_at=START + timedelta(days=10))
-    assert all_time["total_rub"] == "150"
-    assert selected["total_rub"] == "50"
-    assert selected["dividends_rub"] == "0"
-    assert selected["redemptions_rub"] == "1000"
-    assert selected["from"] == (START + timedelta(days=10)).isoformat()
-    assert selected["by_month"][0]["total_rub"] == "50"
-    after_watermark = WorkspaceStore._income(basis, END, from_at=END + timedelta(days=1))
-    assert after_watermark["status"] == "unavailable"
-    assert after_watermark["total_rub"] is None
 
 
 def test_preferences_defaults_have_no_invented_user_facts_and_do_not_alias() -> None:
@@ -132,41 +94,6 @@ def test_old_digest_preferences_keep_midnight_schedule_and_new_defaults_are_expl
     assert old["digest_timezone"] == "Europe/Berlin"
     with pytest.raises(ValueError, match="digest_time_invalid"):
         normalize_preferences({**old, "digest_time": "24:00"})
-
-
-def test_independent_nav_coverage_unlocks_fund_return_but_unknown_legacy_partial_does_not() -> None:
-    snapshots = [
-        {"captured_at": START, "analysis_status": "partial", "nav_rub": "1000",
-         "valuation_status": "complete"},
-        {"captured_at": END, "analysis_status": "partial", "nav_rub": "1100",
-         "valuation_status": "complete"},
-    ]
-    result = portfolio_performance(snapshots, [], watermark=END, history_complete=True)
-    assert result["return_percent"] == "10.0"
-    assert result["investment_result_rub"] == "100"
-    snapshots[0].pop("valuation_status")
-    assert portfolio_performance(snapshots, [], watermark=END, history_complete=True)[
-        "return_status"
-    ] == "unavailable"
-
-
-def test_foreign_internal_payments_do_not_require_fabricated_fx_for_rub_nav_return() -> None:
-    snapshots = [
-        {"captured_at": START, "analysis_status": "observed", "nav_rub": "1000"},
-        {"captured_at": END, "analysis_status": "observed", "nav_rub": "1100"},
-    ]
-    operations = [operation("DIVIDEND", "2", currency="USD"), operation("BROKER_FEE", "-1")]
-    result = portfolio_performance(snapshots, operations, watermark=END, history_complete=True)
-    assert result["return_percent"] == "10.0"
-    assert result["income_received_rub"] is None
-    assert result["fees_rub"] == "1"
-    assert result["metric_coverage"]["dividends_rub"]["status"] == "unavailable"
-    assert result["native_payment_sums"]["currencies"]["USD"]["dividends"] == "2"
-    operations.append(operation("INPUT", "2", currency="USD"))
-    result = portfolio_performance(snapshots, operations, watermark=END, history_complete=True)
-    assert result["return_percent"] is None
-    assert result["nav_change_rub"] == "100"
-    assert result["metric_coverage"]["fees_rub"]["status"] == "complete"
 
 
 @pytest.mark.parametrize(
@@ -262,158 +189,11 @@ def test_goal_document_cannot_assign_identity_or_trade_authority() -> None:
         normalize_goal({**data, "execute": True})
 
 
-def test_accounting_does_not_count_deposits_principal_or_fees_twice() -> None:
-    rows = [
-        operation("INPUT", "20000"),
-        operation("OUTPUT", "-5000"),
-        operation("BUY", "-10000", commission_value=Decimal("10")),
-        operation("BROKER_FEE", "-10"),
-        operation("BOND_TAX", "-130"),
-        operation("COUPON", "1000"),
-        operation("DIVIDEND", "2000"),
-        operation("BOND_REPAYMENT_FULL", "10000"),
-    ]
-    flow = cashflow_summary(rows, from_at=START, to_at=END, complete=True)
-    assert flow["status"] == "available"
-    assert flow["net_contributions_rub"] == "15000"
-    assert flow["fees_rub"] == "10"
-    assert flow["taxes_rub"] == "130"
-    assert flow["income"]["total_rub"] == "3000"
-    assert flow["income"]["redemptions_rub"] == "10000"
-    snapshots = [
-        {"captured_at": START, "nav_rub": "100000", "analysis_status": "observed"},
-        {"captured_at": END, "nav_rub": "117860", "analysis_status": "observed"},
-    ]
-    result = portfolio_performance(snapshots, rows, watermark=END, history_complete=True)
-    assert result["nav_change_rub"] == "17860"
-    assert result["investment_result_rub"] == "2860"
-    assert result["income_received_rub"] == "3000"
-    assert Decimal(result["return_percent"]) == Decimal("2.6")
-    assert result["return_method"] == "modified_dietz"
-    assert result["return_status"] == "available"
-    assert Decimal(result["return_denominator_rub"]) == Decimal("110000")
-    assert result["return_is_estimate"] is True
-    assert result["return_is_annualized"] is False
-
-
-@pytest.mark.parametrize(
-    "rows, closing, expected", [
-        ([], "110000", "10"),
-        ([operation("INPUT", "100000", day=15)], "215000", "10"),
-        ([operation("INPUT", "100000", day=30)], "210000", "10"),
-        ([operation("OUTPUT", "-50000", day=15)], "57500", "10"),
-        ([operation("INPUT", "100000", day=0)], "110000", "10"),
-        ([operation("INPUT", "100000", day=31)], "110000", "10"),
-        ([], "90000", "-10"),
-    ],
-)
-def test_dietz_return_weights_external_flows_and_respects_valuation_boundaries(
-    rows: list[dict[str, Any]], closing: str, expected: str,
-) -> None:
-    snapshots = [
-        {"captured_at": START, "nav_rub": "100000", "analysis_status": "observed"},
-        {"captured_at": END, "nav_rub": closing, "analysis_status": "observed"},
-    ]
-    result = portfolio_performance(snapshots, rows, watermark=END, history_complete=True)
-    assert Decimal(result["return_percent"]) == Decimal(expected)
-    incomplete = portfolio_performance(snapshots, rows, watermark=END, history_complete=False)
-    assert incomplete["return_percent"] is None
-    assert incomplete["return_status"] == "unavailable"
-
-
-def test_dietz_does_not_report_percentage_when_weighted_capital_is_nonpositive() -> None:
-    snapshots = [
-        {"captured_at": START, "nav_rub": "100", "analysis_status": "observed"},
-        {"captured_at": END, "nav_rub": "100", "analysis_status": "observed"},
-    ]
-    result = portfolio_performance(
-        snapshots, [operation("OUTPUT", "-300", day=10)], watermark=END, history_complete=True,
-    )
-    assert result["investment_result_rub"] == "300"
-    assert result["return_percent"] is None
-    assert result["return_reason"] == "non_positive_or_negligible_invested_capital"
-
-
-@pytest.mark.parametrize(
-    "row, reason",
-    [
-        (operation("INPUT_SECURITIES", "0"), "unclassified_or_non_cash_transfer"),
-        (operation("BUY_CARD", "-10000"), "unclassified_or_non_cash_transfer"),
-        (operation("UNKNOWN_NEW_ENUM", "10"), "unclassified_or_non_cash_transfer"),
-        (operation("INPUT", "100", currency="USD"), "payment_currency_or_amount_unavailable"),
-        (operation("INPUT", "-100"), "external_flow_sign_invalid"),
-        (operation("COUPON", "1", operation_state="unknown"), "operation_state_unknown"),
-    ],
-)
-def test_unknown_external_flows_block_performance(row: dict[str, Any], reason: str) -> None:
-    flow = cashflow_summary([row], from_at=START, to_at=END, complete=True)
-    assert flow["status"] == "unavailable"
-    assert reason in flow["reason"]
-    assert flow["net_contributions_rub"] is None
-
-
-def test_repeated_invalid_flow_preserves_the_actual_reason_for_each_metric() -> None:
-    flow = cashflow_summary(
-        [operation("INPUT", "-100"), operation("INPUT", "-50", day=11)],
-        from_at=START, to_at=END, complete=True,
-    )
-    assert flow["metrics"]["net_contributions_rub"]["reason"] == "external_flow_sign_invalid"
-    assert flow["income"]["total_rub"] == "0"
-
-
-def test_canceled_pending_and_outside_period_operations_are_excluded() -> None:
-    rows = [
-        operation("INPUT", "10", operation_state="OPERATION_STATE_CANCELED"),
-        operation("COUPON", "50", operation_state="OPERATION_STATE_PROGRESS"),
-        operation("INPUT", "999", day=0),
-        operation("COUPON", "1000", day=31),
-        operation("COUPON", "30", day=30),
-    ]
-    flow = cashflow_summary(rows, from_at=START, to_at=END, complete=True)
-    assert flow["income"]["total_rub"] == "30"
-    assert flow["net_contributions_rub"] == "0"
-
-
-def test_incomplete_history_never_displays_zero_as_known_income() -> None:
-    flow = cashflow_summary([], from_at=START, to_at=END, complete=False)
-    assert flow["income"]["status"] == "unavailable"
-    assert flow["income"]["total_rub"] is None
-    assert flow["income"]["by_month"] == []
-    assert flow["income"]["metric_coverage"]["coupons_rub"]["status"] == "unavailable"
-    no_payments = cashflow_summary([], from_at=START, to_at=END, complete=True)
-    assert no_payments["income"]["total_rub"] == "0"
-    assert no_payments["income"]["metric_coverage"]["coupons_rub"]["status"] == "complete"
-
-
-def test_performance_never_extrapolates_after_sync_watermark() -> None:
-    snapshots = [
-        {"captured_at": START, "nav_rub": "100000", "analysis_status": "observed"},
-        {"captured_at": END, "nav_rub": "105000", "analysis_status": "observed"},
-        {
-            "captured_at": END + timedelta(seconds=1),
-            "nav_rub": "200000",
-            "analysis_status": "observed",
-        },
-    ]
-    result = portfolio_performance(snapshots, [], watermark=END, history_complete=True)
-    assert result["end_nav_rub"] == "105000"
-    assert result["investment_result_rub"] == "5000"
-    assert (
-        portfolio_performance(snapshots, [], watermark=None, history_complete=False)[
-            "investment_result_rub"
-        ]
-        is None
-    )
-
-
 def test_manual_and_bound_goal_progress_have_distinct_authority() -> None:
     goal = {**goal_document(), "updated_at": END, "account_id": None, "environment": None}
     params: dict[str, Any] = {
         "connection": None,
         "snapshot": None,
-        "operations": [],
-        "watermark": None,
-        "history_complete": False,
         "now": END,
     }
     manual = goal_progress(goal, **params)
@@ -438,64 +218,6 @@ def test_manual_and_bound_goal_progress_have_distinct_authority() -> None:
     assert changed["reason"] == "linked_account_unavailable"
 
 
-def test_income_goal_uses_only_allocated_received_income() -> None:
-    goal = {
-        **goal_document(
-            kind="income", progress_source="income", allocation_percent="25", manual_amount_rub=None
-        ),
-        "updated_at": END,
-        "account_id": "A",
-        "environment": "prod",
-    }
-    result = goal_progress(
-        goal,
-        connection={"account_id": "A", "environment": "prod"},
-        snapshot=None,
-        operations=[operation("COUPON", "1000"), operation("BOND_REPAYMENT_FULL", "10000")],
-        watermark=END,
-        history_complete=True,
-        now=END,
-    )
-    assert result["amount_rub"] == "250"
-
-
-def test_income_goal_start_accepts_stored_date_and_serialized_calendar_date() -> None:
-    expected = datetime(2025, 12, 31, 21, tzinfo=UTC)
-    assert income_goal_start({"start_date": "2026-01-01"}) == expected
-    assert income_goal_start({"start_date": START.date()}) == expected
-    with pytest.raises(ValueError, match="workspace_date_invalid"):
-        income_goal_start({"start_date": START})
-
-
-def test_income_goal_calendar_start_includes_midnight_without_earlier_payments() -> None:
-    midnight_moscow = datetime(2025, 12, 31, 21, tzinfo=UTC)
-    goal = {
-        **goal_document(kind="income", progress_source="income", allocation_percent="100",
-                        manual_amount_rub=None),
-        "updated_at": END, "account_id": "A", "environment": "prod",
-    }
-    result = goal_progress(
-        goal, connection={"account_id": "A", "environment": "prod"}, snapshot=None,
-        operations=[
-            operation("COUPON", "100", operation_date=midnight_moscow),
-            operation("COUPON", "900", operation_date=midnight_moscow - timedelta(microseconds=1)),
-        ],
-        watermark=END, history_complete=True, now=END,
-    )
-    assert result["amount_rub"] == "100"
-
-
-def test_zero_nav_is_a_real_observation_but_one_point_is_not_a_performance_period() -> None:
-    first = {"captured_at": START, "nav_rub": "0", "analysis_status": "observed"}
-    single = portfolio_performance([first], [], watermark=END, history_complete=True)
-    assert single["investment_result_rub"] is None
-    assert single["reason"] == "insufficient_covered_snapshots"
-    second = {"captured_at": END, "nav_rub": "0", "analysis_status": "observed"}
-    pair = portfolio_performance([first, second], [], watermark=END, history_complete=True)
-    assert pair["investment_result_rub"] == "0"
-    assert pair["return_percent"] is None
-
-
 def test_event_identity_is_stable_and_digest_is_not_a_probability() -> None:
     identity = {"instrument": "bond", "state": "watch"}
     assert event_id("risk", identity) == event_id("risk", copy.deepcopy(identity))
@@ -514,3 +236,82 @@ def test_event_identity_is_stable_and_digest_is_not_a_probability() -> None:
     assert digest["by_category"]["system"] == 1
     assert digest["period_basis"] == "available_at"
     assert datetime.fromisoformat(digest["from"]).weekday() == 0
+
+
+def test_value_change_uses_only_our_snapshots_and_never_claims_profit() -> None:
+    rows = [
+        {"captured_at": START, "analysis_status": "observed", "nav_rub": "1000"},
+        {"captured_at": END, "analysis_status": "observed", "nav_rub": "1500"},
+    ]
+    change = portfolio_value_change(rows)
+    assert change["status"] == "available"
+    assert change["nav_change_rub"] == "500"
+    assert change["method"] == "snapshot_value_change"
+    assert "не доходность" in change["limitation"]
+    assert not {"return_percent", "investment_result_rub", "net_contributions_rub"} & change.keys()
+
+
+@pytest.mark.parametrize("nav", [None, "NaN", "Infinity", "unknown"])
+def test_missing_nav_is_not_zero_or_a_complete_value_observation(nav) -> None:
+    row = {
+        "captured_at": START,
+        "analysis_status": "observed",
+        "valuation_status": "complete",
+        "nav_rub": nav,
+    }
+    assert not snapshot_valuation_complete(row)
+    assert portfolio_value_change([row, {**row, "captured_at": END}])["nav_change_rub"] is None
+
+
+def test_real_zero_nav_is_known_but_a_single_observation_has_no_change() -> None:
+    first = {"captured_at": START, "analysis_status": "observed", "nav_rub": "0"}
+    assert snapshot_valuation_complete(first)
+    assert portfolio_value_change([first])["nav_change_rub"] is None
+    assert portfolio_value_change([first, {**first, "captured_at": END}])["nav_change_rub"] == "0"
+
+
+def test_workspace_snapshot_selection_never_reads_private_history_or_profile() -> None:
+    owner = uuid4()
+    cursor = Mock()
+    cursor.fetchone.side_effect = [
+        {"account_id": "A", "environment": "prod", "account_name": "Брокерский счёт"},
+        {
+            "id": uuid4(),
+            "captured_at": END,
+            "analysis_status": "partial",
+            "nav_rub": None,
+            "rub_cash_total": "100",
+            "rub_cash_blocked": None,
+            "rub_cash_unblocked": None,
+            "evidence": {"analysis": {"valuation_status": "unavailable"}},
+        },
+    ]
+
+    def enforce_scope(query, args):
+        assert "operation_observations" not in query
+        assert "broker_sync_state" not in query
+        assert "broker_user" not in query
+        assert "broker_statistics" not in query
+        assert owner in args
+
+    cursor.execute.side_effect = enforce_scope
+    basis = WorkspaceStore(Mock())._basis(cursor, owner)
+    overview = WorkspaceStore._overview(basis, _History([], [], {}), END)
+    assert overview["status"] == "partial"
+    assert overview["nav_rub"] is None
+    assert overview["cash_rub"] == "100"
+    assert overview["blocked_cash_rub"] is None
+    assert overview["free_cash_rub"] is None
+    assert "broker_statistics" not in overview
+
+
+def test_goals_reject_new_automatic_income_source_but_keep_manual_income_targets() -> None:
+    document = goal_document(
+        kind="income",
+        progress_source="income",
+        allocation_percent="100",
+        manual_amount_rub=None,
+    )
+    with pytest.raises(ValueError):
+        normalize_goal(document)
+    assert normalize_goal(goal_document(kind="income"))["progress_source"] == "manual"
