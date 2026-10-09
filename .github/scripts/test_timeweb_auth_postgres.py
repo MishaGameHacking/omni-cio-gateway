@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
 import io
 import json
@@ -14,8 +15,9 @@ import sys
 import tempfile
 import traceback
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -29,6 +31,10 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 UPGRADE = importlib.import_module("inplace_upgrade")
 REVIEWED_MIGRATIONS = (
+    "migrations/0029_email_auth.sql",
+    "migrations/0030_portfolio_read_only.sql",
+)
+HISTORICAL_MIGRATIONS = (
     "migrations/0027_assistant_stream_memory.sql",
     "migrations/0028_notification_device_binding.sql",
 )
@@ -192,7 +198,7 @@ class PostgresTests(unittest.TestCase):
         workflow = (root / ".github/workflows/auth-postgres.yml").read_text(encoding="utf-8")
         migrations = list(REVIEWED_MIGRATIONS)
         self.assertEqual(len(migrations), 2)
-        self.assertEqual([path.split("/")[-1][:4] for path in migrations], ["0027", "0028"])
+        self.assertEqual([path.split("/")[-1][:4] for path in migrations], ["0029", "0030"])
         MODULE.migration_bodies(self.reviewed_upgrade_plan(), [
             (root / path).read_text(encoding="utf-8") for path in migrations
         ])
@@ -206,6 +212,18 @@ class PostgresTests(unittest.TestCase):
         for path in migrations:
             with self.subTest(migration=path):
                 self.assertEqual(workflow.count(f"--migration {path}"), 1)
+
+    def test_cutover_preflight_matches_application_environment(self) -> None:
+        root = MODULE_PATH.parents[2] / ".github/workflows"
+
+        def environment(filename: str, job: str) -> dict[str, str]:
+            text = (root / filename).read_text(encoding="utf-8").split(f"\n  {job}:\n", 1)[1]
+            block = text.split("\n    env:\n", 1)[1].split("\n    steps:\n", 1)[0]
+            return dict(re.findall(r"^      ([A-Z][A-Z0-9_]*): ([^\n]*)$", block, re.M))
+
+        app = environment("auth-app-deploy.yml", "deploy")
+        postgres = environment("auth-postgres.yml", "reconcile")
+        self.assertEqual({name: postgres.get(name) for name in app}, app)
 
     def test_push_validation_queue_cannot_be_replaced_by_scheduled_or_manual_runs(self) -> None:
         workflow = (MODULE_PATH.parents[2] / ".github/workflows/auth-postgres.yml").read_text(
@@ -290,22 +308,47 @@ class PostgresTests(unittest.TestCase):
         return [(root / path).read_text(encoding="utf-8") for path in REVIEWED_MIGRATIONS]
 
     def reviewed_upgrade_plan(self) -> dict:
-        """Validate the frozen 1.3 contract without authorizing the current release."""
+        """Bind current migration content to the accepted 1.3 source readiness."""
         fixture = MODULE_PATH.parents[2] / "tests/fixtures/accepted_upgrade_1_3.json"
         document = json.loads(fixture.read_text(encoding="utf-8"))
-        plan = UPGRADE.validate_plan(document["plan"])
-        UPGRADE.schema_query(document["source_schema"], plan["source_schema_sha256"])
+        plan = UPGRADE.load_plan()
+        UPGRADE.schema_query(document["target_schema"], plan["source_schema_sha256"])
         return plan
 
     def test_current_application_cannot_use_historical_upgrade_before_provider_access(self) -> None:
-        with self.assertRaisesRegex(MODULE.UpgradeBlocked, "^application_version_mismatch$"):
-            MODULE.load_plan()
+        root = MODULE_PATH.parents[2]
+        historical = json.loads((root / "tests/fixtures/accepted_upgrade_1_3.json").read_text(
+            encoding="utf-8",
+        ))
+        UPGRADE.migration_bodies(historical["plan"], [
+            (root / path).read_text(encoding="utf-8") for path in HISTORICAL_MIGRATIONS
+        ])
+        document = {"project": {"version": "1.4.0"},
+                    "tool": {"omnicio": {"timeweb": {"upgrade": historical["plan"]}}}}
         client = Mock()
-        migration_sqls = self.reviewed_upgrade_sql()
-        with self.assertRaisesRegex(MODULE.UpgradeBlocked, "^application_version_mismatch$"):
+        with (
+            patch.object(UPGRADE.tomllib, "load", return_value=document),
+            self.assertRaisesRegex(MODULE.UpgradeBlocked, "^application_version_mismatch$"),
+        ):
+            MODULE.load_plan()
+        with (
+            patch.object(UPGRADE, "load_plan", return_value=historical["plan"]),
+            self.assertRaisesRegex(MODULE.UpgradeBlocked, "^application_version_mismatch$"),
+        ):
+            UPGRADE.render_remote_upgrade(
+                [(root / path).read_text(encoding="utf-8") for path in HISTORICAL_MIGRATIONS],
+                release_sha="a" * 40, database={},
+            )
+        with (
+            patch.object(UPGRADE.tomllib, "load", return_value=document),
+            patch.object(MODULE, "load_policy", return_value=SimpleNamespace(
+                mode=UPGRADE.MODE,
+            )),
+            self.assertRaisesRegex(MODULE.UpgradeBlocked, "^application_version_mismatch$"),
+        ):
             MODULE.reconcile(
                 client, desired=self.desired, server_name="server", server_comment="managed",
-                vpc_name="private", migration_sqls=migration_sqls,
+                vpc_name="private", migration_sqls=["BEGIN;\nSELECT 1;\nCOMMIT;\n"],
                 release_sha="a" * 40,
             )
         self.assertEqual(client.mock_calls, [])
@@ -350,6 +393,264 @@ class PostgresTests(unittest.TestCase):
                 ),
             ):
                 MODULE.run_inplace_upgrade(ssh, **arguments)
+
+    def current_cutover_arguments(self) -> dict:
+        plan = self.reviewed_upgrade_plan()
+        database = {"cluster_id": 4215095, "host": "10.0.0.5", "port": 5432,
+                    "database": "omnicio", "user": "omnicio_app"}
+        return {
+            "plan": plan, "url": "synthetic-database",
+            "payload": {"plan": plan, "database": database, "release_sha": "a" * 40,
+                        "statements": self.reviewed_upgrade_sql(), "target_query": "target"},
+            "identity": UPGRADE.operation_identity(plan, database), "receipt": None,
+            "source_query": "source", "installed_release": plan["source_release"],
+            "recovery_validator": Mock(), "product_preflight": Mock(return_value={
+                "status": "configuration_ready",
+            }),
+        }
+
+    def writer_state(self) -> dict:
+        return {
+            unit: {"active": unit != "omnicio-observer.service",
+                   "enabled": "static" if unit == "omnicio-observer.service" else "enabled"}
+            for unit in UPGRADE.WRITER_UNITS
+        }
+
+    def test_cutover_preflight_failure_does_not_write_receipts_or_stop_source(self) -> None:
+        for failure in ("source", "recovery", "configuration", "missing_verifier"):
+            arguments = self.current_cutover_arguments()
+            connection = Mock()
+            connection.execute.return_value.fetchone.return_value = (False,)
+            if failure == "missing_verifier":
+                arguments["recovery_validator"] = None
+            if failure == "configuration":
+                arguments["product_preflight"].side_effect = UPGRADE.UpgradeBlocked("smtp_missing")
+            with (
+                self.subTest(failure=failure),
+                patch.object(UPGRADE, "_verify_upgrade_role"),
+                patch.object(UPGRADE, "_source_is_ready", return_value=failure != "source"),
+                patch.object(UPGRADE, "_require_recovery", side_effect=(
+                    UPGRADE.UpgradeBlocked("proof_missing") if failure == "recovery" else None,
+                )) as proof,
+                patch.object(UPGRADE, "_operation_lock") as lock,
+                patch.object(UPGRADE, "_write_receipt") as write,
+                patch.object(UPGRADE, "_drain_writers") as stop,
+                self.assertRaises(UPGRADE.UpgradeBlocked),
+            ):
+                UPGRADE._apply_current_upgrade(connection, **arguments)
+            lock.assert_not_called()
+            write.assert_not_called()
+            stop.assert_not_called()
+            if failure in ("source", "missing_verifier"):
+                proof.assert_not_called()
+
+    def test_cutover_records_original_writers_and_stops_them_before_migration(self) -> None:
+        arguments = self.current_cutover_arguments()
+        connection = Mock()
+        connection.execute.return_value.fetchone.side_effect = [(False,), (True,)]
+        events = []
+        arguments["product_preflight"].side_effect = lambda: events.append("configuration")
+        writers = self.writer_state()
+        with (
+            patch.object(UPGRADE, "_verify_upgrade_role"),
+            patch.object(UPGRADE, "_source_is_ready", return_value=True),
+            patch.object(UPGRADE, "_require_recovery",
+                         side_effect=lambda *_: events.append("proof")),
+            patch.object(UPGRADE, "_operation_lock", nullcontext),
+            patch.object(UPGRADE, "_capture_writer_state", return_value=writers),
+            patch.object(UPGRADE, "_write_receipt", side_effect=lambda _: events.append("receipt"))
+                as write,
+            patch.object(UPGRADE, "_drain_writers", side_effect=lambda _: events.append("stop")),
+            patch.object(UPGRADE, "apply_upgrade", side_effect=lambda *_args, **_kwargs:
+                         events.append("migration") or "applied"),
+        ):
+            self.assertEqual(UPGRADE._apply_current_upgrade(connection, **arguments), "applied")
+        self.assertEqual(events, ["proof", "configuration", "receipt", "stop", "migration"])
+        recorded = write.call_args.args[0]
+        self.assertEqual(recorded["writers"], writers)
+        self.assertEqual(recorded["phase"], "pending")
+        self.assertEqual(recorded["identity"], arguments["identity"])
+
+    def test_cutover_failure_resumes_only_a_proven_source_schema(self) -> None:
+        for source_verified in (True, False):
+            arguments = self.current_cutover_arguments()
+            connection = Mock()
+            connection.execute.return_value.fetchone.return_value = (False,)
+            with (
+                self.subTest(source_verified=source_verified),
+                patch.object(UPGRADE, "_verify_upgrade_role"),
+                patch.object(UPGRADE, "_source_is_ready", return_value=True),
+                patch.object(UPGRADE, "_require_recovery"),
+                patch.object(UPGRADE, "_operation_lock", nullcontext),
+                patch.object(UPGRADE, "_capture_writer_state", return_value=self.writer_state()),
+                patch.object(UPGRADE, "_write_receipt"),
+                patch.object(UPGRADE, "_drain_writers"),
+                patch.object(UPGRADE, "apply_upgrade", side_effect=UPGRADE.UpgradeBlocked(
+                    "migration_failed",
+                )),
+                patch.object(UPGRADE, "_resume_source_after_failure", return_value=source_verified)
+                    as resume,
+                self.assertRaisesRegex(UPGRADE.UpgradeBlocked, (
+                    "^migration_failed$" if source_verified
+                    else "^upgrade_failed_writers_remain_stopped$"
+                )),
+            ):
+                UPGRADE._apply_current_upgrade(connection, **arguments)
+            connection.close.assert_called_once_with()
+            self.assertEqual(resume.call_args.args[-1], self.writer_state())
+
+    def test_committed_cutover_reconciles_without_repeating_stop_or_initial_preflight(self) -> None:
+        arguments = self.current_cutover_arguments()
+        arguments["receipt"] = {
+            "identity": arguments["identity"], "phase": "pending", "release_sha": "a" * 40,
+            "installed_release": arguments["plan"]["source_release"],
+            "writers": self.writer_state(),
+        }
+        connection = Mock()
+        connection.execute.return_value.fetchone.return_value = (True,)
+        with (
+            patch.object(UPGRADE, "_verify_upgrade_role"),
+            patch.object(UPGRADE, "_assert_writers_stopped") as stopped,
+            patch.object(UPGRADE, "_require_recovery") as proof,
+            patch.object(UPGRADE, "_operation_lock", nullcontext),
+            patch.object(UPGRADE, "_drain_writers") as stop,
+            patch.object(UPGRADE, "apply_upgrade", return_value="already_applied") as apply,
+        ):
+            self.assertEqual(UPGRADE._apply_current_upgrade(connection, **arguments),
+                             "already_applied")
+        stopped.assert_called_once_with()
+        proof.assert_not_called()
+        arguments["product_preflight"].assert_not_called()
+        stop.assert_not_called()
+        self.assertEqual(apply.call_args.kwargs["receipt"]["writers"], self.writer_state())
+
+    def test_quiescence_disables_previous_boot_targets_before_stopping_writers(self) -> None:
+        calls = []
+        with (
+            patch.object(UPGRADE, "_change_units", side_effect=lambda command, units:
+                         calls.append((command, units))),
+            patch.object(UPGRADE, "_assert_writers_stopped") as verify,
+        ):
+            UPGRADE._drain_writers(self.writer_state())
+        self.assertEqual(calls, [
+            ("disable", ["omnicio-auth.service", "omnicio-observer.timer"]),
+            ("stop", ["omnicio-observer.timer", "omnicio-observer.service",
+                      "omnicio-auth.service"]),
+        ])
+        verify.assert_called_once_with()
+
+    def test_upgrade_requires_unprivileged_role_and_does_not_grant_identity_access(self) -> None:
+        connection = Mock()
+        for flags in ((False, False, False, False, False), (True, False, False, False, False),
+                      (False, True, False, False, False), (False, False, True, False, False),
+                      (False, False, False, True, False), (False, False, False, False, True), None):
+            connection.execute.return_value.fetchone.return_value = flags
+            if flags == (False, False, False, False, False):
+                UPGRADE._verify_upgrade_role(connection)
+            else:
+                with self.subTest(flags=flags), self.assertRaisesRegex(
+                    UPGRADE.UpgradeBlocked, "^upgrade_database_role_is_privileged$",
+                ):
+                    UPGRADE._verify_upgrade_role(connection)
+        connection.reset_mock()
+        connection.execute.return_value.fetchone.return_value = (False,)
+        with (
+            patch.object(UPGRADE, "_operational_bytes") as read,
+            self.assertRaisesRegex(UPGRADE.UpgradeBlocked,
+                                   "^recovery_system_identity_access_unavailable$"),
+        ):
+            UPGRADE._require_recovery(connection, self.reviewed_upgrade_plan(), {}, Mock())
+        read.assert_not_called()
+        self.assertTrue(connection.execute.call_args.args[0].startswith("SELECT "))
+
+    def test_recovery_consumer_decrypts_existing_ciphertext_and_decodes_quoted_keys(self) -> None:
+        from cryptography.fernet import Fernet
+        from timeweb_auth_app import _environment_value
+
+        from omnicio.recovery import require_upgrade_recovery, sign_recovery_evidence
+
+        plan = self.reviewed_upgrade_plan()
+        signing_key = 'synthetic-only-$key`with\\quote"' * 2
+        archive_key = Fernet.generate_key().decode()
+        raw = b"PGDMP synthetic test data only"
+        encrypted = Fernet(archive_key).encrypt(raw)
+        now = datetime.now(UTC)
+        identity = {
+            "source_kind": "runtime_pg_dump", "cluster_id": 4215095,
+            "release_sha": plan["source_release"],
+            "source_at": (now - timedelta(minutes=2)).isoformat(),
+            "source_system_id": "12345", "archive_sha256": hashlib.sha256(raw).hexdigest(),
+        }
+        manifest = sign_recovery_evidence({
+            **identity, "kind": "logical_export_v1", "encrypted_sha256":
+                hashlib.sha256(encrypted).hexdigest(), "content_digest": "a" * 64,
+            "schema_digest": "b" * 64,
+        }, signing_key)
+        state = {"schema_version": 1, "cluster_id": 4215095, "restore_verification":
+                 sign_recovery_evidence({
+                     **identity, "kind": "logical_restore_v1", "target_system_id": "12346",
+                     "verified_at": (now - timedelta(minutes=1)).isoformat(), "duration_seconds": 1,
+                     "checks": dict.fromkeys(
+                         ("content", "schema", "foreign_keys", "tenant_isolation"), True,
+                     ),
+                 }, signing_key)}
+        for corrupt in (False, True):
+            files = {
+                "status.json": json.dumps(state).encode(),
+                "manifest.json": json.dumps(manifest).encode(),
+                "database.dump.encrypted": encrypted[:-1] + b"!" if corrupt else encrypted,
+                "product.env": (
+                    "OMNICIO_RESTORE_RECEIPT_KEY=" + _environment_value(signing_key) + "\n"
+                    "OMNICIO_RESTORE_ARCHIVE_KEY=" + _environment_value(archive_key) + "\n"
+                ).encode(),
+            }
+            connection = Mock()
+            connection.execute.return_value.fetchone.side_effect = [(True,), ("12345",)]
+            validator = Mock(wraps=require_upgrade_recovery)
+            with (
+                self.subTest(corrupt=corrupt),
+                patch.object(UPGRADE, "_operational_bytes", side_effect=lambda path, *_args,
+                             source_files=files, **_kwargs: source_files[path.name]) as read,
+                patch.object(UPGRADE, "_write_receipt") as write,
+                patch.object(UPGRADE, "_change_units") as units,
+            ):
+                if corrupt:
+                    with self.assertRaisesRegex(UPGRADE.UpgradeBlocked,
+                                               "^upgrade_recovery_unavailable$"):
+                        UPGRADE._require_recovery(connection, plan, {"cluster_id": 4215095},
+                                                  validator)
+                    validator.assert_not_called()
+                else:
+                    UPGRADE._require_recovery(connection, plan, {"cluster_id": 4215095}, validator)
+                    self.assertEqual(validator.call_args.kwargs["decrypted_archive_sha256"],
+                                     hashlib.sha256(raw).hexdigest())
+                    self.assertEqual(read.call_args_list[0].kwargs, {"private": False})
+            write.assert_not_called()
+            units.assert_not_called()
+
+    def test_writer_resume_needs_reconnected_source_evidence(self) -> None:
+        import psycopg
+
+        plan = self.reviewed_upgrade_plan()
+        for source_status in (True, False, None):
+            with (
+                self.subTest(source_status=source_status),
+                patch("psycopg.connect") as connect,
+                patch.object(UPGRADE, "CURRENT_RELEASE", SimpleNamespace(resolve=lambda **_:
+                             UPGRADE.RELEASE_ROOT / plan["source_release"])),
+                patch.object(UPGRADE, "_verify_connected_database"),
+                patch.object(UPGRADE, "_verify_upgrade_role"),
+                patch.object(UPGRADE, "_source_is_ready", return_value=source_status,
+                             side_effect=psycopg.OperationalError("synthetic connection lost")
+                             if source_status is None else None),
+                patch.object(UPGRADE, "_restore_writers") as resume,
+            ):
+                connection = connect.return_value.__enter__.return_value
+                connection.execute.return_value.fetchone.return_value = (True,)
+                self.assertEqual(UPGRADE._resume_source_after_failure(
+                    "synthetic-only", {}, plan, "source", self.writer_state(),
+                ), source_status is True)
+            self.assertEqual(resume.call_count, int(source_status is True))
 
     def controller_arguments(self, *, backup_only: bool = False) -> SimpleNamespace:
         return SimpleNamespace(

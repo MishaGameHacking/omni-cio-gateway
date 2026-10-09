@@ -36,9 +36,11 @@ from timeweb_http import request_json
 from timeweb_recovery import (
     RecoveryBlocked,
     ensure_recovery_point,
+    get_schedule,
     inspect_provider_recovery,
     inspect_restore_capacity,
     load_policy,
+    validate_budget,
 )
 from timeweb_ssh_trust import (
     ssh_base_args,
@@ -936,7 +938,7 @@ def run_inplace_upgrade(
     )
     raw = ssh.run(
         "/opt/omnicio/current/.venv/bin/python -I -", input_text=program,
-        stage=STAGE_SCHEMA_MIGRATION, migration_step=28,
+        stage=STAGE_SCHEMA_MIGRATION, migration_step=30,
     )
     if len(raw) > 16384:
         raise InfraError(UNCONFIRMED_UPGRADE)
@@ -1109,7 +1111,15 @@ def reconcile(
                 "Managed PostgreSQL cluster is not attached to approved VPC"
             )
 
-        ensure_recovery_point(client, ssh, cluster, release_sha=release_sha)
+        if single_database and not backup_only:
+            policy = load_policy()
+            validate_budget(cluster, policy)
+            if get_schedule(client, cluster_id)["is_enabled"] is not False:
+                raise RecoveryBlocked("The single-database copy schedule is not disabled")
+        else:
+            # Scheduled policy maintenance retains its existing authority. A
+            # release only reads provider state until its remote preflight passes.
+            ensure_recovery_point(client, ssh, cluster, release_sha=release_sha)
         if not single_database:
             inspect_restore_capacity(client, ssh, cluster_id)
         if backup_only:

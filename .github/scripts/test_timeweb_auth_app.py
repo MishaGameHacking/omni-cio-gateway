@@ -63,14 +63,249 @@ class FakeSsh:
     def __init__(self, succeeds: bool) -> None:
         self.succeeds = succeeds
         self.commands: list[str] = []
+        self.inputs: list[str | None] = []
 
     def run(self, command: str, *, input_text: str | None = None, timeout: int = 300) -> str:
         self.commands.append(command)
+        self.inputs.append(input_text)
         if not self.succeeds:
             raise MODULE.InfraError("not ready")
         if "count(*) FILTER" in command:
             return "1|1\n"
         return ""
+
+
+class ProductPreflightTests(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.directory = pathlib.Path(directory.name)
+
+    def _candidate(self, overrides: dict[str, str]) -> SimpleNamespace:
+        with patch.dict(os.environ, overrides, clear=True):
+            source = MODULE.render_product_preflight()
+        path = self.directory / "candidate_configuration.py"
+        path.write_text(
+            "from inplace_upgrade import UpgradeBlocked, _private_file, parse_environment\n"
+            + source, encoding="utf-8",
+        )
+        spec = importlib.util.spec_from_file_location("candidate_configuration", path)
+        if spec is None or spec.loader is None:
+            self.fail("Unable to load candidate configuration")
+        candidate = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = candidate
+        self.addCleanup(sys.modules.pop, spec.name, None)
+        spec.loader.exec_module(candidate)
+        return candidate
+
+    def _run(self, candidate: SimpleNamespace, product: str) -> dict[str, object]:
+        runtime = (
+            'DATABASE_URL="postgresql://fixture@127.0.0.1/test"\n'
+            'CLIENT_IP_KEY="fixture-ip-key"\n'
+            'BROKER_TOKEN_CRYPTO_KEY="fixture-broker-key"\n'
+        )
+        original = dict(os.environ)
+        with patch.object(candidate, "_private_file", side_effect=[runtime, product]) as read:
+            try:
+                return candidate.require_upgrade_product_configuration()
+            finally:
+                self.assertEqual(dict(os.environ), original)
+                self.assertEqual(
+                    [call.args[0].name for call in read.call_args_list],
+                    ["runtime.env", "product.env"],
+                )
+
+    def test_existing_email_configuration_is_read_without_requiring_new_credentials(self) -> None:
+        candidate = self._candidate({})
+        result = self._run(candidate, (
+            'AUTH_SMTP_HOST="smtp.example.com"\nAUTH_SMTP_SENDER="test@example.com"\n'
+            'AUTH_SMTP_PASSWORD="fixture-only"\nMARKET_DATA_TOKEN="source-fixture"\n'
+            'MARKET_DATA_DISTRIBUTION_APPROVED="true"\n'
+        ))
+        self.assertEqual(result, {
+            "status": "configuration_ready", "smtp_delivery_verified": False,
+            "market_token_configured": True, "market_distribution_approved": False,
+        })
+        self.assertNotIn("fixture", json.dumps(result))
+
+    def test_first_email_release_uses_ci_overrides_without_writing_environment(self) -> None:
+        candidate = self._candidate({
+            "AUTH_SMTP_HOST": "smtp.example.com", "AUTH_SMTP_SENDER": "test@example.com",
+            "AUTH_SMTP_MODE": "starttls", "AUTH_SMTP_PORT": "587",
+            "AUTH_SMTP_PASSWORD": (
+                "fixture-$-`-\\-\"-__OMNICIO_PRESERVED_KEYS__-__OMNICIO_PRODUCT_ENVIRONMENT__"
+            ),
+            "MARKET_DATA_TOKEN": "fixture-source", "MARKET_DATA_DISTRIBUTION_APPROVED": "true",
+        })
+        reader = candidate.load_settings
+
+        def check_password():
+            self.assertEqual(
+                os.environ["AUTH_SMTP_PASSWORD"],
+                "fixture-$-`-\\-\"-__OMNICIO_PRESERVED_KEYS__-__OMNICIO_PRODUCT_ENVIRONMENT__",
+            )
+            return reader()
+
+        with patch.object(candidate, "load_settings", side_effect=check_password):
+            result = self._run(candidate, 'LEGAL_TERMS_VERSION="fixture-version"\n')
+        self.assertTrue(result["market_token_configured"])
+        self.assertTrue(result["market_distribution_approved"])
+        self.assertFalse(result["smtp_delivery_verified"])
+
+    def test_missing_or_invalid_effective_smtp_fails_before_activation(self) -> None:
+        for product in (
+            "", 'AUTH_SMTP_HOST="smtp.example.com"\n',
+            'AUTH_SMTP_HOST="smtp.example.com"\nAUTH_SMTP_SENDER="test@example.com"\n'
+            'AUTH_SMTP_MODE="plain"\n',
+            'AUTH_SMTP_HOST="smtp.example.com"\nAUTH_SMTP_SENDER="test@example.com"\n'
+            'AUTH_SMTP_PORT="65536"\n',
+        ):
+            with self.subTest(product=product):
+                candidate = self._candidate({})
+                with self.assertRaises((candidate.UpgradeBlocked, candidate.ConfigurationError)):
+                    self._run(candidate, product)
+
+    def test_future_base_and_integration_configuration_is_validated_before_cutover(self) -> None:
+        product = (
+            'AUTH_SMTP_HOST="smtp.example.com"\nAUTH_SMTP_SENDER="test@example.com"\n'
+            'SESSION_TTL_SECONDS="60"\nASSISTANT_ENABLED="false"\n'
+        )
+        for overrides in (
+            {"SESSION_TTL_SECONDS": "0"}, {"OPERATOR_USER_ID": "invalid-uuid"},
+            {"ASSISTANT_ENABLED": "invalid-boolean"},
+        ):
+            with self.subTest(overrides=overrides):
+                candidate = self._candidate(overrides)
+                with self.assertRaises(candidate.ConfigurationError):
+                    self._run(candidate, product)
+
+    def test_removed_base_values_do_not_survive_from_old_product_environment(self) -> None:
+        candidate = self._candidate({})
+        product = (
+            'AUTH_SMTP_HOST="smtp.example.com"\nAUTH_SMTP_SENDER="test@example.com"\n'
+            'SESSION_TTL_SECONDS="0"\nOPERATOR_USER_ID="invalid-old-authority"\n'
+            'UNRELATED_OLD_SETTING="old-value"\n'
+        )
+        captured = {}
+        reader = candidate.load_settings
+
+        def capture_settings():
+            captured.update(os.environ)
+            return reader()
+
+        with patch.object(candidate, "load_settings", side_effect=capture_settings):
+            self.assertEqual(self._run(candidate, product)["status"], "configuration_ready")
+        self.assertEqual(captured["SESSION_TTL_SECONDS"], "34560000")
+        self.assertEqual(captured["OPERATOR_USER_ID"], "")
+        self.assertNotIn("UNRELATED_OLD_SETTING", captured)
+        self.assertEqual(captured["AUTH_SMTP_HOST"], "smtp.example.com")
+
+    def test_recovery_key_custody_survives_and_rotation_is_rejected(self) -> None:
+        from cryptography.fernet import Fernet
+
+        archive_key = Fernet.generate_key().decode("ascii")
+        archive = Fernet(archive_key).encrypt(b"PGDMPsynthetic-recovery-fixture")
+        receipt_key = "synthetic-receipt-key"
+        product = (
+            'AUTH_SMTP_HOST="smtp.example.com"\nAUTH_SMTP_SENDER="test@example.com"\n'
+            f'OMNICIO_RESTORE_ARCHIVE_KEY="{archive_key}"\n'
+            f'OMNICIO_RESTORE_RECEIPT_KEY="{receipt_key}"\n'
+        )
+        for overrides in ({}, {"OMNICIO_RESTORE_ARCHIVE_KEY": archive_key,
+                               "OMNICIO_RESTORE_RECEIPT_KEY": receipt_key}):
+            candidate = self._candidate(overrides)
+            reader = candidate.load_settings
+
+            def check_custody(reader=reader):
+                self.assertEqual(
+                    Fernet(os.environ["OMNICIO_RESTORE_ARCHIVE_KEY"]).decrypt(archive),
+                    b"PGDMPsynthetic-recovery-fixture",
+                )
+                self.assertEqual(os.environ["OMNICIO_RESTORE_RECEIPT_KEY"], receipt_key)
+                return reader()
+
+            with patch.object(candidate, "load_settings", side_effect=check_custody):
+                self.assertEqual(self._run(candidate, product)["status"], "configuration_ready")
+        for key in ("OMNICIO_RESTORE_ARCHIVE_KEY", "OMNICIO_RESTORE_RECEIPT_KEY"):
+            with self.subTest(key=key):
+                candidate = self._candidate({key: "replacement-key"})
+                with patch.object(candidate, "load_settings") as reader:
+                    with self.assertRaisesRegex(candidate.UpgradeBlocked, "recovery_key_rotation"):
+                        self._run(candidate, product)
+                    reader.assert_not_called()
+
+    def test_generated_environment_escapes_roundtrip_and_reject_substitution(self) -> None:
+        candidate = self._candidate({})
+        for value in ("", "plain", "space value", 'literal-$-`-\\-"-only', "single'quote"):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    candidate.parse_environment("KEY=" + MODULE._environment_value(value) + "\n"),
+                    {"KEY": value},
+                )
+        for value in ('"$(printf unsafe)"', '"$HOME"', '"`id`"'):
+            with self.subTest(value=value), self.assertRaises(candidate.UpgradeBlocked):
+                candidate.parse_environment("KEY=" + value + "\n")
+
+    def test_preflight_transport_accepts_only_bounded_safe_confirmation(self) -> None:
+        from unittest.mock import Mock
+
+        valid = {
+            "status": "configuration_ready", "smtp_delivery_verified": False,
+            "market_token_configured": False, "market_distribution_approved": False,
+        }
+        for result in (valid, {**valid, "smtp_delivery_verified": True},
+                       {**valid, "market_token_configured": 1},
+                       {**valid, "unexpected": "fixture"}, "x" * 2049):
+            with self.subTest(result=result):
+                ssh = Mock()
+                ssh.run.return_value = result if isinstance(result, str) else json.dumps(result)
+                if result == valid:
+                    MODULE.preflight_product_environment(ssh)
+                else:
+                    with self.assertRaises(MODULE.InfraError):
+                        MODULE.preflight_product_environment(ssh)
+                command = ssh.run.call_args.args[0]
+                self.assertNotIn("fixture", command)
+                self.assertIn(f"flock -n {MODULE.DEPLOY_LOCK}", command)
+                compile(ssh.run.call_args.kwargs["input_text"], "preflight", "exec")
+
+
+    def test_preflight_failure_leaves_the_existing_release_and_environment_untouched(self) -> None:
+        from contextlib import ExitStack
+        from unittest.mock import MagicMock
+
+        client = MagicMock()
+        client.get_vpc_services.return_value = [{"name": "database"}]
+        monitored = (
+            "validate_product_environment", "validate_legal_documents",
+            "find_managed_server", "find_vpc", "public_ipv4", "build_release_archive",
+            "EphemeralSsh", "runtime_is_ready", "preflight_product_environment",
+            "upload_release", "write_product_environment", "deploy_remote", "rollback_remote",
+            "commit_product_environment", "add_summary", "set_output",
+        )
+        with ExitStack() as stack:
+            mocks = {
+                name: stack.enter_context(patch.object(MODULE, name)) for name in monitored
+            }
+            mocks["find_managed_server"].return_value = {"id": 1}
+            mocks["find_vpc"].return_value = {"id": "fixture-vpc"}
+            mocks["public_ipv4"].return_value = "192.0.2.1"
+            mocks["build_release_archive"].return_value = "fixture-archive"
+            mocks["runtime_is_ready"].return_value = True
+            mocks["preflight_product_environment"].side_effect = MODULE.InfraError("not ready")
+            with self.assertRaises(MODULE.InfraError):
+                MODULE.reconcile(
+                    client, server_name="fixture-server", server_comment="fixture-only",
+                    release_sha="a" * 40, repository_root=SCRIPT_DIR.parent.parent,
+                    cluster_name="database", vpc_name="fixture-vpc", location="fixture",
+                    availability_zone="fixture",
+                )
+            mocks["preflight_product_environment"].assert_called_once()
+            for name in (
+                "upload_release", "write_product_environment", "deploy_remote", "rollback_remote",
+                "commit_product_environment", "set_output",
+            ):
+                mocks[name].assert_not_called()
 
 
 class RollbackCompatibilityTests(unittest.TestCase):
@@ -530,8 +765,8 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn("BROKER_TOKEN_CRYPTO_KEY", ready.commands[0])
         self.assertIn("CLIENT_IP_KEY", ready.commands[0])
         self.assertIn("command -v psql", ready.commands[0])
-        self.assertIn("email_identities", ready.commands[0])
-        self.assertIn("column_name = 'role'", ready.commands[0])
+        self.assertIn("email_identities", ready.inputs[0])
+        self.assertIn("column_name = 'role'", ready.inputs[0])
 
     def test_runtime_gate_matches_application_database_readiness(self) -> None:
         source = SCRIPT_DIR.parent.parent / "src/omnicio"
@@ -547,12 +782,16 @@ class AuthAppDeployTests(unittest.TestCase):
         expected = f"SELECT CASE WHEN {predicate} THEN 'ready' ELSE 'missing' END"
         ssh = FakeSsh(True)
         self.assertTrue(MODULE.runtime_is_ready(ssh))
-        match = re.search(r'-Atqc "(.*?)" 2>/dev/null', ssh.commands[0], flags=re.S)
-        self.assertIsNotNone(match)
-        actual = match.group(1) if match else ""
+        actual = ssh.inputs[0]
+        self.assertIsInstance(actual, str)
         self.assertEqual(" ".join(actual.split()), " ".join(expected.split()))
         self.assertIn("column_name = 'next_assessment_at'", actual)
         self.assertIn("c.relforcerowsecurity", actual)
+        self.assertIn("$argon2id$%", actual)
+        self.assertIn("$check$", actual)
+        self.assertIn("-v ON_ERROR_STOP=1 -Atqf -", ssh.commands[0])
+        self.assertNotIn("$argon2id$", ssh.commands[0])
+        self.assertLess(len(ssh.commands[0]), 4096)
 
     def test_missing_runtime_schema_does_not_activate_or_rollback_release(self) -> None:
         from contextlib import ExitStack
@@ -563,8 +802,8 @@ class AuthAppDeployTests(unittest.TestCase):
         monitored = (
             "validate_product_environment", "validate_legal_documents",
             "find_managed_server", "find_vpc", "public_ipv4", "build_release_archive",
-            "EphemeralSsh", "upload_release", "write_product_environment",
-            "deploy_remote", "rollback_remote",
+            "EphemeralSsh", "preflight_product_environment", "upload_release",
+            "write_product_environment", "deploy_remote", "rollback_remote",
             "commit_product_environment", "add_summary", "set_output",
         )
         with ExitStack() as stack:
@@ -586,8 +825,8 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertEqual(result, 0)
             mocks["set_output"].assert_called_once_with("status", "pending_database")
             for name in (
-                "upload_release", "write_product_environment", "deploy_remote",
-                "rollback_remote", "commit_product_environment",
+                "preflight_product_environment", "upload_release", "write_product_environment",
+                "deploy_remote", "rollback_remote", "commit_product_environment",
             ):
                 mocks[name].assert_not_called()
 

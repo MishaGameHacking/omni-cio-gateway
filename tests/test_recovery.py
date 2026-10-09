@@ -1,17 +1,27 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 from uuid import UUID
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from omnicio.db import UserRecord
 from omnicio.main import app
-from omnicio.recovery import recovery_status, sign_recovery_evidence
+from omnicio.recovery import (
+    BACKUP_MAX_AGE,
+    RESTORE_CHECKS,
+    _restore_verification,
+    recovery_status,
+    require_upgrade_recovery,
+    sign_recovery_evidence,
+)
 
 NOW = datetime(2026, 10, 5, 6, tzinfo=UTC)
 
@@ -197,3 +207,149 @@ def test_restore_status_requires_authenticated_isolated_recent_proof(
         assert result["restore"]["status"] == "expired"
     assert "signature" not in str(result)
     assert "70000000000000001" not in str(result)
+
+
+@pytest.fixture
+def upgrade_recovery_inputs() -> dict[str, Any]:
+    """A synthetic archive, never a production receipt or recovery point."""
+    signing_key = "synthetic-signing-key-" + "x" * 32
+    cipher = Fernet(Fernet.generate_key())
+    encrypted = cipher.encrypt(b"PGDMPsynthetic-recovery-test")
+    raw = cipher.decrypt(encrypted)
+    encrypted_sha256 = hashlib.sha256(encrypted).hexdigest()
+    proof = restore_proof(
+        release_sha="a775679cc353eeb64fb51721fdd963eb660e5edb",
+        archive_sha256=hashlib.sha256(raw).hexdigest(),
+    )
+    exported = {name: proof[name] for name in (
+        "source_kind", "cluster_id", "release_sha", "source_at", "source_system_id",
+        "archive_sha256",
+    )}
+    exported.update(kind="logical_export_v1", encrypted_sha256=encrypted_sha256,
+                    content_digest="c" * 64, schema_digest="d" * 64)
+    return {
+        "state": {"schema_version": 1, "cluster_id": 4215095,
+                  "restore_verification": sign_recovery_evidence(proof, signing_key)},
+        "signing_key": signing_key, "cluster_id": 4215095,
+        "source_release": proof["release_sha"], "source_system_id": proof["source_system_id"],
+        "now": NOW, "manifest": sign_recovery_evidence(exported, signing_key),
+        "encrypted_archive_sha256": encrypted_sha256,
+        "decrypted_archive_sha256": proof["archive_sha256"],
+    }
+
+
+def test_upgrade_uses_explicit_server_key_and_both_authenticated_archive_hashes(
+    upgrade_recovery_inputs: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OMNICIO_RESTORE_RECEIPT_KEY", "untrusted-ambient-key")
+    values = upgrade_recovery_inputs
+    assert require_upgrade_recovery(**values) == values["state"]["restore_verification"]["payload"]
+
+
+@pytest.mark.parametrize("field", sorted(RESTORE_CHECKS))
+@pytest.mark.parametrize("value", [False, 1, "true"])
+def test_upgrade_requires_every_restore_check_to_be_exactly_true(
+    upgrade_recovery_inputs: dict[str, Any], field: str, value: object,
+) -> None:
+    values = upgrade_recovery_inputs
+    proof = values["state"]["restore_verification"]["payload"]
+    proof["checks"][field] = value
+    values["state"]["restore_verification"] = sign_recovery_evidence(proof, values["signing_key"])
+    with pytest.raises(ValueError, match="^recovery_proof_unverified$"):
+        require_upgrade_recovery(**values)
+
+
+@pytest.mark.parametrize("age,allowed", [
+    (BACKUP_MAX_AGE, True), (BACKUP_MAX_AGE + timedelta(microseconds=1), False),
+    (timedelta(days=29), False),
+])
+def test_upgrade_requires_fresh_source_even_when_restore_badge_is_verified(
+    upgrade_recovery_inputs: dict[str, Any], age: timedelta, allowed: bool,
+) -> None:
+    values = upgrade_recovery_inputs
+    proof = values["state"]["restore_verification"]["payload"]
+    exported = values["manifest"]["payload"]
+    proof["source_at"] = exported["source_at"] = (NOW - age).isoformat()
+    values["state"]["restore_verification"] = sign_recovery_evidence(proof, values["signing_key"])
+    values["manifest"] = sign_recovery_evidence(exported, values["signing_key"])
+    assert _restore_verification(values["state"], NOW,
+                                 signing_key=values["signing_key"])["status"] == "verified"
+    if allowed:
+        assert require_upgrade_recovery(**values)["source_at"] == proof["source_at"]
+    else:
+        with pytest.raises(ValueError, match="^recovery_source_stale$"):
+            require_upgrade_recovery(**values)
+
+
+@pytest.mark.parametrize("field,value,reason", [
+    ("release_sha", "e" * 40, "source_mismatch"),
+    ("source_system_id", "70000000000000003", "source_mismatch"),
+    ("cluster_id", 99999, "proof_unverified"),
+    ("target_system_id", "70000000000000001", "proof_unverified"),
+    ("target_system_id", "１２３", "proof_unverified"),
+    ("kind", "unverified_status", "proof_unverified"),
+    ("source_kind", "provider_snapshot", "proof_unverified"),
+    ("verified_at", (NOW + timedelta(seconds=1)).isoformat(), "proof_unverified"),
+    ("source_at", (NOW + timedelta(seconds=1)).isoformat(), "proof_unverified"),
+    ("extra_field", "private-canary", "proof_unverified"),
+])
+def test_upgrade_binds_proof_to_observed_source_and_supported_schema(
+    upgrade_recovery_inputs: dict[str, Any], field: str, value: object, reason: str,
+) -> None:
+    values = upgrade_recovery_inputs
+    proof = values["state"]["restore_verification"]["payload"] | {field: value}
+    values["state"]["restore_verification"] = sign_recovery_evidence(proof, values["signing_key"])
+    with pytest.raises(ValueError, match=f"^recovery_{reason}$"):
+        require_upgrade_recovery(**values)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("kind", "logical_restore_v1"), ("source_kind", "provider_snapshot"),
+    ("cluster_id", 99999), ("cluster_id", "4215095"), ("release_sha", "e" * 40),
+    ("source_system_id", "70000000000000003"), ("source_at", NOW.isoformat()),
+    ("archive_sha256", "f" * 64), ("content_digest", "unknown"), ("schema_digest", None),
+    ("extra_field", "private-canary"),
+])
+def test_upgrade_binds_export_manifest_to_exact_restore_proof(
+    upgrade_recovery_inputs: dict[str, Any], field: str, value: object,
+) -> None:
+    values = upgrade_recovery_inputs
+    exported = values["manifest"]["payload"] | {field: value}
+    values["manifest"] = sign_recovery_evidence(exported, values["signing_key"])
+    with pytest.raises(ValueError, match="^recovery_manifest_unverified$"):
+        require_upgrade_recovery(**values)
+
+
+@pytest.mark.parametrize("field", ["encrypted_archive_sha256", "decrypted_archive_sha256"])
+@pytest.mark.parametrize("value", [None, "", "я" * 64, "f" * 64])
+def test_upgrade_requires_present_intact_encrypted_and_decrypted_archive(
+    upgrade_recovery_inputs: dict[str, Any], field: str, value: object,
+) -> None:
+    with pytest.raises(ValueError, match="^recovery_archive_mismatch$"):
+        require_upgrade_recovery(**(upgrade_recovery_inputs | {field: value}))
+
+
+@pytest.mark.parametrize("path,value", [
+    (("state",), {"schema_version": 1, "cluster_id": 4215095,
+                  "status": "verified", "production_restore_verified": True}),
+    (("signing_key",), "y" * 40), (("signing_key",), ""),
+    (("state", "restore_verification", "payload", "duration_seconds"), 3),
+    (("manifest", "payload", "encrypted_sha256"), "f" * 64),
+    (("state", "restore_verification"), {"kind": "logical_restore_v1"}),
+    (("manifest",), {"kind": "logical_export_v1"}),
+    (("state", "restore_verification"), None), (("manifest",), None),
+    (("state", "schema_version"), 2), (("state", "schema_version"), True),
+    (("state", "cluster_id"), 99999), (("now",), NOW.replace(tzinfo=None)),
+])
+def test_upgrade_never_accepts_unproven_recovery_claims(
+    upgrade_recovery_inputs: dict[str, Any], path: tuple[str, ...], value: object,
+) -> None:
+    values = upgrade_recovery_inputs
+    parent = values
+    for name in path[:-1]:
+        parent = parent[name]
+    parent[path[-1]] = value
+    with pytest.raises(ValueError, match="^recovery_[a-z_]+$") as caught:
+        require_upgrade_recovery(**values)
+    assert values["signing_key"] not in str(caught.value) or not values["signing_key"]
+    assert "private-canary" not in str(caught.value)

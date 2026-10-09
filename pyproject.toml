@@ -45,13 +45,13 @@ rub_per_gib = 6
 
 [tool.omnicio.timeweb.upgrade]
 mode = "single_existing_database"
-source_release = "ac4cade4d4291c65f50f070e45d304ad634f9b85"
-source_version = "1.2.0"
-target_version = "1.3.0"
-source_schema_sha256 = "ad860f140e3ba980090d88c039d8f4d6abb5f6e4dacfdbcd61820fc85f21ba50"
+source_release = "a775679cc353eeb64fb51721fdd963eb660e5edb"
+source_version = "1.3.0"
+target_version = "1.4.0"
+source_schema_sha256 = "287e991cdb3e98879b4be876b7291bd2459c617cb93d8b45c9930a335863c2d2"
 migration_sha256 = [
-  "90a733bcf4e9289eff6b14b9653f4a2344454a77b0b8bd76153accd042904419",
-  "a8da904abff76418b04c7d02b1088e3cc48c0f15922562ec5c597b75feb4301f",
+  "a541cc6e56a0a93b8930f2204c13a934e7dd9dd3255dd2173aed5e4048b6dff0",
+  "b37ea71ac1bea7522baad32f4e99babe4135bc4ad885db51bbe5c22f0705bb25",
 ]
 
 [tool.setuptools.packages.find]

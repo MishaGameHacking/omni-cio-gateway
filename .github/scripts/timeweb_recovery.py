@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Protocol, cast
 
+from inplace_upgrade import MAX_LOGICAL_ARCHIVE_BYTES
 from inplace_upgrade import MODE as SINGLE_DATABASE_MODE
 
 REMOTE_STATUS_PATH = "/var/lib/omnicio-recovery/status.json"
@@ -998,7 +999,6 @@ def ensure_recovery_point(
         raise RecoveryBlocked("Backup verification failed; schema remains unchanged") from None
 
 
-MAX_LOGICAL_ARCHIVE_BYTES = 64 * 1024 * 1024
 RESTORE_ROOT = pathlib.Path(__file__).resolve().parents[2]
 ENCRYPTED_ARCHIVE_NAME = "database.dump.encrypted"
 _RESTORE_ARTIFACT_NAMES = frozenset({

@@ -165,6 +165,7 @@ def inplace_database(monkeypatch):
 def remote_inplace_database(inplace_database, monkeypatch):
     """Run the Linux entry point against native CI PostgreSQL, with no production files."""
     upgrade, connection, dsn, arguments = inplace_database
+    deployer = importlib.import_module("timeweb_auth_app")
     options = conninfo_to_dict(dsn)
     expected = {
         "host": options["host"], "port": int(options["port"]),
@@ -183,7 +184,8 @@ def remote_inplace_database(inplace_database, monkeypatch):
     }
 
     def private_file(path: Path, _maximum: int) -> str:
-        return "\n".join(f"{name}={value}" for name, value in files[path.name].items())
+        return "\n".join(f"{name}={deployer._environment_value(value)}"
+                         for name, value in files[path.name].items())
 
     receipts = []
     # Windows runs the actual PostgreSQL server. Only Linux/filesystem ownership
@@ -200,7 +202,7 @@ def remote_inplace_database(inplace_database, monkeypatch):
     payload = {
         "plan": arguments["plan"], "statements": arguments["statements"],
         "target_query": arguments["target_query"], "release_sha": arguments["release_sha"],
-        "database": expected,
+        "database": expected, "application_version": arguments["plan"]["target_version"],
     }
     return upgrade, connection, payload, receipts, runtime
 
@@ -460,6 +462,327 @@ def test_inplace_table_lock_timeout_keeps_the_old_schema_and_rows(inplace_databa
     assert connection.execute(arguments["source_query"]).fetchone() == (True,)
     assert connection.execute(upgrade.NEW_SCHEMA_ABSENT).fetchone() == (True,)
     assert _inplace_rows(connection) == before
+
+
+@pytest.fixture
+def email_upgrade_database(monkeypatch):
+    """Upgrade a disposable 1.3 database as its real, non-bypassing table owner."""
+    if not DATABASE_URL or not os.environ.get("OMNICIO_TEST_POSTGRES_BIN"):
+        pytest.skip("disposable PostgreSQL CI launcher is required")
+    options = conninfo_to_dict(DATABASE_URL)
+    assert options["host"] == "127.0.0.1" and options["dbname"] == "omnicio_test"
+    monkeypatch.syspath_prepend(str(ROOT / ".github/scripts"))
+    upgrade = importlib.import_module("inplace_upgrade")
+    plan = upgrade.load_plan()
+    assert (plan["source_version"], plan["target_version"]) == ("1.3.0", "1.4.0")
+    historical = json.loads((ROOT / "tests/fixtures/accepted_upgrade_1_3.json").read_text())
+    source_query = upgrade.schema_query(historical["target_schema"], plan["source_schema_sha256"])
+    name = "omnicio_email_upgrade_" + secrets.token_hex(8)
+    role = "email_owner_" + secrets.token_hex(8)
+    dsn = make_conninfo(DATABASE_URL, dbname=name, user=role, password=secrets.token_urlsafe(32))
+    with psycopg.connect(DATABASE_URL, autocommit=True) as control:
+        control.execute(sql.SQL(
+            "CREATE ROLE {} LOGIN PASSWORD {} NOSUPERUSER NOBYPASSRLS "
+            "NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT",
+        ).format(sql.Identifier(role), sql.Literal(conninfo_to_dict(dsn)["password"])))
+        try:
+            control.execute(sql.SQL("CREATE DATABASE {} OWNER {} TEMPLATE template0").format(
+                sql.Identifier(name), sql.Identifier(role),
+            ))
+            with psycopg.connect(dsn, autocommit=True) as connection:
+                for path in MIGRATIONS:
+                    if path.name[:4] <= "0028":
+                        connection.execute(path.read_text(encoding="utf-8"))
+                assert connection.execute(source_query).fetchone() == (True,)
+                assert connection.execute(upgrade.source_absence_query(plan)).fetchone() == (
+                    True,
+                ), _email_check_expressions(connection)
+                assert connection.execute(READINESS_QUERY).fetchone() == (False,)
+                _seed_email_upgrade_rows(connection)
+                arguments = dict(
+                    plan=plan,
+                    statements=[path.read_text(encoding="utf-8") for path in MIGRATIONS[-2:]],
+                    source_query=source_query, target_query=READINESS_QUERY,
+                    identity=upgrade.operation_identity(plan, {"database": name}),
+                    release_sha="a" * 40, installed_release=plan["source_release"],
+                    # Only this disposable synthetic database has a test-only recovery callback.
+                    # Production remote_main must obtain its own verified recovery evidence.
+                    require_recovery=lambda: None,
+                )
+                yield upgrade, connection, dsn, arguments
+        finally:
+            control.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(
+                sql.Identifier(name),
+            ))
+            control.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+def _seed_email_upgrade_rows(connection):
+    for owner in (USER_ONE, USER_TWO):
+        connection.execute("SELECT set_config('omnicio.user_id', %s, false)", (str(owner),))
+        connection.execute("INSERT INTO users (id) VALUES (%s)", (owner,))
+        connection.execute("INSERT INTO vkid_identities (user_id, vk_user_id) VALUES (%s, %s)",
+                           (owner, str(owner.int)))
+        connection.execute("INSERT INTO tid_identities (user_id, tid_subject) VALUES (%s, %s)",
+                           (owner, "synthetic-" + str(owner.int)))
+        for provider in (None, "vkid", "tid"):
+            connection.execute(
+                "INSERT INTO sessions (user_id, token_digest, client_ip_hash, expires_at, "
+                "authenticated_provider, authenticated_at) VALUES (%s, %s, %s, "
+                "now() + interval '1 day', %s, "
+                "CASE WHEN %s::text IS NULL THEN NULL ELSE now() END)",
+                (owner, owner.bytes + (provider or "legacy").encode().ljust(16, b"x"),
+                 b"synthetic-ip", provider, provider),
+            )
+        connection.execute(
+            "INSERT INTO legal_acceptances (user_id, document_type, document_version, "
+            "client_ip_hash) VALUES (%s, 'terms', 'before-1.4', %s)", (owner, b"synthetic-ip"),
+        )
+        connection.execute(
+            "INSERT INTO tbank_connection (user_id, environment, account_id, token_ciphertext) "
+            "VALUES (%s, 'prod', 'synthetic-account', %s)", (owner, b"synthetic-" + owner.bytes),
+        )
+        connection.execute(
+            "INSERT INTO workspace_preferences (user_id, version, document) "
+            "VALUES (%s, 7, '{\"theme\":\"dark\"}')", (owner,),
+        )
+        connection.execute(
+            "INSERT INTO strategy_drafts (user_id, version, document, fingerprint) "
+            "VALUES (%s, 3, '{\"name\":\"Preserved synthetic strategy\"}', %s)",
+            (owner, "a" * 64),
+        )
+        snapshot = connection.execute(
+            "INSERT INTO portfolio_snapshots (user_id, account_id, environment, captured_at, "
+            "analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, "
+            "limits_loading_in_progress, evidence) VALUES (%s, 'synthetic-account', 'prod', "
+            "now(), 'observed', 1234.56789012, 123.45678901, 12.34567890, false, "
+            "'{\"source\":\"preserved synthetic evidence\"}') RETURNING id", (owner,),
+        ).fetchone()[0]
+        connection.execute(
+            "INSERT INTO portfolio_snapshot_positions (snapshot_id, user_id, instrument_uid, "
+            "instrument_type, quantity, blocked, blocked_lots) "
+            "VALUES (%s, %s, 'synthetic-instrument', 'share', 1.123456789, false, 0)",
+            (snapshot, owner),
+        )
+    connection.execute("SELECT set_config('omnicio.user_id', '', false)")
+
+
+def _email_upgrade_rows(connection):
+    result = {"users": connection.execute(
+        "SELECT to_jsonb(record)::text AS document FROM users AS record ORDER BY document",
+    ).fetchall()}
+    tables = ("vkid_identities", "tid_identities", "sessions", "legal_acceptances",
+              "tbank_connection", "workspace_preferences", "strategy_drafts",
+              "portfolio_snapshots", "portfolio_snapshot_positions")
+    for owner in (USER_ONE, USER_TWO):
+        connection.execute("SELECT set_config('omnicio.user_id', %s, false)", (str(owner),))
+        result[str(owner)] = {
+            table: connection.execute(sql.SQL(
+                "SELECT to_jsonb(record)::text AS document FROM {} AS record "
+                "WHERE user_id = %s ORDER BY document",
+            ).format(sql.Identifier(table)), (owner,)).fetchall() for table in tables
+        }
+    connection.execute("SELECT set_config('omnicio.user_id', '', false)")
+    return result
+
+
+def _email_check_expressions(connection):
+    """Expose only catalog definitions if PostgreSQL's canonical expression contract drifts."""
+    return connection.execute(
+        "SELECT conrelid::regclass::text, conname, pg_get_expr(conbin, conrelid) "
+        "FROM pg_constraint WHERE contype = 'c' AND conrelid IN ("
+        "to_regclass('public.email_identities'), to_regclass('public.email_auth_challenges'), "
+        "to_regclass('public.email_auth_rate_limits'), to_regclass('public.sessions')) "
+        "ORDER BY conrelid::regclass::text, conname",
+    ).fetchall()
+
+
+def test_email_upgrade_preserves_rows_and_nullable_snapshots_under_force_rls(
+    email_upgrade_database,
+):
+    upgrade, connection, _dsn, arguments = email_upgrade_database
+    before, receipts = _email_upgrade_rows(connection), []
+    assert connection.execute(
+        "SELECT rolsuper, rolbypassrls, rolcreatedb, rolcreaterole, rolreplication "
+        "FROM pg_roles WHERE rolname = current_user",
+    ).fetchone() == (False, False, False, False, False)
+    assert upgrade.apply_upgrade(connection, **arguments, receipt=None,
+                                 save_receipt=receipts.append) == "applied"
+    assert [item["phase"] for item in receipts] == ["pending", "completed"]
+    assert _email_upgrade_rows(connection) == before
+    assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+    assert connection.execute(upgrade.source_absence_query(
+        arguments["plan"],
+    )).fetchone() == (False,)
+    # FORCE RLS remains effective even for the table-owning production-shaped role.
+    assert connection.execute("SELECT user_id FROM portfolio_snapshots").fetchall() == []
+    connection.execute("SELECT set_config('omnicio.user_id', %s, false)", (str(USER_ONE),))
+    assert connection.execute("SELECT user_id FROM portfolio_snapshots").fetchall() == [(USER_ONE,)]
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        connection.execute(
+            "UPDATE portfolio_snapshots SET user_id = %s WHERE user_id = %s", (USER_TWO, USER_ONE),
+        )
+    values = connection.execute(
+        "INSERT INTO portfolio_snapshots (user_id, account_id, environment, captured_at, "
+        "analysis_status, nav_rub, rub_cash_total, rub_cash_blocked, "
+        "limits_loading_in_progress, evidence) VALUES (%s, 'synthetic-account', 'prod', now(), "
+        "'partial', NULL, NULL, NULL, false, '{}') "
+        "RETURNING nav_rub, rub_cash_total, rub_cash_blocked", (USER_ONE,),
+    ).fetchone()
+    assert values == (None, None, None)
+
+
+def test_email_upgrade_requires_recovery_before_receipt_or_ddl(email_upgrade_database):
+    upgrade, connection, _dsn, arguments = email_upgrade_database
+    before, receipts = _email_upgrade_rows(connection), []
+    without_recovery = {key: value for key, value in arguments.items() if key != "require_recovery"}
+    with pytest.raises(upgrade.UpgradeBlocked, match="^upgrade_recovery_required$"):
+        upgrade.apply_upgrade(connection, **without_recovery, receipt=None,
+                              save_receipt=receipts.append)
+
+    def unavailable_recovery():
+        raise upgrade.UpgradeBlocked("synthetic_recovery_unavailable")
+
+    with pytest.raises(upgrade.UpgradeBlocked, match="^synthetic_recovery_unavailable$"):
+        upgrade.apply_upgrade(connection, **{**arguments, "require_recovery": unavailable_recovery},
+                              receipt=None, save_receipt=receipts.append)
+    assert receipts == []
+    assert _email_upgrade_rows(connection) == before
+    assert connection.execute(upgrade.source_absence_query(arguments["plan"])).fetchone() == (True,)
+
+
+@pytest.mark.parametrize("drift", [
+    "CREATE TABLE email_auth_challenges (id uuid)",
+    "ALTER TABLE portfolio_snapshots ALTER COLUMN nav_rub DROP NOT NULL",
+    "ALTER TABLE sessions DROP CONSTRAINT sessions_authentication_evidence; "
+    "ALTER TABLE sessions ADD CONSTRAINT sessions_authentication_evidence CHECK (true)",
+])
+def test_email_upgrade_rejects_partial_or_weakened_source(email_upgrade_database, drift):
+    upgrade, connection, _dsn, arguments = email_upgrade_database
+    before, receipts = _email_upgrade_rows(connection), []
+    connection.execute(drift)
+    with pytest.raises(upgrade.UpgradeBlocked, match="^source_schema_is_not_reviewed_baseline$"):
+        upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=receipts.append)
+    assert receipts == []
+    assert _email_upgrade_rows(connection) == before
+
+
+def test_email_upgrade_uses_public_schema_despite_a_shadow_search_path(email_upgrade_database):
+    upgrade, connection, _dsn, arguments = email_upgrade_database
+    connection.execute("CREATE SCHEMA synthetic_shadow")
+    connection.execute("CREATE TABLE synthetic_shadow.sessions (untouched text)")
+    connection.execute("CREATE TABLE synthetic_shadow.portfolio_snapshots (untouched text)")
+    connection.execute("SET search_path TO synthetic_shadow, public")
+    receipts = []
+    assert upgrade.apply_upgrade(connection, **arguments, receipt=None,
+                                 save_receipt=receipts.append) == "applied"
+    assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+    assert connection.execute(
+        "SELECT to_regclass('synthetic_shadow.email_identities') IS NULL",
+    ).fetchone() == (True,)
+    assert connection.execute(
+        "SELECT table_name, column_name FROM information_schema.columns "
+        "WHERE table_schema = 'synthetic_shadow' ORDER BY table_name",
+    ).fetchall() == [("portfolio_snapshots", "untouched"), ("sessions", "untouched")]
+
+
+def test_email_upgrade_second_migration_lock_failure_rolls_back_both_and_retries(
+    email_upgrade_database,
+):
+    upgrade, connection, dsn, arguments = email_upgrade_database
+    before, receipts = _email_upgrade_rows(connection), []
+    with psycopg.connect(dsn) as other:
+        other.execute("LOCK TABLE portfolio_snapshots IN ACCESS EXCLUSIVE MODE")
+        with pytest.raises(psycopg.errors.LockNotAvailable):
+            upgrade.apply_upgrade(connection, **arguments, receipt=None,
+                                  save_receipt=receipts.append)
+    assert [item["phase"] for item in receipts] == ["pending"]
+    assert connection.execute(arguments["source_query"]).fetchone() == (True,)
+    assert connection.execute(upgrade.source_absence_query(arguments["plan"])).fetchone() == (True,)
+    assert _email_upgrade_rows(connection) == before
+    assert upgrade.apply_upgrade(connection, **arguments, receipt=receipts[-1],
+                                 save_receipt=receipts.append) == "applied"
+    assert _email_upgrade_rows(connection) == before
+
+
+def test_email_upgrade_lost_commit_receipt_reconciles_without_repeating_ddl(email_upgrade_database):
+    upgrade, connection, dsn, arguments = email_upgrade_database
+    before, receipts = _email_upgrade_rows(connection), []
+
+    def lost_confirmation(value):
+        if value["phase"] == "completed":
+            raise OSError("synthetic lost receipt after commit")
+        receipts.append(copy.deepcopy(value))
+
+    with pytest.raises(OSError, match="after commit"):
+        upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=lost_confirmation)
+    assert [item["phase"] for item in receipts] == ["pending"]
+    assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+    assert _email_upgrade_rows(connection) == before
+    with pytest.raises(upgrade.UpgradeBlocked, match="^target_schema_has_no_operation_receipt$"):
+        upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=receipts.append)
+    admin_dsn = make_conninfo(DATABASE_URL, dbname=conninfo_to_dict(dsn)["dbname"])
+    with psycopg.connect(admin_dsn, autocommit=True) as admin:
+        admin.execute("""
+            CREATE FUNCTION synthetic_repeated_email_ddl() RETURNS event_trigger
+            LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'synthetic_migration_was_repeated'; END; $$;
+            CREATE EVENT TRIGGER synthetic_repeated_email_ddl ON ddl_command_start
+                EXECUTE FUNCTION synthetic_repeated_email_ddl();
+        """)
+    # Reconciliation of the committed transaction needs its matching receipt;
+    # it must not repeat either DDL or a now-unavailable pre-mutation recovery check.
+    without_recovery = {key: value for key, value in arguments.items() if key != "require_recovery"}
+    for _ in range(2):
+        assert upgrade.apply_upgrade(connection, **without_recovery, receipt=receipts[-1],
+                                     save_receipt=receipts.append) == "already_applied"
+    assert [item["phase"] for item in receipts] == ["pending", "completed", "completed"]
+    assert _email_upgrade_rows(connection) == before
+
+
+def test_email_readiness_rejects_malformed_auth_contracts(email_upgrade_database):
+    upgrade, connection, _dsn, arguments = email_upgrade_database
+    receipts = []
+    upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=receipts.append)
+    drifts = (
+        "ALTER TABLE email_auth_challenges DROP COLUMN delivery_ciphertext",
+        "ALTER TABLE email_auth_challenges ALTER COLUMN delivery_attempts TYPE integer",
+        "ALTER TABLE email_identities ALTER COLUMN password_hash DROP NOT NULL",
+        "ALTER TABLE email_identities ALTER COLUMN password_version DROP DEFAULT",
+        "ALTER TABLE email_identities DROP CONSTRAINT email_identities_email_key",
+        "ALTER TABLE email_auth_challenges DROP CONSTRAINT email_auth_challenges_user_id_fkey",
+        "ALTER TABLE email_auth_challenges DROP CONSTRAINT email_auth_challenges_user_id_fkey; "
+        "ALTER TABLE email_auth_challenges ADD CONSTRAINT email_auth_challenges_user_id_fkey "
+        "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL",
+        "ALTER TABLE email_identities DROP CONSTRAINT email_identity_hash_valid; "
+        "ALTER TABLE email_identities ADD CONSTRAINT email_identity_hash_valid CHECK (true)",
+        "ALTER TABLE email_auth_challenges DROP CONSTRAINT email_challenge_enrollment",
+        "ALTER TABLE sessions DROP CONSTRAINT sessions_authentication_evidence; "
+        "ALTER TABLE sessions ADD CONSTRAINT sessions_authentication_evidence CHECK (true)",
+        "ALTER TABLE email_auth_challenges DROP CONSTRAINT email_challenge_expiry; "
+        "ALTER TABLE email_auth_challenges ADD CONSTRAINT email_challenge_expiry "
+        "CHECK (expires_at > created_at) NOT VALID",
+        "ALTER TABLE email_auth_challenges DROP CONSTRAINT email_challenge_expiry; "
+        "ALTER TABLE email_auth_challenges ADD CONSTRAINT email_challenge_expiry "
+        "CHECK (expires_at > created_at) NOT ENFORCED",
+        "DROP INDEX email_auth_challenges_delivery_idx",
+        "DROP INDEX email_auth_challenges_delivery_idx; "
+        "CREATE INDEX email_auth_challenges_delivery_idx ON email_auth_challenges (created_at)",
+        "ALTER TABLE email_auth_challenges ENABLE ROW LEVEL SECURITY",
+        "GRANT SELECT ON email_auth_challenges TO PUBLIC",
+        "ALTER TABLE portfolio_snapshots ALTER COLUMN nav_rub TYPE numeric(16, 2)",
+        "ALTER TABLE portfolio_snapshots ALTER COLUMN nav_rub SET NOT NULL",
+        "ALTER TABLE portfolio_snapshots NO FORCE ROW LEVEL SECURITY",
+    )
+    for drift in drifts:
+        with connection.transaction(force_rollback=True):
+            connection.execute(drift)
+            assert connection.execute(READINESS_QUERY).fetchone() == (False,), drift
+        assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+    connection.execute("ALTER TABLE email_identities DROP CONSTRAINT email_identities_email_key")
+    with pytest.raises(upgrade.UpgradeBlocked, match="^completed_upgrade_schema_changed$"):
+        upgrade.apply_upgrade(connection, **arguments, receipt=receipts[-1],
+                              save_receipt=receipts.append)
 
 
 @pytest.mark.skipif(not DATABASE_URL, reason="ephemeral PostgreSQL is required")
@@ -730,7 +1053,9 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
     ]
     _apply_all_migrations()
     with psycopg.connect(DATABASE_URL, autocommit=True) as readiness:
-        assert readiness.execute(READINESS_QUERY).fetchone() == (True,)
+        assert readiness.execute(READINESS_QUERY).fetchone() == (True,), _email_check_expressions(
+            readiness,
+        )
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
         # The additive latest migration is safe to retry before release. Once

@@ -94,7 +94,7 @@ OPTIONAL_INTEGRATION_KEYS = (
     "NOTIFICATION_VAPID_PRIVATE_KEY",
     "NOTIFICATION_VAPID_SUBJECT", "NOTIFICATION_SMTP_HOST", "NOTIFICATION_SMTP_PORT",
     "NOTIFICATION_SMTP_USERNAME", "NOTIFICATION_SMTP_PASSWORD", "NOTIFICATION_SMTP_SENDER",
-    "NOTIFICATION_SMTP_MODE", "OMNICIO_RESTORE_RECEIPT_KEY",
+    "NOTIFICATION_SMTP_MODE", "OMNICIO_RESTORE_RECEIPT_KEY", "OMNICIO_RESTORE_ARCHIVE_KEY",
     "BILLING_ENABLED", "BILLING_TERMINAL_KEY", "BILLING_PASSWORD", "BILLING_AMOUNT_KOPECKS",
     "BILLING_PERIOD_DAYS", "BILLING_OFFER_VERSION", "BILLING_DESCRIPTION", "BILLING_TAXATION",
     "BILLING_TAX",
@@ -102,7 +102,7 @@ OPTIONAL_INTEGRATION_KEYS = (
 OPTIONAL_SECRET_KEYS = frozenset({
     "AUTH_SMTP_PASSWORD", "MARKET_DATA_TOKEN", "ASSISTANT_API_KEY", "NOTIFICATION_CRYPTO_KEY",
     "NOTIFICATION_VAPID_PRIVATE_KEY", "NOTIFICATION_SMTP_PASSWORD",
-    "OMNICIO_RESTORE_RECEIPT_KEY", "BILLING_PASSWORD",
+    "OMNICIO_RESTORE_RECEIPT_KEY", "OMNICIO_RESTORE_ARCHIVE_KEY", "BILLING_PASSWORD",
 })
 
 
@@ -169,10 +169,13 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         "set -a && "
         f". {RUNTIME_ENV} && "
         "set +a && "
-        f'test "$(psql "$DATABASE_URL" -Atqc "{schema_query}" 2>/dev/null)" = "ready"'
+        'test "$(PGCONNECT_TIMEOUT=10 psql "$DATABASE_URL" -X '
+        '-v ON_ERROR_STOP=1 -Atqf - 2>/dev/null)" = "ready"'
     )
     try:
-        ssh.run(command)
+        # SQL is literal stdin: shell substitutions cannot alter its checks, and
+        # the Windows SSH command line stays bounded as the schema grows.
+        ssh.run(command, input_text=schema_query, timeout=45)
         return True
     except InfraError:
         return False
@@ -289,6 +292,98 @@ def build_product_environment(*, release_sha: str = "") -> str:
         f"{name}={_environment_value(value)}\n"
         for name, value in values.items()
     )
+
+
+_PRODUCT_PREFLIGHT_PROGRAM = r'''
+def require_upgrade_product_configuration() -> dict[str, object]:
+    import pathlib
+
+    environments = {}
+    for name in ("runtime.env", "product.env"):
+        path = pathlib.Path("/etc/omnicio") / name
+        try:
+            text = _private_file(path, 65536)
+        except FileNotFoundError:
+            if name == "runtime.env":
+                raise UpgradeBlocked("runtime_environment_missing") from None
+            text = ""
+        environments[name] = parse_environment(text)
+    # Match the writer: explicit values replace base settings; only optional
+    # integration keys absent from the new file survive from product.env.
+    existing = environments["product.env"]
+    desired = parse_environment(__OMNICIO_PRODUCT_ENVIRONMENT__)
+    for name in __OMNICIO_PRESERVED_KEYS__:
+        if name in existing:
+            desired.setdefault(name, existing[name])
+    for name in ("OMNICIO_RESTORE_RECEIPT_KEY", "OMNICIO_RESTORE_ARCHIVE_KEY"):
+        if existing.get(name) and desired.get(name) != existing[name]:
+            raise UpgradeBlocked("recovery_key_rotation_requires_separate_procedure")
+    effective = {**environments["runtime.env"], **desired}
+    previous = dict(os.environ)
+    try:
+        os.environ.clear()
+        os.environ.update(effective)
+        settings = load_settings()
+    finally:
+        os.environ.clear()
+        os.environ.update(previous)
+    if not settings.auth_email_ready:
+        raise UpgradeBlocked("auth_email_configuration_required")
+    return {
+        "status": "configuration_ready",
+        "smtp_delivery_verified": False,
+        "market_token_configured": bool(settings.market_data_token),
+        "market_distribution_approved": settings.market_data_distribution_approved,
+    }
+'''
+
+
+def render_product_preflight() -> str:
+    """Append the candidate's config reader to the reviewed upgrade program.
+
+    Production secrets travel only over the existing SSH stdin. This checks the
+    effective future configuration without changing files or sending messages.
+    The caller supplies UpgradeBlocked, _private_file and parse_environment.
+    """
+    contract = pathlib.Path(__file__).resolve().parents[2] / "src/omnicio/config.py"
+    source = contract.read_text(encoding="utf-8").replace(
+        "from __future__ import annotations\n", "", 1,
+    )
+    return source + "\n" + _PRODUCT_PREFLIGHT_PROGRAM.replace(
+        "__OMNICIO_PRESERVED_KEYS__", repr(OPTIONAL_INTEGRATION_KEYS),
+    ).replace(
+        "__OMNICIO_PRODUCT_ENVIRONMENT__", repr(build_product_environment()),
+    )
+
+
+def preflight_product_environment(ssh: EphemeralSsh) -> None:
+    """Reject missing future config before upload, environment writes or rollback."""
+    source = pathlib.Path(__file__).with_name("inplace_upgrade.py").read_text(encoding="utf-8")
+    program = source + "\n" + render_product_preflight() + r'''
+try:
+    print(json.dumps(require_upgrade_product_configuration(), sort_keys=True))
+except Exception:
+    # This boundary handles secret-bearing input: no traceback or values escape.
+    print("OMNICIO_PREFLIGHT: product_configuration_not_ready", file=sys.stderr)
+    raise SystemExit(1) from None
+'''
+    raw = ssh.run(
+        f"flock -n {DEPLOY_LOCK} timeout --kill-after=5s 45s "
+        "/opt/omnicio/current/.venv/bin/python -I -",
+        input_text=program, timeout=60,
+    )
+    try:
+        result = json.loads(raw) if len(raw) <= 2048 else None
+    except ValueError:
+        result = None
+    if (not isinstance(result, dict) or set(result) != {
+        "status", "smtp_delivery_verified", "market_token_configured",
+        "market_distribution_approved",
+    } or result.get("status") != "configuration_ready"
+            or result.get("smtp_delivery_verified") is not False
+            or type(result.get("market_token_configured")) is not bool
+            or type(result.get("market_distribution_approved")) is not bool):
+        raise InfraError("Effective product configuration was not confirmed")
 
 
 def product_environment_backup_paths(release_sha: str) -> tuple[str, str]:
@@ -1385,6 +1480,7 @@ def reconcile(
             set_output("status", "pending_database")
             return 0
 
+        preflight_product_environment(ssh)
         upload_release(ssh, archive_b64=archive_b64, release_sha=release_sha)
 
         try:

@@ -61,7 +61,8 @@ def test_upgrade_requires_explicit_existing_database_credentials(
                         password=runtime_password)
     keys = "CLIENT_IP_KEY=synthetic-ip\nBROKER_TOKEN_CRYPTO_KEY=synthetic-broker\n"
     keys += "VKID_FLOW_CRYPTO_KEY=synthetic-flow\n"
-    environment = "DATABASE_URL=" + dsn + "\n" + keys
+    deployer = importlib.import_module("timeweb_auth_app")
+    environment = f"DATABASE_URL={deployer._environment_value(dsn)}\n{keys}"
     secrets_file = keys + ("OMNICIO_DB_ADMIN_PASSWORD=" + stored_password + "\n"
                            if stored_password is not None else "")
     monkeypatch.setattr(upgrade, "_private_file", lambda path, _maximum:
