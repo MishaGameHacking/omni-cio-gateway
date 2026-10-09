@@ -1470,17 +1470,20 @@ def _public_news_page(
 def _public_news_status(
     connected: bool, source_status: str, *, has_items: bool, cbr_fresh: bool | None,
 ) -> str:
-    if not connected and cbr_fresh is None:
-        return "unavailable"
+    available_status = "available" if has_items else "empty"
+    if not connected:
+        if cbr_fresh is None:
+            return "unavailable"
+        if not cbr_fresh:
+            return "stale"
+        return available_status
     if not has_items and cbr_fresh is None and source_status == "not_started":
         return "loading"
-    if connected and source_status == "stale":
+    if source_status == "stale":
         return "partial" if cbr_fresh else "stale"
-    if connected and source_status in {"unavailable", "partial", "not_started"}:
+    if source_status in {"unavailable", "partial", "not_started"}:
         return "partial" if has_items or cbr_fresh is not None else "unavailable"
-    if not connected and cbr_fresh is False:
-        return "stale"
-    return "available" if has_items else "empty"
+    return available_status
 
 
 def _collector_status(name: str, state: _CollectorState, now: datetime) -> dict[str, object]:

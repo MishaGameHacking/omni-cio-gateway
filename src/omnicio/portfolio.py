@@ -157,17 +157,20 @@ def _enrich_current_position(
     quote: TBankLastPrice | None,
 ) -> TBankPortfolioPosition:
     price, nkd = _current_market_price(info, quote)
-    return replace(
-        position,
+    return TBankPortfolioPosition(
         ticker=(info.ticker if info else "") or position.ticker,
+        figi=position.figi,
         instrument_uid=info.uid if info else position.instrument_uid,
         instrument_type=position.instrument_type or (info.instrument_type if info else ""),
+        quantity=position.quantity,
         current_price=price,
         current_nkd=nkd,
         average_price=None,
         average_price_fifo=None,
         expected_yield_amount=None,
         daily_yield=None,
+        blocked=position.blocked,
+        blocked_lots=position.blocked_lots,
         quantity_lots=(
             _text(_number(position.quantity) / info.lot)
             if info is not None and info.lot > 0
