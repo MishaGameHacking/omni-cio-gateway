@@ -709,7 +709,9 @@ class AuthAppDeployTests(unittest.TestCase):
 
     def test_deployment_never_retires_users_or_reintroduces_social_login(self) -> None:
         source = MODULE_PATH.read_text(encoding="utf-8")
-        workflow = (SCRIPT_DIR.parent / "workflows" / "auth-app-deploy.yml").read_text()
+        workflow = (SCRIPT_DIR.parent / "workflows" / "auth-app-deploy.yml").read_text(
+            encoding="utf-8",
+        )
         self.assertNotIn("retire_legacy_profile", source)
         self.assertNotIn("DELETE FROM users", source)
         for key in ("VKID_APP_ID", "TID_CLIENT_ID", "LEGACY_PROFILE_RESET_ENABLED",
@@ -1355,7 +1357,9 @@ class AuthAppDeployTests(unittest.TestCase):
                 f'"$WEB_RELEASE/assets/brand/{name}"', deployment_script,
             )
         self.assertFalse(any("omni-sentinel" in name for name in shipped))
-        manifest = json.loads((root / "web" / "manifest.webmanifest").read_text())
+        manifest = json.loads((root / "web" / "manifest.webmanifest").read_text(
+            encoding="utf-8",
+        ))
         self.assertEqual(manifest["name"], "OMNICIO")
         for icon in manifest["icons"]:
             name = icon["src"].rsplit("/", 1)[-1]
