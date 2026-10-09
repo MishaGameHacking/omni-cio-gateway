@@ -5572,6 +5572,20 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   assert.equal(await evaluate("document.querySelectorAll('a[href^=\"/legal/\"][target=\"_blank\"]').length"), 0, "Internal legal pages keep browser Back available");
   await evaluate("history.back()");
   await wait('location.hash === "#public/welcome"', "Public page Back restores the welcome screen");
+  for (const view of ["portfolio", "market", "assistant", "strategies"]) {
+    const selector = `.public-mobile-nav [data-public-open="${view}"]`;
+    const href = await evaluate(`document.querySelector(${JSON.stringify(selector)}).href`);
+    assert.equal(new URL(href).hash, `#demo/${view}`, "A public link advertises the same explicit demo mode as its click action");
+    await click(selector);
+    await wait(`location.hash === ${JSON.stringify(`#demo/${view}`)} && document.querySelector(${JSON.stringify(`#view-${view}`)}).hidden === false`, "The public link opens its intended demo section");
+    assert.equal(await evaluate("location.href"), href, "An ordinary click and the copyable href reach exactly the same destination");
+    const origin = await evaluate("performance.timeOrigin");
+    await send("Page.reload");
+    await wait(`performance.timeOrigin !== ${origin} && location.href === ${JSON.stringify(href)} && !document.querySelector("#app-shell").hidden && !document.querySelector("#tour-notice").hidden`, "The public href retains demo in a fresh document");
+    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Знакомство", "Opening a public href in a new document cannot switch to a personal account");
+    await click('[data-action="leave-tour"]');
+    await wait('location.hash === "#public/welcome" && !document.querySelector("#public-site").hidden', "The demo section returns to its public entry point");
+  }
   const lateKey = `signed-late-session-${round}`;
   const late = makeFixture("signed"); late.holdMe = true; fixtures.set(lateKey, late);
   await send("Page.navigate", {url: `${base}?case=${lateKey}#public/welcome`});
@@ -5614,7 +5628,7 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   await click('#workspace-dialog [data-close-dialog]');
   await wait('!document.querySelector("#workspace-dialog").open', "Draft was returned to its initial state");
   assert.equal(failure.requests.filter(item=>item.method === "POST" && item.path === "/api/goals").length, 0, "Navigating and restoring a draft cannot create a goal");
-  console.log(`PASS canonical navigation round ${round}: repeated demo reload, public screens, Back, control restoration, late bootstrap, retry and draft history`);
+  console.log(`PASS canonical navigation round ${round}: repeated demo reload, public href/click/new-document agreement, public screens, Back, control restoration, late bootstrap, retry and draft history`);
 }
 async function exerciseIndependentPageLoads({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
   await configureViewport(390);
@@ -6837,8 +6851,21 @@ async function exercisePortfolioExperience({send, configureViewport, round, base
     await click('#sidebar-nav [data-route="settings"]');
     await wait('document.querySelector("#view-settings [data-screen-content=appearance]")?.getClientRects().length', "Settings opens its existing appearance controls immediately");
     await checkLayout(`default-settings-experience-${round}-${width}`);
+    const brand = width === 320 ? "#app-shell .mobile-brand" : "#app-sidebar > .brand";
+    const profileName = await evaluate('document.querySelector("#profile-name").textContent');
+    await click(brand);
+    await wait('location.hash === "#account/portfolio" && document.querySelector("#view-portfolio [data-broker-return]")?.getClientRects().length', "The visible logo returns to the personal portfolio without entering demo");
+    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), profileName, "The logo preserves the signed-in identity");
+    assert.equal(await evaluate('document.querySelector("#tour-notice").hidden'), true, "Returning through the logo keeps the personal workspace active");
+    assert.equal(await evaluate('document.querySelector("#view-portfolio [data-portfolio-value]").textContent.replace(/\\s/g, "")'), "1000,08₽", "The same account's confirmed value remains available after logo navigation");
+    await evaluate('location.hash = "#demo/market"');
+    await wait('!document.querySelector("#view-market").hidden && !document.querySelector("#tour-notice").hidden', "An explicit route change opens demo in the same document");
+    await click(brand);
+    await wait('location.hash === "#demo/portfolio" && document.querySelector("#view-portfolio [data-portfolio-summary]")?.getClientRects().length', "The visible logo also preserves demo after an account-to-demo transition");
+    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Знакомство", "The demo logo cannot expose the signed-in name");
+    assert.equal(await evaluate('Boolean(document.querySelector("#view-portfolio [data-portfolio-value]"))'), false, "The demo overview cannot expose the signed-in portfolio value");
   }
-  console.log(`PASS native portfolio experience round ${round}: visible default roots, broker/history separation, kopecks, quantity, mobile rows, quick actions and weighted purchase details`);
+  console.log(`PASS native portfolio experience round ${round}: visible default roots, broker/history separation, kopecks, quantity, mobile rows, quick actions, weighted purchase details and logo mode isolation`);
 }
 async function exerciseViewport({
   send,

@@ -918,8 +918,11 @@
     } catch {/* Display preference only. */}
   };
   const renderNav = () => {
-    $("#sidebar-nav").innerHTML = U.navigation.map(([key, title]) => `<a class="nav-link" href="${U.routeHash({mode: state.mode === "demo" ? "demo" : "account", view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
-    $("#mobile-nav").innerHTML = U.mobileNavigation.map(([key, title]) => `<a href="${U.routeHash({mode: state.mode === "demo" ? "demo" : "account", view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
+    const mode = state.mode === "demo" ? "demo" : "account";
+    $("#sidebar-nav").innerHTML = U.navigation.map(([key, title]) => `<a class="nav-link" href="${U.routeHash({mode, view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
+    $("#mobile-nav").innerHTML = U.mobileNavigation.map(([key, title]) => `<a href="${U.routeHash({mode, view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
+    // Static shell links follow the same mode as the generated navigation.
+    for (const link of $$("#app-shell .brand[data-route]")) link.setAttribute("href", U.routeHash({mode, view: link.dataset.route}));
   };
   const openDrawer = () => {
     state.drawerReturn = $("#app-menu-toggle");
