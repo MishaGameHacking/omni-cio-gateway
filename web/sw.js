@@ -2,15 +2,69 @@
 
 // Only public, versioned interface assets. Never cache API, HTML sessions or messages.
 const build = "__OMNICIO_BUILD__";
+// Imports are public, immutable for this build and cached by the browser worker.
+importScripts(`/assets/config.js?build=${encodeURIComponent(build)}`, `/assets/i18n.js?build=${encodeURIComponent(build)}`);
+const C = globalThis.OMNICIO_CONFIG;
+const I = globalThis.OMNICIO_I18N;
+if (C?.compiledBuild !== build || I?.compiledBuild !== build) throw new Error("worker_build_mismatch");
 const cacheName = `omnicio-public-${build}`;
-const publicPaths = ["/assets/i18n.js", "/assets/app.css", "/assets/app.js", "/assets/workspace.js", "/assets/brand/omnicio-logo.png"];
+const publicPaths = ["/assets/config.js", "/assets/tokens.css", "/assets/i18n.js", "/assets/app.css", "/assets/app.js", "/assets/workspace.js", "/assets/brand/omnicio-logo.png"];
 const offlineUrl = `/offline.html?build=${encodeURIComponent(build)}`;
+const publicUrls = [offlineUrl, ...publicPaths.map(path => `${path}?build=${encodeURIComponent(build)}`)];
+let publicCacheWork = null;
+
+const readPublicCache = async () => {
+  const cache = await caches.open(cacheName);
+  return Promise.all(publicUrls.map(async url => ({url, response: await cache.match(url)})));
+};
+const validPublicResponse = response => response?.ok && response.headers.get("X-Omnicio-Build") === build;
+const completePublicCache = async () => {
+  const entries = await readPublicCache();
+  return entries.every(({response}) => validPublicResponse(response)) && (await caches.keys()).includes(cacheName);
+};
+const fillPublicCache = async signal => {
+  const entries = await readPublicCache();
+  if (signal.aborted) throw new Error("public_cache_timeout");
+  const missing = entries.filter(({response}) => !validPublicResponse(response));
+  const fetched = await Promise.all(missing.map(async ({url}) => {
+    const response = await fetch(url, {method: "GET", cache: "no-store", credentials: "omit", redirect: "error", signal});
+    // An older active worker must never cache a later deployment under its key.
+    if (!response.ok || response.headers.get("X-Omnicio-Build") !== build || response.url !== new URL(url, self.location.origin).href) throw new Error("public_cache_build_mismatch");
+    return {url, response};
+  }));
+  if (signal.aborted) throw new Error("public_cache_timeout");
+  // Recovery may delete the named cache while fetch is pending. Reopen it
+  // before publishing this verified batch instead of writing a detached handle.
+  const cache = await caches.open(cacheName);
+  if (signal.aborted) throw new Error("public_cache_timeout");
+  await Promise.all(fetched.map(({url, response}) => cache.put(url, response)));
+};
+const repairPublicCache = async signal => {
+  await fillPublicCache(signal);
+  if (await completePublicCache()) return;
+  // A deleted partial cache needs its previously present assets too. One retry
+  // and a fresh readback share the original deadline; failure stays explicit.
+  if (signal.aborted) throw new Error("public_cache_timeout");
+  await fillPublicCache(signal);
+  if (!await completePublicCache()) throw new Error("public_cache_incomplete");
+};
+const ensurePublicCache = () => {
+  if (publicCacheWork) return publicCacheWork;
+  const controller = new AbortController();
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => { controller.abort(); reject(new Error("public_cache_timeout")); }, C.timing.publicCacheRepairMs);
+  });
+  publicCacheWork = Promise.race([repairPublicCache(controller.signal), deadline]).finally(() => {
+    clearTimeout(timer);
+    controller.abort();
+    publicCacheWork = null;
+  });
+  return publicCacheWork;
+};
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(cacheName).then((cache) => cache.addAll([
-    offlineUrl,
-    ...publicPaths.map((path) => `${path}?build=${encodeURIComponent(build)}`),
-  ])));
+  event.waitUntil(ensurePublicCache());
 });
 
 self.addEventListener("activate", (event) => {
@@ -23,6 +77,11 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("message", (event) => {
   if (event.origin !== self.location.origin) return;
   if (event.data?.type === "ACTIVATE_UPDATE") event.waitUntil(self.skipWaiting());
+  if (event.data?.type === "REPAIR_PUBLIC_CACHE" && event.data.build === build) {
+    event.waitUntil(ensurePublicCache().then(() => {
+      event.ports?.[0]?.postMessage({handled: true, ok: true});
+    }).catch(() => event.ports?.[0]?.postMessage({handled: true, ok: false})));
+  }
   if (["PUSH_BINDING", "CLEAR_PUSH_BINDING"].includes(event.data?.type)) {
     event.waitUntil(updatePushBinding(event.data).then(result => {
       event.ports?.[0]?.postMessage({handled: true, ok: true, ...result});
@@ -64,7 +123,7 @@ const bindingDatabase = () => new Promise((resolve, reject) => {
     clearTimeout(timer);
     reject(error || new Error("binding_storage_failed"));
   };
-  const timer = setTimeout(() => fail(), 1000);
+  const timer = setTimeout(() => fail(), C.timing.workerStorageMs);
   request.onupgradeneeded = () => {
     if (settled) { request.transaction.abort(); return; }
     request.result.createObjectStore("binding");
@@ -93,7 +152,7 @@ const bindingTransaction = async (change = null) => {
     const timer = setTimeout(() => {
       finish(new Error("binding_storage_failed"));
       try { transaction?.abort(); } catch { /* The transaction may have completed at the deadline. */ }
-    }, 1000);
+    }, C.timing.workerStorageMs);
     try {
       transaction = db.transaction("binding", change ? "readwrite" : "readonly");
       const store = transaction.objectStore("binding");
@@ -122,12 +181,7 @@ const updatePushBinding = message => {
     return {binding_id: bindingId};
   });
 };
-const genericNotificationBody = (locale, test = false) => {
-  if (test) return locale === "en" ? "This is an OMNICIO test notification." : "Это проверочное уведомление OMNICIO.";
-  return locale === "en"
-    ? "New information is available in your account. Open the app to view it."
-    : "В кабинете появились новые сведения. Откройте приложение, чтобы посмотреть подробности.";
-};
+const genericNotificationBody = (locale, test = false) => I.t(test ? "push.notification.test" : "push.notification.update", {}, locale);
 self.addEventListener("push", event => {
   let payload = {};
   try { payload = event.data?.json() || {}; } catch { /* Payload is never rendered as private text. */ }
@@ -135,7 +189,7 @@ self.addEventListener("push", event => {
     const binding = await bindingTransaction().catch(() => null);
     const matches = bindingPattern.test(payload.binding_id || "") && binding?.binding_id === payload.binding_id;
     const tag = typeof payload.tag === "string" && /^[a-f0-9]{64}$/.test(payload.tag) ? payload.tag : "omnicio-event";
-    await self.registration.showNotification("OMNICIO", {
+    await self.registration.showNotification(I.t("product.name"), {
       body: genericNotificationBody(binding?.locale, matches && payload.kind === "test"),
       icon: "/assets/brand/omnicio-logo.png", badge: "/assets/brand/omnicio-logo.png",
       tag, renotify: false,
@@ -145,7 +199,7 @@ self.addEventListener("push", event => {
 });
 const notifyAppClient = (client, path, bindingId) => new Promise(resolve => {
   const channel = new MessageChannel();
-  const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 1500);
+  const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, C.timing.notificationClientAckMs);
   channel.port1.onmessage = event => {
     clearTimeout(timer);
     channel.port1.close();

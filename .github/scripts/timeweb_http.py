@@ -5,15 +5,34 @@ from __future__ import annotations
 import http.client
 import io
 import json
+import re
+import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
 from contextlib import closing
 from email.message import Message
+from pathlib import Path
 from typing import Any
 
 MAX_RESPONSE_BYTES = 2_000_000
 TIMEWEB_HOST = "api.timeweb.cloud"
+
+
+def release_version() -> str:
+    """Read the reviewed checkout's version before the application is installed."""
+    project = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    with project.open("rb") as handle:
+        version = tomllib.load(handle)["project"]["version"]
+    if (not isinstance(version, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}", version) is None):
+        raise ValueError("The reviewed project version is invalid")
+    return version
+
+
+def release_user_agent(component: str) -> str:
+    """Keep public deployment probes attributable to the actual release version."""
+    return f"{component}/{release_version()}"
 
 
 def _safe_error_body(payload: object) -> io.BytesIO:

@@ -18,6 +18,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .financial import MAX_USER_AMOUNT_RUB, PERCENT_SCALE, RUB_QUANTUM
 from .freshness import PORTFOLIO_MAX_AGE
 
 CATEGORIES = ("portfolio", "payments", "goals", "system")
@@ -51,8 +52,6 @@ GOAL_FIELDS = (
     "status",
 )
 _ZERO = Decimal("0")
-_HUNDRED = Decimal("100")
-_MAX_MONEY = Decimal("1000000000000")
 _INCOME_FIELDS = ("coupons_rub", "dividends_rub", "other_income_rub")
 _INCOME_PAYMENT_FIELDS = (*_INCOME_FIELDS, "redemptions_rub")
 _PAYMENT_FIELDS = (*_INCOME_PAYMENT_FIELDS, "net_contributions_rub", "fees_rub", "taxes_rub")
@@ -63,7 +62,7 @@ def decimal_text(value: Decimal) -> str:
     return format(value, "f")
 
 
-def amount(value: object, *, maximum: Decimal = _MAX_MONEY, places: int = 9) -> Decimal:
+def amount(value: object, *, maximum: Decimal = MAX_USER_AMOUNT_RUB, places: int = 9) -> Decimal:
     if isinstance(value, bool) or not isinstance(value, (Decimal, str, int)):
         raise ValueError("workspace_amount_invalid")
     if isinstance(value, str) and len(value) > 64:
@@ -224,7 +223,7 @@ def normalize_goal(value: object) -> dict[str, Any]:
             raise ValueError("workspace_goal_manual_invalid")
         manual = decimal_text(manual_value)
     else:
-        allocation_value = amount(data["allocation_percent"], maximum=_HUNDRED)
+        allocation_value = amount(data["allocation_percent"], maximum=Decimal(PERCENT_SCALE))
         if allocation_value <= 0 or data["manual_amount_rub"] is not None:
             raise ValueError("workspace_goal_allocation_invalid")
         allocation = decimal_text(allocation_value)
@@ -668,8 +667,8 @@ def portfolio_performance(
         result["investment_result_rub"] = decimal_text(investment_result)
         denominator = _dietz_denominator(start_nav, operations, begin, end)
         result["return_denominator_rub"] = decimal_text(denominator)
-        if start_nav >= 0 and end_nav >= 0 and denominator >= Decimal("0.01"):
-            result["return_percent"] = decimal_text(investment_result / denominator * _HUNDRED)
+        if start_nav >= 0 and end_nav >= 0 and denominator >= RUB_QUANTUM:
+            result["return_percent"] = decimal_text(investment_result / denominator * PERCENT_SCALE)
             result["return_status"] = "available"
             result["return_reason"] = None
         else:
@@ -717,7 +716,7 @@ def _portfolio_goal_amount(
         or not snapshot_valuation_complete(snapshot)
     ):
         return None, observed, "portfolio_not_reconciled"
-    current = amount(snapshot["nav_rub"]) * amount(goal["allocation_percent"]) / _HUNDRED
+    current = amount(snapshot["nav_rub"]) * amount(goal["allocation_percent"]) / PERCENT_SCALE
     return current, observed, None
 
 
@@ -745,7 +744,8 @@ def _income_goal_amount(
     )
     if flow["income"]["status"] != "available":
         return None, None, flow["income"]["reason"]
-    current = amount(flow["income"]["total_rub"]) * amount(goal["allocation_percent"]) / _HUNDRED
+    current = (amount(flow["income"]["total_rub"])
+               * amount(goal["allocation_percent"]) / PERCENT_SCALE)
     return current, watermark, None
 
 
@@ -790,7 +790,7 @@ def goal_progress(
     if current is not None:
         result.update(
             status="available", amount_rub=decimal_text(current),
-            percent=decimal_text(current / target * _HUNDRED),
+            percent=decimal_text(current / target * PERCENT_SCALE),
             remaining_rub=decimal_text(max(_ZERO, target - current)),
         )
         if source != "manual" and observed is not None and now - observed >= PORTFOLIO_MAX_AGE:

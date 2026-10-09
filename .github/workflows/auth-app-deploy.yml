@@ -138,6 +138,8 @@ jobs:
             echo ::error::node.exe is required for browser JavaScript syntax validation.
             exit /b 1
           )
+          node.exe --check web\config.js
+          if errorlevel 1 exit /b 1
           node.exe --check web\app.js
           if errorlevel 1 exit /b 1
           node.exe --check web\workspace.js
@@ -189,6 +191,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: read
       checks: read
     name: Deploy auth application
     concurrency:
@@ -285,7 +288,6 @@ jobs:
         shell: cmd
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: '"%OMNICIO_PYTHON%" .github\scripts\verify_main_release.py'
 
       - name: Validate verified SSH server key

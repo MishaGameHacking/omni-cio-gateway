@@ -2,9 +2,15 @@
 
 /* Only application-authored messages are translated. User text, issuer names,
    market news, source evidence and values remain in their original language.
-   t() returns plain text; html() escapes the entire interpolated result. */
+   t() returns plain text; html() escapes the entire interpolated result.
+   Message keys are stable identifiers, including historical keys in Russian.
+   Edit the pair below to change wording everywhere; do not rename a key just
+   because its displayed text changes. Page, offline and push share this catalog. */
 (() => {
   const messages = {
+    "product.name": ["OMNICIO","OMNICIO"],
+    "push.notification.test": ["Это проверочное уведомление OMNICIO.","This is an OMNICIO test notification."],
+    "push.notification.update": ["В кабинете появились новые сведения. Откройте приложение, чтобы посмотреть подробности.","New information is available in your account. Open the app to view it."],
     "navigation.current_section": ["Раздел: {title}","Section: {title}"],
     "research.dividend.coverage_fact": ["сопоставимые денежные потоки эмитента для покрытия дивидендов","comparable issuer cashflows for dividend coverage"],
     "research.dividend.issuer_mismatch": ["Денежные потоки относятся к другому эмитенту.","The cashflows belong to a different issuer."],
@@ -181,6 +187,7 @@
     "research.too_large": ["Документ исследования превышает допустимый размер одной записи. Сократите период или набор исходных данных.","The research document exceeds the size allowed for one record. Reduce the period or source dataset."],
     "research.request_capacity": ["Достигнут лимит хранимых запросов исследования. Дождитесь завершения и очистки старых записей сервером.","The retained research-request limit has been reached. Wait for the server to finish and clean up old requests."],
     "research.evidence_file": ["Файл данных JSON, до 16 МиБ","JSON evidence file, up to 16 MiB"],
+    "research.evidence_file_failed": ["Не удалось прочитать файл. Выберите его ещё раз или вставьте документ в поле ниже.","The file could not be read. Select it again or paste the document into the field below."],
     "research.evidence_too_large": ["Размер исходных данных превышает 16 МиБ. Уменьшите документ и повторите сохранение.","The source dataset exceeds 16 MiB. Reduce the document and save again."],
     "ops.title": ["Состояние сервиса","Service status"],
     "ops.ok": ["Работает штатно","Operating normally"],
@@ -1594,7 +1601,7 @@
     "Параметры подхода можно изменить после входа. Название не является обещанием результата.": ["Параметры подхода можно изменить после входа. Название не является обещанием результата.","You can change the approach parameters after signing in. The name does not promise a result."],
     "Открыть личный кабинет": ["Открыть личный кабинет","Open your account"],
     "Освободите другую долю, прежде чем исключать этот класс.": ["Освободите другую долю, прежде чем исключать этот класс.","Unlock another allocation before excluding this asset class."],
-    "Имя должно быть не длиннее 80 символов.": ["Имя должно быть не длиннее 80 символов.","The name must be no longer than 80 characters."],
+    "profile.name_too_long": ["Имя должно быть не длиннее {limit} символов.","The name must be no longer than {limit} characters."],
     "ID не совпадает с текущим профилем.": ["ID не совпадает с текущим профилем.","The ID does not match the current profile."],
     "Аккаунт удалён.": ["Аккаунт удалён.","Account deleted."],
     "Дата не получена": ["Дата не получена","Date not received"],
@@ -2060,7 +2067,7 @@
     return result;
   };
   const api = Object.freeze({compiledBuild: "__OMNICIO_BUILD__", t, html, has, setLocale, getLocale: () => locale, normalizeLocale, apply, keys: () => Object.keys(messages), preset: record => authoredRecord("preset", record), catalogSource: record => authoredRecord("catalog_source", record)});
-  if (typeof window !== "undefined") window.OMNICIO_I18N = api;
+  globalThis.OMNICIO_I18N = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof document !== "undefined" && Object.hasOwn(document.documentElement.dataset, "i18nDeviceLocale")) {
     setLocale(typeof navigator !== "undefined" ? navigator.language : "ru");

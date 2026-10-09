@@ -16,6 +16,8 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from . import APPLICATION_USER_AGENT
+
 _SOURCE_HOST = "www.cbr.ru"
 _SOURCE_URL = f"https://{_SOURCE_HOST}/rss/eventrss"
 _MAX_BYTES = 512_000
@@ -172,7 +174,7 @@ class NewsClient:
             with closing(http.client.HTTPSConnection(_SOURCE_HOST, timeout=6)) as conn:
                 path = parsed.path + ("?" + parsed.query if parsed.query else "")
                 conn.request("GET", path, headers={"Accept": "text/html",
-                             "User-Agent": "OMNICIO/1.3 (+https://omnicio.ru)"})
+                             "User-Agent": APPLICATION_USER_AGENT})
                 response = conn.getresponse()
                 if response.status != 200:
                     raise NewsUnavailable("news_source_unavailable")
@@ -206,7 +208,7 @@ class NewsClient:
                 with closing(http.client.HTTPSConnection(_SOURCE_HOST, timeout=6)) as conn:
                     conn.request("GET", "/rss/eventrss", headers={
                         "Accept": "application/rss+xml,application/xml,text/xml",
-                        "User-Agent": "OMNICIO/1.0 (+https://omnicio.ru)",
+                        "User-Agent": APPLICATION_USER_AGENT,
                     })
                     response = conn.getresponse()
                     if response.status != 200:

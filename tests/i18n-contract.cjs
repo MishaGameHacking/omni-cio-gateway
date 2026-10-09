@@ -5,6 +5,7 @@ const {readFileSync} = require("node:fs");
 const {join} = require("node:path");
 const vm = require("node:vm");
 const I = require("../web/i18n.js");
+const C = require("../web/config.js");
 
 assert.equal(I.getLocale(), "ru");
 assert.equal(I.t("nav.events"), "События");
@@ -70,7 +71,8 @@ const bootDocument = {
   readyState: "complete",
   querySelectorAll: () => [bootLabel]
 };
-const bootContext = {window: {}, document: bootDocument, navigator: {language: "en-US"}};
+const bootContext = {document: bootDocument, navigator: {language: "en-US"}};
+bootContext.window = bootContext;
 vm.runInNewContext(readFileSync(join(__dirname, "../web/i18n.js"), "utf8"), bootContext);
 assert.equal(bootContext.window.OMNICIO_I18N.getLocale(), "en", "The device-locale API is ready synchronously");
 assert.equal(bootDocument.documentElement.lang, "en");
@@ -93,7 +95,8 @@ assert.equal(I.preset({id: "unknown", title: "Сбалансированная"}
 const source = {id: "buffett1989", title: "Berkshire Hathaway: письмо 1989 года", url: "https://www.berkshirehathaway.com/letters/1989.html"};
 assert.equal(I.catalogSource(source).title, "Berkshire Hathaway: 1989 shareholder letter");
 assert.equal(I.catalogSource(source).url, source.url);
-const displayContext = {window: {OMNICIO_I18N: I}, Intl, console, URLSearchParams};
+const displayContext = {OMNICIO_I18N: I, OMNICIO_CONFIG: C, Intl, console, URLSearchParams};
+displayContext.window = displayContext;
 vm.runInNewContext(readFileSync(join(__dirname, "../web/workspace.js"), "utf8"), displayContext);
 displayContext.window.OmniUI.setLocale("en");
 assert.equal(displayContext.window.OmniUI.navigation.find(([key]) => key === "events")[1], "Events");
@@ -102,6 +105,19 @@ displayContext.window.OmniUI.setLocale("ru");
 assert.equal(displayContext.window.OmniUI.navigation.find(([key]) => key === "events")[1], "События", "Labels must be evaluated in the current locale, not frozen at page startup");
 assert.ok(displayContext.window.OmniUI.periods("portfolio", "1d").includes("1Д"));
 const U = displayContext.window.OmniUI;
+U.setLocale("en-US");
+assert.equal(U.format(1234.5), "1,234.5", "Labels and numeric formatting share the normalized locale");
+assert.equal(U.navigation.find(([key]) => key === "events")[1], "Events");
+assert.equal(I.t("profile.name_too_long", {limit: C.limits.displayNameCharacters}), "The name must be no longer than 80 characters.");
+U.setLocale("ru");
+assert.ok(Object.isFrozen(C) && Object.isFrozen(C.timing) && Object.isFrozen(C.display.periodDays), "One view cannot mutate another view's public configuration");
+assert.equal(U.parseRoute("#account/search?q=" + "x".repeat(100)).q.length, C.limits.searchQueryCharacters);
+assert.equal(U.parseRoute("#account/asset?uid=" + "x".repeat(300)).uid.length, C.limits.routeValueCharacters);
+assert.ok(U.allocation([{label: "Fixture", value_rub: 1, nav_percent: 100}], 1).includes('stroke="var(--chart-allocation-0)"'), "SVG allocations reference the same CSS palette as their HTML legend");
+const workerContext = {};
+for (const file of ["config.js", "i18n.js"]) vm.runInNewContext(readFileSync(join(__dirname, "../web", file), "utf8"), workerContext);
+assert.equal(workerContext.OMNICIO_I18N.t("push.notification.test", {}, "en"), "This is an OMNICIO test notification.", "The public text catalog initializes without window or document in a worker");
+assert.equal(workerContext.OMNICIO_I18N.t("push.notification.update", {}, "ru"), "В кабинете появились новые сведения. Откройте приложение, чтобы посмотреть подробности.");
 for (const hash of ["#demo/market/reference?currency=CNY&reference_period=1y", "#account/portfolio/positions?assets=bond&sort=price&direction=-1", "#account/goals/plan?goal=00000000-0000-4000-8000-000000000001", "#public/features", "#public/install", "#demo/install", "#account/install"]) {
   const route = U.parseRoute(hash);
   assert.equal(route.invalid, false, "A supported nested screen is a valid bookmark");

@@ -9,6 +9,15 @@ from typing import Literal
 Coverage = Literal["complete", "partial", "unknown"]
 FreshnessStatus = Literal["fresh", "partial", "stale", "unavailable"]
 PORTFOLIO_MAX_AGE = timedelta(minutes=5)
+# Retrieval age and source-effective age are separate clocks. These durations
+# bound evidence use; they never manufacture a provider observation timestamp.
+EVIDENCE_RETRIEVAL_MAX_AGE = timedelta(hours=36)
+FUNDAMENTAL_MAX_AGE = timedelta(days=550)
+ISSUER_NEWS_MAX_AGE = timedelta(hours=48)
+ISSUER_IDENTITY_MAX_AGE = timedelta(days=30)
+RATING_MAX_AGE = timedelta(days=366)
+# Completed daily bars/yields may span weekends and exchange holidays.
+CURRENT_RESEARCH_HISTORY_MAX_AGE = timedelta(days=4)
 
 
 @dataclass(frozen=True, slots=True)

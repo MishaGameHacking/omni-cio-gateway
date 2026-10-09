@@ -5,11 +5,12 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 
 from .broker import BrokerEvidenceSnapshot, BrokerObservationBundle
+from .freshness import EVIDENCE_RETRIEVAL_MAX_AGE, FUNDAMENTAL_MAX_AGE, ISSUER_NEWS_MAX_AGE
 from .strategy_assessment import rating_notch
 from .tbank import (
     TBankAssetFundamental,
@@ -33,10 +34,7 @@ RiskState = Literal[
 EvidenceStatus = Literal["received", "partial", "unavailable"]
 DataStatus = Literal["data_missing", "received", "stale", "not_applicable"]
 
-EVIDENCE_RETRIEVAL_MAX_AGE = timedelta(hours=36)
-FUNDAMENTAL_MAX_AGE = timedelta(days=550)
 RISK_RULESET_VERSION = "r3-evidence-v2"
-ISSUER_NEWS_MAX_AGE = timedelta(hours=48)
 TBANK_NEWS_SOURCE = "https://developer.tbank.ru/invest/services/instruments/methods"
 MONETARY_FUNDAMENTAL_FIELDS = (
     "revenue_ttm",

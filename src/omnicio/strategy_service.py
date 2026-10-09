@@ -14,9 +14,6 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from .backtest import (
-    MAX_RESEARCH_ASSETS,
-    MAX_RESEARCH_DAYS,
-    RESEARCH_ENGINE_VERSION,
     BondValuation,
     FactorObservation,
     HistoricalCashflow,
@@ -36,8 +33,19 @@ from .broker import (
     BrokerService,
 )
 from .cbr import CBRClient, CBRUnavailable
-from .freshness import PORTFOLIO_MAX_AGE, describe_freshness
+from .freshness import (
+    CURRENT_RESEARCH_HISTORY_MAX_AGE,
+    ISSUER_IDENTITY_MAX_AGE,
+    PORTFOLIO_MAX_AGE,
+    describe_freshness,
+)
 from .portfolio_store import PortfolioStore, SettingsVersionConflict
+from .research_policy import (
+    MAX_RESEARCH_ASSETS,
+    MAX_RESEARCH_DAYS,
+    RESEARCH_ENGINE_VERSION,
+    SUPPORTED_RESEARCH_ENGINES,
+)
 from .research_store import ResearchNotFound, ResearchStore
 from .strategy import RATING_LEVELS, document_hash, normalize_document
 from .strategy_assessment import (
@@ -64,7 +72,6 @@ from .tbank import (
 _MOSCOW = ZoneInfo("Europe/Moscow")
 _RESEARCH_WORKERS = 4
 _RESEARCH_DEADLINE_SECONDS = 180
-CURRENT_RESEARCH_HISTORY_MAX_AGE = timedelta(days=4)
 _DIVIDEND_SOURCE = "https://developer.tbank.ru/invest/api/instruments-service-get-dividends"
 _BOND_EVENT_SOURCE = "https://developer.tbank.ru/invest/api/instruments-service-get-bond-events"
 _ACCRUAL_SOURCE = "https://developer.tbank.ru/invest/api/instruments-service-get-accrued-interests"
@@ -76,7 +83,7 @@ def _identity_time(row: Mapping[str, Any], prefix: str, now: datetime) -> dateti
     if not (
         isinstance(verified, datetime)
         and verified.tzinfo is not None
-        and timedelta(0) <= now - verified < timedelta(days=30)
+        and timedelta(0) <= now - verified < ISSUER_IDENTITY_MAX_AGE
     ):
         return None
     if not (isinstance(effective, datetime) and effective.tzinfo is not None and effective <= now):
@@ -595,7 +602,7 @@ def _bond_yield_facts(
     if not values or values[0].instrument_uid != instrument_uid:
         return {}
     observed = values[0]
-    if not timedelta(0) <= now - observed.time <= timedelta(days=4):
+    if not timedelta(0) <= now - observed.time <= CURRENT_RESEARCH_HISTORY_MAX_AGE:
         return {}
     return {
         "cashflow_yield_percent": StrategyFact(
@@ -631,7 +638,7 @@ def _current_method_facts(
             return {}
         last = bars[-1]
         if (not last.is_complete or last.time.tzinfo is None
-                or not timedelta(days=1) <= now - last.time <= timedelta(days=4)):
+                or not timedelta(days=1) <= now - last.time <= CURRENT_RESEARCH_HISTORY_MAX_AGE):
             return {}
         price = Decimal(last.close)
         if not price.is_finite() or price <= 0:
@@ -963,7 +970,7 @@ def _research_assets(
     supplied = {row["instrument_uid"]: row for row in evidence.get("assets", [])}
     key_rates: tuple[StrategyFact, ...] = ()
     if cbr is not None and document["rules"]["yield_floor"] == "key_rate":
-        rate_end = now if to_at >= now - timedelta(days=4) else to_at
+        rate_end = now if to_at >= now - CURRENT_RESEARCH_HISTORY_MAX_AGE else to_at
         with suppress(CBRUnavailable):
             key_rates = tuple(
                 StrategyFact(
@@ -1210,7 +1217,7 @@ def _collect_research_result(
         costs=costs,
         now=now,
     )
-    if to_at >= now - timedelta(days=4):
+    if to_at >= now - CURRENT_RESEARCH_HISTORY_MAX_AGE:
         payload["current_selection"] = _current_research_selection(
             document, assets, costs=costs, now=now, catalog=run.catalog,
         )
@@ -1415,14 +1422,8 @@ def research_inputs(
 
 def research_assets_from_inputs(inputs: Mapping[str, Any]) -> list[ResearchAsset]:
     """Replay an owner-authorized archived document with no external I/O."""
-    if inputs.get("schema_version") != 1 or inputs.get("engine_version") not in {
-        "1.1.0",
-        "1.2.0",
-        "1.3.0",
-        "1.3.1",
-        "1.3.2",
-        RESEARCH_ENGINE_VERSION,
-    }:
+    if (inputs.get("schema_version") != 1
+            or inputs.get("engine_version") not in SUPPORTED_RESEARCH_ENGINES):
         raise ValueError("research_replay_version_unsupported")
     assets = []
     for row in inputs["assets"]:

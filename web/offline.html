@@ -3,15 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#071421">
+  <meta name="theme-color" content="__OMNICIO_THEME_COLOR__">
+  <link rel="stylesheet" href="/assets/tokens.css?build=__OMNICIO_BUILD__">
   <link rel="stylesheet" href="/assets/app.css?build=__OMNICIO_BUILD__">
   <title data-i18n-text="[&quot;Нет сети · OMNICIO&quot;]">Нет сети · OMNICIO</title>
+  <script src="/assets/config.js?build=__OMNICIO_BUILD__" defer></script>
   <script src="/assets/i18n.js?build=__OMNICIO_BUILD__" defer></script>
   <script src="/assets/workspace.js?build=__OMNICIO_BUILD__" defer></script>
 </head>
 <body class="offline-page">
   <main class="offline-card">
-    <div class="brand"><img class="brand-image" src="/assets/brand/omnicio-logo.png?build=__OMNICIO_BUILD__" width="40" height="40" alt="">OMNICIO</div>
+    <div class="brand" data-i18n-text="[&quot;product.name&quot;]"><img class="brand-image" src="/assets/brand/omnicio-logo.png?build=__OMNICIO_BUILD__" width="40" height="40" alt="">OMNICIO</div>
     <h1 data-i18n-text="[&quot;Вернёмся к данным,&quot;, &quot;когда появится сеть&quot;]">Вернёмся к данным,<br>когда появится сеть</h1>
     <p data-i18n-text="[&quot;Для входа, портфеля и сохранения изменений необходимо соединение с интернетом.&quot;]">Для входа, портфеля и сохранения изменений необходимо соединение с интернетом.</p>
     <button type="button" data-offline-retry class="button primary" data-i18n-text="[&quot;Попробовать снова&quot;]">Попробовать снова</button>

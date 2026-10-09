@@ -17,11 +17,18 @@ from psycopg import DatabaseError
 
 from .broker import AnalysisSource, BrokerObservationBundle
 from .db import Database, live_execution_lock_key
-from .freshness import PORTFOLIO_MAX_AGE
+from .freshness import EVIDENCE_RETRIEVAL_MAX_AGE, PORTFOLIO_MAX_AGE
 from .intelligence import (
-    EVIDENCE_RETRIEVAL_MAX_AGE,
     EvidenceDocument,
     InstrumentRiskAssessment,
+)
+from .monitoring import (
+    DAILY_MAX_ATTEMPTS,
+    DAILY_RETRY_BASE_SECONDS,
+    DAILY_RUNNING_TIMEOUT,
+    MONITORING_FULL_INTERVAL,
+    REFRESH_COOLDOWN_SECONDS,
+    REFRESH_MAX_ATTEMPTS,
 )
 from .payouts import PAYOUT_READ_CTES
 from .portfolio import SecurityExposure, analyze_portfolio
@@ -38,10 +45,6 @@ from .tbank import (
 
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
 REFRESH_JOB_TYPE = "portfolio_refresh"
-REFRESH_COOLDOWN_SECONDS = 60
-REFRESH_MAX_ATTEMPTS = 3
-DAILY_MAX_ATTEMPTS = 3
-MONITORING_FULL_INTERVAL = timedelta(hours=1)
 
 
 def _has_refresh_legal(cur: Any, user_id: UUID, versions: object) -> bool:
@@ -1172,7 +1175,7 @@ class PortfolioStore:
         context_matches: bool, recover_running: bool,
     ) -> bool:
         if row["status"] == "running":
-            if not recover_running and row["started_at"] >= now - timedelta(minutes=30):
+            if not recover_running and row["started_at"] >= now - DAILY_RUNNING_TIMEOUT:
                 return False
         elif context_matches and (
             not row["details"].get("retryable", row["status"] == "failed")
@@ -1312,7 +1315,7 @@ class PortfolioStore:
                     finished_at = now(),
                     next_attempt_at = CASE WHEN job_type = 'portfolio_daily'
                         THEN now() + make_interval(
-                            secs => 300 * power(2, LEAST(attempt, 3) - 1)::integer)
+                            secs => %s * power(2, LEAST(attempt, %s) - 1)::integer)
                         ELSE next_attempt_at END,
                     details = details || %s::jsonb
                 WHERE id = %s
@@ -1320,7 +1323,8 @@ class PortfolioStore:
                   AND status = 'running'
                 RETURNING id
                 """,
-                (status, _json(details), job_run_id, user_id),
+                (status, DAILY_RETRY_BASE_SECONDS, DAILY_MAX_ATTEMPTS,
+                 _json(details), job_run_id, user_id),
             )
             if cur.fetchone() is None:
                 raise RuntimeError("observation job is no longer running")

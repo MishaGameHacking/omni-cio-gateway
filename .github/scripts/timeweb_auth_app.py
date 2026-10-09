@@ -34,6 +34,7 @@ from timeweb_auth_postgres import (
     integer_value,
     public_ipv4,
 )
+from timeweb_http import release_user_agent, release_version
 from timeweb_recovery import REMOTE_STATUS_PATH
 
 DOMAIN = "omnicio.ru"
@@ -570,15 +571,12 @@ python3 -m venv "$RELEASE/.venv"
 "$RELEASE/.venv/bin/python" -m omnicio.notification_setup
 
 install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
-install -m 0644 "$RELEASE/web/manifest.webmanifest" "$WEB_RELEASE/manifest.webmanifest"
-install -m 0644 "$RELEASE/web/app.js" "$WEB_RELEASE/assets/app.js"
-install -m 0644 "$RELEASE/web/workspace.js" "$WEB_RELEASE/assets/workspace.js"
-install -m 0644 "$RELEASE/web/i18n.js" "$WEB_RELEASE/assets/i18n.js"
-install -m 0644 "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html"
-install -m 0644 "$RELEASE/web/app.css" "$WEB_RELEASE/assets/app.css"
-install -m 0644 "$RELEASE/assets/brand/omnicio-logo.png" "$WEB_RELEASE/assets/brand/omnicio-logo.png"
-install -m 0644 "$RELEASE/assets/brand/web/earth-hero.png" "$WEB_RELEASE/assets/brand/earth-hero.png"
-install -m 0644 "$RELEASE/assets/brand/web/auth-mountains.png" "$WEB_RELEASE/assets/brand/auth-mountains.png"
+install -m 0644 "$RELEASE/assets/brand/omnicio-logo.png" \
+    "$WEB_RELEASE/assets/brand/omnicio-logo.png"
+install -m 0644 "$RELEASE/assets/brand/web/earth-hero.png" \
+    "$WEB_RELEASE/assets/brand/earth-hero.png"
+install -m 0644 "$RELEASE/assets/brand/web/auth-mountains.png" \
+    "$WEB_RELEASE/assets/brand/auth-mountains.png"
 # Existing installed clients may still request the former PNG URLs. All resolve
 # to the owner's unchanged original, while the new manifest uses its canonical URL.
 for name in apple-touch-icon-180.png pwa-icon-192.png pwa-icon-512.png pwa-maskable-512.png; do
@@ -588,7 +586,7 @@ set -a
 . /etc/omnicio/product.env
 set +a
 
-python3 - "$RELEASE/web/legal" "$WEB_RELEASE/legal" <<'PY'
+python3 - "$RELEASE/web/legal" "$WEB_RELEASE/legal" "$SHA" <<'PY'
 import html
 import os
 import pathlib
@@ -599,60 +597,22 @@ destination = pathlib.Path(sys.argv[2])
 replacements = {
     "__OMNICIO_OPERATOR_NAME__": html.escape(os.environ["LEGAL_OPERATOR_NAME"], quote=True),
     "__OMNICIO_OPERATOR_EMAIL__": html.escape(os.environ["LEGAL_OPERATOR_EMAIL"], quote=True),
+    "__OMNICIO_BUILD__": sys.argv[3][:12],
 }
 for name in ("privacy.html", "consent.html", "terms.html"):
     body = (source / name).read_text(encoding="utf-8")
     for marker, value in replacements.items():
         body = body.replace(marker, value)
-    if "__OMNICIO_OPERATOR_" in body:
-        raise SystemExit(f"unresolved legal operator marker: {name}")
+    if "__OMNICIO_OPERATOR_" in body or "__OMNICIO_BUILD__" in body:
+        raise SystemExit(f"unresolved legal publication marker: {name}")
     (destination / name).write_text(body, encoding="utf-8")
 PY
-chmod 0644 "$WEB_RELEASE/legal/privacy.html" "$WEB_RELEASE/legal/consent.html" "$WEB_RELEASE/legal/terms.html"
+chmod 0644 "$WEB_RELEASE/legal/privacy.html" \
+    "$WEB_RELEASE/legal/consent.html" "$WEB_RELEASE/legal/terms.html"
 
-python3 - "$RELEASE/pyproject.toml" "$SHA" "$RELEASE/web/index.html" "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" "$RELEASE/web/sw.js" "$WEB_RELEASE/sw.js" "$RELEASE/web/offline.html" "$WEB_RELEASE/offline.html" <<'PY'
-import json
-import pathlib
-import sys
-import tomllib
-
-with open(sys.argv[1], "rb") as handle:
-    version = str(tomllib.load(handle)["project"]["version"])
-build = sys.argv[2][:12]
-template = pathlib.Path(sys.argv[3]).read_text(encoding="utf-8")
-for marker in ("__OMNICIO_VERSION__", "__OMNICIO_BUILD__"):
-    if marker not in template:
-        raise SystemExit(f"missing release marker: {marker}")
-rendered = (
-    template
-    .replace("__OMNICIO_VERSION__", version)
-    .replace("__OMNICIO_BUILD__", build)
-)
-pathlib.Path(sys.argv[4]).write_text(rendered, encoding="utf-8")
-payload = {"version": version, "build": build}
-pathlib.Path(sys.argv[5]).write_text(
-    "window.OMNICIO_RELEASE = "
-    + json.dumps(payload, separators=(",", ":"))
-    + ";\n",
-    encoding="utf-8",
-)
-for source_index in (6, 8):
-    source = pathlib.Path(sys.argv[source_index])
-    template = source.read_text(encoding="utf-8")
-    if "__OMNICIO_BUILD__" not in template:
-        raise SystemExit(f"release marker is missing: {source.name}")
-    pathlib.Path(sys.argv[source_index + 1]).write_text(
-        template.replace("__OMNICIO_BUILD__", build), encoding="utf-8",
-    )
-assets = pathlib.Path(sys.argv[4]).parent / "assets"
-for name in ("app.js", "workspace.js", "i18n.js"):
-    script = assets / name
-    template = script.read_text(encoding="utf-8")
-    if "__OMNICIO_BUILD__" not in template:
-        raise SystemExit(f"release marker is missing: {name}")
-    script.write_text(template.replace("__OMNICIO_BUILD__", build), encoding="utf-8")
-PY
-chmod 0644 "$WEB_RELEASE/index.html" "$WEB_RELEASE/version.js" "$WEB_RELEASE/sw.js"
+# The installed package and browser CI share this exact renderer. It resolves
+# the version, build, theme and offline assets before the release is promoted.
+"$RELEASE/.venv/bin/python" -m omnicio.web_assets "$RELEASE/web" "$WEB_RELEASE" "$SHA"
 
 cat > "$SERVICE.new" <<'EOF'
 [Unit]
@@ -669,7 +629,9 @@ EnvironmentFile=/etc/omnicio/runtime.env
 EnvironmentFile=/etc/omnicio/product.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-ExecStart=/opt/omnicio/current/.venv/bin/uvicorn omnicio.main:app --host 127.0.0.1 --port 8001 --workers 2 --limit-concurrency 64 --backlog 128 --timeout-keep-alive 5 --proxy-headers --forwarded-allow-ips=127.0.0.1
+ExecStart=/opt/omnicio/current/.venv/bin/uvicorn omnicio.main:app \
+    --host 127.0.0.1 --port 8001 --workers 2 --limit-concurrency 64 \
+    --backlog 128 --timeout-keep-alive 5 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=3
 TimeoutStartSec=45
@@ -808,7 +770,7 @@ server {
     limit_conn_status 429;
 
     location /.well-known/acme-challenge/ {
-        root /var/www/omnicio.ru/current;
+        root /var/www/omnicio.ru/releases/__OMNICIO_PUBLIC_RELEASE__;
         try_files $uri =404;
     }
 
@@ -836,7 +798,8 @@ server {
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
-    root /var/www/omnicio.ru/current;
+    # Root and build header are pinned together, including during graceful reload.
+    root /var/www/omnicio.ru/releases/__OMNICIO_PUBLIC_RELEASE__;
     index index.html;
 
     proxy_hide_header Referrer-Policy;
@@ -1012,6 +975,18 @@ __OMNICIO_SERVER_SECURITY_HEADERS__
         proxy_read_timeout 10s;
     }
 
+    location = /assets/tokens.css {
+        try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /assets/config.js {
+        try_files $uri =404;
+__OMNICIO_LOCATION_SECURITY_HEADERS__
+        add_header Cache-Control "no-cache";
+    }
+
     location = /assets/app.css {
         try_files $uri =404;
 __OMNICIO_LOCATION_SECURITY_HEADERS__
@@ -1100,7 +1075,8 @@ systemctl is-active omnicio-observer.timer >/dev/null
 REMOTE_DEPLOY_SCRIPT = _REMOTE_DEPLOY_TEMPLATE.replace(
     "__OMNICIO_SERVER_SECURITY_HEADERS__", nginx_security_headers(4),
 ).replace(
-    "__OMNICIO_LOCATION_SECURITY_HEADERS__", nginx_security_headers(8),
+    "__OMNICIO_LOCATION_SECURITY_HEADERS__", nginx_security_headers(8)
+    + '\n        add_header X-Omnicio-Build "__OMNICIO_PUBLIC_BUILD__";',
 ).replace(
     "__OMNICIO_DEFAULT_REFERRER_POLICY__", json.dumps(PUBLIC_SECURITY_HEADERS["Referrer-Policy"]),
 )
@@ -1182,11 +1158,16 @@ def upload_release(
 
 
 def deploy_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
+    if not RELEASE_RE.fullmatch(release_sha):
+        raise InfraError(INVALID_RELEASE_SHA)
     # Keep the remote process group bounded before the SSH controller deadline.
     # The same lock makes rollback wait after an ambiguous SSH disconnection.
     ssh.run(
         f"flock -n {DEPLOY_LOCK} timeout --kill-after=15s 840s bash -s -- {release_sha}",
-        input_text=REMOTE_DEPLOY_SCRIPT, timeout=900,
+        input_text=REMOTE_DEPLOY_SCRIPT.replace(
+            "__OMNICIO_PUBLIC_BUILD__", release_sha[:12],
+        ).replace("__OMNICIO_PUBLIC_RELEASE__", release_sha),
+        timeout=900,
     )
 
 
@@ -1273,6 +1254,8 @@ COMMIT;
 
 
 def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
+    if not RELEASE_RE.fullmatch(release_sha):
+        raise InfraError(INVALID_RELEASE_SHA)
     try:
         ssh.run(
             f"flock -w 855 {DEPLOY_LOCK} timeout --kill-after=5s 30s bash -s -- {release_sha}",
@@ -1293,15 +1276,19 @@ def verify_public_security_headers(
             raise InfraError(f"Public application security header invalid: {name}: {path}")
 
 
-def fetch_public(path: str, context: ssl.SSLContext) -> tuple[bytes, str]:
+def fetch_public(
+    path: str, context: ssl.SSLContext, *, expected_build: str = "",
+) -> tuple[bytes, str]:
     request = urllib.request.Request(
         f"https://{DOMAIN}{path}",
-        headers={"User-Agent": "omnicio-auth-deploy/1.0"},
+        headers={"User-Agent": release_user_agent("omnicio-auth-deploy")},
     )
     with urllib.request.urlopen(request, timeout=15, context=context) as response:
         if response.status != 200:
             raise InfraError(f"Public application returned non-200: {path}")
         verify_public_security_headers(response.headers, path)
+        if expected_build and response.headers.get_all("X-Omnicio-Build", []) != [expected_build]:
+            raise InfraError(f"Public application build header does not match release: {path}")
         body = response.read(4 * 1024 * 1024 + 1)
         if len(body) > 4 * 1024 * 1024:
             raise InfraError(f"Public application response is too large: {path}")
@@ -1320,7 +1307,8 @@ def verify_public_callbacks(context: ssl.SSLContext) -> None:
     opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect())
     for path in CALLBACK_PUBLIC_PATHS:
         request = urllib.request.Request(
-            f"https://{DOMAIN}{path}", headers={"User-Agent": "omnicio-auth-deploy/1.0"},
+            f"https://{DOMAIN}{path}",
+            headers={"User-Agent": release_user_agent("omnicio-auth-deploy")},
         )
         try:
             response = opener.open(request, timeout=15)
@@ -1344,8 +1332,13 @@ def verify_public_root(body: bytes, release_sha: str) -> None:
     for marker, message in required.items():
         if marker not in root_body:
             raise InfraError(message)
-    if "__OMNICIO_VERSION__" in root_body or "__OMNICIO_BUILD__" in root_body:
+    if any(marker in root_body for marker in (
+        "__OMNICIO_VERSION__", "__OMNICIO_BUILD__", "__OMNICIO_THEME_COLOR",
+    )):
         raise InfraError("Public auth page contains unresolved release markers")
+    versions = re.findall(r'<[^>]*\bdata-release-version\b[^>]*>([^<]+)</', root_body)
+    if not versions or any(version != release_version() for version in versions):
+        raise InfraError("Public page version does not match the reviewed package")
 
 
 def verify_public_legal_versions(payload: dict[str, object]) -> None:
@@ -1366,8 +1359,9 @@ def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
     expected_build = release_sha[:12]
     if release_sha and (
         not isinstance(release, dict) or release.get("build") != expected_build
+        or release.get("version") != release_version()
     ):
-        raise InfraError("Public API build does not match the frontend release")
+        raise InfraError("Public API version or build does not match the frontend release")
 
     expected_registration = registration_enabled()
     if payload.get("registration_enabled") is not expected_registration:
@@ -1393,25 +1387,32 @@ def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
 
 
 def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
-    brand, content_type = fetch_public(BRAND_PUBLIC_MARK, context)
+    build = release_sha[:12]
+    brand, content_type = fetch_public(BRAND_PUBLIC_MARK, context, expected_build=build)
     approved = (pathlib.Path(__file__).resolve().parents[2] / BRAND_SOURCE).read_bytes()
     if (content_type != PNG_CONTENT_TYPE
             or hashlib.sha256(brand).digest() != hashlib.sha256(approved).digest()):
         raise InfraError("Public approved brand mark verification failed")
 
-    manifest_body, _ = fetch_public(WEB_MANIFEST_PATH, context)
+    manifest_body, _ = fetch_public(WEB_MANIFEST_PATH, context, expected_build=build)
     manifest = json.loads(manifest_body)
     if not isinstance(manifest, dict) or not isinstance(manifest.get("icons"), list):
         raise InfraError("Public web manifest verification failed")
 
-    version_body, _ = fetch_public(VERSION_PUBLIC_PATH, context)
+    version_body, _ = fetch_public(VERSION_PUBLIC_PATH, context, expected_build=build)
     version = version_body.decode()
     if "window.OMNICIO_RELEASE" not in version:
         raise InfraError("Public application version marker is missing")
     if release_sha[:12] not in version:
         raise InfraError("Public application build does not match release")
+    match = re.fullmatch(r"\s*window\.OMNICIO_RELEASE\s*=\s*(\{[^;]+\})\s*;?\s*", version)
+    expected_release = {"version": release_version(), "build": release_sha[:12]}
+    if match is None or json.loads(match.group(1)) != expected_release:
+        raise InfraError("Public application version metadata does not match the release")
 
     runtime_assets = (
+        ("/assets/config.js", b"OMNICIO_CONFIG", JAVASCRIPT_CONTENT_TYPES),
+        ("/assets/tokens.css", b"--browser-theme-dark", ("text/css",)),
         ("/assets/app.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/workspace.js", b"window.OmniUI", JAVASCRIPT_CONTENT_TYPES),
         ("/assets/i18n.js", b"OMNICIO_I18N", JAVASCRIPT_CONTENT_TYPES),
@@ -1422,11 +1423,12 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
         ("/offline.html", b"<html", ("text/html",)),
     )
     for path, marker, content_types in runtime_assets:
-        body, content_type = fetch_public(f"{path}?build={release_sha[:12]}", context)
+        body, content_type = fetch_public(f"{path}?build={build}", context, expected_build=build)
         if content_type not in content_types or marker not in body:
             raise InfraError(f"Public runtime asset verification failed: {path}")
-        if path in {"/sw.js", "/offline.html", "/assets/app.js",
-                    "/assets/workspace.js", "/assets/i18n.js"} and (
+        if path in {"/sw.js", "/offline.html", "/assets/app.js", "/assets/app.css",
+                    "/assets/workspace.js", "/assets/i18n.js", "/assets/config.js",
+                    "/assets/tokens.css"} and (
             release_sha[:12].encode() not in body or b"__OMNICIO_BUILD__" in body
         ):
             raise InfraError(f"Public runtime asset build does not match release: {path}")
@@ -1435,19 +1437,19 @@ def verify_public_assets(context: ssl.SSLContext, release_sha: str) -> None:
 def verify_public(release_sha: str) -> None:
     context = ssl.create_default_context()
     try:
-        root, _ = fetch_public("/", context)
+        root, _ = fetch_public("/", context, expected_build=release_sha[:12])
         verify_public_root(root, release_sha)
         verify_public_assets(context, release_sha)
         config, _ = fetch_public("/api/auth/config", context)
         verify_public_config(config, release_sha=release_sha)
         verify_public_callbacks(context)
         for path, marker in LEGAL_PAGES.items():
-            body, content_type = fetch_public(path, context)
+            body, content_type = fetch_public(path, context, expected_build=release_sha[:12])
             rendered = body.decode(errors="replace")
             if content_type != "text/html" or marker not in rendered:
                 raise InfraError(f"Public legal page verification failed: {path}")
-            if "__OMNICIO_OPERATOR_" in rendered:
-                raise InfraError(f"Public legal page contains unresolved operator data: {path}")
+            if "__OMNICIO_OPERATOR_" in rendered or "__OMNICIO_BUILD__" in rendered:
+                raise InfraError(f"Public legal page contains unresolved publication data: {path}")
             verify_legal_document_version(rendered, path)
     except (
         urllib.error.URLError, TimeoutError, ssl.SSLError, json.JSONDecodeError, UnicodeDecodeError,

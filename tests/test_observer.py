@@ -21,10 +21,14 @@ from test_intelligence import news_item
 
 from omnicio.broker import AnalysisSource, BrokerEvidenceSnapshot, BrokerObservationBundle
 from omnicio.db import BrokerConnectionConflict, Database
-from omnicio.observer import (
+from omnicio.monitoring import (
+    DAILY_MAX_ATTEMPTS,
+    DAILY_RETRY_BASE_SECONDS,
     NEWS_MAX_COMPLETED_CURSORS,
     NEWS_MAX_CONTINUATIONS,
     NEWS_MAX_PATH_PROOFS,
+)
+from omnicio.observer import (
     ObservationInterrupted,
     PortfolioObserver,
     PortfolioRefreshCoordinator,
@@ -596,10 +600,35 @@ def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
     assert "pg_try_advisory_lock" in store
     assert "pg_advisory_xact_lock" in store
     assert "retry_of" in store
-    assert "DAILY_MAX_ATTEMPTS = 3" in store
     assert "recover_running" in store
     assert "ON CONFLICT (job_run_id) DO NOTHING" in store
     assert "pending_cursor" in store
+
+
+def test_daily_retry_policy_controls_durable_delay_and_terminal_attempt() -> None:
+    now = datetime(2026, 10, 6, 10, tzinfo=UTC)
+    cursor, connection, database = Mock(), Mock(), Mock()
+    cursor.fetchone.return_value = {"id": UUID(int=50)}
+    connection.transaction.return_value = nullcontext()
+    connection.cursor.return_value = nullcontext(cursor)
+    database.pool.connection.return_value = nullcontext(connection)
+    store = PortfolioStore(database)
+    with patch.object(store, "_tenant"), patch("omnicio.portfolio_store._require_observation_job"):
+        assert store.finish_job(USER_ID, UUID(int=50), status="failed", details={"retryable": True})
+    statement, params = cursor.execute.call_args.args
+    assert statement.count("%s") == len(params)
+    assert params[1:3] == (DAILY_RETRY_BASE_SECONDS, DAILY_MAX_ATTEMPTS)
+    assert "LEAST(attempt, %s) - 1" in statement
+    assert params[-2:] == (UUID(int=50), USER_ID)
+    row = {"status": "failed", "details": {"retryable": True}, "next_attempt_at": now,
+           "attempt": DAILY_MAX_ATTEMPTS - 1}
+    assert store._settle_daily_retry(
+        cursor, USER_ID, row, now, context_matches=True, recover_running=False,
+    )
+    assert not store._settle_daily_retry(
+        cursor, USER_ID, {**row, "attempt": DAILY_MAX_ATTEMPTS}, now,
+        context_matches=True, recover_running=False,
+    )
 
 
 def test_instrument_required_tests_are_tenant_account_evidence() -> None:

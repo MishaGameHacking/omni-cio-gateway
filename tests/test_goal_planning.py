@@ -14,8 +14,10 @@ from test_workspace_postgres import DATABASE_URL, goal_document, user
 from test_workspace_postgres import workspace_database as workspace_database
 
 from omnicio.db import Database
+from omnicio.financial import MAX_USER_AMOUNT_RUB, RUB_QUANTUM
 from omnicio.goal_planning import goal_forecast, goal_plan_fields, normalize_goal_plan
 from omnicio.portfolio_store import SettingsVersionConflict
+from omnicio.workspace import amount
 from omnicio.workspace_store import WorkspaceNotFound, WorkspaceStore
 
 
@@ -31,6 +33,19 @@ def goal(**changes: Any) -> dict[str, Any]:
     return {"kind": "capital", "progress": {"amount_rub": "100000", "status": "available",
             "source": "manual", "as_of": "2026-01-01T00:00:00+00:00"},
             "target_amount_rub": "220000", "target_date": "2027-01-01", **changes}
+
+
+def test_goal_and_workspace_amounts_share_the_same_rub_input_boundary() -> None:
+    at_limit = str(MAX_USER_AMOUNT_RUB)
+    too_large = str(MAX_USER_AMOUNT_RUB + RUB_QUANTUM)
+    accepted = plan(monthly_contribution_rub=at_limit, monthly_income_rub=at_limit)
+    rejected = plan(monthly_contribution_rub=too_large)
+    assert amount(at_limit) == MAX_USER_AMOUNT_RUB
+    assert normalize_goal_plan(accepted)["monthly_contribution_rub"] == at_limit
+    with pytest.raises(ValueError):
+        amount(too_large)
+    with pytest.raises(ValueError):
+        normalize_goal_plan(rejected)
 
 
 def test_zero_return_has_exact_linear_growth_and_required_contribution() -> None:

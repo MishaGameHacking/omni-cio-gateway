@@ -155,6 +155,19 @@ def test_provider_news_keeps_exact_instrument_links_cursor_and_untrusted_text():
         client.get_news("test-fixture", "prod", cursor="20")
 
 
+def test_news_default_page_and_validation_share_the_provider_ceiling() -> None:
+    from omnicio.tbank import NEWS_MAX_PAGE_SIZE
+
+    client = TBankInvestClient()
+    over_limit = NEWS_MAX_PAGE_SIZE + 1
+    with patch.object(TBankInvestClient, "_post", return_value={"nextCursor": "0"}) as post:
+        assert client.get_news("test-fixture", "prod").items == ()
+        assert post.call_args.kwargs["body"] == {"limit": NEWS_MAX_PAGE_SIZE}
+        with pytest.raises(ValueError, match="news_page_parameters_invalid"):
+            client.get_news("test-fixture", "prod", limit=over_limit)
+    assert post.call_count == 1
+
+
 @pytest.mark.parametrize("has_next", [False, None])
 def test_provider_news_terminal_flag_overrides_remaining_cursor(has_next: bool | None) -> None:
     payload = {

@@ -22,25 +22,34 @@ from .broker import BrokerConnectionError, BrokerObservationBundle, BrokerServic
 from .config import load_settings
 from .db import Database
 from .intelligence import build_news_evidence, build_tbank_evidence, held_news_instrument_uids
+from .monitoring import (
+    HISTORY_CORRECTION_OVERLAP,
+    MAX_HISTORY_PAGES_PER_RUN,
+    MAX_WORKERS,
+    NEWS_BUDGET_SECONDS,
+    NEWS_MAX_COMPLETED_CURSORS,
+    NEWS_MAX_CONTINUATIONS,
+    NEWS_MAX_PAGES_PER_RUN,
+    NEWS_MAX_PATH_PROOFS,
+    PROVIDER_READ_ATTEMPTS,
+    QUICK_REFRESH_BUDGET_SECONDS,
+    REFRESH_ADMISSION_SLOTS,
+    WORKER_POLL_SECONDS,
+    WORKER_SHUTDOWN_SECONDS,
+)
 from .portfolio_store import BrokerSyncState, JobRunRecord, ObservationCancelled, PortfolioStore
-from .tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
+from .tbank import (
+    NEWS_MAX_PAGE_SIZE,
+    OPERATIONS_MAX_PAGE_SIZE,
+    TBankInvestClient,
+    TBankTokenRejected,
+    TBankUnavailable,
+)
 
 logger = logging.getLogger(__name__)
 
 JOB_TYPE = "portfolio_daily"
 MOSCOW = ZoneInfo("Europe/Moscow")
-MAX_WORKERS = 2
-MAX_HISTORY_PAGES_PER_RUN = 20
-QUICK_REFRESH_BUDGET_SECONDS = 35
-HISTORY_PAGE_SIZE = 1000
-HISTORY_CORRECTION_OVERLAP = timedelta(days=7)
-PROVIDER_READ_ATTEMPTS = 3
-NEWS_MAX_PAGES_PER_RUN = 3
-NEWS_PAGE_SIZE = 50
-NEWS_BUDGET_SECONDS = 12
-NEWS_MAX_CONTINUATIONS = 64
-NEWS_MAX_PATH_PROOFS = 128
-NEWS_MAX_COMPLETED_CURSORS = 64
 _AWARE_OBSERVER_TIME_REQUIRED = "observer time must be timezone-aware"
 
 
@@ -448,7 +457,7 @@ class PortfolioObserver:
         state: dict[str, object], *, cursor: str | None,
     ) -> bool:
         """Commit a source page and its continuation together before advancing in memory."""
-        page = self.broker.instrument_news(job.user_id, cursor=cursor, limit=NEWS_PAGE_SIZE)
+        page = self.broker.instrument_news(job.user_id, cursor=cursor, limit=NEWS_MAX_PAGE_SIZE)
         observed = datetime.fromisoformat(page["observed_at"])
         documents = build_news_evidence(held_uids, page["items"], observed_at=observed)
         # Queue mutations must also roll back in memory when persistence fails.
@@ -593,7 +602,7 @@ class PortfolioObserver:
                     from_at=window_from,
                     to_at=window_to,
                     cursor=cursor,
-                    limit=HISTORY_PAGE_SIZE,
+                    limit=OPERATIONS_MAX_PAGE_SIZE,
             )
             page = provider_read(read, retry=retry)
             if page.has_next and page.next_cursor in seen_cursors:
@@ -634,7 +643,7 @@ class PortfolioRefreshCoordinator:
         self.store = store
         self.observer = PortfolioObserver(store, broker, legal_versions=legal_versions)
         self.legal_versions = dict(legal_versions)
-        self._requests = BoundedSemaphore(2)
+        self._requests = BoundedSemaphore(REFRESH_ADMISSION_SLOTS)
         self._wake = Event()
         self._stopping = Event()
         self._worker: Thread | None = None
@@ -656,9 +665,9 @@ class PortfolioRefreshCoordinator:
         if self._worker is not None:
             # An in-flight provider request has its own timeout. An unfinished
             # durable job is recovered after restart; shutdown never marks it fresh.
-            self._worker.join(timeout=5)
+            self._worker.join(timeout=WORKER_SHUTDOWN_SECONDS)
         if self._second_worker is not None:
-            self._second_worker.join(timeout=5)
+            self._second_worker.join(timeout=WORKER_SHUTDOWN_SECONDS)
 
     def request(self, user_id: UUID, *, scope: str = "full") -> dict[str, object]:
         if self._stopping.is_set() or not self._requests.acquire(blocking=False):
@@ -686,7 +695,7 @@ class PortfolioRefreshCoordinator:
                 except Exception as heartbeat_error:
                     logger.exception("portfolio refresh heartbeat error_type=%s",
                                      type(heartbeat_error).__name__, exc_info=None)
-            self._wake.wait(timeout=2)
+            self._wake.wait(timeout=WORKER_POLL_SECONDS)
             self._wake.clear()
 
     def run_pending(self) -> bool:

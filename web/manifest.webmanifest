@@ -9,8 +9,8 @@
     "fullscreen",
     "standalone"
   ],
-  "background_color": "#071421",
-  "theme_color": "#071421",
+  "background_color": "__OMNICIO_THEME_COLOR__",
+  "theme_color": "__OMNICIO_THEME_COLOR__",
   "icons": [
     {
       "src": "/assets/brand/omnicio-logo.png",

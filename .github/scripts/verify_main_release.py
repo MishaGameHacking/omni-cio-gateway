@@ -11,7 +11,6 @@ import subprocess
 import sys
 import time
 from contextlib import closing
-from datetime import datetime
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -19,14 +18,9 @@ REPOSITORY = "MishaGameHacking/omni-cio-gateway"
 FOUNDATION_PATH = ".github/workflows/auth-foundation-ci.yml"
 APPLICATION_PATH = ".github/workflows/auth-app-deploy.yml"
 APPLICATION_TEST_JOB = "Test auth deployer"
+POSTGRES_PATH = ".github/workflows/auth-postgres.yml"
+POSTGRES_TEST_JOB = "Test PostgreSQL reconciler"
 SONAR_PROJECT = "MishaGameHacking_omni-cio-gateway"
-SONAR_ANALYSES_PATH = (
-    f"/api/project_analyses/search?project={SONAR_PROJECT}&branch=main&p=1&ps=1"
-)
-SONAR_ISSUES_PATH = (
-    f"/api/issues/search?componentKeys={SONAR_PROJECT}&branch=main"
-    "&issueStatuses=OPEN,CONFIRMED,ACCEPTED&p=1&ps=1"
-)
 MAX_RESPONSE_BYTES = 2_000_000
 RELEASE_TIMEOUT = "Timed out waiting for accepted main checks"
 
@@ -111,91 +105,18 @@ class GitHubClient:
                 return rows
         raise ReleaseBlocked("GitHub verification pagination limit exceeded")
 
-
-class SonarClient:
-    """Read overall evidence on the fixed EU project; never reuse GitHub auth."""
-
-    def __init__(self, token: str, *, deadline: float) -> None:
-        if token and re.fullmatch(r"[\x21-\x7e]{1,512}", token) is None:
-            raise ReleaseBlocked("SonarCloud verification token is malformed")
-        self.token = token
-        self.deadline = deadline
-
-    def get(self, path: str) -> dict[str, Any]:
-        if path not in {SONAR_ANALYSES_PATH, SONAR_ISSUES_PATH}:
-            raise ReleaseBlocked("SonarCloud verification scope is invalid")
-        headers = {
-            "Accept": "application/json", "Cache-Control": "no-cache",
-            "User-Agent": "omnicio-release-gate/1.0",
-        }
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
-        data = request_json(
-            "sonarcloud.io", path, headers, deadline=self.deadline, label="SonarCloud",
-        )
-        if not isinstance(data, dict):
-            raise ReleaseBlocked("SonarCloud verification response is not an object")
-        return data
-
-
-def sonar_first_page(data: dict[str, Any], key: str) -> tuple[int, list[dict[str, Any]]]:
-    """Validate the API's total, not the size of a possibly truncated page."""
-    paging = data.get("paging")
-    if not isinstance(paging, dict):
-        raise ReleaseBlocked("SonarCloud inventory paging is missing")
-    for field in ("pageIndex", "pageSize", "total"):
-        if type(paging.get(field)) is not int:
-            raise ReleaseBlocked("SonarCloud inventory paging is malformed")
-    if paging["pageIndex"] != 1 or paging["pageSize"] != 1 or paging["total"] < 0:
-        raise ReleaseBlocked("SonarCloud inventory page does not match its request")
-    # V1 may include these deprecated aliases; contradictory counts cannot pass.
-    for old, current in (("p", "pageIndex"), ("ps", "pageSize"), ("total", "total")):
-        if old in data and (type(data[old]) is not int or data[old] != paging[current]):
-            raise ReleaseBlocked("SonarCloud inventory totals are inconsistent")
-    rows = data.get(key)
-    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
-        raise ReleaseBlocked("SonarCloud inventory list is malformed")
-    if len(rows) != min(paging["total"], 1):
-        raise ReleaseBlocked("SonarCloud inventory list is incomplete")
-    return paging["total"], rows
-
-
-def current_sonar_analysis(client: SonarClient, sha: str) -> tuple[str, str, str]:
-    """The API sorts processed analyses newest first; a PR result is not queried."""
-    _, analyses = sonar_first_page(client.get(SONAR_ANALYSES_PATH), "analyses")
-    if not analyses:
-        raise PendingChecks("Waiting for SonarCloud overall main analysis")
-    analysis = analyses[0]
-    key, revision, date = (analysis.get(field) for field in ("key", "revision", "date"))
-    if not isinstance(key, str) or re.fullmatch(r"[A-Za-z0-9_-]{1,128}", key) is None:
-        raise ReleaseBlocked("SonarCloud analysis identity is malformed")
-    if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
-        raise ReleaseBlocked("SonarCloud analysis is missing a valid source revision")
-    if not isinstance(date, str):
-        raise ReleaseBlocked("SonarCloud analysis date is missing")
-    try:
-        timestamp = datetime.fromisoformat(date)
-    except ValueError:
-        raise ReleaseBlocked("SonarCloud analysis date is malformed") from None
-    if timestamp.tzinfo is None:
-        raise ReleaseBlocked("SonarCloud analysis date has no time zone")
-    if revision != sha:
-        raise PendingChecks("Waiting for SonarCloud overall analysis of the exact main SHA")
-    return key, revision, date
-
-
-def require_overall_sonar(client: SonarClient, sha: str) -> None:
-    before = current_sonar_analysis(client, sha)
-    # No new-code/date/assignee/rule filter: even one older or accepted issue blocks.
-    total, _ = sonar_first_page(client.get(SONAR_ISSUES_PATH), "issues")
-    if total != 0:
-        raise ReleaseBlocked("SonarCloud overall main has Open, Confirmed or Accepted issues")
-    if current_sonar_analysis(client, sha) != before:
-        raise PendingChecks("SonarCloud main analysis changed during inventory verification")
+    def collect_list(self, path: str) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for page in range(1, 11):
+            batch = self.get_list(f"{path}?per_page=100&page={page}")
+            rows.extend(batch)
+            if len(batch) < 100:
+                return rows
+        raise ReleaseBlocked("GitHub pull request pagination limit exceeded")
 
 
 def sonar_scope(check: dict[str, Any]) -> str:
-    """A PR result can share main's SHA and must never certify main."""
+    """Attribute trusted results to the exact project and PR, never just its SHA."""
     url = check.get("details_url")
     if not isinstance(url, str):
         return "unknown"
@@ -213,7 +134,7 @@ def sonar_scope(check: dict[str, Any]) -> str:
     if set(query) == {"id", "pullRequest"}:
         numbers = query["pullRequest"]
         if len(numbers) == 1 and re.fullmatch(r"[1-9]\d*", numbers[0], flags=re.ASCII):
-            return "pr"
+            return f"pr:{numbers[0]}"
     return "unknown"
 
 
@@ -233,10 +154,10 @@ def require_success(row: dict[str, Any], label: str) -> None:
 
 
 def sonar_summary_count(summary: str, label: str) -> int:
-    match = re.search(rf"\[(\d+) {re.escape(label)}s?\]", summary)
-    if match is None:
-        raise ReleaseBlocked(f"SonarCloud summary is missing {label} count")
-    return int(match.group(1))
+    matches = re.findall(rf"\[(\d+) {re.escape(label)}s?\]", summary)
+    if len(matches) != 1:
+        raise ReleaseBlocked(f"SonarCloud summary has no unambiguous {label} count")
+    return int(matches[0])
 
 
 def require_clean_sonar_output(check: dict[str, Any]) -> None:
@@ -264,7 +185,9 @@ def require_clean_sonar_output(check: dict[str, Any]) -> None:
         )
 
 
-def require_sonar(checks: list[dict[str, Any]], sha: str) -> tuple[int, str]:
+def require_sonar(
+    checks: list[dict[str, Any]], sha: str, pull_number: int,
+) -> tuple[int, str]:
     candidates = [
         check for check in checks
         if check.get("head_sha") == sha
@@ -272,17 +195,67 @@ def require_sonar(checks: list[dict[str, Any]], sha: str) -> tuple[int, str]:
         and isinstance(check.get("app"), dict)
         and check["app"].get("id") == 12526
         and check["app"].get("slug") == "sonarqubecloud"
-        and sonar_scope(check) != "pr"
+        and sonar_scope(check) in {"unknown", f"pr:{pull_number}"}
     ]
-    check = latest(candidates, "main SonarCloud analysis")
-    if sonar_scope(check) != "main":
-        raise PendingChecks("Waiting for unambiguous main SonarCloud analysis")
-    require_success(check, "Main SonarCloud analysis")
+    check = latest(candidates, "merged PR SonarCloud analysis")
+    if sonar_scope(check) != f"pr:{pull_number}":
+        raise PendingChecks("Waiting for unambiguous merged PR SonarCloud analysis")
+    require_success(check, "Merged PR SonarCloud analysis")
     require_clean_sonar_output(check)
     completed_at = check.get("completed_at")
     if not isinstance(completed_at, str) or not completed_at:
         raise ReleaseBlocked("SonarCloud check completion identity is missing")
     return check["id"], completed_at
+
+
+def merged_pull_request(client: GitHubClient, sha: str, number: int) -> tuple[int, str, str]:
+    """Read the merged PR itself; an association or an open PR is not acceptance."""
+    pull = client.get(f"/pulls/{number}")
+    if (type(pull.get("number")) is not int or pull["number"] != number
+            or pull.get("merged") is not True or pull.get("state") != "closed"
+            or pull.get("merge_commit_sha") != sha):
+        raise ReleaseBlocked("Release SHA is not the accepted merge of this pull request")
+    for key in ("base", "head"):
+        ref = pull.get(key)
+        if (not isinstance(ref, dict) or not isinstance(ref.get("repo"), dict)
+                or ref["repo"].get("full_name") != REPOSITORY):
+            raise ReleaseBlocked("Merged pull request source repository is not trusted")
+    if pull["base"].get("ref") != "main":
+        raise ReleaseBlocked("Merged pull request did not target main")
+    head = pull["head"].get("sha")
+    merged_at = pull.get("merged_at")
+    if (not isinstance(head, str) or re.fullmatch(r"[0-9a-f]{40}", head) is None
+            or not isinstance(merged_at, str) or not merged_at):
+        raise ReleaseBlocked("Merged pull request source identity is missing")
+    return number, head, merged_at
+
+
+def commit_tree(client: GitHubClient, sha: str) -> str:
+    commit = client.get(f"/git/commits/{sha}")
+    tree = commit.get("tree")
+    if commit.get("sha") != sha or not isinstance(tree, dict):
+        raise ReleaseBlocked("GitHub commit tree identity is malformed")
+    tree_sha = tree.get("sha")
+    if not isinstance(tree_sha, str) or re.fullmatch(r"[0-9a-f]{40}", tree_sha) is None:
+        raise ReleaseBlocked("GitHub commit tree SHA is malformed")
+    return tree_sha
+
+
+def accepted_pull_request(client: GitHubClient, sha: str) -> tuple[int, str, str]:
+    rows = client.collect_list(f"/commits/{sha}/pulls")
+    candidates = [pull for pull in rows if pull.get("merge_commit_sha") == sha]
+    if not candidates:
+        raise PendingChecks("Waiting for merged pull request provenance for accepted main")
+    if len(candidates) != 1:
+        raise ReleaseBlocked("Accepted main pull request provenance is ambiguous")
+    number = candidates[0].get("number")
+    if type(number) is not int or number <= 0:
+        raise ReleaseBlocked("Merged pull request number is malformed")
+    identity = merged_pull_request(client, sha, number)
+    # Squash changes commit identity, but may not introduce unanalysed source.
+    if commit_tree(client, sha) != commit_tree(client, identity[1]):
+        raise ReleaseBlocked("Accepted main tree differs from the Sonar-checked PR head tree")
+    return identity
 
 
 def latest_push_run(
@@ -304,48 +277,72 @@ def latest_push_run(
     return max(candidates, key=lambda run: (run["id"], run["run_attempt"]))
 
 
-def require_foundation(runs: list[dict[str, Any]], sha: str) -> None:
+def require_foundation(runs: list[dict[str, Any]], sha: str) -> tuple[int, int]:
     run = latest_push_run(runs, sha, FOUNDATION_PATH, "main foundation CI")
     require_success(run, "Main foundation CI")
+    return run["id"], run["run_attempt"]
 
 
-def require_application_tests(client: GitHubClient, sha: str) -> None:
+def require_push_tests(
+    client: GitHubClient, sha: str, workflow: str, job_name: str, label: str,
+) -> tuple[int, int, int]:
     """A downstream deployment can never replace the exact push's tests.
 
     Only the tests job is required: waiting for the whole deployment workflow
     would couple this gate to its own deploy job. The attempt-scoped endpoint
     prevents a previous green attempt from hiding a rerun's failure or pending job.
     """
-    path = f"/actions/workflows/auth-app-deploy.yml/runs?event=push&head_sha={sha}"
-    label = "main auth application push tests"
-    run = latest_push_run(client.collect(path, "workflow_runs"), sha, APPLICATION_PATH, label)
+    filename = workflow.rsplit("/", 1)[-1]
+    path = f"/actions/workflows/{filename}/runs?event=push&head_sha={sha}"
+    run = latest_push_run(client.collect(path, "workflow_runs"), sha, workflow, label)
     jobs = client.collect(
         f"/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs", "jobs",
     )
     candidates = [
         job for job in jobs
-        if job.get("name") == APPLICATION_TEST_JOB
+        if job.get("name") == job_name
         and job.get("run_id") == run["id"]
         and job.get("head_sha") == sha
         and job.get("head_branch") == "main"
     ]
     if len(candidates) > 1:
-        raise ReleaseBlocked("Main auth application test job is ambiguous")
+        raise ReleaseBlocked(f"{label} job is ambiguous")
     if not candidates and run.get("status") == "completed":
-        raise ReleaseBlocked("Main auth application push is missing its tests job")
+        raise ReleaseBlocked(f"{label} is missing its tests job")
     job = latest(candidates, label)
     # This field is optional in the documented job DTO; the endpoint itself
     # selects the attempt. If supplied, contradictory attribution is rejected.
     if "run_attempt" in job and (
         type(job["run_attempt"]) is not int or job["run_attempt"] != run["run_attempt"]
     ):
-        raise ReleaseBlocked("Main auth application test attempt does not match")
-    require_success(job, "Main auth application push tests")
+        raise ReleaseBlocked(f"{label} attempt does not match")
+    require_success(job, label)
     current = latest_push_run(
-        client.collect(path, "workflow_runs"), sha, APPLICATION_PATH, label,
+        client.collect(path, "workflow_runs"), sha, workflow, label,
     )
     if (current["id"], current["run_attempt"]) != (run["id"], run["run_attempt"]):
-        raise PendingChecks("Main auth application push attempt changed during verification")
+        raise PendingChecks(f"{label} attempt changed during verification")
+    return run["id"], run["run_attempt"], job["id"]
+
+
+def require_application_tests(client: GitHubClient, sha: str) -> tuple[int, int, int]:
+    return require_push_tests(
+        client, sha, APPLICATION_PATH, APPLICATION_TEST_JOB, "Main auth application push tests",
+    )
+
+
+def require_main_ci(client: GitHubClient, sha: str) -> tuple[tuple[int, ...], ...]:
+    runs = client.collect(
+        f"/actions/workflows/auth-foundation-ci.yml/runs?event=push&head_sha={sha}",
+        "workflow_runs",
+    )
+    return (
+        require_foundation(runs, sha),
+        require_application_tests(client, sha),
+        require_push_tests(
+            client, sha, POSTGRES_PATH, POSTGRES_TEST_JOB, "Main PostgreSQL push tests",
+        ),
+    )
 
 
 def require_current_main(client: GitHubClient, sha: str) -> None:
@@ -354,28 +351,27 @@ def require_current_main(client: GitHubClient, sha: str) -> None:
         raise ReleaseBlocked("Release SHA is no longer the current main")
 
 
-def verify(client: GitHubClient, sha: str, sonar: SonarClient) -> None:
+def verify(client: GitHubClient, sha: str) -> None:
     require_current_main(client, sha)
-    # filter=all is essential: a later PR analysis can hide main's failed check.
-    checks = client.collect(f"/commits/{sha}/check-runs?filter=all", "check_runs")
-    sonar_check = require_sonar(checks, sha)
-    runs = client.collect(
-        f"/actions/workflows/auth-foundation-ci.yml/runs?event=push&head_sha={sha}",
-        "workflow_runs",
-    )
-    require_foundation(runs, sha)
-    require_application_tests(client, sha)
-    require_overall_sonar(sonar, sha)
-    current_checks = client.collect(f"/commits/{sha}/check-runs?filter=all", "check_runs")
-    if require_sonar(current_checks, sha) != sonar_check:
-        raise PendingChecks("SonarCloud main check changed during inventory verification")
+    pull = accepted_pull_request(client, sha)
+    number, head, _ = pull
+    # The owner's release policy requires PR Sonar, not main LOC/overall analysis.
+    path = f"/commits/{head}/check-runs?filter=all"
+    sonar_check = require_sonar(client.collect(path, "check_runs"), head, number)
+    ci = require_main_ci(client, sha)
+    if require_main_ci(client, sha) != ci:
+        raise PendingChecks("Main CI attempt changed during verification")
+    if merged_pull_request(client, sha, number) != pull:
+        raise PendingChecks("Merged PR head changed during verification")
+    if require_sonar(client.collect(path, "check_runs"), head, number) != sonar_check:
+        raise PendingChecks("Merged PR SonarCloud check changed during verification")
     require_current_main(client, sha)
 
 
-def wait_for_release(client: GitHubClient, sha: str, sonar: SonarClient) -> None:
+def wait_for_release(client: GitHubClient, sha: str) -> None:
     while True:
         try:
-            verify(client, sha, sonar)
+            verify(client, sha)
             return
         except PendingChecks as exc:
             remaining = client.deadline - time.monotonic()
@@ -386,14 +382,10 @@ def wait_for_release(client: GitHubClient, sha: str, sonar: SonarClient) -> None
 
 
 def wait_for_main_release(sha: str, github_token: str, *, timeout: int = 900) -> None:
-    """Every production caller uses the full gate and separate Sonar credentials."""
+    """All production callers use accepted-main CI and its merged PR's Sonar proof."""
     deadline = time.monotonic() + timeout
     client = GitHubClient(github_token, deadline=deadline)
-    sonar_token = os.environ.get("SONAR_TOKEN", "")
-    if sonar_token and sonar_token == github_token:
-        raise ReleaseBlocked("SonarCloud verification must not reuse the GitHub token")
-    sonar = SonarClient(sonar_token, deadline=deadline)
-    wait_for_release(client, sha, sonar)
+    wait_for_release(client, sha)
 
 
 def release_context() -> tuple[str, str]:

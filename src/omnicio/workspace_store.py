@@ -19,9 +19,8 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from .db import Database, live_execution_lock_key
-from .freshness import PORTFOLIO_MAX_AGE
+from .freshness import ISSUER_NEWS_MAX_AGE, PORTFOLIO_MAX_AGE
 from .goal_planning import goal_forecast, goal_plan_fields, normalize_goal_plan
-from .intelligence import ISSUER_NEWS_MAX_AGE
 from .payouts import PAYOUT_READ_CTES, payout_source_sql, visible_event_sql
 from .portfolio_store import SettingsVersionConflict
 from .workspace import (

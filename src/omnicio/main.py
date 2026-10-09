@@ -552,6 +552,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="OmniCIO Gateway",
+    version=__version__,
     docs_url=None,
     redoc_url=None,
     openapi_url=None,

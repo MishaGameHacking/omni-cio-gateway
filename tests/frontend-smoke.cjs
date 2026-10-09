@@ -32,8 +32,24 @@ const {
   spawnSync
 } = require("node:child_process");
 const root = resolve(__dirname, "..");
-const version = /^version = "([^"\r\n]+)"$/m.exec(readFileSync(join(root, "pyproject.toml"), "utf8"))[1];
-const build = `smoke-${version}`;
+const renderedResult = spawnSync(process.env.OMNICIO_PYTHON || "python", ["-c", "import json; from pathlib import Path; from omnicio import __version__; from omnicio.web_assets import render_web_assets; build='smoke-'+__version__; print(json.dumps({'version':__version__,'build':build,'assets':render_web_assets(Path('web'),build)}))"], {
+  cwd: root,
+  env: {...process.env, PYTHONPATH: join(root, "src")},
+  encoding: "utf8",
+  maxBuffer: 8 * 1024 * 1024
+});
+assert.equal(renderedResult.status, 0, "Browser assets use the production renderer: " + renderedResult.stderr);
+const {version, build, assets: publicAssets} = JSON.parse(renderedResult.stdout);
+const configRealm = vm.createContext({});
+vm.runInContext(publicAssets["assets/config.js"], configRealm);
+const clientConfig = configRealm.OMNICIO_CONFIG;
+// Extracted production functions share the real config. Browser VMs model the
+// actual window/globalThis alias instead of maintaining two unrelated globals.
+const sourceContext = bindings => {
+  const context = {C: clientConfig, OMNICIO_CONFIG: clientConfig, ...bindings.window, ...bindings};
+  if (Object.hasOwn(bindings, "window")) context.window = context;
+  return vm.createContext(context);
+};
 const catalogResult = spawnSync(process.env.OMNICIO_PYTHON || "python", ["-c", "import json,runpy; print(json.dumps(runpy.run_path('src/omnicio/strategy.py')['strategy_catalog']()))"], {
   cwd: root,
   encoding: "utf8",
@@ -630,34 +646,33 @@ const serveTestApiRequest = async (request, response, url) => {
   const body = parts.length ? JSON.parse(Buffer.concat(parts).toString()) : null;
   return await routeAPI(request, response, url, fixtures.get(key), body);
 };
+// A dropped public connection exercises the real worker fetch-failure path.
+let publicNetworkUnavailable = false;
+let unavailablePublicAsset = "";
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, "http://127.0.0.1");
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     if (url.pathname.startsWith("/api/")) return await serveTestApiRequest(request, response, url);
+    if (publicNetworkUnavailable) { request.socket.destroy(); return; }
     const page = new URL(request.headers.referer || url.href);
     const fixture = fixtures.get((url.pathname === "/" ? url : page).searchParams.get("case"));
-    if (fixture?.missingBundle === url.pathname) {
+    if (unavailablePublicAsset === url.pathname || fixture?.missingBundle === url.pathname) {
       response.statusCode = 404;
       return response.end();
-    }
-    if (url.pathname === "/version.js") {
-      response.setHeader("Content-Type", "text/javascript");
-      response.end(`window.OMNICIO_RELEASE=${JSON.stringify({
-        version,
-        build
-      })};`);
-      return;
     }
     let path = url.pathname;
     if (path === "/") path = "/index.html";
     let file = join(root, "web", path.replace(/^\/assets\//, "").replace(/^\//, ""));
     if (path.startsWith("/assets/brand/")) file = path === "/assets/brand/omnicio-logo.png" ? join(root,"assets","brand","omnicio-logo.png") : join(root, "assets", "brand", "web", path.split("/").at(-1));
-    if (!file.startsWith(root) || !existsSync(file)) {
+    const assetKey = path.replace(/^\//, "");
+    const rendered = publicAssets[assetKey];
+    if (rendered === undefined && (!file.startsWith(root) || !existsSync(file))) {
       response.statusCode = 404;
       return response.end();
     }
+    response.setHeader("X-Omnicio-Build", build);
     response.setHeader("Content-Type", {
       ".html": "text/html; charset=utf-8",
       ".js": "text/javascript",
@@ -665,8 +680,8 @@ const server = createServer(async (request, response) => {
       ".png": "image/png",
       ".webmanifest": "application/manifest+json"
     }[extname(file)] || "application/octet-stream");
-    const raw = readFileSync(file);
-    let content = [".html", ".js", ".css"].includes(extname(file)) ? raw.toString().replaceAll("__OMNICIO_BUILD__", build).replaceAll("__OMNICIO_VERSION__", version) : raw;
+    let content = rendered === undefined ? readFileSync(file) : rendered;
+    if (path.startsWith("/legal/") && path.endsWith(".html")) content = content.toString("utf8").replaceAll("__OMNICIO_BUILD__", build);
     if (fixture?.legacyHtml && path === "/index.html") content = content.replace(/<main id="startup-state"[\s\S]*?<\/main>/, "").replace('<div id="public-site" hidden>', '<div id="public-site">');
     response.end(content);
   } catch (error) {
@@ -676,7 +691,7 @@ const server = createServer(async (request, response) => {
   }
 });
 const displayContracts = () => {
-  const context = vm.createContext({
+  const context = sourceContext({
     window: {},
     Intl,
     Date,
@@ -727,7 +742,7 @@ function presetMathContracts(ui, i18n) {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const source = app.slice(app.indexOf("  const strategyMethodLabels ="), app.indexOf("  const assessmentIsCurrent ="));
   const renderers = app.slice(app.indexOf("  function renderSelectionHTMLNotice("), app.indexOf("  function renderAssessmentValue("));
-  const context = vm.createContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
+  const context = sourceContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
     infoRows: ui.infoRows, format: ui.format, percent: ui.percent, money: ui.money, date: ui.date,
     number: ui.number, policyFields: () => [],
     renderFundamentalMetricsHTMLLi2: value => `<li>${ui.escape(context.requirement(value))}</li>`});
@@ -754,7 +769,7 @@ function researchMathContracts(ui, i18n) {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const helpers = app.slice(app.indexOf("  const researchCashProjectionHTML ="), app.indexOf("  const researchWindowHTML ="));
   const freshnessCheck = app.slice(app.indexOf("  const assessmentIsCurrent ="), app.indexOf("  const renderAssessment ="));
-  const context = vm.createContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
+  const context = sourceContext({U: ui, T: i18n.t, H: i18n.html, esc: ui.escape,
     infoRows: ui.infoRows, format: ui.format, percent: ui.percent, money: ui.money, date: ui.date,
     renderFundamentalMetricsHTMLLi2: value => `<li>${ui.escape(value)}</li>`, Date, Number});
   vm.runInContext(helpers + freshnessCheck + "\nglobalThis.renderOutcomes=researchOutcomesHTML; globalThis.renderCash=researchCashProjectionHTML; globalThis.renderWindow=researchOutcomeWindowHTML; globalThis.current=assessmentIsCurrent;", context);
@@ -804,7 +819,7 @@ async function ledgerPaginationContracts() {
   const source = app.slice(app.indexOf("  async function loadLedgerPage()"), app.indexOf("  function supportAddress("));
   const state = {generation: 1, view: "portfolio", data: {ledger: {items: [{id: "old"}], next_cursor: "cursor-old"}}, errors: {}, loading: new Set(), resourceVersions: new Map([["ledger", 1]])};
   let resolveRead, requests = 0, merges = 0;
-  const context = vm.createContext({state, encodeURIComponent, isCancelled: () => false, renderPortfolio() {},
+  const context = sourceContext({state, encodeURIComponent, isCancelled: () => false, renderPortfolio() {},
     api: () => { requests += 1; return new Promise(resolve => { resolveRead = resolve; }); },
     mergePage: (before, after) => { merges += 1; return {...after, items: [...before.items, ...after.items]}; }});
   vm.runInContext(source + "\nglobalThis.load=loadLedgerPage;", context);
@@ -840,7 +855,7 @@ async function searchAndAssetPaginationContracts() {
   const state = {generation: 1, view: "search", tour: false, searchSequence: 1, searchQuery: "old", route: {q: "old"},
     loading: new Set(), errors: {}, resourceVersions: new Map(), searchPages: {events: page("old-event"), news: null}, searchFailures: {}};
   const pending = [];
-  const context = vm.createContext({state, encodeURIComponent, safeSegment: encodeURIComponent, isCancelled: () => false,
+  const context = sourceContext({state, encodeURIComponent, safeSegment: encodeURIComponent, isCancelled: () => false,
     renderSearch() {}, renderAsset() {}, $: () => ({value: "", removeAttribute() {}}),
     routeSearchQuery: () => state.route.q, api: () => new Promise(resolve => pending.push(resolve)),
     mergePage: (before, after) => ({...after, items: [...before.items, ...after.items]})});
@@ -915,7 +930,7 @@ async function visibleRefreshContracts() {
   let sequence = 0, checks = 0, statusReads = 0, editing = false;
   const node = {setAttribute() {}, focus() {}};
   const schedule = (callback, delay) => { const id = ++sequence; timers.set(id, {callback, delay}); return id; };
-  const context = vm.createContext({state, document: {visibilityState: "visible", activeElement: null}, navigator: {onLine: true},
+  const context = sourceContext({state, document: {visibilityState: "visible", activeElement: null}, navigator: {onLine: true},
     window: {setTimeout: schedule}, setTimeout: schedule, clearTimeout: id => timers.delete(id), T: value => value,
     U: {navigation: [["home", "Home"], ["portfolio", "Portfolio"]]}, $: selector => selector === "dialog[open]" ? null : node, $$: () => [],
     resolveNavigationRoute: (view, detail) => ({view, ...detail}),
@@ -981,7 +996,7 @@ async function visibleRefreshContracts() {
 }
 async function payoutDisplayContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
-  const context = vm.createContext({window: {}, Intl, URL, URLSearchParams});
+  const context = sourceContext({window: {}, Intl, URL, URLSearchParams});
   vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
   vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
   const ui = context.window.OmniUI, i18n = context.window.OMNICIO_I18N;
@@ -1083,7 +1098,7 @@ async function payoutEventHistoryContracts() {
   const older = {...normal, id: "d".repeat(64), kind: "broker_operation", title: "Retained older operation", occurred_at: "2026-08-01T00:00:00Z", source: {type: "operation", amount: "42", currency: "RUB"}};
   const incoming = {items: [warning], next_cursor: null, read_all_before: 20, unread_count: 1};
   const state = {};
-  const context = vm.createContext({state, console, safeSegment: encodeURIComponent, T: value => value, H: value => value,
+  const context = sourceContext({state, console, safeSegment: encodeURIComponent, T: value => value, H: value => value,
     esc: value => String(value), date: value => value, icon: () => "", U: {},
     document: {activeElement: null}, $: selector => selector === "#workspace-freshness" ? {} : null,
     renderCurrent() {}, renderEvents() {}, adoptPreferences() {}, adoptStrategy() {}, mergeGoalList: value => value,
@@ -1262,6 +1277,48 @@ async function payoutEventHistoryContracts() {
   }
   console.log("PASS payout event history: real private DTOs, appended cache supersession, valid same-instrument history, read receipts, failure visibility and bounded stale-read cancellation");
 }
+async function evidenceFileReadContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const openResearchEvidence ="), app.indexOf("  const saveResearchEvidence ="));
+  const state = {generation: 1, eventRequest: 0};
+  const messages = [];
+  const dialog = {open: true};
+  let fileChange;
+  const form = {isConnected: true, elements: {document: {value: ""}, evidence_file: {addEventListener(type, handler) { assert.equal(type, "change"); fileChange = handler; }}}};
+  const context = sourceContext({state, enterRouteScreen: () => false, requireUser: () => true,
+    T: value => value, H: value => value, esc: value => value, U: {loading: value => value},
+    openDialog: () => { state.eventRequest += 1; },
+    api: async () => ({version: 1, document: {assets: []}}), isCancelled: () => false,
+    $: selector => selector === "#workspace-dialog" ? dialog : selector === "#research-evidence-form" ? form : {},
+    showMessage: (_element, text) => messages.push(text)});
+  vm.runInContext(source + "\nglobalThis.openEvidence=openResearchEvidence;", context);
+  await context.openEvidence();
+  assert.equal(typeof fileChange, "function", "The production evidence form binds the actual file reader");
+  const selectFile = (size = 20) => {
+    let finish, fail;
+    const text = new Promise((resolve, reject) => { finish = resolve; fail = reject; });
+    const pending = fileChange({target: {files: [{size, text: () => text}]}});
+    return {pending, finish, fail};
+  };
+  const first = selectFile(), second = selectFile();
+  second.finish("newer source"); await second.pending;
+  first.finish("older source"); await first.pending;
+  assert.equal(form.elements.document.value, "newer source", "A slower previous selection cannot replace the selected evidence");
+  const edited = selectFile();
+  form.elements.document.value = "Manual correction";
+  edited.finish("File before correction"); await edited.pending;
+  assert.equal(form.elements.document.value, "Manual correction", "A file completion preserves intervening manual input");
+  const failed = selectFile(); failed.fail(new Error("Synthetic file access failure")); await failed.pending;
+  assert.equal(messages.at(-1), "research.evidence_file_failed", "A read failure becomes a visible recoverable form error");
+  const detached = selectFile(); state.eventRequest += 1;
+  detached.finish("Previous form"); await detached.pending;
+  assert.equal(form.elements.document.value, "Manual correction", "A prior form cannot accept a late read after navigation");
+  await context.openEvidence();
+  const oversized = selectFile(clientConfig.limits.researchEvidenceBytes + 1);
+  await oversized.pending;
+  assert.equal(messages.at(-1), "research.evidence_too_large", "The shared byte limit rejects oversized evidence before reading");
+  console.log("PASS evidence file reader: selection ordering, manual edits, navigation, errors and byte limits");
+}
 function dialogCloseContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const state = {view: "goals", route: {mode: "account", view: "goals", screen: "create", goal_id: "goal-a", overlay: ""}};
@@ -1277,7 +1334,7 @@ function dialogCloseContracts() {
       // HTML close() clears open immediately and queues the close event for a later task.
       queuedClose.push(() => handlers.get("close")());
     }};
-  const context = vm.createContext({state,
+  const context = sourceContext({state,
     $$: selector => selector === "dialog[open]" && !dialog.open ? [] : [dialog],
     saveNavigationPosition() {}, captureScreenDrafts() { captured += 1; },
     routeBack() { backed += 1; },
@@ -1361,7 +1418,7 @@ async function assetBackgroundChartContracts() {
       matches: () => false, focus() { document.activeElement = this; }};
   }};
   const sidebar = {set innerHTML(value) { sidebarText = value; }};
-  const context = vm.createContext({state, document, T: value => value, I: {getLocale: () => locale},
+  const context = sourceContext({state, document, T: value => value, I: {getLocale: () => locale},
     $: (selector, parent) => parent === header ? header[selector] : ({"#view-asset": container,
       ".asset-detail-header": header, "[data-asset-sidebar]": sidebar, ".chart-svg": chart})[selector] || null,
     isWatched: uid => state.prefs.draft.watchlist.some(item => item.instrument_uid === uid),
@@ -1448,7 +1505,7 @@ function assetPayoutDisclosureContracts() {
   const container = {dataset: {}, set innerHTML(text) { replacePayout(text); }};
   const sidebar = {set innerHTML(text) { replacePayout(text); }};
   const header = {h1: {}, p: {}, ".asset-logo": {}, "[data-watch]": {dataset: {}, setAttribute() {}}};
-  const context = vm.createContext({state, document, T: value => value, I: {getLocale: () => "ru"}, isWatched: () => false,
+  const context = sourceContext({state, document, T: value => value, I: {getLocale: () => "ru"}, isWatched: () => false,
     $: (selector, parent) => {
       if (parent === header) return header[selector];
       if (selector === "summary") return parent.summary;
@@ -1489,7 +1546,7 @@ function assetPayoutDisclosureContracts() {
 }
 async function newsMonitoringContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
-  const context = vm.createContext({window: {}, Intl, console, URLSearchParams});
+  const context = sourceContext({window: {}, Intl, console, URLSearchParams});
   vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
   vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
   const ui = context.window.OmniUI, i18n = context.window.OMNICIO_I18N;
@@ -1567,7 +1624,7 @@ async function newsMonitoringContracts() {
 }
 function settingsRecoveryContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
-  const context = vm.createContext({window: {}, Intl, URLSearchParams});
+  const context = sourceContext({window: {}, Intl, URLSearchParams});
   vm.runInContext(readFileSync(join(root, "web", "i18n.js"), "utf8"), context);
   vm.runInContext(readFileSync(join(root, "web", "workspace.js"), "utf8"), context);
   const ui = context.window.OmniUI, i18n = context.window.OMNICIO_I18N;
@@ -1632,7 +1689,7 @@ async function offlineQuoteContracts() {
     addEventListener(name, callback) { this.listeners[name] = callback; }
     close() { this.closed = true; }
   }
-  const context = vm.createContext({state, navigator: {onLine: false}, document: {visibilityState: "visible"}, EventSource: EventSourceFixture,
+  const context = sourceContext({state, navigator: {onLine: false}, document: {visibilityState: "visible"}, EventSource: EventSourceFixture,
     window: {EventSource: EventSourceFixture, addEventListener: (name, callback) => { callbacks[name] = callback; }},
     $: selector => ({"[data-market-source]": source, "[data-market-quote]": price}[selector] || {}), $$: () => [],
     T: value => value, assetPricing: asset => ({market: asset.market}), assetQuoteHTML: value => value.market.last_price,
@@ -1690,7 +1747,7 @@ async function assistantConversationContracts() {
   let delayConversationWrites = false;
   let requestSequence = 0;
   let reportedFailures = 0;
-  const context = vm.createContext({
+  const context = sourceContext({
     state, requireUser: () => true, safeSegment: encodeURIComponent, renderAssistant() {},
     T: value => value, H: value => value, esc: value => value, button: () => "", openDialog() {},
     updateViewRoute: route => { state.route = route; }, loadResource: async () => {},
@@ -1803,7 +1860,7 @@ async function assistantMemoryReconciliationContracts() {
   const saved = {id: "saved-note", version: 1, category: "preference", content: "Explain source timestamps"};
   const state = {generation: 1, view: "assistant", assistantMemoryDraftId: saved.id, data: {assistantMemory: {items: [saved]}}};
   let rendered = "", cleared = 0, failures = 0;
-  const context = vm.createContext({state, crypto: {randomUUID: () => "next-note"}, T: value => value, H: value => value, esc: value => value, select: () => "", loadResource: async () => {}, clearScreenDraft: () => { cleared++; }, humanError: () => "Unconfirmed", $: () => ({}), showMessage: () => { failures++; }, renderAssistant: () => { rendered = context.form(); }});
+  const context = sourceContext({state, crypto: {randomUUID: () => "next-note"}, T: value => value, H: value => value, esc: value => value, select: () => "", loadResource: async () => {}, clearScreenDraft: () => { cleared++; }, humanError: () => "Unconfirmed", $: () => ({}), showMessage: () => { failures++; }, renderAssistant: () => { rendered = context.form(); }});
   vm.runInContext(source + "\nglobalThis.form=assistantMemoryForm;globalThis.reconcile=reconcileAssistantMemory;", context);
   const form = {dataset: {id: saved.id, version: "0"}};
   await context.reconcile(form, saved, new Error("lost_ack"), 1);
@@ -1861,7 +1918,7 @@ async function strategyInputContracts() {
     let remote = structuredClone(state.strategy.server);
     const writes = [], controls = [], statuses = [];
     const form = {elements: controls, checkValidity: () => controls.every(input => input.validity.valid)};
-    const context = vm.createContext({
+    const context = sourceContext({
       state, structuredClone, clone: structuredClone, same: (a, b) => JSON.stringify(a) === JSON.stringify(b),
       $: () => present ? form : null, window: {setTimeout: () => 1}, clearTimeout() {},
       updateSaveStatus() { statuses.push({dirty: state.strategy.dirty, error: state.strategy.error?.message || null}); },
@@ -1985,14 +2042,30 @@ function startupBuildContracts() {
   for (const [bundleBuild, releaseBuild] of [["__OMNICIO_BUILD__", undefined], [build, undefined], [build, build]]) {
     const reachedApplication = new Error("compatible modules reached document initialization");
     const document = {currentScript: {src: `http://127.0.0.1/assets/app.js?build=${bundleBuild}`}, documentElement: {dataset: {}}, querySelector: selector => selector === "#startup-state" ? {} : null};
-    const context = vm.createContext({window: {}, document, URL});
+    const context = sourceContext({window: {}, document, URL, getComputedStyle: () => ({getPropertyValue: () => JSON.stringify(bundleBuild)})});
     if (releaseBuild) context.window.OMNICIO_RELEASE = {build: releaseBuild};
-    for (const name of ["i18n", "workspace"]) vm.runInContext(readFileSync(join(root, "web", `${name}.js`), "utf8").replaceAll("__OMNICIO_BUILD__", bundleBuild), context);
+    for (const name of ["config", "i18n", "workspace"]) vm.runInContext(readFileSync(join(root, "web", `${name}.js`), "utf8").replaceAll("__OMNICIO_BUILD__", bundleBuild), context);
     context.window.OMNICIO_I18N = {...context.window.OMNICIO_I18N, apply() { throw reachedApplication; }};
     const app = readFileSync(join(root, "web", "app.js"), "utf8").replaceAll("__OMNICIO_BUILD__", bundleBuild);
     assert.throws(() => vm.runInContext(app, context), error => error === reachedApplication, "A coherent raw/dev or stamped bundle starts without relying on optional version.js metadata");
   }
-  console.log("PASS startup build contracts: coherent dev and stamped bundles reach initialization even without release metadata");
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const boundary = app.slice(app.indexOf("  function compatibleStartup("), app.indexOf("  async function reloadStartup("));
+  let paletteBuild = JSON.stringify(build);
+  const context = sourceContext({compiledBuild: build, window: {}, URL,
+    document: {querySelector: () => ({}), documentElement: {}, currentScript: {src: `http://127.0.0.1/assets/app.js?build=${build}`}},
+    getComputedStyle: () => ({getPropertyValue: () => paletteBuild})});
+  vm.runInContext(boundary + "\nglobalThis.compatible=compatibleStartup;", context);
+  const translations = {compiledBuild: build, t() {}, html() {}, apply() {}, getLocale() {}};
+  const ui = {compiledBuild: build, parseRoute() {}, routeHash() {}, resumeRoute() {}};
+  assert.equal(context.compatible(translations, ui, clientConfig), true);
+  for (const value of ["", JSON.stringify(build + "-stale"), "unquoted-build", "null"]) {
+    paletteBuild = value;
+    assert.equal(context.compatible(translations, ui, clientConfig), false, "Missing, stale and malformed palette identity cannot start the account");
+  }
+  paletteBuild = JSON.stringify(build);
+  for (const config of [undefined, {...clientConfig, compiledBuild: build + "-stale"}]) assert.equal(context.compatible(translations, ui, config), false, "Missing or stale configuration cannot start the account");
+  console.log("PASS startup build contracts: coherent bundles, independent metadata, missing/stale configuration and CSS identity");
 }
 function goalRouteContracts(ui) {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
@@ -2000,7 +2073,7 @@ function goalRouteContracts(ui) {
   const entry = app.slice(app.indexOf("  function enterRouteScreen("), app.indexOf("  async function restoreRouteOverlay("));
   const state = {view: "goals", route: ui.parseRoute("#account/goals/create"), data: {goals: {items: [{id: "goal-a", title: "A"}, {id: "goal-b", title: "B"}]}}};
   const navigations = [], opened = [];
-  const context = vm.createContext({state, navigate: (...args) => navigations.push(args), requireUser: () => true, goalDocument: goal => goal || {}, T: value => value, H: value => value, esc: String, field: () => "", select: () => "", openDialog: (...args) => opened.push(args), updateGoalFields() {}});
+  const context = sourceContext({state, navigate: (...args) => navigations.push(args), requireUser: () => true, goalDocument: goal => goal || {}, T: value => value, H: value => value, esc: String, field: () => "", select: () => "", openDialog: (...args) => opened.push(args), updateGoalFields() {}});
   vm.runInContext(entry + opener + "\nglobalThis.open=openGoal;", context);
   context.open();
   assert.equal(opened.length, 1, "A parsed create route opens its form without a second navigation that would reset restored scroll");
@@ -2052,7 +2125,7 @@ function assetQuotePrecisionContracts(ui) {
   const start = app.indexOf("  const quotationNanos =");
   assert.ok(start >= 0, "Asset extrema use the source decimal contract");
   const source = app.slice(start, app.indexOf("  const assetChartMarkup =", start));
-  const context = vm.createContext({number: ui.number, marketPrice: ui.marketPrice, money: ui.money, percent: ui.percent, esc: ui.escape, T: value => value, H: value => value, renderAssetValue: () => ""});
+  const context = sourceContext({number: ui.number, marketPrice: ui.marketPrice, money: ui.money, percent: ui.percent, esc: ui.escape, T: value => value, H: value => value, renderAssetValue: () => ""});
   vm.runInContext(source + "\nglobalThis.pricing=assetPricing;globalThis.quote=assetQuoteHTML;globalThis.extreme=assetPriceExtreme;", context);
   const smaller = "10000000.000000001", larger = "10000000.000000002";
   assert.equal(Number(smaller), Number(larger), "The fixture exposes two source prices that Number cannot distinguish");
@@ -2101,7 +2174,7 @@ function eventReadReceiptContracts() {
   const start = app.indexOf("  const eventIsRead =");
   const end = app.indexOf("  const paintEventRow =", start);
   assert.ok(start >= 0 && end > start, "Read receipt contracts exercise the actual application reconciliation");
-  const context = vm.createContext({});
+  const context = sourceContext({});
   vm.runInContext(app.slice(start, end) + "\nglobalThis.reconcile = confirmEventItems;", context);
   const row = {id: "source-event", revision: 10, read_at: null, title: "Earlier fact"};
   const [changed] = context.reconcile([row], item => item.revision <= 10, new Map([[row.id, {...row, revision: 11, title: "New source fact"}]]));
@@ -2120,7 +2193,7 @@ function eventReadReceiptContracts() {
   assert.equal(newer.read_at, null, "An older acknowledged source cannot replace the displayed newer unread fact");
   const counters = app.slice(app.indexOf("  const eventUnreadCount ="), app.indexOf("  const eventUnreadLabel ="));
   const state = {tour: false, data: {events: {unread_count: 2, read_all_before: 10}}};
-  const counts = vm.createContext({state, number: value => value == null ? null : Number(value)});
+  const counts = sourceContext({state, number: value => value == null ? null : Number(value)});
   vm.runInContext(counters + "\nglobalThis.count = eventUnreadCount;globalThis.boundary = eventReadBoundary;", counts);
   assert.equal(counts.count(), null, "A category-filtered page cannot establish the global unread count");
   state.data.eventSummary = {unread_total: 8, max_revision: 11};
@@ -2147,7 +2220,7 @@ function deletionDraftFixture(app, kind, outcome) {
     state.screenBaselines[key] ||= "{}";
     state.screenDrafts[key] = {content: "Editing this note"};
   };
-  const context = vm.createContext({
+  const context = sourceContext({
     state, acceptingUpdate: false, requireUser: () => true, safeSegment: value => value, T: value => value,
     api: async () => {
       if (outcome === "unknown") throw Object.assign(new Error("lost_ack"), {status: 503});
@@ -2222,7 +2295,7 @@ async function browserProtocolContracts() {
     close() {}
   }
   let protocolNow = 0;
-  const context = vm.createContext({WebSocket: SyntheticSocket, setTimeout, clearTimeout, performance: {now: () => protocolNow}, until: (read, label) => until(read, label, 6)});
+  const context = sourceContext({WebSocket: SyntheticSocket, setTimeout, clearTimeout, performance: {now: () => protocolNow}, until: (read, label) => until(read, label, 6)});
   vm.runInContext(source.slice(from, to) + "\nglobalThis.connect=protocolClient;globalThis.session=browserSession;", context);
   const client = await context.connect("ws://synthetic.invalid");
   const navigate = client.send("Page.navigate", {url: "http://127.0.0.1/?case=next"}, "target");
@@ -2385,23 +2458,39 @@ const assertTextContrast = (foreground, background, label) => {
   const ratio = (Math.max(...values) + .05) / (Math.min(...values) + .05);
   assert.ok(ratio >= 4.5, label + ": normal text contrast " + ratio.toFixed(2) + ":1 must reach 4.5:1");
 };
+const resolveStyleTokens = (value, palette, visited = []) => {
+  assert.equal(typeof value, "string", "A checked style property must exist");
+  const resolved = value.replace(/var\((--[\w-]+)(?:,\s*([^()]*))?\)/g, (_, name, fallback) => {
+    assert.ok(!visited.includes(name), "CSS token references cannot form a cycle: " + name);
+    return resolveStyleTokens(palette[name] ?? fallback, palette, [...visited, name]);
+  });
+  if (resolved !== value) return resolveStyleTokens(resolved, palette, visited);
+  assert.ok(!resolved.includes("var("), "Every checked CSS token resolves: " + resolved);
+  return resolved;
+};
 const styleContracts = () => {
   const css = readFileSync(join(root, "web", "app.css"), "utf8");
-  const declared = new Set([...css.matchAll(/(--[\w-]+)\s*:/g)].map(item => item[1]));
-  for (const reference of css.matchAll(/var\((--[\w-]+)(,)?/g)) assert.ok(declared.has(reference[1]) || reference[2], "CSS custom property must exist or have a fallback: " + reference[1]);
+  const tokens = readFileSync(join(root, "web", "tokens.css"), "utf8");
+  const styles = tokens + "\n" + css;
+  const declared = new Set([...styles.matchAll(/(--[\w-]+)\s*:/g)].map(item => item[1]));
+  for (const reference of styles.matchAll(/var\((--[\w-]+)(,)?/g)) assert.ok(declared.has(reference[1]) || reference[2], "CSS custom property must exist or have a fallback: " + reference[1]);
+  assert.ok(!/#[a-f0-9]{3,8}\b/i.test(css), "All authored colors have one palette source");
+  const base = cssRule(tokens, ":root");
+  assert.equal(JSON.parse(base["--omnicio-build"]), "__OMNICIO_BUILD__", "The stylesheet participates in startup release integrity");
+  for (const color of ["--browser-theme-dark", "--browser-theme-light"]) assert.match(base[color], /^#[a-f0-9]{6}$/i, "Public chrome has one literal theme token");
   for (const selector of [":root", ":root[data-theme=light]"]) {
-    const palette = cssRule(css, selector);
+    const palette = {...base, ...cssRule(tokens, selector)};
     for (const text of ["--text", "--muted", "--subtle", "--blue-light", "--green", "--red", "--purple", "--gold"]) {
-      for (const surface of ["--bg", "--panel", "--panel-deep", "--panel-hover"]) assertTextContrast(palette[text], palette[surface], selector + " " + text + " on " + surface);
+      for (const surface of ["--bg", "--panel", "--panel-deep", "--panel-hover"]) assertTextContrast(resolveStyleTokens(palette[text], palette), resolveStyleTokens(palette[surface], palette), selector + " " + text + " on " + surface);
     }
-    assertTextContrast("#ffffff", palette["--blue"], selector + " selected controls");
+    assertTextContrast("#ffffff", resolveStyleTokens(palette["--blue"], palette), selector + " selected controls");
   }
   for (const selector of [".button.primary", ".button.primary:hover", ".vk-provider", ".vk-provider:hover", ".strategy-option .strategy-icon"]) {
     const rule = cssRule(css, selector);
-    for (const background of rule.background.match(/#[a-f0-9]{6}\b/gi) || []) assertTextContrast("#ffffff", background, selector);
+    for (const background of resolveStyleTokens(rule.background, base).match(/#[a-f0-9]{6}\b/gi) || []) assertTextContrast("#ffffff", background, selector);
   }
   const avatar = cssRule(css, ".avatar");
-  for (const background of avatar.background.match(/#[a-f0-9]{6}\b/gi)) assertTextContrast(avatar.color, background, "Profile avatar text");
+  for (const background of resolveStyleTokens(avatar.background, base).match(/#[a-f0-9]{6}\b/gi)) assertTextContrast(resolveStyleTokens(avatar.color, base), background, "Profile avatar text");
   console.log("PASS style contracts: declared tokens and normal-text contrast in both themes");
 };
 function workerBindingDatabase() {
@@ -2441,37 +2530,86 @@ function workerBindingDatabase() {
 const workerContract = async () => {
   const handlers = new Map();
   const tasks = [];
-  const cached = [];
   const notifications = [];
   const opened = [];
   const bindings = workerBindingDatabase();
-  let activated = 0;
+  const cacheStores = new Map();
+  const fetches = [], writes = [], repairTimers = new Map();
+  let activated = 0, storageFailure = false, networkFailure = false;
+  let responseBuild = build, responseStatus = 200, responseUrl = null, fetchGate = null;
   const origin = "https://example.test";
-  globalThis.self = {
-    location: {
-      origin
+  const cacheName = "omnicio-public-" + build;
+  const publicPaths = ["/offline.html", "/assets/config.js", "/assets/tokens.css", "/assets/i18n.js", "/assets/app.css", "/assets/app.js", "/assets/workspace.js", "/assets/brand/omnicio-logo.png"];
+  const publicUrls = publicPaths.map(path => origin + path + "?build=" + encodeURIComponent(build));
+  const requestUrl = value => new URL(typeof value === "string" ? value : value.url, origin).href;
+  const cacheStorage = {
+    async open(name) {
+      if (storageFailure) throw new Error("Synthetic storage failure");
+      if (!cacheStores.has(name)) cacheStores.set(name, new Map());
+      const values = cacheStores.get(name);
+      return {
+        match: async request => values.get(requestUrl(request))?.clone(),
+        put: async (request, response) => { const key = requestUrl(request); writes.push(key); values.set(key, response.clone()); }
+      };
     },
-    addEventListener: (name, handler) => handlers.set(name, handler),
-    registration: {showNotification: async (title, options) => notifications.push({title, options})},
-    clients: {matchAll: async () => [], openWindow: async path => opened.push(path)},
-    skipWaiting: async () => {
-      activated += 1;
+    keys: async () => [...cacheStores.keys()],
+    delete: async name => cacheStores.delete(name),
+    async match(request) {
+      for (const values of cacheStores.values()) {
+        const response = values.get(requestUrl(request));
+        if (response) return response.clone();
+      }
+      return undefined;
     }
   };
-  globalThis.caches = {
-    open: async () => ({
-      addAll: async paths => cached.push(...paths)
-    })
-  };
-  globalThis.indexedDB = bindings.indexedDB;
+  const context = vm.createContext({
+    location: {origin},
+    addEventListener: (name, handler) => handlers.set(name, handler),
+    registration: {showNotification: async (title, options) => notifications.push({title, options: clone(options)})},
+    clients: {matchAll: async () => [], openWindow: async path => opened.push(path), claim: async () => {}},
+    skipWaiting: async () => { activated += 1; },
+    caches: cacheStorage, indexedDB: bindings.indexedDB, URL, AbortController, MessageChannel,
+    setTimeout(handler, ms) {
+      if (ms !== clientConfig.timing.publicCacheRepairMs) return setTimeout(handler, ms);
+      const timer = {};
+      repairTimers.set(timer, handler);
+      return timer;
+    },
+    clearTimeout(timer) { if (!repairTimers.delete(timer)) clearTimeout(timer); },
+    async fetch(request, options) {
+      const url = requestUrl(request);
+      fetches.push({url, options});
+      if (networkFailure) throw new Error("Synthetic offline network");
+      if (fetchGate) await Promise.race([fetchGate, new Promise((_, reject) => {
+        if (options.signal.aborted) reject(new Error("Synthetic aborted fetch"));
+        else options.signal.addEventListener("abort", () => reject(new Error("Synthetic aborted fetch")), {once: true});
+      })]);
+      const body = publicAssets[new URL(url).pathname.replace(/^\//, "")] || "Public brand asset";
+      const response = new Response(body, {status: responseStatus, headers: responseBuild === null ? {} : {"X-Omnicio-Build": responseBuild}});
+      Object.defineProperty(response, "url", {value: responseUrl || url});
+      return response;
+    },
+    importScripts(...urls) {
+      for (const url of urls) {
+        const parsed = new URL(url, origin);
+        assert.equal(parsed.origin, origin);
+        assert.equal(parsed.searchParams.get("build"), build);
+        const source = publicAssets[parsed.pathname.replace(/^\//, "")];
+        assert.ok(source, "The worker imports the actual compiled public asset");
+        vm.runInContext(source, context);
+      }
+    }
+  });
+  context.self = context;
+  const self = context;
   try {
-    require("../web/sw.js");
-    handlers.get("install")({
-      waitUntil: task => tasks.push(task)
-    });
+    vm.runInContext(publicAssets["sw.js"], context);
+    assert.equal(context.window, undefined, "Worker imports do not rely on a browser window");
+    handlers.get("install")({waitUntil: task => tasks.push(task)});
     await Promise.all(tasks);
-    assert.ok(cached.includes("/offline.html?build=__OMNICIO_BUILD__"));
-    assert.ok(cached.every(path => /^\/(offline\.html|assets\/(app\.css|app\.js|workspace\.js|i18n\.js|brand\/omnicio-logo\.png))\?build=__OMNICIO_BUILD__$/.test(path)), "Private content never enters the cache allowlist");
+    assert.deepEqual([...cacheStores.get(cacheName).keys()].sort(), [...publicUrls].sort());
+    assert.ok(fetches.every(({options}) => options.credentials === "omit" && options.cache === "no-store" && options.redirect === "error"), "Only explicit public requests enter the cache");
+    assert.equal(repairTimers.size, 0, "Completed installation releases its deadline");
     let intercepted = 0;
     for (const path of ["/api/me", "/api/workspace", "/api/preferences", "/api/goals", "/api/assistant/messages", "/api/broker/tbank/portfolio", "/health/ready"]) {
       for (const method of ["GET", "POST"]) handlers.get("fetch")({
@@ -2506,10 +2644,67 @@ const workerContract = async () => {
     const workerMessage = async (data, messageOrigin = origin) => {
       let receipt;
       const pending = [];
-      handlers.get("message")({origin: messageOrigin, data, ports: [{postMessage: value => { receipt = value; }}], waitUntil: task => pending.push(task)});
+      handlers.get("message")({origin: messageOrigin, data, ports: [{postMessage: value => { receipt = clone(value); }}], waitUntil: task => pending.push(task)});
       await Promise.all(pending);
       return receipt;
     };
+    const repair = () => workerMessage({type: "REPAIR_PUBLIC_CACHE", build});
+    const initialFetches = fetches.length, initialWrites = writes.length;
+    assert.deepEqual(await repair(), {handled: true, ok: true});
+    assert.equal(fetches.length, initialFetches, "A coherent complete cache requires no network repair");
+    assert.equal(writes.length, initialWrites, "Normal startup does not rewrite its public cache");
+    assert.equal(await workerMessage({type: "REPAIR_PUBLIC_CACHE", build: "wrong-build"}), undefined);
+    assert.equal(await workerMessage({type: "REPAIR_PUBLIC_CACHE", build}, "https://untrusted.invalid"), undefined);
+    cacheStores.delete(cacheName);
+    let releaseFetch;
+    fetchGate = new Promise(resolve => { releaseFetch = resolve; });
+    const repairs = [repair(), repair()];
+    await until(() => fetches.length === initialFetches + publicUrls.length, "Concurrent repair requests share one fetch batch");
+    releaseFetch();
+    assert.deepEqual(await Promise.all(repairs), [{handled: true, ok: true}, {handled: true, ok: true}]);
+    fetchGate = null;
+    assert.equal(writes.length, initialWrites + publicUrls.length);
+    assert.deepEqual([...cacheStores.get(cacheName).keys()].sort(), [...publicUrls].sort(), "Recovery repopulates the full offline shell with the unchanged worker");
+    // Reproduce manual recovery deleting a cache after an older fill obtained
+    // its handle. The new startup joins that fill and must receive a usable name.
+    cacheStores.get(cacheName).delete(publicUrls[1]);
+    const beforeRaceFetches = fetches.length;
+    fetchGate = new Promise(resolve => { releaseFetch = resolve; });
+    const olderRepair = repair();
+    await until(() => fetches.length === beforeRaceFetches + 1, "An older repair holds one missing asset fetch");
+    cacheStores.delete(cacheName);
+    const recoveryRepair = repair();
+    releaseFetch();
+    assert.deepEqual(await Promise.all([olderRepair, recoveryRepair]), [{handled: true, ok: true}, {handled: true, ok: true}]);
+    fetchGate = null;
+    assert.deepEqual([...cacheStores.get(cacheName).keys()].sort(), [...publicUrls].sort(), "A coalesced recovery fills the current named cache, including assets lost from the detached old handle");
+    networkFailure = true;
+    let navigation;
+    handlers.get("fetch")({request: {url: origin + "/?private=session", method: "GET", mode: "navigate"}, respondWith: task => { navigation = task; }});
+    const offline = await navigation;
+    assert.equal(offline.headers.get("X-Omnicio-Build"), build);
+    assert.match(await offline.text(), /data-offline-retry/, "The repaired cache can serve the real public offline page");
+    assert.ok(!writes.some(url => url.includes("private=session")), "Navigation and session HTML cannot enter the repair cache");
+    networkFailure = false;
+    for (const failure of ["missing-header", "stale-header", "bad-status", "foreign-url", "storage"]) {
+      cacheStores.delete(cacheName);
+      const before = writes.length;
+      responseBuild = failure === "missing-header" ? null : failure === "stale-header" ? "old-build" : build;
+      responseStatus = failure === "bad-status" ? 503 : 200;
+      responseUrl = failure === "foreign-url" ? "https://untrusted.invalid/assets/app.js" : null;
+      storageFailure = failure === "storage";
+      assert.deepEqual(await repair(), {handled: true, ok: false}, "Public repair reports " + failure);
+      assert.equal(writes.length, before, "No unvalidated response is published after " + failure);
+    }
+    storageFailure = false; responseBuild = build; responseStatus = 200; responseUrl = null;
+    fetchGate = new Promise(() => {});
+    const timedOut = repair();
+    await until(() => repairTimers.size === 1, "A stalled repair has one bounded deadline");
+    for (const expire of repairTimers.values()) expire();
+    assert.deepEqual(await timedOut, {handled: true, ok: false});
+    fetchGate = null;
+    assert.equal(repairTimers.size, 0);
+    assert.deepEqual(await repair(), {handled: true, ok: true}, "Failure releases the single-flight guard so a later online repair can succeed");
     const bindingA = "00000000-0000-4000-9000-000000000001";
     const bindingB = "00000000-0000-4000-9000-000000000002";
     assert.deepEqual(await workerMessage({type: "PUSH_BINDING", binding_id: bindingA, locale: "ru"}), {handled: true, ok: true, binding_id: bindingA});
@@ -2568,11 +2763,12 @@ const workerContract = async () => {
     assert.deepEqual(opened, ["/#account/events"], "The worker cannot open another tab when an existing app does not acknowledge");
     assert.deepEqual(await workerMessage({type: "CLEAR_PUSH_BINDING", binding_id: bindingB}), {handled: true, ok: true, cleared: true});
     assert.equal(bindings.values.size, 0, "Only the matching binding is cleared after a logout or explicit revocation");
-    console.log("PASS service worker: private-cache isolation, origin checks, private push redaction and safe notification navigation");
+    console.log("PASS service worker: versioned cache repair, offline recovery, bounded failures, private-cache isolation, origin checks and safe notifications");
   } finally {
-    delete globalThis.self;
-    delete globalThis.caches;
-    delete globalThis.indexedDB;
+    for (const expire of repairTimers.values()) expire();
+    repairTimers.clear();
+    handlers.clear();
+    cacheStores.clear();
   }
 };
 function captureBrowserLayout() {
@@ -3299,6 +3495,7 @@ const runBrowser = async base => {
     await payoutEventHistoryContracts();
     assetPayoutDisclosureContracts();
     dialogCloseContracts();
+    await evidenceFileReadContracts();
     await assetBackgroundChartContracts();
     await ledgerPaginationContracts();
     await searchAndAssetPaginationContracts();
@@ -5259,7 +5456,7 @@ async function installLifecycleContracts() {
   const stored = new Map();
   let opens = 0, prompts = 0, installed = false;
   const navigator = {userAgent: "Chrome", platform: "Win32", maxTouchPoints: 0};
-  const context = vm.createContext({installState, navigator, installedDisplay: () => installed, H: value => value, localStorage: {setItem: (key, value) => stored.set(key, value)}, renderInstallState() {}, openInstall: () => { opens += 1; }});
+  const context = sourceContext({installState, navigator, installedDisplay: () => installed, H: value => value, localStorage: {setItem: (key, value) => stored.set(key, value)}, renderInstallState() {}, openInstall: () => { opens += 1; }});
   vm.runInContext(status + actions + "\nglobalThis.installActions={installStatus,installInstructionsHTML,dismissInstall,promptInstall};", context);
   const api = context.installActions;
   assert.equal(api.installStatus(), "manual", "No retained browser event means instructions, not a fake installation button");
@@ -5299,7 +5496,7 @@ async function installPromptInterleavingContracts() {
   for (const isolated of [false, true]) {
     const handlers = [];
     const installState = {prompt: null, installed: false, dismissed: false, busy: false, result: ""};
-    const context = vm.createContext({installState, URLSearchParams, location: {search: `?case=${isolated ? "guest-installation" : "guest-installability"}`}, window: {addEventListener: (_name, callback) => handlers.push(callback)}, renderInstallState() {}, openInstall() {}, localStorage: {setItem() {}}});
+    const context = sourceContext({installState, URLSearchParams, location: {search: `?case=${isolated ? "guest-installation" : "guest-installability"}`}, window: {addEventListener: (_name, callback) => handlers.push(callback)}, renderInstallState() {}, openInstall() {}, localStorage: {setItem() {}}});
     vm.runInContext(`(${installPromptBrowserFixture.toString()})();` + actions + listener + "\nglobalThis.promptInstall=promptInstall;", context);
     const dispatch = event => {
       event.preventDefault = () => { event.defaultPrevented = true; };
@@ -5336,7 +5533,7 @@ async function installPromptInterleavingContracts() {
 async function pushEndpointContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const source = app.slice(app.indexOf("  const pushFingerprint ="), app.indexOf("  const withPushDeviceLock ="));
-  const context = vm.createContext({URL, crypto: require("node:crypto").webcrypto, TextEncoder});
+  const context = sourceContext({URL, crypto: require("node:crypto").webcrypto, TextEncoder});
   vm.runInContext(source + "\nglobalThis.fingerprint=pushFingerprint;", context);
   const endpoint = "https://fcm.googleapis.com/fcm/send/fixture-device?token=one";
   const expected = createHash("sha256").update(endpoint).digest("hex");
@@ -5357,7 +5554,7 @@ async function pushContextContracts() {
     let releaseSubscription, releaseReceipt;
     const registration = {pushManager: {getSubscription: () => boundary === "subscription" ? new Promise(resolve => { releaseSubscription = resolve; }) : Promise.resolve(subscription)}, active: {postMessage: (...args) => bindings.push(args)}};
     const api = async (path, options) => { writes.push({path, options, publicId: state.user.public_id}); return new Promise(resolve => { releaseReceipt = resolve; }); };
-    const context = vm.createContext({state, navigator: {serviceWorker: {ready: Promise.resolve(registration)}}, window: {}, Uint8Array, URL, atob, crypto: require("node:crypto").webcrypto, TextEncoder, setTimeout, clearTimeout, api, T: value => value});
+    const context = sourceContext({state, navigator: {serviceWorker: {ready: Promise.resolve(registration)}}, window: {}, Uint8Array, URL, atob, crypto: require("node:crypto").webcrypto, TextEncoder, setTimeout, clearTimeout, api, T: value => value});
     vm.runInContext(source + "\nglobalThis.pushTest={pushContext,readPushSubscription};", context);
     const pending = context.pushTest.readPushSubscription(data, context.pushTest.pushContext(), true);
     await until(() => boundary === "subscription" ? releaseSubscription : releaseReceipt, "The actual push helper reaches its controlled " + boundary + " boundary");
@@ -5391,7 +5588,7 @@ async function pushBindingReceiptContracts() {
     const state = {generation: 1, user: {public_id: "000000123"}, locked: false, tour: false, devicePush: {status: "checking", channel: null, bindingId: null}};
     const messages = [];
     const registration = {active: {postMessage(message, ports) { messages.push(message); ports[0].postMessage({handled: true, ok: scenario.workerAccepted !== false, binding_id: scenario.matchingBinding === false ? "00000000-0000-4000-9000-000000000099" : message.binding_id}); ports[0].close(); }}};
-    const context = vm.createContext({state, I: {getLocale: () => "en"}, MessageChannel, setTimeout, clearTimeout, crypto: require("node:crypto").webcrypto, TextEncoder, URL});
+    const context = sourceContext({state, I: {getLocale: () => "en"}, MessageChannel, setTimeout, clearTimeout, crypto: require("node:crypto").webcrypto, TextEncoder, URL});
     vm.runInContext(source + "\nglobalThis.pushTest={pushContext,adoptPushReceipt};", context);
     const receipt = {id: scenario.id || channelId, status: "active", current_session: scenario.currentSession !== false, binding_id: scenario.bindingId || bindingId};
     const pending = context.pushTest.adoptPushReceipt(receipt, {endpoint: "https://fcm.googleapis.com/fcm/send/fixture-receipt"}, registration, context.pushTest.pushContext());
@@ -5411,7 +5608,7 @@ async function pushPermissionReadFailureContracts() {
     const saved = {push_configured: true, channels: [{id: "00000000-0000-4000-8000-000000000801", status: "active"}]};
     const state = {user: {public_id: "000000123"}, devicePush: {status: previousStatus, pending: null}, data: {notifications: saved}, errors: {notifications: failure}, resourceRequests: new Map()};
     const reads = [];
-    const context = vm.createContext({state, Notification: {permission}, pushSupported: () => true, pushContext: () => ({}), currentPushContext: () => true, isCancelled: () => false, renderNotificationPanel() {}, loadResource: async (...args) => { reads.push(args); return saved; }});
+    const context = sourceContext({state, Notification: {permission}, pushSupported: () => true, pushContext: () => ({}), currentPushContext: () => true, isCancelled: () => false, renderNotificationPanel() {}, loadResource: async (...args) => { reads.push(args); return saved; }});
     vm.runInContext(source + "\nglobalThis.refresh=refreshPushDevice;", context);
     await context.refresh();
     assert.equal(state.devicePush.status, expected, `Observed ${permission} browser permission and previous ${previousStatus} state remain truthful after a failed server read`);
@@ -5438,7 +5635,7 @@ async function exerciseInstallability({send, configureViewport, base, wait, eval
   console.log("INSTALLABILITY " + JSON.stringify(evidence));
   assert.deepEqual(manifest.errors, [], "Chromium parses the actual deployed manifest without errors");
   assert.equal(new URL(manifest.url).pathname, "/manifest.webmanifest");
-  assert.deepEqual(JSON.parse(manifest.data), JSON.parse(readFileSync(join(root, "web", "manifest.webmanifest"), "utf8")), "Installability uses the repository manifest, not a test substitute");
+  assert.deepEqual(JSON.parse(manifest.data), JSON.parse(publicAssets["manifest.webmanifest"]), "Installability uses the canonical production-rendered manifest, not a test substitute");
   assert.equal(evidence.canonical_logo_sha256, "d9c44905a77858882d99e948a647705afa853fd11cfd01efd37528645b8ca12f", "The installation check retains the approved original logo");
   assert.deepEqual(installability.installabilityErrors, [], "Chromium accepts the actual manifest and its declared original icon");
   console.log("PASS actual manifest and original brand installability");
@@ -5631,6 +5828,15 @@ async function exercisePushNotificationNavigation(context) {
 async function exerciseStartupRecovery({send, configureViewport, base, wait, click, evaluate, checkLayout, screenshot}) {
   await configureViewport(390);
   const destination = "#account/settings/appearance";
+  const publicUrls = ["/offline.html", "/assets/config.js", "/assets/tokens.css", "/assets/i18n.js", "/assets/app.css", "/assets/app.js", "/assets/workspace.js", "/assets/brand/omnicio-logo.png"].map(path => path + "?build=" + encodeURIComponent(build));
+  const waitPublicCache = label => until(() => evaluate(`(async () => {
+    const name = "omnicio-public-" + ${JSON.stringify(build)};
+    if (!(await caches.keys()).includes(name)) return false;
+    const cache = await caches.open(name);
+    const responses = await Promise.all(${JSON.stringify(publicUrls)}.map(url => cache.match(url)));
+    return responses.every(response => response?.ok && response.headers.get("X-Omnicio-Build") === ${JSON.stringify(build)});
+  })()`), label);
+
   const missingKey = "signed-startup-missing";
   const missing = makeFixture("signed");
   missing.missingBundle = "/assets/i18n.js";
@@ -5647,6 +5853,7 @@ async function exerciseStartupRecovery({send, configureViewport, base, wait, cli
   await wait(`performance.timeOrigin !== ${firstOrigin} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "An explicit startup retry reopens the requested personal page");
   assert.equal(await evaluate("location.hash"), destination);
   await wait("Boolean(navigator.serviceWorker.controller)", "The cache regression uses the actual installed service worker");
+  await waitPublicCache("Initial installation has a complete verified public shell");
   await evaluate(`(async () => {
     const resource = "/assets/workspace.js?build=" + ${JSON.stringify(build)};
     const source = await (await fetch(resource)).text();
@@ -5672,6 +5879,62 @@ async function exerciseStartupRecovery({send, configureViewport, base, wait, cli
   assert.equal(await evaluate('sessionStorage.getItem("synthetic-startup-preserved")'), "retained", "Recovery does not clear session state");
   assert.equal(await evaluate('(async () => (await caches.keys()).includes("synthetic-startup-preserved"))()'), true, "Only OMNICIO public asset caches may be removed");
   await evaluate('(async () => {sessionStorage.removeItem("synthetic-startup-preserved");await caches.delete("synthetic-startup-preserved");})()');
+  await waitPublicCache("Manual startup recovery repopulates the offline shell without a worker reinstall");
+  for (const item of [
+    {name: "missing-config", asset: "config.js", missing: true},
+    {name: "stale-config", asset: "config.js", missing: false},
+    {name: "missing-tokens", asset: "tokens.css", missing: true},
+    {name: "stale-tokens", asset: "tokens.css", missing: false}
+  ]) {
+    const key = "signed-startup-" + item.name;
+    const fixture = makeFixture("signed");
+    const path = "/assets/" + item.asset;
+    fixture.missingBundle = item.missing ? path : "";
+    // The worker may finish a prior startup check concurrently; the missing
+    // response must also fail its independent request, not only page referrers.
+    unavailablePublicAsset = fixture.missingBundle;
+    fixtures.set(key, fixture);
+    const resource = path + "?build=" + encodeURIComponent(build);
+    const source = publicAssets[path.slice(1)].replaceAll(build, build + "-stale");
+    await evaluate(`(async () => {
+      const cache = await caches.open("omnicio-public-" + ${JSON.stringify(build)});
+      if (${item.missing}) await cache.delete(${JSON.stringify(resource)});
+      else await cache.put(${JSON.stringify(resource)}, new Response(${JSON.stringify(source)}, {headers: {"Content-Type": ${JSON.stringify(item.asset.endsWith(".css") ? "text/css" : "text/javascript")}, "X-Omnicio-Build": ${JSON.stringify(build)}}}));
+    })()`);
+    await send("Page.navigate", {url: `${base}?case=${key}${destination}`});
+    await wait('document.querySelector("#startup-state")?.dataset.status === "unavailable" && document.querySelector("[data-startup-reload]")?.getClientRects().length', "A " + item.name + " asset fails before private startup");
+    assert.equal(fixture.requests.length, 0, item.name + " cannot start an API read or mutation");
+    assert.equal(await evaluate("location.hash"), destination);
+    if (item.asset === "config.js") assert.equal(await evaluate("window.OMNICIO_CONFIG?.compiledBuild || null"), item.missing ? null : build + "-stale");
+    else assert.equal(await evaluate('getComputedStyle(document.documentElement).getPropertyValue("--omnicio-build").trim()'), item.missing ? "" : JSON.stringify(build + "-stale"));
+    fixture.missingBundle = "";
+    unavailablePublicAsset = "";
+    const timeOrigin = await evaluate("performance.timeOrigin");
+    await click("[data-startup-reload]");
+    await wait(`performance.timeOrigin !== ${timeOrigin} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "Explicit retry restores " + item.name + " without losing the destination");
+    assert.equal(await evaluate("location.hash"), destination);
+    assert.ok(fixture.requests.length > 0 && fixture.requests.every(request => request.clientBuild === build));
+    await waitPublicCache("Recovered " + item.name + " has all eight verified offline assets");
+  }
+  const workerUrl = await evaluate('(async () => (await navigator.serviceWorker.ready).active.scriptURL)()');
+  const offlineKey = "signed-startup-offline";
+  const offline = makeFixture("signed");
+  fixtures.set(offlineKey, offline);
+  publicNetworkUnavailable = true;
+  try {
+    await send("Page.navigate", {url: `${base}?case=${offlineKey}${destination}`});
+    await wait('document.body.classList.contains("offline-page") && document.querySelector("[data-offline-retry]")?.getClientRects().length && Boolean(window.OmniUI)', "A network failure after recovery opens the real cached offline shell");
+    assert.equal(await evaluate("location.hash"), destination);
+    assert.equal(await evaluate("window.OMNICIO_CONFIG.compiledBuild"), build);
+    assert.equal(await evaluate('JSON.parse(getComputedStyle(document.documentElement).getPropertyValue("--omnicio-build"))'), build);
+    assert.equal(await evaluate('Boolean(document.querySelector("#app-shell"))'), false, "The public offline shell contains no retained account document");
+    assert.equal(offline.requests.length, 0, "Offline fallback never asks the API to reconstruct private account data");
+    assert.equal(await evaluate('(async () => (await navigator.serviceWorker.ready).active.scriptURL)()'), workerUrl);
+  } finally { publicNetworkUnavailable = false; }
+  const offlineOrigin = await evaluate("performance.timeOrigin");
+  await click("[data-offline-retry]");
+  await wait(`performance.timeOrigin !== ${offlineOrigin} && document.querySelector('#preferences-form [name="locale"]')?.getClientRects().length`, "The visible offline retry returns to the same authenticated destination once the connection works");
+  assert.equal(await evaluate("location.hash"), destination);
   const htmlKey = "signed-startup-old-html";
   const html = makeFixture("signed");
   html.legacyHtml = true;
@@ -5690,7 +5953,7 @@ async function exerciseStartupRecovery({send, configureViewport, base, wait, cli
   assert.equal(await evaluate("location.hash"), destination);
   assert.equal(await evaluate("window.OMNICIO_RELEASE === undefined"), true, "Stamped script URLs and matching modules remain sufficient when version.js is unavailable");
   assert.ok(html.requests.length > 0 && html.requests.every(item => item.clientBuild === build), "The compiled build identifies API requests without optional release metadata");
-  console.log("PASS startup recovery: missing bundle, legacy public cache, old HTML, unavailable cache API and preserved deep links");
+  console.log("PASS startup recovery: missing/stale configuration and palette, cache repair, real offline fallback and retry, old HTML, storage failure and preserved deep links");
 }
 async function exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
   await configureViewport(390);

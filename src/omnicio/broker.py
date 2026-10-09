@@ -17,6 +17,8 @@ from .db import Database, TBankConnectionRecord
 from .portfolio import PortfolioAnalysis, analyze_portfolio
 from .security import decrypt_secret, encrypt_secret
 from .tbank import (
+    NEWS_MAX_PAGE_SIZE,
+    OPERATIONS_MAX_PAGE_SIZE,
     TBankAccount,
     TBankAccruedInterest,
     TBankAssetFundamental,
@@ -472,7 +474,7 @@ class BrokerService:
 
     def instrument_news(
         self, user_id: UUID, instrument_uid: str | None = None, *,
-        cursor: str | None = None, limit: int = 50,
+        cursor: str | None = None, limit: int = NEWS_MAX_PAGE_SIZE,
     ) -> dict[str, Any]:
         """Read one bounded page; exact provider UID links select company news."""
         if instrument_uid is not None and (not instrument_uid.strip() or len(instrument_uid) > 200):
@@ -1105,7 +1107,7 @@ class BrokerService:
         from_at: datetime,
         to_at: datetime,
         cursor: str = "",
-        limit: int = 1000,
+        limit: int = OPERATIONS_MAX_PAGE_SIZE,
     ) -> TBankOperationsPage:
         record, credential, environment = self._connected_credential(user_id)
         result = self.tbank.get_operations_by_cursor(

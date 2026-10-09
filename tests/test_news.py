@@ -8,6 +8,7 @@ from xml.sax.saxutils import escape
 
 import pytest
 
+from omnicio import APPLICATION_USER_AGENT
 from omnicio.news import NewsClient, NewsNotFound, NewsUnavailable, parse_news, source_page_text
 
 NOW = datetime(2026, 10, 6, 12, tzinfo=UTC)
@@ -80,6 +81,8 @@ def test_search_scope_is_current_official_feed_and_read_is_bound_to_confirmed_id
         assert "Не текст новости" not in read["content"]
         assert len(read["sha256"]) == 64
         network.assert_called_once_with("www.cbr.ru", timeout=6)
+        headers = connection.request.call_args.kwargs["headers"]
+        assert headers["User-Agent"] == APPLICATION_USER_AGENT
         assert client.read_source(found["items"][0]["id"])["freshness"] == "cached"
         assert network.call_count == 1
         with pytest.raises(NewsNotFound):
