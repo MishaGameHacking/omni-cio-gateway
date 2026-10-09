@@ -78,8 +78,12 @@ def test_tenant_cleanup_lock_is_stable_and_user_scoped() -> None:
 def test_one_package_release_reaches_framework_http_and_public_config() -> None:
     project = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
     expected = project["project"]["version"]
-    assert version("omnicio-gateway") == expected == __version__ == app.version
-    assert f"OMNICIO/{expected} (+https://omnicio.ru)" == APPLICATION_USER_AGENT
+    assert version("omnicio-gateway") == expected
+    assert __version__ == expected
+    assert app.version == expected
+    actual_user_agent = APPLICATION_USER_AGENT
+    expected_user_agent = f"OMNICIO/{expected} (+https://omnicio.ru)"
+    assert actual_user_agent == expected_user_agent
     auth, _, _ = auth_service(release_build="a" * 12)
     with (
         patch.object(app.state, "settings", auth.settings, create=True),
@@ -91,11 +95,13 @@ def test_one_package_release_reaches_framework_http_and_public_config() -> None:
     config = response.json()
     assert config["release"] == {"version": expected, "build": "a" * 12}
     assert config["mode"] == "public"
-    assert config["registration_enabled"] and config["login_enabled"]
+    assert config["registration_enabled"]
+    assert config["login_enabled"]
     assert config["auth_providers"] == ["email"]
     assert config["email_domains"] == ["gmail.com", "mail.ru", "xmail.ru"]
     assert "registration_max_users" not in config
-    assert "vkid" not in str(config) and "tid_enabled" not in config
+    assert "vkid" not in str(config)
+    assert "tid_enabled" not in config
 
 
 def test_missing_package_metadata_cannot_silently_report_an_old_release() -> None:
@@ -164,7 +170,8 @@ def test_registration_queues_encrypted_mail_and_hashes_password_before_ownership
     assert args["flow_digest"] == session_digest(result.flow_token)
     document = json.loads(decrypt_secret(args["delivery_ciphertext"], auth._crypto_key))
     assert document["email"] == "User@gmail.com"
-    assert len(document["code"]) == 8 and document["code"].isascii()
+    assert len(document["code"]) == 8
+    assert document["code"].isascii()
     assert args["code_digest"] == email_code_digest(
         str(result.challenge_id), document["code"], auth.settings.ip_key,
     )
@@ -173,7 +180,8 @@ def test_registration_queues_encrypted_mail_and_hashes_password_before_ownership
     db.complete_email_login.assert_not_called()
     db.consume_email_challenge.assert_not_called()
     transport.send_email.assert_not_called()
-    assert result.expires_in_seconds == 600 and result.resend_after_seconds == 60
+    assert result.expires_in_seconds == 600
+    assert result.resend_after_seconds == 60
 
 
 def test_unavailable_mail_blocks_new_registration_but_not_verified_login_or_legacy_session():
@@ -182,7 +190,8 @@ def test_unavailable_mail_blocks_new_registration_but_not_verified_login_or_lega
         "user_id": OWNER.id, "email": "owner@gmail.com", "password_hash": hash_password(PASSWORD),
         "password_version": 1,
     }
-    assert auth.settings.login_ready and not auth.registration_available
+    assert auth.settings.login_ready
+    assert not auth.registration_available
     login = auth.login_email("owner@gmail.com", PASSWORD, client_ip="203.0.113.10")
     assert login.public_id == "000000101"
     assert auth.refresh_session("legacy-session") == OWNER
@@ -275,7 +284,8 @@ def test_mail_worker_sends_only_claimed_message_then_records_safe_delivery_recei
     assert auth.deliver_next_email()
     destination, payload = transport.send_email.call_args.args
     assert destination == {"email": "owner@gmail.com"}
-    assert "01234567" in payload["body"] and PASSWORD not in payload["body"]
+    assert "01234567" in payload["body"]
+    assert PASSWORD not in payload["body"]
     db.complete_email_delivery.assert_called_once_with(
         identity, digest, delivery_status="accepted", delivery_code="email_accepted",
     )

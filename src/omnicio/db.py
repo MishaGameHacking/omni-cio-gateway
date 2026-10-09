@@ -379,8 +379,10 @@ class Database:
             cur.execute(
                 "INSERT INTO audit_events (user_id, event_type, metadata) "
                 "VALUES (%s, %s, '{\"method\":\"email\"}'::jsonb)",
-                (user.id, "account_created" if created else (
-                    "password_reset" if purpose == "reset" else "email_enrolled")),
+                (user.id, {
+                    "register": "account_created", "reset": "password_reset",
+                    "enroll": "email_enrolled",
+                }[purpose]),
             )
             return user, created
 

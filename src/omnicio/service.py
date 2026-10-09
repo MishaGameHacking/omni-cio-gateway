@@ -311,7 +311,7 @@ class AuthService:
         while not self._stop.is_set():
             try:
                 delivered = self.deliver_next_email()
-            except (DatabaseError, SecurityValueError, ValueError) as exc:
+            except (DatabaseError, ValueError) as exc:
                 # Safe class only; neither SQL parameters nor mail contents are logged.
                 logger.warning("auth_email_worker_failed error_type=%s", type(exc).__name__)
                 delivered = False

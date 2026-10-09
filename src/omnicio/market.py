@@ -376,32 +376,35 @@ class MarketService:
         )
 
     def _shared_source(self) -> MarketSourceStatus:
-        return self._connection(PUBLIC_MARKET_SCOPE)
+        return self._connection()
+
+    def _refresh_catalog(self, source: MarketSourceStatus) -> None:
+        with self._cache_lock:
+            if time.monotonic() < self._catalog_refresh_at:
+                return
+        try:
+            catalog = self.broker.market_catalog()
+        except (BrokerConnectionError, TBankUnavailable):
+            with self._cache_lock:
+                self._catalog_status = "unavailable"
+                self._catalog_refresh_at = time.monotonic() + _FUNDAMENTAL_REFRESH_SECONDS
+            return
+        if self.broker.market_status() != source:
+            raise BrokerConnectionError("market_source_changed")
+        with self._cache_lock:
+            if self._closed or self._source_generation != source:
+                raise BrokerConnectionError("market_source_changed")
+            self._catalog = catalog
+            self._catalog_by_uid = {item.uid: item for item in catalog}
+            self._catalog_observed_at = datetime.now(UTC)
+            self._catalog_status = "available" if catalog else "empty"
+            self._catalog_refresh_at = time.monotonic() + _CATALOG_REFRESH_SECONDS
 
     def _collect_quotes(self) -> _CollectorResult:
         source = self._shared_source()
         if not source.connected:
             return _CollectorResult("not_configured")
-        with self._cache_lock:
-            refresh_catalog = time.monotonic() >= self._catalog_refresh_at
-        if refresh_catalog:
-            try:
-                catalog = self.broker.market_catalog()
-            except (BrokerConnectionError, TBankUnavailable):
-                with self._cache_lock:
-                    self._catalog_status = "unavailable"
-                    self._catalog_refresh_at = time.monotonic() + _FUNDAMENTAL_REFRESH_SECONDS
-            else:
-                if self.broker.market_status() != source:
-                    raise BrokerConnectionError("market_source_changed")
-                with self._cache_lock:
-                    if self._closed or self._source_generation != source:
-                        raise BrokerConnectionError("market_source_changed")
-                    self._catalog = catalog
-                    self._catalog_by_uid = {item.uid: item for item in catalog}
-                    self._catalog_observed_at = datetime.now(UTC)
-                    self._catalog_status = "available" if catalog else "empty"
-                    self._catalog_refresh_at = time.monotonic() + _CATALOG_REFRESH_SECONDS
+        self._refresh_catalog(source)
         batch = self.broker.market_all_last_prices()
         observed = datetime.now(UTC)
         prices = {price.instrument_uid: price for price in batch.prices}
@@ -725,20 +728,8 @@ class MarketService:
             content_scope, interval = "headline", _REFERENCE_REFRESH_SECONDS
             source_status = str(cached["freshness"])
         else:
-            source = self._shared_source()
-            with self._cache_lock:
-                document = self._market_news.get(source_id)
-                state = self._collector_states["instrument_news"]
-            if document is None:
-                if not source.connected or state.status in {"not_started", "unavailable"}:
-                    raise NewsUnavailable("news_source_unavailable")
-                raise NewsNotFound("news_source_not_found")
-            if (document.published_at is None
-                    or not now - ISSUER_NEWS_MAX_AGE <= document.published_at <= now):
-                raise NewsNotFound("news_source_not_found")
-            payload = {**document.payload, "occurred_at": document.published_at.isoformat()}
+            payload, source_status, source = self._cached_instrument_news_item(source_id, now)
             content_scope, interval = "source_summary", _QUOTE_REFRESH_SECONDS * 3
-            source_status = str(_collector_status("instrument_news", state, now)["status"])
         try:
             observed = _parse_provider_time(str(payload["observed_at"]))
             published = _parse_provider_time(str(payload["occurred_at"]))
@@ -763,6 +754,24 @@ class MarketService:
             "freshness": freshness.status, "source_status": source_status,
             "cached": True, "web_search": False,
         }
+
+    def _cached_instrument_news_item(
+        self, source_id: str, now: datetime,
+    ) -> tuple[dict[str, Any], str, MarketSourceStatus]:
+        source = self._shared_source()
+        with self._cache_lock:
+            document = self._market_news.get(source_id)
+            state = self._collector_states["instrument_news"]
+        if document is None:
+            if not source.connected or state.status in {"not_started", "unavailable"}:
+                raise NewsUnavailable("news_source_unavailable")
+            raise NewsNotFound("news_source_not_found")
+        if (document.published_at is None
+                or not now - ISSUER_NEWS_MAX_AGE <= document.published_at <= now):
+            raise NewsNotFound("news_source_not_found")
+        payload = {**document.payload, "occurred_at": document.published_at.isoformat()}
+        source_status = str(_collector_status("instrument_news", state, now)["status"])
+        return payload, source_status, source
 
     def acquire_stream(self, user_id: UUID) -> str:
         with self._cache_lock:
@@ -839,10 +848,32 @@ class MarketService:
                     discarded.append(entry.future)
         return discarded
 
-    def _connection(self, user_id: UUID) -> MarketSourceStatus:
+    def _reset_shared_source(self, connection: MarketSourceStatus) -> None:
+        """Invalidate a source generation atomically under the caller's cache lock."""
+        self._catalog = ()
+        self._catalog_by_uid.clear()
+        self._catalog_observed_at = None
+        self._catalog_refresh_at = 0
+        self._catalog_status = "not_started" if connection.connected else "not_configured"
+        self._shared_prices.clear()
+        self._quote_observed_at = None
+        self._shared_quote_refresh_at = 0
+        self._fundamentals.clear()
+        self._risk_assessments.clear()
+        self._price_changes = ()
+        self._fundamental_cursor = 0
+        self._market_news.clear()
+        self._news_cursor = None
+        self._news_seen_cursors.clear()
+        self._news_scan_complete = False
+        self._news_truncated = False
+        for name in ("quotes", "fundamentals", "instrument_news"):
+            self._collector_states[name] = _CollectorState(self._catalog_status)
+        self._source_generation = connection
+
+    def _connection(self) -> MarketSourceStatus:
         # The shared source generation replaces all per-user broker connections.
         # A credential rotation invalidates source caches for every consumer.
-        user_id = PUBLIC_MARKET_SCOPE
         with self._cache_lock:
             if self._closed:
                 raise BrokerConnectionError("market_service_closed")
@@ -853,40 +884,17 @@ class MarketService:
         with self._cache_lock:
             if self._closed:
                 raise BrokerConnectionError("market_service_closed")
-            previous = self._connection_reads.get(user_id)
+            previous = self._connection_reads.get(PUBLIC_MARKET_SCOPE)
             if previous is not None and previous[0] > sequence:
                 if previous[1] != connection:
                     raise BrokerConnectionError("market_source_changed")
             else:
-                self._connection_reads[user_id] = (sequence, connection)
-                self._connection_reads.move_to_end(user_id)
+                self._connection_reads[PUBLIC_MARKET_SCOPE] = (sequence, connection)
+                self._connection_reads.move_to_end(PUBLIC_MARKET_SCOPE)
                 if self._source_generation != connection:
-                    self._catalog = ()
-                    self._catalog_by_uid.clear()
-                    self._catalog_observed_at = None
-                    self._catalog_refresh_at = 0
-                    self._catalog_status = (
-                        "not_started" if connection.connected else "not_configured"
-                    )
-                    self._shared_prices.clear()
-                    self._quote_observed_at = None
-                    self._shared_quote_refresh_at = 0
-                    self._fundamentals.clear()
-                    self._risk_assessments.clear()
-                    self._price_changes = ()
-                    self._fundamental_cursor = 0
-                    self._market_news.clear()
-                    self._news_cursor = None
-                    self._news_seen_cursors.clear()
-                    self._news_scan_complete = False
-                    self._news_truncated = False
-                    for name in ("quotes", "fundamentals", "instrument_news"):
-                        self._collector_states[name] = _CollectorState(
-                            "not_started" if connection.connected else "not_configured",
-                        )
-                    self._source_generation = connection
+                    self._reset_shared_source(connection)
                 if previous is not None and previous[1] != connection:
-                    discarded = self._discard_previous_connections(user_id, connection)
+                    discarded = self._discard_previous_connections(PUBLIC_MARKET_SCOPE, connection)
                 while len(self._connection_reads) > _ENRICHMENT_CACHE_CAPACITY:
                     self._connection_reads.popitem(last=False)
         for future in discarded:
@@ -1031,17 +1039,16 @@ class MarketService:
             return None, "unavailable"
         return metadata, result.status
 
-    def batch_quotes(self, user_id: UUID, instrument_uids: tuple[str, ...]) -> dict[str, object]:
-        user_id = PUBLIC_MARKET_SCOPE
+    def batch_quotes(self, _user_id: UUID, instrument_uids: tuple[str, ...]) -> dict[str, object]:
         if (not 1 <= len(instrument_uids) <= 50 or len(set(instrument_uids)) != len(instrument_uids)
                 or any(not uid or len(uid) > 128 or not all(char.isascii() and (
                     char.isalnum() or char in "_-"
                 ) for char in uid) for uid in instrument_uids)):
             raise ValueError("market_instrument_limit")
-        connection = self._connection(user_id)
-        entries = self._batch_quote_entries(user_id, connection, instrument_uids)
+        connection = self._connection()
+        entries = self._batch_quote_entries(PUBLIC_MARKET_SCOPE, connection, instrument_uids)
         now = datetime.now(UTC)
-        items = [self._batch_quote_item(user_id, connection, uid, entries[uid], now)
+        items = [self._batch_quote_item(PUBLIC_MARKET_SCOPE, connection, uid, entries[uid], now)
                  for uid in instrument_uids]
         if self.broker.market_status() != connection:
             raise BrokerConnectionError("market_source_changed")
@@ -1228,23 +1235,24 @@ class MarketService:
 
     def instrument_snapshot(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         period: str,
     ) -> InstrumentMarketSnapshot:
-        user_id = PUBLIC_MARKET_SCOPE
         config = _MARKET_PERIODS.get(period)
         if config is None and period != "all":
             raise ValueError("unsupported market period")
-        connection = self._connection(user_id)
+        connection = self._connection()
         requested_at = datetime.now(UTC)
-        key = (user_id, connection, "history", instrument_uid, period)
+        key = (PUBLIC_MARKET_SCOPE, connection, "history", instrument_uid, period)
         self._schedule_enrichment(
-            key, lambda: self._instrument_history(user_id, instrument_uid, period, requested_at),
+            key, lambda: self._instrument_history(
+                PUBLIC_MARKET_SCOPE, instrument_uid, period, requested_at,
+            ),
             cache_seconds=_HISTORY_CACHE_SECONDS,
         )
-        live = self._live_state(user_id, connection, instrument_uid)
+        live = self._live_state(PUBLIC_MARKET_SCOPE, connection, instrument_uid)
         history_state = self._enrichment_state(key)
         history = history_state.value
         if not isinstance(history, _InstrumentHistory):
@@ -1343,7 +1351,7 @@ class MarketService:
         return tuple(candles[key] for key in sorted(candles)), interval, history_from
 
     def _validate_history_connection(
-        self, user_id: UUID, connection: MarketSourceStatus,
+        self, _user_id: UUID, connection: MarketSourceStatus,
     ) -> None:
         """Revalidate long history between provider reads and before acceptance."""
         with self._cache_lock:
@@ -1354,12 +1362,11 @@ class MarketService:
 
     def instrument_live_state(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
     ) -> InstrumentLiveState:
-        user_id = PUBLIC_MARKET_SCOPE
-        connection = self._connection(user_id)
-        live = self._live_state(user_id, connection, instrument_uid)
+        connection = self._connection()
+        live = self._live_state(PUBLIC_MARKET_SCOPE, connection, instrument_uid)
         if self.broker.market_status() != connection:
             raise BrokerConnectionError("market_source_changed")
         return live

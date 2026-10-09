@@ -85,15 +85,23 @@ def payout_source_sql(alias: str) -> str:
     )
 
 
-def visible_event_sql(alias: str = "") -> str:
-    """Hide retired transaction alerts and superseded public-calendar aliases."""
+def readable_event_sql(alias: str = "") -> str:
+    """Personal transaction alerts are outside both current feeds and old links."""
     if alias not in {"", "e"}:
         raise ValueError("unsupported_workspace_event_alias")
     prefix = f"{alias}." if alias else ""
     return (
         f"{prefix}kind <> 'payment_operation' "
-        f"AND COALESCE({prefix}source ->> 'type', '') <> 'operation' "
-        f"AND NOT ({prefix}kind = 'payout_calendar' "
+        f"AND COALESCE({prefix}source ->> 'type', '') <> 'operation'"
+    )
+
+
+def visible_event_sql(alias: str = "") -> str:
+    """Feeds additionally hide superseded aliases of public corporate calendars."""
+    readable = readable_event_sql(alias)
+    prefix = f"{alias}." if alias else ""
+    return (
+        f"{readable} AND NOT ({prefix}kind = 'payout_calendar' "
         f"AND COALESCE({prefix}source ->> 'type', '') = 'payout' "
         f"AND COALESCE({prefix}source ->> 'superseded_by', '') ~ '^[0-9a-f]{{64}}$')"
     )

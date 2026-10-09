@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
 
+import inplace_upgrade
 import timeweb_auth_postgres as postgres
 import timeweb_recovery as recovery
 
@@ -721,6 +722,31 @@ class SingleDatabaseTests(ControllerFixture):
 
 
 class MigrationGateTests(unittest.TestCase):
+    def test_new_release_cannot_use_historical_plan_before_provider_or_ssh_access(self) -> None:
+        with self.assertRaisesRegex(
+            inplace_upgrade.UpgradeBlocked, "^application_version_mismatch$",
+        ):
+            postgres.load_plan()
+        client = Mock()
+        desired = postgres.DesiredDatabase(
+            "managed", "omnicio", "app", "18", "ru-3", "msk-1", Decimal(1110), 1, 2048, 20480
+        )
+        with (
+            patch.object(postgres, "load_policy", return_value=replace(
+                recovery.load_policy(), mode=recovery.SINGLE_DATABASE_MODE,
+            )),
+            patch.object(postgres, "EphemeralSsh") as ssh,
+            self.assertRaisesRegex(
+                inplace_upgrade.UpgradeBlocked, "^application_version_mismatch$",
+            ),
+        ):
+            postgres.reconcile(
+                client, desired=desired, server_name="server", server_comment="managed",
+                vpc_name="private", migration_sqls=["SELECT 1;"], release_sha=RELEASE_SHA,
+            )
+        self.assertEqual(client.mock_calls, [])
+        ssh.assert_not_called()
+
     def test_database_policy_guards_migrations_and_scheduled_checks_keep_runtime(self) -> None:
         desired = postgres.DesiredDatabase(
             "managed", "omnicio", "app", "18", "ru-3", "msk-1", Decimal(1110), 1, 2048, 20480
@@ -728,14 +754,22 @@ class MigrationGateTests(unittest.TestCase):
         cases = [(single, scheduled, rejected) for single in (False, True)
                  for scheduled, rejected in ((False, True), (True, False), (False, False))]
         root = Path(__file__).resolve().parents[2]
-        reviewed = [path.read_text(encoding="utf-8")
-                    for path in sorted((root / "migrations").glob("*.sql"))[-2:]]
+        historical = json.loads(
+            (root / "tests/fixtures/accepted_upgrade_1_3.json").read_text(encoding="utf-8"),
+        )
+        reviewed_plan = inplace_upgrade.validate_plan(historical["plan"])
+        reviewed = [(root / "migrations" / name).read_text(encoding="utf-8") for name in (
+            "0027_assistant_stream_memory.sql", "0028_notification_device_binding.sql",
+        )]
         for single, backup_only, rejected in cases:
             with (self.subTest(single=single, scheduled=backup_only, rejected=rejected),
                   ExitStack() as stack):
                 client = Mock()
                 mocks: dict[str, Any] = {}
                 values = {
+                    # Only this historical controller scenario admits the frozen
+                    # 1.3 plan; real load_plan must still block application 1.4.
+                    "load_plan": reviewed_plan,
                     "load_policy": replace(recovery.load_policy(), mode=(
                         recovery.SINGLE_DATABASE_MODE if single else "managed_backups")),
                     "find_managed_server": {"id": 9235089},

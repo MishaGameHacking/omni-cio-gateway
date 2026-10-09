@@ -983,8 +983,8 @@ def test_late_intent_cannot_schedule_reads_after_a_new_source_is_accepted() -> N
     accepted, release = Event(), Event()
     connection = service._connection
 
-    def pause_after_accepted(user_id: UUID) -> MarketSourceStatus:
-        captured = connection(user_id)
+    def pause_after_accepted() -> MarketSourceStatus:
+        captured = connection()
         if current_thread().name.startswith("old-intent"):
             assert captured == old
             accepted.set()

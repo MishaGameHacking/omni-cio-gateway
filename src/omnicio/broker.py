@@ -56,6 +56,7 @@ from .tbank import (
 # 0.31s keeps evidence reads below that ceiling with a small scheduling margin.
 INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS = 0.31
 STRATEGY_RATING_READ_LIMIT = 8
+_NOT_CONNECTED_MESSAGE = "T-Invest is not connected"
 
 
 class BrokerConnectionError(RuntimeError):
@@ -294,7 +295,7 @@ class BrokerService:
 
     def candidate_bond_ratings(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
     ) -> tuple[TBankRating, ...]:
         credential, environment = self._market_credentials()
@@ -436,7 +437,7 @@ class BrokerService:
 
     def market_exchange_candles(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         from_at: datetime,
@@ -456,7 +457,7 @@ class BrokerService:
 
     def market_trading_status(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
     ) -> TBankTradingStatus:
         credential, environment = self._market_credentials()
@@ -469,7 +470,7 @@ class BrokerService:
 
     def candidate_bond_coupons(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         from_at: datetime,
@@ -491,7 +492,7 @@ class BrokerService:
 
     def candidate_accrued_interests(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         from_at: datetime,
@@ -510,7 +511,7 @@ class BrokerService:
 
     def candidate_dividends(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         from_at: datetime,
@@ -527,7 +528,7 @@ class BrokerService:
         )
         return cast(tuple[TBankDividend, ...], result)
 
-    def candidate_fund_profile(self, user_id: UUID, asset_uid: str) -> TBankFundProfile:
+    def candidate_fund_profile(self, _user_id: UUID, asset_uid: str) -> TBankFundProfile:
         credential, environment = self._market_credentials()
         result = self._paced_evidence_read(
             self.market_tbank.get_fund_profile, credential, environment, asset_uid
@@ -647,7 +648,7 @@ class BrokerService:
 
     def candidate_fundamentals(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         asset_uids: tuple[str, ...],
     ) -> tuple[TBankAssetFundamental, ...]:
         credential, environment = self._market_credentials()
@@ -725,6 +726,22 @@ class BrokerService:
             sources=bundle.sources,
         )
 
+    def _cached_portfolio_metadata(
+        self, positions: TBankPositions, observed_at: datetime,
+    ) -> tuple[tuple[TBankInstrumentMetadata, ...], datetime, str]:
+        with self._metadata_lock:
+            entries = tuple(
+                cached for position in positions.holdings
+                if (cached := self._metadata_cache.get(position.instrument_uid)) is not None
+                and time.monotonic() < cached[0]
+            )
+        metadata = tuple(entry[1] for entry in entries)
+        return (
+            metadata,
+            min((entry[2] for entry in entries), default=observed_at),
+            "cached" if metadata else "not_requested",
+        )
+
     def observation_bundle(
         self,
         user_id: UUID,
@@ -742,17 +759,9 @@ class BrokerService:
         if self._market_credential:
             market_credential, market_environment = self._market_credentials()
             if quick:
-                with self._metadata_lock:
-                    entries = tuple(
-                        cached
-                        for position in snapshot.positions.holdings
-                        if (cached := self._metadata_cache.get(position.instrument_uid)) is not None
-                        and time.monotonic() < cached[0]
-                    )
-                metadata = tuple(entry[1] for entry in entries)
-                if entries:
-                    catalog_observed_at = min(entry[2] for entry in entries)
-                catalog_status = "cached" if metadata else "not_requested"
+                metadata, catalog_observed_at, catalog_status = self._cached_portfolio_metadata(
+                    snapshot.positions, catalog_observed_at,
+                )
             else:
                 metadata, catalog_methods, catalog_status = self._read_catalog(
                     market_credential,
@@ -841,7 +850,7 @@ class BrokerService:
     ) -> tuple[BrokerObservationBundle, dict[str, tuple[TBankRating, ...]]]:
         record = self.database.tbank_connection(user_id)
         if record is None:
-            raise BrokerNotConnected("T-Invest is not connected")
+            raise BrokerNotConnected(_NOT_CONNECTED_MESSAGE)
         bundle = self.observation_bundle(user_id)
         self._require_current_connection(record)
         ratings: dict[str, tuple[TBankRating, ...]] = {}
@@ -1065,7 +1074,7 @@ class BrokerService:
     ) -> BrokerEvidenceSnapshot:
         record = self.database.tbank_connection(user_id)
         if record is None:
-            raise BrokerNotConnected("T-Invest is not connected")
+            raise BrokerNotConnected(_NOT_CONNECTED_MESSAGE)
         credential, environment = self._market_credentials()
         if bundle.account_id != record.account_id or bundle.environment != environment:
             raise BrokerConnectionError("evidence_account_changed")
@@ -1224,7 +1233,7 @@ class BrokerService:
     ) -> tuple[TBankConnectionRecord, str, TBankAccount]:
         record = self.database.tbank_connection(user_id)
         if record is None:
-            raise BrokerNotConnected("T-Invest is not connected")
+            raise BrokerNotConnected(_NOT_CONNECTED_MESSAGE)
         if record.environment != "prod":
             raise BrokerAccountNotAccessible("only a real read-only broker account is supported")
         credential = decrypt_secret(record.encrypted_credential, self.credential_key)

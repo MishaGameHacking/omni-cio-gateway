@@ -623,7 +623,8 @@ def test_native_unknown_valuation_preserves_real_quantity_sql_nulls_and_tenant_i
 
     latest = store.portfolio_visualization(ident)["latest"]
     assert latest is not None
-    assert latest["nav_rub"] is None and latest["rub_cash_unblocked"] is None
+    assert latest["nav_rub"] is None
+    assert latest["rub_cash_unblocked"] is None
     assert latest["positions"][0]["quantity"] == Decimal("20")
     assert latest["positions"][0]["value_rub"] is None
     assert store.portfolio_visualization(other) == {
@@ -829,7 +830,7 @@ def test_native_refresh_never_resumes_legacy_broker_history(
             (ident, str(ident), captured - timedelta(days=1), captured),
         )
     broker = _monitoring_broker(ident)
-    broker.observation_bundle.return_value = replace(
+    broker.observation_bundle.side_effect = lambda *_args, **_kwargs: replace(
         bundle(), account_id=str(ident), refreshed_at=captured
     )
     observer = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS)
@@ -838,7 +839,7 @@ def test_native_refresh_never_resumes_legacy_broker_history(
         assert locked
         job = store.claim_refresh_job(ident, LEGAL_VERSIONS)
         assert job is not None
-        outcome = observer.run_job(job)
+        outcome = observer.run_job(job, now=datetime.now(UTC))
     assert outcome.snapshot_saved
     broker.user_info.assert_not_called()
     broker.history_page.assert_not_called()

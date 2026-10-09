@@ -627,7 +627,7 @@ def _registration_legal(body: EmailRegistrationBody, request: Request) -> dict[s
     return body.legal_versions
 
 
-@app.post("/api/auth/email/register", status_code=202)
+@app.post("/api/auth/email/register", status_code=202, responses=_API_FAILURES)
 def register_email(
     body: EmailRegistrationBody, request: Request, response: Response,
 ) -> dict[str, object]:
@@ -640,7 +640,7 @@ def register_email(
     return _challenge_response(result, response)
 
 
-@app.post("/api/auth/email/enroll", status_code=202)
+@app.post("/api/auth/email/enroll", status_code=202, responses=_API_FAILURES)
 def enroll_email(
     body: EmailRegistrationBody, request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -656,7 +656,7 @@ def enroll_email(
     return _challenge_response(result, response)
 
 
-@app.post("/api/auth/email/verify")
+@app.post("/api/auth/email/verify", responses=_API_FAILURES)
 def verify_email(
     body: EmailCodeBody, request: Request, response: Response,
     flow_token: str | None = Cookie(default=None, alias=EMAIL_FLOW_COOKIE),
@@ -672,7 +672,7 @@ def verify_email(
     return _login_response(result, response)
 
 
-@app.post("/api/auth/email/resend", status_code=202)
+@app.post("/api/auth/email/resend", status_code=202, responses=_API_FAILURES)
 def resend_email(
     body: EmailChallengeBody, request: Request, response: Response,
     flow_token: str | None = Cookie(default=None, alias=EMAIL_FLOW_COOKIE),
@@ -684,7 +684,7 @@ def resend_email(
     return _challenge_response(result, response)
 
 
-@app.post("/api/auth/email/login")
+@app.post("/api/auth/email/login", responses=_API_FAILURES)
 def login_email(
     body: EmailLoginBody, request: Request, response: Response,
     session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
@@ -698,7 +698,7 @@ def login_email(
     return _login_response(result, response)
 
 
-@app.post("/api/auth/email/password-reset/request", status_code=202)
+@app.post("/api/auth/email/password-reset/request", status_code=202, responses=_API_FAILURES)
 def request_password_reset(
     body: EmailResetRequestBody, request: Request, response: Response,
 ) -> dict[str, object]:
@@ -709,7 +709,7 @@ def request_password_reset(
     return _challenge_response(result, response)
 
 
-@app.post("/api/auth/email/password-reset/confirm")
+@app.post("/api/auth/email/password-reset/confirm", responses=_API_FAILURES)
 def confirm_password_reset(
     body: EmailPasswordResetBody, request: Request, response: Response,
     flow_token: str | None = Cookie(default=None, alias=EMAIL_FLOW_COOKIE),
@@ -2111,7 +2111,7 @@ def public_news_article(source_id: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="news_source_unavailable") from exc
 
 
-@app.get("/api/news", responses={503: _API_FAILURES[503]})
+@app.get("/api/news", responses={422: _API_FAILURES[422], 503: _API_FAILURES[503]})
 def instrument_news(
     request: Request, instrument_uid: str | None = Query(default=None, max_length=128),
     cursor: str | None = Query(default=None, max_length=64),
@@ -2200,7 +2200,6 @@ async def _usd_rub_market_events(
     request: Request,
     market: MarketService,
     user_id: UUID,
-    session_token: str | None,
 ) -> AsyncIterator[str]:
     retry_delay = 5
     yield "retry: 5000\n\n"
@@ -2271,7 +2270,7 @@ async def usd_rub_market_stream(request: Request) -> StreamingResponse:
     market = market_service(request)
     return _market_stream_response(
         market, uuid5(PUBLIC_MARKET_SCOPE, client_ip(request)),
-        _usd_rub_market_events(request, market, PUBLIC_MARKET_SCOPE, None),
+        _usd_rub_market_events(request, market, PUBLIC_MARKET_SCOPE),
     )
 
 

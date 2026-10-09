@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from .db import Database, live_execution_lock_key
 from .freshness import ISSUER_NEWS_MAX_AGE, PORTFOLIO_MAX_AGE
 from .goal_planning import goal_forecast, goal_plan_fields, normalize_goal_plan
-from .payouts import PAYOUT_READ_CTES, payout_source_sql, visible_event_sql
+from .payouts import PAYOUT_READ_CTES, payout_source_sql, readable_event_sql, visible_event_sql
 from .portfolio_store import SettingsVersionConflict
 from .workspace import (
     CATEGORIES,
@@ -45,6 +45,7 @@ _MAX_HISTORY_POINTS = 366
 _HISTORY_PERIOD_DAYS = {"1d": 1, "1w": 7, "1m": 31, "3m": 93, "1y": 365}
 _EVENT_ID_PATTERN = r"[0-9a-f]{64}"
 _VISIBLE_EVENTS_SQL = visible_event_sql()
+_READABLE_EVENTS_SQL = readable_event_sql()
 _ACTIVITY = {
     "account_created": "Аккаунт создан",
     "login_succeeded": "Выполнен вход в аккаунт",
@@ -364,8 +365,6 @@ class WorkspaceStore:
             basis = self._basis(cur, user_id)
             return {
                 "items": self._goals_with_progress(
-                    cur,
-                    user_id,
                     self._goal_rows(cur, user_id),
                     basis,
                     now,
@@ -374,8 +373,6 @@ class WorkspaceStore:
 
     def _goals_with_progress(
         self,
-        cur: Any,
-        user_id: UUID,
         rows: Sequence[Mapping[str, Any]],
         basis: _Basis,
         now: datetime,
@@ -392,7 +389,7 @@ class WorkspaceStore:
             if row is None:
                 raise WorkspaceNotFound("workspace_goal_not_found")
             basis = self._basis(cur, user_id)
-            goal = self._goals_with_progress(cur, user_id, [row], basis, now)[0]
+            goal = self._goals_with_progress([row], basis, now)[0]
             cur.execute(
                 "SELECT version, document, updated_at FROM goal_plans "
                 "WHERE user_id = %s AND goal_id = %s",
@@ -489,7 +486,7 @@ class WorkspaceStore:
             )
             row = dict(cur.fetchone())
             basis = self._basis(cur, user_id)
-            return self._goals_with_progress(cur, user_id, [row], basis, now)[0]
+            return self._goals_with_progress([row], basis, now)[0]
 
     def update_goal(
         self,
@@ -526,7 +523,7 @@ class WorkspaceStore:
             )
             row = dict(cur.fetchone())
             basis = self._basis(cur, user_id)
-            return self._goals_with_progress(cur, user_id, [row], basis, now)[0]
+            return self._goals_with_progress([row], basis, now)[0]
 
     def delete_goal(self, user_id: UUID, goal_id: UUID, *, expected_version: int) -> bool:
         with self._transaction(user_id) as cur:
@@ -1162,7 +1159,7 @@ class WorkspaceStore:
         with self._transaction(user_id) as cur:
             basis = self._basis(cur, user_id)
             goals = self._goals_with_progress(
-                cur, user_id, self._goal_rows(cur, user_id), basis, now,
+                self._goal_rows(cur, user_id), basis, now,
             )
             self._sync_events(cur, user_id, basis, goals, now)
             return self._events_payload(
@@ -1206,7 +1203,7 @@ class WorkspaceStore:
         with self._transaction(user_id) as cur:
             basis = self._basis(cur, user_id)
             goals = self._goals_with_progress(
-                cur, user_id, self._goal_rows(cur, user_id), basis, now,
+                self._goal_rows(cur, user_id), basis, now,
             )
             self._sync_events(cur, user_id, basis, goals, now)
 
@@ -1217,7 +1214,7 @@ class WorkspaceStore:
             cur.execute(
                 "SELECT id, category, kind, severity, title, detail, occurred_at, read_at, "
                 "target, source, revision FROM workspace_events WHERE user_id = %s AND id = %s "
-                f"AND {_VISIBLE_EVENTS_SQL}",
+                f"AND {_READABLE_EVENTS_SQL}",
                 (user_id, ident),
             )
             row = cur.fetchone()
@@ -1280,7 +1277,7 @@ class WorkspaceStore:
             cur.execute(
                 "SELECT count(*) AS total FROM workspace_events "
                 "WHERE user_id = %s AND id = ANY (%s) "
-                f"AND {_VISIBLE_EVENTS_SQL}",
+                f"AND {_READABLE_EVENTS_SQL}",
                 (user_id, list(ids)),
             )
             if cur.fetchone()["total"] != len(ids):
@@ -1288,7 +1285,7 @@ class WorkspaceStore:
             cur.execute(
                 "UPDATE workspace_events SET read_at = CASE WHEN %s THEN COALESCE(read_at, %s) "
                 "ELSE NULL END WHERE user_id = %s AND id = ANY (%s) "
-                f"AND {_VISIBLE_EVENTS_SQL}",
+                f"AND {_READABLE_EVENTS_SQL}",
                 (read, now, user_id, list(ids)),
             )
             return self._events_payload(
@@ -1316,7 +1313,7 @@ class WorkspaceStore:
             )
             preferences = self._preferences(cur, user_id)
             goal_rows = self._goal_rows(cur, user_id)
-            goals = self._goals_with_progress(cur, user_id, goal_rows, basis, now)
+            goals = self._goals_with_progress(goal_rows, basis, now)
             self._sync_events(cur, user_id, basis, goals, now)
             return {
                 "generated_at": now.isoformat(),

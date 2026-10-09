@@ -322,7 +322,8 @@ def test_no_account_or_broker_authority_exists_before_email_proof(workspace_data
     with database.pool.connection() as conn:
         before = conn.execute("SELECT count(*) AS n FROM users").fetchone()["n"]
     user, created = consume(database, proof)
-    assert created and user.role == "user"
+    assert created
+    assert user.role == "user"
     assert database.email_identity(proof.email)["user_id"] == user.id
     assert database.has_legal_versions(user.id, VERSIONS)
     with database.pool.connection() as conn:
@@ -370,7 +371,8 @@ def test_resend_invalidates_previous_code_without_extending_expiry_or_resetting_
         conn.execute("UPDATE email_auth_challenges SET resend_at = now() WHERE id = %s",
                      (proof.id,))
     ttl = database.resend_email_challenge(proof.id, proof.flow, b"n" * 32, b"ciphertext")
-    assert ttl is not None and 0 < ttl <= 600
+    assert ttl is not None
+    assert 0 < ttl <= 600
     row = challenge_row(database, proof)
     assert row["expires_at"] == original["expires_at"]
     assert row["attempts_remaining"] == 4
@@ -398,7 +400,8 @@ def test_duplicate_registration_never_merges_into_existing_account(workspace_dat
     owner, _, current = login(database, subject=subject)
     proof = start(database, email=subject + "@gmail.com")
     row = challenge_row(database, proof)
-    assert row["suppressed"] and row["delivery_ciphertext"] is None
+    assert row["suppressed"]
+    assert row["delivery_ciphertext"] is None
     assert consume(database, proof) is None
     assert database.email_identity(proof.email)["user_id"] == owner.id
     assert database.refresh_session_digest(current, session_ttl_seconds=3600) == owner
@@ -440,7 +443,8 @@ def test_reset_changes_password_version_revokes_all_sessions_and_blocks_old_logi
     proof = start(database, email=email, purpose="reset")
     replacement = hash_password("A replacement synthetic phrase 42")
     user, created = consume(database, proof, password_hash=replacement)
-    assert user == owner and not created
+    assert user == owner
+    assert not created
     current = database.email_identity(email)
     assert current["password_hash"] == replacement
     assert current["password_version"] == previous["password_version"] + 1

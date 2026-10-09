@@ -917,8 +917,7 @@ def test_native_quick_refresh_restores_shared_metadata_without_reusing_broker_pr
         analysis=analyze_portfolio(portfolio, base.positions, metadata),
         sources=tuple(replace(source, retrieved_at=original) for source in base.sources),
     )
-    info = TBankUserInfo(False, False, ("russian_shares",), "Investor", "CONSERVATIVE")
-    store.save_snapshot(USER_ID, job_run_id=job.id, bundle=observed, user_info=info)
+    store.save_snapshot(USER_ID, job_run_id=job.id, bundle=observed)
     store.finish_job(USER_ID, job.id, status="succeeded", details={})
     store.request_refresh(USER_ID, LEGAL_VERSIONS, scope="quick")
     quick_job = store.claim_refresh_job(USER_ID, LEGAL_VERSIONS)

@@ -2061,11 +2061,12 @@ def test_account_verification_rejects_every_non_readonly_scope(access):
     payload = {
         "accounts": [{"id": "account-1", "status": "ACCOUNT_STATUS_OPEN", "accessLevel": access}]
     }
+    client = TBankInvestClient()
     with (
         patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(payload)),
         pytest.raises(TBankTokenRejected),
     ):
-        TBankInvestClient().get_accounts("synthetic-private-credential", "prod")
+        client.get_accounts("synthetic-private-credential", "prod")
 
 
 def test_account_validation_checks_nonselected_accounts_again_on_every_refresh():
@@ -2186,10 +2187,13 @@ def test_unknown_market_price_preserves_real_holding_without_zero_nav_or_return(
     portfolio = value_current_positions(positions, (), ())
     analysis = analyze_portfolio(portfolio, positions, ())
     assert portfolio.positions[0].quantity == "7"
-    assert portfolio.total is None and analysis.nav_rub is None
-    assert analysis.rub_cash_unblocked is None and analysis.rub_cash_blocked is None
+    assert portfolio.total is None
+    assert analysis.nav_rub is None
+    assert analysis.rub_cash_unblocked is None
+    assert analysis.rub_cash_blocked is None
     assert analysis.rub_cash_total == "100"
-    assert portfolio.expected_yield_percent is None and portfolio.daily_yield is None
+    assert portfolio.expected_yield_percent is None
+    assert portfolio.daily_yield is None
     assert portfolio.positions[0].quantity_lots is None
 
 

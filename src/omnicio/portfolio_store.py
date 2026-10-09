@@ -41,7 +41,6 @@ from .tbank import (
     TBankInstrumentMetadata,
     TBankMoney,
     TBankPortfolioPosition,
-    TBankUserInfo,
 )
 
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
@@ -1158,7 +1157,6 @@ class PortfolioStore:
     def _save_snapshot_catalog(
         self,
         cur: Any,
-        user_id: UUID,
         bundle: BrokerObservationBundle,
         catalog_retrieved_at: datetime,
     ) -> None:
@@ -1376,7 +1374,6 @@ class PortfolioStore:
         job_run_id: UUID,
         bundle: BrokerObservationBundle,
         account: TBankAccount | None = None,
-        user_info: TBankUserInfo | None = None,
     ) -> UUID:
         if account is not None and account.id != bundle.account_id:
             raise ObservationCancelled("observation_account_mismatch")
@@ -1412,7 +1409,6 @@ class PortfolioStore:
             )
             self._save_snapshot_catalog(
                 cur,
-                user_id,
                 bundle,
                 catalog_retrieved_at,
             )

@@ -707,7 +707,7 @@ function portfolioExperienceContracts(ui, i18n) {
   const state = {mode: "account", guest: false, data: {connection: clone(serverContracts.broker_workspace.connection)}, errors: {}, loading: new Set(), portfolioPeriod: "1y"};
   const context = sourceContext({state, U: ui, T: i18n.t, H: i18n.html, esc: ui.escape, money: ui.money,
     percent: ui.percent, number: ui.number, empty: ui.empty, icon: ui.icon, freshness: ui.freshness, dataError: () => "read failed"});
-  const source = app.slice(app.indexOf("  const signedMoney ="), app.indexOf("  const renderPortfolio ="));
+  const source = app.slice(app.indexOf("  const portfolioEntryHTML ="), app.indexOf("  const renderPortfolio ="));
   vm.runInContext(source + "\nglobalThis.summary=portfolioSummaryHTML;", context);
   assert.deepEqual(Array.from(ui.mobileNavigation, item => item[0]), ["portfolio", "market", "strategies", "profile"], "One navigation registry exposes Portfolio directly on mobile");
   assert.equal(ui.parseRoute("").view, "portfolio", "An empty account route starts with actual holdings");
@@ -6511,7 +6511,9 @@ async function exercisePortfolioExperience({send, configureViewport, round, base
     assert.equal(await evaluate('Boolean(document.querySelector("#ledger-screen"))'), false);
     await click(`${primary} [data-route="portfolio"]`);
     await click('#view-portfolio .portfolio-actions [data-route="analytics"]');
-    await wait('document.querySelector("#view-analytics:not([hidden]) .chart-svg")?.getClientRects().length', "Analysis renders actual stored value observations");
+    await wait('document.querySelector("#view-analytics:not([hidden]) .metric-grid .main-value")?.textContent.replace(/\\s/g, "") === "1000,08₽"', "The analytics overview shows the same current portfolio valuation");
+    await click('#view-analytics .screen-menu [data-screen="history"]');
+    await wait('document.querySelector("#view-analytics [data-analytics-history] .chart-svg")?.getClientRects().length', "The explicit history page renders actual stored value observations");
     assert.equal(await evaluate('document.querySelector("#view-analytics").textContent.includes("Modified Dietz")'), false, "Without transaction history the UI does not invent investment return");
     await checkLayout(`analytics-experience-${round}-${width}`, {minCharts:1});
     if (width === 320) await screenshot(`analytics-experience-${round}-${width}.png`);

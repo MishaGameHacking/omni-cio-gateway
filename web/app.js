@@ -1768,7 +1768,7 @@
     if (overview.history_coverage?.period !== period) return [];
     return overview.history || [];
   };
-  const workspaceForPeriod = period => !state.guest && state.data.workspace?.overview?.history_coverage?.period === period ? state.data.workspace : undefined;
+
   const navCoverageHTML = (overview, period) => {
     const coverage = overview.history_coverage;
     if (!coverage || coverage.period !== period) return ("<p class=\"data-footnote\">" + H("Покрытие выбранного периода ещё не получено.") + "</p>");
@@ -1789,10 +1789,7 @@
     $('#view-home').innerHTML = `<h1 class="sr-only">${H('Главная — обзор портфеля')}</h1><div class="dashboard-top"><section class="card summary-card"><p class="card-label">${H('Общая стоимость')}</p><p class="main-value">${esc(money(overview.nav_rub))}</p>${freshness(T('portfolio.snapshot'),overview.observed_at,overview.freshness?.status || overview.status)}<p class="data-footnote">${H('portfolio.current_estimate')}</p>${chart(history,{label:T('Стоимость портфеля'),compact:true})}${periods('home',state.homePeriod)}${navCoverageHTML(overview,state.homePeriod)}</section><section class="card allocation-card">${cardHeader(T('Структура портфеля'))}${U.allocation(overview.allocations,overview.nav_rub)}</section><div class="metric-stack"><section class="card metric-card"><p class="card-label">${H('Свободные средства')}</p><p class="main-value">${esc(money(overview.free_cash_rub))}</p><p class="metric-note">${H('portfolio.cash_scope')}</p></section><section class="card metric-card secondary-metric"><p class="card-label">${H('market.instruments_count')}</p><p class="main-value">${esc(Array.isArray(positions) ? format(positions.length,0) : '—')}</p><p class="metric-note">${H('portfolio.analysis_scope')}</p></section></div><section class="card strategy-card">${homeStrategy()}</section></div><div class="dashboard-bottom"><section class="card">${cardHeader(T('Мои активы'),'portfolio')}${filtersHTML()}${assetsTable()}<p class="data-footnote">${H('portfolio.token_scope')}</p></section><section class="card">${cardHeader(T('Новости и события'),'events','')}${eventFilters()}${eventsHTML()}</section><section class="card goals-overview">${homeGoals()}</section></div>${!state.data.workspace && state.loading.has('workspace') ? U.loading(T('Получаем состояние вашего кабинета…')) : ''}`;
   };
   const eventFilters = () => `<div class="filters" aria-label="${H("Фильтр событий")}">${[["important", T("Важное")], ["assets", T("Мои активы")], ["market", T("Рынок")], ["all", T("Все")]].map(([key, title]) => renderEventFiltersFilterButton(key, title)).join("")}</div>`;
-  const signedMoney = (value, currency = "RUB") => {
-    const rendered = money(value, C.display.moneyFractionDigits, String(currency).toUpperCase());
-    return number(value) > 0 && !rendered.includes("•") ? "+" + rendered : rendered;
-  };
+
   const financialTone = value => {
     const numeric = number(value);
     if (numeric === null || numeric === 0) return "muted";
@@ -1854,7 +1851,10 @@
   };
   const renderMarket = () => {
     const reference=state.data.marketReference;
-    $('#view-market').innerHTML=`${heading(T('Рынок'),T('market.public_access'),button(T('Найти актив'),'search-open',{small:true}))}<section class="card" data-market-status>${publicMarketStatusHTML()}</section>${indicatorCards(reference)}<section class="card section-gap" data-market-catalog>${cardHeader(T('market.catalog_title'))}${publicMarketTableHTML()}</section><div class="two-column section-gap"><section class="card" data-market-reference>${cardHeader(T('Курсы Банка России'))}<div class="button-group">${select('cbr_currency',T('Валюта'),[['USD',T('Доллар США')],['EUR',T('Евро')],['CNY',T('Китайский юань')]],state.cbrCurrency)}${select('cbr_period',T('Период'),[['1m',T('Месяц')],['3m',T('Три месяца')],['1y',T('Год')]],state.cbrPeriod)}</div>${chart(reference?.history?.points,{timeKey:'effective_date',valueKey:'value',label:renderMarketFragment(),personal:false})}${freshness(T('Банк России · официальный курс'),reference?.history?.fetched_at || reference?.indicators?.fetched_at)}<p class="data-footnote">${H('Официальный справочный курс отличается от биржевой котировки.')}</p></section><section class="card" data-market-watchlist>${cardHeader(T('Избранное'))}${watchlist().length ? renderMarketSearchResults() : empty(T('Сохраните интересные активы'),T('market.watchlist_help'),state.guest ? 'login' : '',state.guest ? T('Войти') : '','star')}</section></div>${!state.guest ? '<section class="card section-gap" data-market-positions>'+cardHeader(T('Активы вашего счёта'))+filtersHTML()+assetsTable(false)+'</section>' : ''}${dataError('marketReference')}<section class="card section-gap" data-market-news>${cardHeader(T('Новости и события'))}${newsHTML()}</section>`;
+    const guestAction = state.guest ? 'login' : '';
+    const guestLabel = state.guest ? T('Войти') : '';
+    const savedInstruments = watchlist().length ? renderMarketSearchResults() : empty(T('Сохраните интересные активы'),T('market.watchlist_help'),guestAction,guestLabel,'star');
+    $('#view-market').innerHTML=`${heading(T('Рынок'),T('market.public_access'),button(T('Найти актив'),'search-open',{small:true}))}<section class="card" data-market-status>${publicMarketStatusHTML()}</section>${indicatorCards(reference)}<section class="card section-gap" data-market-catalog>${cardHeader(T('market.catalog_title'))}${publicMarketTableHTML()}</section><div class="two-column section-gap"><section class="card" data-market-reference>${cardHeader(T('Курсы Банка России'))}<div class="button-group">${select('cbr_currency',T('Валюта'),[['USD',T('Доллар США')],['EUR',T('Евро')],['CNY',T('Китайский юань')]],state.cbrCurrency)}${select('cbr_period',T('Период'),[['1m',T('Месяц')],['3m',T('Три месяца')],['1y',T('Год')]],state.cbrPeriod)}</div>${chart(reference?.history?.points,{timeKey:'effective_date',valueKey:'value',label:renderMarketFragment(),personal:false})}${freshness(T('Банк России · официальный курс'),reference?.history?.fetched_at || reference?.indicators?.fetched_at)}<p class="data-footnote">${H('Официальный справочный курс отличается от биржевой котировки.')}</p></section><section class="card" data-market-watchlist>${cardHeader(T('Избранное'))}${savedInstruments}</section></div>${!state.guest ? '<section class="card section-gap" data-market-positions>'+cardHeader(T('Активы вашего счёта'))+filtersHTML()+assetsTable(false)+'</section>' : ''}${dataError('marketReference')}<section class="card section-gap" data-market-news>${cardHeader(T('Новости и события'))}${newsHTML()}</section>`;
     applyScreenLayout('market');
   };
   const runSearch = async query => {
@@ -5667,50 +5667,83 @@
   };
   let authResendTimer = null;
   const authChallengeActive = () => Boolean(state.authChallenge?.challenge_id);
-  const renderAuthConfig = () => {
-    const form = $("#auth-form");
+  const authLegalFields = ['accept_privacy', 'accept_personal_data', 'accept_terms', 'confirm_age_18'];
+  const authScreenMessages = {
+    login: {title: 'auth.email.login_title', explanation: 'auth.email.explanation', submit: 'Войти', endpoint: 'login'},
+    register: {title: 'auth.email.register_title', explanation: 'auth.email.explanation', submit: 'auth.email.register', endpoint: 'register'},
+    enroll: {title: 'auth.email.register_title', explanation: 'auth.email.enroll_help', submit: 'auth.email.register', endpoint: 'enroll'},
+    verify: {title: 'auth.email.verify_title', explanation: 'auth.email.code_sent', submit: 'auth.email.verify', endpoint: 'verify'},
+    resetRequest: {title: 'auth.email.reset_title', explanation: 'auth.email.reset_help', submit: 'auth.email.send_code', endpoint: 'password-reset/request'},
+    resetConfirm: {title: 'auth.email.verify_title', explanation: 'auth.email.code_sent', submit: 'auth.email.save_password', endpoint: 'password-reset/confirm'}
+  };
+  const authScreen = () => {
     const challenge = authChallengeActive();
-    const reset = state.authMode === "reset";
-    const register = state.authMode === "register" || state.authLink;
+    const reset = state.authMode === 'reset';
+    const register = state.authMode === 'register' || state.authLink;
+    let phase = 'login';
+    if (challenge) phase = reset ? 'resetConfirm' : 'verify';
+    else if (reset) phase = 'resetRequest';
+    else if (state.authLink) phase = 'enroll';
+    else if (register) phase = 'register';
+    return {challenge, reset, register, phase};
+  };
+  const renderAuthFields = ({challenge, reset, register}) => {
+    const form = $('#auth-form');
     const newPassword = register || reset && challenge;
-    $("#auth-email-row").hidden = challenge;
+    $('#auth-email-row').hidden = challenge;
     form.elements.email.required = !challenge;
     form.elements.email.disabled = challenge;
-    $("#auth-code-row").hidden = !challenge;
+    $('#auth-code-row').hidden = !challenge;
     form.elements.code.required = challenge;
     form.elements.code.disabled = !challenge;
-    $("#auth-password-row").hidden = challenge ? !reset : reset;
-    form.elements.password.disabled = $("#auth-password-row").hidden;
+    $('#auth-password-row').hidden = challenge ? !reset : reset;
+    form.elements.password.disabled = $('#auth-password-row').hidden;
     form.elements.password.required = !form.elements.password.disabled;
-    form.elements.password.autocomplete = newPassword ? "new-password" : "current-password";
+    form.elements.password.autocomplete = newPassword ? 'new-password' : 'current-password';
     form.elements.password.minLength = newPassword ? state.config?.password_min_length || 15 : 1;
     form.elements.password.maxLength = state.config?.password_max_length || 128;
-    $("#auth-consents").hidden = !register || challenge;
-    for (const name of ["accept_privacy", "accept_personal_data", "accept_terms", "confirm_age_18"]) {
+    $('#auth-consents').hidden = !register || challenge;
+    for (const name of authLegalFields) {
       form.elements[name].required = register && !challenge;
       form.elements[name].disabled = !register || challenge;
     }
-    $("#auth-tabs").hidden = challenge || reset || state.authLink;
-    const title = challenge ? "auth.email.verify_title" : reset ? "auth.email.reset_title" : register ? "auth.email.register_title" : "auth.email.login_title";
-    $("#auth-title").textContent = T(title);
-    $("#auth-explanation").textContent = T(challenge ? "auth.email.code_sent" : state.authLink ? "auth.email.enroll_help" : reset ? "auth.email.reset_help" : "auth.email.explanation");
-    $("#email-auth-submit").textContent = T(challenge ? reset ? "auth.email.save_password" : "auth.email.verify" : reset ? "auth.email.send_code" : register ? "auth.email.register" : "Войти");
-    $("#email-auth-submit").disabled = state.authBusy || !state.config || !challenge && (reset || register) && state.config.email_enabled === false;
-    $("#auth-resend").hidden = !challenge;
-    const remaining = Math.max(0, Math.ceil(((state.authChallenge?.resendAt || 0) - Date.now()) / 1000));
-    $("#auth-resend").disabled = state.authBusy || remaining > 0;
-    $("#auth-resend").textContent = remaining ? T("auth.email.resend_in", {seconds: remaining}) : T("auth.email.resend");
-    $("#auth-restart").hidden = !challenge && !reset;
+  };
+  const renderAuthActions = ({challenge, reset, register}) => {
+    $('#auth-tabs').hidden = challenge || reset || state.authLink;
+    const needsEmail = !challenge && (reset || register);
+    const mailUnavailable = state.config?.email_enabled === false;
+    $('#email-auth-submit').disabled = state.authBusy || !state.config || needsEmail && mailUnavailable;
+    $('#auth-restart').hidden = !challenge && !reset;
     $('[data-action="auth-reset"]').hidden = challenge || reset || register;
-    for (const tab of $$("[data-auth-mode]")) {
-      tab.setAttribute("aria-selected", String(tab.dataset.authMode === state.authMode));
+    for (const tab of $$('[data-auth-mode]')) {
+      tab.setAttribute('aria-selected', String(tab.dataset.authMode === state.authMode));
       tab.disabled = state.authBusy;
     }
-    const message = !state.config ? T("Не удалось проверить доступность регистрации.") : state.config.email_enabled === false ? T("auth.email.mail_unavailable") : T("auth.email.domains");
-    $("#registration-state").textContent = message;
-    $("#public-access-status").textContent = T("market.public_access");
+  };
+  const authAvailabilityMessage = () => {
+    if (!state.config) return T('Не удалось проверить доступность регистрации.');
+    if (state.config.email_enabled === false) return T('auth.email.mail_unavailable');
+    return T('auth.email.domains');
+  };
+  const renderAuthResend = challenge => {
+    $('#auth-resend').hidden = !challenge;
+    const remaining = Math.max(0, Math.ceil(((state.authChallenge?.resendAt || 0) - Date.now()) / 1000));
+    $('#auth-resend').disabled = state.authBusy || remaining > 0;
+    $('#auth-resend').textContent = remaining ? T('auth.email.resend_in', {seconds: remaining}) : T('auth.email.resend');
     clearTimeout(authResendTimer);
-    if (remaining && $("#auth-dialog").open) authResendTimer = setTimeout(renderAuthConfig, 1000);
+    if (remaining && $('#auth-dialog').open) authResendTimer = setTimeout(renderAuthConfig, 1000);
+  };
+  const renderAuthConfig = () => {
+    const screen = authScreen();
+    const messages = authScreenMessages[screen.phase];
+    renderAuthFields(screen);
+    renderAuthActions(screen);
+    $('#auth-title').textContent = T(messages.title);
+    $('#auth-explanation').textContent = T(messages.explanation);
+    $('#email-auth-submit').textContent = T(messages.submit);
+    $('#registration-state').textContent = authAvailabilityMessage();
+    $('#public-access-status').textContent = T('market.public_access');
+    renderAuthResend(screen.challenge);
   };
   function openAuth(mode = "login", linkCurrent = false) {
     closeDrawer(false);
@@ -5739,49 +5772,67 @@
     $("#auth-form").elements.password.value = "";
     $("#auth-form").elements.code.value = "";
   };
+  const authDestination = () => {
+    if (state.authReturn) return state.authReturn;
+    if (state.authLink) return {view: 'profile'};
+    if (state.mode === 'public') return {view: 'portfolio'};
+    return {...state.route, overlay: ''};
+  };
   const completeEmailLogin = async () => {
-    const destination = state.authReturn || (state.authLink ? {view: "profile"} : state.mode === "public" ? {view: "portfolio"} : {...state.route, overlay: ""});
+    const destination = authDestination();
     state.authReturn = null;
-    $("#auth-dialog").close();
-    $("#session-dialog").close();
+    $('#auth-dialog').close();
+    $('#session-dialog').close();
     state.locked = false;
     await bootstrap();
-    if (state.user) navigate(destination.view || "portfolio", {...destination, mode: "account", overlay: ""}, {replace: true});
-    else { openAuth(); showMessage($("#auth-message"), T("auth.email.session_retry"), true); }
+    if (state.user) navigate(destination.view || 'portfolio', {...destination, mode: 'account', overlay: ''}, {replace: true});
+    else {
+      openAuth();
+      showMessage($('#auth-message'), T('auth.email.session_retry'), true);
+    }
+  };
+  const emailAuthRequest = (form, screen) => {
+    const endpoint = authScreenMessages[screen.phase].endpoint;
+    if (screen.challenge) {
+      const payload = {challenge_id: state.authChallenge.challenge_id, code: form.elements.code.value};
+      if (screen.reset) payload.password = form.elements.password.value;
+      return {endpoint, payload};
+    }
+    const payload = {email: form.elements.email.value.trim()};
+    if (!screen.reset) payload.password = form.elements.password.value;
+    if (screen.register) {
+      for (const name of authLegalFields) payload[name] = form.elements[name].checked;
+      payload.legal_versions = state.authLegalVersions;
+    }
+    return {endpoint, payload};
+  };
+  const completeEmailResponse = async (result, screen, endpoint) => {
+    if (screen.challenge && screen.reset) {
+      openAuth('login');
+      showMessage($('#auth-message'), T('auth.email.password_updated'));
+      return;
+    }
+    if (endpoint === 'login' || screen.challenge) {
+      await completeEmailLogin();
+      return;
+    }
+    acceptAuthChallenge(result);
+    showMessage($('#auth-message'), T('auth.email.code_sent'));
   };
   const startAuth = async form => {
     if (state.authBusy || !form.reportValidity()) return;
-    const challenge = state.authChallenge;
-    const reset = state.authMode === "reset";
-    const register = state.authMode === "register" || state.authLink;
-    let endpoint, payload;
-    if (challenge) {
-      endpoint = reset ? "password-reset/confirm" : "verify";
-      payload = {challenge_id: challenge.challenge_id, code: form.elements.code.value};
-      if (reset) payload.password = form.elements.password.value;
-    } else {
-      endpoint = reset ? "password-reset/request" : state.authLink ? "enroll" : register ? "register" : "login";
-      payload = {email: form.elements.email.value.trim()};
-      if (!reset) payload.password = form.elements.password.value;
-      if (register) {
-        for (const name of ["accept_privacy", "accept_personal_data", "accept_terms", "confirm_age_18"]) payload[name] = form.elements[name].checked;
-        payload.legal_versions = state.authLegalVersions;
-      }
-    }
+    const screen = authScreen();
+    const {endpoint, payload} = emailAuthRequest(form, screen);
     state.authBusy = true;
     const sequence = ++state.authSequence;
     renderAuthConfig();
-    showMessage($("#auth-message"), T("auth.email.processing"));
+    showMessage($('#auth-message'), T('auth.email.processing'));
     try {
-      const result = await api(`/api/auth/email/${endpoint}`, {method: "POST", body: payload, bootstrap: !state.authLink});
+      const result = await api(`/api/auth/email/${endpoint}`, {method: 'POST', body: payload, bootstrap: !state.authLink});
       if (sequence !== state.authSequence) return;
-      if (challenge && reset) {
-        openAuth("login");
-        showMessage($("#auth-message"), T("auth.email.password_updated"));
-      } else if (endpoint === "login" || challenge) await completeEmailLogin();
-      else { acceptAuthChallenge(result); showMessage($("#auth-message"), T("auth.email.code_sent")); }
+      await completeEmailResponse(result, screen, endpoint);
     } catch (error) {
-      if (sequence === state.authSequence && !isCancelled(error)) showMessage($("#auth-message"), authError(error), true);
+      if (sequence === state.authSequence && !isCancelled(error)) showMessage($('#auth-message'), authError(error), true);
     } finally {
       delete payload.password;
       if (sequence === state.authSequence) {
@@ -7557,9 +7608,7 @@
     return `<section class="card"><p class="card-label">${label}</p><p class="main-value">${esc(value)}</p></section>`;
   }
 
-  function renderAnalyticsFragment2(item) {
-    return `${item.month}-01`;
-  }
+
   function renderAnalyticsDetailsSummary(item) {
     return `<details><summary class="details-summary">${esc(item.title)}</summary><p class="fine-print">${esc(item.detail)}</p></details>`;
   }
@@ -7941,10 +7990,8 @@
     documentChanged();
     renderStrategies();
   }
-  async function handleChangeGoalSource({
-    input
-  }) {
-    updateGoalFields(input.name === "kind");
+  function handleChangeGoalSource() {
+    updateGoalFields();
   }
   async function handleChangeBrokerEnvironment({}) {
     resetBrokerPreview();
