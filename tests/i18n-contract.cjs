@@ -7,6 +7,25 @@ const vm = require("node:vm");
 const I = require("../web/i18n.js");
 const C = require("../web/config.js");
 
+// Validate the flat JSON catalogue before JS object construction can silently
+// overwrite an earlier key. String tokens consume escaped quotes and colons.
+function uniqueMessageKeys(literal) {
+  const parsed = JSON.parse(literal);
+  const seen = new Set();
+  for (const token of literal.matchAll(/"(?:[^"\\]|\\.)*"/g)) {
+    if (!/^\s*:/.test(literal.slice(token.index + token[0].length))) continue;
+    const key = JSON.parse(token[0]);
+    assert.equal(seen.has(key), false, "Duplicate translation key: " + key);
+    seen.add(key);
+  }
+  assert.equal(seen.size, Object.keys(parsed).length, "All catalogue property keys are checked");
+}
+const translationSource = readFileSync(join(__dirname, "../web/i18n.js"), "utf8");
+const messagesStart = translationSource.indexOf("  const messages = ") + "  const messages = ".length;
+const messagesEnd = translationSource.indexOf("\n  };", messagesStart) + "\n  }".length;
+uniqueMessageKeys(translationSource.slice(messagesStart, messagesEnd));
+assert.throws(() => uniqueMessageKeys('{"quantity":["a","b"],"quantity":["c","d"]}'), /Duplicate translation key/, "A colliding display key cannot erase an interpolation silently");
+
 assert.equal(I.getLocale(), "ru");
 assert.equal(I.t("nav.events"), "События");
 assert.equal(I.setLocale("en-US"), "en");
@@ -20,6 +39,8 @@ assert.equal(I.t("Обновить приложение", {}, "en"), "Update app
 assert.equal(I.t("pwa.apply", {}, "en"), "Update application", "A semantic key retains its own authored wording");
 assert.equal(I.t("Ограничение", {}, "en"), "Constraint", "An explicit phrase key wins over a semantic fallback");
 assert.equal(I.t("billing.limit", {}, "en"), "Limit");
+assert.equal(I.t("portfolio.quantity_value", {quantity: "2"}, "ru"), "Количество: 2", "The holding row retains the actual quantity instead of a colliding label key");
+assert.equal(I.t("portfolio.quantity_value", {quantity: "2"}, "en"), "Quantity: 2");
 for (const key of ["home", "portfolio", "market", "strategies", "assistant", "goals", "analytics", "events", "profile", "settings"]) {
   assert.notEqual(I.t(`nav.${key}`, {}, "en"), I.t(`nav.${key}`, {}, "ru"), "Each primary tab has a translation");
 }

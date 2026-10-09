@@ -85,6 +85,9 @@
       timeZone: "Europe/Moscow",
       locales: {ru: "ru-RU", en: "en-US"},
       numberFractionDigits: 2,
+      // Account money keeps kopecks; market prices retain their source precision.
+      moneyFractionDigits: 2,
+      quantityFractionDigits: 9,
       marketPriceFractionDigits: 9,
       chartAxisFractionDigitsMax: 20,
       periodDays: {"1d": 1, "1w": 7, "1m": 31, "3m": 93, "1y": 365}

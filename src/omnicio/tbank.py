@@ -277,7 +277,7 @@ class TBankPortfolio:
     total: TBankMoney
     expected_yield_percent: str | None
     daily_yield: TBankMoney | None
-    daily_yield_percent: str
+    daily_yield_percent: str | None
     asset_totals: tuple[TBankAssetTotal, ...]
     positions: tuple[TBankPortfolioPosition, ...]
 
@@ -1674,10 +1674,8 @@ class TBankInvestClient:
             method="GetInfo",
             body={},
         )
-        premium = payload.get("premStatus")
-        qualified = payload.get("qualStatus")
-        if not isinstance(premium, bool) or not isinstance(qualified, bool):
-            raise TBankUnavailable("T-Invest user info has invalid qualification flags")
+        premium = _implicit_bool(payload, "premStatus")
+        qualified = _implicit_bool(payload, "qualStatus")
 
         qualified_for = tuple(
             value
@@ -1840,7 +1838,7 @@ class TBankInvestClient:
             total=total,
             expected_yield_percent=_quotation(payload.get("expectedYield")),
             daily_yield=_money(payload.get("dailyYield")),
-            daily_yield_percent=_quotation(payload.get("dailyYieldRelative")) or "0",
+            daily_yield_percent=_quotation(payload.get("dailyYieldRelative")),
             asset_totals=tuple(asset_totals),
             positions=tuple(positions),
         )

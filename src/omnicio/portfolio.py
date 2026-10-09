@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
 from .financial import PERCENT_SCALE, RUB_QUANTUM
@@ -27,6 +29,13 @@ _CLASS_LABELS = {
 }
 # This is only a review threshold. It is not a target allocation or an investment recommendation.
 _CONCENTRATION_NOTICE = Decimal("25")
+_BROKER_STATISTICS_FIELDS = (
+    "source", "source_url", "method", "observed_at", "return_percent",
+    "daily_yield", "daily_yield_percent",
+)
+BROKER_POSITION_STATISTICS_FIELDS = (
+    "expected_yield_amount", "expected_yield_currency", "daily_yield", "average_price",
+)
 
 
 class PortfolioAnalysisError(ValueError):
@@ -82,6 +91,55 @@ class PortfolioAnalysis:
     valuation_status: str = "unknown"
     positions_valuation_status: str = "unknown"
     sector_status: str = "unknown"
+
+
+def broker_statistics(
+    portfolio: TBankPortfolio, *, observed_at: datetime,
+) -> dict[str, object]:
+    """Preserve the broker's current returns independently of historical NAV.
+
+    Portfolio expectedYield is a percentage; position expectedYield is an amount
+    in the instrument's price currency. Its weighted average price is not FIFO.
+    An all-time account amount is not inferred from an undocumented percentage
+    denominator or from the sum of amounts in different currencies.
+    """
+    if observed_at.tzinfo is None:
+        raise PortfolioAnalysisError("broker statistics time must be timezone-aware")
+    positions = {}
+    for position in portfolio.positions:
+        if position.instrument_type == "currency" or _number(position.quantity) == 0:
+            continue
+        currencies = {
+            price.currency.upper() for price in (position.current_price, position.average_price)
+            if price is not None
+        }
+        currency = next(iter(currencies)) if len(currencies) == 1 else None
+        positions[position.instrument_uid or position.figi] = {
+            "expected_yield_amount": position.expected_yield_amount if currency else None,
+            "expected_yield_currency": currency,
+            "daily_yield": asdict(position.daily_yield) if position.daily_yield else None,
+            "average_price": asdict(position.average_price) if position.average_price else None,
+        }
+    return {
+        "source": "T-Invest",
+        "source_url": "https://developer.tbank.ru/invest/services/operations/methods",
+        "method": "broker_open_positions",
+        "observed_at": observed_at.astimezone(UTC).isoformat(),
+        "return_percent": portfolio.expected_yield_percent,
+        "daily_yield": asdict(portfolio.daily_yield) if portfolio.daily_yield else None,
+        "daily_yield_percent": portfolio.daily_yield_percent,
+        "positions": positions,
+    }
+
+
+def broker_statistics_summary(evidence: object) -> dict[str, object] | None:
+    """Read account metrics from a snapshot without exposing its position map."""
+    if not isinstance(evidence, Mapping):
+        return None
+    statistics = evidence.get("broker_statistics")
+    if not isinstance(statistics, Mapping):
+        return None
+    return {key: statistics.get(key) for key in _BROKER_STATISTICS_FIELDS}
 
 
 def _number(value: str) -> Decimal:

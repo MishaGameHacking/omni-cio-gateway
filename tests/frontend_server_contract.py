@@ -1,9 +1,10 @@
 """Emit actual server results for the isolated browser regression server.
 
-Prices and candles pass through T-Invest JSON decoding and parsing, MarketService,
-HTTP routes and SSE serialization. Only their HTTP transport is synthetic;
-account lookup, instrument metadata and trading status remain isolated fixtures.
-The browser consumes the resulting server response.
+Prices, portfolio values and candles pass through T-Invest JSON decoding and parsing,
+portfolio calculations, recorded SQL bindings, MarketService and actual HTTP/SSE
+serializers. Provider transport and database cursors are isolated fixtures;
+PostgreSQL integration tests execute the SQL. Account lookup, instrument metadata
+and trading status remain controlled fixtures. The browser consumes the server response.
 Strategy results use the actual research engine with explicitly synthetic test prices.
 """
 
@@ -26,11 +27,12 @@ from test_backtest import END, START, ZERO_COSTS, prices, research_document
 from omnicio import main
 from omnicio.backtest import run_strategy_backtest
 from omnicio.billing import BillingConfig, BillingService
-from omnicio.broker import BrokerConnectionStatus, BrokerService
+from omnicio.broker import BrokerConnectionStatus, BrokerObservationBundle, BrokerService
 from omnicio.cbr import CBRClient
 from omnicio.db import UserRecord
 from omnicio.goal_planning import goal_forecast
 from omnicio.market import MarketService
+from omnicio.portfolio import analyze_portfolio
 from omnicio.portfolio_store import PortfolioStore
 from omnicio.service import AuthService
 from omnicio.tbank import (
@@ -41,7 +43,8 @@ from omnicio.tbank import (
     TBankTradingStatus,
     _quotation,
 )
-from omnicio.workspace_store import WorkspaceStore
+from omnicio.workspace import default_preferences
+from omnicio.workspace_store import WorkspaceStore, _Basis, _History
 
 
 def _wire_quotation(value: str) -> dict[str, str | int]:
@@ -243,6 +246,168 @@ def market_precision_contract() -> list[dict[str, Any]]:
         assert [row["close"] for row in payload["market"]["candles"]] == [first, last]
         result.append({"key": key, "market_event": payload["instrument_market_event"],
                        "market": payload["market"], "expected": expected})
+    return result
+
+
+def _broker_snapshot_contract(now: datetime) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Capture actual INSERT values; all balances are invented isolated test data."""
+    uid, account_id = "synthetic-a", "synthetic-account"
+
+    def money(value: str) -> dict[str, str | int]:
+        return {"currency": "RUB", **_wire_quotation(value)}
+
+    payloads = {
+        "GetPortfolio": {
+            "accountId": account_id, "totalAmountPortfolio": money("1000.08"),
+            "totalAmountShares": money("250.38"), "totalAmountCurrencies": money("749.70"),
+            "expectedYield": _wire_quotation("1.04267726"),
+            "dailyYield": money("0.42"), "dailyYieldRelative": _wire_quotation("0.042014"),
+            "positions": [{
+                "instrumentUid": uid, "figi": "SYNTHETIC-FIGI", "ticker": "SYNA",
+                "instrumentType": "share", "quantity": _wire_quotation("2"),
+                "quantityLots": _wire_quotation("0.2"),
+                "currentPrice": money("125.19"), "averagePositionPrice": money("120.03"),
+                "averagePositionPriceFifo": money("119.07"),
+                "expectedYield": _wire_quotation("10.32"),
+                "expectedYieldFifo": _wire_quotation("12.24"), "dailyYield": money("0.42"),
+            }],
+        },
+        "GetPositions": {"accountId": account_id, "money": [money("749.70")]},
+    }
+
+    def response(request: Request, **_kwargs: object) -> io.BytesIO:
+        assert request.get_method() == "POST" and isinstance(request.data, bytes)
+        body = json.loads(request.data)
+        assert body["accountId"] == account_id
+        return io.BytesIO(json.dumps(payloads[request.full_url.rsplit("/", 1)[-1]]).encode())
+
+    provider = TBankInvestClient()
+    with patch("urllib.request.OpenerDirector.open", side_effect=response):
+        portfolio = provider.get_portfolio("synthetic-contract-only", "prod", account_id)
+        balances = provider.get_positions("synthetic-contract-only", "prod", account_id)
+    metadata = TBankInstrumentMetadata(
+        uid, "Синтетический актив", "SYNA", "", "share", "other", "RU", False,
+        figi="SYNTHETIC-FIGI", currency="RUB", lot=10,
+    )
+    analysis = analyze_portfolio(portfolio, balances, (metadata,))
+    bundle = BrokerObservationBundle(
+        account_id, "Синтетический счёт", "prod", now,
+        portfolio, balances, (metadata,), analysis, (),
+    )
+    cursor, connection, database = Mock(), Mock(), Mock()
+    database.pool.connection.return_value = nullcontext(connection)
+    connection.transaction.return_value = nullcontext()
+    connection.cursor.return_value = nullcontext(cursor)
+    context = {"account_id": account_id, "environment": "prod", "verified_at": now.isoformat()}
+    cursor.fetchone.side_effect = [
+        {**context, "verified_at": now, "job_type": "portfolio_refresh", "details": {
+            "connection": context, "legal_versions": {key: "synthetic" for key in (
+                "privacy_policy", "personal_data_consent", "terms",
+            )},
+        }},
+        {"accepted": True}, {"id": UUID(int=456)},
+    ]
+    PortfolioStore(database).save_snapshot(UUID(int=123), job_run_id=UUID(int=789), bundle=bundle)
+    records = {}
+    # Project the emitted INSERT column names and bound values. SQL execution is
+    # verified by PostgreSQL integration tests, not by this in-memory transport.
+    for call in cursor.execute.call_args_list:
+        statement, *arguments = call.args
+        if not statement.strip().startswith("INSERT INTO portfolio_snapshot"):
+            continue
+        names = statement.split("(", 1)[1].split(")", 1)[0].split(",")
+        columns = [column.strip() for column in names]
+        records[statement.strip().split()[2]] = dict(zip(columns, arguments[0], strict=True))
+    snapshot = records["portfolio_snapshots"]
+    snapshot.update(id=UUID(int=456), created_at=now, evidence=json.loads(snapshot["evidence"]))
+    position = records["portfolio_snapshot_positions"]
+    for storage_key in ("user_id", "snapshot_id", "quantity_lots",
+                        "current_nkd_value", "current_nkd_currency"):
+        position.pop(storage_key)
+    position.update(name=metadata.name, catalog_instrument_uid=uid, asset_uid="",
+                    currency=metadata.currency, assessed_at=None, risk_state="data_missing")
+    return snapshot, position
+
+
+def broker_portfolio_contract() -> dict[str, Any]:
+    """Keep broker open-position statistics distinct from historical account return."""
+    now = datetime.now(UTC)
+    snapshot, position = _broker_snapshot_contract(now)
+    opening = {**snapshot, "id": UUID(int=455), "captured_at": now - timedelta(days=7),
+               "created_at": now - timedelta(days=7), "nav_rub": Decimal("800.08")}
+    snapshot["evidence"]["account"] = {"opened_at": (now - timedelta(days=30)).isoformat()}
+    basis = _Basis({"account_id": snapshot["account_id"], "environment": "prod",
+                    "account_name": "Синтетический счёт"}, snapshot, [], now, True)
+    history = _History([opening, snapshot], [opening, snapshot], {
+        "status": "complete", "period": "1y",
+        "requested_from": (now - timedelta(days=365)).isoformat(),
+        "requested_to": now.isoformat(), "returned_from": opening["captured_at"].isoformat(),
+        "returned_to": now.isoformat(), "returned_observations": 2, "total_observations": 2,
+    })
+    cursor, connection, database = Mock(), Mock(), Mock()
+    database.pool.connection.return_value = nullcontext(connection)
+    connection.transaction.return_value = nullcontext()
+    connection.cursor.return_value = nullcontext(cursor)
+    cursor.fetchone.return_value = snapshot
+    cursor.fetchall.side_effect = [[snapshot, opening], [position]]
+    auth = Mock(spec=AuthService)
+    auth.refresh_session.return_value = UserRecord(UUID(int=123), 123, "active", "user")
+    preferences = {"version": 0, "document": default_preferences()}
+    with (
+        patch.object(main.app.state, "auth_service", auth, create=True),
+        patch.object(main.app.state, "portfolio_store", PortfolioStore(database), create=True),
+        patch.object(main.app.state, "workspace_store", WorkspaceStore(Mock()), create=True),
+        patch.object(WorkspaceStore, "_transaction", return_value=nullcontext(Mock())),
+        patch.object(WorkspaceStore, "_basis", return_value=basis),
+        patch.object(WorkspaceStore, "_history", return_value=history),
+        patch.object(WorkspaceStore, "_preferences", return_value=preferences),
+        patch.object(WorkspaceStore, "_goal_rows", return_value=[]),
+        patch.object(WorkspaceStore, "_sync_events"),
+        patch.object(WorkspaceStore, "_events_payload", return_value={"items": [], "unread": 0}),
+    ):
+        client = TestClient(main.app, base_url=main.CANONICAL_ORIGIN,
+                            cookies={"omnicio_session": "synthetic-session"})
+        try:
+            result = {}
+            for key, path in (
+                ("broker_portfolio_visualization", "/api/portfolio/visualization"),
+                ("broker_workspace", "/api/workspace?history_period=1y"),
+                ("broker_instrument_visualization",
+                 "/api/portfolio/instruments/synthetic-a/visualization"),
+            ):
+                if key == "broker_instrument_visualization":
+                    cursor.fetchone.return_value = {
+                        "current_snapshot_id": snapshot["id"], "current_snapshot_at": now,
+                        "account_id": snapshot["account_id"], "environment": "prod",
+                    }
+                    cursor.fetchall.side_effect = [[{
+                        **position, "snapshot_id": snapshot["id"], "captured_at": now,
+                        "recorded_at": now, "analysis_status": snapshot["analysis_status"],
+                        "broker_position_statistics": snapshot["evidence"]["broker_statistics"][
+                            "positions"
+                        ][position["instrument_uid"]],
+                    }], [], []]
+                response = client.get(path, headers={"X-Omnicio-Profile": "000000123"})
+                assert response.status_code == 200, response.text
+                assert "no-store" in response.headers["cache-control"]
+                result[key] = response.json()
+        finally:
+            client.close()
+    current = result["broker_workspace"]["overview"]["broker_statistics"]
+    assert current == result["broker_portfolio_visualization"]["latest"]["broker_statistics"]
+    assert current["return_percent"] == "1.04267726"
+    assert current["daily_yield"] == {"currency": "RUB", "value": "0.42"}
+    assert "positions" not in current
+    actual_position = result["broker_portfolio_visualization"]["latest"]["positions"][0]
+    assert Decimal(actual_position["quantity"]) == 2
+    assert actual_position["average_price"] == {"currency": "RUB", "value": "120.03"}
+    assert actual_position["expected_yield_amount"] == "10.32"
+    instrument = result["broker_instrument_visualization"]
+    assert instrument["current_holding"]["status"] == "held"
+    assert instrument["latest"]["average_price"] == actual_position["average_price"]
+    historical = result["broker_workspace"]["performance"]
+    assert historical["investment_result_rub"] == "200.00"
+    assert Decimal(historical["return_percent"]) > 24
     return result
 
 
@@ -493,6 +658,7 @@ def _payout_event_contract(
 
 if __name__ == "__main__":
     print(json.dumps({**market_contract(), "market_precision_cases": market_precision_contract(),
+                      **broker_portfolio_contract(),
                       **goal_contract(), **research_contract(), **preset_math_contract(),
                       **billing_contract(), **refresh_news_contract(), **payout_display_contract()},
                      ensure_ascii=True))

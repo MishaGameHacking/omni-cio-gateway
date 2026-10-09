@@ -495,6 +495,8 @@ def test_cancel_sandbox_order_uses_request_id_not_exchange_guess() -> None:
     [
         {"premStatus": "false", "qualStatus": False},
         {"premStatus": False, "qualStatus": "false"},
+        {"premStatus": None, "qualStatus": False},
+        {"premStatus": False, "qualStatus": None},
         {"premStatus": False, "qualStatus": False, "qualifiedForWorkWith": "bond"},
     ],
 )
@@ -507,6 +509,15 @@ def test_tbank_get_user_info_rejects_malformed_capabilities(
         pytest.raises(TBankUnavailable),
     ):
         client.get_user_info("t.fake-owner-credential-1234567890", "prod")
+
+
+def test_tbank_get_user_info_accepts_omitted_implicit_false_flags() -> None:
+    with patch.object(TBankInvestClient, "_post", return_value={"tariff": "Investor"}):
+        result = TBankInvestClient().get_user_info("synthetic-token", "prod")
+    assert result.premium is False
+    assert result.qualified is False
+    assert result.qualified_for_work_with == ()
+    assert result.tariff == "Investor"
 
 
 def test_tbank_operation_history_uses_cursor_without_write_methods() -> None:
@@ -2396,3 +2407,18 @@ def test_missing_portfolio_return_is_unknown_instead_of_a_fabricated_zero() -> N
     with patch.object(TBankInvestClient, "_post", return_value=payload):
         result = TBankInvestClient().get_portfolio("synthetic-token", "prod", "synthetic-account")
     assert result.expected_yield_percent is None
+    assert result.daily_yield_percent is None
+
+
+def test_present_zero_portfolio_returns_keep_the_provider_zero() -> None:
+    payload = {
+        "totalAmountPortfolio": {"currency": "rub", "units": "100"},
+        "expectedYield": {},
+        "dailyYield": {"currency": "rub"},
+        "dailyYieldRelative": {},
+    }
+    with patch.object(TBankInvestClient, "_post", return_value=payload):
+        result = TBankInvestClient().get_portfolio("synthetic-token", "prod", "synthetic-account")
+    assert result.expected_yield_percent == "0"
+    assert result.daily_yield == TBankMoney("RUB", "0")
+    assert result.daily_yield_percent == "0"
