@@ -107,6 +107,7 @@
     user: null,
     config: null,
     generation: 0,
+    brokerContext: 0,
     locked: false,
     tour: false,
     mode: "auto",
@@ -117,7 +118,7 @@
     viewState: {},
     quotes: {},
     outdated: false,
-    view: "home",
+    view: "portfolio",
     route: {},
     data: {},
     errors: {},
@@ -254,13 +255,16 @@
     return url;
   };
   const privateRequest = path => !path.split("?")[0].startsWith("/api/public/news/") && !["/api/auth/config", "/api/auth/vkid/start", "/api/auth/tid/start", "/api/strategy/catalog", "/api/public/market-reference", "/api/public/news", "/api/public/support"].includes(path.split("?")[0]);
+  const brokerReadPath = path => /^\/api\/(?:workspace|broker\/tbank|portfolio|market)(?:\/|\?|$)/.test(path);
   const ensureResponseContext = ({
     generation,
     profile,
-    bootstrap
+    bootstrap,
+    brokerContext
   }) => {
     if (generation !== state.generation) throw contextError();
     if (profile && state.user?.public_id !== profile) throw contextError();
+    if (brokerContext !== undefined && brokerContext !== (state.brokerContext || 0)) throw contextError();
     if (state.locked && !bootstrap) throw contextError();
   };
   const apiFailure = (response, payload, profile) => {
@@ -331,10 +335,12 @@
     const context = {
       generation: state.generation,
       profile: state.user?.public_id,
-      bootstrap
+      bootstrap,
+      brokerContext: ["GET", "HEAD"].includes(method) && brokerReadPath(path) ? state.brokerContext || 0 : undefined
     };
     const controller = new AbortController();
     controller.omnicioMutation = !["GET", "HEAD"].includes(method);
+    controller.omnicioBrokerRead = context.brokerContext !== undefined;
     state.requests.add(controller);
     let timedOut = false;
     const timer = window.setTimeout(() => {
@@ -912,8 +918,11 @@
     } catch {/* Display preference only. */}
   };
   const renderNav = () => {
-    $("#sidebar-nav").innerHTML = U.navigation.map(([key, title]) => `<a class="nav-link" href="${U.routeHash({mode: state.mode === "demo" ? "demo" : "account", view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
-    $("#mobile-nav").innerHTML = [["home", T("Главная")], ["market", T("Рынок")], ["assistant", T("ИИ")], ["strategies", T("Стратегии")]].map(([key, title]) => `<a href="${U.routeHash({mode: state.mode === "demo" ? "demo" : "account", view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
+    const mode = state.mode === "demo" ? "demo" : "account";
+    $("#sidebar-nav").innerHTML = U.navigation.map(([key, title]) => `<a class="nav-link" href="${U.routeHash({mode, view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
+    $("#mobile-nav").innerHTML = U.mobileNavigation.map(([key, title]) => `<a href="${U.routeHash({mode, view: key})}" data-route="${key}"${state.view === key || key === "market" && ["asset", "search"].includes(state.view) ? ' aria-current="page"' : ""}>${icon(key)}<span>${title}</span></a>`).join("");
+    // Static shell links follow the same mode as the generated navigation.
+    for (const link of $$("#app-shell .brand[data-route]")) link.setAttribute("href", U.routeHash({mode, view: link.dataset.route}));
   };
   const openDrawer = () => {
     state.drawerReturn = $("#app-menu-toggle");
@@ -990,7 +999,7 @@
     if (history.state?.omnicio && history.state.index > 0 && history.state.previous) history.back();
     else if (state.route.screen || state.route.overlay) navigate(state.view, {mode: state.mode}, {replace: true});
     else {
-      let parent = ["asset", "search"].includes(state.view) ? "market" : "home";
+      let parent = ["asset", "search"].includes(state.view) ? "market" : "portfolio";
       if (state.mode === "public") parent = "public/welcome";
       navigate(parent, {mode: state.mode}, {replace: true});
     }
@@ -1135,7 +1144,7 @@
   };
   const showApp = (tour = false) => {
     const route = parseRoute();
-    const view = route.mode === "public" || route.invalid ? "home" : route.view;
+    const view = route.mode === "public" || route.invalid ? "portfolio" : route.view;
     navigate(view, {...route, view, screen: views.has(view) ? route.screen : "", mode: tour ? "demo" : "account", invalid: false}, {replace: !tour});
     if (!tour) {
       void resumeWorkspaceRefresh();
@@ -1666,7 +1675,7 @@
       name: item.name || item.ticker || item.instrument_uid,
       price: state.quotes[item.instrument_uid]?.last_price ?? null,
       currency: String(item.current_price_currency || item.currency || "").toUpperCase(),
-      change: item.daily_change_percent ?? null
+      change: item.expected_yield_amount ?? null
     }));
   };
   const filteredRows = () => {
@@ -1683,18 +1692,34 @@
       const right = number(b[key]);
       if (left === null) return right === null ? 0 : 1;
       if (right === null) return -1;
+      // Prices and position returns are comparable only in the same source unit.
+      // Group currencies/quote units before ordering their numeric values.
+      const group = item => state.sort === "price" ? `${state.quotes[item.uid]?.price_unit || "unknown"}:${state.quotes[item.uid]?.price_currency || ""}` : item.expected_yield_currency || "";
+      if (["price", "change"].includes(state.sort)) {
+        const units = group(a).localeCompare(group(b));
+        if (units) return units;
+      }
       return state.sortDirection * (left - right);
     });
   };
   const filtersHTML = (scope = "assets") => `<div class="filters" aria-label="${H("Тип актива")}">${assetTypes().map(([key, title]) => renderFiltersHTMLFilterButton(key, scope, title)).join("")}</div>`;
+  const assetSortOptions = () => [["name", T("Название")], ["price", T("Цена")], ["change", T("portfolio.since_purchase")], ["value", T("Стоимость")], ["share", T("Доля")]];
+  const holdingsSortHTML = () => `<div class="holdings-sort">${select("holdings_sort", T("portfolio.sort_by"), assetSortOptions(), state.sort)}<button class="button secondary icon-button${state.sortDirection > 0 ? " sort-ascending" : ""}" data-sort="${esc(state.sort)}" aria-label="${H(state.sortDirection > 0 ? "portfolio.sort_descending" : "portfolio.sort_ascending")}" title="${H(state.sortDirection > 0 ? "portfolio.sort_descending" : "portfolio.sort_ascending")}">${icon("down")}</button></div>`;
+  const assetsEmptyHTML = () => {
+    if (portfolioRows().length) return empty(T("Нет активов этого типа"), T("Выберите другой фильтр."));
+    if (state.data.visualization?.latest) return empty(T("portfolio.positions_empty"), T("portfolio.positions_empty_help"));
+    const connected = state.data.connection?.connected || state.data.workspace?.connection?.connected;
+    return empty(T("Активы пока не получены"), T("Состав счёта появится после подключения и первого наблюдения."), connected ? "workspace-refresh" : "connect", connected ? T("Обновить") : T("Подключить счёт"));
+  };
   const assetsTable = (compact = true) => {
     if (state.tour) return empty(T("Ваши активы будут здесь"), T("Войдите и подключите свой счёт. Цены и доли появятся из источника."), "login", T("Войти"));
     if (state.errors.visualization) return dataError("visualization");
     if (!state.data.visualization && state.loading.has("visualization")) return U.loading(T("quotes.positions_loading"));
     const rows = filteredRows();
-    if (!rows.length) return empty(portfolioRows().length ? T("Нет активов этого типа") : T("Активы пока не получены"), portfolioRows().length ? T("Выберите другой фильтр.") : T("Состав счёта появится после подключения и первого наблюдения."), portfolioRows().length ? "" : "connect", T("Подключить счёт"));
-    const headers = [["name", T("Название")], ["price", T("Цена")], ["change", T("Изменение")], ["share", T("Доля")]];
-    return `<div class="table-scroll"><table class="asset-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${compact ? "" : ("<th class=\"hide-on-mobile\" scope=\"col\">" + H("Стоимость") + "</th><th scope=\"col\"><span class=\"sr-only\">" + H("Избранное") + "</span></th>")}</tr></thead><tbody>${(compact ? rows.slice(0, C.pagination.compactAssets) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div><p class="data-footnote">${H("quotes.snapshot_scope")} ${state.data.visualization?.latest?.captured_at ? esc(date(state.data.visualization.latest.captured_at, true)) + " " + H("МСК") : ""}</p>`;
+    if (!rows.length) return assetsEmptyHTML();
+    const headers = compact ? assetSortOptions().slice(0, -1) : assetSortOptions();
+    const watchHeader = compact ? "" : `<th scope="col"><span class="sr-only">${H("Избранное")}</span></th>`;
+    return `${holdingsSortHTML()}<div class="table-scroll holdings-scroll"><table class="asset-table holdings-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${watchHeader}</tr></thead><tbody>${(compact ? rows.slice(0, C.pagination.compactAssets) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div><p class="data-footnote">${H("portfolio.position_result_help")} ${state.data.visualization?.latest?.captured_at ? esc(date(state.data.visualization.latest.captured_at, true)) + " " + H("МСК") : ""}</p>`;
   };
   const selectedPreset = (document = state.strategy.draft) => {
     const id = document?.base_preset_id;
@@ -1780,7 +1805,7 @@
     $("#view-home").innerHTML = `<h1 class="sr-only">${H("Главная — обзор портфеля")}</h1><div class="dashboard-top"><section class="card summary-card"><p class="card-label">${H("Общая стоимость")}</p><p class="main-value">${esc(money(overview.nav_rub))}</p>${freshness(T("portfolio.snapshot"), overview.observed_at, overview.freshness?.status || overview.status)}<div class="value-change ${result === null ? "" : renderHomeValue(result)}">${esc(resultText)}</div>${overview.observed_at ? renderHomeDataFootnote(overview) : ""}${chart(history, {
       label: T("Стоимость портфеля"),
       compact: true
-    })}${periods("home", state.homePeriod)}${navCoverageHTML(overview, state.homePeriod)}</section><section class="card allocation-card">${cardHeader(T("Структура портфеля"))}${U.allocation(overview.allocations, overview.nav_rub)}</section><div class="metric-stack"><section class="card metric-card"><p class="card-label">${H("Доходность")}</p><p class="main-value">${esc(percent(performance.return_percent, true))}</p><p class="metric-note">${performance.return_percent === null || performance.return_percent === undefined ? T("Недостаточно подтверждённых потоков или положительного вложенного капитала.") : renderHomeFragment(performance)}</p>${result !== null ? renderHomeMetricNote(result) : ""}</section><section class="card metric-card secondary-metric"><p class="card-label">${H("Пассивный доход")}</p><p class="main-value">${esc(money(latestMonth?.total_rub))}</p><p class="metric-note">${latestMonth ? renderHomeFragment3(latestMonth) : T("Выплаты до налоговых списаний: данных пока нет")}</p>${incomeCurve.length > 1 ? chart(incomeCurve, {
+    })}${periods("home", state.homePeriod)}${navCoverageHTML(overview, state.homePeriod)}</section><section class="card allocation-card">${cardHeader(T("Структура портфеля"))}${U.allocation(overview.allocations, overview.nav_rub)}</section><div class="metric-stack"><section class="card metric-card"><p class="card-label">${H("Доходность")}</p><p class="main-value ${financialTone(performance.return_percent)}">${esc(percent(performance.return_percent, true, true))}</p><p class="metric-note">${performance.return_percent === null || performance.return_percent === undefined ? T("Недостаточно подтверждённых потоков или положительного вложенного капитала.") : renderHomeFragment(performance)}</p>${result !== null ? renderHomeMetricNote(result) : ""}</section><section class="card metric-card secondary-metric"><p class="card-label">${H("Пассивный доход")}</p><p class="main-value">${esc(money(latestMonth?.total_rub))}</p><p class="metric-note">${latestMonth ? renderHomeFragment3(latestMonth) : T("Выплаты до налоговых списаний: данных пока нет")}</p>${incomeCurve.length > 1 ? chart(incomeCurve, {
       timeKey: "time",
       valueKey: "total_rub",
       label: T("Полученные выплаты по месяцам"),
@@ -1790,15 +1815,45 @@
     applyScreenLayout("home");
   };
   const eventFilters = () => `<div class="filters" aria-label="${H("Фильтр событий")}">${[["important", T("Важное")], ["assets", T("Мои активы")], ["market", T("Рынок")], ["all", T("Все")]].map(([key, title]) => renderEventFiltersFilterButton(key, title)).join("")}</div>`;
+  const signedMoney = (value, currency = "RUB") => {
+    const rendered = money(value, C.display.moneyFractionDigits, String(currency).toUpperCase());
+    return number(value) > 0 && !rendered.includes("•") ? "+" + rendered : rendered;
+  };
+  const financialTone = value => {
+    const numeric = number(value);
+    if (numeric === null || numeric === 0) return "muted";
+    return numeric > 0 ? "positive" : "negative";
+  };
+  const portfolioEntryHTML = () => empty(T("portfolio.start_title"), state.tour ? T("portfolio.start_guest") : T("portfolio.start_help"), state.tour ? "login" : "connect", state.tour ? T("Войти") : T("Подключить счёт"), "portfolio", true);
+  const portfolioQuickActions = () => {
+    const links = [["portfolio", "operations", T("portfolio.operations"), "events"], ["analytics", "", T("Аналитика"), "analytics"], ["market", "watchlist", T("Избранное"), "star"]];
+    const actions = links.map(([view, screen, label, symbol]) => `<a href="${U.routeHash({mode: state.mode, view, screen, ...(["portfolio", "analytics"].includes(view) ? {period: state.portfolioPeriod} : {})})}" data-route="${view}" data-screen="${screen}">${icon(symbol)}<span>${esc(label)}</span></a>`).join("");
+    return `<nav class="portfolio-actions" aria-label="${H("portfolio.quick_actions")}">${actions}</nav>`;
+  };
+  const portfolioSummaryHTML = overview => {
+    const connection = state.data.connection || state.data.workspace?.connection;
+    if (state.tour || connection?.connected === false) return `<section class="card portfolio-summary" data-portfolio-summary>${portfolioEntryHTML()}</section>`;
+    if (!connection) {
+      const resource = state.errors.workspace ? "workspace" : "connection";
+      const content = state.errors[resource] ? dataError(resource) : U.loading(T("Получаем состояние вашего кабинета…"));
+      return `<section class="card portfolio-summary" data-portfolio-summary>${content}</section>`;
+    }
+    const statistics = overview.broker_statistics || {};
+    const daily = statistics.daily_yield;
+    const hasResult = [statistics.return_percent, daily?.value, statistics.daily_yield_percent].some(value => number(value) !== null);
+    const dailyMoney = signedMoney(daily?.value, daily?.currency || "RUB");
+    const dailyPercent = percent(statistics.daily_yield_percent, true, true);
+    const dailyValue = [dailyMoney, dailyPercent].filter(value => value !== "—").join(" · ") || "—";
+    const accountName = connection?.account_name || T("Счёт T-Invest");
+    const result = `<dl class="portfolio-return-grid"><div><dt>${H("portfolio.today")}</dt><dd class="${financialTone(daily?.value ?? statistics.daily_yield_percent)}" data-broker-daily>${esc(dailyValue)}</dd></div><div><dt>${H("portfolio.open_return")}</dt><dd class="${financialTone(statistics.return_percent)}" data-broker-return>${esc(percent(statistics.return_percent, true, true))}</dd></div></dl>`;
+    const method = `<details class="portfolio-method"><summary>${H("portfolio.broker_method")}</summary><p>${H("portfolio.broker_method_help")}</p>${U.sourceLink(statistics.source_url, T("Методика и данные источника"))}</details>`;
+    const resultDetails = hasResult ? result + method : `<p class="fine-print">${H("portfolio.broker_result_missing")}</p>`;
+    return `<section class="card portfolio-summary" data-portfolio-summary><div class="portfolio-account-row"><button class="account-context" data-action="connect" aria-label="${esc(accountName)} · ${H("portfolio.manage_account")}">${icon("portfolio")}<span><strong>${esc(accountName)}</strong><small>${connection?.environment === "sandbox" ? H("Тестовая среда") : H("portfolio.account")}</small></span>${icon("settings", true)}</button></div><p class="card-label">${H("Стоимость портфеля")}</p><p class="main-value" data-portfolio-value>${esc(money(overview.nav_rub))}</p>${resultDetails}<div class="portfolio-cash"><span>${H("Свободные средства")}</span><strong>${esc(money(overview.free_cash_rub))}</strong></div>${freshness(T("portfolio.snapshot"), overview.observed_at, overview.freshness?.status || overview.status)}${portfolioQuickActions()}</section>`;
+  };
   const renderPortfolio = () => {
     captureScreenDrafts();
     const overview = state.tour ? {} : state.data.workspace?.overview || {};
-    const performance = workspaceForPeriod(state.portfolioPeriod)?.performance || {};
-    $("#view-portfolio").innerHTML = `${heading(T("Портфель"), !state.tour && state.data.connection?.account_name || T("Стоимость, структура и активы вашего счёта"), button(T("Обновить"), "refresh", {
-      small: true
-    }) + button(T("Подключение"), "connect", {
-      small: true
-    }))}<div class="metric-grid">${[[T("Стоимость портфеля"), money(overview.nav_rub)], [T("Свободные средства"), money(overview.free_cash_rub)], [T("Результат за период"), money(performance.investment_result_rub)], [T("Активов"), portfolioRows().length ? String(portfolioRows().length) : "—"]].map(([title, value]) => renderPortfolioCard(title, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader(T("Стоимость портфеля"))}${chart(portfolioHistory(overview, state.portfolioPeriod))}${periods("portfolio", state.portfolioPeriod)}${navCoverageHTML(overview, state.portfolioPeriod)}<p class="data-footnote">${H("График стоимости включает пополнения и выводы. Он не является графиком доходности.")}</p></section><section class="card">${cardHeader(T("Структура портфеля"))}${U.allocation(overview.allocations, overview.nav_rub)}${freshness("T-Invest", overview.observed_at, overview.freshness?.status || overview.status)}</section></div><section class="card section-gap">${cardHeader(T("Мои активы"))}${filtersHTML()}${assetsTable(false)}</section>${dataError("workspace")}`;
+    $("#view-portfolio").innerHTML = `${heading(T("Портфель"), "", button(T("Обновить"), "refresh", {small: true}))}${portfolioSummaryHTML(overview)}<div class="two-column section-gap"><section class="card" data-portfolio-history>${cardHeader(T("Стоимость портфеля"))}${chart(portfolioHistory(overview, state.portfolioPeriod))}${periods("portfolio", state.portfolioPeriod)}${navCoverageHTML(overview, state.portfolioPeriod)}<p class="data-footnote">${H("График стоимости включает пополнения и выводы. Он не является графиком доходности.")}</p></section><section class="card" data-portfolio-structure>${cardHeader(T("Структура портфеля"))}${U.allocation(overview.allocations, overview.nav_rub)}</section></div><section class="card section-gap" data-portfolio-holdings>${cardHeader(T("Мои активы"))}${filtersHTML()}${assetsTable(false)}</section>${dataError("workspace")}`;
     applyScreenLayout("portfolio");
   };
   const newsHTML = () => {
@@ -1818,9 +1873,9 @@
   const renderMarket = () => {
     captureScreenDrafts();
     const reference = state.data.marketReference;
-    $("#view-market").innerHTML = `${heading(T("Рынок"), T("Официальные показатели и инструменты из подключённого источника"), button(T("Обновить"), "refresh", {
+    $("#view-market").innerHTML = `${heading(T("Рынок"), T("market.overview_help"), button(T("market.find_instrument"), "focus-search", {primary: true, small: true}) + button(T("Обновить"), "refresh", {
       small: true
-    }))}${indicatorCards(reference)}<div class="two-column section-gap"><section class="card">${cardHeader(T("Курсы Банка России"))}<div class="button-group">${select("cbr_currency", T("Валюта"), [["USD", T("Доллар США")], ["EUR", T("Евро")], ["CNY", T("Китайский юань")]], state.cbrCurrency)}${select("cbr_period", T("Период"), [["1m", T("Месяц")], ["3m", T("Три месяца")], ["1y", T("Год")]], state.cbrPeriod)}</div>${chart(reference?.history?.points, {
+    }))}<p class="fine-print" data-market-search-help>${H("market.find_help")}</p>${indicatorCards(reference)}<div class="two-column section-gap"><section class="card">${cardHeader(T("Курсы Банка России"))}<div class="button-group">${select("cbr_currency", T("Валюта"), [["USD", T("Доллар США")], ["EUR", T("Евро")], ["CNY", T("Китайский юань")]], state.cbrCurrency)}${select("cbr_period", T("Период"), [["1m", T("Месяц")], ["3m", T("Три месяца")], ["1y", T("Год")]], state.cbrPeriod)}</div>${chart(reference?.history?.points, {
       timeKey: "effective_date",
       valueKey: "value",
       label: renderMarketFragment(),
@@ -2154,7 +2209,7 @@
       etf: T("Фонд"),
       currency: T("Валюта")
     }[asset.facts?.instrument_type || latest.instrument_type] || T("Не получен");
-    return `${infoRows([[T("Название"), asset.name], [T("Тикер"), asset.ticker || "—"], [T("Тип"), type], [T("Биржа"), asset.facts?.exchange || "—"], [T("Размер лота"), format(asset.facts?.lot, 0)], [T("В портфеле"), money(position.value_rub)], [T("Доля"), percent(position.nav_percent)], [T("Количество"), format(position.quantity, 8)]])}${assetHoldingNote(context)}`;
+    return `${infoRows([[T("Название"), asset.name], [T("Тикер"), asset.ticker || "—"], [T("Тип"), type], [T("Биржа"), asset.facts?.exchange || "—"], [T("Размер лота"), format(asset.facts?.lot, 0)], [T("В портфеле"), money(position.value_rub)], [T("Доля"), percent(position.nav_percent)], [T("Количество"), format(position.quantity, C.display.quantityFractionDigits)], [T("portfolio.average_price"), marketPrice(position.average_price?.value, "currency", position.average_price?.currency?.toUpperCase() || "", true)], [T("portfolio.since_purchase"), position.expected_yield_currency ? signedMoney(position.expected_yield_amount, position.expected_yield_currency) : "—"]])}${assetHoldingNote(context)}`;
   };
   const assetMetricsHTML = ({
     asset,
@@ -2208,15 +2263,11 @@
     asset,
     latest,
     position,
-    candles,
-    priceUnit,
-    currency,
-    high,
     details
   }) => {
-    const rows = [[T("Открытие"), marketPrice(candles[0]?.open, priceUnit, currency)], [T("Максимум"), marketPrice(high, priceUnit, currency)], [T("Стоимость в портфеле"), money(position.value_rub)], [T("Доля портфеля"), percent(position.nav_percent)], [T("Заблокировано лотов"), position.blocked_lots === undefined ? "—" : format(position.blocked_lots)]];
+    const rows = [[T("Количество"), format(position.quantity, C.display.quantityFractionDigits)], [T("portfolio.average_price"), marketPrice(position.average_price?.value, "currency", position.average_price?.currency?.toUpperCase() || "", true)], [T("Стоимость в портфеле"), money(position.value_rub)], [T("portfolio.since_purchase"), position.expected_yield_currency ? signedMoney(position.expected_yield_amount, position.expected_yield_currency) : "—"], [T("Доля портфеля"), percent(position.nav_percent)], [T("Заблокировано лотов"), position.blocked_lots === undefined ? "—" : format(position.blocked_lots)]];
     const risk = position.risk_state ? riskLabel(position.risk_state) : T("Для оценки риска нужны данные об эмитенте и инструменте.");
-    return `${cardHeader(T("Основные показатели"))}${infoRows(rows)}<p class="notice">${esc(risk)}</p><div class="section-gap">${fundamentalMetricsHTML(asset, true)}</div>${details?.payouts?.length ? renderAssetDetailsSummary2(details) : ""}`;
+    return `${cardHeader(T("В портфеле"))}${infoRows(rows)}${assetHoldingNote({asset, details, latest})}<p class="notice">${esc(risk)}</p><div class="section-gap">${fundamentalMetricsHTML(asset, true)}</div>${details?.payouts?.length ? renderAssetDetailsSummary2(details) : ""}`;
   };
   const assetFrameHTML = (context, content) => {
     const {
@@ -4232,15 +4283,21 @@
   };
   const renderAnalytics = () => {
     captureScreenDrafts();
+    const connection = state.data.connection || state.data.workspace?.connection;
+    if (state.tour || connection?.connected === false) {
+      $("#view-analytics").innerHTML = `${heading(T("Аналитика"), T("analytics.overview_help"))}<section class="card">${portfolioEntryHTML()}</section>`;
+      applyScreenLayout("analytics");
+      return;
+    }
     const ws = workspaceForPeriod(state.analyticsPeriod);
     const performance = ws?.performance || {};
     const income = ws?.income || {};
     const analysis = state.tour ? null : state.data.analysis?.analysis;
     const result = number(performance.investment_result_rub);
     const incomePeriod = income.from ? `${esc(date(income.from))} — ${esc(date(income.to))}<br>` : "";
-    $("#view-analytics").innerHTML = `${heading(T("Аналитика"), T("Результат, денежные потоки и полнота исходных данных"), button(T("Обновить"), "refresh", {
+    $("#view-analytics").innerHTML = `${heading(T("Аналитика"), T("analytics.overview_help"), button(T("Обновить"), "refresh", {
       small: true
-    }))}${periods("analytics", state.analyticsPeriod)}${!ws ? ("<p class=\"notice\">" + H("Показатели выбранного периода ещё не получены. Расчёты другого периода здесь не отображаются.") + "</p>") : ""}${dataError("workspace")}<div class="metric-grid">${[[T("Финансовый результат"), money(result)], [T("Чистые пополнения"), money(performance.net_contributions_rub)], [T("Полученные выплаты"), money(income.total_rub)], [T("Налоги"), money(performance.taxes_rub)]].map(([label, value]) => renderAnalyticsCard(label, value)).join("")}</div><div class="two-column"><section class="card">${cardHeader(T("Стоимость по наблюдениям"))}${chart(ws?.overview?.history)}${navCoverageHTML(ws?.overview || {}, state.analyticsPeriod)}${freshness("T-Invest", ws?.overview?.observed_at, ws?.overview?.freshness?.status || ws?.overview?.status)}<p class="data-footnote">${H("Изменение стоимости включает движение денег. Доходность не выводится из разницы крайних точек.")}</p></section><section class="card">${cardHeader(T("Из чего складывается результат"))}${infoRows([[T("Стоимость в начале"), money(performance.start_nav_rub)], [T("Стоимость в конце"), money(performance.end_nav_rub)], [T("Изменение стоимости"), money(performance.nav_change_rub)], [T("Чистые пополнения / выводы"), money(performance.net_contributions_rub)], [T("Результат после внешних потоков"), money(performance.investment_result_rub)], [T("Комиссии за период"), money(performance.fees_rub)], [T("Налоговые списания"), money(performance.taxes_rub)]])}<p class="data-footnote">${performance.from ? renderAnalyticsFragment(performance) : ""}${H("Метод: изменение стоимости минус внешние денежные потоки. Комиссии и налоги уже отражаются в результате; повторно они не вычитаются.")}</p></section></div><div class="two-column section-gap"><section class="card">${cardHeader(T("Выплаты до налоговых списаний"))}${income.by_month?.length ? chart(income.by_month.map(item => ({
+    }))}${periods("analytics", state.analyticsPeriod)}${!ws ? ("<p class=\"notice\">" + H("Показатели выбранного периода ещё не получены. Расчёты другого периода здесь не отображаются.") + "</p>") : ""}${dataError("workspace")}<div class="metric-grid">${[[T("Финансовый результат"), signedMoney(result)], [T("analytics.period_return"), percent(performance.return_percent, true, true)], [T("Полученные выплаты"), money(income.total_rub)], [T("Чистые пополнения"), money(performance.net_contributions_rub)]].map(([label, value]) => renderAnalyticsCard(label, value)).join("")}</div><p class="data-footnote">${H("analytics.period_method")} · ${H("Modified Dietz · оценка за период с учётом времени пополнений и выводов. Не годовая ставка.")}</p><div class="two-column"><section class="card">${cardHeader(T("Стоимость по наблюдениям"))}${chart(ws?.overview?.history)}${navCoverageHTML(ws?.overview || {}, state.analyticsPeriod)}${freshness("T-Invest", ws?.overview?.observed_at, ws?.overview?.freshness?.status || ws?.overview?.status)}<p class="data-footnote">${H("Изменение стоимости включает движение денег. Доходность не выводится из разницы крайних точек.")}</p></section><section class="card">${cardHeader(T("Из чего складывается результат"))}${infoRows([[T("Стоимость в начале"), money(performance.start_nav_rub)], [T("Стоимость в конце"), money(performance.end_nav_rub)], [T("Изменение стоимости"), money(performance.nav_change_rub)], [T("Чистые пополнения / выводы"), money(performance.net_contributions_rub)], [T("Результат после внешних потоков"), money(performance.investment_result_rub)], [T("Комиссии за период"), money(performance.fees_rub)], [T("Налоговые списания"), money(performance.taxes_rub)]])}<p class="data-footnote">${performance.from ? renderAnalyticsFragment(performance) : ""}${H("Метод: изменение стоимости минус внешние денежные потоки. Комиссии и налоги уже отражаются в результате; повторно они не вычитаются.")}</p></section></div><div class="two-column section-gap"><section class="card">${cardHeader(T("Выплаты до налоговых списаний"))}${income.by_month?.length ? chart(income.by_month.map(item => ({
       ...item,
       time: renderAnalyticsFragment2(item)
     })), {
@@ -5588,10 +5645,15 @@
   function screenLink(view, [key, title, detail]) {
     const selected = state.route.screen === key;
     const note = detail ? `<small>${esc(detail)}</small>` : "";
-    return `<a class="screen-menu-item${selected ? " selected" : ""}" href="${U.routeHash({mode: state.mode, view, screen: key})}" data-route="${view}" data-screen="${key}"${selected ? ' aria-current="page"' : ""}><span><strong>${esc(title)}</strong>${note}</span>${icon("arrow", true)}</a>`;
+    const controls = state.view === view ? state.route : {};
+    const route = {mode: state.mode, view, screen: key};
+    for (const field of ["period", "asset_filter", "sort", "direction", "currency", "reference_period"]) if (controls[field] !== undefined) route[field] = controls[field];
+    return `<a class="screen-menu-item${selected ? " selected" : ""}" href="${U.routeHash(route)}" data-route="${view}" data-screen="${key}"${selected ? ' aria-current="page"' : ""}><span><strong>${esc(title)}</strong>${note}</span>${icon("arrow", true)}</a>`;
   }
   function screenLinks(view, panes) {
-    const menu = `<nav class="screen-menu" aria-label="${H("navigation.sections")}">${panes.map(pane => screenLink(view, pane)).join("")}</nav>`;
+    const overview = ["portfolio", "market", "analytics"].includes(view);
+    const menu = `<nav class="screen-menu${overview ? " screen-tabs" : ""}" aria-label="${H("navigation.sections")}">${panes.map(pane => screenLink(view, pane)).join("")}</nav>`;
+    if (overview) return menu + `<p class="screen-tabs-hint" hidden>${H("navigation.scroll_sections")}</p>`;
     if (!state.route.screen || panes.length <= 2) return menu;
     const current = panes.find(([key]) => key === state.route.screen)?.[1] || T("navigation.sections");
     const compact = compactNavigation();
@@ -5606,6 +5668,7 @@
       picker.open = !compact;
       if (focused) $(compact ? "summary" : '[aria-current="page"]', picker)?.focus({preventScroll: true});
     }
+    for (const menu of $$(".screen-tabs")) revealScreenTab(menu, menu.contains(document.activeElement) ? document.activeElement : null);
   }
   function captureScreenMenuFocus() {
     const root = $(`#view-${state.view}`);
@@ -5628,35 +5691,78 @@
     }
     target?.focus({preventScroll: true});
   }
-  function layoutMarket({root, attach}) {
+  function captureOverviewState() {
+    if (!["portfolio", "market", "analytics", "home"].includes(state.view)) return null;
+    const root = $(`#view-${state.view}`);
+    if (!root) return null;
+    const active = document.activeElement;
+    let selector = null;
+    if (root.contains(active)) {
+      const attribute = ["data-period", "data-asset-filter", "data-sort", "data-screen", "data-action", "data-asset"].find(name => active.hasAttribute(name));
+      if (attribute) selector = `[${attribute}="${CSS.escape(active.getAttribute(attribute))}"]`;
+      else if (active.matches("select[name]")) selector = `select[name="${CSS.escape(active.name)}"]`;
+      else if (active.matches(".portfolio-method summary")) selector = ".portfolio-method summary";
+    }
+    return {root, screen: state.route.screen || "", selector, methodOpen: Boolean($(".portfolio-method", root)?.open)};
+  }
+  function restoreOverviewState(saved) {
+    if (!saved?.root.isConnected || saved.root.hidden || saved.screen !== (state.route.screen || "")) return;
+    const method = $(".portfolio-method", saved.root);
+    if (method) method.open = saved.methodOpen;
+    const target = saved.selector && $(saved.selector, saved.root);
+    if (target?.getClientRects().length) {
+      target.focus({preventScroll: true});
+      revealScreenTab(target.closest(".screen-tabs"), target);
+    }
+  }
+  function revealScreenTab(menu, target = null) {
+    if (!menu?.getClientRects().length) return;
+    const overflow = menu.scrollWidth > menu.clientWidth;
+    const hint = menu.nextElementSibling;
+    if (hint?.classList.contains("screen-tabs-hint")) hint.hidden = !overflow;
+    const selected = target || $('[aria-current="page"]', menu);
+    if (!overflow || !selected) return;
+    // Scroll only the tab strip. Restoring navigation must not move a user's
+    // vertically scrolled page or an unrelated editor.
+    const container = menu.getBoundingClientRect();
+    const item = selected.getBoundingClientRect();
+    if (item.left < container.left) menu.scrollLeft += item.left - container.left;
+    else if (item.right > container.right) menu.scrollLeft += item.right - container.right;
+  }
+  function layoutMarket({root, panes, attach}) {
+    panes.push(["", T("Обзор")]);
     const columns = $$(":scope > .two-column > section", root);
-    attach("reference", T("Курсы Банка России"), [columns[0], $(".market-indicators", root)]);
-    attach("watchlist", T("Избранное"), columns[1]);
+    attach("reference", T("market.reference_short"), [columns[0], $(".market-indicators", root)], true);
+    attach("watchlist", T("Избранное"), columns[1], !state.tour);
     const sections = $$(":scope > section", root);
-    attach("positions", T("Активы вашего счёта"), sections[0]);
-    attach("news", T("Новости Банка России"), sections[1]);
+    attach("positions", T("Мои активы"), sections[0], !state.tour && state.data.connection?.connected);
+    attach("news", T("Новости Банка России"), sections[1], true);
   }
   function layoutPortfolio({root, screen, panes, attach}) {
-    const columns = $$(":scope > .two-column > section", root);
-    attach("history", T("Стоимость портфеля"), columns[0]);
-    attach("structure", T("Структура портфеля"), columns[1]);
-    attach("positions", T("Мои активы"), $(":scope > section", root));
-    panes.push(["income", T("Полученные выплаты")], ["operations", T("portfolio.operations")]);
+    panes.push(["", T("Обзор")]);
+    const summary = $("[data-portfolio-summary]", root);
+    if (summary) summary.hidden = Boolean(screen);
+    attach("positions", T("Мои активы"), $("[data-portfolio-holdings]", root), !state.tour && (state.data.connection || state.data.workspace?.connection)?.connected !== false);
+    attach("history", T("portfolio.history_title"), $("[data-portfolio-history]", root));
+    attach("structure", T("portfolio.structure_short"), $("[data-portfolio-structure]", root));
+    panes.push(["income", T("portfolio.income_short")], ["operations", T("portfolio.operations")]);
     if (screen === "income") root.insertAdjacentHTML("beforeend", `<section class="card" data-screen-content="income">${cardHeader(T("Полученные выплаты"))}${incomePaneHTML()}</section>`);
     if (screen === "operations") root.insertAdjacentHTML("beforeend", `<section id="ledger-screen" class="card" data-screen-content="operations">${ledgerHTML()}</section>`);
   }
-  function layoutAnalytics({root, attach}) {
+  function layoutAnalytics({root, panes, attach}) {
     const groups = $$(":scope > .two-column", root);
-    attach("history", T("Стоимость по наблюдениям"), groups[0]?.children[0]);
-    attach("performance", T("Из чего складывается результат"), groups[0]?.children[1]);
-    attach("income", T("Выплаты до налоговых списаний"), groups[1]?.children[0]);
-    attach("risk", T("Полнота данных и риски"), groups[1]?.children[1]);
+    if (!groups.length) return;
+    panes.push(["", T("Обзор")]);
+    attach("history", T("portfolio.history_title"), groups[0]?.children[0], true);
+    attach("performance", T("analytics.period_short"), groups[0]?.children[1], true);
+    attach("income", T("portfolio.income_short"), groups[1]?.children[0], true);
+    attach("risk", T("analytics.risk_short"), groups[1]?.children[1]);
   }
   function layoutSettings({root, screen, panes, attach}) {
     if (state.tour) return;
     const form = $("#preferences-form", root);
     const sections = form ? $$(":scope > section", form) : [];
-    attach("appearance", T("Оформление и приватность"), sections[0]);
+    attach("appearance", T("Оформление и приватность"), sections[0], true);
     attach("notifications", T("Уведомления"), [sections[1], $("#notification-settings", root)]);
     if (sections[0]) sections[0].insertAdjacentHTML("beforeend", `<div class="form-actions"><button class="button primary" type="submit">${H("Сохранить настройки")}</button></div>${saveErrorHTML("prefs")}`);
     attach("broker", T("Подключение T-Invest"), $("#broker-settings", root));
@@ -5673,7 +5779,7 @@
   function layoutProfile({root, attach}) {
     if (state.tour) return;
     const sections = $$(".settings-layout > section", root);
-    attach("personal", T("Мой профиль"), sections[0]);
+    attach("personal", T("Мой профиль"), sections[0], true);
     attach("identities", T("Способы входа"), [sections[1], sections[4]]);
     attach("delete", T("Удаление аккаунта"), sections[2]);
     attach("sessions", T("Активные сессии"), sections[3]);
@@ -5688,7 +5794,7 @@
     if (screen === "sources") root.insertAdjacentHTML("beforeend", `<section id="assistant-sources-screen" class="card" data-screen-content="sources">${assistantSourcesHTML()}</section>`);
   }
   function layoutStrategies({root, screen, panes, attach}) {
-    attach("catalog", T("Готовые стратегии"), $(".strategy-catalog", root));
+    attach("catalog", T("Готовые стратегии"), $(".strategy-catalog", root), true);
     const editors = $$(".strategy-editor > section", root);
     attach("editor", T("Моя настройка"), editors[0]);
     attach("assessment", T("Проверка на вашем счёте"), editors[1]);
@@ -5706,10 +5812,11 @@
     root.dataset.screen = screen;
     const label = panes.find(([key]) => key === screen)?.[1] || T("Подробности");
     const chip = screen ? `<span class="chip">${esc(label)}</span>` : "";
-    root.insertAdjacentHTML("afterbegin", `<div class="screen-navigation"><button class="button secondary small-button" data-action="route-back">${icon("back", true)} ${H("navigation.back")}</button>${chip}</div>`);
+    if (screen || !["portfolio", "market", "analytics"].includes(view)) root.insertAdjacentHTML("afterbegin", `<div class="screen-navigation"><button class="button secondary small-button" data-action="route-back">${icon("back", true)} ${H("navigation.back")}</button>${chip}</div>`);
     const header = $(".view-header", root);
     if (header) header.insertAdjacentHTML("afterend", screenLinks(view, panes));
-    for (const wrapper of $$(".two-column,.settings-layout,.settings-layout > div,.strategy-layout,.strategy-editor,.assistant-layout", root)) wrapper.classList.add("screen-layout");
+    revealScreenTab($(".screen-tabs", root));
+    if (screen || !["portfolio", "market", "analytics"].includes(view)) for (const wrapper of $$(".two-column,.settings-layout,.settings-layout > div,.strategy-layout,.strategy-editor,.assistant-layout", root)) wrapper.classList.add("screen-layout");
   }
   function applyScreenLayout(view) {
     if (state.view !== view) return;
@@ -5717,13 +5824,14 @@
     if (!root) return;
     const screen = state.route.screen || "";
     const panes = [];
-    const attach = (key, title, elements) => {
+    const attach = (key, title, elements, overview = false) => {
       const nodes = (Array.isArray(elements) ? elements : [elements]).filter(Boolean);
       if (!nodes.length) return;
       panes.push([key, title]);
-      for (const node of nodes) { node.dataset.screenContent = key; node.hidden = screen !== key; }
+      for (const node of nodes) { node.dataset.screenContent = key; node.hidden = screen ? screen !== key : !overview; }
     };
     screenLayoutHandlers[view]?.({root, screen, panes, attach});
+    root.classList.toggle("has-screen-menu", Boolean(panes.length));
     if (panes.length) addScreenNavigation(root, view, screen, panes);
     for (const anchor of $$('a[href^="/legal/"]', root)) { anchor.removeAttribute("target"); anchor.removeAttribute("rel"); }
     restoreScreenDrafts(root);
@@ -5914,6 +6022,7 @@
   async function pollTableQuotes() {
     if (tableQuotesBusy || !navigator.onLine) { scheduleTableQuotes(C.timing.quoteOfflineRetryMs); return; }
     const generation = state.generation;
+    const brokerContext = state.brokerContext || 0;
     const root = $(`#view-${state.view}`);
     const uids = [...new Set($$("[data-table-quote]", root || document).filter(item => item.getClientRects().length).map(item => item.dataset.tableQuote))];
     if (!uids.length) { scheduleTableQuotes(); return; }
@@ -5923,17 +6032,17 @@
       for (let offset = 0; offset < uids.length; offset += C.pagination.quoteBatchSize) {
         const chunk = uids.slice(offset, offset + C.pagination.quoteBatchSize);
         const payload = await api(`/api/market/quotes?instrument_uids=${encodeURIComponent(chunk.join(","))}`);
-        if (generation !== state.generation || state.tour) return;
+        if (generation !== state.generation || brokerContext !== (state.brokerContext || 0) || state.tour) return;
         adoptTableQuotes(payload.items, chunk);
       }
     } catch (error) {
-      if (generation === state.generation && !isCancelled(error)) markTableQuotesUnavailable(uids);
+      if (generation === state.generation && brokerContext === (state.brokerContext || 0) && !isCancelled(error)) markTableQuotesUnavailable(uids);
     } finally { tableQuotesBusy = false; scheduleTableQuotes(); }
   }
   function tableQuoteHTML(item) {
     const quote = state.quotes[item.uid];
     if (!quote) return `<span class="muted">${H("quotes.loading")}</span>`;
-    return `<strong>${esc(marketPrice(quote.last_price, quote.price_unit || "unknown", quote.price_currency || ""))}</strong>${freshness("T-Invest", quote.quote_time || quote.observed_at, quote.quote_status)}`;
+    return `<span class="holding-mobile-label">${H("Цена")}</span><strong>${esc(marketPrice(quote.last_price, quote.price_unit || "unknown", quote.price_currency || ""))}</strong>${freshness("T-Invest", quote.quote_time || quote.observed_at, quote.quote_status)}`;
   }
   function paintTableQuotes() {
     const rows = new Map(portfolioRows().map(item => [item.uid, item]));
@@ -5972,6 +6081,7 @@
   const renderCurrent = ({preserveAssetChart = false} = {}) => {
     if ((state.locked || !state.user && !state.tour) && state.view !== "install") return;
     const menuFocus = captureScreenMenuFocus();
+    const overviewState = captureOverviewState();
     updateIdentity();
     renderConnectionBanner();
     const renderers = {
@@ -5994,6 +6104,7 @@
     U.bindCharts($(`#view-${state.view}`));
     renderInstallPromotion();
     restoreScreenMenuFocus(menuFocus);
+    restoreOverviewState(overviewState);
   };
   const updateLanguageControls = () => {
     for (const control of $$('[data-action="language"]')) {
@@ -6059,7 +6170,7 @@
     if (!["tid", "vkid"].includes(provider) || !form.reportValidity()) return;
     const payload = Object.fromEntries(["accept_privacy", "accept_personal_data", "accept_terms", "confirm_age_18"].map(key => [key, form.elements[key].checked]));
     if (!Object.values(payload).every(Boolean)) return;
-    const destination = state.authReturn || (state.mode === "public" ? {view: "home"} : {...state.route, overlay: ""});
+    const destination = state.authReturn || (state.mode === "public" ? {view: "portfolio"} : {...state.route, overlay: ""});
     payload.return_to = "/" + U.routeHash({...destination, mode: "account"});
     if (state.authLink) payload.link_current_account = true;
     $("#tid-login").disabled = true;
@@ -6248,6 +6359,33 @@
       throw error;
     }
   };
+  const invalidateBrokerReads = () => {
+    // A confirmed connection supersedes earlier empty/old-account reads, but
+    // does not cancel writes or discard this user's unsaved settings and forms.
+    state.brokerContext = (state.brokerContext || 0) + 1;
+    for (const controller of state.requests) if (controller.omnicioBrokerRead) controller.abort();
+    for (const name of ["workspace", "connection", "visualization", "analysis", "ledger", "refreshStatus", "executionCapabilities", "executions", "asset"]) {
+      state.resourceVersions.set(name, (state.resourceVersions.get(name) || 0) + 1);
+      state.resourceRequests.delete(name);
+      state.loading.delete(name);
+      delete state.data[name];
+      delete state.errors[name];
+    }
+    stopQuoteStream();
+    stopAssetHistory();
+    stopTableQuotes();
+    state.quotes = {};
+    state.asset = null;
+    state.searchSequence += 1;
+    state.searchResults = [];
+    state.searchPages = {events: null, news: null};
+    state.searchFailures = {};
+    state.loading.delete("search");
+    state.strategy.assessment = null;
+    state.strategy.research = null;
+    clearTimeout(state.refresh.timer);
+    state.refresh = {sequence: state.refresh.sequence + 1, timer: null, busy: false};
+  };
   const adoptBrokerConnection = async ({
     form,
     generation
@@ -6255,18 +6393,14 @@
     if (generation !== state.generation) return;
     form.elements.credential.value = "";
     resetBrokerPreview();
+    invalidateBrokerReads();
     state.data.connection = connected;
-    delete state.data.workspace;
-    delete state.data.visualization;
-    delete state.data.analysis;
     toast(T("Счёт подключён. Загружаем реальные данные."));
-    renderSettings();
+    renderCurrent();
     await requestWorkspaceRefresh();
     if (generation !== state.generation) return;
-    await loadResource("workspace", workspacePath(), {
-      force: true
-    });
-    if (generation === state.generation && state.view === "settings") renderCurrent();
+    await loadForView(state.view, state.route, true);
+    if (generation === state.generation) renderCurrent();
   };
   const connectBroker = async control => {
     if (!requireUser()) return;
@@ -6595,7 +6729,7 @@
   const actions = {
     login: () => openAuth(),
     register: () => openAuth("register"),
-    tour: () => navigate("home", {mode: "demo"}),
+    tour: () => navigate("portfolio", {mode: "demo"}),
     "session-retry": bootstrap,
     "public-home": () => navigate("public/welcome"),
     "route-back": routeBack,
@@ -6617,6 +6751,7 @@
     },
     "workspace-refresh": requestWorkspaceRefresh,
     "resource-retry": retryResource,
+    "focus-search": () => { $("#global-search").focus(); },
     "execution-plan": openExecutionPlanner,
     "execution-confirm": confirmExecutionPlan,
     "execution-history": openExecutionHistory,
@@ -6927,6 +7062,9 @@
     if (input.closest("#broker-form") && ["credential", "environment"].includes(input.name)) resetBrokerPreview();
   });
   const changeHandlers = [{
+    matches: ({input}) => input.name === "holdings_sort",
+    run: ({event, input}) => handleClickSort({event, control: input})
+  }, {
     matches: ({
       input
     }) => input.name?.startsWith("strategy."),
@@ -7338,17 +7476,17 @@
   function renderAssetsTableAssetTicker(item) {
     return `<small class="asset-ticker">${esc(item.ticker || item.instrument_type)}</small>`;
   }
-  function renderAssetsTableValue2(item) {
-    if (number(item.change) >= 0) {
-      return "positive";
-    }
-    return "negative";
-  }
-  function renderAssetsTableHideOnMobile(item) {
-    return `<td class="hide-on-mobile">${esc(money(item.value_rub))}</td><td>${watchButton(item)}</td>`;
+  function holdingReturnHTML(item) {
+    const currency = String(item.expected_yield_currency || "").toUpperCase();
+    const value = /^[A-Z]{3}$/.test(currency) ? signedMoney(item.expected_yield_amount, currency) : "—";
+    const daily = item.daily_yield;
+    const day = daily && /^[A-Z]{3}$/i.test(daily.currency) ? `<small class="holding-daily">${H("portfolio.today")}: ${esc(signedMoney(daily.value, daily.currency))}</small>` : "";
+    return `<span class="holding-mobile-label">${H("portfolio.since_purchase")}</span><strong class="${financialTone(item.expected_yield_amount)}">${esc(value)}</strong>${day}`;
   }
   function renderAssetsTableAssetName(item, compact) {
-    return `<tr data-position="${esc(item.uid)}"><td><button class="asset-name" data-asset="${esc(item.uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}${compact ? "" : renderAssetsTableAssetTicker(item)}</span></button></td><td data-table-quote="${esc(item.uid)}">${tableQuoteHTML(item)}</td><td class="${number(item.change) === null ? "muted" : renderAssetsTableValue2(item)}" title="${item.change === null ? T("Изменение цены за день не получено от источника") : T("Изменение цены за день")}">${esc(percent(item.change, true))}</td><td>${esc(percent(item.nav_percent))}</td>${compact ? "" : renderAssetsTableHideOnMobile(item)}</tr>`;
+    const quantity = T("portfolio.quantity_value", {quantity: format(item.quantity, C.display.quantityFractionDigits)});
+    const extraColumns = compact ? "" : `<td class="holding-share"><span class="holding-mobile-label">${H("Доля")}</span>${esc(percent(item.nav_percent))}</td><td class="holding-watch">${watchButton(item)}</td>`;
+    return `<tr data-position="${esc(item.uid)}"><td class="holding-name"><button class="asset-name" data-asset="${esc(item.uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}${renderAssetsTableAssetTicker(item)}<small class="holding-quantity">${esc(quantity)}</small></span></button></td><td class="holding-quote" data-table-quote="${esc(item.uid)}">${tableQuoteHTML(item)}</td><td class="holding-return">${holdingReturnHTML(item)}</td><td class="holding-value"><span class="holding-mobile-label">${H("Стоимость в портфеле")}</span><strong>${esc(money(item.value_rub))}</strong></td>${extraColumns}</tr>`;
   }
   function renderHomeStrategyFragment(document) {
     return `${T("Просадка:")} ${esc(percent(document.profile.max_drawdown_percent))}`;
@@ -7406,9 +7544,6 @@
   }
   function renderEventFiltersFilterButton(key, title) {
     return `<button class="filter-button" data-event-filter="${key}" aria-pressed="${state.eventFilter === key}">${title}</button>`;
-  }
-  function renderPortfolioCard(title, value) {
-    return `<article class="card"><p class="card-label">${title}</p><strong class="main-value">${esc(value)}</strong></article>`;
   }
   function renderNewsHTMLEventItem(item) {
     return `<article class="event-item"><span class="event-icon">${icon("events", true)}</span><div class="event-item-body"><h3><button class="event-title-button" data-public-news="${esc(item.id)}">${esc(item.title)}</button></h3><span class="event-meta">${H("Банк России ·")} ${esc(date(item.published_at, true))}</span></div></article>`;
@@ -8011,7 +8146,11 @@
     control
   }) {
     event.preventDefault();
-    navigate(control.dataset.route, {screen: control.dataset.screen || ""});
+    // Route links carry the selected period and filters. Reading their canonical
+    // hash keeps pointer, keyboard and a bookmarked destination equivalent.
+    const href = control.getAttribute("href");
+    const route = href?.startsWith("#") ? U.parseRoute(href) : {screen: control.dataset.screen || ""};
+    navigate(control.dataset.route, route);
   }
   async function handleClickAuthMode({
     event,
@@ -8062,13 +8201,15 @@
     control
   }) {
     event.preventDefault();
-    if (state.sort === control.dataset.sort) state.sortDirection *= -1;else {
-      state.sort = control.dataset.sort;
+    const sort = control.dataset.sort || control.value;
+    const fromSelect = control.name === "holdings_sort";
+    if (state.sort === sort) state.sortDirection *= -1;else {
+      state.sort = sort;
       state.sortDirection = 1;
     }
     updateViewRoute({sort: state.sort, direction: String(state.sortDirection)});
     renderCurrent();
-    $(`[data-sort="${state.sort}"]`, $(`#view-${state.view}`))?.focus({
+    $$(fromSelect ? '[name="holdings_sort"]' : `[data-sort="${state.sort}"]`, $(`#view-${state.view}`)).find(item => item.getClientRects().length)?.focus({
       preventScroll: true
     });
   }

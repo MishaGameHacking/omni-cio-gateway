@@ -18,7 +18,12 @@ from omnicio.market import (
     InstrumentMarketCandle,
     InstrumentMarketSnapshot,
 )
-from omnicio.portfolio import PortfolioAnalysisError, analyze_portfolio
+from omnicio.portfolio import (
+    PortfolioAnalysisError,
+    analyze_portfolio,
+    broker_statistics,
+    broker_statistics_summary,
+)
 from omnicio.portfolio_store import (
     BalancingPolicyRecord,
     InvestmentProfileRecord,
@@ -90,6 +95,53 @@ def metadata(uid: str, sector: str, kind: str = "share") -> TBankInstrumentMetad
 
 def cash(value: str = "100", blocked: str = "20", loading: bool = False) -> TBankPositions:
     return TBankPositions((money(value),), (money(blocked),), loading)
+
+
+def test_broker_statistics_keep_native_amounts_and_weighted_average_separate_from_fifo() -> None:
+    observed_at = datetime(2026, 10, 9, 8, 30, tzinfo=UTC)
+    item = replace(
+        position("foreign", "2", "100"), current_price=money("58.37", "USD"),
+        average_price=money("55.79", "USD"), average_price_fifo=money("52.13", "USD"),
+        expected_yield_amount="5.16", daily_yield=money("-0.07", "USD"),
+    )
+    source = replace(
+        portfolio(item), expected_yield_percent="1.234", daily_yield=money("-0.56"),
+        daily_yield_percent="-0.0123",
+    )
+    statistics = broker_statistics(source, observed_at=observed_at)
+    summary = broker_statistics_summary({"broker_statistics": statistics})
+    assert summary["return_percent"] == "1.234"
+    assert summary["daily_yield"] == {"currency": "RUB", "value": "-0.56"}
+    assert summary["daily_yield_percent"] == "-0.0123"
+    assert summary["observed_at"] == observed_at.isoformat()
+    assert summary["method"] == "broker_open_positions"
+    assert "positions" not in summary
+    assert "investment_result_rub" not in summary
+    assert statistics["positions"]["foreign"] == {
+        "expected_yield_amount": "5.16", "expected_yield_currency": "USD",
+        "daily_yield": {"currency": "USD", "value": "-0.07"},
+        "average_price": {"currency": "USD", "value": "55.79"},
+    }
+
+
+def test_broker_statistics_do_not_guess_currency_or_fill_missing_metrics_with_zero() -> None:
+    unknown = replace(position("unknown", "1", "100"), current_price=None)
+    inconsistent = replace(position("mixed", "1", "100"), average_price=money("1", "USD"))
+    zero = replace(position("zero", "1", "100"), daily_yield=money("0"))
+    source = replace(
+        portfolio(unknown, inconsistent, zero), expected_yield_percent=None,
+        daily_yield_percent=None,
+    )
+    statistics = broker_statistics(source, observed_at=datetime.now(UTC))
+    assert statistics["return_percent"] is None
+    assert statistics["daily_yield_percent"] is None
+    assert statistics["daily_yield"] is None
+    for uid in ("unknown", "mixed"):
+        assert statistics["positions"][uid]["expected_yield_amount"] is None
+        assert statistics["positions"][uid]["expected_yield_currency"] is None
+    assert statistics["positions"]["zero"]["expected_yield_amount"] == "0"
+    assert statistics["positions"]["zero"]["daily_yield"] == {"currency": "RUB", "value": "0"}
+    assert broker_statistics_summary({"analysis": {"nav_rub": "1000"}}) is None
 
 
 def test_decimal_weights_cash_blocking_and_stable_sort() -> None:

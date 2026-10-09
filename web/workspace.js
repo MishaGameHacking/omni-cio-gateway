@@ -14,7 +14,16 @@
 
   // SVG strokes and HTML legends use the same palette, including theme changes.
   const colors = Object.freeze(Array.from({length: C.charts.allocationColorCount}, (_, index) => `var(--chart-allocation-${index})`));
-  const navigation = () => ([["home", T("Главная")], ["portfolio", T("Портфель")], ["market", T("Рынок")], ["strategies", T("Стратегии")], ["assistant", T("ИИ-помощник")], ["goals", T("Цели")], ["analytics", T("Аналитика")], ["events", T("События")], ["profile", T("Профиль")], ["settings", T("Настройки")]]);
+  // One registry owns both navigation surfaces. Portfolio is the daily entry
+  // point; specialised analysis and account tools remain in the complete menu.
+  const navigationItems = Object.freeze([
+    ["portfolio", "Портфель", true], ["home", "Главная", false],
+    ["market", "Рынок", true], ["strategies", "Стратегии", true],
+    ["assistant", "ИИ-помощник", false], ["goals", "Цели", false],
+    ["analytics", "Аналитика", false], ["events", "События", false],
+    ["profile", "Профиль", true], ["settings", "Настройки", false]
+  ]);
+  const navigation = (mobile = false) => navigationItems.filter(item => !mobile || item[2]).map(([key, label]) => [key, T(label)]);
   const publicPages = Object.freeze(["welcome", "features", "how-it-works", "strategies", "technology", "pricing", "about", "support", "install"]);
   const routeScreens = Object.freeze({
     home: [], portfolio: ["positions", "history", "structure", "income", "operations"],
@@ -34,7 +43,7 @@
     const mode = explicitMode ? parts.shift() : fallbackMode;
     const alias = {features: "features", "how-it-works": "how-it-works", "public-strategies": "strategies", technology: "technology", pricing: "pricing", about: "about", welcome: "welcome"};
     if (!explicitMode && Object.hasOwn(alias, parts[0])) return {mode: "public", view: alias[parts[0]], screen: ""};
-    const view = parts.shift() || (mode === "public" ? "welcome" : "home");
+    const view = parts.shift() || (mode === "public" ? "welcome" : "portfolio");
     const result = {mode, view, screen: parts.shift() || "", invalid: parts.length > 0};
     if (mode === "public") result.invalid ||= !publicPages.includes(view) || Boolean(result.screen);
     else result.invalid ||= !Object.hasOwn(routeScreens, view) || Boolean(result.screen && !routeScreens[view]?.includes(result.screen));
@@ -49,7 +58,7 @@
     const mode = ["public", "demo", "account"].includes(route.mode) ? route.mode : "account";
     const query = new URLSearchParams();
     for (const [field, key] of Object.entries(routeFields)) if (route[field] !== undefined && route[field] !== null && String(route[field]) !== "") query.set(key, String(route[field]));
-    return `#${mode}/${route.view || (mode === "public" ? "welcome" : "home")}${route.screen ? "/" + route.screen : ""}${query.size ? "?" + query.toString() : ""}`;
+    return `#${mode}/${route.view || (mode === "public" ? "welcome" : "portfolio")}${route.screen ? "/" + route.screen : ""}${query.size ? "?" + query.toString() : ""}`;
   };
   const resumeRoute = route => {
     const parsed = parseRoute(routeHash({mode: route.mode, view: route.view, screen: route.screen}));
@@ -88,7 +97,7 @@
       maximumFractionDigits: digits
     }).format(value);
   };
-  const money = (value, digits = 0, currency = "RUB", personal = true) => {
+  const money = (value, digits = C.display.moneyFractionDigits, currency = "RUB", personal = true) => {
     if (personal && privateValuesHidden && number(value) !== null) return "••••••";
     const numeric = number(value);
     if (numeric === null) return "—";
@@ -100,8 +109,9 @@
       maximumFractionDigits: digits
     }).format(value);
   };
-  const percent = (value, signed = false) => {
+  const percent = (value, signed = false, personal = false) => {
     const numeric = number(value);
+    if (personal && privateValuesHidden && numeric !== null) return "••••••";
     return numeric === null ? "—" : `${renderPercentValue(signed, numeric)}${format(numeric, C.display.numberFractionDigits)}%`;
   };
   const date = (value, time = false) => {
@@ -501,6 +511,7 @@
     clearCharts,
     colors,
     get navigation() { return navigation(); },
+    get mobileNavigation() { return navigation(true); },
     marketPrice,
     quotationNanos,
     updateChart,

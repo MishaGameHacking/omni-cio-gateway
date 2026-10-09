@@ -31,7 +31,13 @@ from .monitoring import (
     REFRESH_MAX_ATTEMPTS,
 )
 from .payouts import PAYOUT_READ_CTES
-from .portfolio import SecurityExposure, analyze_portfolio
+from .portfolio import (
+    BROKER_POSITION_STATISTICS_FIELDS,
+    SecurityExposure,
+    analyze_portfolio,
+    broker_statistics,
+    broker_statistics_summary,
+)
 from .strategy import document_hash, normalize_document
 from .tbank import (
     TBankAccount,
@@ -45,6 +51,32 @@ from .tbank import (
 
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
 REFRESH_JOB_TYPE = "portfolio_refresh"
+# A catalog match must not multiply a holding or substitute another UID's
+# metadata. Use FIGI only when the exact UID is absent and FIGI is unambiguous.
+_PORTFOLIO_CATALOG_JOIN = """
+LEFT JOIN LATERAL (
+    SELECT exact.* FROM instrument_catalog AS exact
+    WHERE exact.provider = 'tbank' AND exact.instrument_uid = p.instrument_uid
+    UNION ALL
+    SELECT fallback.* FROM instrument_catalog AS fallback
+    WHERE fallback.provider = 'tbank' AND p.figi <> '' AND fallback.figi = p.figi
+      AND NOT EXISTS (
+          SELECT 1 FROM instrument_catalog AS exact
+          WHERE exact.provider = 'tbank' AND exact.instrument_uid = p.instrument_uid
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM instrument_catalog AS other
+          WHERE other.provider = 'tbank' AND other.figi = p.figi
+            AND other.instrument_uid <> fallback.instrument_uid
+      )
+) AS c ON true
+"""
+
+
+def _position_statistics(document: object) -> dict[str, object]:
+    """Old snapshots have unknown metrics; their missing fields are not zeros."""
+    values = document if isinstance(document, Mapping) else {}
+    return {key: values.get(key) for key in BROKER_POSITION_STATISTICS_FIELDS}
 
 
 def _has_refresh_legal(cur: Any, user_id: UUID, versions: object) -> bool:
@@ -1672,6 +1704,9 @@ class PortfolioStore:
         evidence: dict[str, object] = {
             "analysis": asdict(bundle.analysis),
             "sources": [asdict(source) for source in bundle.sources],
+            "broker_statistics": broker_statistics(
+                bundle.portfolio, observed_at=bundle.refreshed_at,
+            ),
         }
         if account is not None:
             evidence["account"] = {
@@ -1931,7 +1966,7 @@ class PortfolioStore:
             history_rows = [dict(row) for row in cur.fetchall()]
 
             cur.execute(
-                """
+                f"""
                 SELECT
                     p.instrument_uid,
                     p.figi,
@@ -1961,12 +1996,7 @@ class PortfolioStore:
                     COALESCE(r.reasons, '[]'::jsonb) AS risk_reasons,
                     r.assessed_at
                 FROM portfolio_snapshot_positions AS p
-                LEFT JOIN instrument_catalog AS c
-                  ON c.provider = 'tbank'
-                 AND (
-                     c.instrument_uid = p.instrument_uid
-                     OR (p.figi <> '' AND c.figi = p.figi)
-                 )
+                {_PORTFOLIO_CATALOG_JOIN}
                 LEFT JOIN LATERAL (
                     SELECT assessment.* FROM portfolio_risk_assessments assessment
                     JOIN portfolio_snapshots assessed ON assessed.id = assessment.snapshot_id
@@ -1993,7 +2023,12 @@ class PortfolioStore:
             if isinstance(raw_analysis, dict):
                 analysis = dict(cast(dict[str, object], raw_analysis))
 
+        statistics = evidence.get("broker_statistics") if isinstance(evidence, Mapping) else None
+        saved_positions = statistics.get("positions") if isinstance(statistics, Mapping) else None
         for position in positions:
+            saved = (saved_positions.get(position["instrument_uid"])
+                     if isinstance(saved_positions, Mapping) else None)
+            position.update(_position_statistics(saved))
             assessed_at = cast(datetime | None, position.get("assessed_at"))
             position["assessment_freshness"] = _freshness_status(
                 assessed_at,
@@ -2033,6 +2068,7 @@ class PortfolioStore:
                 "sector_coverage_percent": analysis.get("sector_coverage_percent"),
                 "valued_security_count": analysis.get("valued_security_count"),
                 "security_count": analysis.get("security_count"),
+                "broker_statistics": broker_statistics_summary(evidence),
                 "positions": positions,
             },
         }
@@ -2080,7 +2116,7 @@ class PortfolioStore:
             environment = str(account["environment"])
 
             cur.execute(
-                """
+                f"""
                 SELECT
                     s.id AS snapshot_id,
                     s.captured_at,
@@ -2102,6 +2138,8 @@ class PortfolioStore:
                     p.sector,
                     p.country_of_risk,
                     p.for_qual_investor,
+                    s.evidence->'broker_statistics'->'positions'->p.instrument_uid
+                        AS broker_position_statistics,
                     COALESCE(c.instrument_uid, '') AS catalog_instrument_uid,
                     COALESCE(c.asset_uid, '') AS asset_uid,
                     COALESCE(c.name, '') AS name,
@@ -2112,18 +2150,13 @@ class PortfolioStore:
                     COALESCE(r.fundamental_status, 'data_missing') AS fundamental_status,
                     COALESCE(r.source_status, 'data_missing') AS source_status,
                     COALESCE(r.reasons, '[]'::jsonb) AS risk_reasons,
-                    COALESCE(r.evidence, '{}'::jsonb) AS risk_evidence,
+                    COALESCE(r.evidence, '{{}}'::jsonb) AS risk_evidence,
                     r.assessed_at
                 FROM portfolio_snapshot_positions AS p
                 JOIN portfolio_snapshots AS s
                   ON s.id = p.snapshot_id
                  AND s.user_id = p.user_id
-                LEFT JOIN instrument_catalog AS c
-                  ON c.provider = 'tbank'
-                 AND (
-                     c.instrument_uid = p.instrument_uid
-                     OR (p.figi <> '' AND c.figi = p.figi)
-                 )
+                {_PORTFOLIO_CATALOG_JOIN}
                 LEFT JOIN LATERAL (
                     SELECT assessment.* FROM portfolio_risk_assessments assessment
                     JOIN portfolio_snapshots assessed ON assessed.id = assessment.snapshot_id
@@ -2149,6 +2182,7 @@ class PortfolioStore:
                 return None
 
             latest = rows[0]
+            latest.update(_position_statistics(latest.pop("broker_position_statistics", None)))
             subjects = [
                 value
                 for value in (
@@ -2336,7 +2370,7 @@ class PortfolioStore:
             broker_user_source = cast(dict[str, Any] | None, cur.fetchone())
 
             cur.execute(
-                """
+                f"""
                 SELECT
                     p.instrument_uid,
                     p.figi,
@@ -2380,12 +2414,7 @@ class PortfolioStore:
                     COALESCE(r.state, 'data_missing') AS risk_state,
                     COALESCE(r.rating_status, 'data_missing') AS rating_status
                 FROM portfolio_snapshot_positions AS p
-                LEFT JOIN instrument_catalog AS c
-                  ON c.provider = 'tbank'
-                 AND (
-                     c.instrument_uid = p.instrument_uid
-                     OR (p.figi <> '' AND c.figi = p.figi)
-                 )
+                {_PORTFOLIO_CATALOG_JOIN}
                 LEFT JOIN instrument_issuer_map AS m
                   ON m.provider = 'tbank'
                  AND m.instrument_uid = c.instrument_uid

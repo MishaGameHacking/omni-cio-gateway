@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from threading import Event
 from unittest.mock import Mock, patch
@@ -53,6 +54,7 @@ from omnicio.tbank import (
     TBankUnavailable,
     TBankUserInfo,
 )
+from omnicio.workspace_store import WorkspaceStore
 
 USER_ID = UUID("00000000-0000-0000-0000-000000000001")
 LEGAL_VERSIONS = {
@@ -1082,6 +1084,96 @@ def test_native_quick_refresh_restores_persisted_metadata_and_original_user_info
     assert all(row[0] == original for row in catalog_times)
     with pytest.raises(ObservationCancelled):
         store.reuse_snapshot_metadata(UUID(int=2), job_run_id=quick_job.id, bundle=quick)
+
+
+def test_native_broker_statistics_keep_currency_scope_and_catalog_matches_unique(
+    connected_database,
+):
+    database, store, admin = connected_database
+    connect_user(database)
+    job = claim_job(store)
+    observed_at = datetime.now(UTC) - timedelta(days=3)
+    original = TBankInstrumentMetadata(
+        uid="held-share", name="Verified share", ticker="HOLD", figi="same-figi",
+        isin="", instrument_type="share", sector="financial", country_of_risk="RU",
+        for_qual_investor=False,
+    )
+    duplicate_figi = replace(original, uid="other-uid", name="Different instrument")
+    position = TBankPortfolioPosition(
+        ticker="HOLD", figi=original.figi, instrument_uid=original.uid, instrument_type="share",
+        quantity="2", current_price=TBankMoney("RUB", "125.19"),
+        average_price=TBankMoney("RUB", "120.03"),
+        average_price_fifo=TBankMoney("RUB", "119.07"),
+        expected_yield_amount="10.32", daily_yield=TBankMoney("RUB", "-0.42"), blocked=False,
+    )
+    base = bundle()
+    portfolio = replace(
+        base.portfolio, expected_yield_percent="1.04267726", daily_yield=TBankMoney("RUB", "-0.42"),
+        daily_yield_percent="-0.042", positions=(position,),
+    )
+    observed = replace(
+        base, refreshed_at=observed_at, portfolio=portfolio, metadata=(original, duplicate_figi),
+        analysis=analyze_portfolio(portfolio, base.positions, (original, duplicate_figi)),
+    )
+    snapshot = store.save_snapshot(USER_ID, job_run_id=job.id, bundle=observed)
+    latest = store.portfolio_visualization(USER_ID)["latest"]
+    assert len(latest["positions"]) == 1
+    assert latest["positions"][0]["name"] == "Verified share"
+    strategy = store.latest_balancing_context(USER_ID)
+    assert len(strategy["holdings"]) == 1
+    assert strategy["holdings"][0]["name"] == "Verified share"
+    stats = latest["broker_statistics"]
+    assert stats["return_percent"] == "1.04267726"
+    assert stats["daily_yield"] == {"currency": "RUB", "value": "-0.42"}
+    assert stats["daily_yield_percent"] == "-0.042"
+    assert stats["observed_at"] == observed_at.isoformat()
+    assert latest["snapshot_freshness"] == "stale"
+    holding = latest["positions"][0]
+    assert holding["expected_yield_amount"] == "10.32"
+    assert holding["expected_yield_currency"] == "RUB"
+    assert holding["average_price"] == {"currency": "RUB", "value": "120.03"}
+    assert holding["average_price_fifo_value"] == Decimal("119.07")
+    asset = store.instrument_visualization(USER_ID, original.uid)
+    assert len(asset["history"]) == 1
+    assert asset["latest"]["expected_yield_amount"] == "10.32"
+    overview = WorkspaceStore(database).dashboard(USER_ID)["overview"]
+    assert overview["broker_statistics"] == stats
+    assert overview["status"] == "stale"
+    assert "positions" not in stats
+    assert store.portfolio_visualization(UUID(int=2))["latest"] is None
+
+    # A legacy row whose only known identity is FIGI must not borrow an
+    # arbitrary catalog UID when two different instruments match that FIGI.
+    admin.execute(
+        "UPDATE portfolio_snapshot_positions SET instrument_uid=figi WHERE snapshot_id=%s",
+        (snapshot,),
+    )
+    ambiguous = store.portfolio_visualization(USER_ID)["latest"]["positions"]
+    assert len(ambiguous) == 1
+    assert ambiguous[0]["catalog_instrument_uid"] == ""
+    legacy = store.instrument_visualization(USER_ID, original.figi)
+    assert len(legacy["history"]) == 1
+    assert legacy["latest"]["catalog_instrument_uid"] == ""
+    strategy = store.latest_balancing_context(USER_ID)
+    assert len(strategy["holdings"]) == 1
+    assert strategy["holdings"][0]["name"] == ""
+    admin.execute(
+        "DELETE FROM instrument_catalog WHERE provider='tbank' AND instrument_uid=%s",
+        (duplicate_figi.uid,),
+    )
+    unique = store.portfolio_visualization(USER_ID)["latest"]["positions"]
+    assert len(unique) == 1
+    assert unique[0]["catalog_instrument_uid"] == original.uid
+    strategy = store.latest_balancing_context(USER_ID)
+    assert len(strategy["holdings"]) == 1
+    assert strategy["holdings"][0]["name"] == "Verified share"
+
+    admin.execute("UPDATE portfolio_snapshots SET evidence=evidence-'broker_statistics' "
+                  "WHERE id=%s", (snapshot,))
+    assert WorkspaceStore(database).dashboard(USER_ID)["overview"]["broker_statistics"] is None
+    old = store.portfolio_visualization(USER_ID)["latest"]
+    assert old["broker_statistics"] is None
+    assert old["positions"][0]["expected_yield_amount"] is None
 
 
 @pytest.fixture

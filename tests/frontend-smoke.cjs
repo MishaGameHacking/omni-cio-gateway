@@ -707,6 +707,10 @@ const displayContracts = () => {
   const ui = context.window.OmniUI;
   for (const value of [null, undefined, "", "  ", false, [], {}, "NaN", Infinity]) assert.equal(ui.number(value), null, "Unknown and non-finite values remain unknown");
   assert.equal(ui.money(null), "—");
+  assert.equal(ui.money("1000.08").replace(/\s/g, ""), "1000,08₽", "Portfolio totals keep kopecks by default");
+  assert.equal(ui.money("0.42").replace(/\s/g, ""), "0,42₽", "A real small return cannot be rounded to a zero result");
+  assert.equal(ui.money("-0.07").replace(/\s/g, ""), "-0,07₽", "A small loss keeps its sign and monetary precision");
+  portfolioExperienceContracts(ui, context.window.OMNICIO_I18N);
   assert.equal(ui.percent(null), "—");
   assert.ok(ui.freshness("T-Invest", stamp, "live").includes("Текущая котировка"), "The actual server live status has an authored user-facing label");
   assert.ok(!ui.freshness("T-Invest", stamp, "live").includes("Статус требует проверки"));
@@ -743,6 +747,47 @@ const displayContracts = () => {
   viewportSizeContracts();
   console.log("PASS display contracts: unknown values, source escaping, privacy, real-series requirements and locale");
 };
+function portfolioExperienceContracts(ui, i18n) {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const state = {mode: "account", data: {connection: clone(serverContracts.broker_workspace.connection)}, errors: {}, loading: new Set(), portfolioPeriod: "1y"};
+  const context = sourceContext({state, U: ui, T: i18n.t, H: i18n.html, esc: ui.escape, money: ui.money,
+    percent: ui.percent, number: ui.number, empty: ui.empty, icon: ui.icon, freshness: ui.freshness, dataError: () => "read failed"});
+  const source = app.slice(app.indexOf("  const signedMoney ="), app.indexOf("  const renderPortfolio ="))
+    + app.slice(app.indexOf("  function holdingReturnHTML("), app.indexOf("  function renderAssetsTableAssetName("));
+  vm.runInContext(source + "\nglobalThis.summary=portfolioSummaryHTML;globalThis.holdingReturn=holdingReturnHTML;", context);
+  assert.deepEqual(Array.from(ui.mobileNavigation, item => item[0]), ["portfolio", "market", "strategies", "profile"], "One navigation registry exposes Portfolio directly on mobile");
+  assert.equal(ui.parseRoute("").view, "portfolio", "An empty account route starts with the actual holdings overview");
+  for (const locale of ["ru", "en"]) {
+    ui.setLocale(locale);
+    ui.setPrivacy(false);
+    const observed = clone(serverContracts.broker_workspace.overview);
+    const html = context.summary(observed);
+    assert.ok(html.includes(ui.escape(ui.money("1000.08"))), "The actual server total retains kopecks");
+    assert.ok(html.includes(ui.escape(ui.percent(observed.broker_statistics.return_percent, true))), "The summary consumes the provider's open-position return");
+    assert.ok(html.includes(ui.escape("+" + ui.money("0.42"))), "The daily amount comes from the provider in its native currency");
+    assert.ok(!html.includes(ui.percent(serverContracts.broker_workspace.performance.return_percent, true)), "Historical Dietz return cannot replace the current broker return");
+    assert.ok(html.includes(observed.broker_statistics.source_url), "The calculation has a directly inspectable source");
+    assert.ok(context.holdingReturn(serverContracts.broker_portfolio_visualization.latest.positions[0]).includes(ui.escape("+" + ui.money("10.32"))), "The holding uses a native monetary result, not a missing daily percentage");
+    const older = {...observed, status: "stale", observed_at: "2025-01-06T11:12:00Z"};
+    const stale = context.summary(older);
+    assert.ok(stale.includes(ui.escape(ui.date(older.observed_at, true))) && stale.includes(ui.escape(i18n.t("Данные устарели"))), "An old snapshot retains its actual timestamp and stale label");
+    const absent = {...observed, broker_statistics: undefined};
+    const missing = context.summary(absent);
+    assert.ok(missing.includes(ui.escape(i18n.t("portfolio.broker_result_missing"))) && !missing.includes("data-broker-return"), "Missing broker data is an explicit unknown, not a zero result");
+    const zero = {...observed, broker_statistics: {...observed.broker_statistics, return_percent: "0", daily_yield_percent: "0", daily_yield: {currency: "RUB", value: "0"}}};
+    assert.ok(context.summary(zero).includes("data-broker-return>0%</dd>"), "A reported zero remains visible");
+    ui.setPrivacy(true);
+    const masked = context.summary(observed);
+    assert.ok(masked.includes("data-broker-return>••••••</dd>") && !masked.includes(ui.percent(observed.broker_statistics.return_percent, true)), "Personal percent and money share the privacy preference");
+    ui.setPrivacy(false);
+  }
+  state.data.connection = undefined;
+  state.loading.add("workspace");
+  assert.ok(!context.summary({}).includes("account-context"), "A pending first workspace read cannot invent a connected account");
+  ui.setLocale("ru");
+  assert.equal(ui.format("0.000000001", clientConfig.display.quantityFractionDigits), "0,000000001", "A nano-sized source quantity cannot turn into zero");
+  console.log("PASS portfolio experience: actual broker DTO, distinct result methods, money and quantity precision, zero/unknown/stale states, privacy and direct mobile navigation");
+}
 function presetMathContracts(ui, i18n) {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const source = app.slice(app.indexOf("  const strategyMethodLabels ="), app.indexOf("  const assessmentIsCurrent ="));
@@ -1407,6 +1452,57 @@ function dialogCloseContracts() {
   assert.equal(navigations.length, 3, "Closing for history navigation cannot trigger a second navigation");
   console.log("PASS dialog close lifecycle: queued old events preserve reopened editors, navigation markers are consumed, and current close, overlay, cancel and history paths remain effective");
 }
+async function brokerConnectionReadContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const state = {generation: 1, brokerContext: 0, user: {public_id: "000000123"}, mode: "account", view: "settings", route: {}, data: {}, errors: {},
+    requests: new Set(), loading: new Set(), resourceRequests: new Map(), resourceVersions: new Map(), quotes: {a: {last_price: "7"}},
+    refresh: {sequence: 0, timer: null, busy: false}, searchSequence: 0, strategy: {draft: {reserve_rub: "21"}, dirty: true},
+    prefs: {draft: {theme: "light"}, dirty: true}, screenDrafts: {profile: {name: "Unsaved name"}}};
+  const pending = [], freshness = {textContent: ""};
+  let finishRefresh;
+  const context = sourceContext({state, window: {setTimeout}, document: {activeElement: null}, navigator: {onLine: true},
+    URL, Headers, AbortController, clearTimeout, location: {origin: "https://isolated.test"}, compiledBuild: "test", T: value => value, date: value => value,
+    fetch: (url, options) => new Promise(resolve => { pending.push({path: url.pathname, options, resolve: payload => resolve({status: 200, ok: true, headers: new Headers(), json: async () => payload})}); }),
+    $: selector => selector === "#workspace-freshness" ? freshness : null, resourceSnapshot: async (_name, payload) => payload,
+    isCancelled: error => error.code === "profile_context_changed" || error.name === "AbortError", renderCurrent() {},
+    resetBrokerPreview() {}, toast() {}, renderSettings() {}, workspacePath: () => "/api/workspace?history_period=all",
+    requestWorkspaceRefresh: () => new Promise(resolve => { finishRefresh = resolve; }),
+    stopQuoteStream() {}, stopAssetHistory() {}, stopTableQuotes() {}, stopVisibleRefresh() {},
+    adoptPreferences() {}, adoptStrategy() {}});
+  const invalidation = app.indexOf("  const invalidateBrokerReads =");
+  context.loadForView = () => context.load("workspace", "/api/workspace?history_period=all", {force: true});
+  const source = app.slice(app.indexOf("  const contextError ="), app.indexOf("  const recoveryErrorReason ="))
+    + app.slice(app.indexOf("  const loadResource ="), app.indexOf("  const resourceSnapshot ="))
+    + app.slice(app.indexOf("  const adoptWorkspace ="), app.indexOf("  const workspacePeriod ="))
+    + app.slice(invalidation < 0 ? app.indexOf("  const adoptBrokerConnection =") : invalidation, app.indexOf("  const connectBroker ="));
+  vm.runInContext(source + "\nglobalThis.load=loadResource; globalThis.connect=adoptBrokerConnection;", context);
+  const paths = [["workspace", "/api/workspace?history_period=all"], ["connection", "/api/broker/tbank"], ["visualization", "/api/portfolio/visualization"]];
+  const reads = paths.map(([name, path]) => context.load(name, path, {force: true}));
+  const old = pending.splice(0);
+  const connected = {connected: true, account_id: "new-account", account_name: "New account", environment: "live"};
+  const form = {elements: {credential: {value: "isolated-test-input"}}};
+  const connection = context.connect({form, generation: 1}, connected);
+  assert.equal(state.data.connection.account_id, "new-account");
+  for (const read of old) read.resolve(read.path === "/api/workspace" ? {connection: {connected: false}, overview: {observed_at: stamp}} : {connected: false, latest: null});
+  await Promise.all(reads);
+  assert.equal(state.data.connection.account_id, "new-account", "A late not-connected GET started before PUT cannot overwrite the successfully connected account");
+  assert.equal(state.data.workspace, undefined, "Pre-connection data cannot return while the initial broker refresh is pending");
+  assert.equal(state.data.visualization, undefined);
+  assert.equal(state.generation, 1, "Connecting a broker keeps the signed-in user's identity context");
+  assert.equal(state.prefs.draft.theme, "light");
+  assert.equal(state.strategy.draft.reserve_rub, "21");
+  assert.equal(state.screenDrafts.profile.name, "Unsaved name", "Unrelated unsaved forms survive a broker connection");
+  assert.equal(form.elements.credential.value, "");
+  assert.equal(Object.keys(state.quotes).length, 0, "Quotes from the previous connection state are invalidated");
+  finishRefresh();
+  await until(() => pending.length, "A fresh workspace read follows confirmed broker refresh");
+  const current = pending.shift();
+  assert.equal(current.path, "/api/workspace");
+  current.resolve({connection: connected, overview: {observed_at: stamp}});
+  await connection;
+  assert.equal(state.data.workspace.connection.account_id, "new-account", "The confirmed account's fresh observation is adopted normally");
+  console.log("PASS broker connection: late pre-connection reads cannot restore empty data; current reads work and unrelated drafts survive");
+}
 async function assetBackgroundChartContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const state = {generation: 1, user: {public_id: "000000123"}, mode: "account", view: "asset",
@@ -1435,6 +1531,7 @@ async function assetBackgroundChartContracts() {
   for (const name of ["Home", "Portfolio", "Market", "Strategies", "Assistant", "Goals", "Analytics", "Events", "Profile", "Settings", "Search", "Install"]) context["render" + name] = () => {};
   const source = app.slice(app.indexOf("  const loadResource ="), app.indexOf("  const resourceSnapshot ="))
     + app.slice(app.indexOf("  const refreshAssetChartContext ="), app.indexOf("  const tradingLabel ="))
+    + app.slice(app.indexOf("  function captureOverviewState("), app.indexOf("  function layoutMarket("))
     + app.slice(app.indexOf("  const renderCurrent ="), app.indexOf("  const updateLanguageControls ="));
   vm.runInContext(source + "\nglobalThis.load=loadResource; globalThis.paint=renderCurrent;", context);
   const pendingRead = name => {
@@ -1641,7 +1738,7 @@ function settingsRecoveryContracts() {
   }}));
   const form = {id: "preferences-form"};
   const status = {dataset: {}, textContent: "", closest: () => form};
-  const view = {set innerHTML(html) {
+  const view = {classList: {toggle() {}}, set innerHTML(html) {
     sections.forEach(section => { section.notices = []; });
     if (html.includes('data-save-error="prefs"')) sections[1].notices.push(notice());
   }};
@@ -3339,7 +3436,7 @@ function assertChartLayout(charts, label) {
     for (const axis of chart.axes.slice(3)) assert.ok(axis.rect.top >= chart.svg.bottom && axis.rect.left >= chart.svg.left - 1 && axis.rect.right <= chart.svg.right + 1, label + ": date axis stays below its own plot");
   }
 }
-const screenshotEvidenceNames = new Set(["portfolio-2-320.png", "market-2-320.png", "strategies-2-390.png", "strategies-custom-2-390.png", "auth-2-390.png", "auth-2-320.png", "failure-state.png", "payout-source-normal-ru-320.png", "payout-source-ambiguous-ru-320.png", "payout-source-normal-en-320.png", "payout-source-ambiguous-en-320.png", "live-candles-1.png", "live-candles-2.png"]);
+const screenshotEvidenceNames = new Set(["portfolio-experience-1-320.png", "portfolio-experience-1-1440.png", "analytics-experience-1-320.png", "portfolio-2-320.png", "market-2-320.png", "strategies-2-390.png", "strategies-custom-2-390.png", "auth-2-390.png", "auth-2-320.png", "failure-state.png", "payout-source-normal-ru-320.png", "payout-source-ambiguous-ru-320.png", "payout-source-normal-en-320.png", "payout-source-ambiguous-en-320.png", "live-candles-1.png", "live-candles-2.png"]);
 let screenshotEvidenceCharacters = 0;
 let screenshotEvidenceSequence = 0;
 function logScreenshotEvidence(name, png) {
@@ -3677,6 +3774,7 @@ const runBrowser = async base => {
     await exercisePushLifecycle({send, configureViewport, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
     const widths = [1440, 1366, 768, 390, 320];
     for (const round of [1, 2]) {
+      await exercisePortfolioExperience({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
       for (const width of widths) {
         await exerciseViewport({
           send,
@@ -3754,6 +3852,7 @@ const runBrowser = async base => {
     assetPayoutDisclosureContracts();
     dialogCloseContracts();
     await evidenceFileReadContracts();
+    await brokerConnectionReadContracts();
     await assetBackgroundChartContracts();
     await ledgerPaginationContracts();
     await searchAndAssetPaginationContracts();
@@ -3897,8 +3996,9 @@ async function serveTestWorkspace({
   response,
   url
 }) {
-  const result = workspace(fixture);
   const period = url.searchParams.get("history_period") || "all";
+  if (fixture.brokerContracts && period === "1y") return serveTestWorkspaceResult({fixture, response, result: clone(serverContracts.broker_workspace)});
+  const result = workspace(fixture);
   if (fixture.periodResults?.[period]) result.performance.investment_result_rub = fixture.periodResults[period];
   const stored = result.overview.history;
   const days = {
@@ -3926,6 +4026,9 @@ async function serveTestWorkspace({
     sampling: "all_observations",
     max_points: 366
   };
+  return serveTestWorkspaceResult({fixture, response, result});
+}
+async function serveTestWorkspaceResult({fixture, response, result}) {
   if (fixture.holdWorkspace) await new Promise(release => fixture.heldWorkspace.push(release));
   return sendJSON(response, fixture.failWorkspace ? {
     detail: "synthetic_failure"
@@ -4175,6 +4278,7 @@ async function serveTestPortfolioVisualization({
   fixture
 }) {
   await holdAssetEnrichment(fixture, "positions");
+  if (fixture.brokerContracts) return sendJSON(response, serverContracts.broker_portfolio_visualization);
   return sendJSON(response, {
     status: "observed",
     history: overview().history,
@@ -4190,6 +4294,7 @@ async function serveTestPortfolioInstruments({
   fixture
 }) {
   await holdAssetEnrichment(fixture, "details");
+  if (fixture.brokerContracts) return sendJSON(response, serverContracts.broker_instrument_visualization);
   return sendJSON(response, {
     status: "observed",
     current_holding: {status: fixture.closedPosition ? "not_held" : "held", quantity: fixture.closedPosition ? "0" : positions[0].quantity, observed_at: stamp},
@@ -4284,6 +4389,7 @@ async function serveTestBrokerTbank({
 }) {
   if (method === "DELETE") fixture.connected = false;
   if (method === "PUT") fixture.connected = true;
+  if (fixture.brokerContracts && fixture.connected) return sendJSON(response, serverContracts.broker_workspace.connection);
   return sendJSON(response, connection(fixture));
 }
 async function serveTestBrokerTbankAccounts({
@@ -4583,7 +4689,7 @@ async function exerciseAnalyticsReadConsistency({fixture, click, wait, evaluate,
   await click('#sidebar-nav [data-route="analytics"]');
   await click('#view-analytics .screen-menu [data-screen="history"]');
   const metricValues = '[...document.querySelectorAll("#view-analytics .metric-grid .main-value")].map(item=>item.textContent)';
-  await wait('document.querySelector("#view-analytics [data-history-period=\\"1y\\"]") && document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("123456")', "The initial year has its own financial result");
+  await wait('document.querySelector("#view-analytics [data-history-period=\\"1y\\"]") && document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("+123456,00")', "The initial year has its own financial result");
   fixture.holdWorkspace = true;
   fixture.failWorkspace = true;
   await click('#view-analytics [data-period="1w"]');
@@ -4599,7 +4705,7 @@ async function exerciseAnalyticsReadConsistency({fixture, click, wait, evaluate,
   fixture.failWorkspace = false;
   const before = fixture.requests.length;
   await click('#view-analytics [data-resource="workspace"]');
-  await wait('document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("7654") && document.querySelector("#view-analytics [data-history-period=\\"1w\\"]")', "The successful retry displays only the selected week's snapshot");
+  await wait('document.querySelector("#view-analytics .metric-grid .main-value").textContent.replace(/\\s/g, "").startsWith("+7654,00") && document.querySelector("#view-analytics [data-history-period=\\"1w\\"]")', "The successful retry displays only the selected week's snapshot");
   assert.ok(fixture.requests.slice(before).some(item => item.path === "/api/workspace" && new URLSearchParams(item.query).get("history_period") === "1w"));
   assert.equal(fixture.requests.slice(before).some(item => item.path === "/api/workspace/refresh" && item.method === "POST"), false);
   await checkLayout(`analytics-period-recovered-${round}-390`, {minCharts: 1});
@@ -5454,10 +5560,10 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   }
   await checkLayout(`canonical-demo-${round}`);
   await click('#view-market [data-screen="news"]');
-  await wait('location.hash === "#demo/market/news" && document.querySelector("#view-market [data-screen-content=news]")?.getClientRects().length', "Market news is a standalone screen");
+  await wait('location.hash === "#demo/market/news?currency=CNY&reference_period=1y" && document.querySelector("#view-market [data-screen-content=news]")?.getClientRects().length', "Market news is a standalone screen with the selected currency and period retained");
   assert.equal(await evaluate('document.querySelector("#view-market [data-screen-content=reference]").getClientRects().length'), 0, "Unselected data panels are not visible");
   await evaluate("history.back()");
-  await wait('location.hash.includes("reference") && document.querySelector("[name=cbr_currency]").value === "CNY" && document.querySelector("[name=cbr_period]").value === "1y"', "Back restores currency and period");
+  await wait('location.hash === "#demo/market/reference?currency=CNY&reference_period=1y" && document.querySelector("[name=cbr_currency]").value === "CNY" && document.querySelector("[name=cbr_period]").value === "1y"', "Back restores the exact reference route, currency and period");
   await click('[data-action="leave-tour"]');
   await wait('!document.querySelector("#public-site").hidden', "Leaving demo returns to the public root");
   await click('.public-nav [data-public-page="features"]');
@@ -5466,6 +5572,20 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   assert.equal(await evaluate("document.querySelectorAll('a[href^=\"/legal/\"][target=\"_blank\"]').length"), 0, "Internal legal pages keep browser Back available");
   await evaluate("history.back()");
   await wait('location.hash === "#public/welcome"', "Public page Back restores the welcome screen");
+  for (const view of ["portfolio", "market", "assistant", "strategies"]) {
+    const selector = `.public-mobile-nav [data-public-open="${view}"]`;
+    const href = await evaluate(`document.querySelector(${JSON.stringify(selector)}).href`);
+    assert.equal(new URL(href).hash, `#demo/${view}`, "A public link advertises the same explicit demo mode as its click action");
+    await click(selector);
+    await wait(`location.hash === ${JSON.stringify(`#demo/${view}`)} && document.querySelector(${JSON.stringify(`#view-${view}`)}).hidden === false`, "The public link opens its intended demo section");
+    assert.equal(await evaluate("location.href"), href, "An ordinary click and the copyable href reach exactly the same destination");
+    const origin = await evaluate("performance.timeOrigin");
+    await send("Page.reload");
+    await wait(`performance.timeOrigin !== ${origin} && location.href === ${JSON.stringify(href)} && !document.querySelector("#app-shell").hidden && !document.querySelector("#tour-notice").hidden`, "The public href retains demo in a fresh document");
+    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Знакомство", "Opening a public href in a new document cannot switch to a personal account");
+    await click('[data-action="leave-tour"]');
+    await wait('location.hash === "#public/welcome" && !document.querySelector("#public-site").hidden', "The demo section returns to its public entry point");
+  }
   const lateKey = `signed-late-session-${round}`;
   const late = makeFixture("signed"); late.holdMe = true; fixtures.set(lateKey, late);
   await send("Page.navigate", {url: `${base}?case=${lateKey}#public/welcome`});
@@ -5508,7 +5628,7 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   await click('#workspace-dialog [data-close-dialog]');
   await wait('!document.querySelector("#workspace-dialog").open', "Draft was returned to its initial state");
   assert.equal(failure.requests.filter(item=>item.method === "POST" && item.path === "/api/goals").length, 0, "Navigating and restoring a draft cannot create a goal");
-  console.log(`PASS canonical navigation round ${round}: repeated demo reload, public screens, Back, control restoration, late bootstrap, retry and draft history`);
+  console.log(`PASS canonical navigation round ${round}: repeated demo reload, public href/click/new-document agreement, public screens, Back, control restoration, late bootstrap, retry and draft history`);
 }
 async function exerciseIndependentPageLoads({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout}) {
   await configureViewport(390);
@@ -6633,6 +6753,120 @@ async function exerciseScreenPages({view, label, click, wait, evaluate, checkLay
     await wait(`location.hash === ${JSON.stringify(`#account/${view}`)}`, `${label}: return to section overview`);
   }
 }
+async function exercisePortfolioExperience({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot}) {
+  const tabStripState = () => evaluate('(() => {const menu=document.querySelector(".view:not([hidden]) .screen-tabs");const box=menu.getBoundingClientRect();const selected=menu.querySelector("[aria-current=page]");const selectedBox=selected.getBoundingClientRect();const focused=document.activeElement;const focusBox=focused.getBoundingClientRect();return {height:box.height,rows:new Set([...menu.children].map(link=>Math.round(link.getBoundingClientRect().top))).size,scrollable:menu.scrollWidth>menu.clientWidth,selectedVisible:selectedBox.left>=box.left-1&&selectedBox.right<=box.right+1,focusVisible:menu.contains(focused)&&focusBox.left>=box.left-1&&focusBox.right<=box.right+1,hintVisible:Boolean(menu.nextElementSibling?.getClientRects().length)};})()');
+  for (const width of [320, 1440]) {
+    await configureViewport(width);
+    const key = `portfolio-experience-${round}-${width}`;
+    const fixture = makeFixture("signed");
+    fixture.brokerContracts = true;
+    fixture.holdAssetParts = new Set(["positions"]);
+    fixture.heldAssetParts = new Map();
+    fixtures.set(key, fixture);
+    await send("Page.navigate", {url: `${base}?case=${key}`});
+    await wait('document.querySelector("#view-portfolio:not([hidden]) [data-broker-return]")', "The default account page shows its actual summary independently of a slower holdings request");
+    await until(() => fixture.heldAssetParts.has("positions"), "Holdings arrive independently from the summary");
+    await evaluate('(() => {const summary=document.querySelector("#view-portfolio .portfolio-method summary");summary.focus();summary.click();})()');
+    fixture.holdAssetParts.delete("positions");
+    fixture.heldAssetParts.get("positions")();
+    await wait('document.querySelector("#view-portfolio .holding-quantity")?.getClientRects().length', "The default portfolio exposes its newly received holdings without an extra menu action");
+    assert.equal(await evaluate('document.querySelector("#view-portfolio .portfolio-method").open && document.activeElement.matches("#view-portfolio .portfolio-method summary")'), true, "A background holdings arrival preserves the open explanation and the user's keyboard focus");
+    await evaluate('(() => {const summary=document.querySelector("#view-portfolio .portfolio-method summary");summary.click();summary.blur();})()');
+    const summary = await evaluate('(() => {const root=document.querySelector("#view-portfolio");const text=selector=>root.querySelector(selector)?.textContent.replace(/\\s/g, "");return {value:text("[data-portfolio-value]"),day:text("[data-broker-daily]"),current:text("[data-broker-return]"),quantity:text(".holding-quantity"),holding:text(".holding-value"),result:text(".holding-return"),account:text(".account-context strong"),hiddenHistory:!root.querySelector("[data-portfolio-history]").getClientRects().length,emptyWrapper:!root.querySelector(".two-column").getClientRects().length,actions:[...root.querySelectorAll(".portfolio-actions a")].map(a=>({view:a.dataset.route,screen:a.dataset.screen,visible:Boolean(a.getClientRects().length)}))};})()');
+    assert.equal(summary.value, "1000,08₽", "The portfolio headline retains the provider total's kopecks");
+    assert.equal(summary.day, "+0,42₽·+0,04%", "The trading-day money and percent are separate from the open-position result");
+    assert.equal(summary.current, "+1,04%", "The headline uses GetPortfolio's actual open-position percentage");
+    assert.equal(summary.account, "Синтетическийсчёт", "The overview names its actual connected account");
+    assert.equal(summary.quantity, "Количество:2", "Quantity is visible and cannot be replaced by metadata lot size or a duplicate translation key");
+    assert.ok(summary.holding.includes("250,38₽") && summary.result.includes("+10,32₽"), "Each holding shows its monetary value and native result");
+    assert.equal(summary.hiddenHistory && summary.emptyWrapper, true, "Hidden subpages leave no empty layout card or padding in the overview");
+    assert.deepEqual(summary.actions, [{view: "portfolio", screen: "operations", visible: true}, {view: "analytics", screen: "", visible: true}, {view: "market", screen: "watchlist", visible: true}], "All quick actions are visible before any helper can open a hidden screen");
+    const primary = width < 961 ? "#mobile-nav" : "#sidebar-nav";
+    if (width < 961) {
+      assert.deepEqual(await evaluate('[...document.querySelectorAll("#mobile-nav [data-route]")].map(a=>a.dataset.route)'), ["portfolio", "market", "strategies", "profile"]);
+      assert.equal(await evaluate('(() => {const table=document.querySelector("#view-portfolio .holdings-scroll");return table.scrollWidth<=table.clientWidth;})()'), true, "Mobile holdings keep value, quantity and return readable without horizontal scrolling");
+    }
+    await checkLayout(`portfolio-experience-${round}-${width}`, {minTables: 1});
+    if (width === 320) {
+      const strip = await tabStripState();
+      assert.equal(strip.rows, 1, "Mobile overview navigation occupies one line");
+      assert.ok(strip.height >= 44 && strip.height <= 66 && strip.scrollable && strip.hintVisible, "The compact strip retains touch targets and indicates horizontal scrolling");
+      assert.equal(strip.selectedVisible, true, "The current overview tab is visible initially");
+      assert.equal(await evaluate('(() => {const bottom=document.querySelector("#mobile-nav").getBoundingClientRect().top;return [...document.querySelectorAll("#view-portfolio .portfolio-actions a")].every(link=>link.getBoundingClientRect().bottom<=bottom);})()'), true, "All portfolio quick actions are visible above the bottom navigation at entry");
+    }
+    await screenshot(`portfolio-experience-${round}-${width}.png`);
+    if (width === 320) {
+      assert.ok(await evaluate('document.querySelector("#view-portfolio [name=holdings_sort]")?.getClientRects().length'), "Mobile sorting is visible before any navigation helper runs");
+      await evaluate('(() => {const control=document.querySelector("#view-portfolio [name=holdings_sort]");control.value="value";control.dispatchEvent(new Event("change",{bubbles:true}));})()');
+      await wait('new URLSearchParams(location.hash.split("?")[1]).get("sort")==="value"', "The visible mobile selector uses the existing sort handler");
+      await click('#view-portfolio .holdings-sort [data-sort="value"]');
+      await wait('new URLSearchParams(location.hash.split("?")[1]).get("direction")==="-1"', "Mobile sorting can reverse its direction");
+      await click('#view-portfolio .screen-menu [data-screen="history"]');
+      assert.equal(await evaluate('new URLSearchParams(location.hash.split("?")[1]).get("sort")'), "value", "Switching portfolio panes preserves its actual sort choice");
+      assert.equal(await evaluate('new URLSearchParams(location.hash.split("?")[1]).get("direction")'), "-1");
+      await click('#view-portfolio .screen-menu [data-screen=""]');
+      assert.equal(await evaluate('document.querySelector("#view-portfolio [name=holdings_sort]").value'), "value", "Returning to the overview restores the visible sort value");
+    }
+    await click('#view-portfolio .portfolio-actions [data-screen="operations"]');
+    await wait('document.querySelector("#ledger-screen")?.getClientRects().length', "A visible portfolio action opens the operation history");
+    assert.equal(await evaluate('new URLSearchParams(location.hash.split("?")[1]).get("period")'), "1y", "Opening operations retains the selected portfolio period");
+    if (width === 320) {
+      assert.equal((await tabStripState()).selectedVisible, true, "Selecting the last tab scrolls it into view without changing the page route");
+      fixture.holdWorkspace = true;
+      await click('#view-portfolio [data-action="refresh"]');
+      await until(() => fixture.heldWorkspace.length > 0, "A background workspace response is pending on the last tab");
+      await evaluate('window.__portfolioTabStrip=document.querySelector("#view-portfolio .screen-tabs");document.querySelector("#view-portfolio .screen-tabs [aria-current=page]").focus()');
+      fixture.holdWorkspace = false;
+      fixture.heldWorkspace.splice(0).forEach(release => release());
+      await wait('document.querySelector("#view-portfolio .screen-tabs")!==window.__portfolioTabStrip && document.activeElement.matches("#view-portfolio .screen-tabs [data-screen=operations]")', "The selected tab keeps keyboard focus after the pending response replaces the old markup");
+      const restored = await tabStripState();
+      assert.ok(restored.selectedVisible && restored.focusVisible && restored.rows === 1, "A rerender restores the focused active tab inside the horizontal strip");
+    }
+    await click('#view-portfolio .screen-menu [data-screen=""]');
+    await wait('document.querySelector("#view-portfolio [data-portfolio-summary]")?.getClientRects().length', "The compact overview tab returns to the account summary");
+    if (width === 320) assert.equal((await tabStripState()).selectedVisible, true, "Returning from the last tab reveals the first active tab");
+    await click('#view-portfolio .portfolio-actions [data-route="analytics"]');
+    await wait('document.querySelector("#view-analytics:not([hidden]) .chart-svg")?.getClientRects().length && document.querySelector("#view-analytics [data-history-period=\\"1y\\"]")', "Analytics opens its actual history and period result without an extra menu selection");
+    const metrics = await evaluate('[...document.querySelectorAll("#view-analytics .metric-grid .main-value")].map(node=>node.textContent.replace(/\\s/g,""))');
+    assert.deepEqual(metrics.slice(0, 2), ["+200,00₽", "+25%"], "Saved-history return and money are distinct from broker current return");
+    assert.ok(await evaluate('document.querySelector("#view-analytics").textContent.includes("Modified Dietz")'), "Historical return explains its actual methodology");
+    await checkLayout(`analytics-experience-${round}-${width}`, {minCharts: 1});
+    if (width === 320) await screenshot(`analytics-experience-${round}-${width}.png`);
+    await click(`${primary} [data-route="market"]`);
+    await wait('document.querySelector("#view-market [data-screen-content=watchlist]")?.getClientRects().length && document.querySelector("#view-market [data-screen-content=reference]")?.getClientRects().length', "Market starts with useful watchlist and sourced reference data");
+    await click('#view-market [data-action="focus-search"]');
+    assert.equal(await evaluate('document.activeElement.id'), "global-search", "Find an instrument focuses the existing working search");
+    await click(`${primary} [data-route="portfolio"]`);
+    await wait('document.querySelector("#view-portfolio .holding-name [data-asset]")?.getClientRects().length', "Portfolio is directly reachable from primary navigation");
+    await click('#view-portfolio .holding-name [data-asset="synthetic-a"]');
+    await wait('document.querySelector("#view-asset [data-asset-sidebar]")?.textContent.includes("120,03") && document.querySelector("#view-asset .chart-svg")?.getClientRects().length', "A holding opens real candle data and its weighted purchase price");
+    const details = await evaluate('document.querySelector("#view-asset [data-asset-sidebar]").textContent.replace(/\\s/g, "")');
+    assert.ok(details.includes("120,03₽") && details.includes("+10,32₽") && !details.includes("119,07"), "The weighted average pairs with the provider result; FIFO is not substituted");
+    await checkLayout(`holding-experience-${round}-${width}`, {minCharts: 1});
+    await click(`${primary} [data-route="profile"]`);
+    await wait('document.querySelector("#view-profile [data-screen-content=personal]")?.getClientRects().length', "Profile opens its real personal form immediately");
+    await click(`${primary} [data-route="strategies"]`);
+    await wait('document.querySelector("#view-strategies .strategy-catalog")?.getClientRects().length', "Strategies opens the actual complete catalogue immediately");
+    assert.equal(await evaluate('document.querySelectorAll("#view-strategies .strategy-option").length'), 10, "The redesign retains all ten strategies");
+    await click('#sidebar-nav [data-route="settings"]');
+    await wait('document.querySelector("#view-settings [data-screen-content=appearance]")?.getClientRects().length', "Settings opens its existing appearance controls immediately");
+    await checkLayout(`default-settings-experience-${round}-${width}`);
+    const brand = width === 320 ? "#app-shell .mobile-brand" : "#app-sidebar > .brand";
+    const profileName = await evaluate('document.querySelector("#profile-name").textContent');
+    await click(brand);
+    await wait('location.hash === "#account/portfolio" && document.querySelector("#view-portfolio [data-broker-return]")?.getClientRects().length', "The visible logo returns to the personal portfolio without entering demo");
+    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), profileName, "The logo preserves the signed-in identity");
+    assert.equal(await evaluate('document.querySelector("#tour-notice").hidden'), true, "Returning through the logo keeps the personal workspace active");
+    assert.equal(await evaluate('document.querySelector("#view-portfolio [data-portfolio-value]").textContent.replace(/\\s/g, "")'), "1000,08₽", "The same account's confirmed value remains available after logo navigation");
+    await evaluate('location.hash = "#demo/market"');
+    await wait('!document.querySelector("#view-market").hidden && !document.querySelector("#tour-notice").hidden', "An explicit route change opens demo in the same document");
+    await click(brand);
+    await wait('location.hash === "#demo/portfolio" && document.querySelector("#view-portfolio [data-portfolio-summary]")?.getClientRects().length', "The visible logo also preserves demo after an account-to-demo transition");
+    assert.equal(await evaluate('document.querySelector("#profile-name").textContent'), "Знакомство", "The demo logo cannot expose the signed-in name");
+    assert.equal(await evaluate('Boolean(document.querySelector("#view-portfolio [data-portfolio-value]"))'), false, "The demo overview cannot expose the signed-in portfolio value");
+  }
+  console.log(`PASS native portfolio experience round ${round}: visible default roots, broker/history separation, kopecks, quantity, mobile rows, quick actions, weighted purchase details and logo mode isolation`);
+}
 async function exerciseViewport({
   send,
   configureViewport,
@@ -6664,7 +6898,7 @@ async function exerciseViewport({
   fixture.extendedWorkflows = width === 390;
   fixture.holdMarketStream = width === 390;
   await send("Page.navigate", {
-    url: `${base}?case=${key}`
+    url: `${base}?case=${key}#account/home`
   });
   await wait('!document.querySelector("#app-shell").hidden && document.querySelector("#profile-name").textContent.includes("Тестовый") && document.querySelector("#view-home .asset-table")', "Authenticated dashboard");
   await checkLayout(`dashboard ${round}/${width}`);

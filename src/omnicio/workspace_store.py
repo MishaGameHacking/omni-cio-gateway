@@ -22,6 +22,7 @@ from .db import Database, live_execution_lock_key
 from .freshness import ISSUER_NEWS_MAX_AGE, PORTFOLIO_MAX_AGE
 from .goal_planning import goal_forecast, goal_plan_fields, normalize_goal_plan
 from .payouts import PAYOUT_READ_CTES, payout_source_sql, visible_event_sql
+from .portfolio import broker_statistics_summary
 from .portfolio_store import SettingsVersionConflict
 from .workspace import (
     CATEGORIES,
@@ -723,6 +724,7 @@ class WorkspaceStore:
             "history_coverage": history.coverage,
             "basis": "latest_observation",
             "allocations": [],
+            "broker_statistics": None,
         }
         if latest is None:
             return result
@@ -744,6 +746,7 @@ class WorkspaceStore:
             else None,
             "observed_at": captured_at.isoformat() if captured_at is not None else None,
             "allocations": analysis.get("classes", []),
+            "broker_statistics": broker_statistics_summary(latest["evidence"]),
             "valuation_status": (
                 "complete" if snapshot_valuation_complete(latest) else "unavailable"
             ),
