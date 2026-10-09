@@ -299,7 +299,8 @@ class MarketService:
         self, user_id: UUID, connection: BrokerConnectionStatus,
     ) -> list[Future[_EnrichmentResult]]:
         discarded: list[Future[_EnrichmentResult]] = []
-        for previous in list(self._enrichment):
+        # Snapshot keys because revoked entries are removed during this pass.
+        for previous in tuple(self._enrichment):
             if previous[0] == user_id and previous[1] != connection:
                 entry = self._enrichment.pop(previous)
                 if entry.future is not None:
@@ -355,7 +356,7 @@ class MarketService:
 
     def _trim_enrichment(self) -> None:
         history_count = sum(key[2] == "history" for key in self._enrichment)
-        for key in list(self._enrichment):
+        for key in tuple(self._enrichment):
             entry = self._enrichment[key]
             if (entry.read is not None
                     or entry.future is not None and not entry.future.done()):
@@ -757,11 +758,7 @@ class MarketService:
         candles: dict[datetime, TBankHistoricCandle] = {}
         reads = 0
         while cursor < requested_at:
-            with self._cache_lock:
-                if self._closed:
-                    raise BrokerConnectionError("market_service_closed")
-            if self.broker.status(user_id) != connection:
-                raise BrokerConnectionError("market_account_changed")
+            self._validate_history_connection(user_id, connection)
             end = min(cursor.replace(year=cursor.year + 10), requested_at)
             begin = cursor
             if interval == "CANDLE_INTERVAL_MONTH" and end - begin < timedelta(days=28):
@@ -775,9 +772,18 @@ class MarketService:
             cursor = end
             if reads >= 8 and cursor < requested_at:
                 raise TBankUnavailable("instrument_history_exceeds_request_budget")
+        self._validate_history_connection(user_id, connection)
+        return tuple(candles[key] for key in sorted(candles)), interval, history_from
+
+    def _validate_history_connection(
+        self, user_id: UUID, connection: BrokerConnectionStatus,
+    ) -> None:
+        """Revalidate long history between provider reads and before acceptance."""
+        with self._cache_lock:
+            if self._closed:
+                raise BrokerConnectionError("market_service_closed")
         if self.broker.status(user_id) != connection:
             raise BrokerConnectionError("market_account_changed")
-        return tuple(candles[key] for key in sorted(candles)), interval, history_from
 
     def instrument_live_state(
         self,

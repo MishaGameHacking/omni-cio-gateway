@@ -186,7 +186,10 @@
   const quotationText = nanos => {
     const negative = nanos < 0n;
     const absolute = negative ? -nanos : nanos;
-    const fraction = String(absolute % 1000000000n).padStart(9, "0").replace(/0+$/, "");
+    const rawFraction = String(absolute % 1000000000n).padStart(9, "0");
+    let end = rawFraction.length;
+    while (end > 0 && rawFraction[end - 1] === "0") end -= 1;
+    const fraction = rawFraction.slice(0, end);
     return `${negative ? "-" : ""}${absolute / 1000000000n}${fraction ? "." + fraction : ""}`;
   };
   const candlePoints = rows => {
@@ -195,7 +198,7 @@
       if (typeof row?.time !== "string") continue;
       const time = Date.parse(row.time);
       const values = Object.fromEntries(["open", "high", "low", "close"].map(key => [key, quotationNanos(row?.[key])]));
-      if (!Number.isFinite(time) || Object.values(values).some(value => value === null)) continue;
+      if (!Number.isFinite(time) || Object.values(values).includes(null)) continue;
       if (values.low > values.open || values.low > values.close || values.high < values.open || values.high < values.close || values.low > values.high) continue;
       const point = {time, value: values.close, sourceValue: row.close, comparison: [], values, source: row};
       unique.set(time, point);
@@ -207,7 +210,9 @@
     const volume = point.source.volume_lots;
     const validVolume = typeof volume === "string" ? /^\d{1,19}$/.test(volume) : Number.isSafeInteger(volume) && volume >= 0;
     const completion = point.source.is_complete;
-    const status = completion === true ? T("market.candle_complete") : completion === false ? T("market.candle_forming") : T("market.candle_completion_unknown");
+    let status = T("market.candle_completion_unknown");
+    if (completion === true) status = T("market.candle_complete");
+    else if (completion === false) status = T("market.candle_forming");
     return [[T("market.candle_open"), price("open")], [T("market.candle_high"), price("high")], [T("market.candle_low"), price("low")], [T("market.candle_close"), price("close")], [T("market.candle_volume"), validVolume ? format(String(volume), 0) : "—"], [T("market.candle_state"), status]].map(([label, value]) => `<div><dt>${escape(label)}</dt><dd>${escape(value)}</dd></div>`).join("");
   };
   const candleChart = (rows, {label, priceUnit, currency}) => {
@@ -215,8 +220,16 @@
     if (!points.length) return `<div class="chart-empty">${H("market.candles_empty")}</div>`;
     const {width, height, edgeInset: left} = C.charts;
     const right = width - left;
-    const rawLow = points.reduce((value, point) => point.values.low < value ? point.values.low : value, points[0].values.low);
-    const rawHigh = points.reduce((value, point) => point.values.high > value ? point.values.high : value, points[0].values.high);
+    // These bounds remain BigInt; Math.min/max would require losing the exact
+    // source nanounits before the relative coordinate calculation below.
+    const rawLow = points.reduce((value, point) => {
+      if (point.values.low < value) return point.values.low;
+      return value;
+    }, points[0].values.low);
+    const rawHigh = points.reduce((value, point) => {
+      if (point.values.high > value) return point.values.high;
+      return value;
+    }, points[0].values.high);
     const range = rawHigh - rawLow;
     const padding = BigInt(Math.max(1, Math.ceil(Number(range || rawHigh) * (range ? 1 : C.charts.flatRangeRatio) * C.charts.rangePaddingRatio)));
     const low = rawLow > padding ? rawLow - padding : 0n;
@@ -230,7 +243,9 @@
     const grid = C.charts.gridFractions.map(part => `<line class="chart-grid" x1="${left}" x2="${right}" y1="${part * height}" y2="${part * height}"/>`).join("");
     const bars = points.map(point => {
       const px = x(point.time), open = y(point.values.open), close = y(point.values.close);
-      const tone = point.values.close > point.values.open ? "rising" : point.values.close < point.values.open ? "falling" : "doji";
+      let tone = "doji";
+      if (point.values.close > point.values.open) tone = "rising";
+      else if (point.values.close < point.values.open) tone = "falling";
       const body = tone === "doji" ? `<line class="candle-body" x1="${px - bodyWidth / 2}" x2="${px + bodyWidth / 2}" y1="${open}" y2="${open}"/>` : `<rect class="candle-body" x="${px - bodyWidth / 2}" y="${Math.min(open, close)}" width="${bodyWidth}" height="${Math.max(C.charts.candleBodyHeightMin, Math.abs(open - close))}"/>`;
       return `<g class="chart-candle candle-${tone}" data-candle-time="${point.time}"><line class="candle-wick" x1="${px}" x2="${px}" y1="${y(point.values.high)}" y2="${y(point.values.low)}"/>${body}</g>`;
     }).join("");
@@ -359,7 +374,7 @@
         const followLatest = !existing.selectedByUser && existing.selected === existing.data.points.length - 1;
         existing.data = data;
         const index = followLatest ? data.points.length - 1 : data.points.findIndex(point => point.time === selected);
-        showChartObservation(svg, existing, index < 0 ? 0 : index, existing.active, false);
+        showChartObservation(svg, existing, Math.max(0, index), existing.active, false);
         continue;
       }
       const binding = {data, selected: data.points.length - 1, active: false, selectedByUser: false};

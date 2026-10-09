@@ -4174,6 +4174,7 @@ async function serveTestPortfolioVisualization({
   response,
   fixture
 }) {
+  await holdAssetEnrichment(fixture, "positions");
   return sendJSON(response, {
     status: "observed",
     history: overview().history,
@@ -6275,13 +6276,16 @@ async function exerciseSafeUpdate({send, configureViewport, round, base, wait, c
 async function exerciseLiveCandles({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot}) {
   const key = `signed-live-candles-${round}`;
   const fixture = makeFixture("signed");
-  fixture.holdAssetParts = new Set(["history"]);
+  fixture.holdAssetParts = new Set(["history", "positions"]);
   fixture.heldAssetParts = new Map();
   fixtures.set(key, fixture);
   await configureViewport(round === 1 ? 320 : 768);
   await send("Page.navigate", {url: `${base}?case=${key}#account/search?q=SYNA`});
+  await until(() => fixture.heldAssetParts.has("positions"), "The bootstrap holdings response is deliberately held");
   await wait('document.querySelector("#view-search [data-table-quote=synthetic-a] strong")?.textContent.includes("250,25")', "A fresh search result receives an actual batch quote without a prefilled holdings cache");
-  assert.equal(fixture.requests.some(item => item.path === "/api/portfolio/visualization"), false, "Search quotes do not rely on previously loaded account positions");
+  assert.equal(await evaluate(completedResourceCount("/api/portfolio/visualization")), 0, "Search quotes appear while the independent bootstrap holdings response remains pending");
+  fixture.holdAssetParts.delete("positions"); fixture.heldAssetParts.get("positions")(); fixture.heldAssetParts.delete("positions");
+  await wait(`${completedResourceCount("/api/portfolio/visualization")} > 0`, "The independent bootstrap holdings response is released after the price was visible");
   await checkLayout(`search-live-price-${round}`);
   await click('#view-search [data-asset="synthetic-a"]');
   await until(() => fixture.heldAssetParts.has("history"), "The provider history read is deliberately held");

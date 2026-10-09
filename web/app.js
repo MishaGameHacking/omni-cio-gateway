@@ -690,6 +690,15 @@
     });
     return request.promise;
   };
+  const repaintAssetMarketMetrics = (container, market) => {
+    for (const row of $$(".asset-tab-content .info-row", container)) {
+      const label = $("dt", row)?.textContent;
+      const value = $("dd", row);
+      if (value && label === T("Последняя цена")) value.textContent = marketPrice(market.last_price, market.price_unit, market.price_currency);
+      if (value && label === T("Время цены")) value.textContent = date(market.quote_time, true);
+      if (value && label === T("Режим торгов")) value.textContent = tradingLabel(market.trading_status);
+    }
+  };
   const repaintAssetQuote = () => {
     if (!state.asset?.market || state.view !== "asset" || state.tour || state.locked) return;
     const container = $("#view-asset");
@@ -707,13 +716,7 @@
     const notes = $("[data-market-notes]", container);
     if (notes) notes.innerHTML = assetChartNotesHTML(context);
     if (source) source.innerHTML = freshness(market.source || "T-Invest", market.quote_time || market.observed_at, market.quote_status);
-    for (const row of $$(".asset-tab-content .info-row", container)) {
-      const label = $("dt", row)?.textContent;
-      const value = $("dd", row);
-      if (value && label === T("Последняя цена")) value.textContent = marketPrice(market.last_price, market.price_unit, market.price_currency);
-      if (value && label === T("Время цены")) value.textContent = date(market.quote_time, true);
-      if (value && label === T("Режим торгов")) value.textContent = tradingLabel(market.trading_status);
-    }
+    repaintAssetMarketMetrics(container, market);
   };
   const startQuoteStream = () => {
     if (quoteStream && visibleAsset() && quoteStreamAsset === state.asset) return;
@@ -2105,9 +2108,18 @@
   };
   const assetHistoryStateHTML = ({asset, market, candles}) => {
     const status = asset.historyError ? "unavailable" : market?.history_status;
-    const message = status === "loading" ? T("market.history_updating") : status === "unavailable" && candles.length ? T("market.history_retained") : "";
-    const source = candles.length ? freshness(T("market.history_source"), market?.history_observed_at, status === "unavailable" ? "cached" : status === "loading" ? "pending" : "available") : "";
-    return `${message ? `<p class="notice${status === "unavailable" ? " error" : ""}">${esc(message)}</p>` : ""}${source}`;
+    let message = "", sourceState = "available";
+    if (status === "loading") {
+      message = T("market.history_updating");
+      sourceState = "pending";
+    } else if (status === "unavailable") {
+      sourceState = "cached";
+      if (candles.length) message = T("market.history_retained");
+    }
+    const source = candles.length ? freshness(T("market.history_source"), market?.history_observed_at, sourceState) : "";
+    const noticeClass = status === "unavailable" ? " error" : "";
+    const notice = message ? `<p class="notice${noticeClass}">${esc(message)}</p>` : "";
+    return notice + source;
   };
   const assetChartNotesHTML = context => {
     const {market, priceUnit} = context;

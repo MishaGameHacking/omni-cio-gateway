@@ -1287,15 +1287,17 @@ def test_tbank_candle_explicit_null_never_becomes_a_proto_default(field: str) ->
         "time": "2026-10-09T06:30:00Z", "candleSource": "CANDLE_SOURCE_EXCHANGE",
         field: None,
     }
+    read = partial(
+        TBankInvestClient().get_exchange_candles,
+        "synthetic-test-credential", "prod", "uid-1",
+        from_at=datetime(2026, 10, 8, 7, tzinfo=UTC),
+        to_at=datetime(2026, 10, 9, 7, tzinfo=UTC), interval="CANDLE_INTERVAL_5_MIN",
+    )
     with (
         patch("urllib.request.OpenerDirector.open", return_value=FakeResponse({"candles": [row]})),
         pytest.raises(TBankUnavailable),
     ):
-        TBankInvestClient().get_exchange_candles(
-            "synthetic-test-credential", "prod", "uid-1",
-            from_at=datetime(2026, 10, 8, 7, tzinfo=UTC),
-            to_at=datetime(2026, 10, 9, 7, tzinfo=UTC), interval="CANDLE_INTERVAL_5_MIN",
-        )
+        read()
 
 
 @pytest.mark.parametrize("method, field", [("GetCandles", "candles"),
@@ -1390,14 +1392,15 @@ def test_tbank_trading_status_implicit_false_cannot_enable_missing_permissions(
                "apiTradeAvailableFlag": True}
     if explicit_null:
         payload["onlyBestPrice"] = None
+    read = partial(
+        TBankInvestClient().get_trading_status, "synthetic-test-credential", "prod", "uid-1",
+    )
     with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(payload)):
         if explicit_null:
             with pytest.raises(TBankUnavailable):
-                TBankInvestClient().get_trading_status("synthetic-test-credential", "prod", "uid-1")
+                read()
         else:
-            result = TBankInvestClient().get_trading_status(
-                "synthetic-test-credential", "prod", "uid-1",
-            )
+            result = read()
             assert result.trading_status == "SECURITY_TRADING_STATUS_NORMAL_TRADING"
             assert result.api_trade_available is True
             assert not any((result.limit_order_available, result.market_order_available,
