@@ -108,6 +108,7 @@
     config: null,
     generation: 0,
     brokerContext: 0,
+    authReadContext: 0,
     locked: false,
     guest: false,
     mode: "auto",
@@ -258,11 +259,13 @@
     generation,
     profile,
     bootstrap,
-    brokerContext
+    brokerContext,
+    authReadContext
   }) => {
     if (generation !== state.generation) throw contextError();
     if (profile && state.user?.public_id !== profile) throw contextError();
     if (brokerContext !== undefined && brokerContext !== (state.brokerContext || 0)) throw contextError();
+    if (authReadContext !== undefined && authReadContext !== (state.authReadContext || 0)) throw contextError();
     if (state.locked && !bootstrap) throw contextError();
   };
   const apiFailure = (response, payload, profile) => {
@@ -334,11 +337,13 @@
       generation: state.generation,
       profile: state.user?.public_id,
       bootstrap,
-      brokerContext: ["GET", "HEAD"].includes(method) && brokerReadPath(path) ? state.brokerContext || 0 : undefined
+      brokerContext: ["GET", "HEAD"].includes(method) && brokerReadPath(path) ? state.brokerContext || 0 : undefined,
+      authReadContext: ["GET", "HEAD"].includes(method) && privateRequest(path) ? state.authReadContext || 0 : undefined
     };
     const controller = new AbortController();
     controller.omnicioMutation = !["GET", "HEAD"].includes(method);
     controller.omnicioBrokerRead = context.brokerContext !== undefined;
+    controller.omnicioAuthRead = context.authReadContext !== undefined;
     state.requests.add(controller);
     let timedOut = false;
     const timer = window.setTimeout(() => {
@@ -5666,7 +5671,7 @@
   const authScreenMessages = {
     login: {title: 'auth.email.login_title', explanation: 'auth.email.explanation', submit: 'Войти', endpoint: 'login'},
     register: {title: 'auth.email.register_title', explanation: 'auth.email.explanation', submit: 'auth.email.register', endpoint: 'register'},
-    enroll: {title: 'auth.email.register_title', explanation: 'auth.email.enroll_help', submit: 'auth.email.register', endpoint: 'enroll'},
+    enroll: {title: 'auth.email.enroll_title', explanation: 'auth.email.enroll_help', submit: 'auth.email.link', endpoint: 'enroll'},
     verify: {title: 'auth.email.verify_title', explanation: 'auth.email.code_sent', submit: 'auth.email.verify', endpoint: 'verify'},
     resetRequest: {title: 'auth.email.reset_title', explanation: 'auth.email.reset_help', submit: 'auth.email.send_code', endpoint: 'password-reset/request'},
     resetConfirm: {title: 'auth.email.verify_title', explanation: 'auth.email.code_sent', submit: 'auth.email.save_password', endpoint: 'password-reset/confirm'}
@@ -5791,14 +5796,29 @@
     if (state.mode === 'public') return {view: 'portfolio'};
     return {...state.route, overlay: ''};
   };
+  const invalidateAuthReads = () => {
+    state.authReadContext += 1;
+    for (const controller of state.requests) if (controller.omnicioAuthRead) controller.abort();
+    const names = new Set(['identities', 'sessions']);
+    for (const [name, request] of state.resourceRequests) if (privateRequest(request.path)) names.add(name);
+    for (const name of names) {
+      state.resourceVersions.set(name, (state.resourceVersions.get(name) || 0) + 1);
+      state.resourceRequests.delete(name);
+      state.loading.delete(name);
+      delete state.data[name];
+      delete state.errors[name];
+    }
+  };
   const completeEmailLogin = async () => {
     const destination = authDestination();
     state.authReturn = null;
+    if (state.authLink) invalidateAuthReads();
+    else clearPrivateState();
     $('#auth-dialog').close();
     $('#session-dialog').close();
     state.locked = false;
     await bootstrap();
-    if (state.user) navigate(destination.view || 'portfolio', {...destination, mode: 'account', overlay: ''}, {replace: true});
+    if (state.user && state.session.status === 'authenticated') navigate(destination.view || 'portfolio', {...destination, mode: 'account', overlay: ''}, {replace: true});
     else {
       openAuth();
       showMessage($('#auth-message'), T('auth.email.session_retry'), true);

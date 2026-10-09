@@ -187,7 +187,7 @@ class RollbackCompatibilityTests(unittest.TestCase):
             f"PREVIOUS_APP={shlex.quote(previous.as_posix())}\n"
             f"PREVIOUS_WEB={shlex.quote(previous_web.as_posix())}\n"
             "OBSERVER_TIMER_WAS_ENABLED=1\nOBSERVER_TIMER_WAS_ACTIVE=1\n",
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
         if missing_state:
             state.unlink()
@@ -196,7 +196,9 @@ class RollbackCompatibilityTests(unittest.TestCase):
         product.with_name(f"product.env.pre-{sha}").write_text(
             "previous-environment\n", encoding="utf-8",
         )
-        product.with_name(f"product.env.pre-{sha}.state").write_text("present\n", encoding="utf-8")
+        product.with_name(f"product.env.pre-{sha}.state").write_text(
+            "present\n", encoding="utf-8", newline="\n",
+        )
         nginx = self.root / "nginx" / "omnicio.ru"
         nginx.write_text("candidate-nginx\n", encoding="utf-8")
         nginx.with_name("omnicio.ru.pre-auth").write_text("previous-nginx\n", encoding="utf-8")
@@ -265,9 +267,14 @@ nginx() {{
                        / "Git" / "bin" / "bash.exe")
         else:
             bash = "/bin/bash"
-        result = subprocess.run(
-            [bash, "-s", "--", sha], input=preamble + script,
-            text=True, capture_output=True, timeout=10,
+        # Bash input and sourced state must keep LF on Windows too. Text-mode
+        # stdin would translate newlines before Git Bash receives this script.
+        raw = subprocess.run(
+            [bash, "-s", "--", sha], input=(preamble + script).encode("utf-8"),
+            capture_output=True, timeout=10,
+        )
+        result = subprocess.CompletedProcess(
+            raw.args, raw.returncode, raw.stdout.decode("utf-8"), raw.stderr.decode("utf-8"),
         )
         return result, log.read_text(encoding="utf-8"), product, nginx, candidate
 

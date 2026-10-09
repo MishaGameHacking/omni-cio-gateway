@@ -1387,6 +1387,96 @@ function dialogCloseContracts() {
   assert.equal(navigations.length, 3, "Closing for history navigation cannot trigger a second navigation");
   console.log("PASS dialog close lifecycle: queued old events preserve reopened editors, navigation markers are consumed, and current close, overlay, cancel and history paths remain effective");
 }
+async function authReadContextContracts() {
+  const app=readFileSync(join(root,"web","app.js"),"utf8");
+  const resources=[['identities','/api/auth/identities'],['sessions','/api/me/sessions'],['workspace','/api/workspace?history_period=1y'],['news',generalNewsPath]];
+  const state={generation:7,authReadContext:0,brokerContext:0,user:{public_id:"000000123"},locked:false,guest:false,
+    requests:new Set(),resourceVersions:new Map(resources.map(([name])=>[name,3])),
+    resourceRequests:new Map(resources.map(([name,path])=>[name,{path,promise:Promise.resolve()}])),
+    loading:new Set(resources.map(([name])=>name)),
+    data:Object.fromEntries(resources.map(([name])=>[name,{cached:name}])),
+    errors:Object.fromEntries(resources.map(([name])=>[name,{old_error:true}])),
+    prefs:{draft:{theme:"light"},dirty:true},strategy:{draft:{reserve_rub:"21.25"},dirty:true},
+    screenDrafts:{profile:{display_name:"Unsaved owner"}},formDrafts:{goal:{title:"Unsaved goal"}}};
+  const preserved={prefs:state.prefs,strategy:state.strategy,screenDrafts:state.screenDrafts,formDrafts:state.formDrafts};
+  const pending=[];
+  let locks=0;
+  const context=sourceContext({state,window:{setTimeout},clearTimeout,URL,Headers,AbortController,
+    navigator:{onLine:true},location:{origin:"https://isolated.test"},compiledBuild:"test",T:value=>value,
+    flagApplicationUpdate(){},lockSession(){locks+=1;state.locked=true;},
+    fetch:(url,options)=>new Promise(resolve=>{
+      const request={path:url.pathname,options};
+      request.headers=(status,payload)=>resolve({status,ok:status>=200&&status<300,headers:new Headers(),json:()=>new Promise(finish=>{request.body=()=>finish(payload);})});
+      // The transport deliberately permits a buffered response to complete after
+      // abort. The real epoch check must protect adoption and error side effects.
+      pending.push(request);
+    })});
+  const source=app.slice(app.indexOf("  const contextError ="),app.indexOf("  const humanError ="))
+    +app.slice(app.indexOf("  const invalidateAuthReads ="),app.indexOf("  const completeEmailLogin ="));
+  vm.runInContext(source+"\nglobalThis.authRequest=api;globalThis.rotateAuthReads=invalidateAuthReads;",context);
+  const observe=promise=>promise.then(value=>({value}),error=>({error}));
+  const old401=observe(context.authRequest("/api/auth/identities"));
+  const old200=observe(context.authRequest("/api/workspace?history_period=1y"));
+  const oldHead=observe(context.authRequest("/api/me/sessions",{method:"HEAD"}));
+  const publicRead=observe(context.authRequest(generalNewsPath));
+  const mutation=observe(context.authRequest("/api/preferences",{method:"PUT",body:{version:1,document:{theme:"light"}}}));
+  assert.equal(pending.length,5,"The actual api function dispatches private GET/HEAD, public GET and a mutation");
+  const [privateFailure,privateSuccess,privateHead,sharedNews,privateWrite]=pending;
+  privateFailure.headers(401,{detail:"authentication required"});
+  privateSuccess.headers(200,{overview:{nav_rub:"12345.67"}});
+  sharedNews.headers(200,{items:[{id:"public-news"}]});
+  privateWrite.headers(200,{version:2,document:{theme:"light"}});
+  await until(()=>[privateFailure,privateSuccess,sharedNews,privateWrite].every(request=>typeof request.body==="function"),"Real readApiResponse calls have started consuming their HTTP bodies");
+  // Resolve the old JSON promises before rotation, but rotate synchronously before
+  // the queued await continuations can run ensureResponseContext/apiFailure.
+  privateFailure.body();
+  privateSuccess.body();
+  context.rotateAuthReads();
+  assert.equal(state.authReadContext,1);
+  assert.equal(state.generation,7,"Email enrollment preserves the current owner's non-auth state");
+  for(const request of [privateFailure,privateSuccess,privateHead]) assert.equal(request.options.signal.aborted,true,"Pending private GET/HEAD is aborted: "+request.path);
+  for(const request of [sharedNews,privateWrite]) assert.equal(request.options.signal.aborted,false,"Public reads and mutations retain their transport: "+request.path);
+  for(const name of ['identities','sessions','workspace']) {
+    assert.equal(state.resourceVersions.get(name),4,"Pending old resource snapshots are superseded: "+name);
+    assert.equal(state.resourceRequests.has(name),false);
+    assert.equal(state.loading.has(name),false);
+    assert.equal(state.data[name],undefined);
+    assert.equal(state.errors[name],undefined);
+  }
+  assert.equal(state.resourceVersions.get('news'),3,"A public resource keeps its current request version");
+  assert.equal(state.resourceRequests.has('news'),true);
+  assert.equal(state.loading.has('news'),true);
+  assert.equal(state.data.news.cached,'news');
+  assert.equal(state.errors.news.old_error,true);
+  for(const [name,value] of Object.entries(preserved)) assert.equal(state[name],value,"Enrollment preserves the existing draft object: "+name);
+  assert.deepEqual(state.prefs,{draft:{theme:"light"},dirty:true});
+  assert.deepEqual(state.strategy,{draft:{reserve_rub:"21.25"},dirty:true});
+  assert.equal(state.screenDrafts.profile.display_name,"Unsaved owner");
+  assert.equal(state.formDrafts.goal.title,"Unsaved goal");
+  privateHead.headers(204,null);
+  sharedNews.body();
+  privateWrite.body();
+  const results=await Promise.all([old401,old200,oldHead,publicRead,mutation]);
+  for(const result of results.slice(0,3)) {
+    assert.equal(result.error?.code,"profile_context_changed","Old successful and failed private reads are rejected by the same epoch boundary");
+    assert.equal(result.value,undefined,"No old payload is returned for adoption");
+  }
+  assert.equal(locks,0,"A buffered 401 from the revoked session cannot call the real apiFailure lock path");
+  assert.equal(state.locked,false);
+  assert.equal(results[3].value.items[0].id,"public-news","Public context accepts its response across email enrollment");
+  assert.equal(results[4].value.version,2,"A mutation response remains authoritative across email enrollment");
+  const current401=observe(context.authRequest("/api/auth/identities"));
+  const current=pending.at(-1);
+  current.headers(401,{detail:"authentication required"});
+  await until(()=>typeof current.body==="function","A request under the new epoch reaches real readApiResponse");
+  current.body();
+  const rejected=await current401;
+  assert.equal(rejected.error?.code,"profile_context_changed");
+  assert.equal(locks,1,"A genuine 401 for the current epoch still locks the session");
+  assert.equal(state.locked,true);
+  assert.equal(state.requests.size,0,"All real request controllers finish and release their timers");
+  console.log("PASS actual auth read context: buffered old401 cannot lock, old200/HEAD ignored, current401 locks, private reads invalidated, public/mutation transports retained and unsaved preferences/strategy/forms preserved");
+}
 async function brokerConnectionReadContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
   const state = {generation: 1, brokerContext: 0, user: {public_id: "000000123"}, mode: "account", view: "settings", route: {}, data: {}, errors: {},
@@ -3739,6 +3829,7 @@ const runBrowser = async base => {
     assetPayoutDisclosureContracts();
     dialogCloseContracts();
     await evidenceFileReadContracts();
+    await authReadContextContracts();
     await brokerConnectionReadContracts();
     await assetBackgroundChartContracts();
     await searchAndAssetPaginationContracts();
@@ -6567,6 +6658,51 @@ async function exerciseNativeEmailRegistration(context, width) {
   await nativeEmailLogout(context,fixture,base);
   console.log(`PASS native email registration/login ${width}px: legal DTO, exact Origin, single-flight, pending proof, wrong/right OTP, HttpOnly cookies, close/reopen cleanup, logout, wrong/right untrimmed password and login without SMTP`);
 }
+async function exerciseNativeEmailSessionReadFailure(context) {
+  const {send,base,wait,click,evaluate,fieldValue}=context;
+  const key="signed-email-session-read-failure",fixture=makeFixture("signed");
+  const email="session-check@mail.ru",password="  Synthetic session check password!  ";
+  Object.assign(fixture,{email,emailPassword:password,emailStrictCookies:true,user:"000004320"});
+  fixture.prefs.document.display_name="Session verification owner";
+  fixtures.set(key,fixture);
+  const previousSession=fixture.emailSession;
+  const preserved={user:fixture.user,connected:fixture.connected,prefs:clone(fixture.prefs),selection:clone(fixture.selection)};
+  await send("Page.navigate",{url:`${base}?case=${key}#account/portfolio`});
+  await wait('document.querySelector("#view-portfolio .holding-quantity")?.textContent.includes("100")',"The session verification case first renders its connected private portfolio");
+  // This is a supported same-document route, as if entered in the address bar.
+  // It keeps the actual cached workspace while opening the ordinary login UI.
+  await send("Page.navigate",{url:`${base}?case=${key}#account/portfolio?overlay=auth`});
+  await wait('document.querySelector("#auth-dialog").open && !document.querySelector("#email-auth-submit").disabled',"The ordinary login overlay opens without logging out the cached account");
+  await assertNativeEmailScreen(context,"login",320);
+  assert.equal(await evaluate('document.querySelector("#main-content").textContent.includes("Тестовая компания")'),true,"The regression begins with actual private content in the same document");
+  await fieldValue("#auth-form","email",email);
+  await fieldValue("#auth-form","password",password);
+  fixture.failMe=true;
+  await click('#email-auth-submit');
+  await wait('document.querySelector("#auth-dialog").open && document.querySelector("#auth-message").classList.contains("error") && document.querySelector("#auth-message").textContent===window.OMNICIO_I18N.t("auth.email.session_retry") && !document.querySelector("#email-auth-submit").disabled',"A successful credential response with failed session verification remains an explicit login error");
+  assertNativeEmailRequest(fixture,"login",{email,password},base);
+  assert.notEqual(fixture.emailSession,previousSession,"The credential endpoint really rotated the server session before /api/me failed");
+  const loginIndex=fixture.requests.findLastIndex(item=>item.path==="/api/auth/email/login");
+  const meIndex=fixture.requests.findLastIndex(item=>item.path==="/api/me");
+  assert.ok(meIndex>loginIndex,"The failed ownership read occurs after the successful login POST");
+  assert.equal(await evaluate('document.querySelector("#app-shell").hidden && !document.querySelector("#main-content").textContent.includes("Тестовая компания")'),true,"A cached private workspace cannot remain authenticated after the new session fails verification");
+  assert.equal(await evaluate('document.querySelector("#profile-name").textContent'),"Мой профиль","The old account label is cleared before a new session is proven");
+  await assertNativeEmailScreen(context,"login",320);
+  await assertNativeEmailSecrets(evaluate,[password],"Session verification failure");
+  fixture.failMe=false;
+  await fieldValue("#auth-form","email",email);
+  await fieldValue("#auth-form","password",password);
+  await click('#email-auth-submit');
+  await wait('!document.querySelector("#auth-dialog").open && !document.querySelector("#app-shell").hidden && document.querySelector("#view-portfolio .holding-quantity")?.textContent.includes("100")',"Ordinary retry with a verified server session reloads the saved connected account");
+  assertNativeEmailRequest(fixture,"login",{email,password},base);
+  assert.equal(nativeEmailRequests(fixture,"login").length,2,"Only the user's two login submissions were sent");
+  assert.deepEqual({user:fixture.user,connected:fixture.connected,prefs:fixture.prefs,selection:fixture.selection},preserved,"A verification outage cannot change the stored owner, portfolio connection or preferences");
+  await click('#sidebar-nav [data-route="profile"]');
+  await wait(`document.querySelector("#view-profile [data-profile-personal]")?.textContent.includes(${JSON.stringify(fixture.user)})`,"The recovered private workspace belongs to the same server-confirmed profile");
+  await assertNativeEmailSecrets(evaluate,[password],"Recovered session verification");
+  await nativeEmailLogout(context,fixture,base);
+  console.log("PASS native email session verification 320px: cached signed portfolio, ordinary login, subsequent /api/me503, cleared private DOM, explicit recovery and same-owner connection reload");
+}
 async function exerciseNativeEmailReset(context, width) {
   const {send,base,wait,click,evaluate,fieldValue,screenshot}=context;
   const key=`signed-email-reset-${width}`,fixture=makeFixture("signed");
@@ -6692,11 +6828,14 @@ async function exerciseNativeEmailEnrollment(context, width) {
     await submitNativeEmailCode(context,challenge.code,false);
     assert.equal(fixture.email,null,"The previous code cannot enroll the account after resend");
     const currentCode=fixture.emailChallenge.code;
+    const identityReads=fixture.requests.filter(item=>item.path==="/api/auth/identities").length;
+    const sessionReads=fixture.requests.filter(item=>item.path==="/api/me/sessions").length;
     await submitNativeEmailCode(context,currentCode,true);
     assertNativeEmailRequest(fixture,"verify",{challenge_id:challenge.id,code:currentCode},base,fixture.user);
     assert.equal(fixture.email,email);
     assert.notEqual(fixture.emailSession,originalSession,"Ownership proof rotates the original session");
     assert.deepEqual({user:fixture.user,role:fixture.role,operator:fixture.canViewOperationalMetrics,connected:fixture.connected,prefs:fixture.prefs,selection:fixture.selection},preserved,"Enrollment preserves the existing owner, rights, connection, preferences and strategy");
+    await until(()=>fixture.requests.filter(item=>item.path==="/api/auth/identities").length>identityReads&&fixture.requests.filter(item=>item.path==="/api/me/sessions").length>sessionReads,"Confirmed enrollment reloads both identity and rotated-session metadata over HTTP");
     await wait(`document.querySelector("#view-profile [data-profile-identities]")?.textContent.includes(${JSON.stringify(email)}) && !document.querySelector("#view-profile [data-action=link-identity]")`,"The same profile now displays its verified email identity");
     await assertNativeEmailSecrets(evaluate,[password,challenge.code,currentCode],"Completed legacy enrollment");
   } finally {
@@ -6715,6 +6854,7 @@ async function exerciseEmailAuthentication(context) {
   for (const width of [320,1440]) {
     await context.configureViewport(width);
     await exerciseNativeEmailRegistration(context,width);
+    if (width===320) await exerciseNativeEmailSessionReadFailure(context);
     await exerciseNativeEmailReset(context,width);
     await exerciseNativeEmailEnrollment(context,width);
   }
