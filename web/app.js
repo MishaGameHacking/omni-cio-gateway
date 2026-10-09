@@ -1790,11 +1790,6 @@
   };
   const eventFilters = () => `<div class="filters" aria-label="${H("Фильтр событий")}">${[["important", T("Важное")], ["assets", T("Мои активы")], ["market", T("Рынок")], ["all", T("Все")]].map(([key, title]) => renderEventFiltersFilterButton(key, title)).join("")}</div>`;
 
-  const financialTone = value => {
-    const numeric = number(value);
-    if (numeric === null || numeric === 0) return "muted";
-    return numeric > 0 ? "positive" : "negative";
-  };
   const portfolioEntryHTML = () => empty(T("portfolio.start_title"), state.guest ? T("portfolio.start_guest") : T("portfolio.start_help"), state.guest ? "login" : "connect", state.guest ? T("Войти") : T("Подключить счёт"), "portfolio", true);
   const portfolioQuickActions = () => {
     const links = [["portfolio", "positions", T("Мои активы"), "portfolio"], ["analytics", "", T("Аналитика"), "analytics"], ["market", "watchlist", T("Избранное"), "star"]];
@@ -5173,7 +5168,7 @@
   function restoreFormFields(form, draft) {
     if (form.id === "goal-form" && draft.kind) {
       form.elements.kind.value = draft.kind;
-      updateGoalFields(true);
+      updateGoalFields();
     }
     for (const [name, value] of Object.entries(draft)) {
       const control = form.elements.namedItem(name);
@@ -5762,9 +5757,27 @@
     renderAuthConfig();
     $("#auth-email").focus();
   }
+  const authErrorMessages = new Map([
+    ['email_invalid', 'auth.email.invalid_address'],
+    ['email_domain_not_allowed', 'auth.email.invalid_address'],
+    ['password_length_invalid', 'auth.email.weak_password'],
+    ['password_too_short', 'auth.email.weak_password'],
+    ['password_compromised_or_common', 'auth.email.weak_password'],
+    ['email_or_password_invalid', 'auth.email.invalid_login'],
+    ['email_code_invalid_or_expired', 'auth.email.invalid_code'],
+    ['email_not_configured', 'auth.email.mail_unavailable'],
+    ['auth_rate_limited', 'auth.email.rate_limited'],
+    ['auth_busy', 'auth.email.rate_limited'],
+    ['auth_resend_unavailable', 'auth.email.rate_limited'],
+    ['email_already_enrolled', 'auth.email.already_enrolled'],
+    ['legal_versions_changed', 'auth.email.legal_changed'],
+    ['legal_acknowledgments_required', 'auth.email.legal_required'],
+    ['age_confirmation_required', 'auth.email.age_required'],
+    ['legal_versions_unavailable', 'auth.email.legal_unavailable']
+  ]);
   const authError = error => {
-    const key={email_invalid:'auth.email.invalid_address',email_domain_not_allowed:'auth.email.invalid_address',password_length_invalid:'auth.email.weak_password',password_too_short:'auth.email.weak_password',password_compromised_or_common:'auth.email.weak_password',email_or_password_invalid:'auth.email.invalid_login',email_code_invalid_or_expired:'auth.email.invalid_code',email_not_configured:'auth.email.mail_unavailable',auth_rate_limited:'auth.email.rate_limited',auth_busy:'auth.email.rate_limited',auth_resend_unavailable:'auth.email.rate_limited',email_already_enrolled:'auth.email.already_enrolled',legal_versions_changed:'auth.email.legal_changed',legal_acknowledgments_required:'auth.email.legal_required',age_confirmation_required:'auth.email.age_required',legal_versions_unavailable:'auth.email.legal_unavailable'}[error?.code || error?.message];
-    return key ? T(key) : humanError(error);
+    const messageKey = authErrorMessages.get(error?.code || error?.message);
+    return messageKey ? T(messageKey) : humanError(error);
   };
   const acceptAuthChallenge = result => {
     if (typeof result?.challenge_id !== "string" || !result.challenge_id || result.challenge_id.length > 128) throw new Error("invalid_server_response");

@@ -1390,7 +1390,8 @@ class FakeTBank:
 
     def get_withdraw_limits(self, credential: str, environment: str, account_id: str):
         assert credential == "t.fake-owner-credential-1234567890"
-        assert environment == "prod" and account_id == "account-1"
+        assert environment == "prod"
+        assert account_id == "account-1"
         return TBankWithdrawLimits((TBankMoney("RUB", "100"),), (), ())
 
 
@@ -2143,11 +2144,12 @@ def test_current_positions_have_quantities_cash_and_no_purchase_statistics():
     ],
 )
 def test_current_positions_reject_ambiguous_identity_or_malformed_values(payload):
+    client = TBankInvestClient()
     with (
         patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(payload)),
         pytest.raises(TBankUnavailable),
     ):
-        TBankInvestClient().get_positions("synthetic-private-token", "prod", "account-1")
+        client.get_positions("synthetic-private-token", "prod", "account-1")
 
 
 def test_public_market_reads_never_look_up_user_connections_or_fall_back_to_their_token():

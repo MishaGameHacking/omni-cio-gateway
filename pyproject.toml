@@ -27,6 +27,10 @@ dev = [
 [dependency-groups]
 build = ["setuptools>=75"]
 
+[tool.omnicio.runtime]
+# Change this contract when the previous runtime cannot safely read the new data.
+rollback_contract = "public-email-holdings-v1"
+
 [tool.omnicio.timeweb]
 server-id = 9235089
 ipv4 = "194.87.151.244"

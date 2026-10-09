@@ -15,12 +15,14 @@ import pathlib
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
 import unittest
 from email.message import Message
+from types import SimpleNamespace
 from unittest.mock import patch
 
 SCRIPT_DIR = pathlib.Path(__file__).parent
@@ -62,13 +64,290 @@ class FakeSsh:
         self.succeeds = succeeds
         self.commands: list[str] = []
 
-    def run(self, command: str, *, input_text: str | None = None) -> str:
+    def run(self, command: str, *, input_text: str | None = None, timeout: int = 300) -> str:
         self.commands.append(command)
         if not self.succeeds:
             raise MODULE.InfraError("not ready")
         if "count(*) FILTER" in command:
             return "1|1\n"
         return ""
+
+
+class RollbackCompatibilityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = pathlib.Path(directory.name).resolve()
+        self.releases = self.root / "releases"
+        self.releases.mkdir()
+        source = self.root / "rollback_check.py"
+        source.write_text(MODULE._ROLLBACK_COMPATIBILITY_PROGRAM, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location("rollback_check", source)
+        if spec is None or spec.loader is None:
+            self.fail("Unable to load the embedded compatibility check")
+        self.checker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.checker)
+        self.metadata_policy = self.checker.trusted_metadata
+
+        # The production target is POSIX/root, while this suite also runs on
+        # Windows. Simulate only its ownership/mode; keep real file types,
+        # contents, bounded reads and path resolution. Test the trust policy
+        # separately with unsafe ownership, modes and symlinks below.
+        trust = patch.object(self.checker, "trusted_metadata", self._fixture_metadata)
+        trust.start()
+        self.addCleanup(trust.stop)
+
+    def _fixture_metadata(self, info: os.stat_result, *, directory: bool) -> bool:
+        mode = stat.S_IFMT(info.st_mode) | (0o755 if directory else 0o644)
+        return bool(self.metadata_policy(
+            SimpleNamespace(st_uid=0, st_mode=mode), directory=directory,
+        ))
+
+    def _release(
+        self, letter: str, contract: str | None, *, version: str = "1.4.0",
+    ) -> pathlib.Path:
+        release = self.releases / (letter * 40)
+        release.mkdir(exist_ok=True)
+        body = '[project]\nname="omnicio-gateway"\n' + f'version="{version}"\n'
+        if contract is not None:
+            body += '[tool.omnicio.runtime]\nrollback_contract=' + json.dumps(contract) + '\n'
+        (release / "pyproject.toml").write_text(body, encoding="utf-8")
+        return release
+
+    def test_contract_is_explicit_and_independent_of_version_order(self) -> None:
+        expected = self.checker.EXPECTED_CONTRACT
+        scenarios = (
+            (expected, expected, True),
+            (expected, None, False),
+            (None, expected, False),
+            (expected, "unknown-contract", False),
+            ("unknown-contract", "unknown-contract", False),
+        )
+        for candidate_contract, previous_contract, allowed in scenarios:
+            with self.subTest(candidate=candidate_contract, previous=previous_contract):
+                candidate = self._release("a", candidate_contract, version="1.4.0")
+                previous = self._release("b", previous_contract, version="1.4.1")
+                self.assertEqual(
+                    self.checker.compatible(candidate, previous, self.releases), allowed,
+                )
+
+    def test_missing_malformed_foreign_and_oversized_metadata_are_denied(self) -> None:
+        candidate = self._release("a", self.checker.EXPECTED_CONTRACT)
+        previous = self._release("b", self.checker.EXPECTED_CONTRACT)
+        metadata = previous / "pyproject.toml"
+        for body in ("", "[broken", "project=7", '[project]\nname="other-service"',
+                     "#" * (self.checker.MAX_METADATA_BYTES + 1)):
+            with self.subTest(body_length=len(body)):
+                metadata.write_text(body, encoding="utf-8")
+                self.assertFalse(self.checker.compatible(candidate, previous, self.releases))
+        metadata.unlink()
+        self.assertFalse(self.checker.compatible(candidate, previous, self.releases))
+        self.assertFalse(self.checker.compatible(candidate, "", self.releases))
+        self.assertFalse(self.checker.compatible(candidate, self.root, self.releases))
+
+    def test_untrusted_metadata_modes_and_owners_are_denied(self) -> None:
+        cases = (
+            (0, stat.S_IFREG | 0o644, False, True),
+            (0, stat.S_IFDIR | 0o755, True, True),
+            (1000, stat.S_IFREG | 0o644, False, False),
+            (0, stat.S_IFREG | 0o664, False, False),
+            (0, stat.S_IFREG | 0o646, False, False),
+            (0, stat.S_IFDIR | 0o775, True, False),
+            (0, stat.S_IFLNK | 0o777, False, False),
+            (0, stat.S_IFIFO | 0o600, False, False),
+        )
+        for owner, mode, directory, allowed in cases:
+            with self.subTest(owner=owner, mode=mode, directory=directory):
+                self.assertEqual(self.metadata_policy(
+                    SimpleNamespace(st_uid=owner, st_mode=mode), directory=directory,
+                ), allowed)
+
+        candidate = self._release("a", self.checker.EXPECTED_CONTRACT)
+        previous = self._release("b", self.checker.EXPECTED_CONTRACT)
+        with patch.object(self.checker, "trusted_metadata", return_value=False):
+            self.assertFalse(self.checker.compatible(candidate, previous, self.releases))
+
+    def _run_rollback(
+        self, flow: str, *, compatible: bool, failure: str = "",
+        missing_state: bool = False, current_candidate: bool = False,
+    ) -> tuple[subprocess.CompletedProcess[str], str, pathlib.Path, pathlib.Path, pathlib.Path]:
+        candidate = self._release("a", self.checker.EXPECTED_CONTRACT)
+        previous = self._release(
+            "b", self.checker.EXPECTED_CONTRACT if compatible else None,
+            version="1.4.0" if compatible else "1.3.0",
+        )
+        (self.root / "run").mkdir(exist_ok=True)
+        (self.root / "etc").mkdir(exist_ok=True)
+        (self.root / "nginx").mkdir(exist_ok=True)
+        previous_web = self.root / "previous-web"
+        previous_web.mkdir(exist_ok=True)
+        sha = candidate.name
+        state = self.root / "run" / f"omnicio-auth-deploy-{sha}.state"
+        state.write_text(
+            f"PREVIOUS_APP={shlex.quote(previous.as_posix())}\n"
+            f"PREVIOUS_WEB={shlex.quote(previous_web.as_posix())}\n"
+            "OBSERVER_TIMER_WAS_ENABLED=1\nOBSERVER_TIMER_WAS_ACTIVE=1\n",
+            encoding="utf-8",
+        )
+        if missing_state:
+            state.unlink()
+        product = self.root / "etc" / "product.env"
+        product.write_text("candidate-environment\n", encoding="utf-8")
+        product.with_name(f"product.env.pre-{sha}").write_text(
+            "previous-environment\n", encoding="utf-8",
+        )
+        product.with_name(f"product.env.pre-{sha}.state").write_text("present\n", encoding="utf-8")
+        nginx = self.root / "nginx" / "omnicio.ru"
+        nginx.write_text("candidate-nginx\n", encoding="utf-8")
+        nginx.with_name("omnicio.ru.pre-auth").write_text("previous-nginx\n", encoding="utf-8")
+        log = self.root / "calls.log"
+        log.write_text("", encoding="utf-8")
+        allowed = self.checker.compatible(candidate, previous, self.releases)
+        preamble = f"""set -euo pipefail
+LOG={shlex.quote(log.as_posix())}
+CHECK_EXIT={0 if allowed else 45}
+STOP_FAIL={1 if failure == 'stop' else 0}
+RESTART_FAIL={1 if failure == 'restart' else 0}
+NGINX_FAIL={1 if flow == 'nginx' else 0}
+NGINX_ALWAYS_FAIL={1 if failure == 'nginx' else 0}
+CURRENT_TARGET={shlex.quote((candidate if current_candidate else previous).as_posix())}
+python3() {{
+    printf '%s\\n' 'contract-check' >> "$LOG"
+    cat >/dev/null
+    test "$1" = '-I' || return 45
+    test "$2" = '-' || return 45
+    test "$3" = "$RELEASE" || return 45
+    test "$4" = "${{PREVIOUS_APP:-}}" || return 45
+    if [ -z "$4" ]; then return 45; fi
+    return "$CHECK_EXIT"
+}}
+readlink() {{ printf '%s\\n' "$CURRENT_TARGET"; }}
+systemctl() {{
+    printf 'systemctl %s\\n' "$*" >> "$LOG"
+    if [ "$1" = 'stop' ] && [ "$STOP_FAIL" = 1 ]; then return 1; fi
+    if [ "$1" = 'restart' ] && [ "$RESTART_FAIL" = 1 ]; then return 1; fi
+}}
+ln() {{ printf 'ln %s\\n' "$*" >> "$LOG"; }}
+nginx() {{
+    if [ "$NGINX_ALWAYS_FAIL" = 1 ]; then return 1; fi
+    if [ "$NGINX_FAIL" = 1 ]; then NGINX_FAIL=0; return 1; fi
+}}
+"""
+        if flow == "controller":
+            script = MODULE.REMOTE_ROLLBACK_SCRIPT
+        else:
+            deploy = MODULE.REMOTE_DEPLOY_SCRIPT
+            if flow == "readiness":
+                start = deploy.index('\nif [ "$READY" != "1" ]; then')
+                end = deploy.index('\nif [ -f "$NGINX_SITE" ]; then', start)
+            else:
+                start = deploy.index('\nif ! nginx -t; then')
+                end = deploy.index('\nsystemctl reload nginx', start)
+            script = (
+                f'SHA="{sha}"\nRELEASE="/opt/omnicio/releases/$SHA"\n'
+                'APP_CURRENT="/opt/omnicio/current"\n'
+                'WEB_CURRENT="/var/www/omnicio.ru/current"\n'
+                'NGINX_SITE="/etc/nginx/sites-available/omnicio.ru"\n'
+                '. "/run/omnicio-auth-deploy-$SHA.state"\nREADY=0\n'
+                + MODULE._ROLLBACK_COMPATIBILITY_GUARD + deploy[start:end]
+            )
+        for original, replacement in (
+            ("/opt/omnicio/releases", self.releases),
+            ("/opt/omnicio/current", self.root / "current"),
+            ("/var/www/omnicio.ru/current", self.root / "web-current"),
+            ("/etc/nginx/sites-available", self.root / "nginx"),
+            ("/etc/omnicio", self.root / "etc"),
+            ("/run/omnicio-auth-deploy", self.root / "run" / "omnicio-auth-deploy"),
+        ):
+            script = script.replace(original, replacement.as_posix())
+        if os.name == "nt":
+            bash = str(pathlib.Path(os.environ.get("PROGRAMFILES", r"C:\Program Files"))
+                       / "Git" / "bin" / "bash.exe")
+        else:
+            bash = "/bin/bash"
+        result = subprocess.run(
+            [bash, "-s", "--", sha], input=preamble + script,
+            text=True, capture_output=True, timeout=10,
+        )
+        return result, log.read_text(encoding="utf-8"), product, nginx, candidate
+
+    def test_incompatible_rollback_never_restores_or_restarts_any_previous_runtime(self) -> None:
+        for flow in ("readiness", "nginx", "controller"):
+            with self.subTest(flow=flow):
+                result, calls, product, nginx, candidate = self._run_rollback(
+                    flow, compatible=False,
+                )
+                self.assertEqual(result.returncode, 45, result.stderr)
+                self.assertIn("contract-check\n", calls)
+                self.assertIn(
+                    "systemctl stop omnicio-auth.service omnicio-observer.timer "
+                    "omnicio-observer.service", calls,
+                )
+                self.assertIn(
+                    "systemctl disable omnicio-auth.service omnicio-observer.timer "
+                    "omnicio-observer.service", calls,
+                )
+                self.assertNotIn("restart", calls)
+                self.assertNotIn("ln ", calls)
+                self.assertEqual(product.read_text(encoding="utf-8"), "candidate-environment\n")
+                self.assertEqual(nginx.read_text(encoding="utf-8"), "candidate-nginx\n")
+                self.assertTrue((candidate / "pyproject.toml").is_file())
+
+    def test_same_explicit_contract_allows_normal_rollback(self) -> None:
+        for flow, expected_exit in (("readiness", 41), ("nginx", 42), ("controller", 0)):
+            with self.subTest(flow=flow):
+                result, calls, product, nginx, _ = self._run_rollback(flow, compatible=True)
+                self.assertEqual(result.returncode, expected_exit, result.stderr)
+                self.assertLess(calls.index("contract-check"), calls.index("ln "))
+                if flow != "nginx":
+                    self.assertIn("systemctl restart omnicio-auth.service", calls)
+                if flow == "controller":
+                    self.assertEqual(product.read_text(encoding="utf-8"), "previous-environment\n")
+                    self.assertIn("systemctl restart omnicio-observer.timer", calls)
+                if flow != "readiness":
+                    self.assertEqual(nginx.read_text(encoding="utf-8"), "previous-nginx\n")
+
+    def test_failed_service_stop_is_reported_without_restore_or_success_claim(self) -> None:
+        result, calls, product, _, _ = self._run_rollback(
+            "controller", compatible=False, failure="stop",
+        )
+        self.assertEqual(result.returncode, 46, result.stderr)
+        self.assertNotIn("restart", calls)
+        self.assertNotIn("ln ", calls)
+        self.assertEqual(product.read_text(encoding="utf-8"), "candidate-environment\n")
+        self.assertIn("shutdown was not confirmed", result.stderr)
+
+    def test_environment_failure_before_deploy_preserves_compatible_running_service(self) -> None:
+        result, calls, product, nginx, _ = self._run_rollback(
+            "controller", compatible=True, missing_state=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, "contract-check\n")
+        self.assertEqual(product.read_text(encoding="utf-8"), "previous-environment\n")
+        self.assertEqual(nginx.read_text(encoding="utf-8"), "candidate-nginx\n")
+
+    def test_compatible_service_or_nginx_failure_does_not_claim_successful_restore(self) -> None:
+        for failure in ("restart", "nginx"):
+            with self.subTest(failure=failure):
+                result, calls, product, _, _ = self._run_rollback(
+                    "controller", compatible=True, failure=failure,
+                )
+                self.assertEqual(result.returncode, 47, result.stderr)
+                self.assertIn("systemctl restart omnicio-auth.service", calls)
+                self.assertIn("systemctl restart omnicio-observer.timer", calls)
+                self.assertEqual(product.read_text(encoding="utf-8"), "previous-environment\n")
+
+    def test_missing_state_does_not_certify_legacy_or_already_active_candidate(self) -> None:
+        for compatible, current_candidate in ((False, False), (True, True)):
+            with self.subTest(compatible=compatible, current_candidate=current_candidate):
+                result, calls, product, _, _ = self._run_rollback(
+                    "controller", compatible=compatible, missing_state=True,
+                    current_candidate=current_candidate,
+                )
+                self.assertEqual(result.returncode, 45, result.stderr)
+                self.assertNotIn("restart", calls)
+                self.assertNotIn("ln ", calls)
+                self.assertEqual(product.read_text(encoding="utf-8"), "candidate-environment\n")
 
 
 class AuthAppDeployTests(unittest.TestCase):
@@ -97,9 +376,79 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_release_upload_rechecks_active_target_before_destructive_steps(self) -> None:
         ssh = FakeSsh(True)
         MODULE.upload_release(ssh, archive_b64="test-only", release_sha="b" * 40)
-        command = ssh.commands[-1]
+        locked_command = ssh.commands[-1]
+        self.assertTrue(locked_command.startswith(f"flock -w 855 {MODULE.DEPLOY_LOCK} "))
+        command = shlex.split(locked_command)[-1]
         self.assertTrue(command.startswith("set -euo pipefail; "))
         self.assertLess(command.index("readlink -f"), command.index("rm -rf"))
+        self.assertIn("--no-same-owner --no-same-permissions", command)
+        self.assertIn(f"chmod 0644 /opt/omnicio/releases/{'b' * 40}/pyproject.toml", command)
+        self.assertIn(f"rm -f /run/omnicio-auth-deploy-{'b' * 40}.state ", command)
+        self.assertLess(command.index("chmod 0644"), command.index("rm -f /run/"))
+
+    def test_only_successful_upload_clears_a_previous_attempts_rollback_state(self) -> None:
+        sha = "b" * 40
+        ssh = FakeSsh(True)
+        MODULE.upload_release(ssh, archive_b64="test-only", release_sha=sha)
+        command = shlex.split(ssh.commands[-1])[-1]
+        body = b'[project]\nname="omnicio-gateway"\nversion="1.4.0"\n'
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+            entry = tarfile.TarInfo("pyproject.toml")
+            entry.size = len(body)
+            archive.addfile(entry, io.BytesIO(body))
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        if os.name == "nt":
+            bash = str(pathlib.Path(os.environ.get("PROGRAMFILES", r"C:\Program Files"))
+                       / "Git" / "bin" / "bash.exe")
+        else:
+            bash = "/bin/bash"
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory).resolve()
+            run = root / "run"
+            run.mkdir()
+            state = run / f"omnicio-auth-deploy-{sha}.state"
+            marker = run / f"omnicio-auth-deploy-{sha}.rollback-blocked"
+            state.write_text("previous-attempt-state\n", encoding="utf-8")
+            marker.write_text("previous-attempt-marker\n", encoding="utf-8")
+            command = command.replace("/opt/omnicio", (root / "app").as_posix())
+            command = command.replace("/run/omnicio-auth-deploy", (run / "omnicio-auth-deploy")
+                                      .as_posix())
+            failed = subprocess.run(
+                [bash, "-c", command], input="not-an-archive", text=True,
+                capture_output=True, timeout=10,
+            )
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertEqual(state.read_text(encoding="utf-8"), "previous-attempt-state\n")
+            self.assertEqual(marker.read_text(encoding="utf-8"), "previous-attempt-marker\n")
+            completed = subprocess.run(
+                [bash, "-c", command], input=encoded, text=True,
+                capture_output=True, timeout=10,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse(state.exists())
+            self.assertFalse(marker.exists())
+            self.assertEqual(
+                (root / "app" / "releases" / sha / "pyproject.toml").read_bytes(), body,
+            )
+
+    def test_rollback_reports_blocked_contract_and_unconfirmed_shutdown_separately(self) -> None:
+        from unittest.mock import Mock
+
+        for code, expected in ((45, "Auth and observer were stopped"),
+                               (46, "shutdown could not be confirmed"),
+                               (47, "application rollback was not confirmed")):
+            with self.subTest(code=code):
+                ssh = Mock()
+                ssh.run.side_effect = MODULE.InfraError(
+                    f"Remote command failed (remote_command, exit_code={code})",
+                )
+                with patch.object(MODULE, "add_summary") as summary:
+                    MODULE.rollback_remote(ssh, release_sha="a" * 40)
+                message = summary.call_args.args[0]
+                self.assertIn(expected, message)
+                if code == 46:
+                    self.assertNotIn("were stopped", message)
 
     def test_deploy_and_rollback_share_a_lock_and_finish_before_ssh_deadline(self) -> None:
         from unittest.mock import Mock
@@ -111,7 +460,7 @@ class AuthAppDeployTests(unittest.TestCase):
         deploy, rollback = ssh.run.call_args_list
         self.assertIn(f"flock -n {MODULE.DEPLOY_LOCK} ", deploy.args[0])
         self.assertIn(f"flock -w 855 {MODULE.DEPLOY_LOCK} ", rollback.args[0])
-        for call, maximum in ((deploy, 840 + 15), (rollback, 855 + 30 + 5)):
+        for call, maximum in ((deploy, 840 + 15), (rollback, 855 + 60 + 5)):
             self.assertGreater(call.kwargs["timeout"], maximum)
             self.assertIn("timeout --kill-after=", call.args[0])
             self.assertNotIn("--foreground", call.args[0])

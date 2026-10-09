@@ -1174,7 +1174,7 @@ button .icon {
 }
 .dashboard-top {
   display:grid;
-  grid-template-columns:minmax(0,1.18fr) minmax(0,1.08fr) minmax(0,.62fr) minmax(0,1.16fr);
+  grid-template-columns:minmax(0,1.18fr) minmax(0,1.08fr) minmax(0,.8fr) minmax(0,1.16fr);
   gap:12px
 }
 .dashboard-bottom {
@@ -2963,7 +2963,7 @@ dialog::backdrop {
     margin:auto
   }
   .dashboard-top {
-    grid-template-columns:1.2fr 1.08fr .63fr 1.1fr
+    grid-template-columns:1.2fr 1.08fr .8fr 1.1fr
   }
   .summary-card {
     min-height:290px
@@ -3057,7 +3057,7 @@ dialog::backdrop {
     gap:6px
   }
   .dashboard-top {
-    grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,.65fr) minmax(0,1fr);
+    grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,.8fr) minmax(0,1fr);
     gap:10px
   }
   .dashboard-bottom {

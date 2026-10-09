@@ -57,6 +57,7 @@ from .tbank import (
 INSTRUMENT_EVIDENCE_REQUEST_INTERVAL_SECONDS = 0.31
 STRATEGY_RATING_READ_LIMIT = 8
 _NOT_CONNECTED_MESSAGE = "T-Invest is not connected"
+_ACCOUNT_DISPLAY_NAME = "Брокерский счёт"
 
 
 class BrokerConnectionError(RuntimeError):
@@ -196,7 +197,9 @@ class BrokerService:
             {account.id for account in accounts}
         ) != len(accounts):
             raise BrokerAccountNotAccessible("broker account identities are ambiguous")
-        return [replace(account, name="Брокерский счёт", opened_at=None) for account in accounts]
+        return [
+            replace(account, name=_ACCOUNT_DISPLAY_NAME, opened_at=None) for account in accounts
+        ]
 
     def connect(
         self,
@@ -286,7 +289,7 @@ class BrokerService:
         self._require_current_connection(record)
         return BrokerPortfolioSnapshot(
             account_id=record.account_id,
-            account_name="Брокерский счёт",
+            account_name=_ACCOUNT_DISPLAY_NAME,
             environment=environment,
             portfolio=portfolio,
             positions=positions,
@@ -312,7 +315,7 @@ class BrokerService:
 
     def candidate_daily_exchange_candles(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         from_at: datetime,
@@ -329,14 +332,14 @@ class BrokerService:
         )
         return cast(tuple[TBankHistoricCandle, ...], result)
 
-    def market_history_start(self, user_id: UUID, instrument_uid: str) -> datetime | None:
+    def market_history_start(self, _user_id: UUID, instrument_uid: str) -> datetime | None:
         credential, environment = self._market_credentials()
         first = self.market_tbank.first_daily_candle(credential, environment, instrument_uid)
         return first
 
     def instrument_facts(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
     ) -> tuple[TBankInstrumentMetadata, TBankAssetFundamental | None]:
         """One exact instrument read and at most one asset statistics read."""
@@ -368,7 +371,7 @@ class BrokerService:
 
     def market_instrument_metadata(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
     ) -> TBankInstrumentMetadata:
         """Typed quote units without coupling quote availability to fundamentals."""
@@ -537,7 +540,7 @@ class BrokerService:
 
     def instrument_news(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str | None = None,
         *,
         cursor: str | None = None,
@@ -582,7 +585,7 @@ class BrokerService:
 
     def candidate_bond_events(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         from_at: datetime,
@@ -604,7 +607,7 @@ class BrokerService:
 
     def candidate_market_yields(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uids: tuple[str, ...],
     ) -> tuple[TBankMarketYield, ...]:
         credential, environment = self._market_credentials()
@@ -617,7 +620,7 @@ class BrokerService:
 
     def candidate_last_prices(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uids: tuple[str, ...],
     ) -> tuple[TBankLastPrice, ...]:
         credential, environment = self._market_credentials()
@@ -638,7 +641,7 @@ class BrokerService:
 
     def market_last_prices(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uids: tuple[str, ...],
     ) -> TBankLastPriceBatch:
         """Partial quote display never changes strict execution readers."""
@@ -667,7 +670,7 @@ class BrokerService:
 
     def candidate_order_book(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         instrument_uid: str,
         *,
         depth: int = 10,
@@ -825,7 +828,7 @@ class BrokerService:
         self._require_current_connection(record)
         return BrokerObservationBundle(
             account_id=record.account_id,
-            account_name="Брокерский счёт",
+            account_name=_ACCOUNT_DISPLAY_NAME,
             environment=environment,
             refreshed_at=snapshot.refreshed_at,
             portfolio=portfolio,
@@ -1193,14 +1196,14 @@ class BrokerService:
     ) -> TBankOperationsPage:
         raise BrokerConnectionError("broker_data_scope_restricted")
 
-    def usd_rub_quote(self, user_id: UUID) -> TBankFxQuote:
+    def usd_rub_quote(self, _user_id: UUID) -> TBankFxQuote:
         credential, environment = self._market_credentials()
         result = self.market_tbank.get_usd_rub_quote(credential, environment)
         return result
 
     def search_instruments(
         self,
-        user_id: UUID,
+        _user_id: UUID,
         *,
         query: str,
         limit: int = 20,
@@ -1284,6 +1287,6 @@ def _status(record: TBankConnectionRecord) -> BrokerConnectionStatus:
         connected=True,
         environment=record.environment,
         account_id=record.account_id,
-        account_name="Брокерский счёт",
+        account_name=_ACCOUNT_DISPLAY_NAME,
         verified_at=record.verified_at,
     )

@@ -27,6 +27,7 @@ _REST_BASES: dict[TBankEnvironment, str] = {
 }
 _API_PREFIX = "tinkoff.public.invest.api.contract.v1."
 _INSTRUMENT_UID_FIELD = "instrument uid"
+_RESTRICTED_SCOPE_MESSAGE = "T-Invest method is outside the permitted data scope"
 _MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 
 # Documented endpoint page ceilings. Defaults and callers use the same limits;
@@ -1138,7 +1139,7 @@ class TBankInvestClient:
         price: Decimal,
         action: str,
     ) -> TBankOrderEstimate:
-        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
+        raise TBankTokenRejected(_RESTRICTED_SCOPE_MESSAGE)
 
     def submit_limit_order(
         self,
@@ -1152,7 +1153,7 @@ class TBankInvestClient:
         action: str,
         request_id: str,
     ) -> TBankOrderState:
-        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
+        raise TBankTokenRejected(_RESTRICTED_SCOPE_MESSAGE)
 
     def get_bond_ratings(
         self,
@@ -1478,7 +1479,7 @@ class TBankInvestClient:
         request_id: str,
         price_type: Literal["point", "currency"],
     ) -> TBankOrderState:
-        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
+        raise TBankTokenRejected(_RESTRICTED_SCOPE_MESSAGE)
 
     def get_sandbox_order_state(
         self,
@@ -1489,7 +1490,7 @@ class TBankInvestClient:
         request_id: str,
         price_type: Literal["point", "currency"],
     ) -> TBankOrderState:
-        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
+        raise TBankTokenRejected(_RESTRICTED_SCOPE_MESSAGE)
 
     def cancel_order(
         self,
@@ -1499,7 +1500,7 @@ class TBankInvestClient:
         *,
         request_id: str,
     ) -> TBankCancelResult:
-        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
+        raise TBankTokenRejected(_RESTRICTED_SCOPE_MESSAGE)
 
     def cancel_sandbox_order(
         self,
@@ -1509,7 +1510,7 @@ class TBankInvestClient:
         *,
         request_id: str,
     ) -> TBankCancelResult:
-        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
+        raise TBankTokenRejected(_RESTRICTED_SCOPE_MESSAGE)
 
     def get_accounts(
         self,
@@ -1556,7 +1557,7 @@ class TBankInvestClient:
         token: str,
         environment: TBankEnvironment,
     ) -> TBankUserInfo:
-        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
+        raise TBankTokenRejected(_RESTRICTED_SCOPE_MESSAGE)
 
     def find_instruments(
         self,
@@ -1650,7 +1651,7 @@ class TBankInvestClient:
         environment: TBankEnvironment,
         account_id: str,
     ) -> TBankPortfolio:
-        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
+        raise TBankTokenRejected(_RESTRICTED_SCOPE_MESSAGE)
 
     def get_positions(
         self,
@@ -1734,7 +1735,7 @@ class TBankInvestClient:
         cursor: str = "",
         limit: int = OPERATIONS_MAX_PAGE_SIZE,
     ) -> TBankOperationsPage:
-        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
+        raise TBankTokenRejected(_RESTRICTED_SCOPE_MESSAGE)
 
     def get_dividends(
         self,
@@ -1934,7 +1935,7 @@ class TBankInvestClient:
     ) -> dict[str, object]:
         allowed = {"portfolio": _PORTFOLIO_METHODS, "market": _MARKET_METHODS}.get(self.purpose)
         if environment != "prod" or allowed is None or (service, method) not in allowed:
-            raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
+            raise TBankTokenRejected(_RESTRICTED_SCOPE_MESSAGE)
         clean_token = _validate_token(token)
         base = _REST_BASES.get(environment)
         if base is None:

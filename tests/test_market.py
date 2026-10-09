@@ -1479,7 +1479,7 @@ def test_public_news_reuses_collected_pages_exact_uids_and_preserves_source_fres
 
 
 @pytest.mark.parametrize("source_id", [
-    "", "0", "-1", "01", "9" * 19, "a" * 63, "A" * 64, "١", "../../private",
+    "", "0", "-1", "01", "9" * 19, "a" * 63, "A" * 64, "١", "1١", "../../private",
     "https://www.cbr.ru/press/event/1",
 ])
 def test_public_news_bookmark_rejects_invalid_identity_before_any_source_access(source_id) -> None:

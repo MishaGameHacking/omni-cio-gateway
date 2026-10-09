@@ -6580,7 +6580,8 @@ async function exerciseViewport({
   await wait('!document.querySelector("#app-shell").hidden && document.querySelector("#profile-name").textContent.includes("Тестовый") && document.querySelector("#view-home .asset-table")', "Authenticated dashboard");
   await checkLayout(`dashboard ${round}/${width}`);
   await screenshot(`dashboard-${round}-${width}.png`);
-  assert.equal(await evaluate('document.querySelector("#view-home .metric-card .main-value").textContent'), "—", "Unknown return must not become zero or NAV-growth percentage");
+  assert.equal(await evaluate('document.querySelector("#view-home .metric-card .main-value").textContent.replace(/\\s/g, "")'), "100000,25₽", "The dashboard shows confirmed current cash from the owned snapshot");
+  assert.equal(await evaluate('document.querySelector("#view-home").textContent.includes("Modified Dietz")'), false, "The dashboard does not turn stored value changes into investment return");
   assert.ok(fixture.requests.filter(item => item.path === "/api/workspace").every(item => item.profile === fixture.user), "Private data requests carry the viewed server profile precondition");
   if (width <= 960) {
     await click("#app-menu-toggle");

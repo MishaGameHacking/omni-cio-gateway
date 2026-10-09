@@ -122,8 +122,8 @@ def _value(position: TBankPortfolioPosition) -> Decimal | None:
     if amount < 0:
         return None
     if position.instrument_type == "bond":
-        # T-Invest OperationsService returns current_price in settlement currency and current_nkd
-        # separately. Gross bond value therefore includes accrued interest.
+        # Shared market quotes are converted to settlement currency before this step.
+        # Gross bond value also includes the issuer's published accrued interest.
         nkd = position.current_nkd
         if nkd is None or nkd.currency.upper() != "RUB":
             return None
@@ -132,6 +132,66 @@ def _value(position: TBankPortfolioPosition) -> Decimal | None:
             return None
         amount += accrued
     return amount * quantity
+
+
+def _current_market_price(
+    info: TBankInstrumentMetadata | None,
+    quote: TBankLastPrice | None,
+) -> tuple[TBankMoney | None, TBankMoney | None]:
+    if info is None or quote is None or not info.currency:
+        return None, None
+    amount = _number(quote.price)
+    nkd = None
+    if info.instrument_type == "bond":
+        if info.nominal is None or info.nominal.currency != info.currency:
+            return None, None
+        amount = amount * _number(info.nominal.value) / PERCENT_SCALE
+        nkd = info.accrued_interest
+    price = TBankMoney(info.currency, _text(amount)) if amount >= 0 else None
+    return price, nkd
+
+
+def _enrich_current_position(
+    position: TBankPortfolioPosition,
+    info: TBankInstrumentMetadata | None,
+    quote: TBankLastPrice | None,
+) -> TBankPortfolioPosition:
+    price, nkd = _current_market_price(info, quote)
+    return replace(
+        position,
+        ticker=(info.ticker if info else "") or position.ticker,
+        instrument_uid=info.uid if info else position.instrument_uid,
+        instrument_type=position.instrument_type or (info.instrument_type if info else ""),
+        current_price=price,
+        current_nkd=nkd,
+        average_price=None,
+        average_price_fifo=None,
+        expected_yield_amount=None,
+        daily_yield=None,
+        quantity_lots=(
+            _text(_number(position.quantity) / info.lot)
+            if info is not None and info.lot > 0
+            else None
+        ),
+    )
+
+
+def _current_holdings_totals(
+    holdings: list[TBankPortfolioPosition],
+) -> tuple[dict[str, Decimal], bool]:
+    totals: dict[str, Decimal] = {}
+    complete = True
+    kinds = {"share": "shares", "bond": "bonds", "etf": "funds"}
+    for item in holdings:
+        if _number(item.quantity) == 0:
+            continue
+        value = _value(item)
+        if value is None or item.instrument_type not in kinds:
+            complete = False
+        else:
+            kind = kinds[item.instrument_type]
+            totals[kind] = totals.get(kind, Decimal(0)) + value
+    return totals, complete
 
 
 def value_current_positions(
@@ -151,53 +211,15 @@ def value_current_positions(
     if len(by_uid) != len(metadata) or len(quotes) != len(prices):
         raise PortfolioAnalysisError("duplicate market instrument identity")
     holdings: list[TBankPortfolioPosition] = []
-    totals: dict[str, Decimal] = {}
-    complete = not positions.limits_loading_in_progress
-    kinds = {"share": "shares", "bond": "bonds", "etf": "funds"}
     for position in positions.holdings:
         info = by_uid.get(position.instrument_uid) or by_figi.get(position.figi)
         quote = quotes.get(info.uid if info else position.instrument_uid)
-        price: TBankMoney | None = None
-        nkd: TBankMoney | None = None
-        if info is not None and quote is not None and info.currency:
-            amount = _number(quote.price)
-            if info.instrument_type == "bond":
-                if info.nominal is not None and info.nominal.currency == info.currency:
-                    amount = amount * _number(info.nominal.value) / PERCENT_SCALE
-                    nkd = info.accrued_interest
-                else:
-                    amount = Decimal(-1)
-            if amount >= 0:
-                price = TBankMoney(info.currency, _text(amount))
-        item = replace(
-            position,
-            ticker=(info.ticker if info else "") or position.ticker,
-            instrument_uid=info.uid if info else position.instrument_uid,
-            instrument_type=position.instrument_type or (info.instrument_type if info else ""),
-            current_price=price,
-            current_nkd=nkd,
-            average_price=None,
-            average_price_fifo=None,
-            expected_yield_amount=None,
-            daily_yield=None,
-            quantity_lots=(
-                _text(_number(position.quantity) / info.lot)
-                if info is not None and info.lot > 0
-                else None
-            ),
-        )
-        holdings.append(item)
-        if _number(item.quantity) == 0:
-            continue
-        value = _value(item)
-        if value is None or item.instrument_type not in kinds:
-            complete = False
-        else:
-            kind = kinds[item.instrument_type]
-            totals[kind] = totals.get(kind, Decimal(0)) + value
+        holdings.append(_enrich_current_position(position, info, quote))
+    totals, complete = _current_holdings_totals(holdings)
     rub_cash, cash_valid = _rub_money(positions.money)
     complete = (
         complete
+        and not positions.limits_loading_in_progress
         and cash_valid
         and all(
             money.currency.upper() == "RUB" or _number(money.value) == 0
@@ -488,6 +510,52 @@ def _observations(
     return tuple(observations)
 
 
+def _valuation_is_consistent(
+    portfolio: TBankPortfolio,
+    nav: Decimal | None,
+    valued: Decimal,
+    cash: Decimal,
+) -> bool:
+    class_subtotal = sum(
+        (
+            _number(item.money.value)
+            for item in portfolio.asset_totals
+            if item.money.currency.upper() == "RUB"
+        ),
+        Decimal(0),
+    )
+    if nav is None or nav < 0:
+        return False
+    return nav >= max(valued + cash, class_subtotal) - RUB_QUANTUM
+
+
+def _current_cash_values(
+    positions: TBankPositions,
+    cash: Decimal,
+    blocked: Decimal,
+    compatible: bool,
+) -> tuple[str | None, str | None, Decimal | None]:
+    if positions.limits_loading_in_progress:
+        return None, None, None
+    if not positions.withdraw_limits_available:
+        return _text(cash), None, None
+    unblocked = cash - blocked if compatible else None
+    return _text(cash), _text(blocked), unblocked
+
+
+def _observation_status(
+    compatible: bool,
+    incomplete: bool,
+    nav: Decimal | None,
+    limits_loading: bool,
+) -> str:
+    if not compatible:
+        return "needs_reconciliation"
+    if incomplete or nav is None or limits_loading:
+        return "partial"
+    return "observed"
+
+
 def analyze_portfolio(
     portfolio: TBankPortfolio,
     positions: TBankPositions,
@@ -502,25 +570,12 @@ def analyze_portfolio(
     securities = _securities(portfolio, metadata, nav if nav is not None else Decimal(0))
     sector_values = _sector_values(securities)
     valued = sum(sector_values.values(), Decimal(0))
-    classified = sum(
-        (value for sector, value in sector_values.items() if sector),
-        Decimal(0),
-    )
+    classified = valued - sector_values.get("", Decimal(0))
     incomplete = any(item.value_rub is None or not item.sector for item in securities)
 
     # Current balances and independently collected market quotes are not an
     # atomic valuation. Contradictory evidence never supplies an allocation denominator.
-    class_subtotal = sum(
-        (
-            _number(item.money.value)
-            for item in portfolio.asset_totals
-            if item.money.currency.upper() == "RUB"
-        ),
-        Decimal(0),
-    )
-    valuation_consistent = (
-        nav is not None and nav >= 0 and nav >= max(valued + cash, class_subtotal) - RUB_QUANTUM
-    )
+    valuation_consistent = _valuation_is_consistent(portfolio, nav, valued, cash)
     if nav is not None and not valuation_consistent:
         compatible = False
         # Retain raw observations for reconciliation, but do not turn a
@@ -528,28 +583,18 @@ def analyze_portfolio(
         securities = tuple(replace(item, nav_percent=None) for item in securities)
     allocation_nav = nav if valuation_consistent and nav is not None else Decimal(0)
 
-    unblocked = (
-        cash - blocked
-        if compatible
-        and not positions.limits_loading_in_progress
-        and positions.withdraw_limits_available
-        else None
+    cash_total, cash_blocked, unblocked = _current_cash_values(
+        positions, cash, blocked, compatible
     )
-    status = "observed"
-    if not compatible:
-        status = "needs_reconciliation"
-    elif incomplete or nav is None or positions.limits_loading_in_progress:
-        status = "partial"
+    status = _observation_status(
+        compatible, incomplete, nav, positions.limits_loading_in_progress
+    )
 
     return PortfolioAnalysis(
         status=status,
         nav_rub=_text(nav) if nav is not None else None,
-        rub_cash_total=_text(cash) if not positions.limits_loading_in_progress else None,
-        rub_cash_blocked=(
-            _text(blocked)
-            if positions.withdraw_limits_available and not positions.limits_loading_in_progress
-            else None
-        ),
+        rub_cash_total=cash_total,
+        rub_cash_blocked=cash_blocked,
         rub_cash_unblocked=_text(unblocked) if unblocked is not None else None,
         security_count=len(securities),
         valued_security_count=sum(item.value_rub is not None for item in securities),

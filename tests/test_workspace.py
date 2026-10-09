@@ -306,13 +306,12 @@ def test_workspace_snapshot_selection_never_reads_private_history_or_profile() -
 
 
 def test_goals_reject_new_automatic_income_source_but_keep_manual_income_targets() -> None:
+    document = goal_document(
+        kind="income",
+        progress_source="income",
+        allocation_percent="100",
+        manual_amount_rub=None,
+    )
     with pytest.raises(ValueError):
-        normalize_goal(
-            goal_document(
-                kind="income",
-                progress_source="income",
-                allocation_percent="100",
-                manual_amount_rub=None,
-            )
-        )
+        normalize_goal(document)
     assert normalize_goal(goal_document(kind="income"))["progress_source"] == "manual"

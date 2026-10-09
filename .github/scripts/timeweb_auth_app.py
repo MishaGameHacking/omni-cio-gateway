@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tarfile
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from collections.abc import Iterable
@@ -339,6 +340,104 @@ def commit_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
         add_summary("- Warning: stale product environment rollback backup remains.")
 
 
+def release_rollback_contract() -> str:
+    """Read the compatibility contract from this exact reviewed checkout."""
+    project = pathlib.Path(__file__).resolve().parents[2] / "pyproject.toml"
+    with project.open("rb") as handle:
+        contract = tomllib.load(handle)["tool"]["omnicio"]["runtime"]["rollback_contract"]
+    if not isinstance(contract, str) or re.fullmatch(r"[a-z][a-z0-9-]{0,63}", contract) is None:
+        raise ValueError("The reviewed runtime rollback contract is invalid")
+    return contract
+
+
+# Do not import either release's Python modules or ask the old application to
+# certify itself. Only root-owned static metadata under the release tree may
+# declare compatibility with the contract accepted in this reviewed checkout.
+_ROLLBACK_COMPATIBILITY_PROGRAM = r"""import os
+import pathlib
+import re
+import stat
+import sys
+import tomllib
+
+EXPECTED_CONTRACT = __OMNICIO_ROLLBACK_CONTRACT__
+MAX_METADATA_BYTES = 65536
+
+
+def trusted_metadata(info: os.stat_result, *, directory: bool) -> bool:
+    expected_type = stat.S_ISDIR if directory else stat.S_ISREG
+    return info.st_uid == 0 and not info.st_mode & 0o022 and expected_type(info.st_mode)
+
+
+def read_contract(release: pathlib.Path, releases_root: pathlib.Path) -> str:
+    if (release.parent != releases_root or not release.is_absolute()
+            or re.fullmatch(r"[0-9a-f]{40}", release.name) is None
+            or release.resolve(strict=True) != release):
+        raise ValueError("untrusted_release_path")
+    for directory in (release, *release.parents):
+        if not trusted_metadata(directory.lstat(), directory=True):
+            raise ValueError("untrusted_release_directory")
+    metadata = release / "pyproject.toml"
+    info = metadata.lstat()
+    if (not trusted_metadata(info, directory=False)
+            or not 0 < info.st_size <= MAX_METADATA_BYTES):
+        raise ValueError("untrusted_release_metadata")
+    with metadata.open("rb") as handle:
+        body = handle.read(MAX_METADATA_BYTES + 1)
+    if len(body) > MAX_METADATA_BYTES:
+        raise ValueError("release_metadata_too_large")
+    project = tomllib.loads(body.decode("utf-8"))
+    if project["project"]["name"] != "omnicio-gateway":
+        raise ValueError("unexpected_release_project")
+    contract = project["tool"]["omnicio"]["runtime"]["rollback_contract"]
+    if not isinstance(contract, str):
+        raise ValueError("invalid_release_contract")
+    return contract
+
+
+def compatible(
+    candidate: str | pathlib.Path, previous: str | pathlib.Path,
+    releases_root: pathlib.Path = pathlib.Path("/opt/omnicio/releases"),
+) -> bool:
+    try:
+        return (read_contract(pathlib.Path(candidate), releases_root) == EXPECTED_CONTRACT
+                and read_contract(pathlib.Path(previous), releases_root) == EXPECTED_CONTRACT)
+    except (OSError, UnicodeError, ValueError, KeyError, TypeError, RuntimeError):
+        return False
+
+
+if __name__ == "__main__":
+    sys.exit(0 if len(sys.argv) == 3 and compatible(sys.argv[1], sys.argv[2]) else 45)
+""".replace("__OMNICIO_ROLLBACK_CONTRACT__", json.dumps(release_rollback_contract()))
+
+_ROLLBACK_COMPATIBILITY_GUARD = r"""require_compatible_rollback() {
+    if ! python3 -I - "$RELEASE" "${PREVIOUS_APP:-}" <<'OMNICIO_ROLLBACK_PY'
+__OMNICIO_ROLLBACK_PROGRAM__
+OMNICIO_ROLLBACK_PY
+    then
+        # Stop the candidate too: neither unavailable service nor an unknown
+        # old runtime may continue writing after compatibility becomes unknown.
+        STOP_CONFIRMED=1
+        systemctl stop omnicio-auth.service omnicio-observer.timer omnicio-observer.service \
+            || STOP_CONFIRMED=0
+        systemctl disable omnicio-auth.service omnicio-observer.timer omnicio-observer.service \
+            || STOP_CONFIRMED=0
+        if [ "$STOP_CONFIRMED" != "1" ]; then
+            printf '%s\n' 'rollback_blocked_shutdown_unconfirmed' \
+                > "/run/omnicio-auth-deploy-$SHA.rollback-blocked"
+            printf '%s\n' 'Rollback blocked; service shutdown was not confirmed.' >&2
+            exit 46
+        fi
+        printf '%s\n' 'rollback_blocked_incompatible_runtime_contract' \
+            > "/run/omnicio-auth-deploy-$SHA.rollback-blocked"
+        printf '%s\n' 'Rollback blocked: incompatible or unknown runtime contract.' \
+            'Services stopped; candidate and environment retained.' >&2
+        exit 45
+    fi
+}
+""".replace("__OMNICIO_ROLLBACK_PROGRAM__", _ROLLBACK_COMPATIBILITY_PROGRAM)
+
+
 _REMOTE_DEPLOY_TEMPLATE = r"""set -euo pipefail
 
 SHA="$1"
@@ -352,6 +451,8 @@ OBSERVER_SERVICE="/etc/systemd/system/omnicio-observer.service"
 OBSERVER_TIMER="/etc/systemd/system/omnicio-observer.timer"
 NGINX_SITE="/etc/nginx/sites-available/omnicio.ru"
 STATE="/run/omnicio-auth-deploy-$SHA.state"
+
+__OMNICIO_ROLLBACK_GUARD__
 
 test -s /etc/omnicio/runtime.env
 test -s /etc/letsencrypt/live/omnicio.ru/fullchain.pem
@@ -605,6 +706,7 @@ for _ in $(seq 1 20); do
 done
 
 if [ "$READY" != "1" ]; then
+    require_compatible_rollback
     if [ -n "$PREVIOUS_APP" ] && [ -d "$PREVIOUS_APP" ]; then
         ln -sfn "$PREVIOUS_APP" "$APP_CURRENT"
         systemctl restart omnicio-auth.service || true
@@ -872,6 +974,7 @@ rm -f /etc/nginx/sites-enabled/default
 ln -sfn "$WEB_RELEASE" "$WEB_CURRENT"
 
 if ! nginx -t; then
+    require_compatible_rollback
     if [ -f "$NGINX_SITE.pre-auth" ]; then
         mv "$NGINX_SITE.pre-auth" "$NGINX_SITE"
     fi
@@ -889,6 +992,8 @@ systemctl is-enabled omnicio-observer.timer >/dev/null
 systemctl is-active omnicio-observer.timer >/dev/null
 """
 REMOTE_DEPLOY_SCRIPT = _REMOTE_DEPLOY_TEMPLATE.replace(
+    "__OMNICIO_ROLLBACK_GUARD__", _ROLLBACK_COMPATIBILITY_GUARD,
+).replace(
     "__OMNICIO_SERVER_SECURITY_HEADERS__", nginx_security_headers(4),
 ).replace(
     "__OMNICIO_LOCATION_SECURITY_HEADERS__", nginx_security_headers(8)
@@ -901,11 +1006,28 @@ REMOTE_DEPLOY_SCRIPT = _REMOTE_DEPLOY_TEMPLATE.replace(
 REMOTE_ROLLBACK_SCRIPT = r"""set -euo pipefail
 
 SHA="$1"
+RELEASE="/opt/omnicio/releases/$SHA"
 STATE="/run/omnicio-auth-deploy-$SHA.state"
 NGINX_SITE="/etc/nginx/sites-available/omnicio.ru"
 PRODUCT_ENV="/etc/omnicio/product.env"
 PRODUCT_ENV_BACKUP="$PRODUCT_ENV.pre-$SHA"
 PRODUCT_ENV_STATE="$PRODUCT_ENV.pre-$SHA.state"
+
+__OMNICIO_ROLLBACK_GUARD__
+
+if [ -s "$STATE" ]; then
+    . "$STATE"
+elif [ ! -e "$STATE" ]; then
+    # product.env can fail before deploy_remote creates its state. Only the
+    # still-active, distinct, independently compatible release is safe here.
+    PREVIOUS_APP="$(readlink -f /opt/omnicio/current 2>/dev/null || true)"
+    if [ "$PREVIOUS_APP" = "$RELEASE" ]; then
+        PREVIOUS_APP=""
+    fi
+fi
+# Check before restoring even product.env: it may re-enable retired readers.
+# Missing or untrusted state is not evidence that the old runtime is safe.
+require_compatible_rollback
 
 if [ -f "$PRODUCT_ENV_STATE" ]; then
     PRODUCT_ENV_PREVIOUS="$(cat "$PRODUCT_ENV_STATE")"
@@ -919,33 +1041,42 @@ if [ -f "$PRODUCT_ENV_STATE" ]; then
     fi
 fi
 
+# An environment-only failure never began an app/web/timer switch. Do not
+# restore an unrelated nginx backup or restart the unchanged compatible app.
+if [ ! -s "$STATE" ]; then
+    exit 0
+fi
+
+RESTORE_CONFIRMED=1
 if [ -s "$STATE" ]; then
-    . "$STATE"
     if [ -n "$PREVIOUS_APP" ] && [ -d "$PREVIOUS_APP" ]; then
         ln -sfn "$PREVIOUS_APP" /opt/omnicio/current
-        systemctl restart omnicio-auth.service || true
+        systemctl restart omnicio-auth.service || RESTORE_CONFIRMED=0
     fi
     if [ -n "$PREVIOUS_WEB" ] && [ -d "$PREVIOUS_WEB" ]; then
         ln -sfn "$PREVIOUS_WEB" /var/www/omnicio.ru/current
     fi
 
     if [ "${OBSERVER_TIMER_WAS_ENABLED:-0}" = "1" ]; then
-        systemctl enable omnicio-observer.timer >/dev/null 2>&1 || true
+        systemctl enable omnicio-observer.timer >/dev/null 2>&1 || RESTORE_CONFIRMED=0
     else
-        systemctl disable omnicio-observer.timer >/dev/null 2>&1 || true
+        systemctl disable omnicio-observer.timer >/dev/null 2>&1 || RESTORE_CONFIRMED=0
     fi
     if [ "${OBSERVER_TIMER_WAS_ACTIVE:-0}" = "1" ]; then
-        systemctl restart omnicio-observer.timer >/dev/null 2>&1 || true
+        systemctl restart omnicio-observer.timer >/dev/null 2>&1 || RESTORE_CONFIRMED=0
     else
-        systemctl stop omnicio-observer.timer >/dev/null 2>&1 || true
+        systemctl stop omnicio-observer.timer >/dev/null 2>&1 || RESTORE_CONFIRMED=0
     fi
 fi
 
 if [ -f "$NGINX_SITE.pre-auth" ]; then
     mv "$NGINX_SITE.pre-auth" "$NGINX_SITE"
 fi
-nginx -t && systemctl reload nginx || true
-"""
+nginx -t && systemctl reload nginx || RESTORE_CONFIRMED=0
+if [ "$RESTORE_CONFIRMED" != "1" ]; then
+    exit 47
+fi
+""".replace("__OMNICIO_ROLLBACK_GUARD__", _ROLLBACK_COMPATIBILITY_GUARD)
 
 
 def upload_release(
@@ -968,9 +1099,18 @@ def upload_release(
         f'test "$(readlink -f /opt/omnicio/current 2>/dev/null || true)" != {release}; '
         f"rm -rf {release}; "
         f"install -d -m 0755 {release}; "
-        f"base64 -d | tar -xzf - -C {release}"
+        f"base64 -d | tar --no-same-owner --no-same-permissions -xzf - -C {release}; "
+        f"chmod 0644 {release}/pyproject.toml; "
+        # A retry of the same SHA must not consume a previous attempt's rollback
+        # target if product.env fails before deploy_remote records new state.
+        f"rm -f /run/omnicio-auth-deploy-{release_sha}.state "
+        f"/run/omnicio-auth-deploy-{release_sha}.rollback-blocked"
     )
-    ssh.run(command, input_text=archive_b64)
+    ssh.run(
+        f"flock -w 855 {DEPLOY_LOCK} timeout --kill-after=5s 60s "
+        f"bash -c {shlex.quote(command)}",
+        input_text=archive_b64, timeout=960,
+    )
 
 
 def deploy_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
@@ -992,11 +1132,23 @@ def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
         raise InfraError(INVALID_RELEASE_SHA)
     try:
         ssh.run(
-            f"flock -w 855 {DEPLOY_LOCK} timeout --kill-after=5s 30s bash -s -- {release_sha}",
-            input_text=REMOTE_ROLLBACK_SCRIPT, timeout=900,
+            f"flock -w 855 {DEPLOY_LOCK} timeout --kill-after=5s 60s bash -s -- {release_sha}",
+            input_text=REMOTE_ROLLBACK_SCRIPT, timeout=960,
         )
-    except InfraError:
-        add_summary("- Warning: application rollback was not confirmed; inspect release state.")
+    except InfraError as exc:
+        if "exit_code=45)" in str(exc):
+            add_summary(
+                "- Rollback blocked: incompatible or unknown runtime contract. "
+                "Auth and observer were stopped; candidate and environment retained. "
+                "An accepted recovery decision is required before restarting services."
+            )
+        elif "exit_code=46)" in str(exc):
+            add_summary(
+                "- Rollback blocked: service shutdown could not be confirmed. "
+                "Candidate and environment retained; inspect auth and observer state immediately."
+            )
+        else:
+            add_summary("- Warning: application rollback was not confirmed; inspect release state.")
 
 
 def verify_public_security_headers(

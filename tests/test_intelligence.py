@@ -50,8 +50,9 @@ def test_public_price_changes_use_exact_observed_prices_and_reject_false_time_co
     ]
     assert changes[0].from_time == previous["fall"].time.isoformat()
     assert changes[0].to_time == now.isoformat()
+    naive_observation = now.replace(tzinfo=None)
     with pytest.raises(ValueError, match="timezone-aware"):
-        market_price_changes(current, previous, observed_at=now.replace(tzinfo=None))
+        market_price_changes(current, previous, observed_at=naive_observation)
 
 
 def _bundle() -> BrokerObservationBundle:

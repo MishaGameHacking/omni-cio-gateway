@@ -473,55 +473,74 @@ class MarketService:
             page = self.broker.instrument_news(
                 PUBLIC_MARKET_SCOPE, cursor=cursor, limit=NEWS_MAX_PAGE_SIZE,
             )
-            observed = _parse_provider_time(str(page["observed_at"]))
+            cursor, observed = self._accept_news_page(source, page, cursor, page_index == 0)
             latest_observed = max(latest_observed or observed, observed)
-            documents = build_news_evidence(None, page["items"], observed_at=observed)
-            if self.broker.market_status() != source:
-                raise BrokerConnectionError("market_source_changed")
-            with self._cache_lock:
-                if self._closed or self._source_generation != source:
-                    raise BrokerConnectionError("market_source_changed")
-                for document in documents:
-                    self._market_news[document.provider_key] = replace(document, payload={
-                        **document.payload, "observed_at": observed.isoformat(),
-                    })
-                self._market_news = OrderedDict(
-                    (key, document) for key, document in self._market_news.items()
-                    if document.published_at is not None
-                    and observed - ISSUER_NEWS_MAX_AGE <= document.published_at <= observed
-                )
-                while len(self._market_news) > _PUBLIC_NEWS_CAPACITY:
-                    self._market_news.popitem(last=False)
-                    self._news_truncated = True
-                next_cursor = page["next_cursor"]
-                if page_index == 0 and self._news_cursor is not None:
-                    cursor = self._news_cursor
-                elif next_cursor is None:
-                    self._news_cursor = None
-                    self._news_seen_cursors.clear()
-                    self._news_scan_complete = True
-                    break
-                elif next_cursor in self._news_seen_cursors:
-                    self._news_cursor = None
-                    self._news_seen_cursors.clear()
-                    self._news_scan_complete = False
-                    raise TBankUnavailable("market_news_cursor_cycle")
-                else:
-                    if cursor is not None:
-                        self._news_seen_cursors.add(cursor)
-                    if len(self._news_seen_cursors) >= NEWS_MAX_PATH_PROOFS:
-                        self._news_seen_cursors.clear()
-                        self._news_cursor = None
-                        self._news_scan_complete = False
-                        self._news_truncated = True
-                        break
-                    self._news_cursor = str(next_cursor)
-                    self._news_scan_complete = False
-                    cursor = self._news_cursor
+            if cursor is None:
+                break
         with self._cache_lock:
             count = len(self._market_news)
             complete = self._news_scan_complete and not self._news_truncated
         return _CollectorResult("fresh" if complete else "partial", latest_observed, count)
+
+    def _accept_news_page(
+        self, source: MarketSourceStatus, page: dict[str, Any], cursor: str | None,
+        first_page: bool,
+    ) -> tuple[str | None, datetime]:
+        observed = _parse_provider_time(str(page["observed_at"]))
+        documents = build_news_evidence(None, page["items"], observed_at=observed)
+        if self.broker.market_status() != source:
+            raise BrokerConnectionError("market_source_changed")
+        with self._cache_lock:
+            if self._closed or self._source_generation != source:
+                raise BrokerConnectionError("market_source_changed")
+            self._merge_news_documents(documents, observed)
+            next_cursor = self._next_news_cursor(cursor, page["next_cursor"], first_page)
+        return next_cursor, observed
+
+    def _merge_news_documents(
+        self, documents: tuple[EvidenceDocument, ...], observed: datetime,
+    ) -> None:
+        """Keep bounded, source-timestamped evidence under the caller's cache lock."""
+        for document in documents:
+            self._market_news[document.provider_key] = replace(document, payload={
+                **document.payload, "observed_at": observed.isoformat(),
+            })
+        self._market_news = OrderedDict(
+            (key, document) for key, document in self._market_news.items()
+            if document.published_at is not None
+            and observed - ISSUER_NEWS_MAX_AGE <= document.published_at <= observed
+        )
+        while len(self._market_news) > _PUBLIC_NEWS_CAPACITY:
+            self._market_news.popitem(last=False)
+            self._news_truncated = True
+
+    def _next_news_cursor(
+        self, cursor: str | None, next_cursor: str | None, first_page: bool,
+    ) -> str | None:
+        """Advance the bounded source scan under the caller's cache lock."""
+        if first_page and self._news_cursor is not None:
+            return self._news_cursor
+        if next_cursor is None:
+            self._news_cursor = None
+            self._news_seen_cursors.clear()
+            self._news_scan_complete = True
+            return None
+        if next_cursor in self._news_seen_cursors:
+            self._news_cursor = None
+            self._news_seen_cursors.clear()
+            self._news_scan_complete = False
+            raise TBankUnavailable("market_news_cursor_cycle")
+        if cursor is not None:
+            self._news_seen_cursors.add(cursor)
+        if len(self._news_seen_cursors) >= NEWS_MAX_PATH_PROOFS:
+            self._news_seen_cursors.clear()
+            self._news_cursor = None
+            self._news_scan_complete = False
+            self._news_truncated = True
+            return None
+        self._news_cursor = str(next_cursor)
+        self._news_scan_complete = False
+        return self._news_cursor
 
     def status(self) -> dict[str, object]:
         """Public source health; no tenant identity, credential, or portfolio state."""
@@ -636,82 +655,55 @@ class MarketService:
             documents = tuple(self._market_news.values())
             state = self._collector_states["instrument_news"]
             truncated = self._news_truncated
-        rows: list[dict[str, Any]] = []
-        for document in documents:
-            payload = document.payload
-            uids = payload.get("instrument_uids")
-            if (document.published_at is None
-                    or not now - ISSUER_NEWS_MAX_AGE <= document.published_at <= now
-                    or not isinstance(uids, (list, tuple))
-                    or instrument_uid is not None and instrument_uid not in uids):
-                continue
-            row = dict(payload)
-            row["occurred_at"] = document.published_at.isoformat()
-            row["content_scope"] = "source_summary"
-            rows.append(row)
+        rows = _public_news_rows(documents, instrument_uid, now)
         sources = ["T-Invest InstrumentsService.News"] if source.connected else []
         source_times = [state.observed_at] if state.observed_at is not None else []
-        cbr_available = False
-        cbr_fresh = False
-        if self.news is not None and instrument_uid is None:
-            try:
-                public = self.news.headlines()
-            except NewsUnavailable:
-                if not rows:
-                    raise
-            else:
-                cbr_available = True
-                cbr_fresh = public["freshness"] in {"fresh", "cached"}
-                sources.append("Банк России")
-                source_times.append(_parse_provider_time(str(public["fetched_at"])))
-                rows.extend({**item, "source_url": item["url"], "summary": "",
-                             "occurred_at": item["published_at"], "instrument_uids": (),
-                             "observed_at": public["fetched_at"],
-                             "priority": False, "content_scope": "headline"}
-                            for item in public["items"])
-        rows.sort(key=lambda item: (str(item["occurred_at"]), str(item["id"])), reverse=True)
-        terms = query.casefold().split()
-        matches = [row for row in rows if all(
-            term in f"{row.get('title', '')} {row.get('summary', '')}".casefold()
-            for term in terms
-        )]
-        start = 0
-        if cursor is not None:
-            index = next((index for index, row in enumerate(matches) if row["id"] == cursor), None)
-            if index is None:
-                raise ValueError("news_cursor_expired")
-            start = index + 1
-        items = matches[start:start + limit]
-        more = start + limit < len(matches)
-        status = "available" if items else "empty"
-        if not source.connected and not cbr_available:
-            status = "unavailable"
-        elif not items and not cbr_available and state.status == "not_started":
-            status = "loading"
-        elif source.connected:
-            source_status = _collector_status("instrument_news", state, now)["status"]
-            if source_status == "stale":
-                status = "partial" if cbr_fresh else "stale"
-            elif source_status in {"unavailable", "partial", "not_started"}:
-                status = "partial" if items or cbr_available else "unavailable"
-        elif cbr_available and not cbr_fresh:
-            status = "stale"
+        cbr_fresh = None
+        public = self._public_cbr_news(instrument_uid, has_instrument_news=bool(rows))
+        if public is not None:
+            cbr_fresh = public["freshness"] in {"fresh", "cached"}
+            sources.append("Банк России")
+            source_times.append(_parse_provider_time(str(public["fetched_at"])))
+            rows.extend({**item, "source_url": item["url"], "summary": "",
+                         "occurred_at": item["published_at"], "instrument_uids": (),
+                         "observed_at": public["fetched_at"],
+                         "priority": False, "content_scope": "headline"}
+                        for item in public["items"])
+        items, total, next_cursor = _public_news_page(rows, query, limit, cursor)
+        status = _public_news_status(
+            source.connected, str(_collector_status("instrument_news", state, now)["status"]),
+            has_items=bool(items), cbr_fresh=cbr_fresh,
+        )
         if self.broker.market_status() != source:
             raise BrokerConnectionError("market_source_changed")
         return {
-            "items": items, "total": len(matches), "scanned_items": len(rows),
-            "next_cursor": str(items[-1]["id"]) if more and items else None,
+            "items": items, "total": total, "scanned_items": len(rows),
+            "next_cursor": next_cursor,
             "instrument_uid": instrument_uid, "query": query, "status": status,
             "scope": "public_sources", "search_scope": "shared_server_sources",
             "sources": sources, "web_search": False,
             "observed_at": max(source_times).isoformat() if source_times else None,
-            "coverage": {"all_market_news": False, "truncated": truncated or more},
+            "coverage": {
+                "all_market_news": False, "truncated": truncated or next_cursor is not None,
+            },
         }
+
+    def _public_cbr_news(
+        self, instrument_uid: str | None, *, has_instrument_news: bool,
+    ) -> dict[str, Any] | None:
+        if self.news is None or instrument_uid is not None:
+            return None
+        try:
+            return self.news.headlines()
+        except NewsUnavailable:
+            if not has_instrument_news:
+                raise
+            return None
 
     def public_news_item(self, source_id: str) -> dict[str, Any]:
         """Resolve a bookmark from shared summaries; never fetch a full article."""
         if not isinstance(source_id, str) or re.fullmatch(
-            r"(?:[1-9][0-9]{0,18}|[0-9a-f]{64})", source_id,
+            r"(?:[1-9]\d{0,18}|[0-9a-f]{64})", source_id, flags=re.ASCII,
         ) is None or len(source_id) <= 19 and int(source_id) > 2**63 - 1:
             raise ValueError("news_source_id_invalid")
         now = datetime.now(UTC)
@@ -1177,9 +1169,8 @@ class MarketService:
         finally:
             self._public_admission.release()
 
-    def usd_rub(self, user_id: UUID) -> UsdRubSnapshot:
-        user_id = PUBLIC_MARKET_SCOPE
-        quote = self.broker.usd_rub_quote(user_id)
+    def usd_rub(self, _user_id: UUID) -> UsdRubSnapshot:
+        quote = self.broker.usd_rub_quote(PUBLIC_MARKET_SCOPE)
         observed = datetime.now(UTC)
         quote_time = _parse_provider_time(quote.quote_time)
         provider_age = observed - quote_time
@@ -1435,6 +1426,61 @@ class MarketService:
             while len(self._quotes) > _QUOTE_CACHE_CAPACITY:
                 self._quotes.popitem(last=False)
         return result
+
+
+def _public_news_rows(
+    documents: tuple[EvidenceDocument, ...], instrument_uid: str | None, now: datetime,
+) -> list[dict[str, Any]]:
+    rows = []
+    for document in documents:
+        payload = document.payload
+        uids = payload.get("instrument_uids")
+        if (document.published_at is None
+                or not now - ISSUER_NEWS_MAX_AGE <= document.published_at <= now
+                or not isinstance(uids, (list, tuple))
+                or instrument_uid is not None and instrument_uid not in uids):
+            continue
+        row = dict(payload)
+        row["occurred_at"] = document.published_at.isoformat()
+        row["content_scope"] = "source_summary"
+        rows.append(row)
+    return rows
+
+
+def _public_news_page(
+    rows: list[dict[str, Any]], query: str, limit: int, cursor: str | None,
+) -> tuple[list[dict[str, Any]], int, str | None]:
+    rows.sort(key=lambda item: (str(item["occurred_at"]), str(item["id"])), reverse=True)
+    terms = query.casefold().split()
+    matches = [row for row in rows if all(
+        term in f"{row.get('title', '')} {row.get('summary', '')}".casefold()
+        for term in terms
+    )]
+    start = 0
+    if cursor is not None:
+        index = next((index for index, row in enumerate(matches) if row["id"] == cursor), None)
+        if index is None:
+            raise ValueError("news_cursor_expired")
+        start = index + 1
+    items = matches[start:start + limit]
+    more = start + limit < len(matches)
+    return items, len(matches), str(items[-1]["id"]) if more and items else None
+
+
+def _public_news_status(
+    connected: bool, source_status: str, *, has_items: bool, cbr_fresh: bool | None,
+) -> str:
+    if not connected and cbr_fresh is None:
+        return "unavailable"
+    if not has_items and cbr_fresh is None and source_status == "not_started":
+        return "loading"
+    if connected and source_status == "stale":
+        return "partial" if cbr_fresh else "stale"
+    if connected and source_status in {"unavailable", "partial", "not_started"}:
+        return "partial" if has_items or cbr_fresh is not None else "unavailable"
+    if not connected and cbr_fresh is False:
+        return "stale"
+    return "available" if has_items else "empty"
 
 
 def _collector_status(name: str, state: _CollectorState, now: datetime) -> dict[str, object]:

@@ -93,6 +93,8 @@ from .workspace_store import WorkspaceNotFound, WorkspaceStore
 
 SESSION_COOKIE = "omnicio_session"
 EMAIL_FLOW_COOKIE = "omnicio_email_flow"
+_EMAIL_AUTH_COOKIE_PATH = "/api/auth/email"
+_AUTHENTICATION_REQUIRED_DETAIL = "authentication required"
 CANONICAL_ORIGIN = "https://omnicio.ru"
 _TBANK_CREDENTIAL_REJECTED_DETAIL = "stored T-Invest credential was rejected"
 _UPDATED_LEGAL_CONSENT_DETAIL = "updated_legal_consent_required"
@@ -357,7 +359,7 @@ def authenticated_user(
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="authentication required",
+            detail=_AUTHENTICATION_REQUIRED_DETAIL,
         )
     expected = request.headers.get(_PROFILE_CONTEXT_HEADER)
     if expected is not None or request.method not in {"GET", "HEAD", "OPTIONS"}:
@@ -592,7 +594,7 @@ def _auth_action[AuthResult](action: Callable[[], AuthResult]) -> AuthResult:
     except LoginUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except PermissionError as exc:
-        raise HTTPException(status_code=401, detail="authentication required") from exc
+        raise HTTPException(status_code=401, detail=_AUTHENTICATION_REQUIRED_DETAIL) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -600,7 +602,7 @@ def _auth_action[AuthResult](action: Callable[[], AuthResult]) -> AuthResult:
 def _challenge_response(result: EmailChallengeStarted, response: Response) -> dict[str, object]:
     response.set_cookie(
         EMAIL_FLOW_COOKIE, result.flow_token, max_age=result.expires_in_seconds,
-        httponly=True, secure=True, samesite="strict", path="/api/auth/email",
+        httponly=True, secure=True, samesite="strict", path=_EMAIL_AUTH_COOKIE_PATH,
     )
     return {"status": "verification_required", "challenge_id": str(result.challenge_id),
             "expires_in_seconds": result.expires_in_seconds,
@@ -612,7 +614,7 @@ def _login_response(result: LoginSucceeded, response: Response) -> dict[str, obj
         SESSION_COOKIE, result.session_token, max_age=result.expires_in_seconds,
         httponly=True, secure=True, samesite="lax", path="/",
     )
-    response.delete_cookie(EMAIL_FLOW_COOKIE, path="/api/auth/email", secure=True,
+    response.delete_cookie(EMAIL_FLOW_COOKIE, path=_EMAIL_AUTH_COOKIE_PATH, secure=True,
                            httponly=True, samesite="strict")
     return {"public_id": result.public_id, "created": result.created}
 
@@ -722,7 +724,7 @@ def confirm_password_reset(
     ))
     if session_token:
         service(request).logout(session_token)
-    response.delete_cookie(EMAIL_FLOW_COOKIE, path="/api/auth/email", secure=True,
+    response.delete_cookie(EMAIL_FLOW_COOKIE, path=_EMAIL_AUTH_COOKIE_PATH, secure=True,
                            httponly=True, samesite="strict")
     response.delete_cookie(SESSION_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
     return {"status": "password_updated"}
@@ -768,6 +770,7 @@ def me(
     responses={
         401: _API_FAILURES[401],
         409: {"description": _PROFILE_CONTEXT_CONFLICT_DESCRIPTION},
+        422: _API_FAILURES[422],
     },
 )
 def auth_identities(
@@ -790,7 +793,7 @@ def _assistant_action[ActionResult](
     except SettingsVersionConflict:
         raise
     except PermissionError as exc:
-        raise HTTPException(status_code=401, detail="authentication required") from exc
+        raise HTTPException(status_code=401, detail=_AUTHENTICATION_REQUIRED_DETAIL) from exc
     except AssistantNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (AssistantBusy, AssistantQuotaExceeded) as exc:
@@ -1342,7 +1345,9 @@ def get_workspace_refresh(
     return {**payload, "public_id": format_public_id(user.public_id)}
 
 
-@app.get("/api/workspace/operations")
+@app.get("/api/workspace/operations", responses={
+    410: {"description": "Personal broker operation history is no longer collected"},
+})
 def get_workspace_operations() -> None:
     raise HTTPException(status_code=410, detail="broker_operations_not_collected")
 
@@ -2188,7 +2193,7 @@ def cbr_market_indicators(request: Request) -> dict[str, object]:
         raise HTTPException(status_code=503, detail="cbr_indicators_unavailable") from exc
 
 
-@app.get("/api/market/usd-rub", responses={503: _API_FAILURES[503]})
+@app.get("/api/market/usd-rub", responses={422: _API_FAILURES[422], 503: _API_FAILURES[503]})
 def usd_rub_market_snapshot(request: Request) -> dict[str, Any]:
     return _market_read(
         lambda: asdict(market_service(request).usd_rub(PUBLIC_MARKET_SCOPE)),
@@ -2298,7 +2303,9 @@ def market_quotes(
     )
 
 
-@app.get("/api/market/instruments/search", responses={503: _API_FAILURES[503]})
+@app.get("/api/market/instruments/search", responses={
+    400: _API_FAILURES[400], 503: _API_FAILURES[503],
+})
 @app.get(
     "/api/broker/tbank/instruments/search", include_in_schema=False,
     responses={
@@ -2433,7 +2440,6 @@ async def _instrument_market_events(
     market: MarketService,
     user_id: UUID,
     instrument_uid: str,
-    session_token: str | None,
 ) -> AsyncIterator[str]:
     retry_delay = 3
     consecutive_failures = 0
@@ -2465,7 +2471,7 @@ async def instrument_market_stream(instrument_uid: str, request: Request) -> Str
     market = market_service(request)
     return _market_stream_response(
         market, uuid5(PUBLIC_MARKET_SCOPE, client_ip(request)),
-        _instrument_market_events(request, market, PUBLIC_MARKET_SCOPE, instrument_uid, None),
+        _instrument_market_events(request, market, PUBLIC_MARKET_SCOPE, instrument_uid),
     )
 
 

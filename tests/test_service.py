@@ -195,9 +195,10 @@ def test_unavailable_mail_blocks_new_registration_but_not_verified_login_or_lega
     login = auth.login_email("owner@gmail.com", PASSWORD, client_ip="203.0.113.10")
     assert login.public_id == "000000101"
     assert auth.refresh_session("legacy-session") == OWNER
+    versions = auth.legal_versions()
     with pytest.raises(LoginUnavailable, match="email_not_configured"):
         auth.request_email(email="new@gmail.com", password=PASSWORD, purpose="register",
-                           client_ip="203.0.113.10", accepted_legal_versions=auth.legal_versions())
+                           client_ip="203.0.113.10", accepted_legal_versions=versions)
     db.create_email_challenge.assert_not_called()
 
 
@@ -228,15 +229,17 @@ def test_stale_password_snapshot_cannot_create_a_new_session_after_password_rese
 def test_rate_limit_is_checked_before_expensive_kdf_and_never_stores_raw_identifiers() -> None:
     auth, db, _ = auth_service()
     db.consume_auth_budget.return_value = False
+    versions = auth.legal_versions()
     with patch("omnicio.service.hash_password") as kdf, pytest.raises(AuthRateLimited):
         auth.request_email(email="owner@gmail.com", password=PASSWORD, purpose="register",
                            client_ip="203.0.113.11",
-                           accepted_legal_versions=auth.legal_versions())
+                           accepted_legal_versions=versions)
     kdf.assert_not_called()
     db.create_email_challenge.assert_not_called()
     buckets = db.consume_auth_budget.call_args.args[0]
     assert all(isinstance(digest, bytes) and len(digest) == 32 for digest, _, _ in buckets)
-    assert "owner@gmail.com" not in str(buckets) and "203.0.113.11" not in str(buckets)
+    assert "owner@gmail.com" not in str(buckets)
+    assert "203.0.113.11" not in str(buckets)
 
 
 def test_email_proof_is_bound_to_browser_and_never_reuses_password_reset_for_registration():
@@ -313,8 +316,11 @@ def test_http_registration_requires_origin_current_consent_and_returns_only_flow
     assert response.status_code == 202
     assert response.json()["status"] == "verification_required"
     cookie = response.headers["set-cookie"]
-    assert "omnicio_email_flow=" in cookie and "HttpOnly" in cookie and "Secure" in cookie
-    assert "SameSite=strict" in cookie and "Path=/api/auth/email" in cookie
+    assert "omnicio_email_flow=" in cookie
+    assert "HttpOnly" in cookie
+    assert "Secure" in cookie
+    assert "SameSite=strict" in cookie
+    assert "Path=/api/auth/email" in cookie
     assert "omnicio_session" not in cookie
     assert set(response.json()) == {
         "status", "challenge_id", "expires_in_seconds", "resend_after_seconds",
@@ -334,7 +340,8 @@ def test_invalid_auth_payloads_do_not_reflect_passwords_or_accept_browser_author
             json={**registration_payload(auth), **changes},
         )
     assert response.status_code == 422
-    assert "sensitive-secret" not in response.text and "must-not-leak" not in response.text
+    assert "sensitive-secret" not in response.text
+    assert "must-not-leak" not in response.text
     assert "input" not in response.text
     db.create_email_challenge.assert_not_called()
 

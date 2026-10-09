@@ -301,10 +301,11 @@ class PostgresTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.UpgradeBlocked, "^application_version_mismatch$"):
             MODULE.load_plan()
         client = Mock()
+        migration_sqls = self.reviewed_upgrade_sql()
         with self.assertRaisesRegex(MODULE.UpgradeBlocked, "^application_version_mismatch$"):
             MODULE.reconcile(
                 client, desired=self.desired, server_name="server", server_comment="managed",
-                vpc_name="private", migration_sqls=self.reviewed_upgrade_sql(),
+                vpc_name="private", migration_sqls=migration_sqls,
                 release_sha="a" * 40,
             )
         self.assertEqual(client.mock_calls, [])
