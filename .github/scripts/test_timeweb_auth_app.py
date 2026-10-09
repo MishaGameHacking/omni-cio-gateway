@@ -940,10 +940,18 @@ class AuthAppDeployTests(unittest.TestCase):
         expressions.append(match[1])
         self.assertIn("          exit /b 1\n", prerequisite)
         self.assertLess(tests.index("id: prerequisite"), tests.index("Checkout candidate state"))
-        for name in ("Upload synthetic interface screenshots", "Report source-specific Sonar"):
+        diagnostic_conditions = {
+            "Upload synthetic interface screenshots": (
+                "always() && steps.checkout.outcome == 'success'"
+            ),
+            "Report source-specific Sonar": (
+                "github.event_name == 'pull_request' && always() "
+                "&& steps.checkout.outcome == 'success' && steps.python.outcome == 'success'"
+            ),
+        }
+        for name, condition in diagnostic_conditions.items():
             step = tests.split("      - name: " + name, 1)[1].split("      - name:", 1)[0]
-            self.assertIn("if: always() && steps.checkout.outcome == 'success'", step)
-        self.assertIn("steps.python.outcome == 'success'", step)
+            self.assertIn("        if: " + condition + "\n", step)
 
         baseline = {
             "event_name": "workflow_run", "repository": "test/omnicio", "sha": "a" * 40,
@@ -1195,10 +1203,12 @@ class AuthAppDeployTests(unittest.TestCase):
             self.assertIn(asset, shipped)
         self.assertIn("assets/brand/web/earth-hero.png", shipped)
         self.assertIn("assets/brand/web/auth-mountains.png", shipped)
+        # Join shell continuations while preserving quoted paths, argument order and modes.
+        deployment_script = re.sub(r"\\\n[ \t]*", "", MODULE.REMOTE_DEPLOY_SCRIPT)
         for name in ("earth-hero.png", "auth-mountains.png"):
             self.assertIn(
                 f'install -m 0644 "$RELEASE/assets/brand/web/{name}" '
-                f'"$WEB_RELEASE/assets/brand/{name}"', MODULE.REMOTE_DEPLOY_SCRIPT,
+                f'"$WEB_RELEASE/assets/brand/{name}"', deployment_script,
             )
         self.assertFalse(any("omni-sentinel" in name for name in shipped))
         manifest = json.loads((root / "web" / "manifest.webmanifest").read_text())
