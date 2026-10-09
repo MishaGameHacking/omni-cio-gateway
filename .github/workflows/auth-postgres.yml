@@ -161,10 +161,6 @@ jobs:
       POSTGRES_VERSION: "18"
       TARGET_LOCATION: ru-3
       TARGET_ZONE: msk-1
-      MAX_DB_PRICE_RUB: "1110"
-      MIN_DB_CPU: "1"
-      MIN_DB_RAM_MB: "2048"
-      MIN_DB_DISK_MB: "20480"
       BACKUP_ONLY: ${{ github.event_name == 'schedule' && '--backup-only' || '' }}
       OMNICIO_POSTGRES_OPERATION: ${{ github.event_name == 'workflow_dispatch' && inputs.operation || 'preflight' }}
       OMNICIO_SMTP_PROBE_RECIPIENT: ${{ github.event_name == 'workflow_dispatch' && inputs.smtp_probe_recipient || '' }}
@@ -261,10 +257,6 @@ jobs:
             --postgres-version "%POSTGRES_VERSION%" ^
             --location "%TARGET_LOCATION%" ^
             --availability-zone "%TARGET_ZONE%" ^
-            --max-price-rub "%MAX_DB_PRICE_RUB%" ^
-            --min-cpu "%MIN_DB_CPU%" ^
-            --min-ram-mb "%MIN_DB_RAM_MB%" ^
-            --min-disk-mb "%MIN_DB_DISK_MB%" ^
             --migration migrations/0029_email_auth.sql ^
             --migration migrations/0030_portfolio_read_only.sql
 
