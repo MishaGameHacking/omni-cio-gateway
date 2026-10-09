@@ -5560,10 +5560,10 @@ async function exerciseCanonicalNavigation({send, configureViewport, round, base
   }
   await checkLayout(`canonical-demo-${round}`);
   await click('#view-market [data-screen="news"]');
-  await wait('location.hash === "#demo/market/news" && document.querySelector("#view-market [data-screen-content=news]")?.getClientRects().length', "Market news is a standalone screen");
+  await wait('location.hash === "#demo/market/news?currency=CNY&reference_period=1y" && document.querySelector("#view-market [data-screen-content=news]")?.getClientRects().length', "Market news is a standalone screen with the selected currency and period retained");
   assert.equal(await evaluate('document.querySelector("#view-market [data-screen-content=reference]").getClientRects().length'), 0, "Unselected data panels are not visible");
   await evaluate("history.back()");
-  await wait('location.hash.includes("reference") && document.querySelector("[name=cbr_currency]").value === "CNY" && document.querySelector("[name=cbr_period]").value === "1y"', "Back restores currency and period");
+  await wait('location.hash === "#demo/market/reference?currency=CNY&reference_period=1y" && document.querySelector("[name=cbr_currency]").value === "CNY" && document.querySelector("[name=cbr_period]").value === "1y"', "Back restores the exact reference route, currency and period");
   await click('[data-action="leave-tour"]');
   await wait('!document.querySelector("#public-site").hidden', "Leaving demo returns to the public root");
   await click('.public-nav [data-public-page="features"]');
@@ -6740,6 +6740,7 @@ async function exerciseScreenPages({view, label, click, wait, evaluate, checkLay
   }
 }
 async function exercisePortfolioExperience({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot}) {
+  const tabStripState = () => evaluate('(() => {const menu=document.querySelector(".view:not([hidden]) .screen-tabs");const box=menu.getBoundingClientRect();const selected=menu.querySelector("[aria-current=page]");const selectedBox=selected.getBoundingClientRect();const focused=document.activeElement;const focusBox=focused.getBoundingClientRect();return {height:box.height,rows:new Set([...menu.children].map(link=>Math.round(link.getBoundingClientRect().top))).size,scrollable:menu.scrollWidth>menu.clientWidth,selectedVisible:selectedBox.left>=box.left-1&&selectedBox.right<=box.right+1,focusVisible:menu.contains(focused)&&focusBox.left>=box.left-1&&focusBox.right<=box.right+1,hintVisible:Boolean(menu.nextElementSibling?.getClientRects().length)};})()');
   for (const width of [320, 1440]) {
     await configureViewport(width);
     const key = `portfolio-experience-${round}-${width}`;
@@ -6772,6 +6773,13 @@ async function exercisePortfolioExperience({send, configureViewport, round, base
       assert.equal(await evaluate('(() => {const table=document.querySelector("#view-portfolio .holdings-scroll");return table.scrollWidth<=table.clientWidth;})()'), true, "Mobile holdings keep value, quantity and return readable without horizontal scrolling");
     }
     await checkLayout(`portfolio-experience-${round}-${width}`, {minTables: 1});
+    if (width === 320) {
+      const strip = await tabStripState();
+      assert.equal(strip.rows, 1, "Mobile overview navigation occupies one line");
+      assert.ok(strip.height >= 44 && strip.height <= 66 && strip.scrollable && strip.hintVisible, "The compact strip retains touch targets and indicates horizontal scrolling");
+      assert.equal(strip.selectedVisible, true, "The current overview tab is visible initially");
+      assert.equal(await evaluate('(() => {const bottom=document.querySelector("#mobile-nav").getBoundingClientRect().top;return [...document.querySelectorAll("#view-portfolio .portfolio-actions a")].every(link=>link.getBoundingClientRect().bottom<=bottom);})()'), true, "All portfolio quick actions are visible above the bottom navigation at entry");
+    }
     await screenshot(`portfolio-experience-${round}-${width}.png`);
     if (width === 320) {
       assert.ok(await evaluate('document.querySelector("#view-portfolio [name=holdings_sort]")?.getClientRects().length'), "Mobile sorting is visible before any navigation helper runs");
@@ -6788,8 +6796,21 @@ async function exercisePortfolioExperience({send, configureViewport, round, base
     await click('#view-portfolio .portfolio-actions [data-screen="operations"]');
     await wait('document.querySelector("#ledger-screen")?.getClientRects().length', "A visible portfolio action opens the operation history");
     assert.equal(await evaluate('new URLSearchParams(location.hash.split("?")[1]).get("period")'), "1y", "Opening operations retains the selected portfolio period");
+    if (width === 320) {
+      assert.equal((await tabStripState()).selectedVisible, true, "Selecting the last tab scrolls it into view without changing the page route");
+      fixture.holdWorkspace = true;
+      await click('#view-portfolio [data-action="refresh"]');
+      await until(() => fixture.heldWorkspace.length > 0, "A background workspace response is pending on the last tab");
+      await evaluate('window.__portfolioTabStrip=document.querySelector("#view-portfolio .screen-tabs");document.querySelector("#view-portfolio .screen-tabs [aria-current=page]").focus()');
+      fixture.holdWorkspace = false;
+      fixture.heldWorkspace.splice(0).forEach(release => release());
+      await wait('document.querySelector("#view-portfolio .screen-tabs")!==window.__portfolioTabStrip && document.activeElement.matches("#view-portfolio .screen-tabs [data-screen=operations]")', "The selected tab keeps keyboard focus after the pending response replaces the old markup");
+      const restored = await tabStripState();
+      assert.ok(restored.selectedVisible && restored.focusVisible && restored.rows === 1, "A rerender restores the focused active tab inside the horizontal strip");
+    }
     await click('#view-portfolio .screen-menu [data-screen=""]');
     await wait('document.querySelector("#view-portfolio [data-portfolio-summary]")?.getClientRects().length', "The compact overview tab returns to the account summary");
+    if (width === 320) assert.equal((await tabStripState()).selectedVisible, true, "Returning from the last tab reveals the first active tab");
     await click('#view-portfolio .portfolio-actions [data-route="analytics"]');
     await wait('document.querySelector("#view-analytics:not([hidden]) .chart-svg")?.getClientRects().length && document.querySelector("#view-analytics [data-history-period=\\"1y\\"]")', "Analytics opens its actual history and period result without an extra menu selection");
     const metrics = await evaluate('[...document.querySelectorAll("#view-analytics .metric-grid .main-value")].map(node=>node.textContent.replace(/\\s/g,""))');

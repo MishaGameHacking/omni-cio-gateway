@@ -1702,19 +1702,21 @@
   const filtersHTML = (scope = "assets") => `<div class="filters" aria-label="${H("Тип актива")}">${assetTypes().map(([key, title]) => renderFiltersHTMLFilterButton(key, scope, title)).join("")}</div>`;
   const assetSortOptions = () => [["name", T("Название")], ["price", T("Цена")], ["change", T("portfolio.since_purchase")], ["value", T("Стоимость")], ["share", T("Доля")]];
   const holdingsSortHTML = () => `<div class="holdings-sort">${select("holdings_sort", T("portfolio.sort_by"), assetSortOptions(), state.sort)}<button class="button secondary icon-button${state.sortDirection > 0 ? " sort-ascending" : ""}" data-sort="${esc(state.sort)}" aria-label="${H(state.sortDirection > 0 ? "portfolio.sort_descending" : "portfolio.sort_ascending")}" title="${H(state.sortDirection > 0 ? "portfolio.sort_descending" : "portfolio.sort_ascending")}">${icon("down")}</button></div>`;
+  const assetsEmptyHTML = () => {
+    if (portfolioRows().length) return empty(T("Нет активов этого типа"), T("Выберите другой фильтр."));
+    if (state.data.visualization?.latest) return empty(T("portfolio.positions_empty"), T("portfolio.positions_empty_help"));
+    const connected = state.data.connection?.connected || state.data.workspace?.connection?.connected;
+    return empty(T("Активы пока не получены"), T("Состав счёта появится после подключения и первого наблюдения."), connected ? "workspace-refresh" : "connect", connected ? T("Обновить") : T("Подключить счёт"));
+  };
   const assetsTable = (compact = true) => {
     if (state.tour) return empty(T("Ваши активы будут здесь"), T("Войдите и подключите свой счёт. Цены и доли появятся из источника."), "login", T("Войти"));
     if (state.errors.visualization) return dataError("visualization");
     if (!state.data.visualization && state.loading.has("visualization")) return U.loading(T("quotes.positions_loading"));
     const rows = filteredRows();
-    if (!rows.length) {
-      if (portfolioRows().length) return empty(T("Нет активов этого типа"), T("Выберите другой фильтр."));
-      if (state.data.visualization?.latest) return empty(T("portfolio.positions_empty"), T("portfolio.positions_empty_help"));
-      if (state.data.connection?.connected || state.data.workspace?.connection?.connected) return empty(T("Активы пока не получены"), T("Состав счёта появится после подключения и первого наблюдения."), "workspace-refresh", T("Обновить"));
-      return empty(T("Активы пока не получены"), T("Состав счёта появится после подключения и первого наблюдения."), "connect", T("Подключить счёт"));
-    }
+    if (!rows.length) return assetsEmptyHTML();
     const headers = compact ? assetSortOptions().slice(0, -1) : assetSortOptions();
-    return `${holdingsSortHTML()}<div class="table-scroll holdings-scroll"><table class="asset-table holdings-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${compact ? "" : `<th scope="col"><span class="sr-only">${H("Избранное")}</span></th>`}</tr></thead><tbody>${(compact ? rows.slice(0, C.pagination.compactAssets) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div><p class="data-footnote">${H("portfolio.position_result_help")} ${state.data.visualization?.latest?.captured_at ? esc(date(state.data.visualization.latest.captured_at, true)) + " " + H("МСК") : ""}</p>`;
+    const watchHeader = compact ? "" : `<th scope="col"><span class="sr-only">${H("Избранное")}</span></th>`;
+    return `${holdingsSortHTML()}<div class="table-scroll holdings-scroll"><table class="asset-table holdings-table${compact ? "" : " full-table"}"><thead><tr>${headers.map(([key, label]) => renderAssetsTableTh(key, label)).join("")}${watchHeader}</tr></thead><tbody>${(compact ? rows.slice(0, C.pagination.compactAssets) : rows).map(item => renderAssetsTableAssetName(item, compact)).join("")}</tbody></table></div><p class="data-footnote">${H("portfolio.position_result_help")} ${state.data.visualization?.latest?.captured_at ? esc(date(state.data.visualization.latest.captured_at, true)) + " " + H("МСК") : ""}</p>`;
   };
   const selectedPreset = (document = state.strategy.draft) => {
     const id = document?.base_preset_id;
@@ -1822,12 +1824,17 @@
   const portfolioEntryHTML = () => empty(T("portfolio.start_title"), state.tour ? T("portfolio.start_guest") : T("portfolio.start_help"), state.tour ? "login" : "connect", state.tour ? T("Войти") : T("Подключить счёт"), "portfolio", true);
   const portfolioQuickActions = () => {
     const links = [["portfolio", "operations", T("portfolio.operations"), "events"], ["analytics", "", T("Аналитика"), "analytics"], ["market", "watchlist", T("Избранное"), "star"]];
-    return `<nav class="portfolio-actions" aria-label="${H("portfolio.quick_actions")}">${links.map(([view, screen, label, symbol]) => `<a href="${U.routeHash({mode: state.mode, view, screen, ...(["portfolio", "analytics"].includes(view) ? {period: state.portfolioPeriod} : {})})}" data-route="${view}" data-screen="${screen}">${icon(symbol)}<span>${esc(label)}</span></a>`).join("")}</nav>`;
+    const actions = links.map(([view, screen, label, symbol]) => `<a href="${U.routeHash({mode: state.mode, view, screen, ...(["portfolio", "analytics"].includes(view) ? {period: state.portfolioPeriod} : {})})}" data-route="${view}" data-screen="${screen}">${icon(symbol)}<span>${esc(label)}</span></a>`).join("");
+    return `<nav class="portfolio-actions" aria-label="${H("portfolio.quick_actions")}">${actions}</nav>`;
   };
   const portfolioSummaryHTML = overview => {
     const connection = state.data.connection || state.data.workspace?.connection;
     if (state.tour || connection?.connected === false) return `<section class="card portfolio-summary" data-portfolio-summary>${portfolioEntryHTML()}</section>`;
-    if (!connection) return `<section class="card portfolio-summary" data-portfolio-summary>${state.errors.workspace || state.errors.connection ? dataError(state.errors.workspace ? "workspace" : "connection") : U.loading(T("Получаем состояние вашего кабинета…"))}</section>`;
+    if (!connection) {
+      const resource = state.errors.workspace ? "workspace" : "connection";
+      const content = state.errors[resource] ? dataError(resource) : U.loading(T("Получаем состояние вашего кабинета…"));
+      return `<section class="card portfolio-summary" data-portfolio-summary>${content}</section>`;
+    }
     const statistics = overview.broker_statistics || {};
     const daily = statistics.daily_yield;
     const hasResult = [statistics.return_percent, daily?.value, statistics.daily_yield_percent].some(value => number(value) !== null);
@@ -1837,7 +1844,8 @@
     const accountName = connection?.account_name || T("Счёт T-Invest");
     const result = `<dl class="portfolio-return-grid"><div><dt>${H("portfolio.today")}</dt><dd class="${financialTone(daily?.value ?? statistics.daily_yield_percent)}" data-broker-daily>${esc(dailyValue)}</dd></div><div><dt>${H("portfolio.open_return")}</dt><dd class="${financialTone(statistics.return_percent)}" data-broker-return>${esc(percent(statistics.return_percent, true, true))}</dd></div></dl>`;
     const method = `<details class="portfolio-method"><summary>${H("portfolio.broker_method")}</summary><p>${H("portfolio.broker_method_help")}</p>${U.sourceLink(statistics.source_url, T("Методика и данные источника"))}</details>`;
-    return `<section class="card portfolio-summary" data-portfolio-summary><div class="portfolio-account-row"><button class="account-context" data-action="connect" aria-label="${esc(accountName)} · ${H("portfolio.manage_account")}">${icon("portfolio")}<span><strong>${esc(accountName)}</strong><small>${connection?.environment === "sandbox" ? H("Тестовая среда") : H("portfolio.account")}</small></span>${icon("settings", true)}</button></div><p class="card-label">${H("Стоимость портфеля")}</p><p class="main-value" data-portfolio-value>${esc(money(overview.nav_rub))}</p>${hasResult ? result + method : `<p class="fine-print">${H("portfolio.broker_result_missing")}</p>`}<div class="portfolio-cash"><span>${H("Свободные средства")}</span><strong>${esc(money(overview.free_cash_rub))}</strong></div>${freshness(T("portfolio.snapshot"), overview.observed_at, overview.freshness?.status || overview.status)}${portfolioQuickActions()}</section>`;
+    const resultDetails = hasResult ? result + method : `<p class="fine-print">${H("portfolio.broker_result_missing")}</p>`;
+    return `<section class="card portfolio-summary" data-portfolio-summary><div class="portfolio-account-row"><button class="account-context" data-action="connect" aria-label="${esc(accountName)} · ${H("portfolio.manage_account")}">${icon("portfolio")}<span><strong>${esc(accountName)}</strong><small>${connection?.environment === "sandbox" ? H("Тестовая среда") : H("portfolio.account")}</small></span>${icon("settings", true)}</button></div><p class="card-label">${H("Стоимость портфеля")}</p><p class="main-value" data-portfolio-value>${esc(money(overview.nav_rub))}</p>${resultDetails}<div class="portfolio-cash"><span>${H("Свободные средства")}</span><strong>${esc(money(overview.free_cash_rub))}</strong></div>${freshness(T("portfolio.snapshot"), overview.observed_at, overview.freshness?.status || overview.status)}${portfolioQuickActions()}</section>`;
   };
   const renderPortfolio = () => {
     captureScreenDrafts();
@@ -5642,7 +5650,7 @@
   function screenLinks(view, panes) {
     const overview = ["portfolio", "market", "analytics"].includes(view);
     const menu = `<nav class="screen-menu${overview ? " screen-tabs" : ""}" aria-label="${H("navigation.sections")}">${panes.map(pane => screenLink(view, pane)).join("")}</nav>`;
-    if (overview) return menu;
+    if (overview) return menu + `<p class="screen-tabs-hint" hidden>${H("navigation.scroll_sections")}</p>`;
     if (!state.route.screen || panes.length <= 2) return menu;
     const current = panes.find(([key]) => key === state.route.screen)?.[1] || T("navigation.sections");
     const compact = compactNavigation();
@@ -5657,6 +5665,7 @@
       picker.open = !compact;
       if (focused) $(compact ? "summary" : '[aria-current="page"]', picker)?.focus({preventScroll: true});
     }
+    for (const menu of $$(".screen-tabs")) revealScreenTab(menu, menu.contains(document.activeElement) ? document.activeElement : null);
   }
   function captureScreenMenuFocus() {
     const root = $(`#view-${state.view}`);
@@ -5688,6 +5697,7 @@
     if (root.contains(active)) {
       const attribute = ["data-period", "data-asset-filter", "data-sort", "data-screen", "data-action", "data-asset"].find(name => active.hasAttribute(name));
       if (attribute) selector = `[${attribute}="${CSS.escape(active.getAttribute(attribute))}"]`;
+      else if (active.matches("select[name]")) selector = `select[name="${CSS.escape(active.name)}"]`;
       else if (active.matches(".portfolio-method summary")) selector = ".portfolio-method summary";
     }
     return {root, screen: state.route.screen || "", selector, methodOpen: Boolean($(".portfolio-method", root)?.open)};
@@ -5697,7 +5707,24 @@
     const method = $(".portfolio-method", saved.root);
     if (method) method.open = saved.methodOpen;
     const target = saved.selector && $(saved.selector, saved.root);
-    if (target?.getClientRects().length) target.focus({preventScroll: true});
+    if (target?.getClientRects().length) {
+      target.focus({preventScroll: true});
+      revealScreenTab(target.closest(".screen-tabs"), target);
+    }
+  }
+  function revealScreenTab(menu, target = null) {
+    if (!menu?.getClientRects().length) return;
+    const overflow = menu.scrollWidth > menu.clientWidth;
+    const hint = menu.nextElementSibling;
+    if (hint?.classList.contains("screen-tabs-hint")) hint.hidden = !overflow;
+    const selected = target || $('[aria-current="page"]', menu);
+    if (!overflow || !selected) return;
+    // Scroll only the tab strip. Restoring navigation must not move a user's
+    // vertically scrolled page or an unrelated editor.
+    const container = menu.getBoundingClientRect();
+    const item = selected.getBoundingClientRect();
+    if (item.left < container.left) menu.scrollLeft += item.left - container.left;
+    else if (item.right > container.right) menu.scrollLeft += item.right - container.right;
   }
   function layoutMarket({root, panes, attach}) {
     panes.push(["", T("Обзор")]);
@@ -5785,6 +5812,7 @@
     if (screen || !["portfolio", "market", "analytics"].includes(view)) root.insertAdjacentHTML("afterbegin", `<div class="screen-navigation"><button class="button secondary small-button" data-action="route-back">${icon("back", true)} ${H("navigation.back")}</button>${chip}</div>`);
     const header = $(".view-header", root);
     if (header) header.insertAdjacentHTML("afterend", screenLinks(view, panes));
+    revealScreenTab($(".screen-tabs", root));
     if (screen || !["portfolio", "market", "analytics"].includes(view)) for (const wrapper of $$(".two-column,.settings-layout,.settings-layout > div,.strategy-layout,.strategy-editor,.assistant-layout", root)) wrapper.classList.add("screen-layout");
   }
   function applyScreenLayout(view) {
@@ -7454,7 +7482,8 @@
   }
   function renderAssetsTableAssetName(item, compact) {
     const quantity = T("portfolio.quantity_value", {quantity: format(item.quantity, C.display.quantityFractionDigits)});
-    return `<tr data-position="${esc(item.uid)}"><td class="holding-name"><button class="asset-name" data-asset="${esc(item.uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}${renderAssetsTableAssetTicker(item)}<small class="holding-quantity">${esc(quantity)}</small></span></button></td><td class="holding-quote" data-table-quote="${esc(item.uid)}">${tableQuoteHTML(item)}</td><td class="holding-return">${holdingReturnHTML(item)}</td><td class="holding-value"><span class="holding-mobile-label">${H("Стоимость в портфеле")}</span><strong>${esc(money(item.value_rub))}</strong></td>${compact ? "" : `<td class="holding-share"><span class="holding-mobile-label">${H("Доля")}</span>${esc(percent(item.nav_percent))}</td><td class="holding-watch">${watchButton(item)}</td>`}</tr>`;
+    const extraColumns = compact ? "" : `<td class="holding-share"><span class="holding-mobile-label">${H("Доля")}</span>${esc(percent(item.nav_percent))}</td><td class="holding-watch">${watchButton(item)}</td>`;
+    return `<tr data-position="${esc(item.uid)}"><td class="holding-name"><button class="asset-name" data-asset="${esc(item.uid)}"><span class="asset-logo">${esc((item.ticker || item.name).slice(0, 1))}</span><span>${esc(item.name)}${renderAssetsTableAssetTicker(item)}<small class="holding-quantity">${esc(quantity)}</small></span></button></td><td class="holding-quote" data-table-quote="${esc(item.uid)}">${tableQuoteHTML(item)}</td><td class="holding-return">${holdingReturnHTML(item)}</td><td class="holding-value"><span class="holding-mobile-label">${H("Стоимость в портфеле")}</span><strong>${esc(money(item.value_rub))}</strong></td>${extraColumns}</tr>`;
   }
   function renderHomeStrategyFragment(document) {
     return `${T("Просадка:")} ${esc(percent(document.profile.max_drawdown_percent))}`;

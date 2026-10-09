@@ -12,6 +12,7 @@
     "push.notification.test": ["Это проверочное уведомление OMNICIO.","This is an OMNICIO test notification."],
     "push.notification.update": ["В кабинете появились новые сведения. Откройте приложение, чтобы посмотреть подробности.","New information is available in your account. Open the app to view it."],
     "navigation.current_section": ["Раздел: {title}","Section: {title}"],
+    "navigation.scroll_sections": ["Разделы можно листать ↔","Scroll for more sections ↔"],
     "portfolio.account": ["Подключённый счёт","Connected account"],
     "portfolio.manage_account": ["Управление подключением счёта","Manage account connection"],
     "portfolio.today": ["За день","Daily result"],
