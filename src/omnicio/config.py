@@ -8,13 +8,7 @@ from uuid import UUID
 
 # Environment defaults live beside their validation, not in provider adapters.
 # TTLs are seconds; the long session lifetime remains subject to server revocation.
-DEFAULT_VKID_FLOW_TTL_SECONDS = 600
 DEFAULT_SESSION_TTL_SECONDS = 34_560_000
-DEFAULT_REGISTRATION_MAX_USERS = 1
-# RUB ceilings are inactive while live execution is disabled. A daily cap cannot
-# be smaller than a single-order cap; load_settings enforces that relationship.
-DEFAULT_LIVE_MAX_ORDER_RUB = 10_000
-DEFAULT_LIVE_MAX_DAILY_RUB = 20_000
 DEFAULT_SMTP_PORT = 465
 DEFAULT_BILLING_PERIOD_DAYS = 30
 DEFAULT_ASSISTANT_DAILY_REQUEST_LIMIT = 30
@@ -56,11 +50,6 @@ def boolean(name: str, default: bool = False) -> bool:
     raise ConfigurationError(f"{name} must be boolean")
 
 
-def positive_numeric_id(value: str) -> bool:
-    return bool(1 <= len(value) <= 128 and value.isascii() and value.isdecimal()
-                and value.strip("0"))
-
-
 def optional_uuid(name: str) -> UUID | None:
     raw = os.environ.get(name, "").strip()
     if not raw:
@@ -79,23 +68,18 @@ class Settings:
     database_url: str
     ip_key: str
     broker_token_crypto_key: str
-    vkid_flow_crypto_key: str
-    vkid_app_id: str
-    vkid_login_enabled: bool
-    registration_enabled: bool
-    registration_max_users: int
     privacy_version: str
     consent_version: str
     terms_version: str
-    vkid_flow_ttl_seconds: int
     session_ttl_seconds: int
-    portfolio_live_execution_enabled: bool
-    portfolio_live_max_order_rub: int
-    portfolio_live_max_daily_rub: int
-    tid_client_id: str = ""
-    tid_client_secret: str = ""
-    tid_login_enabled: bool = False
-    tid_pkce_enabled: bool = True
+    auth_smtp_host: str = ""
+    auth_smtp_port: int = DEFAULT_SMTP_PORT
+    auth_smtp_username: str = ""
+    auth_smtp_password: str = ""
+    auth_smtp_sender: str = ""
+    auth_smtp_mode: str = "tls"
+    market_data_token: str = ""
+    market_data_distribution_approved: bool = False
     assistant_base_url: str = ""
     assistant_api_key: str = ""
     assistant_model: str = ""
@@ -128,56 +112,44 @@ class Settings:
     release_build: str = ""
 
     @property
-    def vkid_ready(self) -> bool:
-        return self.vkid_login_enabled and positive_numeric_id(self.vkid_app_id)
-
-    @property
-    def tid_ready(self) -> bool:
-        return self.tid_login_enabled and bool(self.tid_client_id and self.tid_client_secret)
-
-    @property
     def login_ready(self) -> bool:
-        return self.vkid_ready or self.tid_ready
+        # Password verification never depends on SMTP availability.
+        return True
+
+    @property
+    def auth_email_ready(self) -> bool:
+        return bool(self.auth_smtp_host and self.auth_smtp_sender)
 
     @property
     def access_mode(self) -> str:
-        return "limited_registration" if self.registration_enabled else "closed"
+        return "public"
 
 
 def load_settings() -> Settings:
     email_enabled = boolean("NOTIFICATION_EMAIL_ENABLED", False)
-    live_max_order = positive_int("PORTFOLIO_LIVE_MAX_ORDER_RUB", DEFAULT_LIVE_MAX_ORDER_RUB)
-    live_max_daily = positive_int("PORTFOLIO_LIVE_MAX_DAILY_RUB", DEFAULT_LIVE_MAX_DAILY_RUB)
-    if live_max_daily < live_max_order:
-        raise ConfigurationError(
-            "PORTFOLIO_LIVE_MAX_DAILY_RUB must be >= PORTFOLIO_LIVE_MAX_ORDER_RUB"
-        )
+    auth_host = os.environ.get("AUTH_SMTP_HOST", "").strip()
+    auth_mode = os.environ.get("AUTH_SMTP_MODE", "tls").strip() if auth_host else "tls"
+    auth_port = (
+        positive_int("AUTH_SMTP_PORT", DEFAULT_SMTP_PORT) if auth_host else DEFAULT_SMTP_PORT
+    )
+    if auth_mode not in {"tls", "starttls"} or auth_port > 65535:
+        raise ConfigurationError("AUTH_SMTP_MODE or AUTH_SMTP_PORT is invalid")
     return Settings(
         database_url=required("DATABASE_URL"),
         ip_key=required("CLIENT_IP_KEY"),
         broker_token_crypto_key=required("BROKER_TOKEN_CRYPTO_KEY"),
-        vkid_flow_crypto_key=required("VKID_FLOW_CRYPTO_KEY"),
-        vkid_app_id=os.environ.get("VKID_APP_ID", "").strip(),
-        vkid_login_enabled=boolean("VKID_LOGIN_ENABLED", False),
-        registration_enabled=boolean("REGISTRATION_ENABLED", False),
-        registration_max_users=positive_int(
-            "REGISTRATION_MAX_USERS", DEFAULT_REGISTRATION_MAX_USERS,
-        ),
         privacy_version=os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         consent_version=os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         terms_version=os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
-        vkid_flow_ttl_seconds=positive_int("VKID_FLOW_TTL_SECONDS", DEFAULT_VKID_FLOW_TTL_SECONDS),
         session_ttl_seconds=positive_int("SESSION_TTL_SECONDS", DEFAULT_SESSION_TTL_SECONDS),
-        portfolio_live_execution_enabled=boolean(
-            "PORTFOLIO_LIVE_EXECUTION_ENABLED",
-            False,
-        ),
-        portfolio_live_max_order_rub=live_max_order,
-        portfolio_live_max_daily_rub=live_max_daily,
-        tid_client_id=os.environ.get("TID_CLIENT_ID", "").strip(),
-        tid_client_secret=os.environ.get("TID_CLIENT_SECRET", ""),
-        tid_login_enabled=boolean("TID_LOGIN_ENABLED", False),
-        tid_pkce_enabled=boolean("TID_PKCE_ENABLED", True),
+        auth_smtp_host=auth_host,
+        auth_smtp_port=auth_port,
+        auth_smtp_username=os.environ.get("AUTH_SMTP_USERNAME", "").strip(),
+        auth_smtp_password=os.environ.get("AUTH_SMTP_PASSWORD", ""),
+        auth_smtp_sender=os.environ.get("AUTH_SMTP_SENDER", "").strip(),
+        auth_smtp_mode=auth_mode,
+        market_data_token=os.environ.get("MARKET_DATA_TOKEN", ""),
+        market_data_distribution_approved=boolean("MARKET_DATA_DISTRIBUTION_APPROVED", False),
         assistant_base_url=(os.environ.get("ASSISTANT_BASE_URL", "").strip()
                             if boolean("ASSISTANT_ENABLED", False) else ""),
         assistant_api_key=os.environ.get("ASSISTANT_API_KEY", ""),

@@ -2789,47 +2789,6 @@ dialog::backdrop {
 .legal-checks a {
   color:var(--auth-link)
 }
-.provider-button {
-  width:100%;
-  min-height:48px;
-  border:1px solid var(--auth-provider-border);
-  background:var(--auth-provider-background);
-  color:var(--white)
-}
-.provider-button:hover {
-  background:var(--auth-provider-hover)
-}
-.provider-mark {
-  display:inline-grid;
-  place-items:center;
-  width:23px;
-  height:25px;
-  border-radius:5px;
-  background:var(--tid-mark-background);
-  color:var(--tid-mark-text);
-  font-weight:800;
-  font-size:16px;
-  flex:none
-}
-.vk-provider {
-  background:var(--vk-background);
-  border-color:var(--vk-border)
-}
-.vk-provider:hover {
-  background:var(--vk-hover)
-}
-.vk-provider .provider-mark {
-  background:transparent;
-  color:var(--white);
-  font-size:var(--font-label)
-}
-.provider-state {
-  font-size:var(--font-caption);
-  line-height:1.6;
-  color:var(--auth-provider-state);
-  margin:5px 0 0;
-  text-align:center
-}
 .or-separator {
   display:flex;
   align-items:center;
@@ -4681,3 +4640,20 @@ body.drawer-open {
 .assistant-prefix, .source-document { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
 .source-document { background: var(--panel-deep); padding: 18px; border-radius: 12px; font-size: 14px; line-height: 1.65; }
 .assistant-stream { margin-block: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+
+
+/* Email authorization keeps credentials inside the native form only. */
+.auth-password-control{display:flex;align-items:center;gap:6px;position:relative}
+.auth-password-control input{padding-right:46px;width:100%}
+.auth-password-control .icon-button{position:absolute;right:4px;top:50%;transform:translateY(-50%)}
+.auth-secondary-actions{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px}
+.auth-inner .form-field{display:grid;gap:7px;margin-block:15px}
+.auth-inner .form-field small{font-size:.78rem;color:var(--muted);line-height:1.5}
+.auth-inner .form-field[hidden],.auth-inner [hidden]{display:none!important}
+.auth-inner #email-auth-submit{width:100%;margin-top:14px}
+.auth-consents{padding:0;border:0;display:grid;gap:10px;font-size:.8rem}
+
+/* Shared market coverage */
+.market-coverage{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin:1.4rem 0}.market-coverage>div{display:flex;flex-direction:column;gap:.35rem}.market-coverage strong{font-size:1.6rem}.market-coverage span,.source-status-item time{font-size:.78rem;color:var(--muted)}.source-status-item{display:flex;justify-content:space-between;gap:1rem;padding:.65rem 0;border-bottom:1px solid var(--line)}.source-status-item>div{display:flex;flex-direction:column;gap:.2rem}.source-status summary{cursor:pointer;font-size:.85rem}.public-market-table td{vertical-align:middle}.public-market-table .freshness{display:block;margin-top:.25rem}.market-pagination{flex-wrap:wrap}.public-market-table{min-width:32rem}@media(max-width:540px){.market-coverage{gap:.7rem}.market-coverage strong{font-size:1.3rem}.market-coverage span{font-size:.73rem}.source-status-item time{max-width:8rem;text-align:right}}
+
+.broker-mark{display:inline-grid;place-items:center;width:23px;height:25px;border-radius:5px;background:var(--blue);color:var(--white);font-weight:800;font-size:16px;flex:none}

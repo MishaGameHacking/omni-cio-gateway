@@ -92,7 +92,7 @@ def test_allocated_portfolio_progress_keeps_derived_decimal_precision_in_forecas
     progress = goal_progress(
         document, connection={"account_id": "A", "environment": "prod"},
         snapshot={"captured_at": now, "analysis_status": "observed", "nav_rub": "1000.01"},
-        operations=[], watermark=None, history_complete=True, now=now,
+        now=now,
     )
     assert progress["amount_rub"] == "333.3366666633333"
     result = goal_forecast({**document, "progress": progress}, plan(), today=now.date())
@@ -101,26 +101,43 @@ def test_allocated_portfolio_progress_keeps_derived_decimal_precision_in_forecas
     assert result["projected_amount_rub"] == "120333.34"
 
 
-def test_allocated_income_preserves_twenty_decimal_places_without_relaxing_user_inputs() -> None:
+def test_allocated_nav_preserves_twenty_decimal_places_without_relaxing_user_inputs() -> None:
     from omnicio.workspace import goal_progress
 
     now = datetime(2026, 1, 2, tzinfo=UTC)
-    document = {**goal(kind="income"), "progress_source": "income", "account_id": "A",
-                "environment": "prod", "allocation_percent": "0.000000001",
-                "start_date": "2026-01-01"}
+    document = {**goal(), "progress_source": "portfolio", "account_id": "A",
+                "environment": "prod", "allocation_percent": "0.000000001"}
     progress = goal_progress(
-        document, connection={"account_id": "A", "environment": "prod"}, snapshot=None,
-        operations=[{"operation_date": now, "operation_type": "OPERATION_TYPE_COUPON",
-                     "operation_state": "OPERATION_STATE_EXECUTED",
-                     "payment_value": "0.000000001", "payment_currency": "RUB"}],
-        watermark=now, history_complete=True, now=now,
+        document, connection={"account_id": "A", "environment": "prod"},
+        snapshot={"captured_at": now, "analysis_status": "observed", "nav_rub": "0.000000001"},
+        now=now,
     )
     result = goal_forecast({**document, "progress": progress}, plan(), today=now.date())
     assert result["status"] == "available"
     assert Decimal(result["source_amount_rub"]) == Decimal("1e-20")
-    too_precise_plan = plan(monthly_income_rub="0.000000001")
+    too_precise_plan = plan(monthly_contribution_rub="0.000000001")
     with pytest.raises(ValueError, match="precision"):
-        normalize_goal_plan(too_precise_plan, kind="income")
+        normalize_goal_plan(too_precise_plan, kind="capital")
+
+
+def test_legacy_income_progress_cannot_invent_payments_from_the_current_portfolio() -> None:
+    from omnicio.workspace import goal_progress
+
+    now = datetime(2026, 1, 2, tzinfo=UTC)
+    document = {**goal(kind="income"), "progress_source": "income", "account_id": "A",
+                "environment": "prod", "allocation_percent": "100",
+                "start_date": "2026-01-01"}
+    progress = goal_progress(
+        document, connection={"account_id": "A", "environment": "prod"},
+        snapshot={"captured_at": now, "analysis_status": "observed", "nav_rub": "100000"},
+        now=now,
+    )
+    assert progress["status"] == "unavailable"
+    assert progress["amount_rub"] is None
+    assert progress["reason"] == "transaction_history_not_collected"
+    forecast = goal_forecast({**document, "progress": progress}, plan(), today=now.date())
+    assert forecast["status"] == "unavailable"
+    assert "scenario_path" not in forecast
 
 
 def test_deterministic_attainment_uses_unrounded_amounts_and_large_money_is_decimal() -> None:
@@ -148,7 +165,7 @@ def test_stale_portfolio_progress_cannot_be_presented_as_a_current_forecast() ->
         snapshot={"account_id": "synthetic", "environment": "production",
                   "nav_rub": Decimal("100000"), "analysis_status": "observed",
                   "captured_at": now - timedelta(days=60)},
-        operations=[], watermark=None, history_complete=True, now=now,
+        now=now,
     )
     assert progress["status"] == "stale"
     forecast = goal_forecast({**document, "progress": progress}, plan(), today=now.date())

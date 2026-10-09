@@ -22,7 +22,6 @@ import tempfile
 import unittest
 from email.message import Message
 from unittest.mock import patch
-from urllib.response import addinfourl
 
 SCRIPT_DIR = pathlib.Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -69,19 +68,6 @@ class FakeSsh:
             raise MODULE.InfraError("not ready")
         if "count(*) FILTER" in command:
             return "1|1\n"
-        return ""
-
-
-class MissingLegacyMarkerSsh:
-    def __init__(self) -> None:
-        self.commands: list[str] = []
-        self.inputs: list[str | None] = []
-
-    def run(self, command: str, *, input_text: str | None = None) -> str:
-        self.commands.append(command)
-        self.inputs.append(input_text)
-        if command.startswith("test -f "):
-            raise MODULE.InfraError("marker missing")
         return ""
 
 
@@ -186,9 +172,9 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertTrue(MODULE.runtime_is_ready(ready))
         self.assertFalse(MODULE.runtime_is_ready(missing))
         self.assertIn("BROKER_TOKEN_CRYPTO_KEY", ready.commands[0])
-        self.assertIn("VKID_FLOW_CRYPTO_KEY", ready.commands[0])
+        self.assertIn("CLIENT_IP_KEY", ready.commands[0])
         self.assertIn("command -v psql", ready.commands[0])
-        self.assertIn("vkid_identities", ready.commands[0])
+        self.assertIn("email_identities", ready.commands[0])
         self.assertIn("column_name = 'role'", ready.commands[0])
 
     def test_runtime_gate_matches_application_database_readiness(self) -> None:
@@ -222,7 +208,7 @@ class AuthAppDeployTests(unittest.TestCase):
             "validate_product_environment", "validate_legal_documents",
             "find_managed_server", "find_vpc", "public_ipv4", "build_release_archive",
             "EphemeralSsh", "upload_release", "write_product_environment",
-            "deploy_remote", "rollback_remote", "retire_legacy_profile",
+            "deploy_remote", "rollback_remote",
             "commit_product_environment", "add_summary", "set_output",
         )
         with ExitStack() as stack:
@@ -245,92 +231,10 @@ class AuthAppDeployTests(unittest.TestCase):
             mocks["set_output"].assert_called_once_with("status", "pending_database")
             for name in (
                 "upload_release", "write_product_environment", "deploy_remote",
-                "rollback_remote", "retire_legacy_profile", "commit_product_environment",
+                "rollback_remote", "commit_product_environment",
             ):
                 mocks[name].assert_not_called()
 
-    def test_registration_occupancy_parses_privacy_safe_counts(self) -> None:
-        class OccupancySsh:
-            def run(self, command: str, *, input_text: str | None = None) -> str:
-                self.command = command
-                return "1|1\n"
-
-        ssh = OccupancySsh()
-        self.assertEqual(MODULE.registration_occupancy(ssh), (1, 1))
-        self.assertIn("count(*) FILTER", ssh.command)
-        self.assertNotIn("public_id", ssh.command)
-        self.assertNotIn("vk_user_id", ssh.command)
-
-    def test_registration_occupancy_rejects_invalid_result(self) -> None:
-        class OccupancySsh:
-            def run(self, command: str, *, input_text: str | None = None) -> str:
-                return "two|one\n"
-
-        ssh = OccupancySsh()
-        with self.assertRaises(MODULE.InfraError):
-            MODULE.registration_occupancy(ssh)
-
-    def test_final_occupancy_check_preserves_environment_until_acceptance(self) -> None:
-        from contextlib import ExitStack, nullcontext
-        from unittest.mock import MagicMock, call
-
-        sha = "a" * 40
-        for fails in (True, False):
-            with self.subTest(occupancy_fails=fails), ExitStack() as stack:
-                stack.enter_context(patch.dict(os.environ, {
-                    "VKID_APP_ID": "123456", "REGISTRATION_ENABLED": "false",
-                    "REGISTRATION_MAX_USERS": "2",
-                }, clear=True))
-                ssh = FakeSsh(True)
-                client = MagicMock()
-                client.get_vpc_services.return_value = [{"name": "database"}]
-                for name, result in {
-                    "validate_product_environment": None,
-                    "validate_legal_documents": None,
-                    "find_managed_server": {"id": 1},
-                    "find_vpc": {"id": "test-vpc"},
-                    "public_ipv4": "192.0.2.1",
-                    "build_release_archive": "test-archive",
-                    "EphemeralSsh": nullcontext(ssh),
-                    "upload_release": None,
-                    "write_product_environment": None,
-                    "deploy_remote": None,
-                    "verify_public": None,
-                    "retire_legacy_profile": None,
-                    "add_summary": None,
-                }.items():
-                    stack.enter_context(patch.object(MODULE, name, return_value=result))
-                boundary = MagicMock()
-                for name in (
-                    "registration_occupancy", "commit_product_environment",
-                    "rollback_remote", "set_output",
-                ):
-                    mocked = stack.enter_context(patch.object(MODULE, name))
-                    boundary.attach_mock(mocked, name)
-                boundary.registration_occupancy.return_value = (1, 1)
-                if fails:
-                    boundary.registration_occupancy.side_effect = MODULE.InfraError(
-                        "occupancy unavailable",
-                    )
-                arguments = {
-                    "server_name": "test-server", "server_comment": "test-only",
-                    "release_sha": sha, "repository_root": SCRIPT_DIR.parent.parent,
-                    "cluster_name": "database", "vpc_name": "test-vpc",
-                    "location": "test", "availability_zone": "test",
-                }
-                if fails:
-                    with self.assertRaisesRegex(MODULE.InfraError, "occupancy unavailable"):
-                        MODULE.reconcile(client, **arguments)
-                    boundary.commit_product_environment.assert_not_called()
-                    expected = [call.registration_occupancy(ssh),
-                                call.rollback_remote(ssh, release_sha=sha)]
-                else:
-                    self.assertEqual(MODULE.reconcile(client, **arguments), 0)
-                    boundary.rollback_remote.assert_not_called()
-                    expected = [call.registration_occupancy(ssh),
-                                call.commit_product_environment(ssh, release_sha=sha),
-                                call.set_output("status", "app_ready")]
-                self.assertEqual(boundary.mock_calls, expected)
 
     def test_release_archive_contains_only_runtime_project_files(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -362,17 +266,14 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertNotIn("tests/secret-test.txt", names)
 
     def _base_registration_environment(self) -> None:
-        os.environ["VKID_APP_ID"] = "123456"
-        os.environ["REGISTRATION_ENABLED"] = "true"
-        os.environ["REGISTRATION_MAX_USERS"] = "2"
-        os.environ["MULTIUSER_LEGAL_APPROVED"] = "true"
-        os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
-        os.environ["CONTROLLED_LIVE_TEST_MODE"] = "false"
-        os.environ["LEGAL_OPERATOR_NAME"] = "Test Operator"
-        os.environ["LEGAL_OPERATOR_EMAIL"] = "operator@example.com"
-        os.environ["LEGAL_PRIVACY_VERSION"] = "2026-10-02-v6"
-        os.environ["LEGAL_CONSENT_VERSION"] = "2026-10-02-v6"
-        os.environ["LEGAL_TERMS_VERSION"] = "2026-10-02-v6"
+        os.environ.update({
+            "LEGAL_OPERATOR_NAME": "Test Operator", "LEGAL_OPERATOR_EMAIL": "operator@example.com",
+            "LEGAL_PRIVACY_VERSION": "2026-10-09-v1.4.0",
+            "LEGAL_CONSENT_VERSION": "2026-10-09-v1.4.0",
+            "LEGAL_TERMS_VERSION": "2026-10-09-v1.4.0",
+            "AUTH_SMTP_HOST": "smtp.example.org", "AUTH_SMTP_SENDER": "auth@example.org",
+            "AUTH_SMTP_MODE": "tls", "AUTH_SMTP_PORT": "465",
+        })
 
     def test_product_environment_requires_legal_versions(self) -> None:
         old = dict(os.environ)
@@ -386,78 +287,8 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-    def test_product_environment_requires_numeric_vkid_app_id(self) -> None:
-        old = dict(os.environ)
-        try:
-            self._base_registration_environment()
-            os.environ["VKID_APP_ID"] = "app"
-            with self.assertRaises(MODULE.InfraError):
-                MODULE.validate_product_environment()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
 
-    def test_limited_registration_requires_reviewed_legal_gate(self) -> None:
-        old = dict(os.environ)
-        try:
-            self._base_registration_environment()
-            os.environ["MULTIUSER_LEGAL_APPROVED"] = "false"
-            with self.assertRaises(MODULE.InfraError):
-                MODULE.validate_product_environment()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-
-    def test_limited_registration_requires_regulatory_or_live_test_gate(self) -> None:
-        old = dict(os.environ)
-        try:
-            self._base_registration_environment()
-            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
-            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "false"
-            with self.assertRaises(MODULE.InfraError):
-                MODULE.validate_product_environment()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-
-    def test_controlled_live_test_allows_two_registration_slots(self) -> None:
-        old = dict(os.environ)
-        try:
-            self._base_registration_environment()
-            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
-            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "true"
-            os.environ["REGISTRATION_MAX_USERS"] = "2"
-            MODULE.validate_product_environment()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-
-    def test_controlled_live_test_rejects_more_than_two_slots(self) -> None:
-        old = dict(os.environ)
-        try:
-            self._base_registration_environment()
-            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
-            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "true"
-            os.environ["REGISTRATION_MAX_USERS"] = "3"
-            with self.assertRaises(MODULE.InfraError):
-                MODULE.validate_product_environment()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-
-    def test_controlled_live_test_must_be_disabled_after_regulatory_confirmation(self) -> None:
-        old = dict(os.environ)
-        try:
-            self._base_registration_environment()
-            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
-            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "true"
-            with self.assertRaises(MODULE.InfraError):
-                MODULE.validate_product_environment()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-
-    def test_limited_registration_requires_operator_identity(self) -> None:
+    def test_public_registration_requires_operator_identity(self) -> None:
         old = dict(os.environ)
         try:
             self._base_registration_environment()
@@ -468,7 +299,7 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-    def test_product_environment_builds_two_slot_registration(self) -> None:
+    def test_product_environment_builds_public_email_registration_without_user_cap(self) -> None:
         old = dict(os.environ)
         try:
             self._base_registration_environment()
@@ -478,39 +309,65 @@ class AuthAppDeployTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-        self.assertIn('VKID_APP_ID="123456"', product_env)
-        self.assertIn('VKID_LOGIN_ENABLED="true"', product_env)
-        self.assertIn('REGISTRATION_ENABLED="true"', product_env)
-        self.assertIn('REGISTRATION_MAX_USERS="2"', product_env)
+        self.assertIn('AUTH_SMTP_HOST="smtp.example.org"', product_env)
+        self.assertIn('AUTH_SMTP_MODE="tls"', product_env)
+        self.assertIn('MARKET_DATA_DISTRIBUTION_APPROVED="false"', product_env)
+        for removed in ("VKID", "TID_", "REGISTRATION_", "PORTFOLIO_LIVE", "LEGACY_PROFILE"):
+            self.assertNotIn(removed, product_env)
         self.assertIn('LEGAL_OPERATOR_EMAIL="operator@example.com"', product_env)
         self.assertIn(
             'OMNICIO_RECOVERY_STATUS_PATH="/var/lib/omnicio-recovery/status.json"', product_env,
         )
         self.assertNotIn("OWNER_VK_ID", product_env)
 
-    def test_registration_environment_rejects_invalid_boolean(self) -> None:
-        old = dict(os.environ)
-        try:
-            os.environ["REGISTRATION_ENABLED"] = "yes"
-            with self.assertRaises(MODULE.InfraError):
-                MODULE.registration_enabled()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
 
-    def test_registration_capacity_must_be_positive(self) -> None:
-        old = dict(os.environ)
-        try:
-            os.environ["REGISTRATION_MAX_USERS"] = "0"
-            with self.assertRaises(MODULE.InfraError):
-                MODULE.registration_max_users()
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
+    def test_mail_and_market_configuration_is_validated_without_provider_id_gates(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self._base_registration_environment()
+            MODULE.validate_product_environment()
+            for name, value in (
+                ("AUTH_SMTP_PORT", "0"), ("AUTH_SMTP_PORT", "65536"),
+                ("AUTH_SMTP_PORT", "abc"), ("AUTH_SMTP_MODE", "plain"),
+                ("AUTH_SMTP_HOST", "https://smtp.example.org"),
+                ("MARKET_DATA_DISTRIBUTION_APPROVED", "yes"),
+            ):
+                with (
+                    self.subTest(name=name, value=value),
+                    patch.dict(os.environ, {name: value}),
+                    self.assertRaises(MODULE.InfraError),
+                ):
+                    MODULE.validate_product_environment()
+            with patch.dict(os.environ, {"AUTH_SMTP_HOST": "", "AUTH_SMTP_SENDER": ""}):
+                # The deployment may preserve already configured server mail credentials.
+                # The public configuration check still blocks an unconfigured deployment.
+                MODULE.validate_product_environment()
+
+    def test_market_publication_authority_cannot_inherit_an_old_true_flag(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertIn('MARKET_DATA_DISTRIBUTION_APPROVED="false"',
+                          MODULE.build_product_environment())
+        with patch.dict(os.environ, {"MARKET_DATA_DISTRIBUTION_APPROVED": "true"}, clear=True):
+            self.assertIn('MARKET_DATA_DISTRIBUTION_APPROVED="true"',
+                          MODULE.build_product_environment())
+        self.assertNotIn("MARKET_DATA_DISTRIBUTION_APPROVED", MODULE.OPTIONAL_INTEGRATION_KEYS)
+
+    def test_deployment_never_retires_users_or_reintroduces_social_login(self) -> None:
+        source = MODULE_PATH.read_text(encoding="utf-8")
+        workflow = (SCRIPT_DIR.parent / "workflows" / "auth-app-deploy.yml").read_text()
+        self.assertNotIn("retire_legacy_profile", source)
+        self.assertNotIn("DELETE FROM users", source)
+        for key in ("VKID_APP_ID", "TID_CLIENT_ID", "LEGACY_PROFILE_RESET_ENABLED",
+                    "REGISTRATION_MAX_USERS", "CONTROLLED_LIVE_TEST_MODE",
+                    "PORTFOLIO_LIVE_EXECUTION_ENABLED"):
+            self.assertNotIn(key, source)
+            self.assertNotIn(key, workflow)
+        for key in ("AUTH_SMTP_HOST", "AUTH_SMTP_PASSWORD", "MARKET_DATA_TOKEN",
+                    "MARKET_DATA_DISTRIBUTION_APPROVED"):
+            self.assertIn(key, workflow)
 
     def test_legal_templates_require_operator_placeholders(self) -> None:
         versions = {
-            f"LEGAL_{name}_VERSION": "2026-10-07-v1.3.0"
+            f"LEGAL_{name}_VERSION": "2026-10-09-v1.4.0"
             for name in ("PRIVACY", "CONSENT", "TERMS")
         }
         with patch.dict(os.environ, versions):
@@ -524,72 +381,6 @@ class AuthAppDeployTests(unittest.TestCase):
                 self.assertRaisesRegex(MODULE.InfraError, "Legal document version"),
             ):
                 MODULE.validate_legal_documents(SCRIPT_DIR.parent.parent)
-
-    def test_legacy_reset_is_disabled_without_regulatory_or_live_test_gate(self) -> None:
-        old = dict(os.environ)
-        try:
-            os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
-            os.environ["REGISTRATION_ENABLED"] = "false"
-            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
-            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "false"
-            ssh = FakeSsh(True)
-            MODULE.retire_legacy_profile(ssh)
-            self.assertEqual(ssh.commands, [])
-
-            os.environ["REGISTRATION_ENABLED"] = "true"
-            MODULE.retire_legacy_profile(ssh)
-            self.assertEqual(ssh.commands, [])
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-
-    def test_legacy_reset_is_allowed_for_explicit_controlled_live_test(self) -> None:
-        old = dict(os.environ)
-        try:
-            os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
-            os.environ["REGISTRATION_ENABLED"] = "true"
-            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "false"
-            os.environ["CONTROLLED_LIVE_TEST_MODE"] = "true"
-            ssh = FakeSsh(True)
-            MODULE.retire_legacy_profile(ssh)
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-
-        self.assertGreaterEqual(len(ssh.commands), 1)
-
-    def test_legacy_reset_only_targets_public_id_one(self) -> None:
-        old = dict(os.environ)
-        try:
-            os.environ["REGISTRATION_ENABLED"] = "true"
-            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
-            os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
-            ssh = MissingLegacyMarkerSsh()
-            MODULE.retire_legacy_profile(ssh)
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-
-        migration = next(value for value in ssh.inputs if value and "BEGIN;" in value)
-        self.assertIn("WHERE public_id = 1", migration)
-        self.assertIn("refuses to delete a non-legacy user", migration)
-        self.assertIn("DO $", migration)
-        self.assertNotIn("\nDELETE FROM users;\n", migration)
-        self.assertTrue(any(MODULE.LEGACY_RESET_MARKER in command for command in ssh.commands))
-
-    def test_legacy_reset_marker_makes_cleanup_idempotent(self) -> None:
-        old = dict(os.environ)
-        try:
-            os.environ["REGISTRATION_ENABLED"] = "true"
-            os.environ["RKN_NOTIFICATION_CONFIRMED"] = "true"
-            os.environ["LEGACY_PROFILE_RESET_ENABLED"] = "true"
-            ssh = FakeSsh(True)
-            MODULE.retire_legacy_profile(ssh)
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
-
-        self.assertEqual(ssh.commands, [f"test -f {MODULE.LEGACY_RESET_MARKER}"])
 
 
     def test_auth_deploy_workflow_separates_pr_and_production_concurrency(self) -> None:
@@ -655,8 +446,6 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_product_environment_is_backed_up_for_rollback(self) -> None:
         old = dict(os.environ)
         try:
-            os.environ["VKID_APP_ID"] = "123456"
-            os.environ["REGISTRATION_ENABLED"] = "false"
             ssh = FakeSsh(True)
             sha = "a" * 40
             MODULE.write_product_environment(ssh, release_sha=sha)
@@ -678,7 +467,7 @@ class AuthAppDeployTests(unittest.TestCase):
             MODULE.product_environment_backup_paths("short")
 
     def test_optional_integration_configuration_survives_unrelated_deployment(self) -> None:
-        with patch.dict(os.environ, {"VKID_APP_ID": "123456"}, clear=True):
+        with patch.dict(os.environ, {}, clear=True):
             self.assertIn('OPERATOR_USER_ID=""\n', MODULE.build_product_environment())
             ssh = FakeSsh(True)
             MODULE.write_product_environment(ssh, release_sha="b" * 40)
@@ -689,19 +478,19 @@ class AuthAppDeployTests(unittest.TestCase):
             new = pathlib.Path(directory) / "candidate.env"
             old.write_text(
                 'OPERATOR_USER_ID="00000000-0000-0000-0000-0000000001f5"\n'
-                'TID_CLIENT_ID="existing-app"\n'
-                'TID_CLIENT_SECRET="test-only-value"\n'
-                'TID_LOGIN_ENABLED="true"\n'
+                'AUTH_SMTP_HOST="existing-app"\n'
+                'AUTH_SMTP_PASSWORD="test-only-value"\n'
+                'AUTH_SMTP_MODE="tls"\n'
                 'ASSISTANT_ENABLED="true"\n'
-                'REGISTRATION_ENABLED="true"\n'
+                'VKID_APP_ID="must-not-migrate"\n'
                 'UNRELATED_KEY="must-not-migrate"\n',
                 encoding="utf-8",
             )
             new.write_text(
                 'OPERATOR_USER_ID=""\n'
-                'TID_CLIENT_ID="replacement-app"\n'
+                'AUTH_SMTP_HOST="replacement-app"\n'
                 'ASSISTANT_ENABLED="false"\n'
-                'REGISTRATION_ENABLED="false"\n',
+                'MARKET_DATA_DISTRIBUTION_APPROVED="false"\n',
                 encoding="utf-8",
             )
             subprocess.run(
@@ -711,17 +500,18 @@ class AuthAppDeployTests(unittest.TestCase):
             result = new.read_text(encoding="utf-8").splitlines()
         self.assertEqual(result, [
             'OPERATOR_USER_ID=""',
-            'TID_CLIENT_ID="replacement-app"',
+            'AUTH_SMTP_HOST="replacement-app"',
             'ASSISTANT_ENABLED="false"',
-            'REGISTRATION_ENABLED="false"',
-            'TID_CLIENT_SECRET="test-only-value"',
-            'TID_LOGIN_ENABLED="true"',
+            'MARKET_DATA_DISTRIBUTION_APPROVED="false"',
+            'AUTH_SMTP_PASSWORD="test-only-value"',
+            'AUTH_SMTP_MODE="tls"',
         ])
 
     def test_optional_passwords_preserve_exact_bytes_and_config_values_are_trimmed(self) -> None:
         secret = "  test-only-secret-with-outer-spaces  "
         with patch.dict(os.environ, {
-            "VKID_APP_ID": "123456",
+            "AUTH_SMTP_PASSWORD": secret,
+            "MARKET_DATA_TOKEN": secret,
             "NOTIFICATION_SMTP_PASSWORD": secret,
             "BILLING_PASSWORD": secret,
             "OMNICIO_RESTORE_RECEIPT_KEY": secret,
@@ -730,6 +520,7 @@ class AuthAppDeployTests(unittest.TestCase):
             result = MODULE.build_product_environment()
         for key in (
             "NOTIFICATION_SMTP_PASSWORD", "BILLING_PASSWORD", "OMNICIO_RESTORE_RECEIPT_KEY",
+            "AUTH_SMTP_PASSWORD", "MARKET_DATA_TOKEN",
         ):
             self.assertIn(f'{key}="{secret}"\n', result)
         self.assertIn('NOTIFICATION_SMTP_HOST="smtp.example.test"\n', result)
@@ -748,11 +539,12 @@ class AuthAppDeployTests(unittest.TestCase):
     def test_public_http_surface_has_bounded_resource_consumption(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn("zone=omnicio_auth_start:10m rate=10r/m", script)
-        self.assertIn("zone=omnicio_auth_callback:10m rate=30r/m", script)
         self.assertIn("zone=omnicio_api:10m rate=120r/m", script)
         self.assertIn("limit_conn_zone $binary_remote_addr zone=omnicio_conn:10m", script)
-        self.assertIn("location = /api/auth/vkid/start", script)
-        self.assertIn("location = /api/auth/vkid/callback", script)
+        self.assertIn("location ^~ /api/auth/email/", script)
+        self.assertIn("client_max_body_size 4k", script)
+        self.assertNotIn("location = /api/auth/vkid", script)
+        self.assertNotIn("location = /api/auth/tid", script)
         self.assertIn("limit_req zone=omnicio_api burst=60 nodelay", script)
         self.assertGreaterEqual(script.count("client_max_body_size 16k;"), 2)
         self.assertGreaterEqual(script.count("client_body_timeout 10s;"), 2)
@@ -823,7 +615,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertNotIn("add_header_inherit", nginx)
         self.assertNotIn("nginx-security-headers.conf", script)
 
-    def test_nginx_preserves_callback_policy_and_emits_one_referrer_header(self) -> None:
+    def test_nginx_preserves_stricter_upstream_policy_and_emits_one_referrer_header(self) -> None:
         nginx = MODULE.REMOTE_DEPLOY_SCRIPT.split(
             'cat > "$NGINX_SITE.new" <<\'EOF\'\n', 1,
         )[1].split("\nEOF", 1)[0]
@@ -869,9 +661,11 @@ class AuthAppDeployTests(unittest.TestCase):
                                   for value in additions)
                     self.assertEqual(output, [expected])
 
-    def test_remote_service_is_loopback_only_bounded_and_registration_is_gated(self) -> None:
+    def test_remote_service_is_loopback_only_and_resource_bounded(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
         self.assertIn("--host 127.0.0.1 --port 8001", script)
+        self.assertIn("--workers 1", script)
+        self.assertNotIn("--workers 2", script)
         self.assertIn("--limit-concurrency 64", script)
         self.assertIn("--backlog 128", script)
         self.assertIn("--timeout-keep-alive 5", script)
@@ -1118,16 +912,6 @@ class AuthAppDeployTests(unittest.TestCase):
         source = (SCRIPT_DIR.parent.parent / "src/omnicio/main.py").read_text(encoding="utf-8")
         self.assertIn(("put", "/api/research/evidence"), declared_http_routes(source))
 
-    def test_plan_timeout_preserves_the_generic_api_security_and_body_contract(self) -> None:
-        script = MODULE.REMOTE_DEPLOY_SCRIPT
-        planning = script.split("location = /api/portfolio/proposals/plan {", 1)[1].split("}", 1)[0]
-        generic = script.split("location /api/ {", 1)[1].split("}", 1)[0]
-        self.assertIn("proxy_read_timeout 60s;", planning)
-        self.assertEqual(planning.replace("proxy_read_timeout 60s;", "proxy_read_timeout 30s;"),
-                         generic)
-        self.assertEqual(script.count("proxy_read_timeout 60s;"), 1)
-        source = (SCRIPT_DIR.parent.parent / "src/omnicio/main.py").read_text(encoding="utf-8")
-        self.assertIn(("post", "/api/portfolio/proposals/plan"), declared_http_routes(source))
 
     def test_remote_service_installs_tbank_russian_trusted_ca_safely(self) -> None:
         script = MODULE.REMOTE_DEPLOY_SCRIPT
@@ -1142,27 +926,28 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertNotIn("curl -k", script)
         self.assertNotIn("--insecure", script)
 
-    def test_legal_pages_describe_limited_user_registration(self) -> None:
+    def test_legal_pages_publish_versioned_public_registration_terms(self) -> None:
         root = SCRIPT_DIR.parent.parent
         privacy = (root / "web" / "legal" / "privacy.html").read_text(encoding="utf-8")
         consent = (root / "web" / "legal" / "consent.html").read_text(encoding="utf-8")
         terms = (root / "web" / "legal" / "terms.html").read_text(encoding="utf-8")
 
         for document, version in (
-            (privacy, "2026-10-07-v1.3.0"),
-            (consent, "2026-10-07-v1.3.0"),
-            (terms, "2026-10-07-v1.3.0"),
+            (privacy, "2026-10-09-v1.4.0"),
+            (consent, "2026-10-09-v1.4.0"),
+            (terms, "2026-10-09-v1.4.0"),
         ):
             self.assertIn('content="noindex,nofollow"', document)
             self.assertIn(version, document)
             self.assertIn("__OMNICIO_OPERATOR_", document)
 
         self.assertIn("OMNICIO", privacy)
-        self.assertIn("T-Invest API", privacy)
-        self.assertIn("Текущий временный live-test лимит — два пользовательских аккаунта", terms)
-        self.assertIn("ролью <code>user</code>", terms)
-        self.assertIn("Самостоятельное удаление аккаунта", terms)
-        self.assertIn("восстановление удалённого аккаунта невозможно", privacy)
+        self.assertIn("T-Invest", privacy)
+        self.assertIn("Argon2id", privacy)
+        self.assertIn("READ_ONLY", privacy)
+        self.assertNotIn("Текущий временный live-test лимит — два пользовательских аккаунта", terms)
+        self.assertIn("gmail.com, mail.ru или xmail.ru", terms)
+        self.assertIn("Удаление аккаунта", terms)
 
     def test_reference_workspace_keeps_required_runtime_contracts(self) -> None:
         root = SCRIPT_DIR.parent.parent
@@ -1170,8 +955,11 @@ class AuthAppDeployTests(unittest.TestCase):
         source = (root / "src" / "omnicio" / "main.py").read_text(encoding="utf-8")
         routes = declared_http_routes(source)
         required = {
-            ("post", "/api/auth/tid/start"), ("get", "/api/auth/tid/callback"),
-            ("post", "/api/auth/vkid/start"), ("get", "/api/auth/vkid/callback"),
+            ("post", "/api/auth/email/register"), ("post", "/api/auth/email/verify"),
+            ("post", "/api/auth/email/login"), ("post", "/api/auth/email/enroll"),
+            ("post", "/api/auth/email/password-reset/request"),
+            ("post", "/api/auth/email/password-reset/confirm"),
+            ("get", "/api/public/market-status"), ("get", "/api/public/market"),
             ("get", "/api/workspace"), ("get", "/api/preferences"),
             ("put", "/api/preferences"), ("get", "/api/goals"),
             ("post", "/api/goals"), ("put", "/api/goals/{goal_id}"),
@@ -1186,7 +974,7 @@ class AuthAppDeployTests(unittest.TestCase):
         self.assertIn('id="app-sidebar"', page)
         self.assertIn('id="auth-dialog"', page)
         self.assertIn('id="global-search-form"', page)
-        self.assertNotIn('type="password"', page)
+        self.assertIn('type="password"', page)
         for path in MODULE.LEGAL_PAGES:
             self.assertIn(path, page)
 
@@ -1363,7 +1151,7 @@ class PublicResponse(io.BytesIO):
 class PublicReleaseVerificationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.sha = "a" * 40
-        self.legal_version = "2026-10-07-v1.3.0"
+        self.legal_version = "2026-10-09-v1.4.0"
         environment = patch.dict(os.environ, {
             f"LEGAL_{name}_VERSION": self.legal_version
             for name in ("PRIVACY", "CONSENT", "TERMS")
@@ -1377,14 +1165,12 @@ class PublicReleaseVerificationTests(unittest.TestCase):
         )).encode()
         config = json.dumps({
             "release": {"version": MODULE.release_version(), "build": self.sha[:12]},
-            "mode": "closed",
-            "registration_enabled": False,
-            "registration_max_users": 1,
-            "auth_provider": "vkid",
-            "auth_providers": ["tid", "vkid"],
-            "login_enabled": False,
-            "vkid_enabled": False,
-            "tid_enabled": False,
+            "mode": "public", "registration_enabled": True,
+            "auth_provider": "email", "auth_providers": ["email"],
+            "login_enabled": True, "email_enabled": True,
+            "registration_available": True, "password_reset_available": True,
+            "email_domains": ["gmail.com", "mail.ru", "xmail.ru"],
+            "password_min_length": 15, "password_max_length": 128, "email_code_digits": 8,
             "legal_versions": {
                 "privacy_policy": self.legal_version,
                 "personal_data_consent": self.legal_version,
@@ -1405,8 +1191,6 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             ),
             "/api/auth/config": (config, "application/json", 200),
         }
-        for path in MODULE.CALLBACK_PUBLIC_PATHS:
-            self.responses[path] = (b"", "text/plain", 303)
         for path, body, content_type in (
             ("/assets/config.js", b"OMNICIO_CONFIG " + self.sha[:12].encode(), "text/javascript"),
             ("/assets/tokens.css", b"--browser-theme-dark " + self.sha[:12].encode(), "text/css"),
@@ -1435,7 +1219,6 @@ class PublicReleaseVerificationTests(unittest.TestCase):
 
     def verify(
         self, *, missing_header_path: str | None = None,
-        callback_referrer: list[str] | None = None,
         build_header_path: str | None = None, build_headers: tuple[str, ...] = (),
     ) -> set[str]:
         requested: set[str] = set()
@@ -1451,35 +1234,11 @@ class PublicReleaseVerificationTests(unittest.TestCase):
             response = PublicResponse(*self.responses[path])
             for value in build_headers if path == build_header_path else (self.sha[:12],):
                 response.headers["X-Omnicio-Build"] = value
-            if path in MODULE.CALLBACK_PUBLIC_PATHS:
-                self.assertEqual(request.get_method(), "GET")
-                self.assertIsNone(request.get_header("Cookie"))
-                self.assertIsNone(request.get_header("Authorization"))
-                self.assertIsNone(request.get_header("Referer"))
-                response.headers["Location"] = "/?auth_error=flow"
-                del response.headers["Referrer-Policy"]
-                for value in (["no-referrer"] if callback_referrer is None else callback_referrer):
-                    response.headers["Referrer-Policy"] = value
             if path == missing_header_path:
                 del response.headers["Content-Security-Policy"]
             return response
 
-        def https_response(handler, request):
-            # Exercise urllib's real 303 processing. Following Location would request an
-            # unexpected URL and fail, rather than testing only a mocked redirect handler.
-            self.assertIn(request.full_url.removeprefix(f"https://{MODULE.DOMAIN}"),
-                          MODULE.CALLBACK_PUBLIC_PATHS)
-            response = open_response(request, timeout=request.timeout, context=handler._context)
-            wrapped = addinfourl(response, response.headers, request.full_url, response.status)
-            wrapped.msg = "Synthetic callback response"
-            return wrapped
-
-        with (
-            patch.object(MODULE.urllib.request, "urlopen", side_effect=open_response),
-            patch.object(MODULE.urllib.request.HTTPSHandler, "https_open", autospec=True,
-                         side_effect=https_response),
-            patch.object(MODULE, "vkid_configuration_ready", return_value=False),
-        ):
+        with patch.object(MODULE.urllib.request, "urlopen", side_effect=open_response):
             MODULE.verify_public(self.sha)
         return requested
 
@@ -1518,52 +1277,20 @@ class PublicReleaseVerificationTests(unittest.TestCase):
                 ):
                     MODULE.fetch_public("/", context)
 
-    def test_callback_rejection_requires_one_no_referrer_without_following_redirect(self) -> None:
-        for values in ([], ["unsafe-url"], ["strict-origin-when-cross-origin"],
-                       ["no-referrer", "strict-origin-when-cross-origin"],
-                       ["no-referrer", "no-referrer"]):
-            with self.subTest(values=values), self.assertRaisesRegex(
-                MODULE.InfraError, "security header invalid: Referrer-Policy",
-            ):
-                self.verify(callback_referrer=values)
-
-    def test_callback_verification_rejects_non_redirect_responses(self) -> None:
-        path = MODULE.CALLBACK_PUBLIC_PATHS[0]
-        for status in (200, 401, 500):
-            self.responses[path] = (b"", "text/plain", status)
-            with self.subTest(status=status), self.assertRaisesRegex(
-                MODULE.InfraError, "Public auth callback rejection invalid",
-            ):
-                self.verify()
-
-    def test_public_login_readiness_is_independent_for_each_provider(self) -> None:
-        base = json.loads(self.responses["/api/auth/config"][0])
-        for vkid, tid in ((False, False), (False, True), (True, False), (True, True)):
-            config = dict(base, vkid_enabled=vkid, tid_enabled=tid, login_enabled=vkid or tid)
-            with (
-                self.subTest(vkid=vkid, tid=tid),
-                patch.object(MODULE, "vkid_configuration_ready", return_value=vkid),
-            ):
-                MODULE.verify_public_config(json.dumps(config).encode())
 
     def test_public_login_contract_rejects_missing_or_inconsistent_readiness(self) -> None:
         base = json.loads(self.responses["/api/auth/config"][0])
         invalid = (
-            {"auth_providers": ["vkid"]},
-            {"vkid_enabled": None},
-            {"vkid_enabled": True},
-            {"tid_enabled": "false"},
-            {"tid_enabled": None},
-            {"login_enabled": True},
-            {"tid_enabled": True, "login_enabled": False},
+            {"auth_providers": ["vkid"]}, {"auth_provider": "tid"},
+            {"mode": "closed"}, {"registration_enabled": False}, {"registration_max_users": 2},
+            {"email_enabled": None}, {"email_enabled": False},
+            {"registration_available": False}, {"password_reset_available": False},
+            {"login_enabled": False}, {"email_code_digits": 6},
+            {"email_domains": ["gmail.com"]}, {"password_min_length": 8},
         )
         for changed in invalid:
             encoded = json.dumps(dict(base, **changed)).encode()
-            with (
-                self.subTest(changed=changed),
-                patch.object(MODULE, "vkid_configuration_ready", return_value=False),
-                self.assertRaises(MODULE.InfraError),
-            ):
+            with self.subTest(changed=changed), self.assertRaises(MODULE.InfraError):
                 MODULE.verify_public_config(encoded)
 
     def test_invalid_public_release_is_rejected(self) -> None:

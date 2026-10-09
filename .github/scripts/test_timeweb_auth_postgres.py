@@ -27,6 +27,11 @@ if SPEC is None or SPEC.loader is None:
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+UPGRADE = importlib.import_module("inplace_upgrade")
+REVIEWED_MIGRATIONS = (
+    "migrations/0027_assistant_stream_memory.sql",
+    "migrations/0028_notification_device_binding.sql",
+)
 
 
 class PostgresTests(unittest.TestCase):
@@ -185,13 +190,10 @@ class PostgresTests(unittest.TestCase):
     def test_workflow_passes_only_reviewed_upgrade_migrations_in_order(self) -> None:
         root = MODULE_PATH.parents[2]
         workflow = (root / ".github/workflows/auth-postgres.yml").read_text(encoding="utf-8")
-        migrations = [
-            path.relative_to(root).as_posix()
-            for path in sorted((root / "migrations").glob("*.sql"))[-2:]
-        ]
+        migrations = list(REVIEWED_MIGRATIONS)
         self.assertEqual(len(migrations), 2)
         self.assertEqual([path.split("/")[-1][:4] for path in migrations], ["0027", "0028"])
-        MODULE.migration_bodies(MODULE.load_plan(), [
+        MODULE.migration_bodies(self.reviewed_upgrade_plan(), [
             (root / path).read_text(encoding="utf-8") for path in migrations
         ])
         lines = [line.strip() for line in workflow.splitlines()]
@@ -284,14 +286,38 @@ class PostgresTests(unittest.TestCase):
         )
 
     def reviewed_upgrade_sql(self) -> list[str]:
-        return [path.read_text(encoding="utf-8") for path in
-                sorted((MODULE_PATH.parents[2] / "migrations").glob("*.sql"))[-2:]]
+        root = MODULE_PATH.parents[2]
+        return [(root / path).read_text(encoding="utf-8") for path in REVIEWED_MIGRATIONS]
+
+    def reviewed_upgrade_plan(self) -> dict:
+        """Validate the frozen 1.3 contract without authorizing the current release."""
+        fixture = MODULE_PATH.parents[2] / "tests/fixtures/accepted_upgrade_1_3.json"
+        document = json.loads(fixture.read_text(encoding="utf-8"))
+        plan = UPGRADE.validate_plan(document["plan"])
+        UPGRADE.schema_query(document["source_schema"], plan["source_schema_sha256"])
+        return plan
+
+    def test_current_application_cannot_use_historical_upgrade_before_provider_access(self) -> None:
+        with self.assertRaisesRegex(MODULE.UpgradeBlocked, "^application_version_mismatch$"):
+            MODULE.load_plan()
+        client = Mock()
+        with self.assertRaisesRegex(MODULE.UpgradeBlocked, "^application_version_mismatch$"):
+            MODULE.reconcile(
+                client, desired=self.desired, server_name="server", server_comment="managed",
+                vpc_name="private", migration_sqls=self.reviewed_upgrade_sql(),
+                release_sha="a" * 40,
+            )
+        self.assertEqual(client.mock_calls, [])
 
     def test_inplace_rejects_changed_or_reordered_sql_before_provider_access(self) -> None:
         reviewed = self.reviewed_upgrade_sql()
         for statements in (reviewed[:1], reviewed[::-1], [reviewed[0] + "SELECT 1;", reviewed[1]]):
             client = Mock()
-            with self.subTest(count=len(statements)), self.assertRaises(MODULE.UpgradeBlocked):
+            with (
+                self.subTest(count=len(statements)),
+                patch.object(MODULE, "load_plan", return_value=self.reviewed_upgrade_plan()),
+                self.assertRaises(MODULE.UpgradeBlocked),
+            ):
                 MODULE.reconcile(
                     client, desired=self.desired, server_name="server", server_comment="managed",
                     vpc_name="private", migration_sqls=statements, release_sha="a" * 40,
@@ -305,7 +331,8 @@ class PostgresTests(unittest.TestCase):
         ssh.run.return_value = json.dumps(valid)
         arguments = dict(migration_sqls=self.reviewed_upgrade_sql(), release_sha="a" * 40,
                          endpoint=MODULE.DatabaseEndpoint("10.0.0.5", 5432), desired=self.desired)
-        MODULE.run_inplace_upgrade(ssh, **arguments)
+        with patch.object(UPGRADE, "load_plan", return_value=self.reviewed_upgrade_plan()):
+            MODULE.run_inplace_upgrade(ssh, **arguments)
         self.assertEqual(ssh.run.call_args.args, ("/opt/omnicio/current/.venv/bin/python -I -",))
         self.assertEqual(ssh.run.call_args.kwargs["stage"], MODULE.STAGE_SCHEMA_MIGRATION)
         compile(ssh.run.call_args.kwargs["input_text"], "reviewed-remote-program", "exec")
@@ -314,8 +341,12 @@ class PostgresTests(unittest.TestCase):
                          json.dumps(valid | {"release_sha": "b" * 40}),
                          json.dumps(valid | {"new_database_copies": False})):
             ssh.run.return_value = response
-            with self.subTest(response=response), self.assertRaisesRegex(
-                MODULE.InfraError, "^In-place upgrade result was not confirmed$",
+            with (
+                self.subTest(response=response),
+                patch.object(UPGRADE, "load_plan", return_value=self.reviewed_upgrade_plan()),
+                self.assertRaisesRegex(
+                    MODULE.InfraError, "^In-place upgrade result was not confirmed$",
+                ),
             ):
                 MODULE.run_inplace_upgrade(ssh, **arguments)
 

@@ -2,12 +2,11 @@
 
 from dataclasses import replace
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 from test_broker import _strategy_broker
 
-from omnicio.broker import BrokerConnectionError
 from omnicio.instrument_facts import instrument_facts
 from omnicio.tbank import TBankInvestClient, TBankTokenRejected, TBankUnavailable
 
@@ -41,8 +40,14 @@ def fundamentals(**changes):
 @pytest.fixture
 def runtime():
     broker, database, _, owner = _strategy_broker()
-    broker.tbank = TBankInvestClient()
-    return broker, database, owner
+    # Public facts use one server source regardless of the personal connection.
+    # Keep the real market parser while making any private read fail the test.
+    broker.market_tbank = TBankInvestClient(purpose="market")
+    broker.tbank = Mock(spec=TBankInvestClient)
+    database.tbank_connection = Mock(side_effect=AssertionError("private account read forbidden"))
+    yield broker, database, owner
+    assert not broker.tbank.mock_calls
+    database.tbank_connection.assert_not_called()
 
 
 def read_card(runtime):
@@ -87,6 +92,8 @@ def test_exact_uid_card_uses_two_reads_and_keeps_currency_scale_period_and_sourc
         "idType": "INSTRUMENT_ID_TYPE_UID", "id": UID,
     }
     assert provider.call_args_list[1].kwargs["body"] == {"assets": [ASSET]}
+    assert all(call.kwargs["token"] == "synthetic-shared-market-token"
+               for call in provider.call_args_list)
     assert "t.fake-owner-credential" not in repr(result)
 
 
@@ -163,7 +170,7 @@ def test_invalid_statistics_cannot_enter_a_verified_instrument_card(runtime, cha
 
 @pytest.mark.parametrize("surface", ["overview", "fundamentals"])
 @pytest.mark.parametrize("mutation", ["account", "credential", "disconnect"])
-def test_every_read_is_bound_to_the_exact_original_connection(runtime, surface, mutation):
+def test_public_facts_ignore_changes_to_a_private_connection(runtime, surface, mutation):
     _, database, _ = runtime
 
     def respond(**request):
@@ -179,14 +186,15 @@ def test_every_read_is_bound_to_the_exact_original_connection(runtime, surface, 
                 )
         return overview() if request["method"] == "GetInstrumentBy" else fundamentals()
 
-    with patch.object(TBankInvestClient, "_post", side_effect=respond) as provider, pytest.raises(
-        BrokerConnectionError,
-    ):
-        read_card(runtime)
-    assert provider.call_count == (1 if surface == "overview" else 2)
+    with patch.object(TBankInvestClient, "_post", side_effect=respond) as provider:
+        result = read_card(runtime)
+    assert result["status"] == "available"
+    assert provider.call_count == 2
+    assert all(call.kwargs["token"] == "synthetic-shared-market-token"
+               for call in provider.call_args_list)
 
 
-def test_connection_change_is_not_hidden_by_optional_statistics_failure(runtime):
+def test_private_connection_change_does_not_invalidate_public_partial_statistics(runtime):
     _, database, _ = runtime
 
     def respond(**request):
@@ -195,10 +203,19 @@ def test_connection_change_is_not_hidden_by_optional_statistics_failure(runtime)
         database.record = replace(database.record, account_id="changed-account")
         raise TBankUnavailable("provider unavailable")
 
-    with patch.object(TBankInvestClient, "_post", side_effect=respond), pytest.raises(
-        BrokerConnectionError,
-    ):
+    with patch.object(TBankInvestClient, "_post", side_effect=respond):
+        result = read_card(runtime)
+    assert result["status"] == "partial"
+    assert result["metrics"] == []
+    assert result["instrument_uid"] == UID
+
+
+def test_missing_shared_source_never_falls_back_to_the_connected_personal_token(runtime):
+    broker, _, _ = runtime
+    broker._market_credential = ""
+    with patch.object(TBankInvestClient, "_post") as provider, pytest.raises(TBankUnavailable):
         read_card(runtime)
+    provider.assert_not_called()
 
 
 def test_rejected_broker_credential_is_not_reported_as_merely_missing_metrics(runtime):

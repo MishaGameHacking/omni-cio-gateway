@@ -27,12 +27,12 @@ from test_backtest import END, START, ZERO_COSTS, prices, research_document
 from omnicio import main
 from omnicio.backtest import run_strategy_backtest
 from omnicio.billing import BillingConfig, BillingService
-from omnicio.broker import BrokerConnectionStatus, BrokerObservationBundle, BrokerService
+from omnicio.broker import BrokerObservationBundle, BrokerService, MarketSourceStatus
 from omnicio.cbr import CBRClient
 from omnicio.db import UserRecord
 from omnicio.goal_planning import goal_forecast
 from omnicio.market import MarketService
-from omnicio.portfolio import analyze_portfolio
+from omnicio.portfolio import analyze_portfolio, value_current_positions
 from omnicio.portfolio_store import PortfolioStore
 from omnicio.service import AuthService
 from omnicio.tbank import (
@@ -58,10 +58,9 @@ def _market_http_contract(
     *, price: str, metadata: TBankInstrumentMetadata,
     candles: tuple[dict[str, object], ...] = (), snapshot_price: str | None = None,
 ) -> dict[str, Any]:
-    user = UserRecord(UUID(int=123), 123, "active", "user")
     uid = "synthetic-a"
     credential = "synthetic-browser-contract-credential"
-    provider = TBankInvestClient()
+    provider = TBankInvestClient(purpose="market")
     current_price = snapshot_price or price
 
     def provider_response(request: Request, **_kwargs: object) -> io.BytesIO:
@@ -76,7 +75,7 @@ def _market_http_contract(
             payload = {"candles": candles}
         else:
             assert request.full_url.endswith("MarketDataService/GetLastPrices")
-            assert body["instrumentId"] == [uid]
+            assert body["instrumentId"] in ([], [uid])
             assert body["lastPriceType"] == "LAST_PRICE_EXCHANGE"
             payload = {"lastPrices": [{"instrumentUid": uid,
                                       "price": _wire_quotation(current_price),
@@ -89,7 +88,12 @@ def _market_http_contract(
         )[0]
 
     broker = Mock(spec=BrokerService)
-    broker.status.return_value = BrokerConnectionStatus(True, "prod", "synthetic-account")
+    broker.market_status.return_value = MarketSourceStatus(True, "tbank", "synthetic-source")
+    broker.status.side_effect = AssertionError("Public market must not use personal credentials")
+    broker.market_catalog.return_value = (metadata,)
+    broker.market_all_last_prices.side_effect = (
+        lambda: provider.get_all_last_prices(credential, "prod")
+    )
     broker.market_last_price.side_effect = last_price
     broker.market_last_prices.side_effect = (
         lambda _user, instrument_uids: provider.get_last_prices_batch(
@@ -107,15 +111,14 @@ def _market_http_contract(
     broker.market_instrument_metadata.return_value = metadata
     market = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
     auth = Mock(spec=AuthService)
-    auth.refresh_session.return_value = user
+    auth.refresh_session.side_effect = AssertionError("Public market must not require an account")
     original_next = main._next_instrument_market_event
 
     async def without_provider_poll_delay(*args: object, **kwargs: object) -> tuple:
         event, payload, _, retry, failures, stop = await original_next(*args, **kwargs)
         if event == "market":
-            # End the next real stream observation independently of how many
-            # internal account checks the successful observation performed.
-            broker.status.side_effect = ValueError("test-end")
+            # End the next stream observation through the shared source state.
+            broker.market_status.side_effect = ValueError("test-end")
         return event, payload, 0, retry, failures, stop
 
     snapshot = None
@@ -126,8 +129,7 @@ def _market_http_contract(
         patch("urllib.request.OpenerDirector.open", side_effect=provider_response),
     ):
         # No lifespan: no database, broker credentials, live network or workers.
-        client = TestClient(main.app, base_url=main.CANONICAL_ORIGIN,
-                            cookies={"omnicio_session": "synthetic-session"})
+        client = TestClient(main.app, base_url=main.CANONICAL_ORIGIN)
         try:
             if snapshot_price is not None:
                 rest = client.get(f"/api/market/instruments/{uid}", params={"period": "1m"},
@@ -152,19 +154,33 @@ def _market_http_contract(
             assert quotes.status_code == 200, quotes.text
             assert "no-store" in quotes.headers["cache-control"]
             current_price = price
+            # A completed common collector cycle replaces the cached price for
+            # every guest and member before the next real SSE serialization.
+            market._collect_quotes()
+            public_market = client.get("/api/public/market", params={"limit": 100, "offset": 0})
+            public_status = client.get("/api/public/market-status")
+            assert public_market.status_code == 200, public_market.text
+            assert public_status.status_code == 200, public_status.text
+            assert "no-store" in public_market.headers["cache-control"]
+            assert "no-store" in public_status.headers["cache-control"]
+            assert public_market.json()["items"][0]["last_price"] == price
+            assert public_status.json()["coverage"]["quote_instruments"] == 1
             response = client.get(f"/api/market/instruments/{uid}/stream",
                                   params={"profile_context": "000000123"})
         finally:
             client.close()
             market.close()
     assert response.status_code == 200, response.text
+    auth.refresh_session.assert_not_called()
+    broker.status.assert_not_called()
     assert response.headers["content-type"].startswith("text/event-stream")
     blocks = response.text.split("\n\n")
     market_event = next(block for block in blocks if block.startswith("event: market\n"))
     status_event = next(block for block in blocks if block.startswith("event: status\n"))
     result = {"instrument_stream": response.text,
             "instrument_market_event": market_event + "\n\n",
-            "instrument_status_event": status_event + "\n\n", "market_quotes": quotes.json()}
+            "instrument_status_event": status_event + "\n\n", "market_quotes": quotes.json(),
+            "public_market": public_market.json(), "public_market_status": public_status.json()}
     if snapshot is not None:
         result["market"] = snapshot
     return result
@@ -257,22 +273,12 @@ def _broker_snapshot_contract(now: datetime) -> tuple[dict[str, Any], dict[str, 
         return {"currency": "RUB", **_wire_quotation(value)}
 
     payloads = {
-        "GetPortfolio": {
-            "accountId": account_id, "totalAmountPortfolio": money("1000.08"),
-            "totalAmountShares": money("250.38"), "totalAmountCurrencies": money("749.70"),
-            "expectedYield": _wire_quotation("1.04267726"),
-            "dailyYield": money("0.42"), "dailyYieldRelative": _wire_quotation("0.042014"),
-            "positions": [{
-                "instrumentUid": uid, "figi": "SYNTHETIC-FIGI", "ticker": "SYNA",
-                "instrumentType": "share", "quantity": _wire_quotation("2"),
-                "quantityLots": _wire_quotation("0.2"),
-                "currentPrice": money("125.19"), "averagePositionPrice": money("120.03"),
-                "averagePositionPriceFifo": money("119.07"),
-                "expectedYield": _wire_quotation("10.32"),
-                "expectedYieldFifo": _wire_quotation("12.24"), "dailyYield": money("0.42"),
-            }],
+        "GetPositions": {
+            "accountId": account_id, "money": [money("749.70")],
+            "securities": [{"instrumentUid": uid, "figi": "SYNTHETIC-FIGI",
+                            "instrumentType": "share", "balance": "2", "blocked": "0"}],
         },
-        "GetPositions": {"accountId": account_id, "money": [money("749.70")]},
+        "GetWithdrawLimits": {"money": [money("749.70")]},
     }
 
     def response(request: Request, **_kwargs: object) -> io.BytesIO:
@@ -281,13 +287,20 @@ def _broker_snapshot_contract(now: datetime) -> tuple[dict[str, Any], dict[str, 
         assert body["accountId"] == account_id
         return io.BytesIO(json.dumps(payloads[request.full_url.rsplit("/", 1)[-1]]).encode())
 
-    provider = TBankInvestClient()
+    provider = TBankInvestClient(purpose="portfolio")
     with patch("urllib.request.OpenerDirector.open", side_effect=response):
-        portfolio = provider.get_portfolio("synthetic-contract-only", "prod", account_id)
         balances = provider.get_positions("synthetic-contract-only", "prod", account_id)
+        limits = provider.get_withdraw_limits("synthetic-contract-only", "prod", account_id)
+    balances = replace(
+        balances, money=limits.money, blocked_money=limits.blocked_money,
+        blocked_guarantee_money=limits.blocked_guarantee_money, withdraw_limits_available=True,
+    )
     metadata = TBankInstrumentMetadata(
         uid, "Синтетический актив", "SYNA", "", "share", "other", "RU", False,
         figi="SYNTHETIC-FIGI", currency="RUB", lot=10,
+    )
+    portfolio = value_current_positions(
+        balances, (metadata,), (TBankLastPrice(uid, "125.19", now),),
     )
     analysis = analyze_portfolio(portfolio, balances, (metadata,))
     bundle = BrokerObservationBundle(
@@ -330,14 +343,13 @@ def _broker_snapshot_contract(now: datetime) -> tuple[dict[str, Any], dict[str, 
 
 
 def broker_portfolio_contract() -> dict[str, Any]:
-    """Keep broker open-position statistics distinct from historical account return."""
+    """Serialize quantities and current value without collecting purchase history."""
     now = datetime.now(UTC)
     snapshot, position = _broker_snapshot_contract(now)
     opening = {**snapshot, "id": UUID(int=455), "captured_at": now - timedelta(days=7),
                "created_at": now - timedelta(days=7), "nav_rub": Decimal("800.08")}
-    snapshot["evidence"]["account"] = {"opened_at": (now - timedelta(days=30)).isoformat()}
     basis = _Basis({"account_id": snapshot["account_id"], "environment": "prod",
-                    "account_name": "Синтетический счёт"}, snapshot, [], now, True)
+                    "account_name": "Инвестиционный счёт"}, snapshot)
     history = _History([opening, snapshot], [opening, snapshot], {
         "status": "complete", "period": "1y",
         "requested_from": (now - timedelta(days=365)).isoformat(),
@@ -383,9 +395,6 @@ def broker_portfolio_contract() -> dict[str, Any]:
                     cursor.fetchall.side_effect = [[{
                         **position, "snapshot_id": snapshot["id"], "captured_at": now,
                         "recorded_at": now, "analysis_status": snapshot["analysis_status"],
-                        "broker_position_statistics": snapshot["evidence"]["broker_statistics"][
-                            "positions"
-                        ][position["instrument_uid"]],
                     }], [], []]
                 response = client.get(path, headers={"X-Omnicio-Profile": "000000123"})
                 assert response.status_code == 200, response.text
@@ -393,21 +402,18 @@ def broker_portfolio_contract() -> dict[str, Any]:
                 result[key] = response.json()
         finally:
             client.close()
-    current = result["broker_workspace"]["overview"]["broker_statistics"]
-    assert current == result["broker_portfolio_visualization"]["latest"]["broker_statistics"]
-    assert current["return_percent"] == "1.04267726"
-    assert current["daily_yield"] == {"currency": "RUB", "value": "0.42"}
-    assert "positions" not in current
+    assert "broker_statistics" not in result["broker_workspace"]["overview"]
+    assert "broker_statistics" not in result["broker_portfolio_visualization"]["latest"]
     actual_position = result["broker_portfolio_visualization"]["latest"]["positions"][0]
     assert Decimal(actual_position["quantity"]) == 2
-    assert actual_position["average_price"] == {"currency": "RUB", "value": "120.03"}
-    assert actual_position["expected_yield_amount"] == "10.32"
+    assert "average_price" not in actual_position
+    assert "expected_yield_amount" not in actual_position
     instrument = result["broker_instrument_visualization"]
     assert instrument["current_holding"]["status"] == "held"
-    assert instrument["latest"]["average_price"] == actual_position["average_price"]
-    historical = result["broker_workspace"]["performance"]
-    assert historical["investment_result_rub"] == "200.00"
-    assert Decimal(historical["return_percent"]) > 24
+    assert "average_price" not in instrument["latest"]
+    historical = result["broker_workspace"]["value_change"]
+    assert Decimal(historical["nav_change_rub"]) == 200
+    assert "return_percent" not in historical
     return result
 
 

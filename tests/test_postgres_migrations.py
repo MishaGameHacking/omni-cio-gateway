@@ -9,7 +9,6 @@ import re
 import secrets
 import subprocess
 from contextlib import nullcontext
-from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,8 +19,7 @@ import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-from omnicio.db import ActiveLiveExecutionError, Database
-from omnicio.execution_store import ExecutionLedgerError, ExecutionLegObservation, ExecutionStore
+from omnicio.db import Database
 from omnicio.portfolio_store import PortfolioStore
 from omnicio.schema import READINESS_QUERY
 
@@ -95,6 +93,12 @@ ACCEPTED_MIGRATION_SHA256 = {
     "0025_billing_recovery.sql": (
         "5d6ac08ba7312d09aa85ee895f4d66b8bef7b08c1b8af3ce1d52e0457552d3b1"
     ),
+    "0027_assistant_stream_memory.sql": (
+        "90a733bcf4e9289eff6b14b9653f4a2344454a77b0b8bd76153accd042904419"
+    ),
+    "0028_notification_device_binding.sql": (
+        "a8da904abff76418b04c7d02b1088e3cc48c0f15922562ec5c597b75feb4301f"
+    ),
     "0026_strategy_research_capacity.sql": (
         "1cce5a0967c32a6ddd70c48986dd7dcf5074d23a1e8dfe60c7c5abbc72752288"
     ),
@@ -120,13 +124,15 @@ def inplace_database(monkeypatch):
     assert options["dbname"] == "omnicio_test"
     monkeypatch.syspath_prepend(str(ROOT / ".github/scripts"))
     upgrade = importlib.import_module("inplace_upgrade")
-    plan = upgrade.load_plan()
-    source = subprocess.run(
-        ["git", "show", f"{plan['source_release']}:src/omnicio/schema.py"],
-        cwd=ROOT, capture_output=True, text=True, check=True, timeout=15,
-    ).stdout
-    source_query = upgrade.schema_query(source, plan["source_schema_sha256"])
-    assert [path.name for path in MIGRATIONS[-2:]] == [
+    historical = json.loads((ROOT / "tests/fixtures/accepted_upgrade_1_3.json").read_text())
+    plan = upgrade.validate_plan(historical["plan"])
+    source_query = upgrade.schema_query(historical["source_schema"], plan["source_schema_sha256"])
+    target_query = upgrade.schema_query(
+        historical["target_schema"],
+        "287e991cdb3e98879b4be876b7291bd2459c617cb93d8b45c9930a335863c2d2",
+    )
+    historical_migrations = tuple(path for path in MIGRATIONS if path.name[:4] <= "0028")
+    assert [path.name for path in historical_migrations[-2:]] == [
         "0027_assistant_stream_memory.sql", "0028_notification_device_binding.sql",
     ]
     name = "omnicio_upgrade_" + secrets.token_hex(8)
@@ -137,15 +143,16 @@ def inplace_database(monkeypatch):
         ))
         try:
             with psycopg.connect(dsn, autocommit=True) as connection:
-                for path in MIGRATIONS[:-2]:
+                for path in historical_migrations[:-2]:
                     connection.execute(path.read_text(encoding="utf-8"))
                 assert connection.execute(source_query).fetchone() == (True,)
-                assert connection.execute(READINESS_QUERY).fetchone() == (False,)
+                assert connection.execute(target_query).fetchone() == (False,)
                 _seed_inplace_rows(connection)
                 arguments = dict(
                     plan=plan,
-                    statements=[path.read_text(encoding="utf-8") for path in MIGRATIONS[-2:]],
-                    source_query=source_query, target_query=READINESS_QUERY,
+                    statements=[path.read_text(encoding="utf-8")
+                                for path in historical_migrations[-2:]],
+                    source_query=source_query, target_query=target_query,
                     identity=upgrade.operation_identity(plan, {"database": name}),
                     release_sha="a" * 40, installed_release=plan["source_release"],
                 )
@@ -215,7 +222,7 @@ def test_remote_upgrade_accepts_native_endpoint_and_preserves_rows(
     assert output.err == ""
     assert [item["phase"] for item in receipts] == ["pending", "completed"]
     assert receipts[-1]["identity"]["database"] == payload["database"]
-    assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+    assert connection.execute(payload["target_query"]).fetchone() == (True,)
     assert _inplace_rows(connection, exclude_changes=True) == before
 
     after = _inplace_rows(connection)
@@ -244,7 +251,7 @@ def test_remote_upgrade_rejects_wrong_native_server_before_receipt_or_migration(
         upgrade.remote_main(payload)
     assert receipts == []
     assert connection.execute(upgrade.NEW_SCHEMA_ABSENT).fetchone() == (True,)
-    assert connection.execute(READINESS_QUERY).fetchone() == (False,)
+    assert connection.execute(payload["target_query"]).fetchone() == (False,)
     assert _inplace_rows(connection) == before
     output = capsys.readouterr()
     assert output.out == ""
@@ -324,7 +331,7 @@ def test_inplace_transaction_preserves_tenants_and_expires_only_unbound_delivery
     assert upgrade.apply_upgrade(connection, **arguments, receipt=None,
                                  save_receipt=receipts.append) == "applied"
     assert [item["phase"] for item in receipts] == ["pending", "completed"]
-    assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+    assert connection.execute(arguments["target_query"]).fetchone() == (True,)
     assert _inplace_rows(connection, exclude_changes=True) == before
     assert connection.execute(accepted_query).fetchall() == accepted
     for owner in (USER_ONE, USER_TWO):
@@ -376,7 +383,7 @@ def test_inplace_failure_in_second_migration_rolls_back_both_and_can_resume(inpl
     assert _inplace_rows(connection) == before
     assert upgrade.apply_upgrade(connection, **arguments, receipt=receipts[-1],
                                  save_receipt=receipts.append) == "applied"
-    assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+    assert connection.execute(arguments["target_query"]).fetchone() == (True,)
 
 
 def test_inplace_lost_commit_confirmation_never_repeats_migration_sql(inplace_database):
@@ -392,7 +399,7 @@ def test_inplace_lost_commit_confirmation_never_repeats_migration_sql(inplace_da
         upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=interrupted_write)
     assert [item["phase"] for item in receipts] == ["pending"]
     assert connection.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
-    assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+    assert connection.execute(arguments["target_query"]).fetchone() == (True,)
     with pytest.raises(upgrade.UpgradeBlocked, match="target_schema_has_no_operation_receipt"):
         upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=receipts.append)
     connection.execute("""
@@ -634,8 +641,8 @@ def _assert_legacy_source_guards(runtime, runs: dict[str, UUID], legs: dict[str,
         )
 
 
-def _exercise_legacy_recovery(database: Database, runtime, snapshot_id: UUID) -> tuple[UUID, int]:
-    """Read and settle saved records; no runtime creation helper or broker I/O."""
+def _seed_and_check_legacy_records(runtime, snapshot_id: UUID) -> tuple[UUID, int]:
+    """Retained historical rows stay immutable and tenant-bound after API retirement."""
     _seed_legacy_policy(runtime, 1)
     proposal_id, action_id = _seed_legacy_proposal(runtime, snapshot_id, 1)
     mandate_id = runtime.execute(
@@ -644,152 +651,26 @@ def _exercise_legacy_recovery(database: Database, runtime, snapshot_id: UUID) ->
         "VALUES (%s, 'account-1', 3000, 5000, %s, now() + interval '30 minutes') RETURNING id",
         (USER_ONE, b"m" * 32),
     ).fetchone()[0]
-    runs = {
-        mode: _seed_legacy_run(
-            runtime, proposal_id, action_id, mode, mandate_id if mode == "live" else None
-        )
-        for mode in ("shadow", "sandbox", "live")
-    }
-    legs = {
-        mode: _seed_legacy_leg(runtime, run, "submitted" if mode == "sandbox" else "pending")
-        for mode, run in runs.items()
-    }
+    runs = {mode: _seed_legacy_run(runtime, proposal_id, action_id, mode,
+                                 mandate_id if mode == "live" else None)
+            for mode in ("shadow", "sandbox", "live")}
+    legs = {mode: _seed_legacy_leg(runtime, run, "submitted" if mode == "sandbox" else "pending")
+            for mode, run in runs.items()}
     _assert_legacy_source_guards(runtime, runs, legs)
     competing_id, competing_action = _seed_legacy_proposal(runtime, snapshot_id, 2)
     with pytest.raises(psycopg.errors.UniqueViolation, match="one_active_live"):
         _seed_legacy_run(runtime, competing_id, competing_action, "live", mandate_id)
-    ledger = ExecutionStore(database)
-    assert {run.mode for run in ledger.executions(USER_ONE)} == {"shadow", "sandbox", "live"}
-    assert ledger.execution(USER_TWO, runs["live"]) is None
-    assert ledger.executions(USER_TWO) == ()
-    assert ledger.has_active_live_execution(USER_ONE)
-    assert not ledger.has_active_live_execution(USER_TWO)
-    with pytest.raises(ActiveLiveExecutionError):
-        database.upsert_tbank_connection(
-            user_id=USER_ONE,
-            environment="prod",
-            account_id="account-1",
-            account_name="Synthetic",
-            encrypted_credential=b"replacement",
-            terms_version="test",
-        )
-    with pytest.raises(ActiveLiveExecutionError):
-        database.delete_tbank_connection(USER_ONE)
-    _settle_legacy_records(ledger, runs, legs, mandate_id)
     _seed_legacy_policy(runtime, 2)
     with pytest.raises(psycopg.errors.RaiseException, match="not an exact confirmed proposal"):
         _seed_legacy_run(runtime, competing_id, competing_action, "shadow")
     return proposal_id, action_id
 
 
-def _settle_legacy_records(
-    ledger: ExecutionStore, runs: dict[str, UUID], legs: dict[str, UUID], mandate_id: UUID
-) -> None:
-    revoked = ledger.revoke_live_mandate(USER_ONE)
-    assert revoked is not None
-    assert revoked.id == mandate_id
-    assert ledger.live_mandate(USER_ONE) is None
-    assert ledger.has_active_live_execution(USER_ONE)
-    with pytest.raises(ExecutionLedgerError, match="live_mandate_inactive"):
-        ledger.transition_leg(
-            USER_ONE,
-            run_id=runs["live"],
-            leg_id=legs["live"],
-            expected_statuses=("pending",),
-            new_status="submitting",
-            event_type="forbidden_new_submission",
-            details={},
-        )
-    run, leg = ledger.transition_leg(
-        USER_ONE,
-        run_id=runs["live"],
-        leg_id=legs["live"],
-        expected_statuses=("pending",),
-        new_status="cancelled",
-        event_type="cancelled_before_submission",
-        details={},
-    )
-    assert run.status == "cancelled"
-    assert leg.status == "cancelled"
-    assert not ledger.has_active_live_execution(USER_ONE)
-    pending, _ = ledger.mark_run_reconciling(
-        USER_ONE,
-        run_id=runs["sandbox"],
-        leg_id=legs["sandbox"],
-        error_code="provider_read_unavailable",
-        details={"retry_post_order": False},
-    )
-    assert pending.status == "reconciling"
-    _exercise_execution_observation_order(ledger, runs["sandbox"], legs["sandbox"])
-    run, leg = ledger.transition_leg(
-        USER_ONE,
-        run_id=runs["sandbox"],
-        leg_id=legs["sandbox"],
-        expected_statuses=("partially_filled",),
-        new_status="filled",
-        event_type="provider_state_reconciled",
-        details={},
-        observation=ExecutionLegObservation(
-            lots_executed=2,
-            executed_amount_rub=Decimal("2000"),
-            executed_commission_rub=Decimal("3"),
-        ),
-    )
-    assert run.status == "succeeded"
-    assert leg.status == "filled"
-    assert leg.executed_amount_rub == Decimal("2000")
-    assert leg.executed_commission_rub == Decimal("3")
-    saved = ledger.execution(USER_ONE, runs["sandbox"])
-    assert saved is not None
-    assert [event.event_type for event in saved[2]] == [
-        "provider_read_unavailable",
-        "provider_partial_reconciled",
-        "provider_amount_corrected",
-        "provider_state_reconciled",
-    ]
 
 
-def _exercise_execution_observation_order(
-    ledger: ExecutionStore, run_id: UUID, leg_id: UUID,
-) -> None:
-    """A delayed competing read must not overwrite the committed receipt."""
-    checked_at = datetime.now(UTC)
-    ledger.transition_leg(
-        USER_ONE, run_id=run_id, leg_id=leg_id, expected_statuses=("reconciling",),
-        new_status="partially_filled", event_type="provider_partial_reconciled", details={},
-        now=checked_at,
-        observation=ExecutionLegObservation(
-            provider_status="EXECUTION_REPORT_STATUS_PARTIALLYFILL", lots_executed=1,
-            executed_amount_rub=Decimal("1100"), executed_commission_rub=Decimal("5"),
-        ),
-    )
-    committed = ledger.execution(USER_ONE, run_id)
-    for lots, at in ((0, checked_at + timedelta(seconds=1)),
-                     (1, checked_at - timedelta(seconds=1))):
-        observation = ExecutionLegObservation(
-            provider_status="EXECUTION_REPORT_STATUS_PARTIALLYFILL", lots_executed=lots,
-            executed_amount_rub=Decimal("1000"),
-        )
-        with pytest.raises(ExecutionLedgerError, match="execution_leg_state_changed"):
-            ledger.transition_leg(
-                USER_ONE, run_id=run_id, leg_id=leg_id,
-                expected_statuses=("submitted", "partially_filled", "reconciling"),
-                new_status="partially_filled", event_type="stale_receipt", details={}, now=at,
-                observation=observation,
-            )
-        assert ledger.execution(USER_ONE, run_id) == committed
-    _, corrected = ledger.transition_leg(
-        USER_ONE, run_id=run_id, leg_id=leg_id, expected_statuses=("partially_filled",),
-        new_status="partially_filled", event_type="provider_amount_corrected", details={},
-        now=checked_at + timedelta(seconds=2),
-        observation=ExecutionLegObservation(
-            provider_status="EXECUTION_REPORT_STATUS_PARTIALLYFILL", lots_executed=1,
-            executed_amount_rub=Decimal("1099"), executed_commission_rub=Decimal("4"),
-        ),
-    )
-    assert corrected.lots_executed == 1
-    assert corrected.executed_amount_rub == Decimal("1099")
-    assert corrected.executed_commission_rub == Decimal("4")
+
+
+
 
 
 def test_r6_execution_migration_has_valid_guards_and_event_lineage() -> None:
@@ -837,16 +718,6 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     assert "portfolio_execution_legs_live_submission_guard" in migration
     assert "FOR SHARE OF m" in migration
     assert "live execution mandate is inactive before submission" in migration
-    execution_store_source = (ROOT / "src" / "omnicio" / "execution_store.py").read_text(
-        encoding="utf-8"
-    )
-    assert "def _require_live_transition_mandate(" in execution_store_source
-    assert 'run.mode != "live" or new_status != "submitting"' in execution_store_source
-    assert 'raise ExecutionLedgerError("live_mandate_inactive")' in execution_store_source
-    assert "FOR SHARE" in execution_store_source
-    database_source = (ROOT / "src" / "omnicio" / "db.py").read_text(encoding="utf-8")
-    assert "class ActiveLiveExecutionError" in database_source
-    assert database_source.count("live_execution_lock_key(user_id)") >= 2
 
 
 @pytest.mark.skipif(
@@ -854,8 +725,12 @@ def test_r7_live_execution_migration_requires_exact_mandate_and_fail_closed_mode
     reason="ephemeral PostgreSQL is required for migration integration coverage",
 )
 def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
-    assert [item.name for item in MIGRATIONS][-1] == "0028_notification_device_binding.sql"
+    assert [item.name for item in MIGRATIONS][-2:] == [
+        "0029_email_auth.sql", "0030_portfolio_read_only.sql",
+    ]
     _apply_all_migrations()
+    with psycopg.connect(DATABASE_URL, autocommit=True) as readiness:
+        assert readiness.execute(READINESS_QUERY).fetchone() == (True,)
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as admin:
         # The additive latest migration is safe to retry before release. Once
@@ -1380,15 +1255,13 @@ def test_migrations_apply_reapply_and_enforce_observer_rls() -> None:
                 is None
             )
 
-            proposal_id, action_id = _exercise_legacy_recovery(database, runtime, snapshot_id)
+            proposal_id, action_id = _seed_and_check_legacy_records(runtime, snapshot_id)
             current_policy = store.current_balancing_policy(USER_ONE)
             assert current_policy is not None
             assert current_policy.version == 2
             assert current_policy.max_instrument_percent == Decimal("20")
-            proposal_history = store.proposals(USER_ONE)
-            assert len(proposal_history) == 2
-            assert all(item.status == "confirmed" for item in proposal_history)
-            assert store.proposals(USER_TWO) == ()
+            assert runtime.execute("SELECT count(*) FROM portfolio_proposals").fetchone()[0] == 2
+
 
             # The user-facing journal filters both owner and event type, and
             # never serializes audit metadata (which is for server use only).

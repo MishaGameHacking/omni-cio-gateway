@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
 from threading import Event
 from unittest.mock import Mock, patch
@@ -38,7 +37,6 @@ from omnicio.observer import (
 )
 from omnicio.portfolio import PortfolioAnalysis, analyze_portfolio
 from omnicio.portfolio_store import (
-    BrokerSyncState,
     JobRunRecord,
     ObservationCancelled,
     PortfolioStore,
@@ -118,8 +116,7 @@ def bundle(status: str = "observed") -> BrokerObservationBundle:
 
 
 class FakeStore:
-    def __init__(self, *, state: BrokerSyncState | None = None) -> None:
-        self.state = state
+    def __init__(self) -> None:
         self.finished: list[tuple[str, dict[str, object]]] = []
         self.saved_snapshots = 0
         self.saved_pages: list[str] = []
@@ -204,14 +201,13 @@ class FakeStore:
         job_run_id: UUID,
         bundle,
         account: TBankAccount,
-        user_info: TBankUserInfo | None,
+        user_info: TBankUserInfo | None = None,
     ):
         assert user_id == USER_ID
         assert job_run_id
         assert bundle.account_id == "account-1"
         assert account.id == "account-1"
-        if user_info is not None:
-            assert user_info.risk_level_code == "CONSERVATIVE"
+        assert user_info is None
         self.saved_snapshots += 1
         return uuid4()
 
@@ -244,29 +240,7 @@ class FakeStore:
         assert job_run_id
         return dict(self.news_checkpoint)
 
-    def sync_state(self, user_id: UUID, account_id: str):
-        assert user_id == USER_ID
-        assert account_id == "account-1"
-        return self.state
 
-    def save_history_page(
-        self,
-        user_id: UUID,
-        *,
-        job_run_id: UUID,
-        account_id: str,
-        environment: str,
-        window_from: datetime,
-        window_to: datetime,
-        page: TBankOperationsPage,
-        observed_at: datetime,
-    ) -> int:
-        assert user_id == USER_ID
-        assert account_id == "account-1"
-        assert window_from <= window_to <= observed_at
-        self.saved_pages.append(page.next_cursor)
-        self.saved_windows.append((window_from, window_to))
-        return len(page.items)
 
 
 class FakeBroker:
@@ -305,16 +279,7 @@ class FakeBroker:
         )
 
     def user_info(self, user_id: UUID) -> TBankUserInfo:
-        assert user_id == USER_ID
-        if self.user_info_unavailable:
-            raise TBankUnavailable("temporary")
-        return TBankUserInfo(
-            premium=False,
-            qualified=False,
-            qualified_for_work_with=("russian_shares",),
-            tariff="Investor",
-            risk_level_code="CONSERVATIVE",
-        )
+        raise AssertionError("forbidden private broker data read")
 
     def observation_bundle(
         self,
@@ -388,11 +353,7 @@ class FakeBroker:
         cursor: str = "",
         limit: int = 1000,
     ) -> TBankOperationsPage:
-        assert user_id == USER_ID
-        assert from_at <= to_at
-        assert limit == 1000
-        self.seen_cursors.append(cursor)
-        return self.pages[cursor]
+        raise AssertionError("forbidden private broker data read")
 
 
 def test_provider_read_retries_unavailable_reads_with_bounded_jitter() -> None:
@@ -440,7 +401,7 @@ def test_full_observer_run_defers_durably_when_another_process_holds_lock() -> N
     assert not store.claimed
 
 
-def test_daily_observer_pages_history_and_finishes_once() -> None:
+def test_daily_observer_reads_current_positions_and_never_history_or_profile() -> None:
     store = FakeStore()
     broker = FakeBroker()
     observer = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS)
@@ -450,129 +411,13 @@ def test_daily_observer_pages_history_and_finishes_once() -> None:
     assert result is not None
     assert result.status == "succeeded"
     assert result.snapshot_saved is True
-    assert result.history_pages == 2
-    assert broker.seen_cursors == ["", "cursor-2"]
+    assert result.history_pages == 0
+    assert broker.seen_cursors == []
     assert store.saved_snapshots == 1
     assert store.saved_evidence == 1
     assert store.finished[0][0] == "succeeded"
-    assert store.finished[0][1]["history_status"] == "complete"
-
-
-def test_daily_observer_resumes_durable_cursor_window() -> None:
-    state = BrokerSyncState(
-        user_id=USER_ID,
-        account_id="account-1",
-        history_window_from=datetime(2026, 9, 1, tzinfo=UTC),
-        history_window_to=datetime(2026, 10, 1, tzinfo=UTC),
-        pending_cursor="resume-me",
-        last_complete_watermark=datetime(2026, 8, 31, tzinfo=UTC),
-        updated_at=datetime(2026, 10, 1, tzinfo=UTC),
-    )
-    store = FakeStore(state=state)
-    broker = FakeBroker(
-        pages={
-            "resume-me": TBankOperationsPage(False, "", ()),
-            "": TBankOperationsPage(False, "", ()),
-        },
-    )
-
-    result = PortfolioObserver(
-        store,
-        broker,
-        legal_versions=LEGAL_VERSIONS,
-    ).run_user(
-        USER_ID,
-        now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
-    )
-
-    assert result is not None
-    assert result.status == "succeeded"
-    assert result.history_pages == 2
-    assert broker.seen_cursors == ["resume-me", ""]
-    assert store.saved_windows == [
-        (datetime(2026, 9, 1, tzinfo=UTC), datetime(2026, 10, 1, tzinfo=UTC)),
-        (datetime(2026, 9, 24, tzinfo=UTC), datetime(2026, 10, 2, 6, 0, tzinfo=UTC)),
-    ]
-
-
-def test_resumed_window_does_not_claim_current_coverage_when_page_budget_is_exhausted() -> None:
-    state = BrokerSyncState(
-        user_id=USER_ID, account_id="account-1",
-        history_window_from=datetime(2026, 9, 1, tzinfo=UTC),
-        history_window_to=datetime(2026, 10, 1, tzinfo=UTC),
-        pending_cursor="resume-me",
-        last_complete_watermark=datetime(2026, 8, 31, tzinfo=UTC),
-        updated_at=datetime(2026, 10, 1, tzinfo=UTC),
-    )
-    store = FakeStore(state=state)
-    broker = FakeBroker(pages={"resume-me": TBankOperationsPage(False, "", ())})
-    with patch("omnicio.observer.MAX_HISTORY_PAGES_PER_RUN", 1):
-        result = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_user(
-            USER_ID, now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
-        )
-    assert result is not None
-    assert result.status == "degraded"
-    assert result.history_pages == 1
-    assert broker.seen_cursors == ["resume-me"]
-    assert store.finished[0][1]["history_status"] == "continuation_pending"
-
-
-def test_history_covers_a_snapshot_captured_after_the_job_started() -> None:
-    store = FakeStore()
-    broker = FakeBroker(pages={"": TBankOperationsPage(False, "", ())})
-    captured = datetime(2026, 10, 2, 6, 1, tzinfo=UTC)
-    with patch.object(broker, "observation_bundle", return_value=replace(
-        bundle(), refreshed_at=captured,
-    )):
-        result = PortfolioObserver(store, broker, legal_versions=LEGAL_VERSIONS).run_user(
-            USER_ID, now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
-        )
-    assert result is not None
-    assert result.status == "succeeded"
-    assert store.saved_windows == [(datetime(2024, 1, 1, tzinfo=UTC), captured)]
-
-
-def test_user_info_outage_degrades_but_keeps_portfolio_snapshot() -> None:
-    store = FakeStore()
-    broker = FakeBroker(user_info_unavailable=True)
-
-    with (
-        patch("omnicio.observer.time.sleep"),
-        patch("omnicio.observer.secrets.randbelow", return_value=0),
-    ):
-        result = PortfolioObserver(
-            store,
-            broker,
-            legal_versions=LEGAL_VERSIONS,
-        ).run_user(
-            USER_ID,
-            now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
-        )
-
-    assert result is not None
-    assert result.status == "degraded"
-    assert result.snapshot_saved is True
-    assert store.saved_snapshots == 1
-    assert store.finished[0][1]["broker_user_info_status"] == "unavailable"
-
-
-def test_missing_account_open_date_degrades_without_inventing_history() -> None:
-    store = FakeStore()
-    broker = FakeBroker(opened_at=None)
-
-    result = PortfolioObserver(
-        store,
-        broker,
-        legal_versions=LEGAL_VERSIONS,
-    ).run_user(
-        USER_ID,
-        now=datetime(2026, 10, 2, 6, 0, tzinfo=UTC),
-    )
-
-    assert result is not None
-    assert result.status == "degraded"
-    assert broker.seen_cursors == []
-    assert store.finished[0][1]["history_status"] == "opened_date_missing"
+    assert store.finished[0][1]["history_status"] == "not_collected"
+    assert store.finished[0][1]["broker_user_info_status"] == "not_collected"
 
 
 def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
@@ -595,7 +440,7 @@ def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
     assert "UNIQUE (user_id, job_type, scheduled_for)" in migration
     assert "UNIQUE (user_id, account_id, observation_hash)" in migration
     assert "operation_observations_semantic_unique_idx" in migration
-    assert "ON CONFLICT DO NOTHING" in store
+    assert "ON CONFLICT (job_run_id) DO NOTHING" in store
     assert "UNIQUE (job_run_id)" in migration
     assert "job_runs_finish_state_consistent" in migration
     assert "broker_sync_state_cursor_window_consistent" in migration
@@ -604,7 +449,8 @@ def test_observer_schema_has_tenant_rls_dedup_and_restart_contracts() -> None:
     assert "retry_of" in store
     assert "recover_running" in store
     assert "ON CONFLICT (job_run_id) DO NOTHING" in store
-    assert "pending_cursor" in store
+    assert "FROM broker_sync_state" not in store
+    assert "operation_observations" not in store
 
 
 def test_daily_retry_policy_controls_durable_delay_and_terminal_attempt() -> None:
@@ -633,7 +479,7 @@ def test_daily_retry_policy_controls_durable_delay_and_terminal_attempt() -> Non
     )
 
 
-def test_instrument_required_tests_are_tenant_account_evidence() -> None:
+def test_shared_catalog_does_not_claim_personal_instrument_access() -> None:
     root = Path(__file__).resolve().parents[1]
     migration = (root / "migrations" / "0006_portfolio_observer.sql").read_text(encoding="utf-8")
     store = (root / "src" / "omnicio" / "portfolio_store.py").read_text(encoding="utf-8")
@@ -647,7 +493,7 @@ def test_instrument_required_tests_are_tenant_account_evidence() -> None:
     assert "CREATE TABLE IF NOT EXISTS account_instrument_access" in migration
     assert "required_tests jsonb NOT NULL" in migration
     assert "account_instrument_access_tenant" in migration
-    assert "INSERT INTO account_instrument_access" in store
+    assert "INSERT INTO account_instrument_access" not in store
 
 
 def test_issuer_mapping_foundation_never_guesses_unverified_relationships() -> None:
@@ -741,18 +587,22 @@ def test_native_connection_lifecycle_keeps_tenants_and_discards_old_jobs(connect
     observation = bundle()
     wrong_account = replace(observation, account_id="old")
     observed_at = datetime.now(UTC)
-    window_from = datetime(2026, 1, 1, tzinfo=UTC)
-    empty_page = TBankOperationsPage(items=(), has_next=False, next_cursor="")
-    assert store.claim_daily_job(
-        USER_ID, job_type="portfolio_daily", scheduled_for=date.today(),
-        legal_versions=LEGAL_VERSIONS,
-    ) is None
+    assert (
+        store.claim_daily_job(
+            USER_ID,
+            job_type="portfolio_daily",
+            scheduled_for=date.today(),
+            legal_versions=LEGAL_VERSIONS,
+        )
+        is None
+    )
     current = connect_user(database)
     connect_user(database, other)
     job, other_job = claim_job(store), claim_job(store, other)
     snapshot = store.save_snapshot(USER_ID, job_run_id=job.id, bundle=observation)
     other_snapshot = store.save_snapshot(
-        other, job_run_id=other_job.id,
+        other,
+        job_run_id=other_job.id,
         bundle=replace(bundle(), analysis=replace(analysis(), nav_rub="2000")),
     )
     assert store.portfolio_visualization(USER_ID)["latest"]["nav_rub"] == 1000
@@ -771,8 +621,12 @@ def test_native_connection_lifecycle_keeps_tenants_and_discards_old_jobs(connect
         store.save_snapshot(USER_ID, job_run_id=job.id, bundle=wrong_account)
     with pytest.raises(ObservationCancelled):
         store.save_evidence(
-            USER_ID, job_run_id=job.id, snapshot_id=other_snapshot,
-            documents=(), assessments=(), retrieved_at=observed_at,
+            USER_ID,
+            job_run_id=job.id,
+            snapshot_id=other_snapshot,
+            documents=(),
+            assessments=(),
+            retrieved_at=observed_at,
         )
 
     # Old account rows left by a previous version cannot become the selected account.
@@ -790,18 +644,14 @@ def test_native_connection_lifecycle_keeps_tenants_and_discards_old_jobs(connect
         store.save_snapshot(USER_ID, job_run_id=job.id, bundle=observation)
     with pytest.raises(ObservationCancelled):
         store.save_evidence(
-            USER_ID, job_run_id=job.id, snapshot_id=snapshot,
-            documents=(), assessments=(), retrieved_at=observed_at,
-        )
-    with pytest.raises(ObservationCancelled):
-        store.save_history_page(
-            USER_ID, job_run_id=job.id, account_id="account-1", environment="prod",
-            window_from=window_from, window_to=observed_at,
-            page=empty_page,
-            observed_at=observed_at,
+            USER_ID,
+            job_run_id=job.id,
+            snapshot_id=snapshot,
+            documents=(),
+            assessments=(),
+            retrieved_at=observed_at,
         )
     assert not store.finish_job(USER_ID, job.id, status="succeeded", details={})
-    assert store.sync_state(USER_ID, "account-1") is None
     assert store.portfolio_visualization(USER_ID)["status"] == "pending"
     assert store.portfolio_visualization(other)["latest"]["snapshot_id"] == str(other_snapshot)
     store.save_snapshot(USER_ID, job_run_id=new_job.id, bundle=observation)
@@ -1022,26 +872,48 @@ def test_native_observer_owner_locks_allow_parallel_accounts_and_exclude_legacy_
         assert released
 
 
-def test_native_quick_refresh_restores_persisted_metadata_and_original_user_info_time(
+def test_native_quick_refresh_restores_shared_metadata_without_reusing_broker_profile(
     connected_database,
 ):
     database, store, admin = connected_database
     connect_user(database)
     job = claim_job(store)
     now, original = datetime.now(UTC), datetime.now(UTC) - timedelta(days=3)
-    metadata = tuple(TBankInstrumentMetadata(
-        uid=uid, name=f"Verified {uid}", ticker=uid.upper(), isin="", instrument_type=kind,
-        sector="financial", country_of_risk="RU", for_qual_investor=False,
-    ) for uid, kind in (("share", "share"), ("fund", "etf")))
-    positions = tuple(TBankPortfolioPosition(
-        ticker=item.ticker, figi="", instrument_uid=item.uid, instrument_type=item.instrument_type,
-        quantity="1", current_price=TBankMoney("RUB", "100"), average_price=None,
-        expected_yield_amount=None, daily_yield=None, blocked=False,
-    ) for item in metadata)
+    metadata = tuple(
+        TBankInstrumentMetadata(
+            uid=uid,
+            name=f"Verified {uid}",
+            ticker=uid.upper(),
+            isin="",
+            instrument_type=kind,
+            sector="financial",
+            country_of_risk="RU",
+            for_qual_investor=False,
+        )
+        for uid, kind in (("share", "share"), ("fund", "etf"))
+    )
+    positions = tuple(
+        TBankPortfolioPosition(
+            ticker=item.ticker,
+            figi="",
+            instrument_uid=item.uid,
+            instrument_type=item.instrument_type,
+            quantity="1",
+            current_price=TBankMoney("RUB", "100"),
+            average_price=None,
+            expected_yield_amount=None,
+            daily_yield=None,
+            blocked=False,
+        )
+        for item in metadata
+    )
     base = bundle()
     portfolio = replace(base.portfolio, positions=positions)
     observed = replace(
-        base, refreshed_at=original, portfolio=portfolio, metadata=metadata,
+        base,
+        refreshed_at=original,
+        portfolio=portfolio,
+        metadata=metadata,
         analysis=analyze_portfolio(portfolio, base.positions, metadata),
         sources=tuple(replace(source, retrieved_at=original) for source in base.sources),
     )
@@ -1052,31 +924,38 @@ def test_native_quick_refresh_restores_persisted_metadata_and_original_user_info
     quick_job = store.claim_refresh_job(USER_ID, LEGAL_VERSIONS)
     assert quick_job is not None
     quick = replace(
-        observed, refreshed_at=now, metadata=(),
+        observed,
+        refreshed_at=now,
+        metadata=(),
         analysis=analyze_portfolio(portfolio, base.positions, ()),
-        sources=tuple(replace(source, retrieved_at=now, status="not_requested")
-                      for source in observed.sources),
+        sources=tuple(
+            replace(source, retrieved_at=now, status="not_requested") for source in observed.sources
+        ),
     )
     restored = PortfolioStore(database).reuse_snapshot_metadata(
-        USER_ID, job_run_id=quick_job.id, bundle=quick,
+        USER_ID,
+        job_run_id=quick_job.id,
+        bundle=quick,
     )
     assert {item.name for item in restored.analysis.securities} == {
-        "Verified share", "Verified fund",
+        "Verified share",
+        "Verified fund",
     }
     assert {item.uid: item.sector for item in restored.analysis.securities} == {
-        "share": "financial", "fund": "",
+        "share": "financial",
+        "fund": "",
     }
     assert restored.sources[0].retrieved_at == original
     assert restored.sources[0].status == "cached"
     store.save_snapshot(USER_ID, job_run_id=quick_job.id, bundle=restored)
     context = store.latest_balancing_context(USER_ID)
-    assert context["broker_user"]["qualified"] is False
-    assert context["broker_user"]["tariff"] == "Investor"
-    assert context["broker_user_as_of"] == original
-    assert context["broker_user_freshness"] == "stale"
+    assert context["broker_user"] == {}
+    assert context["broker_user_as_of"] is None
+    assert context["broker_user_time_basis"] == "not_collected"
     rows = store.portfolio_visualization(USER_ID, now=now)["latest"]["positions"]
     assert {row["instrument_uid"]: row["sector"] for row in rows} == {
-        "share": "financial", "fund": "",
+        "share": "financial",
+        "fund": "",
     }
     catalog_times = admin.execute(
         "SELECT provider_retrieved_at FROM instrument_catalog WHERE provider='tbank'"
@@ -1086,7 +965,7 @@ def test_native_quick_refresh_restores_persisted_metadata_and_original_user_info
         store.reuse_snapshot_metadata(UUID(int=2), job_run_id=quick_job.id, bundle=quick)
 
 
-def test_native_broker_statistics_keep_currency_scope_and_catalog_matches_unique(
+def test_native_snapshots_discard_purchase_statistics_and_keep_catalog_matches_unique(
     connected_database,
 ):
     database, store, admin = connected_database
@@ -1094,25 +973,43 @@ def test_native_broker_statistics_keep_currency_scope_and_catalog_matches_unique
     job = claim_job(store)
     observed_at = datetime.now(UTC) - timedelta(days=3)
     original = TBankInstrumentMetadata(
-        uid="held-share", name="Verified share", ticker="HOLD", figi="same-figi",
-        isin="", instrument_type="share", sector="financial", country_of_risk="RU",
+        uid="held-share",
+        name="Verified share",
+        ticker="HOLD",
+        figi="same-figi",
+        isin="",
+        instrument_type="share",
+        sector="financial",
+        country_of_risk="RU",
         for_qual_investor=False,
     )
     duplicate_figi = replace(original, uid="other-uid", name="Different instrument")
     position = TBankPortfolioPosition(
-        ticker="HOLD", figi=original.figi, instrument_uid=original.uid, instrument_type="share",
-        quantity="2", current_price=TBankMoney("RUB", "125.19"),
+        ticker="HOLD",
+        figi=original.figi,
+        instrument_uid=original.uid,
+        instrument_type="share",
+        quantity="2",
+        current_price=TBankMoney("RUB", "125.19"),
         average_price=TBankMoney("RUB", "120.03"),
         average_price_fifo=TBankMoney("RUB", "119.07"),
-        expected_yield_amount="10.32", daily_yield=TBankMoney("RUB", "-0.42"), blocked=False,
+        expected_yield_amount="10.32",
+        daily_yield=TBankMoney("RUB", "-0.42"),
+        blocked=False,
     )
     base = bundle()
     portfolio = replace(
-        base.portfolio, expected_yield_percent="1.04267726", daily_yield=TBankMoney("RUB", "-0.42"),
-        daily_yield_percent="-0.042", positions=(position,),
+        base.portfolio,
+        expected_yield_percent="1.04267726",
+        daily_yield=TBankMoney("RUB", "-0.42"),
+        daily_yield_percent="-0.042",
+        positions=(position,),
     )
     observed = replace(
-        base, refreshed_at=observed_at, portfolio=portfolio, metadata=(original, duplicate_figi),
+        base,
+        refreshed_at=observed_at,
+        portfolio=portfolio,
+        metadata=(original, duplicate_figi),
         analysis=analyze_portfolio(portfolio, base.positions, (original, duplicate_figi)),
     )
     snapshot = store.save_snapshot(USER_ID, job_run_id=job.id, bundle=observed)
@@ -1122,25 +1019,23 @@ def test_native_broker_statistics_keep_currency_scope_and_catalog_matches_unique
     strategy = store.latest_balancing_context(USER_ID)
     assert len(strategy["holdings"]) == 1
     assert strategy["holdings"][0]["name"] == "Verified share"
-    stats = latest["broker_statistics"]
-    assert stats["return_percent"] == "1.04267726"
-    assert stats["daily_yield"] == {"currency": "RUB", "value": "-0.42"}
-    assert stats["daily_yield_percent"] == "-0.042"
-    assert stats["observed_at"] == observed_at.isoformat()
+    assert "broker_statistics" not in latest
     assert latest["snapshot_freshness"] == "stale"
     holding = latest["positions"][0]
-    assert holding["expected_yield_amount"] == "10.32"
-    assert holding["expected_yield_currency"] == "RUB"
-    assert holding["average_price"] == {"currency": "RUB", "value": "120.03"}
-    assert holding["average_price_fifo_value"] == Decimal("119.07")
+    assert not {"expected_yield_amount", "expected_yield_currency", "average_price",
+                "average_price_fifo_value"} & holding.keys()
     asset = store.instrument_visualization(USER_ID, original.uid)
     assert len(asset["history"]) == 1
-    assert asset["latest"]["expected_yield_amount"] == "10.32"
+    assert "expected_yield_amount" not in asset["latest"]
     overview = WorkspaceStore(database).dashboard(USER_ID)["overview"]
-    assert overview["broker_statistics"] == stats
+    assert "broker_statistics" not in overview
     assert overview["status"] == "stale"
-    assert "positions" not in stats
     assert store.portfolio_visualization(UUID(int=2))["latest"] is None
+    stored = admin.execute(
+        "SELECT average_price_fifo_value, average_price_fifo_currency FROM "
+        "portfolio_snapshot_positions WHERE snapshot_id=%s", (snapshot,),
+    ).fetchone()
+    assert stored == (None, None)
 
     # A legacy row whose only known identity is FIGI must not borrow an
     # arbitrary catalog UID when two different instruments match that FIGI.
@@ -1168,12 +1063,14 @@ def test_native_broker_statistics_keep_currency_scope_and_catalog_matches_unique
     assert len(strategy["holdings"]) == 1
     assert strategy["holdings"][0]["name"] == "Verified share"
 
-    admin.execute("UPDATE portfolio_snapshots SET evidence=evidence-'broker_statistics' "
-                  "WHERE id=%s", (snapshot,))
-    assert WorkspaceStore(database).dashboard(USER_ID)["overview"]["broker_statistics"] is None
+    admin.execute(
+        "UPDATE portfolio_snapshots SET evidence=evidence-'broker_statistics' WHERE id=%s",
+        (snapshot,),
+    )
+    assert "broker_statistics" not in WorkspaceStore(database).dashboard(USER_ID)["overview"]
     old = store.portfolio_visualization(USER_ID)["latest"]
-    assert old["broker_statistics"] is None
-    assert old["positions"][0]["expected_yield_amount"] is None
+    assert "broker_statistics" not in old
+    assert "expected_yield_amount" not in old["positions"][0]
 
 
 @pytest.fixture

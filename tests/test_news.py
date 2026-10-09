@@ -58,6 +58,38 @@ def test_news_keeps_real_dates_sorts_deduplicates_and_canonicalizes_source_https
     assert payload["freshness"] == "fresh"
 
 
+def test_cached_headline_never_fetches_and_refuses_unknown_or_expired_cache() -> None:
+    client, connection = NewsClient(), Mock()
+    connection.getresponse.return_value = Mock(status=200, read=Mock(return_value=feed(item())))
+    clock = [0.0]
+    with (
+        patch("omnicio.news.time.monotonic", side_effect=lambda: clock[0]),
+        patch("omnicio.news.http.client.HTTPSConnection", return_value=connection) as network,
+        patch.object(client, "read_source") as article,
+    ):
+        with pytest.raises(NewsUnavailable):
+            client.cached_headline("a" * 64)
+        network.assert_not_called()
+        collected = client.headlines()
+        ident = collected["items"][0]["id"]
+        cached = client.cached_headline(ident)
+        assert cached["fetched_at"] == collected["fetched_at"]
+        assert "content" not in cached
+        cached["title"] = "A caller must not mutate the cached feed"
+        assert client.cached_headline(ident)["title"] == collected["items"][0]["title"]
+        with pytest.raises(NewsNotFound):
+            client.cached_headline("a" * 64)
+        clock[0] = 301
+        assert client.cached_headline(ident)["fetched_at"] == collected["fetched_at"]
+        clock[0] = 3600
+        with pytest.raises(NewsUnavailable):
+            client.cached_headline(ident)
+        with pytest.raises(ValueError):
+            client.cached_headline("https://www.cbr.ru/press/event/1")
+        network.assert_called_once()
+        article.assert_not_called()
+
+
 def test_search_scope_is_current_official_feed_and_read_is_bound_to_confirmed_id() -> None:
     payload = parse_news(feed(item(title="Новая ставка"),
                               item(title="Отчёт", link="https://www.cbr.ru/press/event/2")),

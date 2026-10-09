@@ -12,7 +12,7 @@ from uuid import UUID
 
 import pytest
 
-from omnicio.broker import BrokerConnectionError, BrokerConnectionStatus
+from omnicio.broker import BrokerConnectionError, BrokerService, MarketSourceStatus
 from omnicio.cbr import (
     CBRClient,
     CBRHistory,
@@ -22,7 +22,8 @@ from omnicio.cbr import (
     CBRRate,
     CBRUnavailable,
 )
-from omnicio.market import MarketService, MarketStreamLimit
+from omnicio.market import PUBLIC_MARKET_SCOPE, MarketService, MarketStreamLimit, _CollectorState
+from omnicio.news import NewsClient, NewsNotFound, NewsUnavailable
 from omnicio.tbank import (
     TBankFxQuote,
     TBankHistoricCandle,
@@ -248,13 +249,15 @@ class FakeBroker:
     def __init__(self, quote_time: str) -> None:
         self.quote_time = quote_time
 
-    def status(self, user_id: UUID) -> BrokerConnectionStatus:
-        return BrokerConnectionStatus(True, "prod", "fixture-account", verified_at=None)
+    def market_status(self) -> MarketSourceStatus:
+        return MarketSourceStatus(True, "tbank", "fixture-source")
+
+    def status(self, user_id: UUID) -> None:
+        raise AssertionError("Public market data must never inspect a user connection")
 
     def market_instrument_metadata(
         self, user_id: UUID, instrument_uid: str,
     ) -> TBankInstrumentMetadata:
-        assert user_id == UUID("00000000-0000-0000-0000-000000000001")
         assert instrument_uid == "uid-1"
         return TBankInstrumentMetadata(
             uid=instrument_uid, name="Fixture share", ticker="FIX", isin="",
@@ -263,7 +266,6 @@ class FakeBroker:
         )
 
     def usd_rub_quote(self, user_id: UUID) -> TBankFxQuote:
-        assert user_id == UUID("00000000-0000-0000-0000-000000000001")
         return TBankFxQuote(
             instrument_uid="uid-usd-rub",
             ticker="USDTEST",
@@ -285,7 +287,6 @@ class FakeBroker:
         to_at: datetime,
         interval: str,
     ) -> tuple[TBankHistoricCandle, ...]:
-        assert user_id == UUID("00000000-0000-0000-0000-000000000001")
         assert instrument_uid == "uid-1"
         assert interval == "CANDLE_INTERVAL_4_HOUR"
         assert to_at - from_at == timedelta(days=31)
@@ -308,7 +309,6 @@ class FakeBroker:
         user_id: UUID,
         instrument_uid: str,
     ) -> TBankLastPrice:
-        assert user_id == UUID("00000000-0000-0000-0000-000000000001")
         assert instrument_uid == "uid-1"
         return TBankLastPrice(
             instrument_uid="uid-1",
@@ -321,7 +321,6 @@ class FakeBroker:
         user_id: UUID,
         instrument_uid: str,
     ) -> TBankTradingStatus:
-        assert user_id == UUID("00000000-0000-0000-0000-000000000001")
         assert instrument_uid == "uid-1"
         return TBankTradingStatus(
             instrument_uid="uid-1",
@@ -532,7 +531,6 @@ def test_market_service_future_quote_timestamp_fails_closed() -> None:
         user_id: UUID,
         instrument_uid: str,
     ) -> TBankLastPrice:
-        assert user_id == UUID("00000000-0000-0000-0000-000000000001")
         assert instrument_uid == "uid-1"
         return TBankLastPrice(
             instrument_uid="uid-1",
@@ -754,7 +752,7 @@ def test_blocked_metadata_does_not_delay_live_quote_and_completion_is_adopted() 
                 release.set()
             _finish_market_reads(service)
             assert service.instrument_live_state(owner, uid).metadata_status == "available"
-            broker.market_instrument_metadata.assert_called_once_with(owner, uid)
+            broker.market_instrument_metadata.assert_called_once_with(PUBLIC_MARKET_SCOPE, uid)
     finally:
         release.set()
         service.close()
@@ -763,7 +761,7 @@ def test_blocked_metadata_does_not_delay_live_quote_and_completion_is_adopted() 
 def test_real_wire_history_is_single_flight_and_never_blocks_an_independent_quote() -> None:
     owner, uid, now = UUID(int=1), "uid-1", datetime.now(UTC)
     fixture = FakeBroker(now.isoformat())
-    broker, client = Mock(wraps=fixture), TBankInvestClient()
+    broker, client = Mock(wraps=fixture), TBankInvestClient(purpose="market")
     entered = {name: Event() for name in ("history", "metadata", "trading")}
     release = {name: Event() for name in entered}
     row = {"open": {"units": "100"}, "high": {"units": "102"},
@@ -850,7 +848,7 @@ def test_metadata_backlog_reserves_history_workers_and_all_quote_rows_progress()
     owner, another, now = UUID(int=1), UUID(int=2), datetime.now(UTC)
     uids = tuple(f"uid-{index}" for index in range(50))
     broker = Mock()
-    broker.status.side_effect = lambda user: BrokerConnectionStatus(True, "prod", str(user))
+    broker.market_status.side_effect = lambda: MarketSourceStatus(True, "tbank", "shared")
     broker.market_last_prices.side_effect = lambda user, ids: TBankLastPriceBatch(tuple(
         TBankLastPrice(uid, "101", now) for uid in ids
     ))
@@ -860,7 +858,7 @@ def test_metadata_backlog_reserves_history_workers_and_all_quote_rows_progress()
     )
     metadata_release, two_started, backlog_finished, last_finished = (Event() for _ in range(4))
     history_release = Event()
-    history_entered = {owner: Event(), another: Event()}
+    history_entered = {"selected-1": Event(), "selected-2": Event()}
     metadata_seen: list[str] = []
     seen_lock = Lock()
 
@@ -880,7 +878,7 @@ def test_metadata_backlog_reserves_history_workers_and_all_quote_rows_progress()
         )
 
     def history(user, uid, **kwargs):
-        history_entered[user].set()
+        history_entered[uid].set()
         assert history_release.wait(timeout=5)
         return ()
 
@@ -896,9 +894,9 @@ def test_metadata_backlog_reserves_history_workers_and_all_quote_rows_progress()
                 assert len(metadata_seen) == 2
                 for user in (owner, another):
                     result = requests.submit(
-                        service.instrument_snapshot, user, "selected", period="1d",
+                        service.instrument_snapshot, user, f"selected-{user.int}", period="1d",
                     )
-                    assert history_entered[user].wait(timeout=1)
+                    assert history_entered[f"selected-{user.int}"].wait(timeout=1)
                     snapshot = result.result(timeout=1)
                     assert snapshot.last_price == "101"
                     assert snapshot.history_status == "loading"
@@ -931,16 +929,16 @@ def test_metadata_backlog_reserves_history_workers_and_all_quote_rows_progress()
         service.close()
 
 
-def test_late_connection_observation_cannot_evict_current_market_cache() -> None:
+def test_late_source_observation_cannot_evict_current_market_cache() -> None:
     owner, uid, now = UUID(int=1), "uid-1", datetime.now(UTC)
-    old = BrokerConnectionStatus(True, "prod", "old", verified_at=now)
-    current_connection = BrokerConnectionStatus(
-        True, "prod", "current", verified_at=now + timedelta(seconds=1),
+    old = MarketSourceStatus(True, "prod", "old")
+    current_connection = MarketSourceStatus(
+        True, "prod", "current",
     )
     current, first_old = old, True
     entered, release = Event(), Event()
 
-    def status(_owner):
+    def status():
         nonlocal first_old
         if current_thread().name.startswith("late-old") and first_old:
             first_old = False
@@ -951,7 +949,7 @@ def test_late_connection_observation_cannot_evict_current_market_cache() -> None
         return current
 
     broker = Mock(wraps=FakeBroker(now.isoformat()))
-    broker.status.side_effect = status
+    broker.market_status.side_effect = status
     service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
     try:
         with ThreadPoolExecutor(max_workers=1, thread_name_prefix="late-old") as readers:
@@ -974,18 +972,18 @@ def test_late_connection_observation_cannot_evict_current_market_cache() -> None
         service.close()
 
 
-def test_late_intent_cannot_schedule_reads_after_a_new_connection_is_accepted() -> None:
+def test_late_intent_cannot_schedule_reads_after_a_new_source_is_accepted() -> None:
     owner, uid, now = UUID(int=1), "uid-1", datetime.now(UTC)
-    old = BrokerConnectionStatus(True, "prod", "old", verified_at=now)
-    new = BrokerConnectionStatus(True, "prod", "new", verified_at=now + timedelta(seconds=1))
+    old = MarketSourceStatus(True, "prod", "old")
+    new = MarketSourceStatus(True, "prod", "new")
     current = old
     broker = Mock(wraps=FakeBroker(now.isoformat()))
-    broker.status.side_effect = lambda _owner: current
+    broker.market_status.side_effect = lambda: current
     service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
     accepted, release = Event(), Event()
     connection = service._connection
 
-    def pause_after_accepted(user_id: UUID) -> BrokerConnectionStatus:
+    def pause_after_accepted(user_id: UUID) -> MarketSourceStatus:
         captured = connection(user_id)
         if current_thread().name.startswith("old-intent"):
             assert captured == old
@@ -1013,17 +1011,18 @@ def test_late_intent_cannot_schedule_reads_after_a_new_connection_is_accepted() 
                 assert {key[1] for key in service._enrichment} == {new}
             broker.market_instrument_metadata.assert_called_once()
             broker.market_trading_status.assert_called_once()
-            assert broker.market_last_price.call_count == 2
+            # The accepted source quote is shared by subsequent readers.
+            assert broker.market_last_price.call_count == 1
     finally:
         release.set()
         service.close()
 
 
-def test_batch_quotes_do_not_wait_for_metadata_and_cache_is_connection_scoped() -> None:
+def test_batch_quotes_share_cache_across_users_and_invalidate_on_source_rotation() -> None:
     owner = UUID("00000000-0000-0000-0000-000000000001")
     broker = Mock()
-    first = BrokerConnectionStatus(True, "prod", "first", verified_at=datetime.now(UTC))
-    broker.status.return_value = first
+    first = MarketSourceStatus(True, "prod", "first")
+    broker.market_status.return_value = first
     broker.market_last_prices.return_value = TBankLastPriceBatch((
         TBankLastPrice("uid-1", "10", datetime.now(UTC)),
         TBankLastPrice("uid-2", "NaN", datetime.now(UTC)),
@@ -1045,9 +1044,10 @@ def test_batch_quotes_do_not_wait_for_metadata_and_cache_is_connection_scoped() 
         assert rows[0]["price_currency"] is None
         assert rows[1]["quote_status"] == "unavailable"
         assert rows[1]["last_price"] is None
-        service.batch_quotes(owner, ("uid-1", "uid-2"))
+        service.batch_quotes(UUID(int=2), ("uid-1", "uid-2"))
         assert broker.market_last_prices.call_count == 1
-        broker.status.return_value = BrokerConnectionStatus(True, "prod", "second")
+        broker.status.assert_not_called()
+        broker.market_status.return_value = MarketSourceStatus(True, "prod", "second")
         service.batch_quotes(owner, ("uid-1", "uid-2"))
         assert broker.market_last_prices.call_count == 2
     finally:
@@ -1069,8 +1069,8 @@ def test_quote_batch_uses_real_parser_and_keeps_strict_consumers_fail_closed(fai
         "duplicate": {"instrumentUid": "good"},
     }
     bad.update(changes[failure])
-    client, broker = TBankInvestClient(), Mock()
-    broker.status.return_value = BrokerConnectionStatus(True, "prod", "synthetic")
+    client, broker = TBankInvestClient(purpose="market"), Mock()
+    broker.market_status.return_value = MarketSourceStatus(True, "prod", "synthetic")
     broker.market_last_prices.side_effect = lambda _user, uids: client.get_last_prices_batch(
         "synthetic-token", "prod", uids,
     )
@@ -1093,7 +1093,9 @@ def test_quote_batch_uses_real_parser_and_keeps_strict_consumers_fail_closed(fai
             assert items["bad"]["quote_status"] == "unavailable"
             assert items["bad"]["last_price"] is None
             assert items["bad"]["quote_time"] is None
-            assert items["absent"]["quote_status"] == "missing"
+            # A missing requested UID is incomplete provider evidence. Strict
+            # consumers must not interpret that partial response as a full set.
+            assert items["absent"]["quote_status"] == "unavailable"
         assert items["bad"]["errors"]["quote"] == "source_unavailable"
     finally:
         service.close()
@@ -1114,8 +1116,8 @@ def test_invalid_protojson_price_cannot_escape_or_contaminate_valid_quotes(bad_p
          "time": now.isoformat()},
         {"instrumentUid": "bad", "price": bad_price, "time": now.isoformat()},
     ]}).encode()
-    client, broker = TBankInvestClient(), Mock()
-    broker.status.return_value = BrokerConnectionStatus(True, "prod", "synthetic")
+    client, broker = TBankInvestClient(purpose="market"), Mock()
+    broker.market_status.return_value = MarketSourceStatus(True, "prod", "synthetic")
     broker.market_last_prices.side_effect = lambda _user, uids: client.get_last_prices_batch(
         "synthetic-test-credential", "prod", uids,
     )
@@ -1309,3 +1311,214 @@ def test_cbr_requested_date_rejects_future_rate_and_preserves_weekend_effective_
         rate = client.usd_rub_rate(date(2026, 10, 4))
     assert rate.effective_date == date(2026, 10, 2)
     assert rate.value == "90"
+
+
+def test_public_collectors_run_without_users_survive_source_failure_and_share_results() -> None:
+    now = datetime.now(UTC)
+    broker = Mock(spec=BrokerService)
+    broker.market_status.return_value = MarketSourceStatus(True, "tbank", "fixture-source")
+    broker.market_catalog.return_value = (TBankInstrumentMetadata(
+        "uid-1", "Fixture share", "FIX", "", "share", "", "RU", False,
+        currency="RUB", asset_uid="asset-1",
+    ),)
+    broker.market_all_last_prices.return_value = TBankLastPriceBatch((
+        TBankLastPrice("uid-1", "101", now - timedelta(seconds=2)),
+    ))
+    broker.candidate_fundamentals.return_value = ()
+    broker.instrument_news.return_value = {
+        "items": [], "next_cursor": None, "observed_at": now.isoformat(),
+    }
+    cbr, news = Mock(spec=CBRClient), Mock(spec=NewsClient)
+    cbr.latest_indicators.side_effect = CBRUnavailable("fixture source outage")
+    news.headlines.return_value = {
+        "items": [], "freshness": "fresh", "fetched_at": now.isoformat(),
+    }
+    service = MarketService(broker=broker, cbr=cbr, news=news)
+    quotes_done, risk_done = Event(), Event()
+    quote_read, risk_read = service._collect_quotes, service._collect_fundamentals
+
+    def collect_quotes():
+        result = quote_read()
+        quotes_done.set()
+        return result
+
+    def collect_risk():
+        assert quotes_done.wait(timeout=5)
+        result = risk_read()
+        risk_done.set()
+        return result
+
+    try:
+        with (patch.object(service, "_collect_quotes", side_effect=collect_quotes),
+              patch.object(service, "_collect_fundamentals", side_effect=collect_risk)):
+            service.start()
+            first_workers = tuple(service._collectors)
+            service.start()
+            assert tuple(service._collectors) == first_workers
+            assert risk_done.wait(timeout=5)
+            snapshot = service.public_snapshot()
+            assert snapshot["items"][0]["last_price"] == "101"
+            assert snapshot["items"][0]["risk"]["state"] == "data_missing"
+            assert snapshot["status"]["running"] is True
+            assert snapshot["status"]["coverage"]["instruments"] == 1
+            assert snapshot["status"]["user_tokens_used"] is False
+            assert snapshot["status"]["sources"]["reference"]["status"] == "unavailable"
+            for user_id in (UUID(int=1), UUID(int=2)):
+                result = service.batch_quotes(user_id, ("uid-1",))
+                assert result["items"][0]["last_price"] == "101"
+            broker.market_last_prices.assert_not_called()
+            broker.market_instrument_metadata.assert_not_called()
+            broker.status.assert_not_called()
+            broker.portfolio.assert_not_called()
+            broker.candidate_fundamentals.assert_called_once_with(
+                PUBLIC_MARKET_SCOPE, ("asset-1",),
+            )
+    finally:
+        service.close()
+    assert all(not worker.is_alive() for worker in first_workers)
+
+
+def test_shared_market_reports_catalog_outage_and_clears_data_on_source_revocation() -> None:
+    broker = Mock(spec=BrokerService)
+    broker.market_status.return_value = MarketSourceStatus(True, "tbank", "source-one")
+    broker.market_catalog.side_effect = TBankUnavailable("catalog unavailable")
+    broker.market_all_last_prices.return_value = TBankLastPriceBatch((
+        TBankLastPrice("uid-1", "101", datetime.now(UTC) - timedelta(minutes=15)),
+    ))
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
+    try:
+        service._collect_quotes()
+        status = service.status()
+        assert status["coverage"]["catalog_status"] == "unavailable"
+        assert status["coverage"]["instruments"] == 0
+        assert status["coverage"]["quote_instruments"] == 1
+        assert status["market_source"]["real_time_guaranteed"] is False
+        broker.market_status.return_value = MarketSourceStatus(False, "tbank", "source-two")
+        snapshot = service.public_snapshot()
+        assert snapshot["items"] == []
+        assert snapshot["price_changes"] == []
+        assert snapshot["status"]["coverage"]["quote_instruments"] == 0
+        broker.market_all_last_prices.assert_called_once()
+        broker.status.assert_not_called()
+    finally:
+        service.close()
+
+
+def test_public_news_reuses_collected_pages_exact_uids_and_preserves_source_freshness() -> None:
+    now = datetime.now(UTC)
+    broker = Mock(spec=BrokerService)
+    broker.market_status.return_value = MarketSourceStatus(True, "tbank", "fixture-news")
+
+    def item(ident: str, uids: tuple[str, ...], age: int) -> dict[str, object]:
+        return {
+            "id": ident, "title": "Fixture issuer update", "summary": "Public source summary",
+            "instrument_uids": uids, "occurred_at": now - timedelta(minutes=age),
+            "source": "Fixture provider", "source_url": "https://example.com/issuer",
+            "priority": False,
+        }
+
+    broker.instrument_news.side_effect = [
+        {"items": [item("1", ("uid-a",), 1), item("2", ("uid-b",), 2)],
+         "next_cursor": "page-two", "observed_at": now.isoformat()},
+        {"items": [item("3", (), 3)], "next_cursor": None,
+         "observed_at": (now - timedelta(seconds=2)).isoformat()},
+    ]
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
+    try:
+        result = service._collect_instrument_news()
+        service._collector_states["instrument_news"] = _CollectorState(
+            result.status, now, result.observed_at, result.items,
+        )
+        first = service.public_news(limit=2)
+        assert [row["id"] for row in first["items"]] == ["1", "2"]
+        assert first["status"] == "available"
+        assert first["observed_at"] == now.isoformat()
+        assert first["coverage"]["all_market_news"] is False
+        last = service.public_news(limit=2, cursor=first["next_cursor"])
+        assert [row["id"] for row in last["items"]] == ["3"]
+        assert last["next_cursor"] is None
+        assert last["items"][0]["observed_at"] == (now - timedelta(seconds=2)).isoformat()
+        bookmark = service.public_news_item("3")
+        assert bookmark["observed_at"] == last["items"][0]["observed_at"]
+        assert bookmark["summary"] == "Public source summary"
+        assert bookmark["full_content_available"] is False
+        assert bookmark["content_scope"] == "source_summary"
+        assert bookmark["content"] is None
+        with pytest.raises(NewsNotFound):
+            service.public_news_item("4")
+        matched = service.public_news("uid-b", query="issuer")
+        assert [row["id"] for row in matched["items"]] == ["2"]
+        assert service.public_news("uid-c")["items"] == []
+        assert broker.instrument_news.call_count == 2
+        assert all(call.args[0] == PUBLIC_MARKET_SCOPE
+                   for call in broker.instrument_news.call_args_list)
+        broker.status.assert_not_called()
+        with pytest.raises(ValueError, match="cursor_expired"):
+            service.public_news(cursor="unknown")
+        with patch("omnicio.market.datetime") as clock:
+            clock.fromisoformat.side_effect = datetime.fromisoformat
+            clock.now.return_value = now + timedelta(minutes=2)
+            stale = service.public_news("uid-b")
+            assert stale["status"] == "stale"
+            assert stale["observed_at"] == now.isoformat()
+            assert stale["items"][0]["observed_at"] == now.isoformat()
+            assert service.public_news_item("1")["freshness"] == "stale"
+            assert service.public_news_item("3")["observed_at"] == bookmark["observed_at"]
+            clock.now.return_value = now + timedelta(days=3)
+            assert service.public_news("uid-b")["items"] == []
+            with pytest.raises(NewsNotFound):
+                service.public_news_item("1")
+        broker.market_status.return_value = MarketSourceStatus(False, "tbank", "revoked")
+        assert service.public_news("uid-b")["status"] == "unavailable"
+        assert service.public_news("uid-b")["items"] == []
+        assert service.status()["sources"]["instrument_news"]["status"] == "not_configured"
+        with pytest.raises(NewsUnavailable):
+            service.public_news_item("1")
+    finally:
+        service.close()
+
+
+@pytest.mark.parametrize("source_id", [
+    "", "0", "-1", "01", "9" * 19, "a" * 63, "A" * 64, "١", "../../private",
+    "https://www.cbr.ru/press/event/1",
+])
+def test_public_news_bookmark_rejects_invalid_identity_before_any_source_access(source_id) -> None:
+    broker, news = Mock(spec=BrokerService), Mock(spec=NewsClient)
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient), news=news)
+    try:
+        with pytest.raises(ValueError, match="news_source_id_invalid"):
+            service.public_news_item(source_id)
+        assert not broker.mock_calls
+        assert not news.mock_calls
+    finally:
+        service.close()
+
+
+def test_public_cbr_bookmark_preserves_stale_headline_without_broker_or_full_article() -> None:
+    now = datetime.now(UTC)
+    broker, news = Mock(spec=BrokerService), Mock(spec=NewsClient)
+    news.cached_headline.return_value = {
+        "id": "a" * 64, "title": "Source headline", "source": "Банк России",
+        "url": "https://www.cbr.ru/press/event/1", "published_at": now.isoformat(),
+        "fetched_at": (now - timedelta(minutes=6)).isoformat(), "freshness": "cached",
+        "content": "Do not expose full article from another cache", "private_field": "canary",
+    }
+    news.cached_headline.return_value["published_at"] = (now - timedelta(hours=1)).isoformat()
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient), news=news)
+    try:
+        result = service.public_news_item("a" * 64)
+        assert result["id"] == "a" * 64
+        assert result["observed_at"] == news.cached_headline.return_value["fetched_at"]
+        assert result["freshness"] == "stale"
+        assert result["full_content_available"] is False
+        assert result["content_scope"] == "headline"
+        assert result["content"] is None
+        assert "private_field" not in result
+        assert not broker.mock_calls
+        news.headlines.assert_not_called()
+        news.read_source.assert_not_called()
+        news.cached_headline.return_value["fetched_at"] = (now + timedelta(hours=1)).isoformat()
+        with pytest.raises(NewsUnavailable):
+            service.public_news_item("a" * 64)
+    finally:
+        service.close()

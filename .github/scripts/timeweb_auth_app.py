@@ -55,7 +55,6 @@ LEGAL_DOCUMENT_KEYS = {
 }
 RUNTIME_ENV = "/etc/omnicio/runtime.env"
 PRODUCT_ENV = "/etc/omnicio/product.env"
-LEGACY_RESET_MARKER = "/etc/omnicio/legacy-profile-reset-v1.done"
 DEPLOY_LOCK = "/run/omnicio-auth-deploy.lock"
 RELEASE_RE = re.compile(r"^[0-9a-f]{40}$")
 INVALID_RELEASE_SHA = "Release SHA must be a full lowercase 40-character SHA"
@@ -71,10 +70,6 @@ BRAND_RUNTIME_FILES = (
 BRAND_PUBLIC_MARK = "/assets/brand/omnicio-logo.png"
 WEB_MANIFEST_PATH = "/manifest.webmanifest"
 VERSION_PUBLIC_PATH = "/version.js"
-CALLBACK_PUBLIC_PATHS = (
-    "/api/auth/tid/callback?error=access_denied",
-    "/api/auth/vkid/callback?error=access_denied",
-)
 JAVASCRIPT_CONTENT_TYPES = ("text/javascript", "application/javascript")
 PNG_CONTENT_TYPE = "image/png"
 # version.js holds only a bounded version/build object, never a runtime bundle.
@@ -90,7 +85,8 @@ PUBLIC_SECURITY_HEADERS = {
     ),
 }
 OPTIONAL_INTEGRATION_KEYS = (
-    "TID_CLIENT_ID", "TID_CLIENT_SECRET", "TID_LOGIN_ENABLED", "TID_PKCE_ENABLED",
+    "AUTH_SMTP_HOST", "AUTH_SMTP_PORT", "AUTH_SMTP_USERNAME", "AUTH_SMTP_PASSWORD",
+    "AUTH_SMTP_SENDER", "AUTH_SMTP_MODE", "MARKET_DATA_TOKEN",
     "ASSISTANT_BASE_URL", "ASSISTANT_API_KEY", "ASSISTANT_MODEL", "ASSISTANT_ENABLED",
     "ASSISTANT_ALLOWED_ENDPOINTS", "ASSISTANT_DAILY_REQUEST_LIMIT",
     "NOTIFICATIONS_ENABLED", "NOTIFICATION_EMAIL_ENABLED", "NOTIFICATION_CRYPTO_KEY",
@@ -103,7 +99,7 @@ OPTIONAL_INTEGRATION_KEYS = (
     "BILLING_TAX",
 )
 OPTIONAL_SECRET_KEYS = frozenset({
-    "TID_CLIENT_SECRET", "ASSISTANT_API_KEY", "NOTIFICATION_CRYPTO_KEY",
+    "AUTH_SMTP_PASSWORD", "MARKET_DATA_TOKEN", "ASSISTANT_API_KEY", "NOTIFICATION_CRYPTO_KEY",
     "NOTIFICATION_VAPID_PRIVATE_KEY", "NOTIFICATION_SMTP_PASSWORD",
     "OMNICIO_RESTORE_RECEIPT_KEY", "BILLING_PASSWORD",
 })
@@ -166,7 +162,7 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
     command = (
         f"test -s {RUNTIME_ENV} && "
         f"grep -q '^DATABASE_URL=' {RUNTIME_ENV} && "
-        f"grep -q '^VKID_FLOW_CRYPTO_KEY=' {RUNTIME_ENV} && "
+        f"grep -q '^CLIENT_IP_KEY=' {RUNTIME_ENV} && "
         f"grep -q '^BROKER_TOKEN_CRYPTO_KEY=' {RUNTIME_ENV} && "
         "command -v psql >/dev/null 2>&1 && "
         "set -a && "
@@ -181,39 +177,12 @@ def runtime_is_ready(ssh: EphemeralSsh) -> bool:
         return False
 
 
-def registration_occupancy(ssh: EphemeralSsh) -> tuple[int, int]:
-    command = (
-        "set -a && "
-        f". {RUNTIME_ENV} && "
-        "set +a && "
-        'psql "$DATABASE_URL" -AtF "|" -v ON_ERROR_STOP=1 -c '
-        '"SELECT count(*) FILTER (WHERE status <> \'deleted\'), '
-        'count(*) FILTER (WHERE status = \'active\') FROM users;"'
-    )
-    raw = ssh.run(command).strip()
-    parts = raw.split("|")
-    if len(parts) != 2:
-        raise InfraError("Registration occupancy query returned an invalid result")
-    try:
-        used_slots = int(parts[0])
-        active_users = int(parts[1])
-    except ValueError as exc:
-        raise InfraError("Registration occupancy query returned non-integer values") from exc
-    if used_slots < 0 or active_users < 0 or active_users > used_slots:
-        raise InfraError("Registration occupancy query returned impossible values")
-    return used_slots, active_users
-
-
 def _environment_value(value: str) -> str:
     if "\n" in value or "\r" in value:
         raise InfraError("Runtime environment value contains a newline")
     escaped = (value.replace("\\", "\\\\").replace('"', '\\"')
                .replace("$", "\\$").replace("`", "\\`"))
     return f'"{escaped}"'
-
-
-def _positive_numeric_id(value: str) -> bool:
-    return value.isdigit() and int(value) > 0
 
 
 def _strict_boolean_environment(name: str, default: bool = False) -> bool:
@@ -226,105 +195,6 @@ def _strict_boolean_environment(name: str, default: bool = False) -> bool:
     if normalized == "false":
         return False
     raise InfraError(f"{name} must be true or false")
-
-
-def registration_enabled() -> bool:
-    return _strict_boolean_environment("REGISTRATION_ENABLED", False)
-
-
-def registration_max_users() -> int:
-    raw = os.environ.get("REGISTRATION_MAX_USERS", "1").strip()
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise InfraError("REGISTRATION_MAX_USERS must be an integer") from exc
-    if value <= 0:
-        raise InfraError("REGISTRATION_MAX_USERS must be positive")
-    return value
-
-
-def vkid_configuration_ready() -> bool:
-    return _positive_numeric_id(os.environ.get("VKID_APP_ID", "").strip())
-
-
-CONTROLLED_LIVE_TEST_MAX_USERS = 2
-
-
-def controlled_live_test_mode() -> bool:
-    return _strict_boolean_environment("CONTROLLED_LIVE_TEST_MODE", False)
-
-
-def regulatory_gate_satisfied() -> bool:
-    return _strict_boolean_environment("RKN_NOTIFICATION_CONFIRMED", False)
-
-
-def legacy_profile_reset_enabled() -> bool:
-    return (
-        registration_enabled()
-        and (regulatory_gate_satisfied() or controlled_live_test_mode())
-        and _strict_boolean_environment("LEGACY_PROFILE_RESET_ENABLED", False)
-    )
-
-
-def portfolio_live_execution_enabled() -> bool:
-    return _strict_boolean_environment("PORTFOLIO_LIVE_EXECUTION_ENABLED", False)
-
-
-def portfolio_live_caps() -> tuple[int, int]:
-    values: list[int] = []
-    for name, default in (
-        ("PORTFOLIO_LIVE_MAX_ORDER_RUB", "10000"),
-        ("PORTFOLIO_LIVE_MAX_DAILY_RUB", "20000"),
-    ):
-        raw = os.environ.get(name, default).strip()
-        try:
-            value = int(raw)
-        except ValueError as exc:
-            raise InfraError(f"{name} must be an integer") from exc
-        if value <= 0:
-            raise InfraError(f"{name} must be positive")
-        values.append(value)
-    order_cap, daily_cap = values
-    if daily_cap < order_cap:
-        raise InfraError(
-            "PORTFOLIO_LIVE_MAX_DAILY_RUB must be >= PORTFOLIO_LIVE_MAX_ORDER_RUB"
-        )
-    return order_cap, daily_cap
-
-
-def _validate_registration_environment() -> None:
-    if not _strict_boolean_environment("MULTIUSER_LEGAL_APPROVED", False):
-        raise InfraError(
-            "Registration requires an explicit reviewed legal approval gate"
-        )
-
-    capacity = registration_max_users()
-    regulatory_ready = regulatory_gate_satisfied()
-    live_test = controlled_live_test_mode()
-    if not regulatory_ready and not live_test:
-        raise InfraError(
-            "Registration requires either confirmed regulatory readiness "
-            "or an explicit controlled live-test exception"
-        )
-    if live_test and capacity > CONTROLLED_LIVE_TEST_MAX_USERS:
-        raise InfraError(
-            "CONTROLLED_LIVE_TEST_MODE allows at most "
-            f"{CONTROLLED_LIVE_TEST_MAX_USERS} users"
-        )
-    if live_test and regulatory_ready:
-        raise InfraError(
-            "Disable CONTROLLED_LIVE_TEST_MODE after regulatory readiness is confirmed"
-        )
-
-    operator_name = os.environ.get("LEGAL_OPERATOR_NAME", "").strip()
-    operator_email = os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip()
-    if not 3 <= len(operator_name) <= 200:
-        raise InfraError("LEGAL_OPERATOR_NAME must contain 3-200 characters")
-    if not re.fullmatch(
-        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}",
-        operator_email,
-    ):
-        raise InfraError("LEGAL_OPERATOR_EMAIL must be a valid email address")
 
 
 def validate_product_environment() -> None:
@@ -344,18 +214,24 @@ def validate_product_environment() -> None:
             + ", ".join(missing)
         )
 
-    if not vkid_configuration_ready():
-        raise InfraError("VKID_APP_ID must be a positive numeric value")
-
-    if registration_enabled():
-        _validate_registration_environment()
-
-    portfolio_live_caps()
-    if portfolio_live_execution_enabled():
-        raise InfraError(
-            "Production live execution requires a newer reviewed legal publication "
-            "than 2026-10-02-v6; keep PORTFOLIO_LIVE_EXECUTION_ENABLED=false"
-        )
+    operator_name = os.environ.get("LEGAL_OPERATOR_NAME", "").strip()
+    operator_email = os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip()
+    if not 3 <= len(operator_name) <= 200:
+        raise InfraError("LEGAL_OPERATOR_NAME must contain 3-200 characters")
+    if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}", operator_email):
+        raise InfraError("LEGAL_OPERATOR_EMAIL must be a valid email address")
+    # Missing SMTP values may already be installed on the server. Verification
+    # of the rendered auth config is the final deployment gate for registration.
+    host = os.environ.get("AUTH_SMTP_HOST", "").strip()
+    if host and not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", host):
+        raise InfraError("AUTH_SMTP_HOST must be a hostname")
+    raw_port = os.environ.get("AUTH_SMTP_PORT", "465").strip() or "465"
+    if not raw_port.isascii() or not raw_port.isdecimal() or not 1 <= int(raw_port) <= 65535:
+        raise InfraError("AUTH_SMTP_PORT must be between 1 and 65535")
+    mode = os.environ.get("AUTH_SMTP_MODE", "tls").strip() or "tls"
+    if mode not in {"tls", "starttls"}:
+        raise InfraError("AUTH_SMTP_MODE must use tls or starttls")
+    _strict_boolean_environment("MARKET_DATA_DISTRIBUTION_APPROVED", False)
 
 
 def verify_legal_document_version(body: str, path: str) -> None:
@@ -387,24 +263,18 @@ def build_product_environment(*, release_sha: str = "") -> str:
         raise InfraError(INVALID_RELEASE_SHA)
     values = {
         "OMNICIO_RECOVERY_STATUS_PATH": REMOTE_STATUS_PATH,
+        # Publication authority is always explicit and never inherited from a prior release.
+        "MARKET_DATA_DISTRIBUTION_APPROVED": (
+            "true" if _strict_boolean_environment("MARKET_DATA_DISTRIBUTION_APPROVED") else "false"
+        ),
         # Authority must be explicitly revoked when the workflow variable is cleared.
         "OPERATOR_USER_ID": os.environ.get("OPERATOR_USER_ID", "").strip(),
-        "VKID_APP_ID": os.environ.get("VKID_APP_ID", "").strip(),
-        "VKID_LOGIN_ENABLED": "true" if vkid_configuration_ready() else "false",
-        "REGISTRATION_ENABLED": "true" if registration_enabled() else "false",
-        "REGISTRATION_MAX_USERS": str(registration_max_users()),
         "LEGAL_OPERATOR_NAME": os.environ.get("LEGAL_OPERATOR_NAME", "").strip(),
         "LEGAL_OPERATOR_EMAIL": os.environ.get("LEGAL_OPERATOR_EMAIL", "").strip(),
         "LEGAL_PRIVACY_VERSION": os.environ.get("LEGAL_PRIVACY_VERSION", "").strip(),
         "LEGAL_CONSENT_VERSION": os.environ.get("LEGAL_CONSENT_VERSION", "").strip(),
         "LEGAL_TERMS_VERSION": os.environ.get("LEGAL_TERMS_VERSION", "").strip(),
-        "VKID_FLOW_TTL_SECONDS": os.environ.get("VKID_FLOW_TTL_SECONDS", "600").strip(),
         "SESSION_TTL_SECONDS": os.environ.get("SESSION_TTL_SECONDS", "34560000").strip(),
-        "PORTFOLIO_LIVE_EXECUTION_ENABLED": (
-            "true" if portfolio_live_execution_enabled() else "false"
-        ),
-        "PORTFOLIO_LIVE_MAX_ORDER_RUB": str(portfolio_live_caps()[0]),
-        "PORTFOLIO_LIVE_MAX_DAILY_RUB": str(portfolio_live_caps()[1]),
     }
     if release_sha:
         values["OMNICIO_RELEASE_BUILD"] = release_sha[:12]
@@ -465,7 +335,7 @@ def commit_product_environment(ssh: EphemeralSsh, *, release_sha: str) -> None:
         ssh.run(f"rm -f {backup} {state}")
     except InfraError:
         # Backup cleanup is housekeeping after a proven healthy release. It must
-        # never roll back a release after a destructive account cutover.
+        # never turn a proven healthy release into a failed deployment.
         add_summary("- Warning: stale product environment rollback backup remains.")
 
 
@@ -569,7 +439,7 @@ python3 -m venv "$RELEASE/.venv"
 
 # Keep the signing identity outside product.env rollback and release cleanup.
 # The helper preserves an existing key, writes private files atomically, and
-# exposes only a readiness status. SMTP remains separately disabled.
+# exposes only a readiness status. Auth SMTP is configured separately.
 "$RELEASE/.venv/bin/python" -m omnicio.notification_setup
 
 install -d -m 0755 "$WEB_RELEASE/assets" "$WEB_RELEASE/assets/brand" "$WEB_RELEASE/legal"
@@ -632,7 +502,7 @@ EnvironmentFile=/etc/omnicio/product.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ExecStart=/opt/omnicio/current/.venv/bin/uvicorn omnicio.main:app \
-    --host 127.0.0.1 --port 8001 --workers 2 --limit-concurrency 64 \
+    --host 127.0.0.1 --port 8001 --workers 1 --limit-concurrency 64 \
     --backlog 128 --timeout-keep-alive 5 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=3
@@ -748,7 +618,6 @@ fi
 
 cat > "$NGINX_SITE.new" <<'EOF'
 limit_req_zone $binary_remote_addr zone=omnicio_auth_start:10m rate=10r/m;
-limit_req_zone $binary_remote_addr zone=omnicio_auth_callback:10m rate=30r/m;
 limit_req_zone $binary_remote_addr zone=omnicio_api:10m rate=120r/m;
 limit_conn_zone $binary_remote_addr zone=omnicio_conn:10m;
 
@@ -807,50 +676,9 @@ server {
     proxy_hide_header Referrer-Policy;
 __OMNICIO_SERVER_SECURITY_HEADERS__
 
-    location = /api/auth/vkid/start {
+    location ^~ /api/auth/email/ {
+        client_max_body_size 4k;
         limit_req zone=omnicio_auth_start burst=5 nodelay;
-        limit_req_status 429;
-        proxy_pass http://127.0.0.1:8001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 30s;
-        proxy_send_timeout 30s;
-    }
-
-    location = /api/auth/vkid/callback {
-        limit_req zone=omnicio_auth_callback burst=10 nodelay;
-        limit_req_status 429;
-        proxy_pass http://127.0.0.1:8001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 30s;
-        proxy_send_timeout 30s;
-    }
-
-    location = /api/auth/tid/start {
-        limit_req zone=omnicio_auth_start burst=5 nodelay;
-        limit_req_status 429;
-        proxy_pass http://127.0.0.1:8001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 30s;
-        proxy_send_timeout 30s;
-    }
-
-    location = /api/auth/tid/callback {
-        limit_req zone=omnicio_auth_callback burst=10 nodelay;
         limit_req_status 429;
         proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
@@ -935,20 +763,6 @@ __OMNICIO_SERVER_SECURITY_HEADERS__
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_connect_timeout 5s;
         proxy_read_timeout 120s;
-        proxy_send_timeout 30s;
-    }
-
-    location = /api/portfolio/proposals/plan {
-        limit_req zone=omnicio_api burst=60 nodelay;
-        limit_req_status 429;
-        proxy_pass http://127.0.0.1:8001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 60s;
         proxy_send_timeout 30s;
     }
 
@@ -1173,88 +987,6 @@ def deploy_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
     )
 
 
-def retire_legacy_profile(ssh: EphemeralSsh) -> None:
-    if not legacy_profile_reset_enabled():
-        return
-
-    try:
-        ssh.run(f"test -f {LEGACY_RESET_MARKER}")
-        return
-    except InfraError:
-        pass
-
-    sql = """
-BEGIN;
-SELECT pg_advisory_xact_lock(hashtextextended('omnicio-legacy-profile-reset', 0));
-
-DO $$
-DECLARE
-    reset_done boolean;
-    total_users bigint;
-    legacy_users bigint;
-    legacy_user_id uuid;
-BEGIN
-    SELECT EXISTS (
-        SELECT 1
-        FROM audit_events
-        WHERE event_type = 'legacy_profile_retired'
-          AND metadata ->> 'reason' = 'limited_user_cutover'
-    ) INTO reset_done;
-
-    IF reset_done THEN
-        RETURN;
-    END IF;
-
-    SELECT count(*) INTO total_users FROM users;
-    SELECT count(*) INTO legacy_users FROM users WHERE public_id = 1;
-
-    IF total_users > 1 THEN
-        RAISE EXCEPTION 'legacy reset refuses a database containing multiple users';
-    END IF;
-    IF total_users = 1 AND legacy_users <> 1 THEN
-        RAISE EXCEPTION 'legacy reset refuses to delete a non-legacy user';
-    END IF;
-
-    SELECT id INTO legacy_user_id
-    FROM users
-    WHERE public_id = 1
-    FOR UPDATE;
-
-    INSERT INTO audit_events (user_id, event_type, metadata)
-    VALUES (
-        legacy_user_id,
-        'legacy_profile_retired',
-        '{"reason":"limited_user_cutover"}'::jsonb
-    );
-
-    IF legacy_user_id IS NOT NULL THEN
-        DELETE FROM users WHERE id = legacy_user_id;
-    END IF;
-END
-$$;
-
-COMMIT;
-"""
-    command = (
-        "set -a && "
-        f". {RUNTIME_ENV} && "
-        "set +a && "
-        'export PGCONNECT_TIMEOUT=10; '
-        'export PGOPTIONS="-c statement_timeout=30000 -c lock_timeout=5000"; '
-        'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q'
-    )
-    ssh.run(command, input_text=sql)
-    try:
-        ssh.run(
-            f"umask 077; install -d -m 0700 /etc/omnicio; "
-            f"touch {LEGACY_RESET_MARKER}; chmod 0600 {LEGACY_RESET_MARKER}"
-        )
-    except InfraError:
-        # The database audit marker is authoritative. A filesystem marker is
-        # only an optimization to avoid the no-op database transaction later.
-        add_summary("- Warning: legacy reset filesystem marker could not be persisted.")
-
-
 def rollback_remote(ssh: EphemeralSsh, *, release_sha: str) -> None:
     if not RELEASE_RE.fullmatch(release_sha):
         raise InfraError(INVALID_RELEASE_SHA)
@@ -1295,32 +1027,6 @@ def fetch_public(
         if len(body) > 4 * 1024 * 1024:
             raise InfraError(f"Public application response is too large: {path}")
         return body, response.headers.get_content_type()
-
-
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(
-        self, req: object, fp: object, code: int, msg: str, headers: Message, newurl: str,
-    ) -> None:
-        return None
-
-
-def verify_public_callbacks(context: ssl.SSLContext) -> None:
-    # No cookie processor, auth flow or redirect follow: inspect only rejection responses.
-    opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), NoRedirect())
-    for path in CALLBACK_PUBLIC_PATHS:
-        request = urllib.request.Request(
-            f"https://{DOMAIN}{path}",
-            headers={"User-Agent": release_user_agent("omnicio-auth-deploy")},
-        )
-        try:
-            response = opener.open(request, timeout=15)
-        except urllib.error.HTTPError as exc:
-            response = exc
-        with response:
-            if (response.status != 303
-                    or response.headers.get_all("Location", []) != ["/?auth_error=flow"]):
-                raise InfraError(f"Public auth callback rejection invalid: {path}")
-            verify_public_security_headers(response.headers, path, referrer_policy="no-referrer")
 
 
 def verify_public_root(body: bytes, release_sha: str) -> None:
@@ -1365,27 +1071,23 @@ def verify_public_config(body: bytes, *, release_sha: str = "") -> None:
     ):
         raise InfraError("Public API version or build does not match the frontend release")
 
-    expected_registration = registration_enabled()
-    if payload.get("registration_enabled") is not expected_registration:
-        raise InfraError("Public registration mode does not match deployment config")
-    expected_mode = "limited_registration" if expected_registration else "closed"
-    if payload.get("mode") != expected_mode:
-        raise InfraError("Public access mode does not match deployment config")
-    if payload.get("registration_max_users") != registration_max_users():
-        raise InfraError("Public registration capacity does not match deployment config")
-    if payload.get("auth_provider") != "vkid":
-        raise InfraError("Public auth provider is not VK ID")
-    if payload.get("auth_providers") != ["tid", "vkid"]:
-        raise InfraError("Public auth providers do not match the release contract")
-
-    expected_vkid = vkid_configuration_ready()
-    if payload.get("vkid_enabled") is not expected_vkid:
-        raise InfraError("Public VK ID readiness does not match deployment config")
-    tid_ready = payload.get("tid_enabled")
-    if not isinstance(tid_ready, bool):
-        raise InfraError("Public T-ID readiness is not a boolean")
-    if payload.get("login_enabled") is not (expected_vkid or tid_ready):
-        raise InfraError("Public login readiness does not match available providers")
+    if payload.get("mode") != "public" or payload.get("registration_enabled") is not True:
+        raise InfraError("Public access mode does not match the email release contract")
+    if "registration_max_users" in payload:
+        raise InfraError("Public registration must not have a user capacity limit")
+    if payload.get("auth_provider") != "email" or payload.get("auth_providers") != ["email"]:
+        raise InfraError("Public auth provider must be email only")
+    if payload.get("login_enabled") is not True:
+        raise InfraError("Verified account login must remain enabled independently of SMTP")
+    if (payload.get("email_domains") != ["gmail.com", "mail.ru", "xmail.ru"]
+            or payload.get("password_min_length") != 15
+            or payload.get("password_max_length") != 128
+            or payload.get("email_code_digits") != 8):
+        raise InfraError("Public email verification policy does not match the release contract")
+    if any(payload.get(name) is not True for name in (
+        "email_enabled", "registration_available", "password_reset_available",
+    )):
+        raise InfraError("Auth SMTP must be configured for public registration and recovery")
 
 
 def verify_public_version_script(body: bytes, release_sha: str) -> None:
@@ -1451,7 +1153,6 @@ def verify_public(release_sha: str) -> None:
         verify_public_assets(context, release_sha)
         config, _ = fetch_public("/api/auth/config", context)
         verify_public_config(config, release_sha=release_sha)
-        verify_public_callbacks(context)
         for path, marker in LEGAL_PAGES.items():
             body, content_type = fetch_public(path, context, expected_build=release_sha[:12])
             rendered = body.decode(errors="replace")
@@ -1519,8 +1220,6 @@ def reconcile(
 
     archive_b64 = build_release_archive(repository_root)
 
-    used_slots = 0
-    active_users = 0
     with EphemeralSsh(
         client=client,
         server_id=server_id,
@@ -1548,29 +1247,16 @@ def reconcile(
             else:
                 raise InfraError("Public verification did not become healthy")
 
-            # The legacy account is removed only after the replacement release
-            # is already healthy. The reset itself is one transaction and
-            # refuses to touch a database containing more than one user.
-            retire_legacy_profile(ssh)
-            used_slots, active_users = registration_occupancy(ssh)
             commit_product_environment(ssh, release_sha=release_sha)
         except InfraError:
             rollback_remote(ssh, release_sha=release_sha)
             raise
 
-    vkid_ready = vkid_configuration_ready()
-    login_state = "enabled" if vkid_ready else "fail-closed pending VK ID configuration"
-    if registration_enabled():
-        registration_state = f"open with capacity {registration_max_users()}"
-        if controlled_live_test_mode():
-            registration_state += " (controlled live-test exception)"
-    else:
-        registration_state = "closed"
     add_summary(
         f"- Result: app_ready. Release {release_sha[:12]} is healthy over HTTPS; "
-        f"VK ID login is {login_state}; registration is {registration_state}; "
-        f"occupancy is {used_slots}/{registration_max_users()} slots "
-        f"with {active_users} active user(s)."
+        "public access is open, email/password login and SMTP configuration are ready. "
+        "Existing profiles are preserved; legacy owners enroll from their active session. "
+        "SMTP delivery and market-source coverage must be monitored separately."
     )
     set_output("status", "app_ready")
     return 0

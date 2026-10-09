@@ -4,6 +4,20 @@ READINESS_QUERY = """
 SELECT
     to_regclass('public.users') IS NOT NULL
     AND to_regclass('public.sessions') IS NOT NULL
+    AND to_regclass('public.email_identities') IS NOT NULL
+    AND to_regclass('public.email_auth_challenges') IS NOT NULL
+    AND to_regclass('public.email_auth_rate_limits') IS NOT NULL
+    AND EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('public.email_identities')
+          AND conname = 'email_identity_hash_valid' AND contype = 'c' AND convalidated
+    )
+    AND (
+        SELECT count(*) = 3 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'portfolio_snapshots'
+          AND column_name IN ('nav_rub', 'rub_cash_total', 'rub_cash_blocked')
+          AND is_nullable = 'YES'
+    )
     AND to_regclass('public.legal_acceptances') IS NOT NULL
     AND to_regclass('public.vkid_identities') IS NOT NULL
     AND to_regclass('public.tid_identities') IS NOT NULL

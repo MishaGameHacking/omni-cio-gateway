@@ -92,7 +92,7 @@ def _instrument_requirements(metadata: TBankInstrumentMetadata) -> set[str]:
 def instrument_facts(
     *, user_id: UUID, instrument_uid: str, broker: BrokerService,
 ) -> dict[str, Any]:
-    """Read-only card; BrokerService binds both reads to the same connection record."""
+    """Public card; BrokerService uses only the common server market credential."""
     metadata, fundamental = broker.instrument_facts(user_id, instrument_uid)
     if metadata.uid != instrument_uid.strip() or (
         fundamental is not None and fundamental.asset_uid != metadata.asset_uid

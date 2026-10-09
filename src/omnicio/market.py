@@ -1,20 +1,36 @@
-"""Read-only market-data orchestration for OmniCIO Personal."""
+"""Shared market collection and analysis, independent of user sessions or portfolios."""
 
 from __future__ import annotations
 
+import logging
+import re
 import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from typing import Any
 from uuid import UUID, uuid4
 
-from .broker import BrokerConnectionError, BrokerConnectionStatus, BrokerService
+from .broker import BrokerConnectionError, BrokerService, MarketSourceStatus
 from .cbr import CBRClient, CBRRate, CBRUnavailable
+from .freshness import EVIDENCE_RETRIEVAL_MAX_AGE, ISSUER_NEWS_MAX_AGE, describe_freshness
+from .intelligence import (
+    EvidenceDocument,
+    InstrumentRiskAssessment,
+    MarketPriceChange,
+    assess_candidate_fundamental_risk,
+    build_news_evidence,
+    market_price_changes,
+)
+from .monitoring import NEWS_BUDGET_SECONDS, NEWS_MAX_PAGES_PER_RUN, NEWS_MAX_PATH_PROOFS
+from .news import NewsClient, NewsNotFound, NewsUnavailable
 from .tbank import (
+    NEWS_MAX_PAGE_SIZE,
+    TBankAssetFundamental,
     TBankHistoricCandle,
     TBankInstrumentMetadata,
     TBankLastPrice,
@@ -22,6 +38,20 @@ from .tbank import (
     TBankTradingStatus,
     TBankUnavailable,
 )
+
+logger = logging.getLogger(__name__)
+
+# A source/cache namespace, never a user or an authority for private data.
+PUBLIC_MARKET_SCOPE = UUID(int=0)
+_QUOTE_REFRESH_SECONDS = 10
+_QUOTE_CACHE_CAPACITY = 2048
+_CATALOG_REFRESH_SECONDS = 6 * 3600
+_REFERENCE_REFRESH_SECONDS = 300
+_FUNDAMENTAL_REFRESH_SECONDS = 60
+_FUNDAMENTAL_BATCH_SIZE = 50
+_COLLECTOR_SHUTDOWN_SECONDS = 8
+_PUBLIC_PAGE_LIMIT = 200
+_PUBLIC_NEWS_CAPACITY = 5000
 
 type _QuoteCacheEntry = tuple[float, TBankLastPrice | None, datetime, str | None]
 
@@ -149,14 +179,12 @@ _MARKET_PERIODS: dict[str, tuple[timedelta, str]] = {
 _CBR_SOURCE = "Bank of Russia"
 _PROVIDER_CLOCK_SKEW_TOLERANCE = timedelta(seconds=5)
 
-# All enrichment uses the existing four workers. At most two long history jobs
-# may run or wait, one per owner, leaving capacity for short metadata/status reads.
+# All readers share four enrichment workers. At most two long history jobs
+# may run or wait, leaving capacity for short metadata/status reads.
 _ENRICHMENT_WORKERS = 4
 _ANCILLARY_ACTIVE_LIMIT = 2
 _ENRICHMENT_PENDING_LIMIT = 200
-_ENRICHMENT_OWNER_PENDING_LIMIT = 50
 _HISTORY_PENDING_LIMIT = 2
-_HISTORY_OWNER_PENDING_LIMIT = 1
 _ENRICHMENT_CACHE_CAPACITY = 1024
 _HISTORY_CACHE_CAPACITY = 64
 _METADATA_CACHE_SECONDS = 60
@@ -174,7 +202,23 @@ class _InstrumentHistory:
 
 
 type _EnrichmentValue = TBankInstrumentMetadata | TBankTradingStatus | _InstrumentHistory
-type _MarketReadKey = tuple[UUID, BrokerConnectionStatus, str, str, str]
+type _MarketReadKey = tuple[UUID, MarketSourceStatus, str, str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class _CollectorResult:
+    status: str
+    observed_at: datetime | None = None
+    items: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _CollectorState:
+    status: str = "not_started"
+    last_attempt_at: datetime | None = None
+    observed_at: datetime | None = None
+    items: int = 0
+    error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,27 +261,508 @@ class MarketService:
         broker: BrokerService,
         cbr: CBRClient,
         live_after_seconds: int = 30,
+        news: NewsClient | None = None,
     ) -> None:
         self.broker = broker
         self.cbr = cbr
         self.live_after_seconds = live_after_seconds
+        self.news = news
         self._public_admission = threading.BoundedSemaphore(2)
         self._cache_lock = threading.Lock()
         self._enrichment_pool = ThreadPoolExecutor(
             max_workers=_ENRICHMENT_WORKERS, thread_name_prefix="market-enrichment",
         )
         self._enrichment: OrderedDict[_MarketReadKey, _EnrichmentEntry] = OrderedDict()
-        self._last_dispatched_owner: dict[str, UUID] = {}
         self._active_enrichment: dict[Future[_EnrichmentResult], _MarketReadKey] = {}
         self._connection_reads: OrderedDict[
-            UUID, tuple[int, BrokerConnectionStatus],
+            UUID, tuple[int, MarketSourceStatus],
         ] = OrderedDict()
         self._read_sequence = 0
         self._quotes: OrderedDict[
-            tuple[UUID, BrokerConnectionStatus, str], _QuoteCacheEntry,
+            tuple[UUID, MarketSourceStatus, str], _QuoteCacheEntry,
         ] = OrderedDict()
         self._streams: dict[UUID, set[str]] = {}
         self._closed = False
+        self._stop = threading.Event()
+        self._collectors: list[threading.Thread] = []
+        self._collector_states: dict[str, _CollectorState] = {
+            name: _CollectorState()
+            for name in ("reference", "news", "quotes", "fundamentals", "instrument_news")
+        }
+        self._catalog: tuple[TBankInstrumentMetadata, ...] = ()
+        self._catalog_by_uid: dict[str, TBankInstrumentMetadata] = {}
+        self._catalog_observed_at: datetime | None = None
+        self._catalog_refresh_at = 0.0
+        self._catalog_status = "not_started"
+        self._shared_prices: dict[str, TBankLastPrice] = {}
+        self._quote_observed_at: datetime | None = None
+        self._shared_quote_refresh_at = 0.0
+        self._fundamentals: dict[str, TBankAssetFundamental] = {}
+        self._risk_assessments: dict[str, InstrumentRiskAssessment] = {}
+        self._price_changes: tuple[MarketPriceChange, ...] = ()
+        self._fundamental_cursor = 0
+        self._source_generation: MarketSourceStatus | None = None
+        self._market_news: OrderedDict[str, EvidenceDocument] = OrderedDict()
+        self._news_cursor: str | None = None
+        self._news_seen_cursors: set[str] = set()
+        self._news_scan_complete = False
+        self._news_truncated = False
+
+    def start(self) -> None:
+        """Start independent source collectors once, even with no registered or active users."""
+        tasks = [
+            ("reference", self._collect_reference, _REFERENCE_REFRESH_SECONDS),
+            ("quotes", self._collect_quotes, _QUOTE_REFRESH_SECONDS),
+            ("fundamentals", self._collect_fundamentals, _FUNDAMENTAL_REFRESH_SECONDS),
+            ("instrument_news", self._collect_instrument_news, _QUOTE_REFRESH_SECONDS),
+        ]
+        if self.news is not None:
+            tasks.append(("news", self._collect_news, _REFERENCE_REFRESH_SECONDS))
+        with self._cache_lock:
+            if self._closed:
+                raise BrokerConnectionError("market_service_closed")
+            if self._collectors:
+                return
+            self._collectors = [threading.Thread(
+                target=self._collector_loop, args=(name, collect, interval),
+                name=f"public-market-{name}", daemon=True,
+            ) for name, collect, interval in tasks]
+            for worker in self._collectors:
+                worker.start()
+
+    def _collector_loop(
+        self, name: str, collect: Callable[[], _CollectorResult], interval: int,
+    ) -> None:
+        while not self._stop.is_set():
+            attempted = datetime.now(UTC)
+            try:
+                result = collect()
+            except (BrokerConnectionError, TBankUnavailable, CBRUnavailable, NewsUnavailable):
+                with self._cache_lock:
+                    previous = self._collector_states[name]
+                    self._collector_states[name] = _CollectorState(
+                        "unavailable", attempted, previous.observed_at, previous.items,
+                        "source_unavailable",
+                    )
+                logger.warning("Public market collector unavailable: %s", name)
+            except Exception:
+                # Keep the source independent and retry boundedly. Never log
+                # provider exceptions: they may contain authentication headers.
+                with self._cache_lock:
+                    previous = self._collector_states[name]
+                    self._collector_states[name] = _CollectorState(
+                        "unavailable", attempted, previous.observed_at, previous.items,
+                        "collector_failed",
+                    )
+                logger.error("Public market collector failed: %s", name)
+            else:
+                with self._cache_lock:
+                    self._collector_states[name] = _CollectorState(
+                        result.status, attempted, result.observed_at, result.items,
+                    )
+            self._stop.wait(interval)
+
+    def _collect_reference(self) -> _CollectorResult:
+        snapshot = self.cbr_indicators()
+        return _CollectorResult(snapshot.freshness, _parse_provider_time(snapshot.fetched_at), 3)
+
+    def _collect_news(self) -> _CollectorResult:
+        if self.news is None:
+            return _CollectorResult("not_configured")
+        payload = self.news.headlines()
+        return _CollectorResult(
+            str(payload["freshness"]), _parse_provider_time(str(payload["fetched_at"])),
+            len(payload["items"]),
+        )
+
+    def _shared_source(self) -> MarketSourceStatus:
+        return self._connection(PUBLIC_MARKET_SCOPE)
+
+    def _collect_quotes(self) -> _CollectorResult:
+        source = self._shared_source()
+        if not source.connected:
+            return _CollectorResult("not_configured")
+        with self._cache_lock:
+            refresh_catalog = time.monotonic() >= self._catalog_refresh_at
+        if refresh_catalog:
+            try:
+                catalog = self.broker.market_catalog()
+            except (BrokerConnectionError, TBankUnavailable):
+                with self._cache_lock:
+                    self._catalog_status = "unavailable"
+                    self._catalog_refresh_at = time.monotonic() + _FUNDAMENTAL_REFRESH_SECONDS
+            else:
+                if self.broker.market_status() != source:
+                    raise BrokerConnectionError("market_source_changed")
+                with self._cache_lock:
+                    if self._closed or self._source_generation != source:
+                        raise BrokerConnectionError("market_source_changed")
+                    self._catalog = catalog
+                    self._catalog_by_uid = {item.uid: item for item in catalog}
+                    self._catalog_observed_at = datetime.now(UTC)
+                    self._catalog_status = "available" if catalog else "empty"
+                    self._catalog_refresh_at = time.monotonic() + _CATALOG_REFRESH_SECONDS
+        batch = self.broker.market_all_last_prices()
+        observed = datetime.now(UTC)
+        prices = {price.instrument_uid: price for price in batch.prices}
+        if len(prices) != len(batch.prices) or self.broker.market_status() != source:
+            raise BrokerConnectionError("market_source_changed")
+        with self._cache_lock:
+            if self._closed or self._source_generation != source:
+                raise BrokerConnectionError("market_source_changed")
+            previous = self._shared_prices
+            self._price_changes = market_price_changes(
+                batch.prices, previous, observed_at=observed,
+            )
+            self._shared_prices = prices
+            self._quote_observed_at = observed
+            self._shared_quote_refresh_at = time.monotonic() + _QUOTE_REFRESH_SECONDS
+            # Global snapshots have no tenant component. Discard delisted/missing
+            # quotes instead of presenting an old price as a newly fetched one.
+            self._quotes.clear()
+        status = "partial" if batch.unavailable_uids else "fresh"
+        return _CollectorResult(status if prices else "empty", observed, len(prices))
+
+    def _collect_fundamentals(self) -> _CollectorResult:
+        source = self._shared_source()
+        if not source.connected:
+            return _CollectorResult("not_configured")
+        with self._cache_lock:
+            catalog = self._catalog
+            asset_uids = sorted({item.asset_uid for item in catalog if item.asset_uid})
+            if not asset_uids:
+                return _CollectorResult("waiting_for_catalog")
+            start = self._fundamental_cursor % len(asset_uids)
+            selected = tuple(asset_uids[start:start + _FUNDAMENTAL_BATCH_SIZE])
+            self._fundamental_cursor = (start + len(selected)) % len(asset_uids)
+        fundamentals = self.broker.candidate_fundamentals(PUBLIC_MARKET_SCOPE, selected)
+        if self.broker.market_status() != source:
+            raise BrokerConnectionError("market_source_changed")
+        now = datetime.now(UTC)
+        by_asset = {item.asset_uid: item for item in fundamentals}
+        if len(by_asset) != len(fundamentals) or not by_asset.keys() <= set(selected):
+            raise TBankUnavailable("market_fundamental_identity_mismatch")
+        assessments = {item.uid: assess_candidate_fundamental_risk(
+            item, by_asset.get(item.asset_uid), assessed_at=now,
+        ) for item in catalog if item.asset_uid in selected}
+        with self._cache_lock:
+            if self._closed or self._source_generation != source:
+                raise BrokerConnectionError("market_source_changed")
+            for uid in selected:
+                self._fundamentals.pop(uid, None)
+            self._fundamentals.update(by_asset)
+            self._risk_assessments.update(assessments)
+            count = len(self._risk_assessments)
+        return _CollectorResult("partial" if len(by_asset) < len(selected) else "fresh", now, count)
+
+    def _collect_instrument_news(self) -> _CollectorResult:
+        source = self._shared_source()
+        if not source.connected:
+            return _CollectorResult("not_configured")
+        started = time.monotonic()
+        # Refresh the head on every cycle, then advance a bounded continuation.
+        # The API's limited history is not coverage of all news on the internet.
+        cursor: str | None = None
+        latest_observed: datetime | None = None
+        for page_index in range(NEWS_MAX_PAGES_PER_RUN):
+            if self._stop.is_set() or time.monotonic() - started >= NEWS_BUDGET_SECONDS:
+                break
+            page = self.broker.instrument_news(
+                PUBLIC_MARKET_SCOPE, cursor=cursor, limit=NEWS_MAX_PAGE_SIZE,
+            )
+            observed = _parse_provider_time(str(page["observed_at"]))
+            latest_observed = max(latest_observed or observed, observed)
+            documents = build_news_evidence(None, page["items"], observed_at=observed)
+            if self.broker.market_status() != source:
+                raise BrokerConnectionError("market_source_changed")
+            with self._cache_lock:
+                if self._closed or self._source_generation != source:
+                    raise BrokerConnectionError("market_source_changed")
+                for document in documents:
+                    self._market_news[document.provider_key] = replace(document, payload={
+                        **document.payload, "observed_at": observed.isoformat(),
+                    })
+                self._market_news = OrderedDict(
+                    (key, document) for key, document in self._market_news.items()
+                    if document.published_at is not None
+                    and observed - ISSUER_NEWS_MAX_AGE <= document.published_at <= observed
+                )
+                while len(self._market_news) > _PUBLIC_NEWS_CAPACITY:
+                    self._market_news.popitem(last=False)
+                    self._news_truncated = True
+                next_cursor = page["next_cursor"]
+                if page_index == 0 and self._news_cursor is not None:
+                    cursor = self._news_cursor
+                elif next_cursor is None:
+                    self._news_cursor = None
+                    self._news_seen_cursors.clear()
+                    self._news_scan_complete = True
+                    break
+                elif next_cursor in self._news_seen_cursors:
+                    self._news_cursor = None
+                    self._news_seen_cursors.clear()
+                    self._news_scan_complete = False
+                    raise TBankUnavailable("market_news_cursor_cycle")
+                else:
+                    if cursor is not None:
+                        self._news_seen_cursors.add(cursor)
+                    if len(self._news_seen_cursors) >= NEWS_MAX_PATH_PROOFS:
+                        self._news_seen_cursors.clear()
+                        self._news_cursor = None
+                        self._news_scan_complete = False
+                        self._news_truncated = True
+                        break
+                    self._news_cursor = str(next_cursor)
+                    self._news_scan_complete = False
+                    cursor = self._news_cursor
+        with self._cache_lock:
+            count = len(self._market_news)
+            complete = self._news_scan_complete and not self._news_truncated
+        return _CollectorResult("fresh" if complete else "partial", latest_observed, count)
+
+    def status(self) -> dict[str, object]:
+        """Public source health; no tenant identity, credential, or portfolio state."""
+        source = self._shared_source()
+        now = datetime.now(UTC)
+        with self._cache_lock:
+            states = dict(self._collector_states)
+            running = bool(self._collectors) and all(
+                worker.is_alive() for worker in self._collectors
+            )
+            catalog_size = len(self._catalog)
+            quote_size = len(self._shared_prices)
+            risk_size = len(self._risk_assessments)
+            news_size = len(self._market_news)
+            news_complete = self._news_scan_complete
+            news_truncated = self._news_truncated
+            catalog_at = self._catalog_observed_at
+            catalog_status = self._catalog_status
+            quote_times = tuple(self._shared_prices.values())
+        quote_freshness: dict[str, int] = {}
+        for price in quote_times:
+            quote_status = _quote_values(
+                price.instrument_uid, observed=now, last_price=price,
+                live_after_seconds=self.live_after_seconds,
+            )[3]
+            quote_freshness[quote_status] = quote_freshness.get(quote_status, 0) + 1
+        return {
+            "mode": "continuous", "running": running and not self._stop.is_set(),
+            "scope": "public", "user_tokens_used": False,
+            "requires_account": False, "observed_at": now.isoformat(),
+            "market_source": {"source": source.source, "configured": source.connected,
+                              "real_time_guaranteed": False},
+            "sources": {
+                name: _collector_status(name, state, now) for name, state in states.items()
+            },
+            "coverage": {
+                "scope": "configured_provider_catalog", "all_internet": False,
+                "catalog_status": catalog_status, "instruments": catalog_size,
+                "quote_instruments": quote_size, "risk_assessments": risk_size,
+                "instrument_news_items": news_size, "news_scan_complete": news_complete,
+                "news_truncated": news_truncated, "quote_freshness": quote_freshness,
+                "catalog_observed_at": catalog_at.isoformat() if catalog_at else None,
+                "instrument_types": ["share", "bond", "etf", "currency", "future"],
+            },
+        }
+
+    def public_snapshot(
+        self, *, query: str = "", instrument_type: str | None = None,
+        limit: int = 100, offset: int = 0,
+    ) -> dict[str, object]:
+        """Serve already collected observations; reading a page never starts analysis."""
+        if (len(query) > 200 or not 1 <= limit <= _PUBLIC_PAGE_LIMIT or offset < 0
+                or instrument_type not in {None, "share", "bond", "etf", "currency", "future"}):
+            raise ValueError("market_query_invalid")
+        source = self._shared_source()
+        now = datetime.now(UTC)
+        with self._cache_lock:
+            catalog = self._catalog
+            prices = dict(self._shared_prices)
+            risks = dict(self._risk_assessments)
+            fundamentals = dict(self._fundamentals)
+            news = sorted((item for item in self._market_news.values()
+                           if item.published_at is not None
+                           and now - ISSUER_NEWS_MAX_AGE <= item.published_at <= now),
+                          key=lambda item: (
+                item.published_at or datetime.min.replace(tzinfo=UTC)
+            ), reverse=True)
+            changes = tuple(self._price_changes)
+            observed_at = self._quote_observed_at
+        needle = query.strip().casefold()
+        selected = [item for item in catalog
+                    if (instrument_type is None or item.instrument_type == instrument_type)
+                    and (not needle or needle in
+                         f"{item.ticker} {item.name} {item.isin}".casefold())]
+        items = []
+        for item in selected[offset:offset + limit]:
+            live = _instrument_live_state(
+                item.uid, observed=now, last_price=prices.get(item.uid), trading=None,
+                live_after_seconds=self.live_after_seconds, metadata=item,
+            )
+            items.append({
+                **asdict(live), "ticker": item.ticker, "name": item.name,
+                "instrument_type": item.instrument_type, "sector": item.sector,
+                "risk": _public_risk(risks.get(item.uid), now),
+                "fundamental": asdict(fundamentals[item.asset_uid])
+                if item.asset_uid in fundamentals else None,
+            })
+        if self.broker.market_status() != source:
+            raise BrokerConnectionError("market_source_changed")
+        return {
+            "items": items, "total": len(selected), "offset": offset, "limit": limit,
+            "has_more": offset + limit < len(selected), "scope": "public",
+            "source": "T-Invest", "observed_at": observed_at.isoformat() if observed_at else None,
+            "price_changes": [asdict(change) for change in changes[:20]],
+            "news": [item.payload for item in news[:20]],
+            "change_period": "between_source_observations", "real_time_guaranteed": False,
+            "status": self.status(),
+        }
+
+    def public_news(
+        self, instrument_uid: str | None = None, *, query: str = "",
+        limit: int = 20, cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """Filter shared evidence by exact provider UID, never by a user's portfolio."""
+        if (not 1 <= limit <= NEWS_MAX_PAGE_SIZE or len(query) > 200
+                or instrument_uid is not None and not 1 <= len(instrument_uid) <= 128
+                or cursor is not None and not 1 <= len(cursor) <= 64):
+            raise ValueError("news_query_invalid")
+        source = self._shared_source()
+        now = datetime.now(UTC)
+        with self._cache_lock:
+            documents = tuple(self._market_news.values())
+            state = self._collector_states["instrument_news"]
+            truncated = self._news_truncated
+        rows: list[dict[str, Any]] = []
+        for document in documents:
+            payload = document.payload
+            uids = payload.get("instrument_uids")
+            if (document.published_at is None
+                    or not now - ISSUER_NEWS_MAX_AGE <= document.published_at <= now
+                    or not isinstance(uids, (list, tuple))
+                    or instrument_uid is not None and instrument_uid not in uids):
+                continue
+            row = dict(payload)
+            row["occurred_at"] = document.published_at.isoformat()
+            row["content_scope"] = "source_summary"
+            rows.append(row)
+        sources = ["T-Invest InstrumentsService.News"] if source.connected else []
+        source_times = [state.observed_at] if state.observed_at is not None else []
+        cbr_available = False
+        cbr_fresh = False
+        if self.news is not None and instrument_uid is None:
+            try:
+                public = self.news.headlines()
+            except NewsUnavailable:
+                if not rows:
+                    raise
+            else:
+                cbr_available = True
+                cbr_fresh = public["freshness"] in {"fresh", "cached"}
+                sources.append("Банк России")
+                source_times.append(_parse_provider_time(str(public["fetched_at"])))
+                rows.extend({**item, "source_url": item["url"], "summary": "",
+                             "occurred_at": item["published_at"], "instrument_uids": (),
+                             "observed_at": public["fetched_at"],
+                             "priority": False, "content_scope": "headline"}
+                            for item in public["items"])
+        rows.sort(key=lambda item: (str(item["occurred_at"]), str(item["id"])), reverse=True)
+        terms = query.casefold().split()
+        matches = [row for row in rows if all(
+            term in f"{row.get('title', '')} {row.get('summary', '')}".casefold()
+            for term in terms
+        )]
+        start = 0
+        if cursor is not None:
+            index = next((index for index, row in enumerate(matches) if row["id"] == cursor), None)
+            if index is None:
+                raise ValueError("news_cursor_expired")
+            start = index + 1
+        items = matches[start:start + limit]
+        more = start + limit < len(matches)
+        status = "available" if items else "empty"
+        if not source.connected and not cbr_available:
+            status = "unavailable"
+        elif not items and not cbr_available and state.status == "not_started":
+            status = "loading"
+        elif source.connected:
+            source_status = _collector_status("instrument_news", state, now)["status"]
+            if source_status == "stale":
+                status = "partial" if cbr_fresh else "stale"
+            elif source_status in {"unavailable", "partial", "not_started"}:
+                status = "partial" if items or cbr_available else "unavailable"
+        elif cbr_available and not cbr_fresh:
+            status = "stale"
+        if self.broker.market_status() != source:
+            raise BrokerConnectionError("market_source_changed")
+        return {
+            "items": items, "total": len(matches), "scanned_items": len(rows),
+            "next_cursor": str(items[-1]["id"]) if more and items else None,
+            "instrument_uid": instrument_uid, "query": query, "status": status,
+            "scope": "public_sources", "search_scope": "shared_server_sources",
+            "sources": sources, "web_search": False,
+            "observed_at": max(source_times).isoformat() if source_times else None,
+            "coverage": {"all_market_news": False, "truncated": truncated or more},
+        }
+
+    def public_news_item(self, source_id: str) -> dict[str, Any]:
+        """Resolve a bookmark from shared summaries; never fetch a full article."""
+        if not isinstance(source_id, str) or re.fullmatch(
+            r"(?:[1-9][0-9]{0,18}|[0-9a-f]{64})", source_id,
+        ) is None or len(source_id) <= 19 and int(source_id) > 2**63 - 1:
+            raise ValueError("news_source_id_invalid")
+        now = datetime.now(UTC)
+        source: MarketSourceStatus | None = None
+        if len(source_id) == 64:
+            if self.news is None:
+                raise NewsUnavailable("news_source_unavailable")
+            cached = self.news.cached_headline(source_id)
+            payload: dict[str, Any] = {
+                **cached, "source_url": cached["url"], "summary": "",
+                "instrument_uids": (), "priority": False,
+                "occurred_at": cached["published_at"], "observed_at": cached["fetched_at"],
+            }
+            content_scope, interval = "headline", _REFERENCE_REFRESH_SECONDS
+            source_status = str(cached["freshness"])
+        else:
+            source = self._shared_source()
+            with self._cache_lock:
+                document = self._market_news.get(source_id)
+                state = self._collector_states["instrument_news"]
+            if document is None:
+                if not source.connected or state.status in {"not_started", "unavailable"}:
+                    raise NewsUnavailable("news_source_unavailable")
+                raise NewsNotFound("news_source_not_found")
+            if (document.published_at is None
+                    or not now - ISSUER_NEWS_MAX_AGE <= document.published_at <= now):
+                raise NewsNotFound("news_source_not_found")
+            payload = {**document.payload, "occurred_at": document.published_at.isoformat()}
+            content_scope, interval = "source_summary", _QUOTE_REFRESH_SECONDS * 3
+            source_status = str(_collector_status("instrument_news", state, now)["status"])
+        try:
+            observed = _parse_provider_time(str(payload["observed_at"]))
+            published = _parse_provider_time(str(payload["occurred_at"]))
+        except (KeyError, ValueError) as exc:
+            raise NewsUnavailable("news_source_unavailable") from exc
+        freshness = describe_freshness(
+            observed, max_age=timedelta(seconds=interval), coverage="complete",
+            effective_at=published, now=now,
+        )
+        if freshness.status == "unavailable" or published > now:
+            raise NewsUnavailable("news_source_unavailable")
+        if source is not None and self.broker.market_status() != source:
+            raise BrokerConnectionError("market_source_changed")
+        return {
+            **{key: payload.get(key) for key in (
+                "id", "title", "summary", "source", "source_url", "instrument_uids", "priority",
+            )},
+            "occurred_at": published.isoformat(), "observed_at": observed.isoformat(),
+            "scope": "public_sources", "content_scope": content_scope,
+            "content": None, "full_content_available": False,
+            "content_status": "unavailable", "content_reason": "full_content_not_collected",
+            "freshness": freshness.status, "source_status": source_status,
+            "cached": True, "web_search": False,
+        }
 
     def acquire_stream(self, user_id: UUID) -> str:
         with self._cache_lock:
@@ -259,18 +784,25 @@ class MarketService:
                     self._streams.pop(user_id, None)
 
     def close(self) -> None:
+        self._stop.set()
         with self._cache_lock:
             self._closed = True
             self._streams.clear()
             futures = list(self._active_enrichment)
             self._enrichment.clear()
-            self._last_dispatched_owner.clear()
             self._active_enrichment.clear()
             self._connection_reads.clear()
             self._quotes.clear()
+            self._shared_prices.clear()
+            self._market_news.clear()
+            self._risk_assessments.clear()
+            self._price_changes = ()
         for future in futures:
             future.cancel()
         self._enrichment_pool.shutdown(wait=False, cancel_futures=True)
+        deadline = time.monotonic() + _COLLECTOR_SHUTDOWN_SECONDS
+        for worker in self._collectors:
+            worker.join(timeout=max(0, deadline - time.monotonic()))
 
     @staticmethod
     def _harvest_enrichment(entry: _EnrichmentEntry) -> None:
@@ -296,7 +828,7 @@ class MarketService:
             entry.observed_at = result.observed_at
 
     def _discard_previous_connections(
-        self, user_id: UUID, connection: BrokerConnectionStatus,
+        self, user_id: UUID, connection: MarketSourceStatus,
     ) -> list[Future[_EnrichmentResult]]:
         discarded: list[Future[_EnrichmentResult]] = []
         # Snapshot keys because revoked entries are removed during this pass.
@@ -307,15 +839,16 @@ class MarketService:
                     discarded.append(entry.future)
         return discarded
 
-    def _connection(self, user_id: UUID) -> BrokerConnectionStatus:
-        # Reserve order before database I/O. An old request may finish its
-        # status read after a newer connection was already observed and cached.
+    def _connection(self, user_id: UUID) -> MarketSourceStatus:
+        # The shared source generation replaces all per-user broker connections.
+        # A credential rotation invalidates source caches for every consumer.
+        user_id = PUBLIC_MARKET_SCOPE
         with self._cache_lock:
             if self._closed:
                 raise BrokerConnectionError("market_service_closed")
             self._read_sequence += 1
             sequence = self._read_sequence
-        connection = self.broker.status(user_id)
+        connection = self.broker.market_status()
         discarded: list[Future[_EnrichmentResult]] = []
         with self._cache_lock:
             if self._closed:
@@ -323,10 +856,35 @@ class MarketService:
             previous = self._connection_reads.get(user_id)
             if previous is not None and previous[0] > sequence:
                 if previous[1] != connection:
-                    raise BrokerConnectionError("market_account_changed")
+                    raise BrokerConnectionError("market_source_changed")
             else:
                 self._connection_reads[user_id] = (sequence, connection)
                 self._connection_reads.move_to_end(user_id)
+                if self._source_generation != connection:
+                    self._catalog = ()
+                    self._catalog_by_uid.clear()
+                    self._catalog_observed_at = None
+                    self._catalog_refresh_at = 0
+                    self._catalog_status = (
+                        "not_started" if connection.connected else "not_configured"
+                    )
+                    self._shared_prices.clear()
+                    self._quote_observed_at = None
+                    self._shared_quote_refresh_at = 0
+                    self._fundamentals.clear()
+                    self._risk_assessments.clear()
+                    self._price_changes = ()
+                    self._fundamental_cursor = 0
+                    self._market_news.clear()
+                    self._news_cursor = None
+                    self._news_seen_cursors.clear()
+                    self._news_scan_complete = False
+                    self._news_truncated = False
+                    for name in ("quotes", "fundamentals", "instrument_news"):
+                        self._collector_states[name] = _CollectorState(
+                            "not_started" if connection.connected else "not_configured",
+                        )
+                    self._source_generation = connection
                 if previous is not None and previous[1] != connection:
                     discarded = self._discard_previous_connections(user_id, connection)
                 while len(self._connection_reads) > _ENRICHMENT_CACHE_CAPACITY:
@@ -340,19 +898,13 @@ class MarketService:
                    if entry.read is not None]
         pending.extend(candidate for future, candidate in self._active_enrichment.items()
                        if not future.done())
-        if (len(pending) >= _ENRICHMENT_PENDING_LIMIT
-                or sum(candidate[0] == key[0] for candidate in pending)
-                >= _ENRICHMENT_OWNER_PENDING_LIMIT):
+        if len(pending) >= _ENRICHMENT_PENDING_LIMIT:
             return False
         if key[2] != "history":
             ancillary = [candidate for candidate in pending if candidate[2] != "history"]
-            return (len(ancillary) < _ENRICHMENT_PENDING_LIMIT - _HISTORY_PENDING_LIMIT
-                    and sum(candidate[0] == key[0] for candidate in ancillary)
-                    < _ENRICHMENT_OWNER_PENDING_LIMIT - _HISTORY_OWNER_PENDING_LIMIT)
+            return len(ancillary) < _ENRICHMENT_PENDING_LIMIT - _HISTORY_PENDING_LIMIT
         history = [candidate for candidate in pending if candidate[2] == "history"]
-        return (len(history) < _HISTORY_PENDING_LIMIT
-                and sum(candidate[0] == key[0] for candidate in history)
-                < _HISTORY_OWNER_PENDING_LIMIT)
+        return len(history) < _HISTORY_PENDING_LIMIT
 
     def _trim_enrichment(self) -> None:
         history_count = sum(key[2] == "history" for key in self._enrichment)
@@ -370,8 +922,8 @@ class MarketService:
         """Called under the cache lock; never fill the executor with waiting metadata.
 
         Two slots serve short reads, two serve history. Bounded pending intents
-        drain automatically, alternating owners when both have waiting work, so
-        refreshing the first table rows cannot starve later instrument metadata.
+        drain in source order, so refreshing the first table rows cannot starve
+        later instrument metadata. No source request depends on a user's plan.
         """
         dispatched: list[Future[_EnrichmentResult]] = []
         if self._closed:
@@ -384,16 +936,12 @@ class MarketService:
                           if (key[2] == "history") == (lane == "history"))
             waiting = [(key, entry) for key, entry in entries if entry.read is not None]
             while running < limit and waiting:
-                previous_owner = self._last_dispatched_owner.get(lane)
-                index = next((index for index, (key, _) in enumerate(waiting)
-                              if key[0] != previous_owner), 0)
-                key, entry = waiting.pop(index)
+                key, entry = waiting.pop(0)
                 assert entry.read is not None
                 entry.future = self._enrichment_pool.submit(_read_enrichment, entry.read)
                 self._active_enrichment[entry.future] = key
                 entry.read = None
                 dispatched.append(entry.future)
-                self._last_dispatched_owner[lane] = key[0]
                 running += 1
         return dispatched
 
@@ -416,7 +964,7 @@ class MarketService:
             if observed is not None and observed[1] != key[1]:
                 # A request can pause after observing its connection. Once a
                 # newer one is accepted, old intents must not consume capacity.
-                raise BrokerConnectionError("market_account_changed")
+                raise BrokerConnectionError("market_source_changed")
             dispatched = self._queue_enrichment(key, read, cache_seconds)
         for future in dispatched:
             future.add_done_callback(self._continue_enrichment)
@@ -461,8 +1009,12 @@ class MarketService:
             return _EnrichmentState(entry.value, status, entry.observed_at, entry.error)
 
     def _instrument_metadata(
-        self, user_id: UUID, connection: BrokerConnectionStatus, uid: str,
+        self, user_id: UUID, connection: MarketSourceStatus, uid: str,
     ) -> tuple[TBankInstrumentMetadata | None, str]:
+        with self._cache_lock:
+            shared = self._catalog_by_uid.get(uid)
+        if shared is not None:
+            return shared, "available"
         key = (user_id, connection, "metadata", uid, "")
         self._schedule_enrichment(
             key, lambda: self.broker.market_instrument_metadata(user_id, uid),
@@ -480,6 +1032,7 @@ class MarketService:
         return metadata, result.status
 
     def batch_quotes(self, user_id: UUID, instrument_uids: tuple[str, ...]) -> dict[str, object]:
+        user_id = PUBLIC_MARKET_SCOPE
         if (not 1 <= len(instrument_uids) <= 50 or len(set(instrument_uids)) != len(instrument_uids)
                 or any(not uid or len(uid) > 128 or not all(char.isascii() and (
                     char.isalnum() or char in "_-"
@@ -490,16 +1043,17 @@ class MarketService:
         now = datetime.now(UTC)
         items = [self._batch_quote_item(user_id, connection, uid, entries[uid], now)
                  for uid in instrument_uids]
-        if self.broker.status(user_id) != connection:
-            raise BrokerConnectionError("market_account_changed")
+        if self.broker.market_status() != connection:
+            raise BrokerConnectionError("market_source_changed")
         return {"items": items, "source": "T-Invest", "observed_at": now.isoformat(),
-                "refresh_after_seconds": 10}
+                "scope": "public", "real_time_guaranteed": False,
+                "refresh_after_seconds": _QUOTE_REFRESH_SECONDS}
 
     def _batch_quote_entries(
-        self, user_id: UUID, connection: BrokerConnectionStatus, instrument_uids: tuple[str, ...],
+        self, user_id: UUID, connection: MarketSourceStatus, instrument_uids: tuple[str, ...],
     ) -> dict[str, _QuoteCacheEntry]:
         with self._cache_lock:
-            cached = {uid: self._quotes.get((user_id, connection, uid)) for uid in instrument_uids}
+            cached = {uid: self._cached_quote(connection, uid) for uid in instrument_uids}
         missing = tuple(uid for uid, entry in cached.items()
                         if entry is None or entry[0] <= time.monotonic())
         if missing:
@@ -513,16 +1067,26 @@ class MarketService:
             with self._cache_lock:
                 for uid in missing:
                     quote_error = "source_unavailable" if uid in unavailable else error
-                    entry = (time.monotonic() + 10, by_uid.get(uid), fetched_at, quote_error)
+                    entry = (time.monotonic() + _QUOTE_REFRESH_SECONDS,
+                             by_uid.get(uid), fetched_at, quote_error)
                     self._quotes[(user_id, connection, uid)] = entry
                     self._quotes.move_to_end((user_id, connection, uid))
                     cached[uid] = entry
-                while len(self._quotes) > 2048:
+                while len(self._quotes) > _QUOTE_CACHE_CAPACITY:
                     self._quotes.popitem(last=False)
         return {uid: entry for uid, entry in cached.items() if entry is not None}
 
+    def _cached_quote(self, source: MarketSourceStatus, uid: str) -> _QuoteCacheEntry | None:
+        """Read under the cache lock; the autonomous snapshot serves every visitor."""
+        if (source == self._source_generation and self._quote_observed_at is not None
+                and time.monotonic() < self._shared_quote_refresh_at
+                and uid in self._shared_prices):
+            return (self._shared_quote_refresh_at, self._shared_prices[uid],
+                    self._quote_observed_at, None)
+        return self._quotes.get((PUBLIC_MARKET_SCOPE, source, uid))
+
     def _batch_quote_item(
-        self, user_id: UUID, connection: BrokerConnectionStatus, uid: str,
+        self, user_id: UUID, connection: MarketSourceStatus, uid: str,
         quote_entry: _QuoteCacheEntry, now: datetime,
     ) -> dict[str, object]:
         metadata, metadata_status = self._instrument_metadata(user_id, connection, uid)
@@ -584,8 +1148,9 @@ class MarketService:
                 "source": _CBR_SOURCE, "source_url": "https://www.cbr.ru/development/SXML/",
                 "currency": currency, "period": period, "unit": "RUB per currency unit",
                 "indicators": None, "history": None, "status": "unavailable",
-                "exchange_quotes": "broker_connection_required",
-                "public_exchange_distribution": "agreement_not_configured",
+                "exchange_quotes": "server_source",
+                "public_exchange_distribution": "separate_server_source",
+                "market_source_status_url": "/api/public/market-status",
                 "personal_data": False,
                 "history_error": None, "indicators_error": None,
             }
@@ -606,6 +1171,7 @@ class MarketService:
             self._public_admission.release()
 
     def usd_rub(self, user_id: UUID) -> UsdRubSnapshot:
+        user_id = PUBLIC_MARKET_SCOPE
         quote = self.broker.usd_rub_quote(user_id)
         observed = datetime.now(UTC)
         quote_time = _parse_provider_time(quote.quote_time)
@@ -667,6 +1233,7 @@ class MarketService:
         *,
         period: str,
     ) -> InstrumentMarketSnapshot:
+        user_id = PUBLIC_MARKET_SCOPE
         config = _MARKET_PERIODS.get(period)
         if config is None and period != "all":
             raise ValueError("unsupported market period")
@@ -684,8 +1251,8 @@ class MarketService:
             history = _InstrumentHistory(
                 (), config[1] if config is not None else "CANDLE_INTERVAL_MONTH", None, None,
             )
-        if self.broker.status(user_id) != connection:
-            raise BrokerConnectionError("market_account_changed")
+        if self.broker.market_status() != connection:
+            raise BrokerConnectionError("market_source_changed")
         observed = datetime.now(UTC)
         history_status = history_state.status
         if history_status == "available" and not history.candles:
@@ -751,7 +1318,7 @@ class MarketService:
     def _available_history(
         self, user_id: UUID, instrument_uid: str, requested_at: datetime,
     ) -> tuple[tuple[TBankHistoricCandle, ...], str, str]:
-        connection = self.broker.status(user_id)
+        connection = self.broker.market_status()
         first = self.broker.market_history_start(user_id, instrument_uid)
         cursor, interval, history_from = _available_history_window(first, requested_at)
         history_floor = cursor
@@ -776,47 +1343,42 @@ class MarketService:
         return tuple(candles[key] for key in sorted(candles)), interval, history_from
 
     def _validate_history_connection(
-        self, user_id: UUID, connection: BrokerConnectionStatus,
+        self, user_id: UUID, connection: MarketSourceStatus,
     ) -> None:
         """Revalidate long history between provider reads and before acceptance."""
         with self._cache_lock:
             if self._closed:
                 raise BrokerConnectionError("market_service_closed")
-        if self.broker.status(user_id) != connection:
-            raise BrokerConnectionError("market_account_changed")
+        if self.broker.market_status() != connection:
+            raise BrokerConnectionError("market_source_changed")
 
     def instrument_live_state(
         self,
         user_id: UUID,
         instrument_uid: str,
     ) -> InstrumentLiveState:
+        user_id = PUBLIC_MARKET_SCOPE
         connection = self._connection(user_id)
         live = self._live_state(user_id, connection, instrument_uid)
-        if self.broker.status(user_id) != connection:
-            raise BrokerConnectionError("market_account_changed")
+        if self.broker.market_status() != connection:
+            raise BrokerConnectionError("market_source_changed")
         return live
 
     def _live_state(
-        self, user_id: UUID, connection: BrokerConnectionStatus, instrument_uid: str,
+        self, user_id: UUID, connection: MarketSourceStatus, instrument_uid: str,
     ) -> InstrumentLiveState:
-        metadata_key = (user_id, connection, "metadata", instrument_uid, "")
         trading_key = (user_id, connection, "trading", instrument_uid, "")
-        self._schedule_enrichment(
-            metadata_key, lambda: self.broker.market_instrument_metadata(user_id, instrument_uid),
-            cache_seconds=_METADATA_CACHE_SECONDS,
-        )
+        metadata, metadata_status = self._instrument_metadata(user_id, connection, instrument_uid)
         self._schedule_enrichment(
             trading_key, lambda: self.broker.market_trading_status(user_id, instrument_uid),
             cache_seconds=_TRADING_CACHE_SECONDS,
         )
-        price, quote_error = _market_component(
-            lambda: self.broker.market_last_price(user_id, instrument_uid),
-        )
+        quote_entry = self._live_quote(connection, instrument_uid)
+        price, quote_error = quote_entry[1], quote_entry[3]
         trading_state = self._enrichment_state(trading_key)
         trading = (
             trading_state.value if isinstance(trading_state.value, TBankTradingStatus) else None
         )
-        metadata, metadata_status = self._metadata_state(metadata_key)
         live = _instrument_live_state(
             instrument_uid,
             observed=datetime.now(UTC),
@@ -826,7 +1388,7 @@ class MarketService:
             metadata=metadata,
         )
         return InstrumentLiveState(
-            instrument_uid=live.instrument_uid, observed_at=live.observed_at,
+            instrument_uid=live.instrument_uid, observed_at=quote_entry[2].isoformat(),
             last_price=live.last_price, quote_time=live.quote_time,
             quote_age_seconds=live.quote_age_seconds,
             quote_status="unavailable" if quote_error else live.quote_status,
@@ -845,6 +1407,64 @@ class MarketService:
                     "metadata": "source_unavailable" if metadata_status == "unavailable"
                     else live.errors.get("metadata")},
         )
+
+    def _live_quote(
+        self, source: MarketSourceStatus, instrument_uid: str,
+    ) -> _QuoteCacheEntry:
+        key = (PUBLIC_MARKET_SCOPE, source, instrument_uid)
+        with self._cache_lock:
+            cached = self._cached_quote(source, instrument_uid)
+        if cached is not None and time.monotonic() < cached[0]:
+            return cached
+        price, error = _market_component(
+            lambda: self.broker.market_last_price(PUBLIC_MARKET_SCOPE, instrument_uid),
+        )
+        result = (time.monotonic() + _QUOTE_REFRESH_SECONDS, price, datetime.now(UTC), error)
+        with self._cache_lock:
+            if self._closed or self._source_generation != source:
+                raise BrokerConnectionError("market_source_changed")
+            self._quotes[key] = result
+            self._quotes.move_to_end(key)
+            while len(self._quotes) > _QUOTE_CACHE_CAPACITY:
+                self._quotes.popitem(last=False)
+        return result
+
+
+def _collector_status(name: str, state: _CollectorState, now: datetime) -> dict[str, object]:
+    intervals = {
+        "quotes": _QUOTE_REFRESH_SECONDS, "reference": _REFERENCE_REFRESH_SECONDS,
+        "news": _REFERENCE_REFRESH_SECONDS, "fundamentals": _FUNDAMENTAL_REFRESH_SECONDS,
+        "instrument_news": _QUOTE_REFRESH_SECONDS,
+    }
+    interval = intervals[name]
+    freshness = describe_freshness(
+        state.observed_at, max_age=timedelta(seconds=interval * 3),
+        coverage="complete" if state.status == "fresh" else "partial", now=now,
+    )
+    status = state.status
+    if status in {"fresh", "cached", "partial"}:
+        status = freshness.status
+    return {
+        "status": status,
+        "last_attempt_at": state.last_attempt_at.isoformat() if state.last_attempt_at else None,
+        "observed_at": state.observed_at.isoformat() if state.observed_at else None,
+        "age_seconds": freshness.age_seconds, "refresh_interval_seconds": interval,
+        "items": state.items, "error": state.error,
+    }
+
+
+def _public_risk(
+    assessment: InstrumentRiskAssessment | None, now: datetime,
+) -> dict[str, object] | None:
+    if assessment is None:
+        return None
+    payload = asdict(assessment)
+    assessed_at = _parse_provider_time(str(assessment.evidence["assessed_at"]))
+    if now - assessed_at > EVIDENCE_RETRIEVAL_MAX_AGE:
+        payload["state"] = "data_missing"
+        payload["source_status"] = "partial"
+        payload["reasons"] = [*assessment.reasons, "provider_evidence_stale"]
+    return payload
 
 
 def _checked_quote_batch(
@@ -995,7 +1615,7 @@ def _market_price_units(
     if kind == "bond":
         cash_price = _bond_cash_price(metadata, price)
         return "percent_nominal", None, cash_price, currency if cash_price is not None else None
-    if kind in {"futures", "option"}:
+    if kind in {"future", "futures", "option"}:
         return "points", None, None, None
     if kind == "currency":
         # Exchange quotation can be per nominal; a bare currency symbol would

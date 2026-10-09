@@ -12,7 +12,7 @@ from uuid import UUID
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from test_tid import configuration
+from test_service import settings as configuration
 
 from omnicio.broker import BrokerConnectionStatus, BrokerService
 from omnicio.db import Database, UserRecord
@@ -292,6 +292,9 @@ def test_lifespan_starts_worker_after_database_and_always_closes_database_last(
         patch("omnicio.main.load_settings", return_value=configuration()),
         patch("omnicio.main.Database", return_value=database),
         patch("omnicio.main.PortfolioRefreshCoordinator", return_value=refresh),
+        patch("omnicio.main.AuthService"),
+        patch("omnicio.main.MarketService"),
+        patch("omnicio.main.NotificationService"),
     ):
         coroutine = enter()
         if failure is None:

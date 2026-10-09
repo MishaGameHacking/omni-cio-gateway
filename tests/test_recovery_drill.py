@@ -102,7 +102,10 @@ def test_connected_database_guard_requires_an_observation():
 def test_upgrade_receipt_keeps_actual_installation_trusted_after_failed_deploy(
     monkeypatch, tmp_path,
 ):
-    plan = upgrade.load_plan()
+    fixture = SCRIPTS.parents[1] / "tests/fixtures/accepted_upgrade_1_3.json"
+    document = json.loads(fixture.read_text(encoding="utf-8"))
+    plan = upgrade.validate_plan(document["plan"])
+    upgrade.schema_query(document["source_schema"], plan["source_schema_sha256"])
     source = "READINESS_QUERY = 'SELECT true'\n"
     plan = plan | {"source_schema_sha256": upgrade._digest(source)}
     baseline = tmp_path / plan["source_release"] / "src/omnicio/schema.py"

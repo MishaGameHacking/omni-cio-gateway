@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
-import json
-import re
 import secrets
+import unicodedata
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
 from typing import Any
-from urllib.parse import parse_qsl
 
+from cryptography.exceptions import InvalidKey
 from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
 
 PUBLIC_ID_MIN = 1
 PUBLIC_ID_MAX = 999_999_999
-DEFAULT_AUTH_RETURN = "/#account/home"
 
 
 class SecurityValueError(ValueError):
@@ -85,137 +82,88 @@ def client_ip_digest(ip_address: str, ip_key: str) -> bytes:
     return hmac.new(key, ip_address.encode(), hashlib.sha256).digest()
 
 
-def generate_oauth_state() -> str:
-    return secrets.token_urlsafe(32)
+# Password length is measured in NFC Unicode code points. Limits keep expensive
+# password hashing bounded; composition and periodic-change rules are not imposed.
+PASSWORD_MIN_LENGTH = 15
+PASSWORD_MAX_LENGTH = 128
+PASSWORD_MEMORY_KIB = 19_456
+PASSWORD_ITERATIONS = 2
+PASSWORD_PARALLELISM = 1
+EMAIL_CODE_DIGITS = 8
+EMAIL_CODE_TTL_SECONDS = 600
+EMAIL_RESEND_SECONDS = 60
+EMAIL_CODE_MAX_ATTEMPTS = 5
+EMAIL_DOMAINS = ("gmail.com", "mail.ru", "xmail.ru")
+# Common long passwords that pass the minimum length. Short compromised values
+# already fail length validation. Comparison uses the whole candidate only.
+_PASSWORD_BLOCKLIST = frozenset({
+    "123456789012345", "1234567890123456", "12345678901234567",
+    "123456789012345678", "1234567890123456789", "12345678901234567890",
+    "123456789123456789", "1234567812345678", "1234567890abcdef",
+    "passwordpassword", "passwordpassword1", "passwordpassword123",
+    "password123456789", "password12345678", "password1234567",
+    "password1234567890", "qwertyuiopasdfgh", "qwertyuiopasdfghjkl",
+    "qwertyuiop123456", "qwerty1234567890", "qwertyqwertyqwerty",
+    "asdfghjklqwertyuiop", "asdfghjkl123456789", "iloveyouiloveyou",
+    "iloveyou123456789", "adminadminadmin", "administrator123",
+    "letmeinletmeinletmein", "changemechangeme", "welcome123456789",
+    "correcthorsebatterystaple", "парольпарольпароль", "йцукенгшщзфывапр",
+    "omnicioomnicioomnicio",
+})
 
 
-def generate_pkce_verifier() -> str:
-    verifier = secrets.token_urlsafe(64)
-    if not 43 <= len(verifier) <= 128:
-        raise SecurityValueError("generated PKCE verifier has invalid length")
-    return verifier
+def password_bytes(password: str) -> bytes:
+    """Normalize the complete password without stripping spaces or truncating it."""
+    normalized = unicodedata.normalize("NFC", password)
+    if not 1 <= len(normalized) <= PASSWORD_MAX_LENGTH:
+        raise SecurityValueError("password_length_invalid")
+    return normalized.encode("utf-8")
 
 
-def pkce_challenge(verifier: str) -> str:
-    if not 43 <= len(verifier) <= 128:
-        raise SecurityValueError("PKCE verifier has invalid length")
-    digest = hashlib.sha256(verifier.encode("ascii")).digest()
-    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+def validate_new_password(password: str, email: str) -> None:
+    normalized = unicodedata.normalize("NFC", password)
+    password_bytes(password)
+    if len(normalized) < PASSWORD_MIN_LENGTH:
+        raise SecurityValueError("password_too_short")
+    candidate = normalized.casefold()
+    local = email.partition("@")[0].casefold()
+    if (candidate in _PASSWORD_BLOCKLIST or candidate in {email.casefold(), local}
+            or len(set(candidate)) == 1
+            or any(candidate == item * count for item in ("omnicio", local) if item
+                   for count in range(2, 10))):
+        raise SecurityValueError("password_compromised_or_common")
 
 
-@dataclass(frozen=True, slots=True)
-class OAuthFlow:
-    state: str
-    code_verifier: str
-    legal_versions: dict[str, str]
-    link_user_id: str | None = None
-    link_session_digest: str | None = None
-    return_to: str = DEFAULT_AUTH_RETURN
+def hash_password(password: str) -> str:
+    """Generate a fresh Argon2id PHC verifier using the existing crypto dependency."""
+    return Argon2id(
+        salt=secrets.token_bytes(16), length=32, iterations=PASSWORD_ITERATIONS,
+        lanes=PASSWORD_PARALLELISM, memory_cost=PASSWORD_MEMORY_KIB,
+    ).derive_phc_encoded(password_bytes(password))
 
 
-def validate_auth_return_to(value: str) -> str:
-    """Accept only a bounded application route; never redirect to a supplied origin."""
-    if (not isinstance(value, str) or len(value) > 2048
-            or not value.startswith("/#account/")
-            or any(ord(char) < 32 or ord(char) == 127 or char == "\\" for char in value)):
-        raise SecurityValueError("oauth_return_to_invalid")
-    path, _, query = value[len("/#account/"):].partition("?")
-    parts = path.split("/")
-    if (not 1 <= len(parts) <= 2
-            or parts[0] not in {
-                "home", "portfolio", "market", "strategies", "assistant", "goals",
-                "analytics", "events", "profile", "settings", "asset", "search", "install",
-            }
-            or any(re.fullmatch(r"[a-z][a-z0-9-]{0,39}", part) is None for part in parts)):
-        raise SecurityValueError("oauth_return_to_invalid")
+def verify_password(password: str, encoded: str) -> bool:
     try:
-        fields = parse_qsl(query, keep_blank_values=True, strict_parsing=True, max_num_fields=24)
-    except ValueError as exc:
-        raise SecurityValueError("oauth_return_to_invalid") from exc
-    if (len({key for key, _ in fields}) != len(fields)
-            or any(re.fullmatch(r"[a-z_]{1,30}", key) is None
-                   or len(item) > 512 or "#" in item
-                   or any(ord(char) < 32 or ord(char) == 127 for char in item)
-                   for key, item in fields)):
-        raise SecurityValueError("oauth_return_to_invalid")
-    return value
+        Argon2id.verify_phc_encoded(password_bytes(password), encoded)
+    except (InvalidKey, SecurityValueError):
+        return False
+    return True
 
 
-def seal_oauth_flow(
-    *,
-    state: str,
-    code_verifier: str,
-    legal_versions: dict[str, str],
-    crypto_key: str,
-    provider: str = "vkid",
-    link_user_id: str | None = None,
-    link_session_digest: str | None = None,
-    return_to: str = DEFAULT_AUTH_RETURN,
-) -> str:
-    if provider not in {"vkid", "tid"}:
-        raise SecurityValueError("invalid OAuth provider")
-    payload = json.dumps(
-        {
-            "state": state,
-            "code_verifier": code_verifier,
-            "legal_versions": legal_versions,
-            "provider": provider,
-            "link_user_id": link_user_id,
-            "link_session_digest": link_session_digest,
-            "return_to": validate_auth_return_to(return_to),
-        },
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode()
-    try:
-        return Fernet(crypto_key.encode("ascii")).encrypt(payload).decode("ascii")
-    except ValueError as exc:
-        raise SecurityValueError("invalid OAuth flow encryption key") from exc
+def generate_email_code() -> str:
+    return f"{secrets.randbelow(10 ** EMAIL_CODE_DIGITS):0{EMAIL_CODE_DIGITS}d}"
 
 
-def open_oauth_flow(
-    token: str,
-    *,
-    crypto_key: str,
-    ttl_seconds: int,
-    provider: str = "vkid",
-) -> OAuthFlow:
-    try:
-        raw = Fernet(crypto_key.encode("ascii")).decrypt(
-            token.encode("ascii"),
-            ttl=ttl_seconds,
-        )
-        payload = json.loads(raw)
-    except (InvalidToken, ValueError) as exc:
-        raise SecurityValueError("invalid or expired OAuth flow") from exc
+def email_code_digest(challenge_id: str, code: str, key: str) -> bytes:
+    """A database copy alone cannot enumerate a short email code's keyed verifier."""
+    return hmac.new(
+        _key_bytes(key, name="auth code key"),
+        f"email-code:v1:{challenge_id}:{code}".encode(), hashlib.sha256,
+    ).digest()
 
-    if not isinstance(payload, dict):
-        raise SecurityValueError("invalid OAuth flow payload")
-    if provider not in {"vkid", "tid"} or payload.get("provider") != provider:
-        raise SecurityValueError("OAuth provider mismatch")
-    state = payload.get("state")
-    verifier = payload.get("code_verifier")
-    versions = payload.get("legal_versions")
-    if not isinstance(state, str) or not state:
-        raise SecurityValueError("VK ID flow state is missing")
-    if not isinstance(verifier, str) or not 43 <= len(verifier) <= 128:
-        raise SecurityValueError("VK ID flow verifier is invalid")
-    if not isinstance(versions, dict) or not all(
-        isinstance(key, str) and isinstance(value, str)
-        for key, value in versions.items()
-    ):
-        raise SecurityValueError("VK ID flow legal versions are invalid")
-    link_user = payload.get("link_user_id")
-    link_session = payload.get("link_session_digest")
-    if (link_user is None) != (link_session is None):
-        raise SecurityValueError("OAuth link context is incomplete")
-    if link_user is not None and (
-        not isinstance(link_user, str) or len(link_user) != 36
-        or not isinstance(link_session, str) or len(link_session) != 64
-        or any(c not in "0123456789abcdef" for c in link_session)
-    ):
-        raise SecurityValueError("OAuth link context is invalid")
-    return OAuthFlow(
-        state, verifier, versions, link_user, link_session,
-        validate_auth_return_to(payload.get("return_to", DEFAULT_AUTH_RETURN)),
-    )
+
+def auth_rate_digest(scope: str, value: str, key: str) -> bytes:
+    return hmac.new(
+        _key_bytes(key, name="auth rate key"),
+        f"auth-rate:v1:{scope}:{value}".encode(), hashlib.sha256,
+    ).digest()

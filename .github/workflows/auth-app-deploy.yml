@@ -150,7 +150,7 @@ jobs:
           if errorlevel 1 exit /b 1
           node.exe --check web\sw.js
 
-      - name: Browser workspace and demo isolation
+      - name: Browser public market and account isolation
         shell: cmd
         run: node.exe tests\frontend-smoke.cjs
 
@@ -219,12 +219,16 @@ jobs:
       VPC_NAME: omni-cio-private
       TARGET_LOCATION: ru-3
       TARGET_ZONE: msk-1
-      VKID_APP_ID: ${{ vars.VKID_APP_ID }}
       OPERATOR_USER_ID: ${{ vars.OPERATOR_USER_ID }}
-      TID_CLIENT_ID: ${{ vars.TID_CLIENT_ID }}
-      TID_CLIENT_SECRET: ${{ secrets.TID_CLIENT_SECRET }}
-      TID_LOGIN_ENABLED: ${{ vars.TID_LOGIN_ENABLED }}
-      TID_PKCE_ENABLED: ${{ vars.TID_PKCE_ENABLED }}
+      AUTH_SMTP_HOST: ${{ vars.AUTH_SMTP_HOST }}
+      AUTH_SMTP_PORT: ${{ vars.AUTH_SMTP_PORT }}
+      AUTH_SMTP_USERNAME: ${{ secrets.AUTH_SMTP_USERNAME }}
+      AUTH_SMTP_PASSWORD: ${{ secrets.AUTH_SMTP_PASSWORD }}
+      AUTH_SMTP_SENDER: ${{ vars.AUTH_SMTP_SENDER }}
+      AUTH_SMTP_MODE: ${{ vars.AUTH_SMTP_MODE }}
+      MARKET_DATA_TOKEN: ${{ secrets.MARKET_DATA_TOKEN }}
+      # Only separately authorized service data can be published to all visitors.
+      MARKET_DATA_DISTRIBUTION_APPROVED: ${{ vars.MARKET_DATA_DISTRIBUTION_APPROVED }}
       ASSISTANT_BASE_URL: ${{ vars.ASSISTANT_BASE_URL }}
       ASSISTANT_MODEL: ${{ vars.ASSISTANT_MODEL }}
       ASSISTANT_API_KEY: ${{ secrets.ASSISTANT_API_KEY }}
@@ -233,7 +237,7 @@ jobs:
       ASSISTANT_ALLOWED_ENDPOINTS: ${{ vars.ASSISTANT_ALLOWED_ENDPOINTS }}
       ASSISTANT_DAILY_REQUEST_LIMIT: ${{ vars.ASSISTANT_DAILY_REQUEST_LIMIT }}
       # The owner requested native Web Push; user permission and a bound session
-      # remain mandatory. No email delivery is activated by this release.
+      # remain mandatory. Login verification uses the separate AUTH_SMTP settings.
       NOTIFICATIONS_ENABLED: "true"
       NOTIFICATION_EMAIL_ENABLED: "false"
       NOTIFICATION_CRYPTO_KEY: ${{ secrets.NOTIFICATION_CRYPTO_KEY }}
@@ -255,21 +259,12 @@ jobs:
       BILLING_DESCRIPTION: ${{ vars.BILLING_DESCRIPTION }}
       BILLING_TAXATION: ${{ vars.BILLING_TAXATION }}
       BILLING_TAX: ${{ vars.BILLING_TAX }}
-      REGISTRATION_ENABLED: "true"
-      REGISTRATION_MAX_USERS: "2"
-      MULTIUSER_LEGAL_APPROVED: "true"
-      RKN_NOTIFICATION_CONFIRMED: "false"
-      CONTROLLED_LIVE_TEST_MODE: "true"
-      LEGACY_PROFILE_RESET_ENABLED: "false"
       LEGAL_OPERATOR_NAME: "КЛИМАЧЕВ МИХАИЛ КОНСТАНТИНОВИЧ"
       LEGAL_OPERATOR_EMAIL: "omnicioinfo@gmail.com"
-      LEGAL_PRIVACY_VERSION: "2026-10-07-v1.3.0"
-      LEGAL_CONSENT_VERSION: "2026-10-07-v1.3.0"
-      LEGAL_TERMS_VERSION: "2026-10-07-v1.3.0"
+      LEGAL_PRIVACY_VERSION: "2026-10-09-v1.4.0"
+      LEGAL_CONSENT_VERSION: "2026-10-09-v1.4.0"
+      LEGAL_TERMS_VERSION: "2026-10-09-v1.4.0"
       SESSION_TTL_SECONDS: "34560000"
-      PORTFOLIO_LIVE_EXECUTION_ENABLED: "false"
-      PORTFOLIO_LIVE_MAX_ORDER_RUB: "10000"
-      PORTFOLIO_LIVE_MAX_DAILY_RUB: "20000"
 
     steps:
       - name: Checkout accepted main state
@@ -324,4 +319,4 @@ jobs:
         run: |
           "%OMNICIO_PYTHON%" -c "import os, sys; sys.exit(0 if os.environ.get('AUTH_DEPLOY_STATUS') == 'app_ready' else '::error::Application deployment did not reach app_ready; inspect the database and release prerequisites.')"
           if errorlevel 1 exit /b 1
-          echo OmniCIO is healthy over HTTPS. VK ID auth is deployed with the reviewed access mode.
+          echo OmniCIO is healthy over HTTPS. Public access and email authentication configuration are ready.

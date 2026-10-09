@@ -314,14 +314,22 @@ def test_research_context_keeps_partial_coverage_and_metric_limitations() -> Non
     assert len(bounded["limitations"][0]) == 500
 
 
-def test_portfolio_context_preserves_return_method_and_estimate_boundaries() -> None:
+def test_portfolio_context_excludes_legacy_transaction_based_returns() -> None:
     performance = {
         "status": "available", "return_percent": "5", "return_method": "modified_dietz",
         "return_denominator_rub": "10000", "return_is_estimate": True,
         "return_is_annualized": False, "return_time_basis": "broker_operation_instruction_time",
         "return_limitations": ["An estimate can differ from time-weighted return."],
     }
-    assert portfolio_context({"performance": performance})["performance"] == performance
+    value_change = {
+        "status": "available", "method": "snapshot_value_change",
+        "nav_change_rub": "500", "label": "Изменение стоимости",
+        "limitation": "Пополнения и выплаты не учитываются; это не доходность.",
+    }
+    context = portfolio_context({"performance": performance, "value_change": value_change})
+    assert "performance" not in context
+    assert "broker_operation_instruction_time" not in json.dumps(context)
+    assert context["value_change"] == value_change
 
 
 @pytest.mark.parametrize("provider", ["ollama", "openai_compatible"])
@@ -573,7 +581,7 @@ def test_memory_replay_and_new_request_after_settings_change_do_not_cancel_valid
     assert control.event.is_set()
 
 
-def test_current_valuation_coverage_and_original_payment_currency_survive_context_filter() -> None:
+def test_current_valuation_coverage_survives_context_filter_but_legacy_payments_do_not() -> None:
     context = portfolio_context({
         "overview": {"status": "stale", "nav_rub": "1000", "valuation_status": "complete",
                      "sector_status": "partial", "valid_until": "2026-10-07T10:05:00Z"},
@@ -584,10 +592,12 @@ def test_current_valuation_coverage_and_original_payment_currency_survive_contex
     })
     assert context["overview"]["status"] == "stale"
     assert context["overview"]["sector_status"] == "partial"
-    assert context["income"]["metric_coverage"]["dividends_rub"]["value_rub"] is None
-    assert context["income"]["native_payment_sums"]["currencies"]["USD"]["dividends"] == "12.5"
+    assert context["overview"]["valuation_status"] == "complete"
+    assert context["overview"]["valid_until"] == "2026-10-07T10:05:00Z"
+    assert "income" not in context
     assert "hidden" not in json.dumps(context)
-    validate_source_response("Получено 12,5 USD.", context)
+    with pytest.raises(AssistantUnavailable, match="evidence_unverified"):
+        validate_source_response("Получено 12,5 USD.", context)
     with pytest.raises(AssistantUnavailable, match="evidence_unverified"):
         validate_source_response("Получено 12,5 руб.", context)
     validate_source_response("Ставка 15%.", {

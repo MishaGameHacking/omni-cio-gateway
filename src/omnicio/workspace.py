@@ -1,8 +1,7 @@
-"""User workspace contracts and calculations over observed financial facts.
+"""Workspace goals and current portfolio values, without broker transaction history.
 
-NAV movement and investment result are different quantities. Cash-flow accounting
-uses the T-Invest OperationType contract; it never turns deposits into earnings:
-https://developer.tbank.ru/invest/services/operations/methods
+Changes between our own NAV observations describe account value only. They do
+not establish investment profit because cash flows are intentionally not read.
 """
 
 from __future__ import annotations
@@ -12,13 +11,12 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .financial import MAX_USER_AMOUNT_RUB, PERCENT_SCALE, RUB_QUANTUM
+from .financial import MAX_USER_AMOUNT_RUB, PERCENT_SCALE
 from .freshness import PORTFOLIO_MAX_AGE
 
 CATEGORIES = ("portfolio", "payments", "goals", "system")
@@ -52,10 +50,6 @@ GOAL_FIELDS = (
     "status",
 )
 _ZERO = Decimal("0")
-_INCOME_FIELDS = ("coupons_rub", "dividends_rub", "other_income_rub")
-_INCOME_PAYMENT_FIELDS = (*_INCOME_FIELDS, "redemptions_rub")
-_PAYMENT_FIELDS = (*_INCOME_PAYMENT_FIELDS, "net_contributions_rub", "fees_rub", "taxes_rub")
-_SOURCE = "https://developer.tbank.ru/invest/services/operations/methods"
 
 
 def decimal_text(value: Decimal) -> str:
@@ -206,7 +200,7 @@ def _date(value: object) -> date:
 def normalize_goal(value: object) -> dict[str, Any]:
     data = _exact(value, GOAL_FIELDS)
     kind = _choice(data["kind"], ("capital", "income"))
-    source = _choice(data["progress_source"], ("portfolio", "income", "manual"))
+    source = _choice(data["progress_source"], ("portfolio", "manual"))
     if source != "manual" and source != {"capital": "portfolio", "income": "income"}[kind]:
         raise ValueError("workspace_goal_source_mismatch")
     target = amount(data["target_amount_rub"], places=8)
@@ -262,371 +256,44 @@ def quiet_now(preferences: Mapping[str, Any], now: datetime) -> bool:
     return start <= local < end if start < end else local >= start or local < end
 
 
-_INPUT = {"INPUT", "INPUT_SWIFT", "INPUT_ACQUIRING", "INP_MULTI"}
-_OUTPUT = {"OUTPUT", "OUTPUT_SWIFT", "OUTPUT_ACQUIRING", "OUT_MULTI"}
-_FEES = {
-    "SERVICE_FEE",
-    "MARGIN_FEE",
-    "BROKER_FEE",
-    "SUCCESS_FEE",
-    "TRACK_MFEE",
-    "TRACK_PFEE",
-    "CASH_FEE",
-    "OUT_FEE",
-    "OUT_STAMP_DUTY",
-    "OUTPUT_PENALTY",
-    "ADVICE_FEE",
-    "OVER_COM",
-    "OTHER_FEE",
-    "FUNDING",
-}
-_TAXES = {
-    "BOND_TAX",
-    "TAX",
-    "DIVIDEND_TAX",
-    "TAX_CORRECTION",
-    "BENEFIT_TAX",
-    "TAX_PROGRESSIVE",
-    "BOND_TAX_PROGRESSIVE",
-    "DIVIDEND_TAX_PROGRESSIVE",
-    "BENEFIT_TAX_PROGRESSIVE",
-    "TAX_CORRECTION_PROGRESSIVE",
-    "TAX_REPO_PROGRESSIVE",
-    "TAX_REPO",
-    "TAX_REPO_HOLD",
-    "TAX_REPO_REFUND",
-    "TAX_REPO_HOLD_PROGRESSIVE",
-    "TAX_REPO_REFUND_PROGRESSIVE",
-    "TAX_CORRECTION_COUPON",
-}
-_INCOME = {
-    "COUPON": "coupons_rub",
-    "DIVIDEND": "dividends_rub",
-    "OVERNIGHT": "other_income_rub",
-    "OVER_INCOME": "other_income_rub",
-}
-_REDEMPTIONS = {"BOND_REPAYMENT", "BOND_REPAYMENT_FULL"}
-_INTERNAL = {
-    "BUY",
-    "SELL",
-    "SELL_MARGIN",
-    "BUY_MARGIN",
-    "ACCRUING_VARMARGIN",
-    "WRITING_OFF_VARMARGIN",
-    "DELIVERY_BUY",
-    "DELIVERY_SELL",
-    "OVER_PLACEMENT",
-    "OPTION_EXPIRATION",
-    "FUTURE_EXPIRATION",
-    "DFA_REDEMPTION",
-    "PRIMARY_ORDER",
-}
-_NON_INCOME_TRANSFERS = {
-    "INPUT_SECURITIES",
-    "OUTPUT_SECURITIES",
-    "TRANS_IIS_BS",
-    "TRANS_BS_BS",
-    "BUY_CARD",
-    "SELL_CARD",
-}
-
-
-def operation_category(operation_type: object) -> str:
-    """One classification shared by the ledger and financial explanations."""
-    kind = str(operation_type or "").removeprefix("OPERATION_TYPE_")
-    for choices, category in (
-        (_INPUT, "contribution"), (_OUTPUT, "withdrawal"), (_FEES, "fee"),
-        (_TAXES, "tax"), (_INCOME.keys(), "income"), (_REDEMPTIONS, "principal_return"),
-        (_INTERNAL, "internal"), (_NON_INCOME_TRANSFERS, "non_cash_transfer"),
-    ):
-        if kind in choices:
-            return category
-    return "unclassified"
-
-
-def _cashflow_metric(kind: str) -> str:
-    if kind in _INPUT | _OUTPUT:
-        return "net_contributions_rub"
-    if kind in _FEES:
-        return "fees_rub"
-    if kind in _TAXES:
-        return "taxes_rub"
-    if kind in _REDEMPTIONS:
-        return "redemptions_rub"
-    return _INCOME[kind]
-
-
-def _operation_amount(operation: Mapping[str, Any]) -> Decimal | None:
-    if str(operation.get("payment_currency") or "").upper() != "RUB":
-        return None
-    try:
-        return amount(operation.get("payment_value"))
-    except ValueError:
-        return None
-
-
-def _executed_cashflow(
-    operation: Mapping[str, Any], from_at: datetime, to_at: datetime,
-    reasons: set[str], income_reasons: set[str],
-) -> tuple[str, datetime] | None:
-    at = timestamp(operation.get("operation_date"))
-    if at is None:
-        reasons.add("operation_time_invalid")
-        income_reasons.add("operation_time_invalid")
-        return None
-    if not from_at < at <= to_at:
-        return None
-    state = operation.get("operation_state")
-    if state in {"OPERATION_STATE_CANCELED", "OPERATION_STATE_PROGRESS"}:
-        return None
-    if state != "OPERATION_STATE_EXECUTED":
-        reasons.add("operation_state_unknown")
-        income_reasons.add("operation_state_unknown")
-        return None
-    kind = str(operation.get("operation_type") or "").removeprefix("OPERATION_TYPE_")
-    if kind in _INTERNAL:
-        return None
-    if kind not in _INPUT | _OUTPUT | _FEES | _TAXES | _INCOME.keys() | _REDEMPTIONS:
-        reasons.add("unclassified_or_non_cash_transfer")
-        if kind not in _NON_INCOME_TRANSFERS:
-            income_reasons.add("unclassified_income")
-        return None
-    return kind, at
-
-
-def _cashflow_payment(
-    operation: Mapping[str, Any], kind: str, reasons: set[str], income_reasons: set[str],
-) -> Decimal | None:
-    payment = _operation_amount(operation)
-    if payment is None:
-        reasons.add("payment_currency_or_amount_unavailable")
-        if kind in _INCOME.keys() | _REDEMPTIONS:
-            income_reasons.add("income_currency_or_amount_unavailable")
-        return None
-    if (kind in _INPUT and payment < 0) or (kind in _OUTPUT and payment > 0):
-        reasons.add("external_flow_sign_invalid")
-        return None
-    return payment
-
-
-def _accumulate_cashflow(
-    kind: str, at: datetime, payment: Decimal, values: dict[str, Decimal],
-    months: dict[str, dict[str, Decimal]],
-) -> None:
-    if kind in _INPUT | _OUTPUT:
-        values["net_contributions_rub"] += payment
-    elif kind in _FEES:
-        values["fees_rub"] -= payment
-    elif kind in _TAXES:
-        values["taxes_rub"] -= payment
-    elif kind in _REDEMPTIONS:
-        values["redemptions_rub"] += payment
-    else:
-        key = _INCOME[kind]
-        values[key] += payment
-        month = at.astimezone(ZoneInfo(_MOSCOW_TIMEZONE)).strftime("%Y-%m")
-        monthly = months.setdefault(month, dict.fromkeys(_INCOME_FIELDS, _ZERO))
-        monthly[key] += payment
-
-
-@dataclass(slots=True)
-class _PaymentTotals:
-    values: dict[str, Decimal]
-    months: dict[str, dict[str, Decimal]]
-    native: dict[str, dict[str, Decimal]]
-    reasons: set[str]
-    income_reasons: set[str]
-    metric_reasons: dict[str, set[str]]
-    metric_counts: dict[str, int]
-
-
-def _record_payment(
-    totals: _PaymentTotals, operation: Mapping[str, Any], kind: str, at: datetime,
-    reasons: set[str], income_reasons: set[str],
-) -> None:
-    currency = str(operation.get("payment_currency") or "").upper()
-    try:
-        native_payment = amount(operation.get("payment_value"))
-    except ValueError:
-        native_payment = None
-    if native_payment is not None and re.fullmatch(r"[A-Z]{3}", currency):
-        currency_values = totals.native.setdefault(currency, dict.fromkeys(_PAYMENT_FIELDS, _ZERO))
-        _accumulate_cashflow(kind, at, native_payment, currency_values, {})
-    metric = _cashflow_metric(kind)
-    payment = _cashflow_payment(operation, kind, reasons, income_reasons)
-    if payment is None:
-        totals.metric_reasons[metric].update(reasons)
-        return
-    totals.metric_counts[metric] += 1
-    _accumulate_cashflow(kind, at, payment, totals.values, totals.months)
-
-
-def _record_cashflow(
-    totals: _PaymentTotals, operation: Mapping[str, Any], from_at: datetime, to_at: datetime,
-) -> None:
-    # Errors belong to the current operation before they are merged. Repeating
-    # an error already seen in another category must not hide its metric impact.
-    reasons: set[str] = set()
-    income_reasons: set[str] = set()
-    parsed = _executed_cashflow(operation, from_at, to_at, reasons, income_reasons)
-    if parsed is None:
-        for key in totals.values:
-            metric_errors = income_reasons if key in _INCOME_PAYMENT_FIELDS else reasons
-            totals.metric_reasons[key].update(metric_errors)
-    else:
-        kind, at = parsed
-        _record_payment(totals, operation, kind, at, reasons, income_reasons)
-    totals.reasons.update(reasons)
-    totals.income_reasons.update(income_reasons)
-
-
-def _payment_metrics(totals: _PaymentTotals) -> dict[str, dict[str, Any]]:
-    metrics = {}
-    for key, value in totals.values.items():
-        reasons, count = totals.metric_reasons[key], totals.metric_counts[key]
-        status = "complete"
-        if reasons:
-            status = "partial" if count else "unavailable"
-        metrics[key] = {
-            "status": status,
-            "value_rub": decimal_text(value) if not reasons else None,
-            "observed_rub": decimal_text(value) if count else None,
-            "reason": ",".join(sorted(reasons)) or None,
-        }
-    return metrics
-
-
-def _native_payment_sums(
-    native: Mapping[str, Mapping[str, Decimal]], fields: Sequence[str],
-) -> dict[str, dict[str, str]]:
-    return {currency: {key.removesuffix("_rub"): decimal_text(row[key]) for key in fields}
-            for currency, row in sorted(native.items())}
-
-
-def _income_summary(
-    totals: _PaymentTotals, metrics: Mapping[str, dict[str, Any]],
-    from_at: datetime, to_at: datetime,
-) -> dict[str, Any]:
-    reasons = totals.income_reasons
-    values = totals.values
-    income_total = sum((values[key] for key in _INCOME_FIELDS), _ZERO)
-    months = [{"month": month, **{key: decimal_text(row[key]) for key in _INCOME_FIELDS},
-               "total_rub": decimal_text(sum(row.values(), _ZERO))}
-              for month, row in sorted(totals.months.items())]
-    return {
-        "status": "available" if not reasons else "unavailable",
-        "reason": ",".join(sorted(reasons)) or None,
-        "from": from_at.isoformat(),
-        "to": to_at.isoformat(),
-        **{key: decimal_text(values[key]) if not reasons else None
-           for key in _INCOME_PAYMENT_FIELDS},
-        "total_rub": decimal_text(income_total) if not reasons else None,
-        "by_month": [] if reasons else months,
-        "source_url": _SOURCE,
-        "tax_basis": "broker_payments_before_separate_tax_operations",
-        "metric_coverage": {key: metrics[key] for key in _INCOME_PAYMENT_FIELDS},
-        "native_payment_sums": _native_payment_sums(totals.native, _INCOME_PAYMENT_FIELDS),
-    }
-
-
-def cashflow_summary(
-    operations: Sequence[Mapping[str, Any]],
-    *,
-    from_at: datetime,
-    to_at: datetime,
-    complete: bool,
-) -> dict[str, Any]:
-    """Sum executed ledger payments once; embedded commission fields are metadata.
-
-    Noncash transfers, card purchases and unfamiliar operations prevent a return
-    assertion. Redemption is returned principal, separate from investment income.
-    """
-    reasons = set() if complete else {"history_incomplete"}
-    totals = _PaymentTotals(
-        values=dict.fromkeys(_PAYMENT_FIELDS, _ZERO), months={}, native={},
-        reasons=reasons, income_reasons=set(reasons),
-        metric_reasons={key: set(reasons) for key in _PAYMENT_FIELDS},
-        metric_counts=dict.fromkeys(_PAYMENT_FIELDS, 0),
-    )
-    for operation in operations:
-        _record_cashflow(totals, operation, from_at, to_at)
-    metrics = _payment_metrics(totals)
-    return {
-        "status": "available" if not reasons else "unavailable",
-        "reason": ",".join(sorted(reasons)) or None,
-        "from": from_at.isoformat(), "to": to_at.isoformat(),
-        **{key: decimal_text(value) if not reasons else None
-           for key, value in totals.values.items()},
-        "metrics": metrics,
-        "native_payment_sums": {
-            "basis": "observed_executed_payments_without_fx_conversion",
-            "history_complete": complete,
-            "currencies": _native_payment_sums(totals.native, _PAYMENT_FIELDS),
-        },
-        "income": _income_summary(totals, metrics, from_at, to_at),
-    }
-
-
 def snapshot_valuation_complete(snapshot: Mapping[str, Any]) -> bool:
-    """Use independent NAV coverage; legacy snapshots require observed status."""
+    """A complete valuation requires an actual finite NAV, never a missing value."""
+    try:
+        amount(snapshot.get("nav_rub"))
+    except ValueError:
+        return False
     valuation_status = snapshot.get("valuation_status")
     evidence = snapshot.get("evidence")
     if valuation_status is None and isinstance(evidence, Mapping):
         analysis = evidence.get("analysis")
         if isinstance(analysis, Mapping):
             valuation_status = analysis.get("valuation_status")
-    return (valuation_status == "complete" if valuation_status is not None
-            else snapshot.get("analysis_status") == "observed")
+    return (
+        valuation_status == "complete"
+        if valuation_status is not None
+        else snapshot.get("analysis_status") == "observed"
+    )
 
 
-def portfolio_performance(
-    snapshots: Sequence[Mapping[str, Any]],
-    operations: Sequence[Mapping[str, Any]],
-    *,
-    watermark: datetime | None,
-    history_complete: bool,
-) -> dict[str, Any]:
+def portfolio_value_change(snapshots: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Compare our own valued observations without inventing investment returns."""
     result: dict[str, Any] = {
         "status": "unavailable",
-        "reason": "insufficient_covered_snapshots",
+        "reason": "insufficient_valued_snapshots",
         "from": None,
         "to": None,
         "start_nav_rub": None,
         "end_nav_rub": None,
         "nav_change_rub": None,
-        "net_contributions_rub": None,
-        "investment_result_rub": None,
-        "income_received_rub": None,
-        "fees_rub": None,
-        "taxes_rub": None,
-        "return_percent": None,
-        "return_status": "unavailable",
-        "return_reason": "insufficient_covered_snapshots",
-        "return_method": "modified_dietz",
-        "return_denominator_rub": None,
-        "return_is_estimate": True,
-        "return_is_annualized": False,
-        "return_time_basis": "broker_operation_instruction_time",
-        "return_limitations": [
-            "Cash flows are weighted by the broker's recorded operation time (OperationItem.date), "
-            "which is the instruction date, not a separately confirmed settlement timestamp.",
-            "Large flows and volatility can make this estimate differ from time-weighted return.",
-            "This is a historical account result, not a forecast or a probability of success.",
-        ],
-        "return_source_url": (
-            "https://www.gipsstandards.org/standards/gips-standards-for-firms/"
-            "gips-standards-handbook-for-firms/"
-        ),
-        "method": "nav_less_external_flows",
-        "source_url": _SOURCE,
+        "method": "snapshot_value_change",
+        "label": "Изменение стоимости портфеля",
+        "limitation": "Разность собственных наблюдений стоимости, не доходность. "
+        "История операций и денежных потоков не собирается.",
     }
     covered = [
         row
         for row in snapshots
-        if watermark is not None
-        and (at := timestamp(row.get("captured_at"))) is not None
-        and at <= watermark
-        and snapshot_valuation_complete(row)
+        if timestamp(row.get("captured_at")) is not None and snapshot_valuation_complete(row)
     ]
     covered.sort(key=lambda row: timestamp(row["captured_at"]) or datetime.min.replace(tzinfo=UTC))
     if len(covered) < 2:
@@ -635,76 +302,16 @@ def portfolio_performance(
     begin, end = timestamp(first["captured_at"]), timestamp(last["captured_at"])
     if begin is None or end is None or end <= begin:
         return result
-    flow = cashflow_summary(operations, from_at=begin, to_at=end, complete=history_complete)
     start_nav, end_nav = amount(first["nav_rub"]), amount(last["nav_rub"])
-    delta = end_nav - start_nav
     result.update(
-        {
-            "status": flow["status"],
-            "reason": flow["reason"],
-            "from": begin.isoformat(),
-            "to": end.isoformat(),
-            "start_nav_rub": decimal_text(start_nav),
-            "end_nav_rub": decimal_text(end_nav),
-            "nav_change_rub": decimal_text(delta),
-            "net_contributions_rub": flow["net_contributions_rub"],
-            "income_received_rub": flow["income"]["total_rub"],
-            "fees_rub": flow["metrics"]["fees_rub"]["value_rub"],
-            "taxes_rub": flow["metrics"]["taxes_rub"]["value_rub"],
-        }
+        status="available",
+        reason=None,
+        **{"from": begin.isoformat(), "to": end.isoformat()},
+        start_nav_rub=decimal_text(start_nav),
+        end_nav_rub=decimal_text(end_nav),
+        nav_change_rub=decimal_text(end_nav - start_nav),
     )
-    contribution = flow["metrics"]["net_contributions_rub"]
-    result["metric_coverage"] = flow["metrics"]
-    result["native_payment_sums"] = flow["native_payment_sums"]
-    result["nav_status"] = "complete"
-    if contribution["status"] == "complete":
-        result.update(status="available", reason=None,
-                      net_contributions_rub=contribution["value_rub"])
-        # Expenses and payouts already change NAV: do not subtract/add them twice.
-        # Foreign internal payouts/fees need no FX approximation for the RUB
-        # account result. Only external transfers require a known RUB value.
-        investment_result = delta - amount(contribution["value_rub"])
-        result["investment_result_rub"] = decimal_text(investment_result)
-        denominator = _dietz_denominator(start_nav, operations, begin, end)
-        result["return_denominator_rub"] = decimal_text(denominator)
-        if start_nav >= 0 and end_nav >= 0 and denominator >= RUB_QUANTUM:
-            result["return_percent"] = decimal_text(investment_result / denominator * PERCENT_SCALE)
-            result["return_status"] = "available"
-            result["return_reason"] = None
-        else:
-            result["return_reason"] = "non_positive_or_negligible_invested_capital"
-    else:
-        result["return_reason"] = contribution["reason"]
     return result
-
-
-def _dietz_denominator(
-    start_nav: Decimal, operations: Sequence[Mapping[str, Any]], begin: datetime, end: datetime,
-) -> Decimal:
-    """Modified Dietz estimate using broker operation times, never ingestion time.
-
-    A flow at the ending valuation has weight zero; a flow at the beginning
-    is already in opening NAV and is excluded by the same accounting boundary.
-    OperationItem.date is the broker's instruction time; exact settlement time
-    is not supplied by this ledger and must not be claimed as known.
-    Called only after cash-flow classification and coverage succeed.
-    """
-    span = end - begin
-    duration = Decimal(span.days * 86_400 + span.seconds) + Decimal(span.microseconds) / 1_000_000
-    denominator = start_nav
-    for operation in operations:
-        classified = _executed_cashflow(operation, begin, end, set(), set())
-        if classified is None or classified[0] not in _INPUT | _OUTPUT:
-            continue
-        remaining = end - classified[1]
-        seconds = (
-            Decimal(remaining.days * 86_400 + remaining.seconds)
-            + Decimal(remaining.microseconds) / 1_000_000
-        )
-        payment = _operation_amount(operation)
-        assert payment is not None  # cashflow_summary already verified this exact operation set
-        denominator += payment * seconds / duration
-    return denominator
 
 
 def _portfolio_goal_amount(
@@ -720,43 +327,11 @@ def _portfolio_goal_amount(
     return current, observed, None
 
 
-def income_goal_start(goal: Mapping[str, Any]) -> datetime:
-    """The goal's inclusive Moscow calendar boundary, shared with ledger selection."""
-    value = goal["start_date"]
-    started = value if type(value) is date else _date(value)
-    return datetime.combine(
-        started, time.min, ZoneInfo(_MOSCOW_TIMEZONE),
-    ).astimezone(UTC)
-
-
-def _income_goal_amount(
-    goal: Mapping[str, Any], operations: Sequence[Mapping[str, Any]],
-    watermark: datetime | None, history_complete: bool, now: datetime,
-) -> tuple[Decimal | None, datetime | None, str | None]:
-    if watermark is None or watermark > now:
-        return None, None, "history_incomplete"
-    begin = income_goal_start(goal)
-    if begin >= watermark:
-        return None, None, "goal_period_not_observed"
-    flow = cashflow_summary(
-        operations, from_at=begin - timedelta(microseconds=1),
-        to_at=watermark, complete=history_complete,
-    )
-    if flow["income"]["status"] != "available":
-        return None, None, flow["income"]["reason"]
-    current = (amount(flow["income"]["total_rub"])
-               * amount(goal["allocation_percent"]) / PERCENT_SCALE)
-    return current, watermark, None
-
-
 def goal_progress(
     goal: Mapping[str, Any],
     *,
     connection: Mapping[str, Any] | None,
     snapshot: Mapping[str, Any] | None,
-    operations: Sequence[Mapping[str, Any]],
-    watermark: datetime | None,
-    history_complete: bool,
     now: datetime,
 ) -> dict[str, Any]:
     source = goal["progress_source"]
@@ -774,9 +349,7 @@ def goal_progress(
     elif source == "portfolio":
         current, observed, reason = _portfolio_goal_amount(goal, snapshot, now)
     else:
-        current, observed, reason = _income_goal_amount(
-            goal, operations, watermark, history_complete, now,
-        )
+        reason = "transaction_history_not_collected"
     target = amount(goal["target_amount_rub"])
     result: dict[str, Any] = {
         "status": "unavailable",
@@ -789,7 +362,8 @@ def goal_progress(
     }
     if current is not None:
         result.update(
-            status="available", amount_rub=decimal_text(current),
+            status="available",
+            amount_rub=decimal_text(current),
             percent=decimal_text(current / target * PERCENT_SCALE),
             remaining_rub=decimal_text(max(_ZERO, target - current)),
         )

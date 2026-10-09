@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "omnicio-gateway"
-version = "1.3.0"
-description = "OmniCIO Personal owner gateway and broker connectivity service"
+version = "1.4.0"
+description = "OmniCIO public market analytics and private portfolio monitoring"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-  "cryptography>=43,<51",
+  "cryptography>=45,<51",
   "fastapi>=0.115,<1",
   "psycopg[binary]>=3.2,<4",
   "psycopg-pool>=3.2,<4",

@@ -1,4 +1,4 @@
-"""Daily read-only portfolio observer with durable restart and pagination state."""
+"""Current-position observation with durable jobs and shared market evidence."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from functools import partial
 from threading import BoundedSemaphore, Event, Thread
 from typing import Literal, TypedDict, cast
 from uuid import UUID
@@ -23,8 +22,6 @@ from .config import load_settings
 from .db import Database
 from .intelligence import build_news_evidence, build_tbank_evidence, held_news_instrument_uids
 from .monitoring import (
-    HISTORY_CORRECTION_OVERLAP,
-    MAX_HISTORY_PAGES_PER_RUN,
     MAX_WORKERS,
     NEWS_BUDGET_SECONDS,
     NEWS_MAX_COMPLETED_CURSORS,
@@ -32,15 +29,13 @@ from .monitoring import (
     NEWS_MAX_PAGES_PER_RUN,
     NEWS_MAX_PATH_PROOFS,
     PROVIDER_READ_ATTEMPTS,
-    QUICK_REFRESH_BUDGET_SECONDS,
     REFRESH_ADMISSION_SLOTS,
     WORKER_POLL_SECONDS,
     WORKER_SHUTDOWN_SECONDS,
 )
-from .portfolio_store import BrokerSyncState, JobRunRecord, ObservationCancelled, PortfolioStore
+from .portfolio_store import JobRunRecord, ObservationCancelled, PortfolioStore
 from .tbank import (
     NEWS_MAX_PAGE_SIZE,
-    OPERATIONS_MAX_PAGE_SIZE,
     TBankInvestClient,
     TBankTokenRejected,
     TBankUnavailable,
@@ -151,34 +146,6 @@ def _advance_news_path(state: dict[str, object], cursor: str, next_cursor: str |
         existing["seen_cursors"].extend(visited)
     else:
         paths.append({"cursor": next_cursor, "seen_cursors": visited})
-
-
-def _history_window(
-    state: BrokerSyncState | None,
-    account_opened_at: datetime | None,
-    now: datetime,
-) -> tuple[datetime, datetime, str] | Literal[
-    "opened_date_missing",
-    "opened_date_invalid",
-]:
-    if state is not None and state.pending_cursor:
-        if state.history_window_from is None or state.history_window_to is None:
-            raise RuntimeError("history cursor has no durable window")
-        return state.history_window_from, state.history_window_to, state.pending_cursor
-
-    if account_opened_at is None:
-        return "opened_date_missing"
-    opened_at = account_opened_at.astimezone(UTC)
-    if opened_at > now:
-        return "opened_date_invalid"
-
-    window_from = opened_at
-    if state is not None and state.last_complete_watermark is not None:
-        window_from = max(
-            opened_at,
-            state.last_complete_watermark - HISTORY_CORRECTION_OVERLAP,
-        )
-    return window_from, now, ""
 
 
 def provider_read[T](operation: Callable[[], T], *, retry: bool = True) -> T:
@@ -330,7 +297,10 @@ class PortfolioObserver:
             return self.run_job(job, now=now)
 
     def run_job(
-        self, job: JobRunRecord, *, now: datetime,
+        self,
+        job: JobRunRecord,
+        *,
+        now: datetime,
         should_stop: Callable[[], bool] | None = None,
     ) -> UserObservationResult:
         """Observe one already claimed daily or manual job; never execute orders."""
@@ -352,8 +322,12 @@ class PortfolioObserver:
         except ObservationInterrupted:
             raise
         except ObservationCancelled:
-            details.update(stage_error="ObservationCancelled", snapshot_saved=False,
-                           history_pages=0, history_new_observations=0)
+            details.update(
+                stage_error="ObservationCancelled",
+                snapshot_saved=False,
+                history_pages=0,
+                history_new_observations=0,
+            )
         except (
             BrokerConnectionError,
             TBankTokenRejected,
@@ -365,14 +339,22 @@ class PortfolioObserver:
             self._record_failure(job, details, exc)
             raise
         details["retryable"] = status == "degraded" and details.get("stage_error") not in {
-            "ObservationCancelled", "BrokerConnectionError", "TBankTokenRejected", "ValueError",
-        } and details.get("history_status") not in {"opened_date_missing", "opened_date_invalid"}
+            "ObservationCancelled",
+            "BrokerConnectionError",
+            "TBankTokenRejected",
+            "ValueError",
+        }
         finished = self.store.finish_job(job.user_id, job.id, status=status, details=details)
-        return _confirmed_job_result(UserObservationResult(
-            user_id=job.user_id, status=status, snapshot_saved=bool(details["snapshot_saved"]),
-            history_pages=cast(int, details["history_pages"]),
-            history_items_inserted=cast(int, details["history_new_observations"]),
-        ), finished)
+        return _confirmed_job_result(
+            UserObservationResult(
+                user_id=job.user_id,
+                status=status,
+                snapshot_saved=bool(details["snapshot_saved"]),
+                history_pages=cast(int, details["history_pages"]),
+                history_items_inserted=cast(int, details["history_new_observations"]),
+            ),
+            finished,
+        )
 
     def _record_failure(
         self, job: JobRunRecord, details: dict[str, object], exc: Exception,
@@ -389,13 +371,15 @@ class PortfolioObserver:
             )
 
     def _observe_job(
-        self, job: JobRunRecord, now: datetime, details: dict[str, object],
+        self,
+        job: JobRunRecord,
+        now: datetime,
+        details: dict[str, object],
         should_stop: Callable[[], bool] | None,
     ) -> None:
         _checkpoint(should_stop)
         quick = job.refresh_scope == "quick"
-        deadline = time.monotonic() + QUICK_REFRESH_BUDGET_SECONDS if quick else None
-        bundle, snapshot_id, opened_at = self._snapshot(job, details)
+        bundle, snapshot_id = self._snapshot(job, details)
         _checkpoint(should_stop)
         if quick:
             details["evidence_sources"] = {}
@@ -404,19 +388,12 @@ class PortfolioObserver:
             try:
                 self._evidence(job, bundle, snapshot_id, now, details)
             except TBankUnavailable:
-                # NAV and the ledger remain usable if an enrichment provider fails.
+                # Current holdings remain usable if a shared market source fails.
                 details["evidence_sources"] = {"provider": "unavailable"}
         _checkpoint(should_stop)
         profile = self.store.current_profile(job.user_id)
         details["profile_version"] = profile.version if profile else None
-        pages, inserted, history_status = self._sync_history(
-            job.user_id, job_run_id=job.id, account_id=bundle.account_id,
-            environment=bundle.environment, account_opened_at=opened_at,
-            now=max(now, bundle.refreshed_at), should_stop=should_stop,
-            max_pages=1 if quick else None, retry=not quick, deadline=deadline,
-        )
-        details.update(history_pages=pages, history_new_observations=inserted,
-                       history_status=history_status)
+        details.update(history_pages=0, history_new_observations=0, history_status="not_collected")
         _checkpoint(should_stop)
         self._news(job, bundle, snapshot_id, details, should_stop)
 
@@ -484,42 +461,46 @@ class PortfolioObserver:
         return pending
 
     def _snapshot(
-        self, job: JobRunRecord, details: dict[str, object],
-    ) -> tuple[BrokerObservationBundle, UUID, datetime | None]:
+        self,
+        job: JobRunRecord,
+        details: dict[str, object],
+    ) -> tuple[BrokerObservationBundle, UUID]:
         user_id = job.user_id
         quick = job.refresh_scope == "quick"
-        account = (self.broker.revalidate_account(user_id) if quick
-                   else provider_read(lambda: self.broker.revalidate_account(user_id)))
-        details.update(account_access=account.access_level, account_status=account.status,
-                       account_type=account.type)
-        user_info = None
-        details["broker_user_info_status"] = "not_requested"
-        if not quick:
-            try:
-                user_info = provider_read(lambda: self.broker.user_info(user_id))
-            except TBankUnavailable:
-                details["broker_user_info_status"] = "unavailable"
-            else:
-                details.update(
-                    broker_user_info_status="received", broker_qualified=user_info.qualified,
-                    broker_qualified_for_work_with=list(user_info.qualified_for_work_with),
-                    broker_risk_level_code=user_info.risk_level_code,
-                    broker_tariff=user_info.tariff,
-                )
-        bundle = (self.broker.observation_bundle(user_id, quick=True) if quick else
-                  provider_read(lambda: self.broker.observation_bundle(user_id, full_catalog=True)))
+        account = (
+            self.broker.revalidate_account(user_id)
+            if quick
+            else provider_read(lambda: self.broker.revalidate_account(user_id))
+        )
+        details.update(
+            account_access=account.access_level,
+            account_status=account.status,
+            account_type=account.type,
+        )
+        details["broker_user_info_status"] = "not_collected"
+        bundle = (
+            self.broker.observation_bundle(user_id, quick=True)
+            if quick
+            else provider_read(lambda: self.broker.observation_bundle(user_id, full_catalog=True))
+        )
         if quick:
             bundle = self.store.reuse_snapshot_metadata(user_id, job_run_id=job.id, bundle=bundle)
         snapshot_id = self.store.save_snapshot(
-            user_id, job_run_id=job.id, bundle=bundle, account=account, user_info=user_info,
+            user_id,
+            job_run_id=job.id,
+            bundle=bundle,
+            account=account,
         )
         details.update(
-            snapshot_saved=True, analysis_status=bundle.analysis.status,
+            snapshot_saved=True,
+            analysis_status=bundle.analysis.status,
             valuation_status=bundle.analysis.valuation_status,
-            catalog_status=next((source.status for source in bundle.sources
-                                 if source.id == "catalog"), "not_requested"),
+            catalog_status=next(
+                (source.status for source in bundle.sources if source.id == "catalog"),
+                "not_requested",
+            ),
         )
-        return bundle, snapshot_id, account.opened_at
+        return bundle, snapshot_id
 
     def _evidence(
         self, job: JobRunRecord, bundle: BrokerObservationBundle, snapshot_id: UUID,
@@ -556,82 +537,19 @@ class PortfolioObserver:
     @staticmethod
     def _degraded(details: dict[str, object]) -> bool:
         if details.get("refresh_scope") == "quick":
-            return (details.get("valuation_status") != "complete"
-                    or details.get("history_status") != "complete")
+            return details.get("valuation_status") != "complete"
         return (
-            (details.get("valuation_status") != "complete"
-             and details["analysis_status"] != "observed")
+            (
+                details.get("valuation_status") != "complete"
+                and details["analysis_status"] != "observed"
+            )
             or details["catalog_status"] == "partial"
-            or details["broker_user_info_status"] != "received"
-            or details["history_status"] != "complete"
-            or any(value != "received" for key, value in
-                   cast(dict[str, str], details["evidence_sources"]).items()
-                   if key != "credit_ratings")
+            or any(
+                value != "received"
+                for key, value in cast(dict[str, str], details["evidence_sources"]).items()
+                if key != "credit_ratings"
+            )
         )
-
-    def _sync_history(
-        self,
-        user_id: UUID,
-        *,
-        job_run_id: UUID,
-        account_id: str,
-        environment: str,
-        account_opened_at: datetime | None,
-        now: datetime,
-        should_stop: Callable[[], bool] | None = None,
-        max_pages: int | None = None,
-        retry: bool = True,
-        deadline: float | None = None,
-    ) -> tuple[int, int, str]:
-        state = self.store.sync_state(user_id, account_id)
-        window = _history_window(state, account_opened_at, now)
-        if isinstance(window, str):
-            return 0, 0, window
-        window_from, window_to, cursor = window
-
-        seen_cursors = {cursor} if cursor else set()
-        inserted = 0
-        page_limit = max_pages if max_pages is not None else MAX_HISTORY_PAGES_PER_RUN
-        for page_number in range(1, page_limit + 1):
-            _checkpoint(should_stop)
-            if deadline is not None and time.monotonic() >= deadline:
-                return page_number - 1, inserted, "continuation_pending"
-            read = partial(
-                    self.broker.history_page,
-                    user_id,
-                    from_at=window_from,
-                    to_at=window_to,
-                    cursor=cursor,
-                    limit=OPERATIONS_MAX_PAGE_SIZE,
-            )
-            page = provider_read(read, retry=retry)
-            if page.has_next and page.next_cursor in seen_cursors:
-                raise RuntimeError("T-Invest operation pagination cursor repeated")
-
-            inserted += self.store.save_history_page(
-                user_id,
-                job_run_id=job_run_id,
-                account_id=account_id,
-                environment=environment,
-                window_from=window_from,
-                window_to=window_to,
-                page=page,
-                observed_at=now,
-            )
-            if page.has_next:
-                seen_cursors.add(page.next_cursor)
-                cursor = page.next_cursor
-                continue
-            if window_to >= now:
-                return page_number, inserted, "complete"
-            # Finishing a resumed cursor only covers its original window.
-            # Catch up to this snapshot without exceeding the shared page
-            # budget; each completed watermark remains durable on failure.
-            window_from = max(window_from, window_to - HISTORY_CORRECTION_OVERLAP)
-            window_to, cursor = now, ""
-            seen_cursors.clear()
-
-        return page_limit, inserted, "continuation_pending"
 
 
 class PortfolioRefreshCoordinator:
@@ -766,6 +684,9 @@ def main() -> int:
             database,
             credential_key=cfg.broker_token_crypto_key,
             tbank=TBankInvestClient(),
+            market_credential=(
+                cfg.market_data_token if cfg.market_data_distribution_approved else ""
+            ),
         )
         result = PortfolioObserver(
             store,

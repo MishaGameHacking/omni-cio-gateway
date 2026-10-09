@@ -1,4 +1,4 @@
-"""Typed T-Invest REST reads and explicit, idempotent limit-order requests."""
+"""T-Invest readers with separate portfolio and shared market-data boundaries."""
 
 from __future__ import annotations
 
@@ -13,18 +13,17 @@ from decimal import Decimal, InvalidOperation
 from http.client import HTTPException
 from typing import Literal, Never, cast
 from urllib.parse import urlsplit
-from uuid import UUID
 
 from .security import NoRedirectHandler
 
 TBankEnvironment = Literal["prod", "sandbox"]
 TBankQuoteSource = Literal["exchange", "dealer"]
+TBankPurpose = Literal["portfolio", "market"]
 
 logger = logging.getLogger(__name__)
 
 _REST_BASES: dict[TBankEnvironment, str] = {
     "prod": "https://invest-public-api.tbank.ru/rest/",
-    "sandbox": "https://sandbox-invest-public-api.tbank.ru/rest/",
 }
 _API_PREFIX = "tinkoff.public.invest.api.contract.v1."
 _INSTRUMENT_UID_FIELD = "instrument uid"
@@ -34,6 +33,59 @@ _MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 # these are provider contracts, not runtime knobs that may be raised arbitrarily.
 NEWS_MAX_PAGE_SIZE = 50
 OPERATIONS_MAX_PAGE_SIZE = 1000
+
+# A user's bearer is never an all-purpose API credential. Unknown methods and
+# every mutation fail before constructing an authenticated network request.
+_PORTFOLIO_METHODS = frozenset(
+    {
+        ("UsersService", "GetAccounts"),
+        ("OperationsService", "GetPositions"),
+        ("OperationsService", "GetWithdrawLimits"),
+    }
+)
+_MARKET_METHODS = frozenset(
+    {
+        ("InstrumentsService", method)
+        for method in (
+            "News",
+            "FindInstrument",
+            "GetAssetBy",
+            "GetAssetFundamentals",
+            "GetAssetReports",
+            "GetInstrumentBy",
+            "Shares",
+            "Bonds",
+            "Etfs",
+            "Currencies",
+            "Futures",
+            "Options",
+            "OptionsBy",
+            "Indicatives",
+            "StructuredNotes",
+            "Dfas",
+            "ShareBy",
+            "BondBy",
+            "EtfBy",
+            "FutureBy",
+            "GetDividends",
+            "GetBondCoupons",
+            "GetBondEvents",
+            "GetAccruedInterests",
+            "TradingSchedules",
+        )
+    }
+    | {
+        ("MarketDataService", method)
+        for method in (
+            "GetCandles",
+            "GetLastPrices",
+            "GetMarketValues",
+            "GetTradingStatus",
+            "GetOrderBook",
+        )
+    }
+)
+READ_ONLY_ACCESS = "ACCOUNT_ACCESS_LEVEL_READ_ONLY"
 
 
 class TBankError(RuntimeError):
@@ -235,7 +287,7 @@ class TBankPortfolioPosition:
     current_nkd: TBankMoney | None = None
     blocked_lots: str = "0"
     average_price_fifo: TBankMoney | None = None
-    quantity_lots: str = "0"
+    quantity_lots: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,7 +326,7 @@ class TBankInstrumentMetadata:
 
 @dataclass(frozen=True, slots=True)
 class TBankPortfolio:
-    total: TBankMoney
+    total: TBankMoney | None
     expected_yield_percent: str | None
     daily_yield: TBankMoney | None
     daily_yield_percent: str | None
@@ -287,6 +339,16 @@ class TBankPositions:
     money: tuple[TBankMoney, ...]
     blocked_money: tuple[TBankMoney, ...]
     limits_loading_in_progress: bool
+    holdings: tuple[TBankPortfolioPosition, ...] = ()
+    blocked_guarantee_money: tuple[TBankMoney, ...] = ()
+    withdraw_limits_available: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class TBankWithdrawLimits:
+    money: tuple[TBankMoney, ...]
+    blocked_money: tuple[TBankMoney, ...]
+    blocked_guarantee_money: tuple[TBankMoney, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -611,73 +673,6 @@ def _search_instrument(raw: object) -> TBankInstrument | None:
         for_iis=cast(bool, for_iis),
         weekend_trading=cast(bool, weekend),
     )
-
-
-def _operation_trade(raw: object) -> TBankOperationTrade:
-    trade = _required_object(raw, "operation trade")
-    trade_date = _optional_provider_timestamp(trade.get("date"))
-    if trade_date is None:
-        raise TBankUnavailable("T-Invest operation trade has no date")
-    return TBankOperationTrade(
-        num=_text(trade.get("num")).strip(),
-        date=trade_date,
-        quantity=_integer_text(trade.get("quantity")),
-        price=_money(trade.get("price")),
-    )
-
-
-def _operation_trades(item: dict[str, object]) -> tuple[TBankOperationTrade, ...]:
-    trades_info = item.get("tradesInfo")
-    if trades_info is None:
-        return ()
-    rows = _optional_list(
-        _required_object(trades_info, "operation trades"),
-        "trades",
-    )
-    return tuple(_operation_trade(raw) for raw in rows)
-
-
-def _operation(raw: object) -> TBankOperation:
-    item = _required_object(raw, "operation item")
-    operation_date = _optional_provider_timestamp(item.get("date"))
-    if operation_date is None:
-        raise TBankUnavailable("T-Invest operation item has no date")
-    return TBankOperation(
-        cursor=_text(item.get("cursor")).strip(),
-        broker_account_id=_text(item.get("brokerAccountId")).strip(),
-        id=_text(item.get("id")).strip(),
-        parent_operation_id=_text(item.get("parentOperationId")).strip(),
-        name=_text(item.get("name")).strip(),
-        date=operation_date,
-        operation_type=_text(item.get("type")).strip(),
-        description=_text(item.get("description")).strip(),
-        state=_text(item.get("state")).strip(),
-        instrument_uid=_text(item.get("instrumentUid")).strip(),
-        figi=_text(item.get("figi")).strip(),
-        instrument_type=_text(item.get("instrumentType")).strip(),
-        position_uid=_text(item.get("positionUid")).strip(),
-        ticker=_text(item.get("ticker")).strip(),
-        class_code=_text(item.get("classCode")).strip(),
-        payment=_money(item.get("payment")),
-        price=_money(item.get("price")),
-        commission=_money(item.get("commission")),
-        accrued_int=_money(item.get("accruedInt")),
-        quantity=_integer_text(item.get("quantity")),
-        quantity_rest=_integer_text(item.get("quantityRest")),
-        quantity_done=_integer_text(item.get("quantityDone")),
-        asset_uid=_text(item.get("assetUid")).strip(),
-        trades=_operation_trades(item),
-    )
-
-
-def _operation_page_cursor(payload: dict[str, object]) -> tuple[bool, str]:
-    has_next = payload.get("hasNext", False)
-    if not isinstance(has_next, bool):
-        raise TBankUnavailable("T-Invest operation page has invalid hasNext flag")
-    next_cursor = _text(payload.get("nextCursor")).strip()
-    if has_next and not next_cursor:
-        raise TBankUnavailable("T-Invest operation page is missing next cursor")
-    return has_next, next_cursor
 
 
 def _instrument_metadata(
@@ -1010,6 +1005,7 @@ def _decode_tbank_response(raw: str) -> dict[str, object]:
 @dataclass(frozen=True, slots=True)
 class TBankInvestClient:
     timeout_seconds: int = 10
+    purpose: TBankPurpose = "portfolio"
 
     def get_news(
         self, token: str, environment: TBankEnvironment, *, cursor: str | None = None,
@@ -1062,19 +1058,32 @@ class TBankInvestClient:
         return TBankFundProfile(ident, expense, _text(fund.get("primaryIndex")).strip())
 
     def get_instrument_metadata(
-        self, token: str, environment: TBankEnvironment, instrument_type: str,
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_type: str,
     ) -> tuple[TBankInstrumentMetadata, ...]:
-        method = {"share": "Shares", "bond": "Bonds", "etf": "Etfs"}.get(instrument_type)
+        method = {
+            "share": "Shares",
+            "bond": "Bonds",
+            "etf": "Etfs",
+            "currency": "Currencies",
+            "future": "Futures",
+        }.get(instrument_type)
         if method is None:
             raise ValueError("unsupported metadata instrument type")
         payload = self._post(
-            token=token, environment=environment, service="InstrumentsService", method=method,
+            token=token,
+            environment=environment,
+            service="InstrumentsService",
+            method=method,
             body={"instrumentStatus": "INSTRUMENT_STATUS_ALL"},
         )
         result, seen = [], set()
         for raw in _required_list(payload, "instruments"):
             item = _instrument_metadata(
-                _required_object(raw, "instrument metadata"), instrument_type,
+                _required_object(raw, "instrument metadata"),
+                instrument_type,
             )
             if item.uid in seen:
                 raise TBankUnavailable("T-Invest metadata has missing or duplicate uid")
@@ -1129,24 +1138,7 @@ class TBankInvestClient:
         price: Decimal,
         action: str,
     ) -> TBankOrderEstimate:
-        body = _limit_order_body(account_id, instrument_uid, lots, price, action)
-        payload = self._post(
-            token=token,
-            environment=environment,
-            service="SandboxService" if environment == "sandbox" else "OrdersService",
-            method="GetSandboxOrderPrice" if environment == "sandbox" else "GetOrderPrice",
-            body=body,
-        )
-        total = _money(payload.get("totalOrderAmount"))
-        initial = _money(payload.get("initialOrderAmount"))
-        commission = _money(payload.get("executedCommission"))
-        if _int_value(payload.get("lotsRequested"), "lotsRequested") != lots or any(
-            value is None or value.currency.upper() != "RUB" or Decimal(value.value) < 0
-            for value in (total, initial, commission)
-        ):
-            raise TBankUnavailable("order estimate is incomplete")
-        assert total is not None and initial is not None and commission is not None
-        return TBankOrderEstimate(lots, total, initial, commission)
+        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
 
     def submit_limit_order(
         self,
@@ -1160,25 +1152,7 @@ class TBankInvestClient:
         action: str,
         request_id: str,
     ) -> TBankOrderState:
-        ident = str(UUID(request_id))
-        body = _limit_order_body(account_id, instrument_uid, lots, price, action)
-        body.update(
-            {
-                "orderId": ident,
-                "orderType": "ORDER_TYPE_LIMIT",
-                "priceType": "PRICE_TYPE_CURRENCY",
-                "timeInForce": "TIME_IN_FORCE_FILL_AND_KILL",
-                "confirmMarginTrade": False,
-            }
-        )
-        payload = self._post(
-            token=token,
-            environment=environment,
-            service="SandboxService" if environment == "sandbox" else "OrdersService",
-            method="PostSandboxOrder" if environment == "sandbox" else "PostOrder",
-            body=body,
-        )
-        return _order_state(payload, expected_request_id=ident)
+        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
 
     def get_bond_ratings(
         self,
@@ -1336,12 +1310,14 @@ class TBankInvestClient:
         return batch.prices
 
     def get_last_prices_batch(
-        self, token: str, environment: TBankEnvironment, instrument_uids: tuple[str, ...],
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        instrument_uids: tuple[str, ...],
     ) -> TBankLastPriceBatch:
         clean = tuple(
             dict.fromkeys(
-                _validate_provider_id(value, _INSTRUMENT_UID_FIELD)
-                for value in instrument_uids
+                _validate_provider_id(value, _INSTRUMENT_UID_FIELD) for value in instrument_uids
             )
         )
         if not clean:
@@ -1357,32 +1333,26 @@ class TBankInvestClient:
                 "instrumentStatus": "INSTRUMENT_STATUS_BASE",
             },
         )
-        requested = set(clean)
-        seen: set[str] = set()
-        result: list[TBankLastPrice] = []
-        unavailable: list[str] = []
-        for raw in _optional_list(payload, "lastPrices"):
-            item = _required_object(raw, "last price")
-            uid = _text(item.get("instrumentUid")).strip()
-            if not uid or uid not in requested or uid in seen:
-                raise TBankUnavailable("T-Invest last prices returned invalid instrument uid")
-            seen.add(uid)
-            try:
-                price = _quotation(item.get("price"))
-                quote_time = _optional_provider_timestamp(item.get("time"))
-                if price is None or Decimal(price) <= 0 or quote_time is None:
-                    raise TBankUnavailable("T-Invest last price is missing required fields")
-            except TBankUnavailable:
-                unavailable.append(uid)
-                continue
-            result.append(
-                TBankLastPrice(
-                    instrument_uid=uid,
-                    price=price,
-                    time=quote_time,
-                )
-            )
-        return TBankLastPriceBatch(tuple(result), tuple(unavailable))
+        return _last_price_batch(payload, requested=set(clean))
+
+    def get_all_last_prices(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+    ) -> TBankLastPriceBatch:
+        """An explicit shared market collection; empty user batches never request all prices."""
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="MarketDataService",
+            method="GetLastPrices",
+            body={
+                "instrumentId": [],
+                "lastPriceType": "LAST_PRICE_EXCHANGE",
+                "instrumentStatus": "INSTRUMENT_STATUS_BASE",
+            },
+        )
+        return _last_price_batch(payload, requested=None)
 
     def get_accrued_interests(
         self,
@@ -1499,7 +1469,6 @@ class TBankInvestClient:
             is_consistent=consistent,
         )
 
-
     def get_order_state(
         self,
         token: str,
@@ -1509,16 +1478,7 @@ class TBankInvestClient:
         request_id: str,
         price_type: Literal["point", "currency"],
     ) -> TBankOrderState:
-        _require_prod(environment)
-        return self._get_order_state(
-            token,
-            environment,
-            service="OrdersService",
-            method="GetOrderState",
-            account_id=account_id,
-            request_id=request_id,
-            price_type=price_type,
-        )
+        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
 
     def get_sandbox_order_state(
         self,
@@ -1529,42 +1489,7 @@ class TBankInvestClient:
         request_id: str,
         price_type: Literal["point", "currency"],
     ) -> TBankOrderState:
-        _require_sandbox(environment)
-        return self._get_order_state(
-            token,
-            environment,
-            service="SandboxService",
-            method="GetSandboxOrderState",
-            account_id=account_id,
-            request_id=request_id,
-            price_type=price_type,
-        )
-
-    def _get_order_state(
-        self,
-        token: str,
-        environment: TBankEnvironment,
-        *,
-        service: str,
-        method: str,
-        account_id: str,
-        request_id: str,
-        price_type: Literal["point", "currency"],
-    ) -> TBankOrderState:
-        request_uuid = _validate_request_uuid(request_id)
-        payload = self._post(
-            token=token,
-            environment=environment,
-            service=service,
-            method=method,
-            body={
-                "accountId": _validate_account_id(account_id),
-                "orderId": request_uuid,
-                "priceType": _provider_price_type(price_type),
-                "orderIdType": "ORDER_ID_TYPE_REQUEST",
-            },
-        )
-        return _order_state(payload, expected_request_id=request_uuid)
+        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
 
     def cancel_order(
         self,
@@ -1574,15 +1499,7 @@ class TBankInvestClient:
         *,
         request_id: str,
     ) -> TBankCancelResult:
-        _require_prod(environment)
-        return self._cancel_order(
-            token,
-            environment,
-            service="OrdersService",
-            method="CancelOrder",
-            account_id=account_id,
-            request_id=request_id,
-        )
+        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
 
     def cancel_sandbox_order(
         self,
@@ -1592,43 +1509,7 @@ class TBankInvestClient:
         *,
         request_id: str,
     ) -> TBankCancelResult:
-        _require_sandbox(environment)
-        return self._cancel_order(
-            token,
-            environment,
-            service="SandboxService",
-            method="CancelSandboxOrder",
-            account_id=account_id,
-            request_id=request_id,
-        )
-
-    def _cancel_order(
-        self,
-        token: str,
-        environment: TBankEnvironment,
-        *,
-        service: str,
-        method: str,
-        account_id: str,
-        request_id: str,
-    ) -> TBankCancelResult:
-        request_uuid = _validate_request_uuid(request_id)
-        payload = self._post(
-            token=token,
-            environment=environment,
-            service=service,
-            method=method,
-            body={
-                "accountId": _validate_account_id(account_id),
-                "orderId": request_uuid,
-                "orderIdType": "ORDER_ID_TYPE_REQUEST",
-            },
-        )
-        cancelled_at = _optional_provider_timestamp(payload.get("time"))
-        if cancelled_at is None:
-            raise TBankUnavailable("T-Invest cancellation has no timestamp")
-        return TBankCancelResult(cancelled_at=cancelled_at)
-
+        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
 
     def get_accounts(
         self,
@@ -1640,26 +1521,34 @@ class TBankInvestClient:
             environment=environment,
             service="UsersService",
             method="GetAccounts",
-            body={"status": "ACCOUNT_STATUS_OPEN"},
+            body={"status": "ACCOUNT_STATUS_ALL"},
         )
         items = _required_list(payload, "accounts")
 
         accounts: list[TBankAccount] = []
+        seen: set[str] = set()
         for item_raw in items:
             item = _required_object(item_raw, "account")
             account_id = _text(item.get("id")).strip()
-            if not account_id:
-                raise TBankUnavailable("T-Invest API returned account without id")
+            if not account_id or account_id in seen:
+                raise TBankUnavailable("T-Invest API returned missing or duplicate account id")
+            seen.add(account_id)
+            access = item.get("accessLevel")
+            if access != READ_ONLY_ACCESS and not (type(access) is int and access == 2):
+                raise TBankTokenRejected("T-Invest requires verified read-only account access")
             accounts.append(
                 TBankAccount(
                     id=account_id,
-                    name=_text(item.get("name")).strip(),
+                    # User-defined names and account dates are not needed for
+                    # portfolio monitoring and never leave this adapter.
+                    name="Брокерский счёт",
                     type=_text(item.get("type")).strip(),
                     status=_text(item.get("status")).strip(),
-                    opened_at=_optional_provider_timestamp(item.get("openedDate")),
-                    access_level=_text(item.get("accessLevel")).strip(),
+                    access_level=READ_ONLY_ACCESS,
                 )
             )
+        if not accounts:
+            raise TBankTokenRejected("T-Invest returned no accounts to verify")
         return accounts
 
     def get_user_info(
@@ -1667,28 +1556,7 @@ class TBankInvestClient:
         token: str,
         environment: TBankEnvironment,
     ) -> TBankUserInfo:
-        payload = self._post(
-            token=token,
-            environment=environment,
-            service="UsersService",
-            method="GetInfo",
-            body={},
-        )
-        premium = _implicit_bool(payload, "premStatus")
-        qualified = _implicit_bool(payload, "qualStatus")
-
-        qualified_for = tuple(
-            value
-            for raw in _optional_list(payload, "qualifiedForWorkWith")
-            if (value := _text(raw).strip())
-        )
-        return TBankUserInfo(
-            premium=premium,
-            qualified=qualified,
-            qualified_for_work_with=qualified_for,
-            tariff=_text(payload.get("tariff")).strip(),
-            risk_level_code=_text(payload.get("riskLevelCode")).strip(),
-        )
+        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
 
     def find_instruments(
         self,
@@ -1782,66 +1650,7 @@ class TBankInvestClient:
         environment: TBankEnvironment,
         account_id: str,
     ) -> TBankPortfolio:
-        payload = self._post(
-            token=token,
-            environment=environment,
-            service="OperationsService",
-            method="GetPortfolio",
-            body={"accountId": _validate_account_id(account_id), "currency": "RUB"},
-        )
-        total = _money(payload.get("totalAmountPortfolio"))
-        if total is None:
-            raise TBankUnavailable("T-Invest portfolio has no total amount")
-
-        asset_keys = (
-            ("shares", "totalAmountShares"),
-            ("bonds", "totalAmountBonds"),
-            ("funds", "totalAmountEtf"),
-            ("currencies", "totalAmountCurrencies"),
-            ("futures", "totalAmountFutures"),
-            ("options", "totalAmountOptions"),
-            ("structured_products", "totalAmountSp"),
-            ("dfa", "totalAmountDfa"),
-        )
-        asset_totals: list[TBankAssetTotal] = []
-        for kind, key in asset_keys:
-            money = _money(payload.get(key))
-            if money is not None:
-                asset_totals.append(TBankAssetTotal(kind=kind, money=money))
-
-        positions: list[TBankPortfolioPosition] = []
-        for position_raw in _optional_list(payload, "positions"):
-            position = _required_object(position_raw, "portfolio position")
-            blocked_raw = position.get("blocked", False)
-            if not isinstance(blocked_raw, bool):
-                raise TBankUnavailable("T-Invest portfolio position has invalid blocked flag")
-            positions.append(
-                TBankPortfolioPosition(
-                    ticker=_text(position.get("ticker")).strip(),
-                    figi=_text(position.get("figi")).strip(),
-                    instrument_uid=_text(position.get("instrumentUid")).strip(),
-                    instrument_type=_text(position.get("instrumentType")).strip(),
-                    quantity=_quotation(position.get("quantity")) or "0",
-                    current_price=_money(position.get("currentPrice")),
-                    average_price=_money(position.get("averagePositionPrice")),
-                    expected_yield_amount=_quotation(position.get("expectedYield")),
-                    daily_yield=_money(position.get("dailyYield")),
-                    blocked=blocked_raw,
-                    current_nkd=_money(position.get("currentNkd")),
-                    blocked_lots=_quotation(position.get("blockedLots")) or "0",
-                    average_price_fifo=_money(position.get("averagePositionPriceFifo")),
-                    quantity_lots=_quotation(position.get("quantityLots")) or "0",
-                )
-            )
-
-        return TBankPortfolio(
-            total=total,
-            expected_yield_percent=_quotation(payload.get("expectedYield")),
-            daily_yield=_money(payload.get("dailyYield")),
-            daily_yield_percent=_quotation(payload.get("dailyYieldRelative")),
-            asset_totals=tuple(asset_totals),
-            positions=tuple(positions),
-        )
+        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
 
     def get_positions(
         self,
@@ -1849,13 +1658,17 @@ class TBankInvestClient:
         environment: TBankEnvironment,
         account_id: str,
     ) -> TBankPositions:
+        requested_account = _validate_account_id(account_id)
         payload = self._post(
             token=token,
             environment=environment,
             service="OperationsService",
             method="GetPositions",
-            body={"accountId": _validate_account_id(account_id)},
+            body={"accountId": requested_account},
         )
+        returned_account = _text(payload.get("accountId")).strip()
+        if returned_account and returned_account != requested_account:
+            raise TBankUnavailable("T-Invest positions returned a different account")
         money = tuple(
             parsed
             for item in _optional_list(payload, "money")
@@ -1869,11 +1682,46 @@ class TBankInvestClient:
         loading = payload.get("limitsLoadingInProgress", False)
         if not isinstance(loading, bool):
             raise TBankUnavailable("T-Invest positions has invalid loading flag")
+        holdings: list[TBankPortfolioPosition] = []
+        seen: set[str] = set()
+        for key, kind in (("securities", ""), ("futures", "future"), ("options", "option")):
+            for raw in _optional_list(payload, key):
+                item = _position_holding(raw, kind)
+                identity = item.instrument_uid or item.figi
+                if identity in seen:
+                    raise TBankUnavailable("T-Invest positions returned duplicate instrument")
+                seen.add(identity)
+                holdings.append(item)
         return TBankPositions(
             money=money,
             blocked_money=blocked_money,
             limits_loading_in_progress=loading,
+            holdings=tuple(holdings),
         )
+
+    def get_withdraw_limits(
+        self,
+        token: str,
+        environment: TBankEnvironment,
+        account_id: str,
+    ) -> TBankWithdrawLimits:
+        """Read current money reservations, including futures collateral, without history."""
+        payload = self._post(
+            token=token,
+            environment=environment,
+            service="OperationsService",
+            method="GetWithdrawLimits",
+            body={"accountId": _validate_account_id(account_id)},
+        )
+        values = tuple(
+            tuple(
+                parsed
+                for item in _optional_list(payload, key)
+                if (parsed := _money(item)) is not None
+            )
+            for key in ("money", "blocked", "blockedGuarantee")
+        )
+        return TBankWithdrawLimits(*values)
 
     def get_operations_by_cursor(
         self,
@@ -1886,47 +1734,7 @@ class TBankInvestClient:
         cursor: str = "",
         limit: int = OPERATIONS_MAX_PAGE_SIZE,
     ) -> TBankOperationsPage:
-        if from_at.tzinfo is None or to_at.tzinfo is None:
-            raise ValueError("operation history boundaries must be timezone-aware")
-        if from_at > to_at:
-            raise ValueError("operation history start must not be after end")
-        if not 1 <= limit <= OPERATIONS_MAX_PAGE_SIZE:
-            raise ValueError(
-                f"operation history limit must be between 1 and {OPERATIONS_MAX_PAGE_SIZE}"
-            )
-        if len(cursor) > 4096 or "\n" in cursor or "\r" in cursor:
-            raise ValueError("operation history cursor is invalid")
-
-        account = _validate_account_id(account_id)
-        body: dict[str, object] = {
-            "accountId": account,
-            "from": _utc_timestamp(from_at),
-            "to": _utc_timestamp(to_at),
-            "limit": limit,
-            "state": "OPERATION_STATE_UNSPECIFIED",
-            "withoutCommissions": False,
-            "withoutTrades": False,
-            "withoutOvernights": False,
-        }
-        if cursor:
-            body["cursor"] = cursor
-
-        payload = self._post(
-            token=token,
-            environment=environment,
-            service="OperationsService",
-            method="GetOperationsByCursor",
-            body=body,
-        )
-        has_next, next_cursor = _operation_page_cursor(payload)
-        items = tuple(_operation(raw) for raw in _required_list(payload, "items"))
-        if any(item.broker_account_id and item.broker_account_id != account for item in items):
-            raise TBankUnavailable("T-Invest operation returned a different account")
-        return TBankOperationsPage(
-            has_next=has_next,
-            next_cursor=next_cursor,
-            items=items,
-        )
+        raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
 
     def get_dividends(
         self,
@@ -2124,6 +1932,9 @@ class TBankInvestClient:
         method: str,
         body: dict[str, object],
     ) -> dict[str, object]:
+        allowed = {"portfolio": _PORTFOLIO_METHODS, "market": _MARKET_METHODS}.get(self.purpose)
+        if environment != "prod" or allowed is None or (service, method) not in allowed:
+            raise TBankTokenRejected("T-Invest method is outside the permitted data scope")
         clean_token = _validate_token(token)
         base = _REST_BASES.get(environment)
         if base is None:
@@ -2147,93 +1958,56 @@ class TBankInvestClient:
         return _decode_tbank_response(raw)
 
 
-def _require_prod(environment: TBankEnvironment) -> None:
-    if environment != "prod":
-        raise ValueError("production order requires production environment")
-
-
-def _require_sandbox(environment: TBankEnvironment) -> None:
-    if environment != "sandbox":
-        raise ValueError("sandbox mutation requires sandbox environment")
-
-
-def _validate_request_uuid(value: str) -> str:
-    clean = value.strip()
-    try:
-        parsed = UUID(clean)
-    except ValueError as exc:
-        raise ValueError("order request id must be a UUID") from exc
-    canonical = str(parsed)
-    if clean.lower() != canonical:
-        raise ValueError("order request id must use canonical UUID form")
-    return canonical
-
-
-def _provider_price_type(value: Literal["point", "currency"]) -> str:
-    return {
-        "point": "PRICE_TYPE_POINT",
-        "currency": "PRICE_TYPE_CURRENCY",
-    }[value]
-
-
-def _limit_order_body(
-    account_id: str, instrument_uid: str, lots: int, price: Decimal, action: str,
-) -> dict[str, object]:
-    if (type(lots) is not int or not 0 < lots <= 10**9 or action not in {"buy", "sell"}
-            or not price.is_finite() or not 0 < price <= Decimal("1e12")
-            or price * 10**9 != (price * 10**9).to_integral_value()):
-        raise ValueError("limit_order_parameters_invalid")
-    units = int(price)
-    return {"accountId": _validate_provider_id(account_id, "account id"),
-            "instrumentId": _validate_provider_id(instrument_uid, _INSTRUMENT_UID_FIELD),
-            "quantity": str(lots), "price": {"units": str(units), "nano": int((price-units)*10**9)},
-            "direction": "ORDER_DIRECTION_BUY" if action == "buy" else "ORDER_DIRECTION_SELL"}
-
-
-def _order_state(
+def _last_price_batch(
     payload: dict[str, object],
     *,
-    expected_request_id: str,
-) -> TBankOrderState:
-    request_id = _text(payload.get("orderRequestId")).strip()
-    order_id = _text(payload.get("orderId")).strip()
-    instrument_uid = _text(payload.get("instrumentUid")).strip()
-    execution_status = _text(payload.get("executionReportStatus")).strip()
-    lots_requested = _int_value(
-        payload.get("lotsRequested"),
-        "lotsRequested",
-    )
-    lots_executed = _int_value(
-        payload.get("lotsExecuted"),
-        "lotsExecuted",
-    )
-    if request_id != expected_request_id:
-        raise TBankUnavailable(
-            "T-Invest order returned a different request id"
-        )
-    if not order_id or not instrument_uid or not execution_status:
-        raise TBankUnavailable(
-            "T-Invest order state is missing identity fields"
-        )
-    if (
-        lots_requested <= 0
-        or lots_executed < 0
-        or lots_executed > lots_requested
-    ):
-        raise TBankUnavailable(
-            "T-Invest order state has invalid lot counts"
-        )
-    return TBankOrderState(
-        order_id=order_id,
-        order_request_id=request_id,
-        instrument_uid=instrument_uid,
-        execution_report_status=execution_status,
-        lots_requested=lots_requested,
-        lots_executed=lots_executed,
-        total_order_amount=_money(payload.get("totalOrderAmount")),
-        executed_commission=_money(payload.get("executedCommission")),
-        direction=_text(payload.get("direction")).strip(),
-        order_type=_text(payload.get("orderType")).strip(),
+    requested: set[str] | None,
+) -> TBankLastPriceBatch:
+    seen: set[str] = set()
+    result: list[TBankLastPrice] = []
+    unavailable: set[str] = set()
+    for raw in _optional_list(payload, "lastPrices"):
+        item = _required_object(raw, "last price")
+        uid = _text(item.get("instrumentUid")).strip()
+        if not uid or uid in seen or (requested is not None and uid not in requested):
+            raise TBankUnavailable("T-Invest last prices returned invalid instrument uid")
+        seen.add(uid)
+        try:
+            price = _quotation(item.get("price"))
+            quote_time = _optional_provider_timestamp(item.get("time"))
+            if price is None or Decimal(price) <= 0 or quote_time is None:
+                raise TBankUnavailable("T-Invest last price is missing required fields")
+        except TBankUnavailable:
+            unavailable.add(uid)
+            continue
+        result.append(TBankLastPrice(instrument_uid=uid, price=price, time=quote_time))
+    if requested is not None:
+        unavailable.update(requested - seen)
+    return TBankLastPriceBatch(tuple(result), tuple(sorted(unavailable)))
+
+
+def _position_holding(raw: object, instrument_type: str) -> TBankPortfolioPosition:
+    item = _required_object(raw, "position")
+    uid = _text(item.get("instrumentUid")).strip()
+    figi = _text(item.get("figi")).strip()
+    if not uid and not figi:
+        raise TBankUnavailable("T-Invest position is missing instrument identity")
+    balance = int(_integer_text(item.get("balance")))
+    blocked = int(_integer_text(item.get("blocked")))
+    if blocked < 0:
+        raise TBankUnavailable("T-Invest position has a negative blocked balance")
+    return TBankPortfolioPosition(
+        ticker=_text(item.get("ticker")).strip(),
+        figi=figi,
+        instrument_uid=uid,
+        instrument_type=instrument_type or _text(item.get("instrumentType")).strip(),
+        quantity=str(balance + blocked),
+        current_price=None,
+        average_price=None,
+        expected_yield_amount=None,
+        daily_yield=None,
+        blocked=_implicit_bool(item, "exchangeBlocked"),
+        blocked_lots=str(blocked),
     )
 
 

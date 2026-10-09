@@ -95,7 +95,8 @@ def parse_news(raw: bytes, *, fetched_at: datetime) -> dict[str, Any]:
         raise NewsUnavailable("news_feed_invalid")
     items = []
     seen = set()
-    for item in root.findall("./channel/item")[:100]:
+    source_items = root.findall("./channel/item")
+    for item in source_items[:100]:
         title = " ".join(unescape(item.findtext("title", "")).split())
         link = item.findtext("link", "").strip()
         try:
@@ -126,6 +127,10 @@ def parse_news(raw: bytes, *, fetched_at: datetime) -> dict[str, Any]:
     return {
         "items": items[:20], "source_url": _SOURCE_URL,
         "fetched_at": fetched_at.isoformat(), "freshness": "fresh",
+        "scope": "current_cbr_feed", "all_market_news": False,
+        "coverage": {"source_items": len(source_items),
+                     "accepted_items": len(items), "returned_items": min(20, len(items)),
+                     "truncated": len(items) > 20 or len(source_items) > 100},
     }
 
 
@@ -196,6 +201,18 @@ class NewsClient:
             raise NewsUnavailable("news_source_unavailable") from exc
         finally:
             self._reading.release()
+
+    def cached_headline(self, source_id: str) -> dict[str, Any]:
+        """Read a previously collected feed entry without opening any network connection."""
+        if not isinstance(source_id, str) or re.fullmatch(r"[0-9a-f]{64}", source_id) is None:
+            raise ValueError("news_source_id_invalid")
+        # _fallback has a hard cache-age bound and never fetches the RSS or an
+        # article. The collector replaces the feed rather than mutating its rows.
+        feed = self._fallback()
+        item = next((row for row in feed["items"] if row["id"] == source_id), None)
+        if item is None:
+            raise NewsNotFound("news_source_not_found")
+        return {**item, "fetched_at": feed["fetched_at"], "freshness": feed["freshness"]}
 
     def headlines(self) -> dict[str, Any]:
         now = time.monotonic()

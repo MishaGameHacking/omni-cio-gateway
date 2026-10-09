@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -16,6 +17,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from .schema import READINESS_QUERY
+from .security import EMAIL_CODE_MAX_ATTEMPTS, EMAIL_CODE_TTL_SECONDS, EMAIL_RESEND_SECONDS
 
 _ADVISORY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
 _SET_USER_CONTEXT_SQL = "SELECT set_config('omnicio.user_id', %s, true)"
@@ -37,18 +39,6 @@ class TBankConnectionRecord:
     encrypted_credential: bytes
     verified_at: datetime
     updated_at: datetime
-
-
-class RegistrationClosedError(RuntimeError):
-    """Raised when an unknown VK identity cannot create an account."""
-
-
-class RegistrationCapacityError(RuntimeError):
-    """Raised when the configured user-account capacity is exhausted."""
-
-
-class ActiveLiveExecutionError(RuntimeError):
-    """Raised when cleanup would race with an unfinished production execution."""
 
 
 class BrokerConnectionConflict(ValueError):
@@ -150,168 +140,370 @@ class Database:
             row = cast(dict[str, Any], fetched)
             return bool(row["ready"])
 
-    def complete_vkid_login(
-        self, *, vk_user_id: str, **context: Any,
-    ) -> tuple[UserRecord, bool]:
-        return self._complete_identity_login(provider="vkid", subject=vk_user_id, **context)
-
-    def complete_tid_login(
-        self, *, tid_subject: str, **context: Any,
-    ) -> tuple[UserRecord, bool]:
-        return self._complete_identity_login(provider="tid", subject=tid_subject, **context)
-
-    def claim_oauth_flow(self, state_digest: bytes, provider: str, ttl_seconds: int) -> bool:
-        """Consume a verified browser-bound state exactly once across processes."""
-        if provider not in {"vkid", "tid"} or len(state_digest) != 32:
-            raise ValueError("oauth_flow_invalid")
+    def consume_auth_budget(self, buckets: list[tuple[bytes, int, int]]) -> bool:
+        """Durable fixed windows shared by workers; denied attempts still count."""
+        allowed = True
         with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
-            cur.execute("DELETE FROM oauth_flow_claims WHERE expires_at < now()")
+            for digest, limit, window_seconds in sorted(buckets):
+                cur.execute(
+                    "INSERT INTO email_auth_rate_limits "
+                    "(bucket_digest, expires_at, attempts) "
+                    "VALUES (%s, clock_timestamp() + make_interval(secs => %s), 1) "
+                    "ON CONFLICT (bucket_digest) DO UPDATE SET "
+                    "attempts = CASE WHEN email_auth_rate_limits.expires_at <= clock_timestamp() "
+                    "THEN 1 ELSE LEAST(email_auth_rate_limits.attempts + 1, 1000000000) END, "
+                    "window_started_at = CASE WHEN email_auth_rate_limits.expires_at "
+                    "<= clock_timestamp() THEN clock_timestamp() "
+                    "ELSE email_auth_rate_limits.window_started_at END, "
+                    "expires_at = CASE WHEN email_auth_rate_limits.expires_at <= clock_timestamp() "
+                    "THEN EXCLUDED.expires_at ELSE email_auth_rate_limits.expires_at END "
+                    "RETURNING attempts", (digest, window_seconds),
+                )
+                row = cast(dict[str, Any], cur.fetchone())
+                allowed = int(row["attempts"]) <= limit and allowed
             cur.execute(
-                "INSERT INTO oauth_flow_claims (state_digest, provider, expires_at) "
-                "VALUES (%s, %s, now() + make_interval(secs => %s)) "
-                "ON CONFLICT (state_digest) DO NOTHING RETURNING state_digest",
-                (state_digest, provider, ttl_seconds),
+                "DELETE FROM email_auth_rate_limits WHERE bucket_digest IN "
+                "(SELECT bucket_digest FROM email_auth_rate_limits WHERE expires_at "
+                "< clock_timestamp() - interval '1 day' LIMIT 100 FOR UPDATE SKIP LOCKED)"
             )
-            return cur.fetchone() is not None
+        return allowed
 
-    def _complete_identity_login(
-        self, *, provider: str, subject: str,
-        client_ip_hash: bytes, session_token_digest: bytes, session_ttl_seconds: int,
-        legal_versions: dict[str, str], registration_enabled: bool,
-        registration_max_users: int, link_user_id: UUID | None = None,
-        link_session_digest: bytes | None = None,
-    ) -> tuple[UserRecord, bool]:
-        """Resolve a verified identity; linking never guesses a tenant from email."""
-        lookup = {
-            "vkid": "SELECT u.id, u.public_id, u.status, u.role FROM users AS u "
-                    "JOIN vkid_identities AS v ON v.user_id = u.id "
-                    "WHERE v.vk_user_id = %s FOR UPDATE OF u",
-            "tid": "SELECT u.id, u.public_id, u.status, u.role FROM users AS u "
-                   "JOIN tid_identities AS v ON v.user_id = u.id "
-                   "WHERE v.tid_subject = %s FOR UPDATE OF u",
-        }
-        insert_identity = {
-            "vkid": "INSERT INTO vkid_identities (user_id, vk_user_id, verified_at) "
-                    "VALUES (%s, %s, now())",
-            "tid": "INSERT INTO tid_identities (user_id, tid_subject, verified_at) "
-                   "VALUES (%s, %s, now())",
-        }
-        if provider not in lookup:
-            raise ValueError("oauth_provider_invalid")
-        if (link_user_id is None) != (link_session_digest is None):
-            raise PermissionError("oauth_link_session_required")
-        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
-            if link_user_id is not None:
-                cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(link_user_id),))
-            cur.execute(_ADVISORY_LOCK_SQL, (f"identity:{provider}:{subject}",))
-            if link_user_id is not None:
-                cur.execute(
-                    "SELECT 1 FROM sessions WHERE user_id = %s AND token_digest = %s "
-                    "AND revoked_at IS NULL AND expires_at > now() FOR UPDATE",
-                    (link_user_id, link_session_digest),
-                )
-                if cur.fetchone() is None:
-                    raise PermissionError("oauth_link_session_expired")
-            cur.execute(lookup[provider], (subject,))
-            fetched = cur.fetchone()
-            user, created = self._identity_login_user(
-                cur, fetched, provider=provider, link_user_id=link_user_id,
-                registration_enabled=registration_enabled,
-                registration_max_users=registration_max_users,
-            )
-            linked = fetched is None
-            if linked:
-                cur.execute(insert_identity[provider], (user.id, subject))
-            if user.status != "active":
-                raise PermissionError("account is not active")
-            for document_type, version in legal_versions.items():
-                cur.execute(
-                    "INSERT INTO legal_acceptances "
-                    "(user_id, document_type, document_version, client_ip_hash) "
-                    "VALUES (%s, %s, %s, %s) "
-                    "ON CONFLICT (user_id, document_type, document_version) DO NOTHING",
-                    (user.id, document_type, version, client_ip_hash),
-                )
+    def email_identity(self, email: str) -> dict[str, Any] | None:
+        """Internal credential lookup, never serialized at the HTTP boundary."""
+        with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO sessions (user_id, token_digest, client_ip_hash, expires_at, "
-                "authenticated_provider, authenticated_at) "
-                "VALUES (%s, %s, %s, now() + make_interval(secs => %s), %s, now())",
-                (user.id, session_token_digest, client_ip_hash, session_ttl_seconds, provider),
+                "SELECT e.user_id, e.email, e.password_hash, e.password_version "
+                "FROM email_identities e JOIN users u ON u.id = e.user_id "
+                "WHERE e.email = %s AND u.status = 'active'", (email,),
             )
+            return cast(dict[str, Any] | None, cur.fetchone())
+
+    def email_identity_status(self, user_id: UUID) -> dict[str, Any]:
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT email FROM email_identities WHERE user_id = %s", (user_id,))
+            row = cur.fetchone()
+            email = cast(dict[str, Any], row)["email"] if row is not None else None
+            return {"email": email, "email_verified": row is not None,
+                    "migration_required": row is None,
+                    "providers": ["email"] if row is not None else []}
+
+    def create_email_challenge(
+        self, *, challenge_id: UUID, purpose: str, email: str, password_hash: str | None,
+        flow_digest: bytes, code_digest: bytes, client_ip_hash: bytes,
+        legal_versions: dict[str, str], delivery_ciphertext: bytes,
+        user_id: UUID | None = None, enrollment_session_digest: bytes | None = None,
+    ) -> None:
+        if purpose not in {"register", "enroll", "reset"}:
+            raise ValueError("auth_purpose_invalid")
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            if purpose == "enroll":
+                if user_id is None or enrollment_session_digest is None:
+                    raise PermissionError("enrollment_session_required")
+                self._active_session(cur, user_id, enrollment_session_digest)
+                cur.execute("SELECT 1 FROM email_identities WHERE user_id = %s", (user_id,))
+                if cur.fetchone() is not None:
+                    raise ValueError("email_already_enrolled")
+            cur.execute(_ADVISORY_LOCK_SQL, (f"email-identity:{email}",))
+            cur.execute(
+                "SELECT e.user_id, e.password_version, u.status FROM email_identities e "
+                "JOIN users u ON u.id = e.user_id WHERE e.email = %s", (email,),
+            )
+            identity = cast(dict[str, Any] | None, cur.fetchone())
+            suppressed = identity is not None if purpose != "reset" else (
+                identity is None or identity["status"] != "active"
+            )
+            if purpose == "reset" and not suppressed and identity is not None:
+                user_id = identity["user_id"]
+            # New requests cancel older codes and their queued deliveries. No
+            # password or existing identity is changed until successful proof.
+            cur.execute(
+                "UPDATE email_auth_challenges SET consumed_at = clock_timestamp(), "
+                "delivery_ciphertext = NULL WHERE email = %s AND purpose = %s "
+                "AND consumed_at IS NULL", (email, purpose),
+            )
+            cur.execute(
+                "INSERT INTO email_auth_challenges "
+                "(id, purpose, email, user_id, enrollment_session_digest, password_hash, "
+                "password_version, flow_digest, code_digest, client_ip_hash, legal_versions, "
+                "attempts_remaining, suppressed, expires_at, resend_at, delivery_ciphertext, "
+                "delivery_state) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s, "
+                "clock_timestamp() + make_interval(secs => %s), "
+                "clock_timestamp() + make_interval(secs => %s),%s,%s)",
+                (challenge_id, purpose, email, user_id, enrollment_session_digest, password_hash,
+                 identity["password_version"] if identity else None, flow_digest, code_digest,
+                 client_ip_hash, json.dumps(legal_versions), EMAIL_CODE_MAX_ATTEMPTS, suppressed,
+                 EMAIL_CODE_TTL_SECONDS, EMAIL_RESEND_SECONDS,
+                 None if suppressed else delivery_ciphertext,
+                 "suppressed" if suppressed else "pending"),
+            )
+
+    def email_challenge(self, challenge_id: UUID, flow_digest: bytes) -> dict[str, Any] | None:
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, email, purpose, expires_at FROM email_auth_challenges "
+                "WHERE id = %s AND flow_digest = %s AND consumed_at IS NULL "
+                "AND expires_at > clock_timestamp() AND attempts_remaining > 0",
+                (challenge_id, flow_digest),
+            )
+            return cast(dict[str, Any] | None, cur.fetchone())
+
+    def resend_email_challenge(
+        self, challenge_id: UUID, flow_digest: bytes, code_digest: bytes,
+        delivery_ciphertext: bytes,
+    ) -> int | None:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            cur.execute(
+                "UPDATE email_auth_challenges SET code_digest = %s, "
+                "delivery_ciphertext = CASE WHEN suppressed THEN NULL ELSE %s END, "
+                "delivery_state = CASE WHEN suppressed THEN 'suppressed' ELSE 'pending' END, "
+                "delivery_attempts = 0, next_delivery_at = clock_timestamp(), "
+                "resend_at = clock_timestamp() + make_interval(secs => %s) "
+                "WHERE id = %s AND flow_digest = %s AND consumed_at IS NULL "
+                "AND expires_at > clock_timestamp() AND attempts_remaining > 0 "
+                "AND resend_at <= clock_timestamp() "
+                "RETURNING CEIL(EXTRACT(epoch FROM (expires_at - clock_timestamp()))) AS ttl",
+                (code_digest, delivery_ciphertext, EMAIL_RESEND_SECONDS, challenge_id, flow_digest),
+            )
+            row = cur.fetchone()
+            return int(cast(dict[str, Any], row)["ttl"]) if row is not None else None
+
+    @staticmethod
+    def _insert_email_session(
+        cur: Any, user_id: UUID, *, token_digest: bytes, client_ip_hash: bytes,
+        session_ttl_seconds: int,
+    ) -> None:
+        cur.execute(
+            "INSERT INTO sessions (user_id, token_digest, client_ip_hash, expires_at, "
+            "authenticated_provider, authenticated_at) "
+            "VALUES (%s, %s, %s, now() + make_interval(secs => %s), 'email', now())",
+            (user_id, token_digest, client_ip_hash, session_ttl_seconds),
+        )
+
+    def complete_email_login(
+        self, identity: dict[str, Any], *, token_digest: bytes, client_ip_hash: bytes,
+        session_ttl_seconds: int,
+    ) -> UserRecord | None:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            user_id = identity["user_id"]
+            cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
+            cur.execute(
+                "SELECT u.id, u.public_id, u.status, u.role FROM users u "
+                "JOIN email_identities e ON e.user_id = u.id "
+                "WHERE u.id = %s AND u.status = 'active' AND e.email = %s "
+                "AND e.password_hash = %s AND e.password_version = %s FOR UPDATE OF u, e",
+                (user_id, identity["email"], identity["password_hash"],
+                 identity["password_version"]),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            user = _user(cast(dict[str, Any], row))
+            self._insert_email_session(cur, user.id, token_digest=token_digest,
+                                       client_ip_hash=client_ip_hash,
+                                       session_ttl_seconds=session_ttl_seconds)
             cur.execute(
                 "INSERT INTO audit_events (user_id, event_type, metadata) "
-                "VALUES (%s, %s, %s::jsonb)",
-                (user.id, "account_created" if created else "login_succeeded",
-                 json.dumps({"method": provider, "identity_linked": linked})),
+                "VALUES (%s, 'login_succeeded', '{\"method\":\"email\"}'::jsonb)", (user.id,),
             )
             self._prune_sessions(cur, user.id)
+            return user
+
+    def consume_email_challenge(
+        self, *, challenge_id: UUID, flow_digest: bytes, code_digest: bytes,
+        purpose: str, client_ip_hash: bytes, legal_versions: dict[str, str],
+        token_digest: bytes, session_ttl_seconds: int,
+        enrollment_session_digest: bytes | None = None, password_hash: str | None = None,
+    ) -> tuple[UserRecord, bool] | None:
+        """Proof, identity creation/password change, and session mutation are atomic."""
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            # Resolve only lock keys before taking a row lock. Enrollment requests
+            # and account deletion lock tenant -> email -> challenge in this order.
+            cur.execute(
+                "SELECT user_id, email FROM email_auth_challenges "
+                "WHERE id = %s AND flow_digest = %s AND purpose = %s",
+                (challenge_id, flow_digest, purpose),
+            )
+            context = cast(dict[str, Any] | None, cur.fetchone())
+            if context is None:
+                return None
+            if context["user_id"] is not None:
+                cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(context["user_id"]),))
+            cur.execute(_ADVISORY_LOCK_SQL, (f"email-identity:{context['email']}",))
+            cur.execute(
+                "SELECT * FROM email_auth_challenges WHERE id = %s AND flow_digest = %s "
+                "AND purpose = %s AND consumed_at IS NULL AND expires_at > clock_timestamp() "
+                "FOR UPDATE", (challenge_id, flow_digest, purpose),
+            )
+            row = cast(dict[str, Any] | None, cur.fetchone())
+            if row is None or row["attempts_remaining"] <= 0:
+                return None
+            if not hmac.compare_digest(bytes(row["code_digest"]), code_digest):
+                cur.execute(
+                    "UPDATE email_auth_challenges SET attempts_remaining = attempts_remaining - 1, "
+                    "delivery_ciphertext = CASE WHEN attempts_remaining = 1 "
+                    "THEN NULL ELSE delivery_ciphertext END "
+                    "WHERE id = %s", (challenge_id,),
+                )
+                return None  # Returning commits the failed attempt; raising would roll it back.
+            cur.execute(
+                "UPDATE email_auth_challenges SET consumed_at = clock_timestamp(), "
+                "delivery_ciphertext = NULL WHERE id = %s", (challenge_id,),
+            )
+            if row["suppressed"] or (
+                purpose != "reset" and row["legal_versions"] != legal_versions
+            ):
+                return None
+            if purpose == "reset":
+                user = self._reset_email_password(cur, row, password_hash)
+            else:
+                user = self._enroll_email_identity(cur, row, enrollment_session_digest)
+            if user is None:
+                return None
+            cur.execute(
+                "UPDATE email_auth_challenges SET user_id = %s WHERE id = %s",
+                (user.id, challenge_id),
+            )
+            created = purpose == "register"
+            if purpose != "reset":
+                for document_type, version in legal_versions.items():
+                    cur.execute(
+                        "INSERT INTO legal_acceptances "
+                        "(user_id, document_type, document_version, client_ip_hash) "
+                        "VALUES (%s, %s, %s, %s) ON CONFLICT "
+                        "(user_id, document_type, document_version) DO NOTHING",
+                        (user.id, document_type, version, client_ip_hash),
+                    )
+                self._insert_email_session(cur, user.id, token_digest=token_digest,
+                                           client_ip_hash=client_ip_hash,
+                                           session_ttl_seconds=session_ttl_seconds)
+            cur.execute(
+                "INSERT INTO audit_events (user_id, event_type, metadata) "
+                "VALUES (%s, %s, '{\"method\":\"email\"}'::jsonb)",
+                (user.id, "account_created" if created else (
+                    "password_reset" if purpose == "reset" else "email_enrolled")),
+            )
             return user, created
 
     @staticmethod
-    def _identity_login_user(
-        cur: Any, fetched: Any, *, provider: str, link_user_id: UUID | None,
-        registration_enabled: bool, registration_max_users: int,
-    ) -> tuple[UserRecord, bool]:
-        if fetched is not None:
-            user = _user(cast(dict[str, Any], fetched))
-            if link_user_id is not None and user.id != link_user_id:
-                raise PermissionError("identity_already_linked")
-            return user, False
-        if link_user_id is not None:
-            return Database._active_identity_link_target(cur, provider, link_user_id), False
-        return Database._register_identity_user(
-            cur, registration_enabled=registration_enabled,
-            registration_max_users=registration_max_users,
-        ), True
-
-    @staticmethod
-    def _active_identity_link_target(cur: Any, provider: str, user_id: UUID) -> UserRecord:
-        cur.execute(
-            "SELECT id, public_id, status, role FROM users "
-            "WHERE id = %s AND status = 'active' FOR UPDATE", (user_id,),
-        )
-        active = cur.fetchone()
-        if active is None:
-            raise PermissionError("link_account_inactive")
-        user = _user(cast(dict[str, Any], active))
-        # Each provider is linked once. Do not silently replace it.
-        existing_query = (
-            "SELECT 1 FROM vkid_identities WHERE user_id = %s" if provider == "vkid"
-            else "SELECT 1 FROM tid_identities WHERE user_id = %s"
-        )
-        cur.execute(existing_query, (user.id,))
+    def _enroll_email_identity(
+        cur: Any, row: dict[str, Any], session_token_digest: bytes | None,
+    ) -> UserRecord | None:
+        if row["purpose"] == "enroll":
+            original = bytes(row["enrollment_session_digest"])
+            if session_token_digest is None or not hmac.compare_digest(
+                original, session_token_digest,
+            ):
+                return None
+            Database._active_session(cur, row["user_id"], original)
+            cur.execute("SELECT 1 FROM email_identities WHERE user_id = %s", (row["user_id"],))
+            if cur.fetchone() is not None:
+                return None
+        cur.execute("SELECT 1 FROM email_identities WHERE email = %s", (row["email"],))
         if cur.fetchone() is not None:
-            raise PermissionError("provider_already_linked")
+            return None  # Never attach a new email request to an existing account.
+        if row["purpose"] == "register":
+            cur.execute("INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status, role")
+        else:
+            cur.execute(
+                "SELECT id, public_id, status, role FROM users WHERE id = %s AND status = 'active'",
+                (row["user_id"],),
+            )
+        fetched = cur.fetchone()
+        if fetched is None:
+            return None
+        user = _user(cast(dict[str, Any], fetched))
+        cur.execute(
+            "INSERT INTO email_identities (user_id, email, password_hash) VALUES (%s, %s, %s)",
+            (user.id, row["email"], row["password_hash"]),
+        )
+        if row["purpose"] == "enroll":
+            cur.execute(
+                "UPDATE sessions SET revoked_at = clock_timestamp() "
+                "WHERE user_id = %s AND revoked_at IS NULL", (user.id,),
+            )
         return user
 
     @staticmethod
-    def _register_identity_user(
-        cur: Any, *, registration_enabled: bool, registration_max_users: int,
-    ) -> UserRecord:
-        if not registration_enabled:
-            raise RegistrationClosedError("registration is closed")
-        cur.execute(_ADVISORY_LOCK_SQL, ("omnicio-registration-capacity",))
-        cur.execute("SELECT count(*) AS total FROM users WHERE status <> 'deleted'")
-        count = cur.fetchone()
-        if count is None:
-            raise RuntimeError("registration_capacity_unavailable")
-        if int(cast(dict[str, Any], count)["total"]) >= registration_max_users:
-            raise RegistrationCapacityError("registration capacity reached")
-        cur.execute("INSERT INTO users DEFAULT VALUES RETURNING id, public_id, status, role")
-        inserted = cur.fetchone()
-        if inserted is None:
-            raise RuntimeError("user_creation_unavailable")
-        return _user(cast(dict[str, Any], inserted))
+    def _reset_email_password(
+        cur: Any, row: dict[str, Any], password_hash: str | None,
+    ) -> UserRecord | None:
+        if password_hash is None:
+            return None
+        cur.execute(
+            "SELECT u.id, u.public_id, u.status, u.role FROM users u JOIN email_identities e "
+            "ON e.user_id = u.id WHERE u.id = %s AND u.status = 'active' AND e.email = %s "
+            "AND e.password_version = %s FOR UPDATE OF u, e",
+            (row["user_id"], row["email"], row["password_version"]),
+        )
+        fetched = cur.fetchone()
+        if fetched is None:
+            return None
+        user = _user(cast(dict[str, Any], fetched))
+        cur.execute(
+            "UPDATE email_identities SET password_hash = %s, "
+            "password_version = password_version + 1, "
+            "password_changed_at = clock_timestamp() WHERE user_id = %s", (password_hash, user.id),
+        )
+        cur.execute(
+            "UPDATE sessions SET revoked_at = clock_timestamp() "
+            "WHERE user_id = %s AND revoked_at IS NULL", (user.id,),
+        )
+        cur.execute(
+            "UPDATE email_auth_challenges SET consumed_at = clock_timestamp(), "
+            "delivery_ciphertext = NULL WHERE email = %s AND consumed_at IS NULL", (row["email"],),
+        )
+        return user
 
-    def identity_providers(self, user_id: UUID) -> list[str]:
-        """Expose provider names only, never external identifiers."""
+    def claim_email_delivery(self, *, delivery_enabled: bool = True) -> dict[str, Any] | None:
+        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
+            # A crashed sender may have reached SMTP DATA. Do not automatically
+            # repeat that ambiguous attempt; the user can request a fresh code.
+            cur.execute(
+                "UPDATE email_auth_challenges SET delivery_state = 'uncertain', "
+                "delivery_ciphertext = NULL, delivery_code = 'email_result_unknown' "
+                "WHERE delivery_state = 'sending' AND delivery_started_at "
+                "< clock_timestamp() - interval '1 minute'"
+            )
+            cur.execute(
+                "DELETE FROM email_auth_challenges WHERE id IN "
+                "(SELECT id FROM email_auth_challenges WHERE expires_at "
+                "< clock_timestamp() - interval '1 hour' LIMIT 100 FOR UPDATE SKIP LOCKED)"
+            )
+            if not delivery_enabled:
+                return None
+            cur.execute(
+                "SELECT id, code_digest, delivery_ciphertext, purpose FROM email_auth_challenges "
+                "WHERE delivery_state = 'pending' AND delivery_ciphertext IS NOT NULL "
+                "AND consumed_at IS NULL AND attempts_remaining > 0 "
+                "AND expires_at > clock_timestamp() "
+                "AND next_delivery_at <= clock_timestamp() "
+                "ORDER BY next_delivery_at, created_at LIMIT 1 FOR UPDATE SKIP LOCKED"
+            )
+            row = cast(dict[str, Any] | None, cur.fetchone())
+            if row is not None:
+                cur.execute(
+                    "UPDATE email_auth_challenges SET delivery_state = 'sending', "
+                    "delivery_started_at = clock_timestamp(), "
+                    "delivery_attempts = delivery_attempts + 1 "
+                    "WHERE id = %s", (row["id"],),
+                )
+            return row
+
+    def complete_email_delivery(
+        self, challenge_id: UUID, code_digest: bytes, *, delivery_status: str, delivery_code: str,
+    ) -> None:
         with self.pool.connection() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT 'vkid' AS provider FROM vkid_identities WHERE user_id = %s "
-                "UNION ALL SELECT 'tid' AS provider FROM tid_identities WHERE user_id = %s",
-                (user_id, user_id),
+                "UPDATE email_auth_challenges SET delivery_state = CASE "
+                "WHEN %s = 'queued' AND delivery_attempts < 3 THEN 'pending' "
+                "WHEN %s = 'queued' THEN 'failed' ELSE %s END, delivery_code = %s, "
+                "delivery_ciphertext = CASE WHEN %s = 'queued' AND delivery_attempts < 3 "
+                "THEN delivery_ciphertext ELSE NULL END, "
+                "next_delivery_at = clock_timestamp() + interval '1 minute' "
+                "WHERE id = %s AND code_digest = %s AND delivery_state = 'sending'",
+                (delivery_status, delivery_status, delivery_status, delivery_code, delivery_status,
+                 challenge_id, code_digest),
             )
-            return [str(row["provider"]) for row in cast(list[dict[str, Any]], cur.fetchall())]
 
     def refresh_session_digest(
         self,
@@ -330,7 +522,8 @@ class Database:
                     expires_at = now() + make_interval(secs => %s)
                 FROM users AS u
                 WHERE s.user_id = u.id
-                  AND (EXISTS (SELECT 1 FROM vkid_identities AS v WHERE v.user_id = u.id)
+                  AND (EXISTS (SELECT 1 FROM email_identities AS e WHERE e.user_id = u.id)
+                       OR EXISTS (SELECT 1 FROM vkid_identities AS v WHERE v.user_id = u.id)
                        OR EXISTS (SELECT 1 FROM tid_identities AS t WHERE t.user_id = u.id))
                   AND s.token_digest = %s
                   AND s.revoked_at IS NULL
@@ -386,8 +579,8 @@ class Database:
     @staticmethod
     def _active_session(cur: Any, user_id: UUID, token_digest: bytes) -> dict[str, Any]:
         """Serialize self-service security mutations with login and account deletion."""
-        # OAuth linking locks session before user, while a join planner can choose
-        # either row order. The shared tenant lock prevents opposite-order deadlocks.
+        # Authentication mutations and account deletion share this tenant lock
+        # before locking users or sessions, avoiding opposite row-order deadlocks.
         cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
         cur.execute(
             "SELECT s.id, s.authenticated_provider, s.authenticated_at, "
@@ -481,55 +674,6 @@ class Database:
                     (user_id, json.dumps({"count": count})),
                 )
             return count
-
-    def unlink_identity(
-        self, user_id: UUID, current_digest: bytes, provider: str,
-        *, enabled_providers: frozenset[str],
-    ) -> bool:
-        """Require recent proof of another working identity; never orphan an account."""
-        if provider not in {"vkid", "tid"}:
-            raise ValueError("oauth_provider_invalid")
-        lookup = {
-            "vkid": "SELECT vk_user_id AS subject FROM vkid_identities WHERE user_id = %s",
-            "tid": "SELECT tid_subject AS subject FROM tid_identities WHERE user_id = %s",
-        }
-        remove = {
-            "vkid": "DELETE FROM vkid_identities WHERE user_id = %s AND vk_user_id = %s",
-            "tid": "DELETE FROM tid_identities WHERE user_id = %s AND tid_subject = %s",
-        }
-        with self.pool.connection() as conn, conn.transaction(), conn.cursor() as cur:
-            cur.execute(_ADVISORY_LOCK_SQL, (live_execution_lock_key(user_id),))
-            cur.execute(lookup[provider], (user_id,))
-            identity = cur.fetchone()
-            if identity is not None:
-                subject = cast(dict[str, Any], identity)["subject"]
-                cur.execute(_ADVISORY_LOCK_SQL, (f"identity:{provider}:{subject}",))
-            current = self._active_session(cur, user_id, current_digest)
-            other = current["authenticated_provider"]
-            if (not current["recently_authenticated"] or other == provider
-                    or other not in enabled_providers or other not in lookup):
-                raise PermissionError("identity_reauthentication_required")
-            cur.execute(lookup[other], (user_id,))
-            if cur.fetchone() is None:
-                raise PermissionError("identity_last_provider")
-            if identity is None:
-                return False
-            cur.execute(remove[provider], (user_id, subject))
-            changed = cur.rowcount == 1
-            if changed:
-                # Legacy sessions cannot prove their original provider, so revoke
-                # them as well. The current recent other-provider session survives.
-                cur.execute(
-                    "UPDATE sessions SET revoked_at = now() WHERE user_id = %s "
-                    "AND revoked_at IS NULL AND (authenticated_provider = %s "
-                    "OR authenticated_provider IS NULL)", (user_id, provider),
-                )
-                cur.execute(
-                    "INSERT INTO audit_events (user_id, event_type, metadata) "
-                    "VALUES (%s, 'identity_unlinked', %s::jsonb)",
-                    (user_id, json.dumps({"provider": provider})),
-                )
-            return changed
 
     def operational_metrics(
         self, operator_user_id: UUID, current_digest: bytes, *,
@@ -716,25 +860,10 @@ class Database:
                 _ADVISORY_LOCK_SQL,
                 (live_execution_lock_key(user_id),),
             )
-            cur.execute(
-                """
-                SELECT 'vkid' AS provider, vk_user_id AS subject
-                FROM vkid_identities WHERE user_id = %s
-                UNION ALL
-                SELECT 'tid' AS provider, tid_subject AS subject
-                FROM tid_identities WHERE user_id = %s
-                ORDER BY provider, subject
-                """,
-                (user_id, user_id),
-            )
-            identities = cast(list[dict[str, Any]], cur.fetchall())
-            if not identities:
-                return False
-            for identity in identities:
-                cur.execute(
-                    _ADVISORY_LOCK_SQL,
-                    (f"identity:{identity['provider']}:{identity['subject']}",),
-                )
+            cur.execute("SELECT email FROM email_identities WHERE user_id = %s", (user_id,))
+            identity = cast(dict[str, Any] | None, cur.fetchone())
+            if identity is not None:
+                cur.execute(_ADVISORY_LOCK_SQL, (f"email-identity:{identity['email']}",))
             cur.execute(
                 """
                 SELECT u.id, u.public_id, u.status, u.role
@@ -751,27 +880,16 @@ class Database:
             user = _user(cast(dict[str, Any], fetched))
             if user.status != "active":
                 raise PermissionError("account is not active")
+            if identity is not None:
+                # Include unverified/suppressed requests whose user_id is still
+                # NULL. They must not retain the deleted login or its verifier.
+                cur.execute("DELETE FROM email_auth_challenges WHERE email = %s",
+                            (identity["email"],))
 
             cur.execute(
                 _SET_USER_CONTEXT_SQL,
                 (str(user.id),),
             )
-            cur.execute(
-                """
-                SELECT 1
-                FROM portfolio_execution_runs
-                WHERE user_id = %s
-                  AND mode = 'live'
-                  AND status IN ('created', 'running', 'reconciling')
-                LIMIT 1
-                FOR UPDATE
-                """,
-                (user.id,),
-            )
-            if cur.fetchone() is not None:
-                raise ActiveLiveExecutionError(
-                    "active live execution must be reconciled before account deletion"
-                )
 
             cur.execute(
                 """
@@ -871,19 +989,6 @@ class Database:
                 raise BrokerConnectionConflict("broker_disconnect_required")
             cur.execute(
                 """
-                SELECT 1 FROM portfolio_execution_runs
-                WHERE user_id = %s AND mode = 'live'
-                  AND status IN ('created', 'running', 'reconciling')
-                LIMIT 1
-                """,
-                (user_id,),
-            )
-            if cur.fetchone() is not None:
-                raise ActiveLiveExecutionError(
-                    "active live execution blocks credential replacement"
-                )
-            cur.execute(
-                """
                 INSERT INTO tbank_connection (
                     user_id,
                     environment,
@@ -966,22 +1071,6 @@ class Database:
             cur.execute(
                 "SELECT set_config('omnicio.financial_cleanup', 'broker_disconnect', true)"
             )
-            cur.execute(
-                """
-                SELECT 1
-                FROM portfolio_execution_runs
-                WHERE user_id = %s
-                  AND mode = 'live'
-                  AND status IN ('created', 'running', 'reconciling')
-                LIMIT 1
-                FOR UPDATE
-                """,
-                (user_id,),
-            )
-            if cur.fetchone() is not None:
-                raise ActiveLiveExecutionError(
-                    "active live execution must be reconciled before broker disconnect"
-                )
             cur.execute(
                 """
                 UPDATE portfolio_live_execution_mandates

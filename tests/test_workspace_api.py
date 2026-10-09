@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import nullcontext
-from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock, patch
@@ -16,7 +15,7 @@ from fastapi.testclient import TestClient
 from omnicio.assistant import AssistantService
 from omnicio.db import Database, UserRecord
 from omnicio.main import CANONICAL_ORIGIN, app
-from omnicio.market import MarketService
+from omnicio.market import PUBLIC_MARKET_SCOPE, MarketService
 from omnicio.notifications import (
     NotificationConflict,
     NotificationRateLimited,
@@ -75,7 +74,7 @@ def workspace_http() -> Iterator[tuple[TestClient, Mock, Mock, Mock]]:
             client.close()
 
 
-def test_event_summary_and_filtered_operations_use_the_current_session_owner(
+def test_event_summary_uses_the_current_session_owner_and_operations_are_retired(
     workspace_http: tuple[TestClient, Mock, Mock, Mock],
 ) -> None:
     client, _, store, _ = workspace_http
@@ -88,16 +87,14 @@ def test_event_summary_and_filtered_operations_use_the_current_session_owner(
     assert result.status_code == 200
     assert store.events.call_args.kwargs["important_only"] is True
     assert store.events.call_args.kwargs["category"] == "assets"
-    store.operations.return_value = {"items": [], "next_cursor": None}
-    result = client.get("/api/workspace/operations", headers=HEADERS, params={
-        "from_at": "2026-09-01T00:00:00Z", "to_at": "2026-10-01T00:00:00Z",
-        "limit": 25, "cursor": "saved-cursor", "user_id": str(OTHER.id),
-    })
-    assert result.status_code == 200
-    store.operations.assert_called_once_with(
-        OWNER.id, from_at=datetime(2026, 9, 1, tzinfo=UTC),
-        to_at=datetime(2026, 10, 1, tzinfo=UTC), limit=25, cursor="saved-cursor",
-    )
+    with patch("omnicio.main.broker_service") as broker:
+        result = client.get("/api/workspace/operations", headers=HEADERS, params={
+            "from_at": "2026-09-01T00:00:00Z", "to_at": "2026-10-01T00:00:00Z",
+            "limit": 25, "cursor": "saved-cursor", "user_id": str(OTHER.id),
+        })
+    assert result.status_code == 410
+    assert result.json()["detail"] == "broker_operations_not_collected"
+    broker.assert_not_called()
 
 
 def test_push_http_binding_comes_from_the_authenticated_session_only(
@@ -183,25 +180,40 @@ def test_push_test_requires_current_legal_profile_and_rechecks_after_queueing(
     assert "private-outbox-id" not in response.text
 
 
-def test_quote_batch_rechecks_profile_before_disclosing_the_result(
+def test_quote_batch_uses_shared_market_scope_without_auth_or_tenant_selection(
     workspace_http: tuple[TestClient, Mock, Mock, Mock],
 ) -> None:
     client, auth, _, _ = workspace_http
     market = Mock(spec=MarketService)
 
     def read(owner: UUID, uids: tuple[str, ...]) -> dict[str, Any]:
-        assert owner == OWNER.id
+        assert owner == PUBLIC_MARKET_SCOPE
         assert uids == ("uid-a", "uid-b")
-        auth.refresh_session.side_effect = None
-        auth.refresh_session.return_value = OTHER
-        return {"private_quote_marker": "100.25"}
+        return {"public_quote_marker": "100.25"}
 
     market.batch_quotes.side_effect = read
     with patch.object(app.state, "market_service", market, create=True):
         response = client.get("/api/market/quotes?instrument_uids=uid-a,uid-b", headers=HEADERS)
-    assert response.status_code == 409
-    assert "private_quote_marker" not in response.text
+    assert response.status_code == 200
+    assert response.json()["public_quote_marker"] == "100.25"
+    auth.refresh_session.assert_not_called()
     assert response.headers["cache-control"] == "private, no-store"
+
+
+def test_public_static_instrument_search_precedes_the_dynamic_instrument_route():
+    broker, market = Mock(), Mock(spec=MarketService)
+    broker.search_instruments.return_value = []
+    with (
+        patch.object(app.state, "broker_service", broker, create=True),
+        patch.object(app.state, "market_service", market, create=True),
+        patch("omnicio.main.service") as auth,
+    ):
+        response = TestClient(app).get("/api/market/instruments/search?q=SBER")
+    assert response.status_code == 200
+    assert response.json() == {"items": []}
+    broker.search_instruments.assert_called_once_with(PUBLIC_MARKET_SCOPE, query="SBER", limit=20)
+    market.instrument_snapshot.assert_not_called()
+    auth.assert_not_called()
 
 
 @pytest.mark.parametrize("path", ["messages", "messages/stream"])
