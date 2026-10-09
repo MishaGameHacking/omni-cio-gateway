@@ -789,6 +789,36 @@ def test_email_upgrade_lost_commit_receipt_reconciles_without_repeating_ddl(emai
     assert _email_upgrade_rows(connection) == before
 
 
+def test_email_readiness_survives_reparsed_check_definitions(email_upgrade_database):
+    upgrade, connection, _dsn, arguments = email_upgrade_database
+    receipts = []
+    upgrade.apply_upgrade(connection, **arguments, receipt=None, save_receipt=receipts.append)
+    _assert_email_readiness(connection)
+    definitions = connection.execute("""
+        SELECT relation.relname, constraint_definition.conname,
+               pg_get_constraintdef(constraint_definition.oid)
+        FROM pg_constraint AS constraint_definition
+        JOIN pg_class AS relation ON relation.oid = constraint_definition.conrelid
+        WHERE constraint_definition.contype = 'c' AND constraint_definition.conrelid IN (
+            to_regclass('public.email_identities'), to_regclass('public.email_auth_challenges'),
+            to_regclass('public.email_auth_rate_limits'), to_regclass('public.sessions'))
+        ORDER BY relation.relname, constraint_definition.conname
+    """).fetchall()
+    # pg_dump restores these deparsed CHECK definitions. BETWEEN's inner AND becomes
+    # part of its parent AND when parsed again; its enforced conditions must survive.
+    with connection.transaction():
+        for table, name, definition in definitions:
+            connection.execute(sql.SQL("ALTER TABLE {} DROP CONSTRAINT {}").format(
+                sql.Identifier("public", table), sql.Identifier(name),
+            ))
+            connection.execute(sql.SQL("ALTER TABLE {} ADD CONSTRAINT {} {}").format(
+                sql.Identifier("public", table), sql.Identifier(name), sql.SQL(definition),
+            ))
+        _assert_email_readiness(connection)
+    assert upgrade.apply_upgrade(connection, **arguments, receipt=receipts[-1],
+                                 save_receipt=receipts.append) == "already_applied"
+
+
 def test_email_readiness_rejects_malformed_auth_contracts(email_upgrade_database):
     upgrade, connection, _dsn, arguments = email_upgrade_database
     receipts = []
@@ -806,6 +836,10 @@ def test_email_readiness_rejects_malformed_auth_contracts(email_upgrade_database
         "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL",
         "ALTER TABLE email_identities DROP CONSTRAINT email_identity_hash_valid; "
         "ALTER TABLE email_identities ADD CONSTRAINT email_identity_hash_valid CHECK (true)",
+        "ALTER TABLE email_identities DROP CONSTRAINT email_identity_address_valid; "
+        "ALTER TABLE email_identities ADD CONSTRAINT email_identity_address_valid CHECK ("
+        "(char_length(email) >= 3 AND char_length(email) <= 254) "
+        "OR split_part(email, '@', 2) IN ('gmail.com', 'mail.ru', 'xmail.ru'))",
         "ALTER TABLE email_auth_challenges DROP CONSTRAINT email_challenge_enrollment",
         "ALTER TABLE sessions DROP CONSTRAINT sessions_authentication_evidence; "
         "ALTER TABLE sessions ADD CONSTRAINT sessions_authentication_evidence CHECK (true)",

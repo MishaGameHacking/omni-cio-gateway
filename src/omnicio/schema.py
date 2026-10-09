@@ -161,9 +161,24 @@ SELECT
               AND constraint_definition.conname = expected.constraint_name
               AND constraint_definition.contype = 'c'
               AND constraint_definition.convalidated AND constraint_definition.conenforced
-              AND regexp_replace(pg_get_expr(constraint_definition.conbin,
-                  constraint_definition.conrelid), '[[:space:]]', '', 'g')
-                  = regexp_replace(expected.expression, '[[:space:]]', '', 'g')
+              AND (
+                  regexp_replace(pg_get_expr(constraint_definition.conbin,
+                      constraint_definition.conrelid), '[[:space:]]', '', 'g')
+                      = regexp_replace(expected.expression, '[[:space:]]', '', 'g')
+                  OR (
+                      -- Re-parsing pg_dump's expanded BETWEEN flattens only this inner AND.
+                      -- Both fixed forms require the same length and allowed-domain predicates.
+                      expected.table_name = 'email_identities'
+                      AND expected.constraint_name = 'email_identity_address_valid'
+                      AND regexp_replace(pg_get_expr(constraint_definition.conbin,
+                          constraint_definition.conrelid), '[[:space:]]', '', 'g')
+                          = regexp_replace($restored$((char_length(email) >= 3)
+                              AND (char_length(email) <= 254)
+                              AND (split_part(email, '@'::text, 2) = ANY (
+                                  ARRAY['gmail.com'::text, 'mail.ru'::text, 'xmail.ru'::text])))
+                              $restored$, '[[:space:]]', '', 'g')
+                  )
+              )
         )
     )
     AND NOT EXISTS (
