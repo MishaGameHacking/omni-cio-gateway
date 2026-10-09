@@ -27,6 +27,7 @@ controller = importlib.import_module("timeweb_recovery")
 runner = importlib.import_module("run_recovery_drill")
 gate = importlib.import_module("verify_main_release")
 upgrade = importlib.import_module("inplace_upgrade")
+postgres = importlib.import_module("timeweb_auth_postgres")
 SHA = "a" * 40
 KEY = "test-receipt-key-" + "x" * 40
 
@@ -70,6 +71,32 @@ def test_upgrade_requires_explicit_existing_database_credentials(
     else:
         with pytest.raises(upgrade.UpgradeBlocked, match="runtime_database_"):
             upgrade._database_url(expected)
+
+
+@pytest.mark.parametrize("field,value,reason", [
+    (0, "other-database", "name"), (1, "other-user", "user"),
+    (2, "10.0.0.6", "address"), (2, None, "address"),
+    (3, 5433, "port"), (4, 170005, "version"), (5, True, "recovery"),
+])
+def test_connected_database_guard_preserves_each_identity_boundary(field, value, reason):
+    expected = {"host": "10.0.0.5", "port": 5432, "database": "omnicio", "user": "omnicio_app"}
+    observed = ["omnicio", "omnicio_app", "10.0.0.5", 5432, 180005, False]
+    observed[field] = value
+    connection = Mock()
+    connection.execute.return_value.fetchone.return_value = tuple(observed)
+    with pytest.raises(upgrade.UpgradeBlocked) as caught:
+        upgrade._verify_connected_database(connection, expected)
+    assert str(caught.value) == f"connected_database_{reason}_mismatch"
+    assert postgres.UPGRADE_DIAGNOSTIC.fullmatch(
+        b"OMNICIO_UPGRADE: " + str(caught.value).encode("ascii"),
+    ) is not None
+
+
+def test_connected_database_guard_requires_an_observation():
+    connection = Mock()
+    connection.execute.return_value.fetchone.return_value = None
+    with pytest.raises(upgrade.UpgradeBlocked, match="^connected_database_observation_missing$"):
+        upgrade._verify_connected_database(connection, {})
 
 
 def test_upgrade_receipt_keeps_actual_installation_trusted_after_failed_deploy(

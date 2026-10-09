@@ -302,6 +302,27 @@ def _database_url(expected: dict[str, Any]) -> str:
     return url
 
 
+def _verify_connected_database(connection: Any, expected: dict[str, Any]) -> None:
+    """Verify the live database before any migration or operation receipt write."""
+    # An explicit inet::text cast retains /32 (or /128). host() returns the
+    # address itself, matching the exact private endpoint supplied by Timeweb.
+    observed = connection.execute(
+        "SELECT current_database(), current_user, host(inet_server_addr()), "
+        "inet_server_port(), current_setting('server_version_num')::int, pg_is_in_recovery()",
+    ).fetchone()
+    if observed is None:
+        raise UpgradeBlocked("connected_database_observation_missing")
+    fields = (("name", "database"), ("user", "user"), ("address", "host"), ("port", "port"))
+    for actual, (label, key) in zip(observed[:4], fields, strict=True):
+        if actual != expected[key]:
+            # Report the failed invariant, never SQL results or credentials.
+            raise UpgradeBlocked(f"connected_database_{label}_mismatch")
+    if observed[4] // 10000 != 18:
+        raise UpgradeBlocked("connected_database_version_mismatch")
+    if observed[5]:
+        raise UpgradeBlocked("connected_database_recovery_mismatch")
+
+
 def remote_main(payload: dict[str, Any]) -> None:
     if sys.platform != "linux":
         raise UpgradeBlocked("upgrade_requires_linux")
@@ -326,13 +347,7 @@ def remote_main(payload: dict[str, Any]) -> None:
         identity = operation_identity(plan, expected)
         validate_receipt(receipt, identity)
         source_query, installed_release = _existing_installation(plan, receipt, release_sha)
-        observed = connection.execute(
-            "SELECT current_database(), current_user, inet_server_addr()::text, "
-            "inet_server_port(), current_setting('server_version_num')::int, pg_is_in_recovery()",
-        ).fetchone()
-        if (observed is None or observed[:4] != (expected["database"], expected["user"],
-                expected["host"], expected["port"]) or observed[4] // 10000 != 18 or observed[5]):
-            raise UpgradeBlocked("connected_database_identity_mismatch")
+        _verify_connected_database(connection, expected)
         result = apply_upgrade(
             connection, plan=plan, statements=payload["statements"], source_query=source_query,
             target_query=payload["target_query"], identity=identity, receipt=receipt,

@@ -3,13 +3,16 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib
+import json
 import os
 import re
 import secrets
 import subprocess
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import psycopg
@@ -149,6 +152,103 @@ def inplace_database(monkeypatch):
                 yield upgrade, connection, dsn, arguments
         finally:
             control.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
+@pytest.fixture
+def remote_inplace_database(inplace_database, monkeypatch):
+    """Run the Linux entry point against native CI PostgreSQL, with no production files."""
+    upgrade, connection, dsn, arguments = inplace_database
+    options = conninfo_to_dict(dsn)
+    expected = {
+        "host": options["host"], "port": int(options["port"]),
+        "database": options["dbname"], "user": options["user"], "cluster_id": 42,
+    }
+    password = secrets.token_urlsafe(32)
+    keys = {
+        "CLIENT_IP_KEY": "synthetic-native-ip",
+        "BROKER_TOKEN_CRYPTO_KEY": "synthetic-native-broker",
+        "VKID_FLOW_CRYPTO_KEY": "synthetic-native-flow",
+    }
+    runtime = {"DATABASE_URL": make_conninfo(dsn, password=password), **keys}
+    files = {
+        "runtime.env": runtime,
+        "auth-secrets.env": {"OMNICIO_DB_ADMIN_PASSWORD": password, **keys},
+    }
+
+    def private_file(path: Path, _maximum: int) -> str:
+        return "\n".join(f"{name}={value}" for name, value in files[path.name].items())
+
+    receipts = []
+    # Windows runs the actual PostgreSQL server. Only Linux/filesystem ownership
+    # boundaries are fixtures; connection, identity SQL and both migrations remain real.
+    monkeypatch.setattr(upgrade, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(upgrade, "_operation_lock", nullcontext)
+    monkeypatch.setattr(upgrade, "_private_file", private_file)
+    monkeypatch.setattr(upgrade, "_read_receipt",
+                        lambda: copy.deepcopy(receipts[-1]) if receipts else None)
+    monkeypatch.setattr(upgrade, "_write_receipt",
+                        lambda value: receipts.append(copy.deepcopy(value)))
+    monkeypatch.setattr(upgrade, "_existing_installation", lambda _plan, _receipt, _release:
+                        (arguments["source_query"], arguments["installed_release"]))
+    payload = {
+        "plan": arguments["plan"], "statements": arguments["statements"],
+        "target_query": arguments["target_query"], "release_sha": arguments["release_sha"],
+        "database": expected,
+    }
+    return upgrade, connection, payload, receipts, runtime
+
+
+def test_remote_upgrade_accepts_native_endpoint_and_preserves_rows(
+    remote_inplace_database, capsys,
+):
+    upgrade, connection, payload, receipts, _runtime = remote_inplace_database
+    before = _inplace_rows(connection, exclude_changes=True)
+    expected_output = {
+        "cluster_id": payload["database"]["cluster_id"],
+        "release_sha": payload["release_sha"], "new_database_copies": 0,
+    }
+    # A real IPv4 session catches inet::text returning a /32 suffix. Mocking
+    # the observed SELECT tuple would miss the production failure again.
+    upgrade.remote_main(payload)
+    output = capsys.readouterr()
+    assert json.loads(output.out) == {**expected_output, "status": "applied"}
+    assert output.err == ""
+    assert [item["phase"] for item in receipts] == ["pending", "completed"]
+    assert receipts[-1]["identity"]["database"] == payload["database"]
+    assert connection.execute(READINESS_QUERY).fetchone() == (True,)
+    assert _inplace_rows(connection, exclude_changes=True) == before
+
+    after = _inplace_rows(connection)
+    upgrade.remote_main(payload)
+    output = capsys.readouterr()
+    assert json.loads(output.out) == {**expected_output, "status": "already_applied"}
+    assert output.err == ""
+    assert [item["phase"] for item in receipts] == ["pending", "completed", "completed"]
+    assert _inplace_rows(connection) == after
+
+
+def test_remote_upgrade_rejects_wrong_native_server_before_receipt_or_migration(
+    remote_inplace_database, capsys,
+):
+    upgrade, connection, payload, receipts, runtime = remote_inplace_database
+    before = _inplace_rows(connection)
+    actual_host = payload["database"]["host"]
+    payload["database"]["host"] = "127.0.0.2"
+    # Both addresses are loopback. libpq's explicit hostaddr reaches the actual
+    # disposable server while the declared target passes the runtime-file check.
+    # The server-side observation must still reject this different endpoint.
+    runtime["DATABASE_URL"] = make_conninfo(
+        runtime["DATABASE_URL"], host=payload["database"]["host"], hostaddr=actual_host,
+    )
+    with pytest.raises(upgrade.UpgradeBlocked, match="^connected_database_address_mismatch$"):
+        upgrade.remote_main(payload)
+    assert receipts == []
+    assert connection.execute(upgrade.NEW_SCHEMA_ABSENT).fetchone() == (True,)
+    assert connection.execute(READINESS_QUERY).fetchone() == (False,)
+    assert _inplace_rows(connection) == before
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert output.err == ""
 
 
 def _seed_inplace_rows(connection):
