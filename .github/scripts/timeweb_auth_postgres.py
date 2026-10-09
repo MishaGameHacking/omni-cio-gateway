@@ -23,15 +23,17 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from inplace_upgrade import (
-    MODE as SINGLE_DATABASE_MODE,
-)
-from inplace_upgrade import (
+    MAX_INSPECTION_REPORT_BYTES,
     OPERATIONS,
     UpgradeBlocked,
     load_plan,
     migration_bodies,
     render_remote_upgrade,
+    valid_inspection_diagnostics,
     validate_operation,
+)
+from inplace_upgrade import (
+    MODE as SINGLE_DATABASE_MODE,
 )
 from timeweb_addresses import network_addresses
 from timeweb_http import request_json
@@ -906,13 +908,24 @@ def _valid_inspection_result(result: dict[str, Any], operation: str, message_id:
         return False
     ready = (recovery["status"] == "ready" and configuration["status"] == "configuration_ready"
              and probe["status"] in ("not_requested", "accepted"))
+    if not valid_inspection_diagnostics(
+        result.get("diagnostics"), recovery_ready=recovery["status"] == "ready",
+        configuration_ready=configuration["status"] == "configuration_ready",
+    ):
+        return False
+    if configuration["status"] == "configuration_ready":
+        observed = result["diagnostics"]["configuration"]
+        if (observed["market_data_token_present"] != configuration["market_token_configured"]
+                or observed["market_data_distribution_approved"]
+                != configuration["market_distribution_approved"]):
+            return False
     return result.get("status") == ("preflight_ready" if ready else "preflight_blocked")
 
 
 def _read_upgrade_result(
     raw: str, *, cluster_id: int, release_sha: str, operation: str, message_id: str,
 ) -> dict[str, Any]:
-    if len(raw) > 16384:
+    if len(raw) > MAX_INSPECTION_REPORT_BYTES:
         raise InfraError(UNCONFIRMED_UPGRADE)
     try:
         result = json.loads(raw)
@@ -920,7 +933,8 @@ def _read_upgrade_result(
         raise InfraError(UNCONFIRMED_UPGRADE) from None
     keys = {"status", "cluster_id", "release_sha", "new_database_copies"}
     if operation != "apply":
-        keys.update({"operation", "schema", "recovery", "configuration", "email_probe"})
+        keys.update({"operation", "schema", "recovery", "configuration", "email_probe",
+                     "diagnostics"})
     if (not isinstance(result, dict) or set(result) != keys
             or type(result.get("cluster_id")) is not int
             or result.get("cluster_id") != cluster_id or result.get("release_sha") != release_sha

@@ -129,6 +129,7 @@ class ProductPreflightTests(unittest.TestCase):
 
     def _run(
         self, candidate: SimpleNamespace, product: str, *, smtp_probe: bool = False,
+        diagnostics: dict[str, object] | None = None,
     ) -> dict[str, object]:
         broker_key = base64.urlsafe_b64encode(b"b" * 32).decode("ascii")
         runtime = (
@@ -141,6 +142,8 @@ class ProductPreflightTests(unittest.TestCase):
             try:
                 if smtp_probe:
                     return candidate.send_upgrade_control_email()
+                if diagnostics is not None:
+                    return candidate.require_upgrade_product_configuration(diagnostics=diagnostics)
                 return candidate.require_upgrade_product_configuration()
             finally:
                 self.assertEqual(dict(os.environ), original)
@@ -161,6 +164,103 @@ class ProductPreflightTests(unittest.TestCase):
             "market_token_configured": True, "market_distribution_approved": False,
         })
         self.assertNotIn("fixture", json.dumps(result))
+
+    def test_diagnostics_distinguish_missing_effective_smtp_fields_without_sending(self) -> None:
+        for host_present, sender_present in ((False, False), (True, False), (False, True),
+                                             (True, True)):
+            product = (
+                ('AUTH_SMTP_HOST="smtp.private-canary.example"\n' if host_present else "")
+                + ('AUTH_SMTP_SENDER="private-canary@example.com"\n' if sender_present else "")
+                + 'MARKET_DATA_TOKEN="private-market-canary"\n'
+                + 'MARKET_DATA_DISTRIBUTION_APPROVED="true"\n'
+            )
+            candidate = self._candidate({})
+            diagnostics: dict[str, object] = {}
+            with (
+                self.subTest(host=host_present, sender=sender_present),
+                patch("omnicio.notifications.NotificationTransport.send_email") as send,
+            ):
+                if host_present and sender_present:
+                    result = self._run(candidate, product, diagnostics=diagnostics)
+                    self.assertEqual(set(result), {
+                        "status", "smtp_delivery_verified", "market_token_configured",
+                        "market_distribution_approved",
+                    })
+                else:
+                    with self.assertRaisesRegex(
+                        candidate.UpgradeBlocked, "^auth_email_configuration_required$",
+                    ):
+                        self._run(candidate, product, diagnostics=diagnostics)
+            send.assert_not_called()
+            self.assertEqual(diagnostics, {
+                "stage": "validated" if host_present and sender_present else "email_readiness",
+                "auth_smtp_host_present": host_present, "auth_smtp_sender_present": sender_present,
+                "existing_receipt_key_present": False, "existing_archive_key_present": False,
+                "market_data_token_present": True, "market_data_distribution_approved": False,
+            })
+            self.assertNotIn("canary", json.dumps(diagnostics))
+
+    def test_diagnostics_use_future_settings_and_existing_key_custody(self) -> None:
+        candidate = self._candidate({
+            "AUTH_SMTP_HOST": "smtp.private-canary.example",
+            "AUTH_SMTP_SENDER": "private-canary@example.com",
+            "MARKET_DATA_TOKEN": "private-market-canary",
+            "MARKET_DATA_DISTRIBUTION_APPROVED": "true",
+            "OMNICIO_RESTORE_RECEIPT_KEY": "private-new-receipt-canary" * 2,
+            "OMNICIO_RESTORE_ARCHIVE_KEY": base64.urlsafe_b64encode(b"k" * 32).decode(),
+        })
+        diagnostics: dict[str, object] = {}
+        self._run(candidate, "", diagnostics=diagnostics)
+        self.assertEqual(diagnostics, {
+            "stage": "validated", "auth_smtp_host_present": True, "auth_smtp_sender_present": True,
+            "existing_receipt_key_present": False, "existing_archive_key_present": False,
+            "market_data_token_present": True, "market_data_distribution_approved": True,
+        })
+        preserved = self._candidate({})
+        product = (self.auth_product
+                   + 'OMNICIO_RESTORE_RECEIPT_KEY="private-existing-receipt-canary"\n'
+                   + 'OMNICIO_RESTORE_ARCHIVE_KEY="private-existing-archive-canary"\n')
+        self._run(preserved, product, diagnostics=diagnostics)
+        self.assertTrue(diagnostics["existing_receipt_key_present"])
+        self.assertTrue(diagnostics["existing_archive_key_present"])
+        self.assertFalse(diagnostics["market_data_token_present"])
+        self.assertFalse(diagnostics["market_data_distribution_approved"])
+        self.assertNotIn("canary", json.dumps(diagnostics))
+
+    def test_diagnostics_record_configuration_failure_stage_without_values(self) -> None:
+        for overrides, product, stage in (
+            ({"SESSION_TTL_SECONDS": "0"}, self.auth_product, "settings_validation"),
+            ({"AUTH_SMTP_SENDER": "invalid-private-canary"}, self.auth_product,
+             "auth_email_validation"),
+            ({"NOTIFICATION_VAPID_PRIVATE_KEY": "private-canary"}, self.auth_product,
+             "push_validation"),
+            ({"OMNICIO_RESTORE_RECEIPT_KEY": "new-private-canary"},
+             self.auth_product + 'OMNICIO_RESTORE_RECEIPT_KEY="old-private-canary"\n',
+             "environment_merge"),
+        ):
+            candidate = self._candidate(overrides)
+            diagnostics: dict[str, object] = {}
+            with self.subTest(stage=stage), self.assertRaises(ValueError if stage in (
+                "auth_email_validation", "push_validation",
+            ) else candidate.UpgradeBlocked):
+                self._run(candidate, product, diagnostics=diagnostics)
+            self.assertEqual(diagnostics["stage"], stage)
+            self.assertNotIn("canary", json.dumps(diagnostics))
+        candidate = self._candidate({})
+        for path, values, stage in (
+            ("runtime", [FileNotFoundError("private-canary")], "runtime_environment"),
+            ("product", ["", PermissionError("private-canary")], "product_environment"),
+        ):
+            diagnostics = {}
+            with (
+                self.subTest(path=path),
+                patch.object(candidate, "_private_file", side_effect=values),
+                self.assertRaises((OSError, candidate.UpgradeBlocked)),
+            ):
+                candidate.require_upgrade_product_configuration(diagnostics=diagnostics)
+            self.assertEqual(diagnostics["stage"], stage)
+            self.assertTrue(all(value is None for name, value in diagnostics.items()
+                                if name != "stage"))
 
     def test_first_email_release_uses_ci_overrides_without_writing_environment(self) -> None:
         candidate = self._candidate({
@@ -463,10 +563,14 @@ class ProductPreflightTests(unittest.TestCase):
                     smtp_probe=include_probe, release_sha="b" * 40,
                     capture_configuration_errors=True,
                 )
+                diagnostics = {"auth_smtp_host_present": None, "auth_smtp_sender_present": None}
                 with self.assertRaisesRegex(
                     candidate.UpgradeBlocked, "product_configuration_invalid",
                 ):
-                    candidate.require_upgrade_product_configuration()
+                    candidate.require_upgrade_product_configuration(diagnostics=diagnostics)
+                self.assertEqual(diagnostics["stage"], "candidate_validation")
+                self.assertTrue(all(value is None for name, value in diagnostics.items()
+                                    if name != "stage"))
                 if include_probe:
                     with (
                         patch("omnicio.notifications.NotificationTransport.send_email") as send,
@@ -999,10 +1103,33 @@ class AuthAppDeployTests(unittest.TestCase):
         deploy, rollback = ssh.run.call_args_list
         self.assertIn(f"flock -n {MODULE.DEPLOY_LOCK} ", deploy.args[0])
         self.assertIn(f"flock -w 855 {MODULE.DEPLOY_LOCK} ", rollback.args[0])
-        for call, maximum in ((deploy, 840 + 15), (rollback, 855 + 60 + 5)):
-            self.assertGreater(call.kwargs["timeout"], maximum)
-            self.assertIn("timeout --kill-after=", call.args[0])
-            self.assertNotIn("--foreground", call.args[0])
+        budgets = []
+        for call in (deploy, rollback):
+            command = shlex.split(call.args[0])
+            position = command.index("timeout")
+            grace, duration = command[position + 1:position + 3]
+            self.assertRegex(grace, r"^--kill-after=[0-9]+s$")
+            self.assertRegex(duration, r"^[0-9]+s$")
+            grace_seconds = int(grace.removeprefix("--kill-after=")[:-1])
+            operation_seconds = int(duration[:-1])
+            lock_seconds = 0 if command[1] == "-n" else int(command[2])
+            self.assertGreater(call.kwargs["timeout"],
+                               lock_seconds + operation_seconds + grace_seconds)
+            self.assertNotIn("--foreground", command)
+            budgets.append(operation_seconds)
+        self.assertEqual(budgets, [840, 180])
+        self.assertEqual(rollback.kwargs["timeout"], 1080)
+        script = MODULE.REMOTE_DEPLOY_SCRIPT
+        auth = script.split('cat > "$SERVICE.new"', 1)[1].split("\nEOF\n", 1)[0]
+        observer = script.split('cat > "$OBSERVER_SERVICE.new"', 1)[1].split("\nEOF\n", 1)[0]
+        auth_stop = int(re.search(r"^TimeoutStopSec=([0-9]+)$", auth, flags=re.M)[1])
+        auth_start = int(re.search(r"^TimeoutStartSec=([0-9]+)$", auth, flags=re.M)[1])
+        observer_stop = int(re.search(r"^TimeoutStopSec=([0-9]+)$", observer, flags=re.M)[1])
+        # Incompatible rollback stops both units; compatible rollback restarts auth.
+        self.assertGreater(budgets[1], max(auth_stop + observer_stop, auth_stop + auth_start))
+        # Restoring the timer does not wait for the observer's long-running work.
+        self.assertNotRegex(MODULE.REMOTE_ROLLBACK_SCRIPT.replace("\\\n", " "),
+                            r"systemctl\s+(?:start|restart)\s+[^\n]*omnicio-observer\.service\b")
         self.assertEqual(
             deploy.kwargs["input_text"],
             MODULE.REMOTE_DEPLOY_SCRIPT.replace(
@@ -1554,15 +1681,41 @@ class AuthAppDeployTests(unittest.TestCase):
                     self.assertEqual(output, [expected])
 
     def test_remote_service_is_loopback_only_and_resource_bounded(self) -> None:
+        from uvicorn.main import main as uvicorn_command
+
         script = MODULE.REMOTE_DEPLOY_SCRIPT
-        self.assertIn("--host 127.0.0.1 --port 8001", script)
-        self.assertIn("--workers 1", script)
-        self.assertNotIn("--workers 2", script)
-        self.assertIn("--limit-concurrency 64", script)
-        self.assertIn("--backlog 128", script)
-        self.assertIn("--timeout-keep-alive 5", script)
-        self.assertIn("EnvironmentFile=/etc/omnicio/runtime.env", script)
-        self.assertIn("NoNewPrivileges=true", script)
+        service = script.split('cat > "$SERVICE.new"', 1)[1].split("\nEOF\n", 1)[0]
+        starts = re.findall(r"^ExecStart=(.+)$", service.replace("\\\n", " "), flags=re.M)
+        self.assertEqual(len(starts), 1)
+        command = shlex.split(starts[0])
+        self.assertEqual(command[0], "/opt/omnicio/current/.venv/bin/uvicorn")
+        # Parse the rendered command through the pinned CLI without starting a server.
+        with uvicorn_command.make_context("uvicorn", command[1:]) as context:
+            expected = {
+                "app": "omnicio.main:app", "host": "127.0.0.1", "port": 8001,
+                "workers": 1, "limit_concurrency": 64, "backlog": 128,
+                "timeout_keep_alive": 5, "timeout_graceful_shutdown": 30,
+                "proxy_headers": True, "forwarded_allow_ips": "127.0.0.1",
+            }
+            for name, value in expected.items():
+                with self.subTest(option=name):
+                    self.assertEqual(context.params[name], value)
+                    if name != "app":
+                        option = "--" + name.replace("_", "-")
+                        self.assertEqual(sum(arg.split("=", 1)[0] == option for arg in command), 1)
+        # HTTP drain does not bound lifespan cleanup. The simple unit's own deadline
+        # terminates its entire process group if cleanup or database I/O remains stuck.
+        for name, value in {
+            "Type": "simple", "User": "omnicio", "Group": "omnicio",
+            "TimeoutStopSec": "90", "KillMode": "control-group", "SendSIGKILL": "yes",
+            "NoNewPrivileges": "true",
+        }.items():
+            with self.subTest(setting=name):
+                self.assertEqual(re.findall(rf"^{name}=(.*)$", service, flags=re.M), [value])
+        self.assertNotRegex(service, r"(?m)^ExecStop(?:Post)?=")
+        self.assertEqual(re.findall(r"^EnvironmentFile=(.*)$", service, flags=re.M), [
+            "/etc/omnicio/runtime.env", "/etc/omnicio/product.env",
+        ])
         self.assertIn("proxy_pass http://127.0.0.1:8001", script)
 
     def test_production_app_deploy_requires_explicit_main_dispatch(self) -> None:

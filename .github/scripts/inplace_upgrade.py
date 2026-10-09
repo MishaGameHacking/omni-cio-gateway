@@ -32,6 +32,37 @@ RECOVERY_DIRECTORY = pathlib.Path("/var/lib/omnicio-recovery")
 # The existing exporter accepts at most 64 MiB before Fernet encryption.
 MAX_LOGICAL_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_ENCRYPTED_ARCHIVE_BYTES = 2 * MAX_LOGICAL_ARCHIVE_BYTES
+RECOVERY_FILES = {
+    "status": (RECOVERY_DIRECTORY / "status.json", 16384, False),
+    "manifest": (RECOVERY_DIRECTORY / "manifest.json", 16384, True),
+    "archive": (RECOVERY_DIRECTORY / "database.dump.encrypted", MAX_ENCRYPTED_ARCHIVE_BYTES, True),
+    "product_environment": (pathlib.Path("/etc/omnicio/product.env"), 65536, True),
+}
+CONFIGURATION_STAGES = (
+    "not_started", "candidate_validation", "runtime_environment", "product_environment",
+    "environment_merge", "settings_validation", "auth_email_validation", "push_validation",
+    "email_readiness", "validated",
+)
+CONFIGURATION_CUSTODY_FIELDS = ("existing_receipt_key_present", "existing_archive_key_present")
+CONFIGURATION_SETTINGS_FIELDS = (
+    "auth_smtp_host_present", "auth_smtp_sender_present", "market_data_token_present",
+    "market_data_distribution_approved",
+)
+RECOVERY_STAGES = (
+    "not_started", "system_identity_access", "status_file", "manifest_file", "encrypted_archive",
+    "recovery_environment", "archive_decryption", "archive_format", "system_identity",
+    "proof_verification", "verified",
+)
+# Only this reviewed verifier vocabulary can cross the operator-report boundary.
+RECOVERY_PROOF_FAILURES = (
+    "recovery_clock_unavailable", "recovery_source_identity_invalid", "recovery_state_mismatch",
+    "recovery_proof_unverified", "recovery_source_mismatch", "recovery_source_stale",
+    "recovery_manifest_unverified", "recovery_archive_mismatch",
+)
+CAPACITY_MEMORY_FIELDS = ("MemTotal", "MemAvailable", "SwapTotal", "SwapFree")
+CAPACITY_OS_FIELDS = ("ID", "VERSION_ID", "VERSION_CODENAME")
+MAX_OBSERVED_BYTES = 2**63 - 1
+MAX_INSPECTION_REPORT_BYTES = 16384
 AUTH_SERVICE = "omnicio-auth.service"
 OBSERVER_TIMER = "omnicio-observer.timer"
 OBSERVER_SERVICE = "omnicio-observer.service"
@@ -181,13 +212,18 @@ def schema_query(source: str, expected_digest: str | None = None) -> str:
     return query
 
 
+def _trusted_operational_directory(details: os.stat_result) -> bool:
+    return (stat.S_ISDIR(details.st_mode) and details.st_uid == 0
+            and not details.st_mode & 0o022)
+
+
 @contextmanager
 def _operational_file(path: pathlib.Path, *, private: bool = True) -> Iterator[BinaryIO]:
     """Open one existing trusted inode for reading, without creating or following it."""
     if sys.platform != "linux":
         raise UpgradeBlocked("upgrade_requires_linux")
     parent = path.parent.lstat()
-    if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid != 0 or parent.st_mode & 0o022):
+    if not _trusted_operational_directory(parent):
         raise UpgradeBlocked("untrusted_operational_directory")
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(descriptor, "rb") as handle:
@@ -236,6 +272,119 @@ def _inspection_lock(path: Any) -> Iterator[None]:
 
 def _private_file(path: pathlib.Path, maximum: int) -> str:
     return _operational_bytes(path, maximum).decode("utf-8")
+
+
+def _inspect_recovery_file(path: pathlib.Path) -> dict[str, Any]:
+    """Observe metadata only; the recovery gate separately opens its trusted inode."""
+    report: dict[str, Any] = {
+        "state": "unavailable", "exists": None, "kind": None,
+        "root_owned": None, "mode_octal": None, "size_bytes": None,
+    }
+    try:
+        parent = path.parent.lstat()
+    except FileNotFoundError:
+        return report | {"state": "parent_missing", "exists": False}
+    except OSError:
+        return report
+    if not _trusted_operational_directory(parent):
+        return report | {"state": "parent_untrusted"}
+    try:
+        details = path.lstat()
+    except FileNotFoundError:
+        return report | {"state": "missing", "exists": False}
+    except OSError:
+        return report
+    if not 0 <= details.st_size <= MAX_OBSERVED_BYTES:
+        return report
+    if stat.S_ISREG(details.st_mode):
+        kind = "regular"
+    elif stat.S_ISLNK(details.st_mode):
+        kind = "symlink"
+    else:
+        kind = "other"
+    return {
+        "state": "observed", "exists": True, "kind": kind,
+        "root_owned": details.st_uid == 0,
+        "mode_octal": format(stat.S_IMODE(details.st_mode), "04o"),
+        "size_bytes": details.st_size,
+    }
+
+
+def inspect_host_capacity() -> dict[str, Any]:
+    """Observe current host resources without assigning load or price thresholds."""
+    import shutil
+
+    try:
+        memory: dict[str, int | None] = dict.fromkeys(CAPACITY_MEMORY_FIELDS)
+        with pathlib.Path("/proc/meminfo").open(encoding="utf-8") as handle:
+            raw_memory = handle.read(65537)
+        with pathlib.Path("/etc/os-release").open(encoding="utf-8") as handle:
+            raw_release = handle.read(65537)
+        if len(raw_memory) > 65536 or len(raw_release) > 65536:
+            raise ValueError("host_capacity_unavailable")
+        for line in raw_memory.splitlines():
+            key, separator, value = line.partition(":")
+            if not separator or key not in CAPACITY_MEMORY_FIELDS:
+                continue
+            amount, unit = value.split()
+            if unit != "kB":
+                raise ValueError("host_capacity_unavailable")
+            memory[key] = int(amount) * 1024
+        release = {}
+        for line in raw_release.splitlines():
+            key, separator, value = line.partition("=")
+            if separator and key in CAPACITY_OS_FIELDS:
+                release[key] = value.strip('"')
+        disk = shutil.disk_usage("/var/lib")
+        report = {
+            "status": "observed", "cpu_count": os.cpu_count(), "memory_bytes": memory,
+            "disk_total_bytes": disk.total, "disk_free_bytes": disk.free,
+            "os": release, "systemd_run": bool(shutil.which("systemd-run")),
+            "postgres_majors": sorted(
+                path.name for path in pathlib.Path("/usr/lib/postgresql").glob("*")
+                if path.is_dir() and path.name.isdecimal()
+            ),
+        }
+        if _valid_host_capacity(report):
+            return report
+    except (OSError, ValueError, TypeError):
+        pass
+    return {"status": "unavailable", "code": "host_capacity_unavailable"}
+
+
+def _observed_integer(value: Any, *, minimum: int = 0) -> bool:
+    return type(value) is int and minimum <= value <= MAX_OBSERVED_BYTES
+
+
+def _valid_host_capacity(value: Any) -> bool:
+    if value == {"status": "unavailable", "code": "host_capacity_unavailable"}:
+        return True
+    if (not isinstance(value, dict) or set(value) != {
+            "status", "cpu_count", "memory_bytes", "disk_total_bytes", "disk_free_bytes",
+            "os", "systemd_run", "postgres_majors",
+    } or value.get("status") != "observed"
+            or (value["cpu_count"] is not None
+                and not _observed_integer(value["cpu_count"], minimum=1))
+            or not _observed_integer(value["disk_total_bytes"])
+            or not _observed_integer(value["disk_free_bytes"])
+            or value["disk_free_bytes"] > value["disk_total_bytes"]
+            or type(value["systemd_run"]) is not bool):
+        return False
+    memory, release, majors = value["memory_bytes"], value["os"], value["postgres_majors"]
+    if (not isinstance(memory, dict) or set(memory) != set(CAPACITY_MEMORY_FIELDS)
+            or any(item is not None and not _observed_integer(item) for item in memory.values())
+            or not isinstance(release, dict) or not set(release).issubset(CAPACITY_OS_FIELDS)
+            or any(not isinstance(item, str) or re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", item) is None
+                   for item in release.values())
+            or not isinstance(majors, list) or len(majors) > 32
+            or any(not isinstance(item, str)
+                   or re.fullmatch(r"\d{1,3}", item, flags=re.ASCII) is None
+                   for item in majors)):
+        return False
+    for free, total in (("MemAvailable", "MemTotal"), ("SwapFree", "SwapTotal")):
+        if memory[free] is not None and memory[total] is not None and memory[free] > memory[total]:
+            return False
+    return majors == sorted(set(majors))
 
 
 def _unescape_environment_text(text: str) -> str:
@@ -287,44 +436,69 @@ def parse_environment(text: str) -> dict[str, str]:
 def _require_recovery(
     connection: Any, plan: dict[str, Any], expected: dict[str, Any],
     validator: Callable[..., dict[str, Any]],
+    *, diagnostics: dict[str, Any] | None = None,
 ) -> None:
     """Authenticate and decrypt only existing evidence in protected server custody."""
     from cryptography.fernet import Fernet, InvalidToken
 
+    observation = {} if diagnostics is None else diagnostics
+    observation.update({
+        "stage": "system_identity_access", "proof_code": "not_checked",
+        "system_identity_access": None, "system_identity_read": False,
+    })
     try:
-        if connection.execute(
+        has_access = connection.execute(
             "SELECT pg_catalog.has_function_privilege(current_user, "
             "'pg_catalog.pg_control_system()', 'EXECUTE')",
-        ).fetchone() != (True,):
+        ).fetchone() == (True,)
+        observation["system_identity_access"] = has_access
+        if not has_access:
             raise UpgradeBlocked("recovery_system_identity_access_unavailable")
-        state = json.loads(_operational_bytes(
-            RECOVERY_DIRECTORY / "status.json", 16384, private=False,
-        ))
-        manifest = json.loads(_private_file(RECOVERY_DIRECTORY / "manifest.json", 16384))
-        encrypted = _operational_bytes(
-            RECOVERY_DIRECTORY / "database.dump.encrypted", MAX_ENCRYPTED_ARCHIVE_BYTES,
-        )
-        environment = parse_environment(_private_file(pathlib.Path("/etc/omnicio/product.env"),
-                                                       65536))
+        observation["stage"] = "status_file"
+        state = json.loads(_recovery_file_bytes("status"))
+        observation["stage"] = "manifest_file"
+        manifest = json.loads(_recovery_file_bytes("manifest").decode("utf-8"))
+        observation["stage"] = "encrypted_archive"
+        encrypted = _recovery_file_bytes("archive")
+        observation["stage"] = "recovery_environment"
+        environment = parse_environment(_recovery_file_bytes("product_environment").decode("utf-8"))
+        observation["stage"] = "archive_decryption"
         raw = Fernet(environment.get("OMNICIO_RESTORE_ARCHIVE_KEY", "")).decrypt(encrypted)
+        observation["stage"] = "archive_format"
         if not raw.startswith(b"PGDMP") or not 0 < len(raw) <= MAX_LOGICAL_ARCHIVE_BYTES:
             raise UpgradeBlocked("recovery_archive_invalid")
+        observation["stage"] = "system_identity"
         system_id = connection.execute(
             "SELECT system_identifier::text FROM pg_catalog.pg_control_system()",
         ).fetchone()
         if system_id is None:
             raise UpgradeBlocked("recovery_database_identity_missing")
-        validator(
-            state, environment.get("OMNICIO_RESTORE_RECEIPT_KEY", ""),
-            cluster_id=expected["cluster_id"], source_release=plan["source_release"],
-            source_system_id=system_id[0], now=datetime.now(UTC), manifest=manifest,
-            encrypted_archive_sha256=hashlib.sha256(encrypted).hexdigest(),
-            decrypted_archive_sha256=hashlib.sha256(raw).hexdigest(),
-        )
+        observation["system_identity_read"] = True
+        observation["stage"] = "proof_verification"
+        try:
+            validator(
+                state, environment.get("OMNICIO_RESTORE_RECEIPT_KEY", ""),
+                cluster_id=expected["cluster_id"], source_release=plan["source_release"],
+                source_system_id=system_id[0], now=datetime.now(UTC), manifest=manifest,
+                encrypted_archive_sha256=hashlib.sha256(encrypted).hexdigest(),
+                decrypted_archive_sha256=hashlib.sha256(raw).hexdigest(),
+            )
+        except (ValueError, TypeError) as exc:
+            observation["proof_code"] = (
+                str(exc) if isinstance(exc, ValueError) and str(exc) in RECOVERY_PROOF_FAILURES
+                else "proof_invalid"
+            )
+            raise
+        observation.update({"stage": "verified", "proof_code": "verified"})
     except (OSError, ValueError, TypeError, InvalidToken) as exc:
         # Ciphertext, plaintext, keys, paths supplied by another actor and SQL
         # driver diagnostics never become a recovery failure message.
         raise UpgradeBlocked("upgrade_recovery_unavailable") from exc
+
+
+def _recovery_file_bytes(name: str) -> bytes:
+    path, maximum, private = RECOVERY_FILES[name]
+    return _operational_bytes(path, maximum, private=private)
 
 
 def render_source_definitions(path: pathlib.Path, names: set[str]) -> str:
@@ -736,6 +910,106 @@ def _inspection_failure(exc: Exception, component: str) -> dict[str, str]:
     return {"status": "blocked", "code": code}
 
 
+def _inspection_diagnostics() -> dict[str, Any]:
+    return {
+        "configuration": {
+            "stage": "not_started",
+            **dict.fromkeys((*CONFIGURATION_CUSTODY_FIELDS, *CONFIGURATION_SETTINGS_FIELDS)),
+        },
+        "recovery": {
+            "stage": "not_started", "proof_code": "not_checked",
+            "system_identity_access": None, "system_identity_read": False,
+        },
+        "files": {name: _inspect_recovery_file(specification[0])
+                  for name, specification in RECOVERY_FILES.items()},
+        "host": inspect_host_capacity(),
+    }
+
+
+def _valid_configuration_observation(value: Any) -> bool:
+    keys = {"stage", *CONFIGURATION_CUSTODY_FIELDS, *CONFIGURATION_SETTINGS_FIELDS}
+    if (not isinstance(value, dict) or set(value) != keys
+            or value["stage"] not in CONFIGURATION_STAGES):
+        return False
+    stage = CONFIGURATION_STAGES.index(value["stage"])
+    for names, first_stage in (
+        (CONFIGURATION_CUSTODY_FIELDS, "environment_merge"),
+        (CONFIGURATION_SETTINGS_FIELDS, "auth_email_validation"),
+    ):
+        observed = stage >= CONFIGURATION_STAGES.index(first_stage)
+        if any(type(value[name]) is not bool if observed else value[name] is not None
+               for name in names):
+            return False
+    if value["stage"] == "validated":
+        return (value["auth_smtp_host_present"] is True
+                and value["auth_smtp_sender_present"] is True)
+    return True
+
+
+def _valid_recovery_observation(value: Any) -> bool:
+    if (not isinstance(value, dict) or set(value) != {
+            "stage", "proof_code", "system_identity_access", "system_identity_read",
+    } or value["stage"] not in RECOVERY_STAGES
+            or value["proof_code"] not in ("not_checked", "verified", "proof_invalid",
+                                            *RECOVERY_PROOF_FAILURES)
+            or (value["system_identity_access"] is not None
+                and type(value["system_identity_access"]) is not bool)
+            or type(value["system_identity_read"]) is not bool):
+        return False
+    if (value["stage"] not in ("not_started", "system_identity_access")
+            and value["system_identity_access"] is not True):
+        return False
+    if value["stage"] == "not_started" and value["system_identity_access"] is not None:
+        return False
+    if value["stage"] == "system_identity_access" and value["system_identity_access"] is True:
+        return False
+    identity_read = value["stage"] in ("proof_verification", "verified")
+    if value["system_identity_read"] != identity_read:
+        return False
+    if value["stage"] == "verified":
+        return bool(value["proof_code"] == "verified")
+    return value["proof_code"] != "verified" and (
+        identity_read or value["proof_code"] == "not_checked"
+    )
+
+
+def _valid_file_observation(value: Any) -> bool:
+    if not isinstance(value, dict) or set(value) != {
+        "state", "exists", "kind", "root_owned", "mode_octal", "size_bytes",
+    }:
+        return False
+    state = value["state"]
+    if state == "observed":
+        return (value["exists"] is True and value["kind"] in ("regular", "symlink", "other")
+                and type(value["root_owned"]) is bool
+                and isinstance(value["mode_octal"], str)
+                and re.fullmatch(r"[0-7]{4}", value["mode_octal"]) is not None
+                and _observed_integer(value["size_bytes"]))
+    if state not in ("missing", "parent_missing", "parent_untrusted", "unavailable"):
+        return False
+    exists = False if state in ("missing", "parent_missing") else None
+    return value["exists"] is exists and all(
+        value[name] is None for name in ("kind", "root_owned", "mode_octal", "size_bytes")
+    )
+
+
+def valid_inspection_diagnostics(
+    value: Any, *, recovery_ready: bool, configuration_ready: bool,
+) -> bool:
+    """Accept only the fixed operator vocabulary; observations never grant readiness."""
+    if not isinstance(value, dict) or set(value) != {"configuration", "recovery", "files", "host"}:
+        return False
+    configuration, recovery, files = value["configuration"], value["recovery"], value["files"]
+    return (
+        _valid_configuration_observation(configuration) and _valid_recovery_observation(recovery)
+        and configuration_ready == (configuration["stage"] == "validated")
+        and recovery_ready == (recovery["stage"] == "verified")
+        and isinstance(files, dict) and set(files) == set(RECOVERY_FILES)
+        and all(_valid_file_observation(item) for item in files.values())
+        and _valid_host_capacity(value["host"])
+    )
+
+
 def _inspect_email_probe(
     operation: str, configuration: dict[str, Any],
     smtp_probe: Callable[[], dict[str, Any]] | None,
@@ -754,7 +1028,7 @@ def _inspect_current_upgrade(
     connection: Any, *, payload: dict[str, Any], plan: dict[str, Any],
     receipt: dict[str, Any] | None, source_query: str, installed_release: str,
     recovery_validator: Callable[..., dict[str, Any]] | None,
-    product_preflight: Callable[[], dict[str, Any]] | None,
+    product_preflight: Callable[..., dict[str, Any]] | None,
     smtp_probe: Callable[[], dict[str, Any]] | None,
 ) -> dict[str, Any]:
     """Read both live prerequisites independently, without entering the mutation path."""
@@ -766,13 +1040,15 @@ def _inspect_current_upgrade(
         connection, payload=payload, plan=plan, receipt=receipt,
         source_query=source_query, installed_release=installed_release,
     )
+    diagnostics = _inspection_diagnostics()
     try:
-        _require_recovery(connection, plan, payload["database"], recovery_validator)
+        _require_recovery(connection, plan, payload["database"], recovery_validator,
+                          diagnostics=diagnostics["recovery"])
         recovery = {"status": "ready", "code": "recovery_verified"}
     except (UpgradeBlocked, OSError, ValueError, TypeError, psycopg.Error) as exc:
         recovery = _inspection_failure(exc, "recovery")
     try:
-        configuration = product_preflight()
+        configuration = product_preflight(diagnostics=diagnostics["configuration"])
     except (UpgradeBlocked, OSError, ValueError, TypeError) as exc:
         configuration = _inspection_failure(exc, "configuration")
     probe = _inspect_email_probe(payload["operation"], configuration, smtp_probe)
@@ -785,6 +1061,7 @@ def _inspect_current_upgrade(
         "cluster_id": payload["database"]["cluster_id"], "new_database_copies": 0,
         "schema": "target_ready" if ready else "source_ready",
         "recovery": recovery, "configuration": configuration, "email_probe": probe,
+        "diagnostics": diagnostics,
     }
 
 
@@ -845,7 +1122,7 @@ def _apply_current_upgrade(
 
 def remote_main(
     payload: dict[str, Any], *, recovery_validator: Callable[..., dict[str, Any]] | None = None,
-    product_preflight: Callable[[], dict[str, Any]] | None = None,
+    product_preflight: Callable[..., dict[str, Any]] | None = None,
     smtp_probe: Callable[[], dict[str, Any]] | None = None,
 ) -> None:
     if sys.platform != "linux":

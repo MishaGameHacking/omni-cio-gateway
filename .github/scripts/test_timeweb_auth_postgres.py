@@ -446,6 +446,27 @@ class PostgresTests(unittest.TestCase):
                              "message_id": "<smtp-probe-1.4-aaaaaaaaaaaa-123@omnicio.ru>"}
                             if operation == "email_probe" else
                             {"status": "not_requested", "code": "not_requested", "message_id": ""}),
+            "diagnostics": self.inspection_diagnostics(ready=ready),
+        }
+
+    def inspection_diagnostics(self, *, ready: bool = True) -> dict:
+        return {
+            "configuration": {
+                "stage": "validated", "auth_smtp_host_present": True,
+                "auth_smtp_sender_present": True, "existing_receipt_key_present": True,
+                "existing_archive_key_present": True, "market_data_token_present": False,
+                "market_data_distribution_approved": False,
+            },
+            "recovery": {
+                "stage": "verified" if ready else "status_file",
+                "proof_code": "verified" if ready else "not_checked",
+                "system_identity_access": True, "system_identity_read": ready,
+            },
+            "files": {name: {
+                "state": "unavailable", "exists": None, "kind": None,
+                "root_owned": None, "mode_octal": None, "size_bytes": None,
+            } for name in ("status", "manifest", "archive", "product_environment")},
+            "host": {"status": "unavailable", "code": "host_capacity_unavailable"},
         }
 
     def test_remote_inspection_reads_both_checks_without_mutating_source_or_target(self) -> None:
@@ -477,6 +498,9 @@ class PostgresTests(unittest.TestCase):
             probe = Mock(return_value=self.inspection_report(
                 operation="email_probe",
             )["email_probe"])
+            diagnostics = self.inspection_diagnostics(ready=not recovery_failed)
+            if configuration_failed:
+                diagnostics["configuration"]["stage"] = "auth_email_validation"
             readonly = {
                 "_database_url": "synthetic-connection",
                 "_read_receipt": receipt,
@@ -484,6 +508,7 @@ class PostgresTests(unittest.TestCase):
                 "_verify_connected_database": None, "_verify_upgrade_role": None,
                 "_source_is_ready": True, "_assert_writers_stopped": None,
                 "_require_recovery": None, "_inspection_lock": nullcontext(),
+                "_inspection_diagnostics": diagnostics,
             }
             mutators = ("_operation_lock", "_receipt_directory", "_write_receipt", "_change_units",
                         "_capture_writer_state", "_drain_writers", "_restore_writers",
@@ -529,7 +554,7 @@ class PostgresTests(unittest.TestCase):
                                                       and not configuration_failed))
                 stubs["_require_recovery"].assert_called_once()
                 stubs["_inspection_lock"].assert_called_once_with(payload["deployment_lock"])
-                configuration.assert_called_once_with()
+                configuration.assert_called_once_with(diagnostics=diagnostics["configuration"])
                 for name, mutation in mutations.items():
                     self.assertEqual(mutation.call_count, 0, name)
 
@@ -625,6 +650,218 @@ class PostgresTests(unittest.TestCase):
                 MODULE.InfraError, "^In-place upgrade result was not confirmed$",
             ):
                 MODULE._read_upgrade_result(raw, **kwargs)
+
+    def test_diagnostic_wire_rejects_extra_data_and_impossible_observation_stages(self) -> None:
+        kwargs = dict(cluster_id=4215095, release_sha="a" * 40,
+                      operation="preflight", message_id="")
+        invalid = (
+            (("configuration", "auth_smtp_host_present"), "private-canary"),
+            (("configuration", "existing_archive_key_present"), 1),
+            (("configuration", "market_data_token_present"), None),
+            (("configuration", "market_data_token_present"), True),
+            (("configuration", "market_data_distribution_approved"), True),
+            (("configuration", "stage"), "not_started"),
+            (("configuration", "secret"), "private-canary"),
+            (("recovery", "system_identity_access"), 1),
+            (("recovery", "system_identity_read"), True),
+            (("recovery", "proof_code"), "private-canary"),
+            (("recovery", "stage"), "not_started"),
+            (("recovery", "stage"), "system_identity_access"),
+            (("recovery", "stage"), "verified"),
+            (("files", "status", "exists"), False),
+            (("files", "status", "size_bytes"), 0),
+            (("files", "unknown_path"), {}),
+            (("host", "secret"), "private-canary"),
+            (("host", "code"), "private-canary"),
+        )
+        for path, value in invalid:
+            report = self.inspection_report(ready=False)
+            target = report["diagnostics"]
+            for part in path[:-1]:
+                target = target[part]
+            target[path[-1]] = value
+            raw = json.dumps(report)
+            with self.subTest(path=path, value=value), self.assertRaisesRegex(
+                MODULE.InfraError, "^In-place upgrade result was not confirmed$",
+            ):
+                MODULE._read_upgrade_result(raw, **kwargs)
+
+    def test_configuration_diagnostics_require_exact_unknown_and_observed_flags(self) -> None:
+        custody = ("existing_receipt_key_present", "existing_archive_key_present")
+        settings = ("auth_smtp_host_present", "auth_smtp_sender_present",
+                    "market_data_token_present", "market_data_distribution_approved")
+        for stage in UPGRADE.CONFIGURATION_STAGES:
+            position = UPGRADE.CONFIGURATION_STAGES.index(stage)
+            value = {
+                "stage": stage,
+                **dict.fromkeys(custody, True if position >= 4 else None),
+                **dict.fromkeys(settings, True if position >= 6 else None),
+            }
+            with self.subTest(stage=stage):
+                self.assertTrue(UPGRADE._valid_configuration_observation(value))
+                for name in (*custody, *settings):
+                    contradictory = None if value[name] is True else True
+                    self.assertFalse(UPGRADE._valid_configuration_observation(
+                        value | {name: contradictory},
+                    ))
+        value = self.inspection_diagnostics()["configuration"] | {"stage": "email_readiness"}
+        self.assertTrue(UPGRADE._valid_configuration_observation(value))
+        self.assertFalse(UPGRADE._valid_configuration_observation(
+            value | {"auth_smtp_host_present": None},
+        ))
+
+    def test_invalid_settings_preserve_both_inspection_results_without_sending(self) -> None:
+        from timeweb_auth_app import render_product_preflight
+
+        environment = {
+            "LEGAL_OPERATOR_NAME": "Synthetic Operator", "LEGAL_OPERATOR_EMAIL": "a@example.test",
+            "LEGAL_PRIVACY_VERSION": "test", "LEGAL_CONSENT_VERSION": "test",
+            "LEGAL_TERMS_VERSION": "test", "SESSION_TTL_SECONDS": "private-canary",
+        }
+        with patch.dict(UPGRADE.os.environ, environment, clear=True):
+            source = render_product_preflight(capture_configuration_errors=True)
+        arguments = self.current_cutover_arguments()
+        payload = arguments["payload"] | {"operation": "email_probe"}
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "candidate_inspection.py"
+            path.write_text(pathlib.Path(UPGRADE.__file__).read_text(encoding="utf-8") + source,
+                            encoding="utf-8")
+            name = "synthetic_candidate_inspection"
+            spec = importlib.util.spec_from_file_location(name, path)
+            self.assertIsNotNone(spec)
+            candidate = importlib.util.module_from_spec(spec)
+            sys.modules[name] = candidate
+            self.addCleanup(sys.modules.pop, name, None)
+            spec.loader.exec_module(candidate)
+            diagnostics = self.inspection_diagnostics(ready=False)
+            runtime = ('DATABASE_URL="postgresql://fixture@127.0.0.1/test"\n'
+                       'CLIENT_IP_KEY="fixture"\nBROKER_TOKEN_CRYPTO_KEY="fixture"\n')
+            product = 'AUTH_SMTP_HOST="smtp.example.test"\nAUTH_SMTP_SENDER="a@example.test"\n'
+            probe = Mock()
+            with (
+                patch.object(candidate, "_current_schema_ready", return_value=False),
+                patch.object(candidate, "_inspection_diagnostics", return_value=diagnostics),
+                patch.object(candidate, "_require_recovery", side_effect=candidate.UpgradeBlocked(
+                    "upgrade_recovery_unavailable",
+                )) as recovery,
+                patch.object(candidate, "_private_file", side_effect=[runtime, product]),
+                patch.object(candidate, "_write_receipt") as write,
+                patch.object(candidate, "_change_units") as units,
+                patch("omnicio.notifications.NotificationTransport.send_email") as send,
+            ):
+                report = candidate._inspect_current_upgrade(
+                    Mock(), payload=payload, plan=arguments["plan"], receipt=None,
+                    source_query="source", installed_release=arguments["installed_release"],
+                    recovery_validator=Mock(),
+                    product_preflight=candidate.require_upgrade_product_configuration,
+                    smtp_probe=probe,
+                )
+        self.assertEqual(report["recovery"], {
+            "status": "blocked", "code": "upgrade_recovery_unavailable",
+        })
+        self.assertEqual(report["configuration"], {
+            "status": "blocked", "code": "product_configuration_invalid",
+        })
+        observed = report["diagnostics"]["configuration"]
+        self.assertEqual(observed["stage"], "settings_validation")
+        for field in UPGRADE.CONFIGURATION_SETTINGS_FIELDS:
+            self.assertIsNone(observed[field])
+        for field in UPGRADE.CONFIGURATION_CUSTODY_FIELDS:
+            self.assertIs(observed[field], False)
+        self.assertEqual(MODULE._read_upgrade_result(
+            json.dumps(report), cluster_id=4215095, release_sha="a" * 40,
+            operation="email_probe", message_id="",
+        ), report)
+        self.assertNotIn("canary", json.dumps(report))
+        recovery.assert_called_once()
+        for action in (probe, write, units, send):
+            action.assert_not_called()
+
+    def test_host_diagnostics_are_strict_metadata_and_do_not_set_readiness_thresholds(self) -> None:
+        kwargs = dict(cluster_id=4215095, release_sha="a" * 40,
+                      operation="preflight", message_id="")
+        valid = self.inspection_report()
+        self.assertEqual(MODULE._read_upgrade_result(json.dumps(valid), **kwargs), valid)
+        host = {
+            "status": "observed", "cpu_count": None,
+            "memory_bytes": {"MemTotal": 8192, "MemAvailable": None, "SwapTotal": 0, "SwapFree": 0},
+            "disk_total_bytes": 100, "disk_free_bytes": 0,
+            "os": {"ID": "ubuntu", "VERSION_ID": "24.04"}, "systemd_run": False,
+            "postgres_majors": ["18"],
+        }
+        valid["diagnostics"]["host"] = host
+        self.assertEqual(MODULE._read_upgrade_result(json.dumps(valid), **kwargs), valid)
+        invalid = (
+            {"cpu_count": True}, {"cpu_count": 0}, {"cpu_count": 2**63},
+            {"disk_free_bytes": -1}, {"disk_free_bytes": 101}, {"disk_total_bytes": 2**63},
+            {"systemd_run": 1}, {"os": {"ID": "private-canary\nvalue"}},
+            {"os": {"SECRET": "private-canary"}}, {"postgres_majors": ["١٨"]},
+            {"postgres_majors": ["18", "18"]}, {"postgres_majors": [str(i) for i in range(33)]},
+            {"memory_bytes": {}},
+            {"memory_bytes": host["memory_bytes"] | {"MemAvailable": 8193}},
+            {"memory_bytes": host["memory_bytes"] | {"SwapFree": False}},
+        )
+        for replacement in invalid:
+            valid["diagnostics"]["host"] = host | replacement
+            raw = json.dumps(valid)
+            with self.subTest(replacement=replacement), self.assertRaisesRegex(
+                MODULE.InfraError, "^In-place upgrade result was not confirmed$",
+            ):
+                MODULE._read_upgrade_result(raw, **kwargs)
+
+    def test_file_diagnostics_are_metadata_only_and_do_not_follow_symlinks(self) -> None:
+        for scenario in ("regular", "symlink", "other", "foreign_owner", "empty", "oversized",
+                         "missing", "unavailable", "parent_missing", "parent_untrusted",
+                         "parent_symlink", "parent_foreign_owner"):
+            path = Mock()
+            path.parent.lstat.return_value = SimpleNamespace(
+                st_mode=UPGRADE.stat.S_IFDIR | 0o755, st_uid=0,
+            )
+            details = SimpleNamespace(st_mode=UPGRADE.stat.S_IFREG | 0o640, st_uid=0, st_size=100)
+            path.lstat.return_value = details
+            expected = "observed"
+            if scenario == "symlink":
+                details.st_mode = UPGRADE.stat.S_IFLNK | 0o777
+            elif scenario == "other":
+                details.st_mode = UPGRADE.stat.S_IFIFO | 0o600
+            elif scenario == "foreign_owner":
+                details.st_uid = 1000
+            elif scenario in ("empty", "oversized"):
+                details.st_size = (0 if scenario == "empty" else
+                                   UPGRADE.MAX_ENCRYPTED_ARCHIVE_BYTES + 1)
+            elif scenario in ("missing", "unavailable"):
+                error = FileNotFoundError if scenario == "missing" else PermissionError
+                path.lstat.side_effect = error("private-canary")
+                expected = scenario
+            elif scenario == "parent_missing":
+                path.parent.lstat.side_effect = FileNotFoundError("private-canary")
+                expected = "parent_missing"
+            elif scenario.startswith("parent_"):
+                parent = path.parent.lstat.return_value
+                if scenario == "parent_symlink":
+                    parent.st_mode = UPGRADE.stat.S_IFLNK | 0o777
+                elif scenario == "parent_foreign_owner":
+                    parent.st_uid = 1000
+                else:
+                    parent.st_mode |= 0o022
+                expected = "parent_untrusted"
+            with (
+                self.subTest(scenario=scenario),
+                patch.object(UPGRADE.os, "open") as opened,
+                patch.object(UPGRADE, "_operational_bytes") as content,
+            ):
+                report = UPGRADE._inspect_recovery_file(path)
+                self.assertEqual(report["state"], expected)
+                self.assertTrue(UPGRADE._valid_file_observation(report))
+                if expected == "observed":
+                    self.assertEqual(report["size_bytes"], details.st_size)
+                    self.assertEqual(report["root_owned"], scenario != "foreign_owner")
+                    self.assertEqual(report["mode_octal"], format(details.st_mode & 0o7777, "04o"))
+                if scenario.startswith("parent_"):
+                    path.lstat.assert_not_called()
+                self.assertNotIn("canary", json.dumps(report))
+                opened.assert_not_called()
+                content.assert_not_called()
 
     def test_generated_inspection_program_is_bounded_and_probe_is_only_explicit(self) -> None:
         environment = {
@@ -844,6 +1081,7 @@ class PostgresTests(unittest.TestCase):
                          ("content", "schema", "foreign_keys", "tenant_isolation"), True,
                      ),
                  }, signing_key)}
+        decrypt_archive = Fernet.decrypt
         for corrupt in (False, True):
             files = {
                 "status.json": json.dumps(state).encode(),
@@ -857,26 +1095,103 @@ class PostgresTests(unittest.TestCase):
             connection = Mock()
             connection.execute.return_value.fetchone.side_effect = [(True,), ("12345",)]
             validator = Mock(wraps=require_upgrade_recovery)
+            diagnostics: dict = {}
             with (
                 self.subTest(corrupt=corrupt),
                 patch.object(UPGRADE, "_operational_bytes", side_effect=lambda path, *_args,
                              source_files=files, **_kwargs: source_files[path.name]) as read,
                 patch.object(UPGRADE, "_write_receipt") as write,
                 patch.object(UPGRADE, "_change_units") as units,
+                patch.object(Fernet, "decrypt", autospec=True,
+                             side_effect=decrypt_archive) as decrypt,
             ):
                 if corrupt:
                     with self.assertRaisesRegex(UPGRADE.UpgradeBlocked,
                                                "^upgrade_recovery_unavailable$"):
                         UPGRADE._require_recovery(connection, plan, {"cluster_id": 4215095},
-                                                  validator)
+                                                  validator, diagnostics=diagnostics)
                     validator.assert_not_called()
                 else:
-                    UPGRADE._require_recovery(connection, plan, {"cluster_id": 4215095}, validator)
+                    UPGRADE._require_recovery(connection, plan, {"cluster_id": 4215095}, validator,
+                                              diagnostics=diagnostics)
+                    validator.assert_called_once()
                     self.assertEqual(validator.call_args.kwargs["decrypted_archive_sha256"],
                                      hashlib.sha256(raw).hexdigest())
                     self.assertEqual(read.call_args_list[0].kwargs, {"private": False})
+                self.assertEqual([call.args[0].name for call in read.call_args_list], [
+                    "status.json", "manifest.json", "database.dump.encrypted", "product.env",
+                ])
+                decrypt.assert_called_once()
+                self.assertEqual(diagnostics, {
+                    "stage": "archive_decryption" if corrupt else "verified",
+                    "proof_code": "not_checked" if corrupt else "verified",
+                    "system_identity_access": True, "system_identity_read": not corrupt,
+                })
+                self.assertTrue(UPGRADE._valid_recovery_observation(diagnostics))
+                for secret in (signing_key, archive_key, raw.decode()):
+                    self.assertNotIn(secret, json.dumps(diagnostics))
             write.assert_not_called()
             units.assert_not_called()
+
+    def test_recovery_diagnostics_preserve_the_failed_existing_stage_and_fixed_codes(self) -> None:
+        from cryptography.fernet import Fernet
+
+        plan = self.reviewed_upgrade_plan()
+        key = Fernet.generate_key()
+        normal = {
+            "status.json": b"{}", "manifest.json": b"{}",
+            "database.dump.encrypted": Fernet(key).encrypt(b"PGDMP synthetic-only"),
+            "product.env": b'OMNICIO_RESTORE_ARCHIVE_KEY="' + key + b'"\n',
+        }
+        scenarios = (
+            ("system_identity_access", None, None),
+            ("status_file", "status.json", FileNotFoundError("private-canary")),
+            ("manifest_file", "manifest.json", b"private-canary"),
+            ("encrypted_archive", "database.dump.encrypted", PermissionError("private-canary")),
+            ("recovery_environment", "product.env", b"INVALID=private canary"),
+            ("archive_decryption", "database.dump.encrypted", b"private-canary"),
+            ("archive_format", "database.dump.encrypted", Fernet(key).encrypt(b"private-canary")),
+            ("system_identity", None, None),
+            ("proof_verification", None, ValueError("recovery_source_stale")),
+            ("proof_verification", None, ValueError("private-canary")),
+            ("proof_verification", None, TypeError("private-canary")),
+        )
+        for stage, filename, failure in scenarios:
+            files = normal | ({filename: failure} if filename else {})
+
+            def read_file(path, *_args, source=files, **_kwargs):
+                body = source[path.name]
+                if isinstance(body, Exception):
+                    raise body
+                return body
+
+            connection, validator = Mock(), Mock()
+            connection.execute.return_value.fetchone.side_effect = [
+                (stage != "system_identity_access",),
+                None if stage == "system_identity" else ("12345",),
+            ]
+            if stage == "proof_verification":
+                validator.side_effect = failure
+            diagnostics = {}
+            with (
+                self.subTest(stage=stage, failure=type(failure).__name__),
+                patch.object(UPGRADE, "_operational_bytes", side_effect=read_file) as read,
+                self.assertRaises(UPGRADE.UpgradeBlocked),
+            ):
+                UPGRADE._require_recovery(connection, plan, {"cluster_id": 4215095}, validator,
+                                          diagnostics=diagnostics)
+            self.assertEqual(diagnostics["stage"], stage)
+            self.assertTrue(UPGRADE._valid_recovery_observation(diagnostics))
+            if stage == "proof_verification":
+                expected = ("recovery_source_stale" if str(failure) == "recovery_source_stale"
+                            else "proof_invalid")
+                self.assertEqual(diagnostics["proof_code"], expected)
+                validator.assert_called_once()
+            else:
+                validator.assert_not_called()
+            self.assertLessEqual(sum(call.args[0].name == "database.dump.encrypted"
+                                     for call in read.call_args_list), 1)
+            self.assertNotIn("canary", json.dumps(diagnostics))
 
     def test_writer_resume_needs_reconnected_source_evidence(self) -> None:
         import psycopg

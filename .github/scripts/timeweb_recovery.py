@@ -18,7 +18,12 @@ from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Protocol, cast
 
-from inplace_upgrade import MAX_LOGICAL_ARCHIVE_BYTES
+from inplace_upgrade import (
+    MAX_INSPECTION_REPORT_BYTES,
+    MAX_LOGICAL_ARCHIVE_BYTES,
+    _valid_host_capacity,
+    render_source_definitions,
+)
 from inplace_upgrade import MODE as SINGLE_DATABASE_MODE
 
 REMOTE_STATUS_PATH = "/var/lib/omnicio-recovery/status.json"
@@ -899,35 +904,25 @@ def inspect_restore_capacity(client: Provider, ssh: Remote, cluster_id: int) -> 
             status = getattr(exc, "status_code", None)
             if type(status) is int:
                 report[name]["http_status"] = status
-    raw = ssh.run(REMOTE_PYTHON, input_text=RESTORE_CAPACITY_SCRIPT)
-    host = json.loads(raw)
-    if not isinstance(host, dict):
-        raise RecoveryBlocked("Invalid restore capacity response")
+    capacity_source = render_source_definitions(
+        pathlib.Path(__file__).with_name("inplace_upgrade.py"), {
+            "CAPACITY_MEMORY_FIELDS", "CAPACITY_OS_FIELDS", "MAX_OBSERVED_BYTES",
+            "inspect_host_capacity", "_observed_integer", "_valid_host_capacity",
+        },
+    )
+    program = ("import json, os, pathlib, re\nfrom typing import Any\n"
+               + capacity_source + "\nprint(json.dumps(inspect_host_capacity()))\n")
+    raw = ssh.run(REMOTE_PYTHON, input_text=program)
+    try:
+        if len(raw) > MAX_INSPECTION_REPORT_BYTES:
+            raise ValueError("oversized_host_capacity")
+        host = json.loads(raw)
+        if not _valid_host_capacity(host):
+            raise ValueError("invalid_host_capacity")
+    except (ValueError, TypeError):
+        raise RecoveryBlocked("Invalid restore capacity response") from None
     report["host"] = host
     print("Recovery drill capacity: " + json.dumps(report, sort_keys=True))
-
-
-RESTORE_CAPACITY_SCRIPT = r"""
-import json, os, pathlib, shutil
-memory = {}
-for line in pathlib.Path('/proc/meminfo').read_text().splitlines():
-    key, value = line.split(':', 1)
-    if key in {'MemTotal', 'MemAvailable', 'SwapTotal', 'SwapFree'}:
-        memory[key] = int(value.split()[0]) * 1024
-release = {}
-for line in pathlib.Path('/etc/os-release').read_text().splitlines():
-    key, sep, value = line.partition('=')
-    if sep and key in {'ID', 'VERSION_ID', 'VERSION_CODENAME'}:
-        release[key] = value.strip('"')
-disk = shutil.disk_usage('/var/lib')
-print(json.dumps({
-    'cpu_count': os.cpu_count(), 'memory_bytes': memory,
-    'disk_total_bytes': disk.total, 'disk_free_bytes': disk.free,
-    'os': release, 'systemd_run': bool(shutil.which('systemd-run')),
-    'postgres_majors': sorted(p.name for p in pathlib.Path('/usr/lib/postgresql').glob('*')
-                              if p.is_dir() and p.name.isdecimal()),
-}))
-"""
 
 
 def ensure_recovery_point(
