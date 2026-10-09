@@ -94,9 +94,9 @@ jobs:
           retention-days: 7
 
       - name: Report Sonar annotations for this exact source
-        if: matrix.name == 'Release gate tests'
+        if: github.event_name == 'pull_request' && matrix.name == 'Release gate tests'
         shell: cmd
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
         run: '"%OMNICIO_PYTHON%" .github/scripts/report_sonar_annotations.py'

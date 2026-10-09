@@ -180,11 +180,11 @@ jobs:
           "%OMNICIO_PYTHON%" -c "from pathlib import Path; text=Path('web/index.html').read_text(encoding='utf-8'); assert 'name=\"omni-cio-white-site\"' in text; assert r'\n' not in text"
 
       - name: Report source-specific Sonar diagnostics
-        if: always() && steps.checkout.outcome == 'success' && steps.python.outcome == 'success'
+        if: github.event_name == 'pull_request' && always() && steps.checkout.outcome == 'success' && steps.python.outcome == 'success'
         shell: cmd
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
         run: '"%OMNICIO_PYTHON%" .github/scripts/report_sonar_annotations.py'
 
   deploy:

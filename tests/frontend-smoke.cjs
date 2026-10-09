@@ -2542,6 +2542,36 @@ const workerContract = async () => {
   const fetches = [], writes = [], repairTimers = new Map();
   let activated = 0, storageFailure = false, networkFailure = false;
   let responseBuild = build, responseStatus = 200, responseUrl = null, fetchGate = null;
+  // Installing browsers can hold only a few unread fetch responses at once.
+  // Cache.put below consumes a real Response body before returning the permit.
+  const responsePool = {enabled: false, used: 0, peak: 0, queue: []};
+  const releaseQueuedResponses = () => {
+    while (responsePool.used < 3 && responsePool.queue.length) responsePool.queue.shift()();
+  };
+  const reserveResponseBody = signal => {
+    if (!responsePool.enabled) return Promise.resolve(() => {});
+    return new Promise((resolve, reject) => {
+      let granted = false, released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        signal.removeEventListener("abort", cancel);
+        if (granted) responsePool.used -= 1;
+        else responsePool.queue = responsePool.queue.filter(item => item !== grant);
+        releaseQueuedResponses();
+      };
+      const cancel = () => { release(); reject(new Error("Synthetic aborted response")); };
+      const grant = () => {
+        granted = true;
+        responsePool.used += 1;
+        responsePool.peak = Math.max(responsePool.peak, responsePool.used);
+        resolve(release);
+      };
+      signal.addEventListener("abort", cancel, {once: true});
+      if (signal.aborted) cancel();
+      else { responsePool.queue.push(grant); releaseQueuedResponses(); }
+    });
+  };
   const origin = "https://example.test";
   const cacheName = "omnicio-public-" + build;
   const publicPaths = ["/offline.html", "/assets/config.js", "/assets/tokens.css", "/assets/i18n.js", "/assets/app.css", "/assets/app.js", "/assets/workspace.js", "/assets/brand/omnicio-logo.png"];
@@ -2554,7 +2584,13 @@ const workerContract = async () => {
       const values = cacheStores.get(name);
       return {
         match: async request => values.get(requestUrl(request))?.clone(),
-        put: async (request, response) => { const key = requestUrl(request); writes.push(key); values.set(key, response.clone()); }
+        put: async (request, response) => {
+          const body = await response.arrayBuffer();
+          const stored = new Response(body, {status: response.status, statusText: response.statusText, headers: response.headers});
+          const key = requestUrl(request);
+          writes.push(key);
+          values.set(key, stored);
+        }
       };
     },
     keys: async () => [...cacheStores.keys()],
@@ -2585,14 +2621,19 @@ const workerContract = async () => {
       const url = requestUrl(request);
       fetches.push({url, options});
       if (networkFailure) throw new Error("Synthetic offline network");
-      if (fetchGate) await Promise.race([fetchGate, new Promise((_, reject) => {
-        if (options.signal.aborted) reject(new Error("Synthetic aborted fetch"));
-        else options.signal.addEventListener("abort", () => reject(new Error("Synthetic aborted fetch")), {once: true});
-      })]);
-      const body = publicAssets[new URL(url).pathname.replace(/^\//, "")] || "Public brand asset";
-      const response = new Response(body, {status: responseStatus, headers: responseBuild === null ? {} : {"X-Omnicio-Build": responseBuild}});
-      Object.defineProperty(response, "url", {value: responseUrl || url});
-      return response;
+      const releaseBody = await reserveResponseBody(options?.signal);
+      try {
+        if (fetchGate) await Promise.race([fetchGate, new Promise((_, reject) => {
+          if (options.signal.aborted) reject(new Error("Synthetic aborted fetch"));
+          else options.signal.addEventListener("abort", () => reject(new Error("Synthetic aborted fetch")), {once: true});
+        })]);
+        const body = publicAssets[new URL(url).pathname.replace(/^\//, "")] || "Public brand asset";
+        const response = new Response(body, {status: responseStatus, headers: responseBuild === null ? {} : {"X-Omnicio-Build": responseBuild}});
+        Object.defineProperty(response, "url", {value: responseUrl || url});
+        const readBody = response.arrayBuffer.bind(response);
+        response.arrayBuffer = async () => { try { return await readBody(); } finally { releaseBody(); } };
+        return response;
+      } catch (error) { releaseBody(); throw error; }
     },
     importScripts(...urls) {
       for (const url of urls) {
@@ -2670,6 +2711,16 @@ const workerContract = async () => {
     fetchGate = null;
     assert.equal(writes.length, initialWrites + publicUrls.length);
     assert.deepEqual([...cacheStores.get(cacheName).keys()].sort(), [...publicUrls].sort(), "Recovery repopulates the full offline shell with the unchanged worker");
+    cacheStores.delete(cacheName);
+    const beforeStreamingWrites = writes.length;
+    responsePool.enabled = true;
+    const streamingRepair = repair();
+    await until(() => writes.length === beforeStreamingWrites + publicUrls.length, "Each response body is consumed before waiting for all remaining headers", 30);
+    assert.deepEqual(await streamingRepair, {handled: true, ok: true});
+    assert.equal(responsePool.peak, 3, "The regression exercises the installing-worker response throttle");
+    assert.equal(responsePool.used, 0);
+    assert.equal(responsePool.queue.length, 0);
+    responsePool.enabled = false;
     // Reproduce manual recovery deleting a cache after an older fill obtained
     // its handle. The new startup joins that fill and must receive a usable name.
     cacheStores.get(cacheName).delete(publicUrls[1]);
@@ -2768,7 +2819,7 @@ const workerContract = async () => {
     assert.deepEqual(opened, ["/#account/events"], "The worker cannot open another tab when an existing app does not acknowledge");
     assert.deepEqual(await workerMessage({type: "CLEAR_PUSH_BINDING", binding_id: bindingB}), {handled: true, ok: true, cleared: true});
     assert.equal(bindings.values.size, 0, "Only the matching binding is cleared after a logout or explicit revocation");
-    console.log("PASS service worker: versioned cache repair, offline recovery, bounded failures, private-cache isolation, origin checks and safe notifications");
+    console.log("PASS service worker: streaming response throttle, versioned cache repair, offline recovery, bounded failures, private-cache isolation, origin checks and safe notifications");
   } finally {
     for (const expire of repairTimers.values()) expire();
     repairTimers.clear();

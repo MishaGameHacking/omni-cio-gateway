@@ -571,6 +571,30 @@ class ApplicationPushEvidenceTests(unittest.TestCase):
 
 
 class SelfHostedCiPolicyTests(unittest.TestCase):
+    def test_sonar_diagnostics_cannot_block_main_on_provider_quota(self) -> None:
+        workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
+        conditions = {
+            "auth-foundation-ci.yml": "matrix.name == 'Release gate tests'",
+            "auth-app-deploy.yml": (
+                "always() && steps.checkout.outcome == 'success' "
+                "&& steps.python.outcome == 'success'"
+            ),
+        }
+        for name, condition in conditions.items():
+            workflow = (workflow_dir / name).read_text(encoding="utf-8")
+            diagnostic_steps = [
+                block for block in workflow.split("\n      - name: ")[1:]
+                if "run:" in block and "report_sonar_annotations.py'" in block
+            ]
+            with self.subTest(workflow=name):
+                self.assertEqual(len(diagnostic_steps), 1)
+                step = diagnostic_steps[0]
+                self.assertIn(
+                    "        if: github.event_name == 'pull_request' && " + condition + "\n",
+                    step,
+                )
+                self.assertIn("SOURCE_SHA: ${{ github.event.pull_request.head.sha }}", step)
+
     def test_workflow_environment_and_permission_blocks_are_not_empty(self) -> None:
         workflow_dir = pathlib.Path(__file__).resolve().parent.parent / "workflows"
         for path in workflow_dir.glob("*.yml"):

@@ -26,18 +26,18 @@ const fillPublicCache = async signal => {
   const entries = await readPublicCache();
   if (signal.aborted) throw new Error("public_cache_timeout");
   const missing = entries.filter(({response}) => !validPublicResponse(response));
-  const fetched = await Promise.all(missing.map(async ({url}) => {
+  await Promise.all(missing.map(async ({url}) => {
     const response = await fetch(url, {method: "GET", cache: "no-store", credentials: "omit", redirect: "error", signal});
+    if (signal.aborted) throw new Error("public_cache_timeout");
     // An older active worker must never cache a later deployment under its key.
     if (!response.ok || response.headers.get("X-Omnicio-Build") !== build || response.url !== new URL(url, self.location.origin).href) throw new Error("public_cache_build_mismatch");
-    return {url, response};
+    // Consume each validated response immediately: installing workers may
+    // throttle further requests until an earlier response body is consumed.
+    // Reopen after fetch so recovery cannot redirect writes to a deleted handle.
+    const cache = await caches.open(cacheName);
+    if (signal.aborted) throw new Error("public_cache_timeout");
+    await cache.put(url, response);
   }));
-  if (signal.aborted) throw new Error("public_cache_timeout");
-  // Recovery may delete the named cache while fetch is pending. Reopen it
-  // before publishing this verified batch instead of writing a detached handle.
-  const cache = await caches.open(cacheName);
-  if (signal.aborted) throw new Error("public_cache_timeout");
-  await Promise.all(fetched.map(({url, response}) => cache.put(url, response)));
 };
 const repairPublicCache = async signal => {
   await fillPublicCache(signal);
