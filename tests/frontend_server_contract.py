@@ -1,13 +1,15 @@
 """Emit actual server results for the isolated browser regression server.
 
-The market contract replaces only external broker reads and session lookup.
-MarketService, the HTTP route, event names, freshness mapping and SSE serialization
-are production code, so the browser cannot test an independently invented protocol.
+Prices and candles pass through T-Invest JSON decoding and parsing, MarketService,
+HTTP routes and SSE serialization. Only their HTTP transport is synthetic;
+account lookup, instrument metadata and trading status remain isolated fixtures.
+The browser consumes the resulting server response.
 Strategy results use the actual research engine with explicitly synthetic test prices.
 """
 
 from __future__ import annotations
 
+import io
 import json
 from contextlib import nullcontext
 from dataclasses import replace
@@ -15,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from unittest.mock import Mock, patch
+from urllib.request import Request
 from uuid import UUID
 
 from fastapi.testclient import TestClient
@@ -23,7 +26,7 @@ from test_backtest import END, START, ZERO_COSTS, prices, research_document
 from omnicio import main
 from omnicio.backtest import run_strategy_backtest
 from omnicio.billing import BillingConfig, BillingService
-from omnicio.broker import BrokerService
+from omnicio.broker import BrokerConnectionStatus, BrokerService
 from omnicio.cbr import CBRClient
 from omnicio.db import UserRecord
 from omnicio.goal_planning import goal_forecast
@@ -31,8 +34,8 @@ from omnicio.market import MarketService
 from omnicio.portfolio_store import PortfolioStore
 from omnicio.service import AuthService
 from omnicio.tbank import (
-    TBankHistoricCandle,
     TBankInstrumentMetadata,
+    TBankInvestClient,
     TBankLastPrice,
     TBankMoney,
     TBankTradingStatus,
@@ -41,18 +44,60 @@ from omnicio.tbank import (
 from omnicio.workspace_store import WorkspaceStore
 
 
+def _wire_quotation(value: str) -> dict[str, str | int]:
+    """Encode synthetic positive test prices without bypassing the provider parser."""
+    units, _, fraction = value.partition(".")
+    parts: dict[str, str | int] = {"units": units, "nano": int(fraction.ljust(9, "0"))}
+    return {key: part for key, part in parts.items() if part not in ("0", 0)}
+
+
 def _market_http_contract(
     *, price: str, metadata: TBankInstrumentMetadata,
-    candles: tuple[TBankHistoricCandle, ...] = (), snapshot_price: str | None = None,
+    candles: tuple[dict[str, object], ...] = (), snapshot_price: str | None = None,
 ) -> dict[str, Any]:
     user = UserRecord(UUID(int=123), 123, "active", "user")
     uid = "synthetic-a"
+    credential = "synthetic-browser-contract-credential"
+    provider = TBankInvestClient()
+    current_price = snapshot_price or price
+
+    def provider_response(request: Request, **_kwargs: object) -> io.BytesIO:
+        """Only controlled wire JSON crosses the real provider's HTTP boundary."""
+        assert request.get_method() == "POST"
+        assert isinstance(request.data, bytes)
+        body = json.loads(request.data)
+        payload: dict[str, object]
+        if request.full_url.endswith("MarketDataService/GetCandles"):
+            assert body["instrumentId"] == uid
+            assert body["candleSourceType"] == "CANDLE_SOURCE_EXCHANGE"
+            payload = {"candles": candles}
+        else:
+            assert request.full_url.endswith("MarketDataService/GetLastPrices")
+            assert body["instrumentId"] == [uid]
+            assert body["lastPriceType"] == "LAST_PRICE_EXCHANGE"
+            payload = {"lastPrices": [{"instrumentUid": uid,
+                                      "price": _wire_quotation(current_price),
+                                      "time": datetime.now(UTC).isoformat()}]}
+        return io.BytesIO(json.dumps(payload).encode())
+
+    def last_price(_user: UUID, instrument_uid: str) -> TBankLastPrice:
+        return provider.get_last_prices(
+            credential, "prod", (instrument_uid,),
+        )[0]
+
     broker = Mock(spec=BrokerService)
-    broker.status.return_value = "same-test-account"
-    broker.market_last_price.return_value = TBankLastPrice(
-        uid, snapshot_price or price, datetime.now(UTC),
+    broker.status.return_value = BrokerConnectionStatus(True, "prod", "synthetic-account")
+    broker.market_last_price.side_effect = last_price
+    broker.market_last_prices.side_effect = (
+        lambda _user, instrument_uids: provider.get_last_prices_batch(
+            credential, "prod", instrument_uids,
+        )
     )
-    broker.market_exchange_candles.return_value = candles
+    broker.market_exchange_candles.side_effect = (
+        lambda _user, instrument_uid, **window: provider.get_exchange_candles(
+            credential, "prod", instrument_uid, **window,
+        )
+    )
     broker.market_trading_status.return_value = TBankTradingStatus(
         uid, "SECURITY_TRADING_STATUS_NORMAL_TRADING", True, True, True, True, False,
     )
@@ -64,6 +109,10 @@ def _market_http_contract(
 
     async def without_provider_poll_delay(*args: object, **kwargs: object) -> tuple:
         event, payload, _, retry, failures, stop = await original_next(*args, **kwargs)
+        if event == "market":
+            # End the next real stream observation independently of how many
+            # internal account checks the successful observation performed.
+            broker.status.side_effect = ValueError("test-end")
         return event, payload, 0, retry, failures, stop
 
     snapshot = None
@@ -71,6 +120,7 @@ def _market_http_contract(
         patch.object(main.app.state, "auth_service", auth, create=True),
         patch.object(main.app.state, "market_service", market, create=True),
         patch.object(main, "_next_instrument_market_event", without_provider_poll_delay),
+        patch("urllib.request.OpenerDirector.open", side_effect=provider_response),
     ):
         # No lifespan: no database, broker credentials, live network or workers.
         client = TestClient(main.app, base_url=main.CANONICAL_ORIGIN,
@@ -80,12 +130,25 @@ def _market_http_contract(
                 rest = client.get(f"/api/market/instruments/{uid}", params={"period": "1m"},
                                   headers={"X-Omnicio-Profile": "000000123"})
                 assert rest.status_code == 200, rest.text
+                # The first response may correctly contain pending enrichment.
+                # Await actual worker completion outside its lock, then read
+                # the public contract again; no sleep or synchronous bypass.
+                with market._cache_lock:
+                    futures = [entry.future for entry in market._enrichment.values()
+                               if entry.future is not None]
+                for future in futures:
+                    future.result(timeout=5)
+                rest = client.get(f"/api/market/instruments/{uid}", params={"period": "1m"},
+                                  headers={"X-Omnicio-Profile": "000000123"})
+                assert rest.status_code == 200, rest.text
+                assert "no-store" in rest.headers["cache-control"]
                 snapshot = rest.json()
-            broker.market_last_price.return_value = TBankLastPrice(uid, price, datetime.now(UTC))
-            # One normal observation followed by a terminal invalid instrument response.
-            broker.status.side_effect = [
-                "same-test-account", "same-test-account", ValueError("test-end"),
-            ]
+                assert snapshot["history_status"] == "available", snapshot["errors"]
+            quotes = client.get("/api/market/quotes", params={"instrument_uids": uid},
+                                headers={"X-Omnicio-Profile": "000000123"})
+            assert quotes.status_code == 200, quotes.text
+            assert "no-store" in quotes.headers["cache-control"]
+            current_price = price
             response = client.get(f"/api/market/instruments/{uid}/stream",
                                   params={"profile_context": "000000123"})
         finally:
@@ -98,7 +161,7 @@ def _market_http_contract(
     status_event = next(block for block in blocks if block.startswith("event: status\n"))
     result = {"instrument_stream": response.text,
             "instrument_market_event": market_event + "\n\n",
-            "instrument_status_event": status_event + "\n\n"}
+            "instrument_status_event": status_event + "\n\n", "market_quotes": quotes.json()}
     if snapshot is not None:
         result["market"] = snapshot
     return result
@@ -109,7 +172,29 @@ def market_contract() -> dict[str, Any]:
         "synthetic-a", "Synthetic contract company", "SYNA", "", "share", "other", "RU", False,
         currency="rub", lot=1,
     )
-    return _market_http_contract(price="251.75", metadata=metadata)
+    now = datetime.now(UTC)
+    current_bar = now.replace(hour=now.hour - now.hour % 4, minute=0, second=0, microsecond=0)
+    candles: tuple[dict[str, object], ...] = (
+        {"open": _wire_quotation("245"), "high": _wire_quotation("249"),
+         "low": _wire_quotation("242"), "close": _wire_quotation("248"),
+         "time": (current_bar - timedelta(hours=4)).isoformat(), "volume": "10",
+         "isComplete": True, "candleSource": "CANDLE_SOURCE_EXCHANGE"},
+        {"open": _wire_quotation("248"), "high": _wire_quotation("251"),
+         "low": _wire_quotation("247"), "close": _wire_quotation("250.25"),
+         "time": current_bar.isoformat(), "candleSource": "CANDLE_SOURCE_EXCHANGE"},
+    )
+    # ProtoJSON omits false/zero scalars on the unfinished bar. A dataclass
+    # fixture previously concealed rejection of this valid provider response.
+    result = _market_http_contract(
+        price="251.75", metadata=metadata, candles=candles, snapshot_price="250.25",
+    )
+    rows = result["market"]["candles"]
+    assert len(rows) == 2
+    assert rows[1]["is_complete"] is False and rows[1]["volume_lots"] == 0
+    assert [rows[1][key] for key in ("open", "high", "low", "close")] == [
+        "248", "251", "247", "250.25",
+    ]
+    return result
 
 
 def market_precision_contract() -> list[dict[str, Any]]:
@@ -136,11 +221,13 @@ def market_precision_contract() -> list[dict[str, Any]]:
             "synthetic-a", "Synthetic precision contract", "SYNA", "", kind, "other", "RU", False,
             currency="RUB", lot=1, nominal=TBankMoney("RUB", "1000") if kind == "bond" else None,
         )
-        candles = tuple(TBankHistoricCandle(
-            instrument_uid="synthetic-a", open=first, high=first, low=last, close=close,
-            volume_lots=1, time=now - timedelta(hours=hours), is_complete=True,
-            source="CANDLE_SOURCE_EXCHANGE",
-        ) for close, hours in ((first, 8), (last, 4)))
+        candles: tuple[dict[str, object], ...] = tuple(
+            {"open": _wire_quotation(first), "high": _wire_quotation(first),
+             "low": _wire_quotation(last), "close": _wire_quotation(close),
+             "volume": "1", "time": (now - timedelta(hours=hours)).isoformat(),
+             "isComplete": True, "candleSource": "CANDLE_SOURCE_EXCHANGE"}
+            for close, hours in ((first, 8), (last, 4))
+        )
         payload = _market_http_contract(
             price=price, metadata=metadata, candles=candles, snapshot_price=first,
         )

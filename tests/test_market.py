@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import io
 import json
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
-from threading import Event
+from functools import partial
+from threading import Event, Lock, current_thread
 from unittest.mock import Mock, patch
 from uuid import UUID
 
 import pytest
 
-from omnicio.broker import BrokerConnectionStatus
+from omnicio.broker import BrokerConnectionError, BrokerConnectionStatus
 from omnicio.cbr import (
     CBRClient,
     CBRHistory,
@@ -32,6 +33,15 @@ from omnicio.tbank import (
     TBankTradingStatus,
     TBankUnavailable,
 )
+
+
+def _finish_market_reads(service: MarketService) -> None:
+    """Wait for deterministic test transport, outside the scheduler's lock."""
+    with service._cache_lock:
+        futures = [entry.future for entry in service._enrichment.values()
+                   if entry.future is not None]
+    for future in futures:
+        future.result(timeout=5)
 
 
 class FakeXmlResponse:
@@ -483,11 +493,18 @@ def test_market_service_instrument_snapshot_preserves_quote_time_ohlc_and_status
         live_after_seconds=30,
     )
 
-    snapshot = service.instrument_snapshot(
+    operation = partial(
+        service.instrument_snapshot,
         UUID("00000000-0000-0000-0000-000000000001"),
         "uid-1",
         period="1m",
     )
+    try:
+        operation()
+        _finish_market_reads(service)
+        snapshot = operation()
+    finally:
+        service.close()
 
     assert snapshot.instrument_uid == "uid-1"
     assert snapshot.period == "1m"
@@ -530,10 +547,13 @@ def test_market_service_future_quote_timestamp_fails_closed() -> None:
         live_after_seconds=30,
     )
 
-    state = service.instrument_live_state(
-        UUID("00000000-0000-0000-0000-000000000001"),
-        "uid-1",
-    )
+    try:
+        state = service.instrument_live_state(
+            UUID("00000000-0000-0000-0000-000000000001"),
+            "uid-1",
+        )
+    finally:
+        service.close()
 
     assert state.quote_status == "future"
     assert state.last_price is None
@@ -568,11 +588,18 @@ def test_market_service_one_year_period_stays_within_provider_request_window() -
         live_after_seconds=30,
     )
 
-    snapshot = service.instrument_snapshot(
+    operation = partial(
+        service.instrument_snapshot,
         UUID("00000000-0000-0000-0000-000000000001"),
         "uid-1",
         period="1y",
     )
+    try:
+        operation()
+        _finish_market_reads(service)
+        snapshot = operation()
+    finally:
+        service.close()
 
     assert snapshot.period == "1y"
     assert snapshot.interval == "CANDLE_INTERVAL_DAY"
@@ -607,9 +634,16 @@ def test_market_service_rejects_malformed_provider_ohlc_as_unavailable() -> None
         live_after_seconds=30,
     )
 
-    snapshot = service.instrument_snapshot(
+    operation = partial(
+        service.instrument_snapshot,
         UUID("00000000-0000-0000-0000-000000000001"), "uid-1", period="1m",
     )
+    try:
+        operation()
+        _finish_market_reads(service)
+        snapshot = operation()
+    finally:
+        service.close()
     assert snapshot.history_status == "unavailable"
     assert snapshot.errors["history"] == "source_unavailable"
     assert snapshot.candles == ()
@@ -622,12 +656,15 @@ def test_market_service_rejects_unknown_instrument_period_before_provider_read()
         cbr=FakeCBR(),  # type: ignore[arg-type]
     )
 
-    with pytest.raises(ValueError, match="unsupported market period"):
-        service.instrument_snapshot(
-            UUID("00000000-0000-0000-0000-000000000001"),
-            "uid-1",
-            period="decade",
-        )
+    try:
+        with pytest.raises(ValueError, match="unsupported market period"):
+            service.instrument_snapshot(
+                UUID("00000000-0000-0000-0000-000000000001"),
+                "uid-1",
+                period="decade",
+            )
+    finally:
+        service.close()
 
 
 @pytest.mark.parametrize("failed", ["history", "quote", "trading_status", "metadata"])
@@ -638,9 +675,13 @@ def test_provider_component_failure_keeps_independent_market_data(failed: str) -
     setattr(broker, methods[failed], Mock(side_effect=TBankUnavailable("private upstream text")))
     service = MarketService(broker=broker, cbr=FakeCBR())  # type: ignore[arg-type]
     try:
-        result = service.instrument_snapshot(
+        operation = partial(
+            service.instrument_snapshot,
             UUID("00000000-0000-0000-0000-000000000001"), "uid-1", period="1m",
         )
+        operation()
+        _finish_market_reads(service)
+        result = operation()
         assert result.errors[failed] == "source_unavailable"
         assert bool(result.candles) is (failed != "history")
         assert result.last_price == (None if failed == "quote" else "102.5")
@@ -668,11 +709,15 @@ def test_metadata_retry_deadline_survives_continuous_stream_readers() -> None:
             # Two permitted streams read the same instrument at staggered intervals.
             for at in (0, 2.5, 4.9):
                 clock.return_value = at
+                service.instrument_live_state(owner, uid)
+                _finish_market_reads(service)
                 result = service.instrument_live_state(owner, uid)
                 assert result.metadata_status == "unavailable"
                 assert result.last_price == "102.5"
             assert broker.market_instrument_metadata.call_count == 1
             clock.return_value = 5
+            service.instrument_live_state(owner, uid)
+            _finish_market_reads(service)
             recovered = service.instrument_live_state(owner, uid)
             assert broker.market_instrument_metadata.call_count == 2
             assert recovered.metadata_status == "available"
@@ -683,40 +728,292 @@ def test_metadata_retry_deadline_survives_continuous_stream_readers() -> None:
         service.close()
 
 
-def test_late_failed_metadata_waiter_cannot_replace_a_recovered_future() -> None:
+def test_blocked_metadata_does_not_delay_live_quote_and_completion_is_adopted() -> None:
     owner, uid = UUID(int=1), "uid-1"
     fixture = FakeBroker(datetime.now(UTC).isoformat())
     broker = Mock(wraps=fixture)
-    connection = fixture.status(owner)
     service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
-    old: Future[TBankInstrumentMetadata] = Future()
-    old.set_exception(TBankUnavailable("transient"))
-    service._metadata[(owner, connection, uid)] = (1, old)
     entered, release = Event(), Event()
-    result = old.result
 
-    def delayed_result(timeout: float | None = None) -> TBankInstrumentMetadata:
+    def delayed_metadata(user_id: UUID, instrument_uid: str) -> TBankInstrumentMetadata:
         entered.set()
         assert release.wait(timeout=5)
-        return result(timeout=timeout)
+        return fixture.market_instrument_metadata(user_id, instrument_uid)
 
+    broker.market_instrument_metadata.side_effect = delayed_metadata
     try:
-        with (
-            patch("omnicio.market.time.monotonic") as clock,
-            patch.object(old, "result", side_effect=delayed_result),
-            ThreadPoolExecutor(max_workers=1) as readers,
-        ):
-            clock.return_value = 0
-            waiting = readers.submit(service.instrument_live_state, owner, uid)
+        with ThreadPoolExecutor(max_workers=1) as readers:
+            quote = readers.submit(service.instrument_live_state, owner, uid)
             try:
                 assert entered.wait(timeout=5)
-                clock.return_value = 2
+                result = quote.result(timeout=1)
+                assert result.last_price == "102.5"
+                assert result.quote_status == "live"
+                assert result.metadata_status == "loading"
+            finally:
+                release.set()
+            _finish_market_reads(service)
+            assert service.instrument_live_state(owner, uid).metadata_status == "available"
+            broker.market_instrument_metadata.assert_called_once_with(owner, uid)
+    finally:
+        release.set()
+        service.close()
+
+
+def test_real_wire_history_is_single_flight_and_never_blocks_an_independent_quote() -> None:
+    owner, uid, now = UUID(int=1), "uid-1", datetime.now(UTC)
+    fixture = FakeBroker(now.isoformat())
+    broker, client = Mock(wraps=fixture), TBankInvestClient()
+    entered = {name: Event() for name in ("history", "metadata", "trading")}
+    release = {name: Event() for name in entered}
+    row = {"open": {"units": "100"}, "high": {"units": "102"},
+           "low": {"units": "99"}, "close": {"units": "101"},
+           "time": now.isoformat(), "candleSource": "CANDLE_SOURCE_EXCHANGE"}
+
+    def transport(request, **kwargs):
+        if request.full_url.endswith("/GetCandles"):
+            body = json.loads(request.data)
+            assert body["candleSourceType"] == "CANDLE_SOURCE_EXCHANGE"
+            assert "candleSource" not in body
+            entered["history"].set()
+            assert release["history"].wait(timeout=5)
+            payload = {"candles": [row]}
+        else:
+            assert request.full_url.endswith("/GetLastPrices")
+            payload = {"lastPrices": [{"instrumentUid": uid, "time": now.isoformat(),
+                                       "price": {"units": "101", "nano": 1}}]}
+        return io.BytesIO(json.dumps(payload).encode())
+
+    def metadata(user_id, instrument_uid):
+        entered["metadata"].set()
+        assert release["metadata"].wait(timeout=5)
+        return fixture.market_instrument_metadata(user_id, instrument_uid)
+
+    def trading(user_id, instrument_uid):
+        entered["trading"].set()
+        assert release["trading"].wait(timeout=5)
+        return fixture.market_trading_status(user_id, instrument_uid)
+
+    broker.market_exchange_candles.side_effect = lambda _user, instrument_uid, **kwargs: (
+        client.get_exchange_candles("synthetic-test-credential", "prod", instrument_uid, **kwargs)
+    )
+    broker.market_last_price.side_effect = lambda _user, instrument_uid: client.get_last_prices(
+        "synthetic-test-credential", "prod", (instrument_uid,),
+    )[0]
+    broker.market_instrument_metadata.side_effect = metadata
+    broker.market_trading_status.side_effect = trading
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
+    try:
+        with (
+            patch("urllib.request.OpenerDirector.open", side_effect=transport),
+            ThreadPoolExecutor(max_workers=2) as requests,
+        ):
+            first = requests.submit(service.instrument_snapshot, owner, uid, period="1d")
+            try:
+                assert all(event.wait(timeout=5) for event in entered.values())
+                pending = first.result(timeout=1)
+                assert pending.last_price == "101.000000001"
+                assert pending.quote_status == "live"
+                assert pending.history_status == "loading"
+                assert pending.history_observed_at is None
+                assert pending.metadata_status == pending.trading_status_status == "loading"
+                second = requests.submit(service.instrument_snapshot, owner, uid, period="1d")
+                assert second.result(timeout=1).last_price == pending.last_price
+                assert broker.market_exchange_candles.call_count == 1
+                release["history"].set()
+                with service._cache_lock:
+                    history = next(entry.future for key, entry in service._enrichment.items()
+                                   if key[2] == "history")
+                assert history is not None
+                history.result(timeout=5)
+                ready = service.instrument_snapshot(owner, uid, period="1d")
+                assert ready.history_status == "available"
+                assert ready.metadata_status == "loading"
+                assert ready.candles[0].close == "101"
+                assert ready.candles[0].is_complete is False
+                assert ready.candles[0].volume_lots == 0
+                assert ready.history_observed_at is not None
+                again = service.instrument_snapshot(owner, uid, period="1d")
+                assert again.history_observed_at == ready.history_observed_at
+                assert broker.market_exchange_candles.call_count == 1
+            finally:
+                for event in release.values():
+                    event.set()
+                _finish_market_reads(service)
+    finally:
+        for event in release.values():
+            event.set()
+        service.close()
+
+
+def test_metadata_backlog_reserves_history_workers_and_all_quote_rows_progress() -> None:
+    owner, another, now = UUID(int=1), UUID(int=2), datetime.now(UTC)
+    uids = tuple(f"uid-{index}" for index in range(50))
+    broker = Mock()
+    broker.status.side_effect = lambda user: BrokerConnectionStatus(True, "prod", str(user))
+    broker.market_last_prices.side_effect = lambda user, ids: TBankLastPriceBatch(tuple(
+        TBankLastPrice(uid, "101", now) for uid in ids
+    ))
+    broker.market_last_price.side_effect = lambda user, uid: TBankLastPrice(uid, "101", now)
+    broker.market_trading_status.side_effect = lambda user, uid: TBankTradingStatus(
+        uid, "SECURITY_TRADING_STATUS_NORMAL_TRADING", False, False, True, False, False,
+    )
+    metadata_release, two_started, backlog_finished, last_finished = (Event() for _ in range(4))
+    history_release = Event()
+    history_entered = {owner: Event(), another: Event()}
+    metadata_seen: list[str] = []
+    seen_lock = Lock()
+
+    def metadata(user, uid):
+        with seen_lock:
+            metadata_seen.append(uid)
+            if len(metadata_seen) == 2:
+                two_started.set()
+        assert metadata_release.wait(timeout=5)
+        with seen_lock:
+            if len(metadata_seen) >= 49:
+                backlog_finished.set()
+            if uid == uids[-1]:
+                last_finished.set()
+        return TBankInstrumentMetadata(
+            uid, uid, uid, "", "share", "", "RU", False, currency="RUB",
+        )
+
+    def history(user, uid, **kwargs):
+        history_entered[user].set()
+        assert history_release.wait(timeout=5)
+        return ()
+
+    broker.market_instrument_metadata.side_effect = metadata
+    broker.market_exchange_candles.side_effect = history
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
+    try:
+        with ThreadPoolExecutor(max_workers=2) as requests:
+            try:
+                batch = service.batch_quotes(owner, uids)
+                assert two_started.wait(timeout=5)
+                assert all(item["last_price"] == "101" for item in batch["items"])
+                assert len(metadata_seen) == 2
+                for user in (owner, another):
+                    result = requests.submit(
+                        service.instrument_snapshot, user, "selected", period="1d",
+                    )
+                    assert history_entered[user].wait(timeout=1)
+                    snapshot = result.result(timeout=1)
+                    assert snapshot.last_price == "101"
+                    assert snapshot.history_status == "loading"
+                # History is still blocked. Its separate slots must not stop
+                # either the current quotes or FIFO completion of metadata.
+                metadata_release.set()
+                assert backlog_finished.wait(timeout=5)
+                service.batch_quotes(owner, uids)
+                assert last_finished.wait(timeout=5)
+                with service._cache_lock:
+                    finishing = [entry.future for key, entry in service._enrichment.items()
+                                 if key[2] == "metadata" and entry.future is not None]
+                for future in finishing:
+                    future.result(timeout=5)
+                ready = service.batch_quotes(owner, uids)
+                assert all(item["last_price"] == "101" for item in ready["items"])
+                assert all(item["price_currency"] == "RUB" for item in ready["items"])
+                assert set(uids) <= set(metadata_seen)
+                assert all(metadata_seen.count(uid) == 1 for uid in uids)
+                requests.submit(service.close).result(timeout=1)
+                assert not service._enrichment
+                with pytest.raises(BrokerConnectionError, match="closed"):
+                    service.instrument_snapshot(owner, "selected", period="1d")
+            finally:
+                metadata_release.set()
+                history_release.set()
+    finally:
+        metadata_release.set()
+        history_release.set()
+        service.close()
+
+
+def test_late_connection_observation_cannot_evict_current_market_cache() -> None:
+    owner, uid, now = UUID(int=1), "uid-1", datetime.now(UTC)
+    old = BrokerConnectionStatus(True, "prod", "old", verified_at=now)
+    current_connection = BrokerConnectionStatus(
+        True, "prod", "current", verified_at=now + timedelta(seconds=1),
+    )
+    current, first_old = old, True
+    entered, release = Event(), Event()
+
+    def status(_owner):
+        nonlocal first_old
+        if current_thread().name.startswith("late-old") and first_old:
+            first_old = False
+            captured = current
+            entered.set()
+            assert release.wait(timeout=5)
+            return captured
+        return current
+
+    broker = Mock(wraps=FakeBroker(now.isoformat()))
+    broker.status.side_effect = status
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
+    try:
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="late-old") as readers:
+            obsolete = readers.submit(service.instrument_live_state, owner, uid)
+            try:
+                assert entered.wait(timeout=5)
+                current = current_connection
+                service.instrument_live_state(owner, uid)
+                _finish_market_reads(service)
                 assert service.instrument_live_state(owner, uid).metadata_status == "available"
             finally:
                 release.set()
-            assert waiting.result(timeout=5).metadata_status == "unavailable"
-            assert service.instrument_live_state(owner, uid).metadata_status == "available"
-            broker.market_instrument_metadata.assert_called_once_with(owner, uid)
+            with pytest.raises(BrokerConnectionError):
+                obsolete.result(timeout=5)
+            with service._cache_lock:
+                assert {key[1] for key in service._enrichment} == {current_connection}
+            broker.market_instrument_metadata.assert_called_once()
+    finally:
+        release.set()
+        service.close()
+
+
+def test_late_intent_cannot_schedule_reads_after_a_new_connection_is_accepted() -> None:
+    owner, uid, now = UUID(int=1), "uid-1", datetime.now(UTC)
+    old = BrokerConnectionStatus(True, "prod", "old", verified_at=now)
+    new = BrokerConnectionStatus(True, "prod", "new", verified_at=now + timedelta(seconds=1))
+    current = old
+    broker = Mock(wraps=FakeBroker(now.isoformat()))
+    broker.status.side_effect = lambda _owner: current
+    service = MarketService(broker=broker, cbr=Mock(spec=CBRClient))
+    accepted, release = Event(), Event()
+    connection = service._connection
+
+    def pause_after_accepted(user_id: UUID) -> BrokerConnectionStatus:
+        captured = connection(user_id)
+        if current_thread().name.startswith("old-intent"):
+            assert captured == old
+            accepted.set()
+            assert release.wait(timeout=5)
+        return captured
+
+    try:
+        with (
+            patch.object(service, "_connection", side_effect=pause_after_accepted),
+            ThreadPoolExecutor(max_workers=1, thread_name_prefix="old-intent") as requests,
+        ):
+            obsolete = requests.submit(service.instrument_live_state, owner, uid)
+            try:
+                assert accepted.wait(timeout=5)
+                current = new
+                service.instrument_live_state(owner, uid)
+                _finish_market_reads(service)
+                assert service.instrument_live_state(owner, uid).metadata_status == "available"
+            finally:
+                release.set()
+            with pytest.raises(BrokerConnectionError):
+                obsolete.result(timeout=5)
+            with service._cache_lock:
+                assert {key[1] for key in service._enrichment} == {new}
+            broker.market_instrument_metadata.assert_called_once()
+            broker.market_trading_status.assert_called_once()
+            assert broker.market_last_price.call_count == 2
     finally:
         release.set()
         service.close()

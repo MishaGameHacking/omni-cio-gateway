@@ -6,7 +6,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
-from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -110,6 +110,7 @@ class InstrumentMarketSnapshot:
     trading_status_status: str = "available"
     metadata_status: str = "available"
     errors: dict[str, str | None] = field(default_factory=dict)
+    history_observed_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +149,66 @@ _MARKET_PERIODS: dict[str, tuple[timedelta, str]] = {
 _CBR_SOURCE = "Bank of Russia"
 _PROVIDER_CLOCK_SKEW_TOLERANCE = timedelta(seconds=5)
 
+# All enrichment uses the existing four workers. At most two long history jobs
+# may run or wait, one per owner, leaving capacity for short metadata/status reads.
+_ENRICHMENT_WORKERS = 4
+_ANCILLARY_ACTIVE_LIMIT = 2
+_ENRICHMENT_PENDING_LIMIT = 200
+_ENRICHMENT_OWNER_PENDING_LIMIT = 50
+_HISTORY_PENDING_LIMIT = 2
+_HISTORY_OWNER_PENDING_LIMIT = 1
+_ENRICHMENT_CACHE_CAPACITY = 1024
+_HISTORY_CACHE_CAPACITY = 64
+_METADATA_CACHE_SECONDS = 60
+_TRADING_CACHE_SECONDS = 15
+_HISTORY_CACHE_SECONDS = 15
+_ENRICHMENT_RETRY_SECONDS = 5
+
+
+@dataclass(frozen=True, slots=True)
+class _InstrumentHistory:
+    candles: tuple[InstrumentMarketCandle, ...]
+    interval: str
+    history_from: str | None
+    history_note: str | None
+
+
+type _EnrichmentValue = TBankInstrumentMetadata | TBankTradingStatus | _InstrumentHistory
+type _MarketReadKey = tuple[UUID, BrokerConnectionStatus, str, str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class _EnrichmentResult:
+    value: _EnrichmentValue | None
+    error: str | None
+    observed_at: datetime
+    completed_at: float
+
+
+@dataclass(slots=True)
+class _EnrichmentEntry:
+    cache_seconds: int
+    future: Future[_EnrichmentResult] | None = None
+    read: Callable[[], _EnrichmentValue] | None = None
+    value: _EnrichmentValue | None = None
+    observed_at: datetime | None = None
+    error: str | None = None
+    failure: Exception | None = None
+    refresh_at: float = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _EnrichmentState:
+    value: _EnrichmentValue | None
+    status: str
+    observed_at: datetime | None
+    error: str | None
+
+
+def _read_enrichment(read: Callable[[], _EnrichmentValue]) -> _EnrichmentResult:
+    value, error = _market_component(read)
+    return _EnrichmentResult(value, error, datetime.now(UTC), time.monotonic())
+
 
 class MarketService:
     def __init__(
@@ -162,18 +223,18 @@ class MarketService:
         self.live_after_seconds = live_after_seconds
         self._public_admission = threading.BoundedSemaphore(2)
         self._cache_lock = threading.Lock()
-        self._metadata_pool = ThreadPoolExecutor(
-            max_workers=4, thread_name_prefix="market-metadata",
+        self._enrichment_pool = ThreadPoolExecutor(
+            max_workers=_ENRICHMENT_WORKERS, thread_name_prefix="market-enrichment",
         )
-        self._metadata: OrderedDict[
-            tuple[UUID, BrokerConnectionStatus, str],
-            tuple[float, Future[TBankInstrumentMetadata]],
+        self._enrichment: OrderedDict[_MarketReadKey, _EnrichmentEntry] = OrderedDict()
+        self._last_dispatched_owner: dict[str, UUID] = {}
+        self._active_enrichment: dict[Future[_EnrichmentResult], _MarketReadKey] = {}
+        self._connection_reads: OrderedDict[
+            UUID, tuple[int, BrokerConnectionStatus],
         ] = OrderedDict()
+        self._read_sequence = 0
         self._quotes: OrderedDict[
             tuple[UUID, BrokerConnectionStatus, str], _QuoteCacheEntry,
-        ] = OrderedDict()
-        self._trading: OrderedDict[
-            tuple[UUID, BrokerConnectionStatus, str], tuple[float, TBankTradingStatus],
         ] = OrderedDict()
         self._streams: dict[UUID, set[str]] = {}
         self._closed = False
@@ -201,78 +262,221 @@ class MarketService:
         with self._cache_lock:
             self._closed = True
             self._streams.clear()
-            self._metadata.clear()
+            futures = list(self._active_enrichment)
+            self._enrichment.clear()
+            self._last_dispatched_owner.clear()
+            self._active_enrichment.clear()
+            self._connection_reads.clear()
             self._quotes.clear()
-            self._trading.clear()
-        self._metadata_pool.shutdown(wait=False, cancel_futures=True)
+        for future in futures:
+            future.cancel()
+        self._enrichment_pool.shutdown(wait=False, cancel_futures=True)
 
-    def _metadata_future(
-        self, user_id: UUID, connection: BrokerConnectionStatus, uid: str,
-    ) -> Future[TBankInstrumentMetadata] | None:
-        key = (user_id, connection, uid)
+    @staticmethod
+    def _harvest_enrichment(entry: _EnrichmentEntry) -> None:
+        if entry.future is None or not entry.future.done():
+            return
+        try:
+            result = entry.future.result()
+        except Exception as error:
+            # Keep authentication/connection failures fail-closed for readers,
+            # while allowing a bounded later retry instead of a poisoned Future.
+            entry.future = None
+            entry.failure = error
+            entry.refresh_at = time.monotonic() + _ENRICHMENT_RETRY_SECONDS
+            return
+        entry.future = None
+        entry.failure = None
+        entry.error = result.error
+        entry.refresh_at = result.completed_at + (
+            entry.cache_seconds if result.error is None else _ENRICHMENT_RETRY_SECONDS
+        )
+        if result.error is None:
+            entry.value = result.value
+            entry.observed_at = result.observed_at
+
+    def _discard_previous_connections(
+        self, user_id: UUID, connection: BrokerConnectionStatus,
+    ) -> list[Future[_EnrichmentResult]]:
+        discarded: list[Future[_EnrichmentResult]] = []
+        for previous in list(self._enrichment):
+            if previous[0] == user_id and previous[1] != connection:
+                entry = self._enrichment.pop(previous)
+                if entry.future is not None:
+                    discarded.append(entry.future)
+        return discarded
+
+    def _connection(self, user_id: UUID) -> BrokerConnectionStatus:
+        # Reserve order before database I/O. An old request may finish its
+        # status read after a newer connection was already observed and cached.
         with self._cache_lock:
             if self._closed:
-                return None
-            entry = self._metadata.get(key)
-            if entry is not None and entry[0] <= time.monotonic() and entry[1].done():
-                self._metadata.pop(key)
-                entry = None
+                raise BrokerConnectionError("market_service_closed")
+            self._read_sequence += 1
+            sequence = self._read_sequence
+        connection = self.broker.status(user_id)
+        discarded: list[Future[_EnrichmentResult]] = []
+        with self._cache_lock:
+            if self._closed:
+                raise BrokerConnectionError("market_service_closed")
+            previous = self._connection_reads.get(user_id)
+            if previous is not None and previous[0] > sequence:
+                if previous[1] != connection:
+                    raise BrokerConnectionError("market_account_changed")
+            else:
+                self._connection_reads[user_id] = (sequence, connection)
+                self._connection_reads.move_to_end(user_id)
+                if previous is not None and previous[1] != connection:
+                    discarded = self._discard_previous_connections(user_id, connection)
+                while len(self._connection_reads) > _ENRICHMENT_CACHE_CAPACITY:
+                    self._connection_reads.popitem(last=False)
+        for future in discarded:
+            future.cancel()
+        return connection
+
+    def _enrichment_admitted(self, key: _MarketReadKey) -> bool:
+        pending = [candidate for candidate, entry in self._enrichment.items()
+                   if entry.read is not None]
+        pending.extend(candidate for future, candidate in self._active_enrichment.items()
+                       if not future.done())
+        if (len(pending) >= _ENRICHMENT_PENDING_LIMIT
+                or sum(candidate[0] == key[0] for candidate in pending)
+                >= _ENRICHMENT_OWNER_PENDING_LIMIT):
+            return False
+        if key[2] != "history":
+            ancillary = [candidate for candidate in pending if candidate[2] != "history"]
+            return (len(ancillary) < _ENRICHMENT_PENDING_LIMIT - _HISTORY_PENDING_LIMIT
+                    and sum(candidate[0] == key[0] for candidate in ancillary)
+                    < _ENRICHMENT_OWNER_PENDING_LIMIT - _HISTORY_OWNER_PENDING_LIMIT)
+        history = [candidate for candidate in pending if candidate[2] == "history"]
+        return (len(history) < _HISTORY_PENDING_LIMIT
+                and sum(candidate[0] == key[0] for candidate in history)
+                < _HISTORY_OWNER_PENDING_LIMIT)
+
+    def _trim_enrichment(self) -> None:
+        history_count = sum(key[2] == "history" for key in self._enrichment)
+        for key in list(self._enrichment):
+            entry = self._enrichment[key]
+            if (entry.read is not None
+                    or entry.future is not None and not entry.future.done()):
+                continue
+            if (len(self._enrichment) > _ENRICHMENT_CACHE_CAPACITY
+                    or key[2] == "history" and history_count > _HISTORY_CACHE_CAPACITY):
+                self._enrichment.pop(key)
+                history_count -= key[2] == "history"
+
+    def _dispatch_enrichment(self) -> list[Future[_EnrichmentResult]]:
+        """Called under the cache lock; never fill the executor with waiting metadata.
+
+        Two slots serve short reads, two serve history. Bounded pending intents
+        drain automatically, alternating owners when both have waiting work, so
+        refreshing the first table rows cannot starve later instrument metadata.
+        """
+        dispatched: list[Future[_EnrichmentResult]] = []
+        if self._closed:
+            return dispatched
+        for lane, limit in (("history", _HISTORY_PENDING_LIMIT),
+                            ("ancillary", _ANCILLARY_ACTIVE_LIMIT)):
+            entries = [(key, entry) for key, entry in self._enrichment.items()
+                       if (key[2] == "history") == (lane == "history")]
+            running = sum(not future.done() for future, key in self._active_enrichment.items()
+                          if (key[2] == "history") == (lane == "history"))
+            waiting = [(key, entry) for key, entry in entries if entry.read is not None]
+            while running < limit and waiting:
+                previous_owner = self._last_dispatched_owner.get(lane)
+                index = next((index for index, (key, _) in enumerate(waiting)
+                              if key[0] != previous_owner), 0)
+                key, entry = waiting.pop(index)
+                assert entry.read is not None
+                entry.future = self._enrichment_pool.submit(_read_enrichment, entry.read)
+                self._active_enrichment[entry.future] = key
+                entry.read = None
+                dispatched.append(entry.future)
+                self._last_dispatched_owner[lane] = key[0]
+                running += 1
+        return dispatched
+
+    def _continue_enrichment(self, _finished: Future[_EnrichmentResult]) -> None:
+        with self._cache_lock:
+            self._active_enrichment.pop(_finished, None)
+            dispatched = self._dispatch_enrichment()
+        # A Future may already be done when its callback is attached. Register
+        # outside the lock: immediate callbacks must not deadlock the scheduler.
+        for future in dispatched:
+            future.add_done_callback(self._continue_enrichment)
+
+    def _schedule_enrichment(
+        self, key: _MarketReadKey, read: Callable[[], _EnrichmentValue], *, cache_seconds: int,
+    ) -> None:
+        with self._cache_lock:
+            if self._closed:
+                raise BrokerConnectionError("market_service_closed")
+            observed = self._connection_reads.get(key[0])
+            if observed is not None and observed[1] != key[1]:
+                # A request can pause after observing its connection. Once a
+                # newer one is accepted, old intents must not consume capacity.
+                raise BrokerConnectionError("market_account_changed")
+            dispatched = self._queue_enrichment(key, read, cache_seconds)
+        for future in dispatched:
+            future.add_done_callback(self._continue_enrichment)
+
+    def _queue_enrichment(
+        self, key: _MarketReadKey, read: Callable[[], _EnrichmentValue], cache_seconds: int,
+    ) -> list[Future[_EnrichmentResult]]:
+        entry = self._enrichment.get(key)
+        if entry is not None:
+            self._enrichment.move_to_end(key)
+            self._harvest_enrichment(entry)
+            if (entry.read is not None or entry.future is not None
+                    or time.monotonic() < entry.refresh_at):
+                return []
+        if not self._enrichment_admitted(key):
+            return []
+        if entry is None:
+            self._enrichment[key] = _EnrichmentEntry(cache_seconds, read=read)
+        else:
+            entry.read = read
+            entry.error = None
+        self._trim_enrichment()
+        return self._dispatch_enrichment()
+
+    def _enrichment_state(self, key: _MarketReadKey) -> _EnrichmentState:
+        with self._cache_lock:
+            if self._closed:
+                raise BrokerConnectionError("market_service_closed")
+            entry = self._enrichment.get(key)
             if entry is None:
-                # Bound both the worker count and waiting work, per owner and in total.
-                pending = [key for key, value in self._metadata.items() if not value[1].done()]
-                if len(pending) >= 200 or sum(key[0] == user_id for key in pending) >= 50:
-                    return None
-                future = self._metadata_pool.submit(
-                    self.broker.market_instrument_metadata, user_id, uid,
-                )
-                entry = (time.monotonic() + 60, future)
-                self._metadata[key] = entry
-            self._metadata.move_to_end(key)
-            # Materialize completed keys before mutation; pending oldest tasks
-            # must not prevent eviction of later completed cache entries.
-            finished = [key for key, value in self._metadata.items() if value[1].done()]
-            for oldest in finished[:max(0, len(self._metadata) - 1024)]:
-                self._metadata.pop(oldest)
-        return entry[1]
+                # Queue pressure is pending work, not an empty provider result.
+                return _EnrichmentState(None, "loading", None, None)
+            self._harvest_enrichment(entry)
+            if entry.failure is not None:
+                raise entry.failure
+            status = "available"
+            if entry.error is not None:
+                status = "unavailable"
+            elif (entry.read is not None or entry.future is not None
+                  or time.monotonic() >= entry.refresh_at):
+                status = "loading"
+            return _EnrichmentState(entry.value, status, entry.observed_at, entry.error)
 
     def _instrument_metadata(
-        self, user_id: UUID, connection: BrokerConnectionStatus, uid: str, *, wait: bool,
-    ) -> tuple[TBankInstrumentMetadata | None, str]:
-        future = self._metadata_future(user_id, connection, uid)
-        if future is None:
-            return None, "unavailable"
-        if not wait and not future.done():
-            return None, "loading"
-        try:
-            result = future.result(timeout=10 if wait else 0)
-        except TimeoutError:
-            return None, "loading"
-        except (TBankUnavailable, CancelledError):
-            key = (user_id, connection, uid)
-            with self._cache_lock:
-                current = self._metadata.get(key)
-                if current is not None and current[1] is future:
-                    self._metadata[key] = (min(current[0], time.monotonic() + 5), future)
-            return None, "unavailable"
-        if result.uid != uid:
-            return None, "unavailable"
-        return result, "available"
-
-    def _trading_status(
         self, user_id: UUID, connection: BrokerConnectionStatus, uid: str,
-    ) -> TBankTradingStatus:
-        key = (user_id, connection, uid)
-        with self._cache_lock:
-            cached = self._trading.get(key)
-            if cached is not None and time.monotonic() < cached[0]:
-                self._trading.move_to_end(key)
-                return cached[1]
-        trading = self.broker.market_trading_status(user_id, uid)
-        with self._cache_lock:
-            self._trading[key] = (time.monotonic() + 15, trading)
-            while len(self._trading) > 256:
-                self._trading.popitem(last=False)
-        return trading
+    ) -> tuple[TBankInstrumentMetadata | None, str]:
+        key = (user_id, connection, "metadata", uid, "")
+        self._schedule_enrichment(
+            key, lambda: self.broker.market_instrument_metadata(user_id, uid),
+            cache_seconds=_METADATA_CACHE_SECONDS,
+        )
+        return self._metadata_state(key)
+
+    def _metadata_state(self, key: _MarketReadKey) -> tuple[TBankInstrumentMetadata | None, str]:
+        result = self._enrichment_state(key)
+        metadata = result.value
+        if metadata is None:
+            return None, result.status
+        if not isinstance(metadata, TBankInstrumentMetadata) or metadata.uid != key[3]:
+            return None, "unavailable"
+        return metadata, result.status
 
     def batch_quotes(self, user_id: UUID, instrument_uids: tuple[str, ...]) -> dict[str, object]:
         if (not 1 <= len(instrument_uids) <= 50 or len(set(instrument_uids)) != len(instrument_uids)
@@ -280,7 +484,7 @@ class MarketService:
                     char.isalnum() or char in "_-"
                 ) for char in uid) for uid in instrument_uids)):
             raise ValueError("market_instrument_limit")
-        connection = self.broker.status(user_id)
+        connection = self._connection(user_id)
         entries = self._batch_quote_entries(user_id, connection, instrument_uids)
         now = datetime.now(UTC)
         items = [self._batch_quote_item(user_id, connection, uid, entries[uid], now)
@@ -320,7 +524,7 @@ class MarketService:
         self, user_id: UUID, connection: BrokerConnectionStatus, uid: str,
         quote_entry: _QuoteCacheEntry, now: datetime,
     ) -> dict[str, object]:
-        metadata, metadata_status = self._instrument_metadata(user_id, connection, uid, wait=False)
+        metadata, metadata_status = self._instrument_metadata(user_id, connection, uid)
         live = _instrument_live_state(
             uid, observed=now, last_price=quote_entry[1], trading=None,
             live_after_seconds=self.live_after_seconds, metadata=metadata,
@@ -465,50 +669,31 @@ class MarketService:
         config = _MARKET_PERIODS.get(period)
         if config is None and period != "all":
             raise ValueError("unsupported market period")
-        connection = self.broker.status(user_id)
+        connection = self._connection(user_id)
         requested_at = datetime.now(UTC)
-        history_from = None
-        history_note = None
-        interval = config[1] if config is not None else "CANDLE_INTERVAL_MONTH"
-        history_error = None
-        candles: tuple[TBankHistoricCandle, ...] = ()
-        market_candles: tuple[InstrumentMarketCandle, ...] = ()
-        try:
-            if period == "all":
-                candles, interval, history_from = self._available_history(
-                    user_id, instrument_uid, requested_at,
-                )
-                resolution = "месячные" if interval == "CANDLE_INTERVAL_MONTH" else "дневные"
-                history_note = f"Доступная история источника; {resolution} свечи без учёта выплат."
-            else:
-                assert config is not None
-                window, interval = config
-                candles = self.broker.market_exchange_candles(
-                    user_id, instrument_uid, from_at=requested_at - window,
-                    to_at=requested_at, interval=interval,
-                )
-            market_candles = tuple(
-                InstrumentMarketCandle(
-                    time=item.time.astimezone(UTC).isoformat(),
-                    open=_required_market_price(item.open), high=_required_market_price(item.high),
-                    low=_required_market_price(item.low), close=_required_market_price(item.close),
-                    volume_lots=item.volume_lots, is_complete=item.is_complete,
-                ) for item in candles
-            )
-        except TBankUnavailable:
-            history_error = "source_unavailable"
+        key = (user_id, connection, "history", instrument_uid, period)
+        self._schedule_enrichment(
+            key, lambda: self._instrument_history(user_id, instrument_uid, period, requested_at),
+            cache_seconds=_HISTORY_CACHE_SECONDS,
+        )
         live = self._live_state(user_id, connection, instrument_uid)
+        history_state = self._enrichment_state(key)
+        history = history_state.value
+        if not isinstance(history, _InstrumentHistory):
+            history = _InstrumentHistory(
+                (), config[1] if config is not None else "CANDLE_INTERVAL_MONTH", None, None,
+            )
         if self.broker.status(user_id) != connection:
             raise BrokerConnectionError("market_account_changed")
         observed = datetime.now(UTC)
-        history_status = "available" if market_candles else "empty"
-        if history_error:
-            history_status = "unavailable"
+        history_status = history_state.status
+        if history_status == "available" and not history.candles:
+            history_status = "empty"
 
         return InstrumentMarketSnapshot(
             instrument_uid=instrument_uid,
             period=period,
-            interval=interval,
+            interval=history.interval,
             source="T-Invest exchange candles",
             observed_at=observed.isoformat(),
             last_price=live.last_price,
@@ -519,9 +704,9 @@ class MarketService:
             api_trade_available=live.api_trade_available,
             limit_order_available=live.limit_order_available,
             market_order_available=live.market_order_available,
-            candles=market_candles,
-            history_from=history_from,
-            history_note=history_note,
+            candles=history.candles,
+            history_from=history.history_from,
+            history_note=history.history_note,
             price_unit=live.price_unit,
             price_currency=live.price_currency,
             cash_price=live.cash_price,
@@ -529,8 +714,38 @@ class MarketService:
             history_status=history_status,
             trading_status_status=live.trading_status_status,
             metadata_status=live.metadata_status,
-            errors={**live.errors, "history": history_error},
+            errors={**live.errors, "history": history_state.error},
+            history_observed_at=(
+                history_state.observed_at.isoformat() if history_state.observed_at else None
+            ),
         )
+
+    def _instrument_history(
+        self, user_id: UUID, instrument_uid: str, period: str, requested_at: datetime,
+    ) -> _InstrumentHistory:
+        history_from = None
+        history_note = None
+        if period == "all":
+            candles, interval, history_from = self._available_history(
+                user_id, instrument_uid, requested_at,
+            )
+            resolution = "месячные" if interval == "CANDLE_INTERVAL_MONTH" else "дневные"
+            history_note = f"Доступная история источника; {resolution} свечи без учёта выплат."
+        else:
+            window, interval = _MARKET_PERIODS[period]
+            candles = self.broker.market_exchange_candles(
+                user_id, instrument_uid, from_at=requested_at - window,
+                to_at=requested_at, interval=interval,
+            )
+        market_candles = tuple(
+            InstrumentMarketCandle(
+                time=item.time.astimezone(UTC).isoformat(),
+                open=_required_market_price(item.open), high=_required_market_price(item.high),
+                low=_required_market_price(item.low), close=_required_market_price(item.close),
+                volume_lots=item.volume_lots, is_complete=item.is_complete,
+            ) for item in candles
+        )
+        return _InstrumentHistory(market_candles, interval, history_from, history_note)
 
     def _available_history(
         self, user_id: UUID, instrument_uid: str, requested_at: datetime,
@@ -542,6 +757,11 @@ class MarketService:
         candles: dict[datetime, TBankHistoricCandle] = {}
         reads = 0
         while cursor < requested_at:
+            with self._cache_lock:
+                if self._closed:
+                    raise BrokerConnectionError("market_service_closed")
+            if self.broker.status(user_id) != connection:
+                raise BrokerConnectionError("market_account_changed")
             end = min(cursor.replace(year=cursor.year + 10), requested_at)
             begin = cursor
             if interval == "CANDLE_INTERVAL_MONTH" and end - begin < timedelta(days=28):
@@ -564,7 +784,7 @@ class MarketService:
         user_id: UUID,
         instrument_uid: str,
     ) -> InstrumentLiveState:
-        connection = self.broker.status(user_id)
+        connection = self._connection(user_id)
         live = self._live_state(user_id, connection, instrument_uid)
         if self.broker.status(user_id) != connection:
             raise BrokerConnectionError("market_account_changed")
@@ -573,15 +793,24 @@ class MarketService:
     def _live_state(
         self, user_id: UUID, connection: BrokerConnectionStatus, instrument_uid: str,
     ) -> InstrumentLiveState:
+        metadata_key = (user_id, connection, "metadata", instrument_uid, "")
+        trading_key = (user_id, connection, "trading", instrument_uid, "")
+        self._schedule_enrichment(
+            metadata_key, lambda: self.broker.market_instrument_metadata(user_id, instrument_uid),
+            cache_seconds=_METADATA_CACHE_SECONDS,
+        )
+        self._schedule_enrichment(
+            trading_key, lambda: self.broker.market_trading_status(user_id, instrument_uid),
+            cache_seconds=_TRADING_CACHE_SECONDS,
+        )
         price, quote_error = _market_component(
             lambda: self.broker.market_last_price(user_id, instrument_uid),
         )
-        trading, trading_error = _market_component(
-            lambda: self._trading_status(user_id, connection, instrument_uid),
+        trading_state = self._enrichment_state(trading_key)
+        trading = (
+            trading_state.value if isinstance(trading_state.value, TBankTradingStatus) else None
         )
-        metadata, metadata_status = self._instrument_metadata(
-            user_id, connection, instrument_uid, wait=True,
-        )
+        metadata, metadata_status = self._metadata_state(metadata_key)
         live = _instrument_live_state(
             instrument_uid,
             observed=datetime.now(UTC),
@@ -601,11 +830,12 @@ class MarketService:
             price_unit=live.price_unit, price_currency=live.price_currency,
             cash_price=live.cash_price, cash_price_currency=live.cash_price_currency,
             trading_status_status=(
-                "unavailable" if trading_error or live.errors.get("trading_status") else "available"
+                "unavailable" if trading_state.error or live.errors.get("trading_status")
+                else trading_state.status
             ),
             metadata_status="unavailable" if live.errors.get("metadata") else metadata_status,
             errors={"quote": quote_error or live.errors.get("quote"),
-                    "trading_status": trading_error or live.errors.get("trading_status"),
+                    "trading_status": trading_state.error or live.errors.get("trading_status"),
                     "metadata": "source_unavailable" if metadata_status == "unavailable"
                     else live.errors.get("metadata")},
         )

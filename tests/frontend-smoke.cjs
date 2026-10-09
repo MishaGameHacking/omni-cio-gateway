@@ -69,7 +69,6 @@ assert.equal(serverContracts.goal_available.title, "Тестовая цель и
 const marketEvent = JSON.parse(serverContracts.instrument_market_event.split("\ndata: ")[1].trim());
 assert.equal(marketEvent.instrument_uid, "synthetic-a");
 assert.equal(marketEvent.quote_status, "live");
-const restMarketObservedAt = new Date(Date.parse(marketEvent.observed_at) - 1000).toISOString();
 const artifacts = join(root, "artifacts", "frontend");
 mkdirSync(artifacts, {
   recursive: true
@@ -529,7 +528,7 @@ const testApiHandlers = [{
 }, {
   matches: ({path}) => path === "/api/market/quotes",
   run: ({url,response,fixture}) => {
-    const quote = fixture.precisionCase ? JSON.parse(fixture.precisionCase.market_event.split("\ndata: ")[1].trim()) : marketEvent;
+    const quote = fixture.precisionCase ? JSON.parse(fixture.precisionCase.market_event.split("\ndata: ")[1].trim()) : serverContracts.market_quotes.items[0];
     return sendJSON(response,{items:(url.searchParams.get("instrument_uids") || "").split(",").filter(Boolean).map(uid=>({...quote,instrument_uid:uid,metadata_status:"available"})),source:"T-Invest",observed_at:stamp,refresh_after_seconds:10});
   }
 }, {
@@ -736,6 +735,7 @@ const displayContracts = () => {
   quotePrecisionContracts(ui);
   assetQuotePrecisionContracts(ui);
   quoteChartPrecisionContracts(ui);
+  candlestickContracts(ui);
   goalVersionContracts(ui);
   chartAxisContracts(ui);
   researchMathContracts(ui, context.window.OMNICIO_I18N);
@@ -939,7 +939,7 @@ async function visibleRefreshContracts() {
     window: {setTimeout: schedule}, setTimeout: schedule, clearTimeout: id => timers.delete(id), T: value => value,
     U: {navigation: [["home", "Home"], ["portfolio", "Portfolio"]]}, $: selector => selector === "dialog[open]" ? null : node, $$: () => [],
     resolveNavigationRoute: (view, detail) => ({view, ...detail}),
-    saveNavigationPosition() {}, captureScreenDrafts() {}, closeRouteDialogs() {}, closeDrawer() {}, stopQuoteStream() {}, stopTableQuotes() {},
+    saveNavigationPosition() {}, captureScreenDrafts() {}, closeRouteDialogs() {}, closeDrawer() {}, stopQuoteStream() {}, stopAssetHistory() {}, stopTableQuotes() {},
     restoreRouteControls() {}, updateRouteHistory() {}, renderNav() {}, renderCurrent() {}, restoreNavigationScroll() {},
     loadNavigationScreen: async () => {}, scheduleTableQuotes() {}, scheduleEventSummary() {}, refreshPushDevice: async () => {},
     verifySession: async () => { checks += 1; }, hasPending: () => editing,
@@ -1687,7 +1687,7 @@ async function offlineQuoteContracts() {
   const events = app.slice(app.indexOf('  window.addEventListener("offline",'), app.indexOf('  prefersDark.addEventListener("change",'));
   const stamp = "2026-10-08T12:00:00Z";
   const quote = {instrument_uid: "a", last_price: "123.000000001", quote_status: "live", quote_time: stamp, observed_at: stamp, price_unit: "currency", price_currency: "RUB"};
-  const state = {generation: 1, user: {public_id: "000000123"}, view: "asset", asset: {uid: "a", market: {...quote}}, quotes: {a: {...quote}}, session: {status: "authenticated"}};
+  const state = {generation: 1, mode: "account", user: {public_id: "000000123"}, view: "asset", asset: {uid: "a", market: {...quote}}, quotes: {a: {...quote}}, session: {status: "authenticated"}};
   const source = {innerHTML: "live"}, price = {innerHTML: quote.last_price}, callbacks = {}, streams = [];
   class EventSourceFixture {
     constructor() { this.listeners = {}; streams.push(this); }
@@ -1696,12 +1696,12 @@ async function offlineQuoteContracts() {
   }
   const context = sourceContext({state, navigator: {onLine: false}, document: {visibilityState: "visible"}, EventSource: EventSourceFixture,
     window: {EventSource: EventSourceFixture, addEventListener: (name, callback) => { callbacks[name] = callback; }},
-    $: selector => ({"[data-market-source]": source, "[data-market-quote]": price}[selector] || {}), $$: () => [],
-    T: value => value, assetPricing: asset => ({market: asset.market}), assetQuoteHTML: value => value.market.last_price,
+    $: selector => ({"[data-market-source]": source, "[data-market-quote]": price}[selector] || null), $$: () => [],
+    T: value => value, tradingLabel: value => value || "Unknown", assetPricing: asset => ({market: asset.market}), assetQuoteHTML: value => value.market.last_price,
     freshness: (name, at, status) => status, safeSegment: encodeURIComponent, encodeURIComponent,
     clearTimeout() {}, setTimeout: () => 1, toast() {}, lockSession() {}, refreshVisibleData() {}, scheduleTableQuotes() {}, scheduleEventSummary() {}, paintTableQuotes() {},
     stopQuoteStream: () => { if (streams.length) streams.at(-1).close(); }});
-  vm.runInContext("let quoteStream=null, quoteFailures=0, quoteReconnectTimer=null;\n" + helper + stream + tables + events
+  vm.runInContext("let quoteStream=null, quoteStreamAsset=null, quoteFailures=0, quoteReconnectTimer=null, assetQuoteFallbackTimer=null, assetQuoteRequest=null, assetHistoryTimer=null;\n" + helper + stream + tables + events
     + "\nglobalThis.accept=adoptTableQuotes; globalThis.unavailable=markTableQuotesUnavailable;", context);
   callbacks.offline();
   assert.equal(state.asset.market.quote_status, "offline", "An offline event immediately removes the live label from the asset");
@@ -1716,10 +1716,10 @@ async function offlineQuoteContracts() {
   state.assetPeriod = "1m";
   Object.assign(state.asset, {details: {}, facts: {}, news: {items: []}});
   let finishAsset;
-  Object.assign(context, {renderAsset: () => true, U: {bindCharts() {}}, api: () => new Promise(resolve => { finishAsset = resolve; })});
+  Object.assign(context, {renderAsset: () => true, U: {bindCharts() {}, updateChart() {}}, refreshAssetChartContext() {}, assetChartMarkup: () => "", assetHistoryStateHTML: () => "", api: () => new Promise(resolve => { finishAsset = resolve; })});
   vm.runInContext(assetLoad + "\nglobalThis.loadAssetNow=loadAsset;", context);
   const pendingAsset = context.loadAssetNow("a");
-  finishAsset(quote);
+  finishAsset({...quote, period: "1m", candles: []});
   await pendingAsset;
   assert.equal(state.asset.market.quote_status, "offline", "An asset REST response received offline cannot claim a live source");
   assert.equal(state.asset.market.quote_time, stamp);
@@ -1737,6 +1737,152 @@ async function offlineQuoteContracts() {
   assert.equal(state.quotes.a.quote_status, "unavailable", "A failed or timed-out batch retains its unavailable source status");
   assert.equal(state.quotes.a.last_price, quote.last_price);
   console.log("PASS offline quotes: source/table state, exact retained values, late responses, reconnect confirmation and source failures");
+}
+async function assetMarketRefreshContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const source = app.slice(app.indexOf("  const stopQuoteStream ="), app.indexOf("  const clearPrivateState ="))
+    + app.slice(app.indexOf("  const loadAsset ="), app.indexOf("  const fundamentalMetricsHTML ="))
+    + app.slice(app.indexOf("  const loadAssetView ="), app.indexOf("  const loadSelectedAssistantConversation ="));
+  const asset = {uid: "new-asset", name: "Source asset", ticker: "SRC", market: null, details: {}, facts: {}, news: {items: []}};
+  const state = {asset, generation: 1, user: {public_id: "000000123"}, mode: "account", view: "asset", route: {uid: asset.uid}, assetPeriod: "1m", resourceVersions: new Map()};
+  const requests = [], timers = new Map(), streams = [];
+  let nextTimer = 0, paints = 0;
+  const container = {dataset: {assetUid: asset.uid, assetPeriod: "1m"}};
+  const quoteNode = {innerHTML: ""}, sourceNode = {}, chartNode = {}, historyNode = {};
+  class Stream {
+    constructor(url) { this.url = url; this.listeners = {}; streams.push(this); }
+    addEventListener(name, callback) { this.listeners[name] = callback; }
+    close() { this.closed = true; }
+  }
+  const context = sourceContext({state, window: {EventSource: Stream}, EventSource: Stream, navigator: {onLine: true}, document: {visibilityState: "visible"},
+    setTimeout: (callback, delay) => { const id = ++nextTimer; timers.set(id, {callback, delay}); return id; }, clearTimeout: id => timers.delete(id),
+    api: path => new Promise((resolve, reject) => requests.push({path, resolve, reject})), safeSegment: encodeURIComponent, encodeURIComponent,
+    viewResources: [], renderCurrent: options => assert.equal(options.preserveAssetChart, true, "The general refresh preserves the asset SVG before loading auxiliary resources"), T: value => value, isCancelled: () => false, tradingLabel: value => value || "Unknown", freshness: (name, at, status) => status,
+    renderAsset() { container.dataset.assetPeriod = state.assetPeriod; return true; },
+    assetPricing: current => ({asset: current, market: current.market, candles: current.market?.candles || []}),
+    assetQuoteHTML: ({market}) => market?.last_price || "—", assetChartMarkup: ({candles}) => JSON.stringify(candles), assetHistoryStateHTML: ({market}) => market?.history_status || "", refreshAssetChartContext: () => true,
+    U: {bindCharts() {}, updateChart: () => { paints += 1; }},
+    $: selector => ({"#view-asset": container, "[data-market-chart]": chartNode, "[data-market-history-state]": historyNode, "[data-market-quote]": quoteNode, "[data-market-source]": sourceNode})[selector] || null, $$: () => []});
+  vm.runInContext("let quoteStream=null,quoteStreamAsset=null,quoteFailures=0,quoteReconnectTimer=null,assetQuoteFallbackTimer=null,assetQuoteRequest=null,assetHistoryTimer=null;\n"
+    + source + "\nglobalThis.background=()=>loadForView('asset',{uid:state.asset.uid},true,{background:true});globalThis.load=loadAsset;globalThis.historyRead=readAssetHistory;globalThis.start=startQuoteStream;globalThis.stop=stopQuoteStream;globalThis.quoteRead=readAssetQuoteFallback;", context);
+  const initial = context.load(asset.uid);
+  assert.equal(streams.length, 1, "Price streaming starts while the initial history response is held");
+  assert.equal(requests.length, 1);
+  const quote = {instrument_uid: asset.uid, observed_at: "2026-10-09T08:00:20Z", quote_time: "2026-10-09T08:00:20Z", last_price: "251.75", quote_status: "live", price_unit: "currency", price_currency: "RUB"};
+  streams[0].listeners.market({data: JSON.stringify(quote)});
+  assert.equal(quoteNode.innerHTML, "251.75", "The visible quote does not wait for historical bars");
+  assert.equal(asset.market.candles, undefined, "A quote tick cannot fabricate OHLC");
+  const bars = [{time: "2026-10-09T04:00:00Z", open: "245", high: "251", low: "242", close: "250.25", volume_lots: 0, is_complete: false}];
+  const snapshot = {...quote, observed_at: "2026-10-09T08:00:10Z", quote_time: "2026-10-09T08:00:10Z", last_price: "250.25", period: "1m", history_status: "available", history_observed_at: "2026-10-09T08:00:10Z", candles: bars};
+  requests.shift().resolve(snapshot);
+  await initial;
+  assert.equal(asset.market.last_price, quote.last_price, "A later arriving REST response cannot replace a newer stream price");
+  assert.equal(asset.market.candles, bars);
+  assert.equal(streams.length, 1, "History and auxiliary completion do not reconnect the existing stream");
+  const general = context.background();
+  assert.equal(requests.length, 3, "The general page refresh rereads only details, facts and news");
+  assert.ok(requests.every(item => !item.path.includes("?period=")), "The existing candle scheduler remains the only periodic history owner");
+  requests.splice(0).forEach(item => item.resolve({}));
+  await general;
+  assert.equal(streams.length, 1);
+  const refresh = context.historyRead();
+  assert.equal(context.historyRead(), refresh, "Concurrent history consumers share one in-flight request for the same period");
+  assert.equal(requests.length, 1);
+  requests.shift().resolve({...snapshot, observed_at: "2026-10-09T08:00:30Z", history_observed_at: null, history_status: "loading", candles: []});
+  await refresh;
+  assert.equal(asset.market.candles, bars, "Loading after a server-cache eviction retains actual browser history");
+  assert.equal(asset.market.history_observed_at, snapshot.history_observed_at, "A loading response does not refresh the date of retained observations");
+  for (const status of ["loading", "unavailable"]) {
+    const olderState = context.historyRead();
+    requests.shift().resolve({...snapshot, history_status: status, history_observed_at: "2026-10-09T07:00:00Z", candles: [{...bars[0], close: "200"}]});
+    await olderState;
+    assert.equal(asset.market.candles, bars, "An older worker cache cannot replace newer browser observations");
+    assert.equal(asset.market.history_observed_at, snapshot.history_observed_at);
+    assert.equal(asset.market.history_status, status, "The latest source problem remains visible even when its cached bars are older");
+  }
+  const olderEmpty = context.historyRead();
+  requests.shift().resolve({...snapshot, history_status: "empty", history_observed_at: "2026-10-09T07:00:00Z", candles: []});
+  await olderEmpty;
+  assert.equal(asset.market.candles, bars, "An older successful empty result cannot erase newer source observations");
+  const failed = context.historyRead();
+  requests.shift().reject(new Error("history_unavailable"));
+  await failed;
+  assert.equal(asset.market.candles, bars);
+  assert.equal(asset.market.history_status, "unavailable");
+  assert.equal(quoteNode.innerHTML, quote.last_price, "A failed history read leaves the independent quote visible");
+  const oldPeriod = context.historyRead();
+  const oldReply = requests.shift();
+  state.assetPeriod = "1w";
+  const newPeriod = context.load(asset.uid);
+  const newReply = requests.shift();
+  const weekly = [{...bars[0], time: "2026-10-08T00:00:00Z"}];
+  newReply.resolve({...snapshot, period: "1w", candles: weekly});
+  await newPeriod;
+  oldReply.resolve({...snapshot, candles: [{...bars[0], close: "999"}]});
+  await oldPeriod;
+  assert.equal(asset.market.candles, weekly, "An old period cannot overwrite the selected source interval");
+  context.stop();
+  context.EventSource = undefined;
+  context.start();
+  const fallbackTimer = [...timers.entries()].find(([, timer]) => timer.delay === 0);
+  assert.ok(fallbackTimer, "Clients without EventSource schedule independent batch quotes");
+  timers.delete(fallbackTimer[0]); fallbackTimer[1].callback();
+  const fallback = requests.shift();
+  assert.ok(fallback.path.startsWith("/api/market/quotes?"));
+  fallback.resolve({items: [{...quote, observed_at: "2026-10-09T08:00:40Z", quote_time: "2026-10-09T08:00:40Z", last_price: "252"}]});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(quoteNode.innerHTML, "252");
+  assert.equal(asset.market.candles, weekly, "Fallback quote reads cannot mutate historical candles");
+  const delayedFailure = context.quoteRead(asset);
+  const delayedFallback = requests.shift();
+  context.EventSource = Stream;
+  context.start();
+  streams.at(-1).listeners.market({data: JSON.stringify({...quote, observed_at: "2026-10-09T08:00:50Z", quote_time: "2026-10-09T08:00:50Z", last_price: "253"})});
+  delayedFallback.reject(new Error("old_fallback_unavailable"));
+  await delayedFailure;
+  assert.equal(asset.market.quote_status, "live", "A delayed fallback failure cannot hide a newer confirmed SSE observation");
+  assert.equal(sourceNode.innerHTML, "live", "The visible source badge retains the newer live state");
+  assert.equal(quoteNode.innerHTML, "253");
+  const currentFailure = context.quoteRead(asset);
+  requests.shift().reject(new Error("current_fallback_unavailable"));
+  await currentFailure;
+  assert.equal(asset.market.quote_status, "unavailable", "A current source failure remains visible when no newer observation superseded its request");
+  assert.equal(quoteNode.innerHTML, "253", "A failed current read retains the last confirmed price");
+  const before = paints;
+  const previousAccount = context.historyRead();
+  const previousReply = requests.shift();
+  state.generation += 1;
+  state.asset = {...asset, uid: "different-account-asset"};
+  previousReply.resolve({...snapshot, period: "1w"});
+  await previousAccount;
+  assert.equal(paints, before, "An earlier account response cannot repaint the current asset");
+  console.log("PASS independent market reads: delayed/failed history, immediate SSE, nonstale quote adoption, retained source dates, single flight, period/account isolation and no-SSE fallback");
+}
+async function searchQuoteContracts() {
+  const app = readFileSync(join(root, "web", "app.js"), "utf8");
+  const state = {mode: "account", user: {public_id: "000000123"}, view: "search", generation: 1, quotes: {}};
+  const uid = "fresh-search-uid";
+  const cell = {dataset: {tableQuote: uid}, getClientRects: () => [{}], innerHTML: ""};
+  const timers = new Map(), requests = [];
+  let sequence = 0;
+  const context = sourceContext({state, document: {visibilityState: "visible"}, navigator: {onLine: true}, encodeURIComponent,
+    setTimeout: (callback, delay) => { const id = ++sequence; timers.set(id, {callback, delay}); return id; }, clearTimeout: id => timers.delete(id),
+    $: () => ({}), $$: () => [cell], portfolioRows: () => [], isCancelled: () => false,
+    quoteForConnection: value => value, T: value => value, H: value => value, esc: value => String(value), icon: () => "", marketPrice: value => value || "—", freshness: () => "source",
+    api: async path => { requests.push(path); return {items: [{instrument_uid: uid, observed_at: "2026-10-09T08:00:00Z", last_price: "412.35", quote_status: "live", price_unit: "currency", price_currency: "RUB"}]}; }});
+  const quote = app.slice(app.indexOf("  const adoptAssetQuote ="), app.indexOf("  const scheduleAssetQuoteFallback ="));
+  const polling = app.slice(app.indexOf("  function stopTableQuotes()"), app.indexOf("  function scheduleEventSummary("));
+  const render = app.slice(app.indexOf("  function renderSearchSearchResult3("), app.indexOf("  function renderSearchFragment("));
+  vm.runInContext("let tableQuotesTimer=null,tableQuotesBusy=false;\n" + quote + polling + render + "\nglobalThis.schedule=scheduleTableQuotes;globalThis.paintSearch=renderSearchSearchResult3;", context);
+  assert.ok(context.paintSearch({uid, name: "New instrument", ticker: "NEW", instrument_type: "share"}).includes(`data-table-quote="${uid}"`), "Actual search results render a quote consumer for a newly found UID");
+  context.schedule(0);
+  assert.equal(timers.size, 1, "Entering Search starts the same bounded quote scheduler as holdings");
+  const [id, timer] = [...timers.entries()][0]; timers.delete(id); timer.callback();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(requests, [`/api/market/quotes?instrument_uids=${uid}`]);
+  assert.ok(cell.innerHTML.includes("412.35"), "A fresh Search UID receives its own price without a prefilled portfolio quote cache");
+  assert.equal(state.quotes[uid].last_price, "412.35");
+  console.log("PASS search quotes: real search renderer, fresh UID, bounded batch scheduler and visible price adoption");
 }
 async function assistantConversationContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
@@ -2130,7 +2276,7 @@ function assetQuotePrecisionContracts(ui) {
   const start = app.indexOf("  const quotationNanos =");
   assert.ok(start >= 0, "Asset extrema use the source decimal contract");
   const source = app.slice(start, app.indexOf("  const assetChartMarkup =", start));
-  const context = sourceContext({number: ui.number, marketPrice: ui.marketPrice, money: ui.money, percent: ui.percent, esc: ui.escape, T: value => value, H: value => value, renderAssetValue: () => ""});
+  const context = sourceContext({U: ui, number: ui.number, marketPrice: ui.marketPrice, money: ui.money, percent: ui.percent, esc: ui.escape, T: value => value, H: value => value, renderAssetValue: () => ""});
   vm.runInContext(source + "\nglobalThis.pricing=assetPricing;globalThis.quote=assetQuoteHTML;globalThis.extreme=assetPriceExtreme;", context);
   const smaller = "10000000.000000001", larger = "10000000.000000002";
   assert.equal(Number(smaller), Number(larger), "The fixture exposes two source prices that Number cannot distinguish");
@@ -2173,6 +2319,46 @@ function quoteChartPrecisionContracts(ui) {
   assert.ok(readout.lastElementChild.textContent.includes("10\u00a0000\u00a0000,000000002"), "Pointer selection preserves the last source decimal");
   assert.ok(attributes.get("aria-label").includes("10\u00a0000\u00a0000,000000002"));
   console.log("PASS source chart readouts: initial, keyboard, pointer and accessibility retain exact decimal strings");
+}
+function candlestickContracts(ui) {
+  const date = "2026-10-09T08:00:00Z";
+  const candle = {time: date, open: "10000000.000000001", high: "10000000.000000004", low: "10000000.000000001", close: "10000000.000000002", volume_lots: 0, is_complete: false};
+  const options = {kind: "candlestick", personal: false, priceUnit: "currency", currency: "RUB", label: "Actual source candle"};
+  const one = ui.chart([candle], options);
+  assert.equal((one.match(/class="chart-candle /g) || []).length, 1, "One actual OHLC observation is a complete drawable candle");
+  assert.ok(one.includes("candle-rising"));
+  const body = /<rect class="candle-body"[^>]* height="([^"]+)"/.exec(one);
+  assert.ok(Number(body[1]) > 1, "Nano movement remains visible in the geometry after subtracting exact source values");
+  assert.equal(Number(candle.open), Number(candle.close), "This regression crosses the Number precision boundary");
+  assert.ok(one.includes(ui.escape(ui.marketPrice(candle.open, "currency", "RUB"))));
+  assert.ok(one.includes("Формируется") && one.includes("<dd>0</dd>"), "Omitted ProtoJSON defaults arrive as a forming candle and real zero volume");
+  assert.ok(!one.includes("NaN") && !one.includes("Infinity"));
+  const earlier = {...candle, time: "2026-10-09T04:00:00Z", open: candle.high, close: candle.low, is_complete: true};
+  const doji = {...candle, time: "2026-10-09T12:00:00Z", close: candle.open};
+  const markup = ui.chart([doji, candle, earlier], options);
+  assert.ok(markup.includes("candle-falling") && markup.includes("candle-rising") && markup.includes("candle-doji"));
+  const times = [...markup.matchAll(/data-candle-time="(\d+)"/g)].map(match => Number(match[1]));
+  assert.deepEqual(times, [...times].sort((left, right) => left - right), "Source candles are ordered by their real times");
+  assert.ok(!ui.chart([{...candle, high: candle.low}], options).includes("chart-candle"), "Impossible OHLC cannot become a price chart");
+  assert.ok(!ui.chart([{...candle, open: "NaN"}], options).includes("chart-candle"));
+  const listeners = new Map(), attributes = new Map();
+  const fields = {innerHTML: "", get textContent() { return this.innerHTML.replace(/<[^>]*>/g, " "); }};
+  const readout = {firstElementChild: {}, lastElementChild: {}};
+  const shape = {setAttribute() {}};
+  const hover = {setAttribute() {}, querySelector: () => shape};
+  const block = {querySelector: selector => selector === "[data-candle-readout]" ? fields : readout, querySelectorAll: () => []};
+  const svg = {dataset: {chart: /data-chart="([^"]+)"/.exec(markup)[1]}, querySelector: () => hover, closest: () => block, addEventListener: (name, callback) => listeners.set(name, callback), setAttribute: (name, value) => attributes.set(name, value), getBoundingClientRect: () => ({left: 0, width: 480})};
+  ui.bindCharts({querySelectorAll: () => [svg]});
+  listeners.get("keydown")({key: "Home", preventDefault() {}});
+  assert.ok(fields.innerHTML.includes("Завершена"));
+  assert.ok(attributes.get("aria-label").includes("Открытие") && attributes.get("aria-label").includes("Объём"), "Keyboard accessibility announces OHLC, volume and completion");
+  listeners.get("pointermove")({clientX: 480});
+  assert.ok(fields.innerHTML.includes("Формируется"));
+  assert.equal(readout.lastElementChild.textContent, ui.marketPrice(doji.close, "currency", "RUB"));
+  ui.setLocale("en");
+  assert.ok(ui.chart([candle], options).includes("Forming"));
+  ui.setLocale("ru");
+  console.log("PASS candlesticks: one source bar, exact nano geometry, OHLC bounds, rise/fall/doji, volume, completion and accessible source readouts");
 }
 function eventReadReceiptContracts() {
   const app = readFileSync(join(root, "web", "app.js"), "utf8");
@@ -3153,7 +3339,7 @@ function assertChartLayout(charts, label) {
     for (const axis of chart.axes.slice(3)) assert.ok(axis.rect.top >= chart.svg.bottom && axis.rect.left >= chart.svg.left - 1 && axis.rect.right <= chart.svg.right + 1, label + ": date axis stays below its own plot");
   }
 }
-const screenshotEvidenceNames = new Set(["portfolio-2-320.png", "market-2-320.png", "strategies-2-390.png", "strategies-custom-2-390.png", "auth-2-390.png", "auth-2-320.png", "failure-state.png", "payout-source-normal-ru-320.png", "payout-source-ambiguous-ru-320.png", "payout-source-normal-en-320.png", "payout-source-ambiguous-en-320.png"]);
+const screenshotEvidenceNames = new Set(["portfolio-2-320.png", "market-2-320.png", "strategies-2-390.png", "strategies-custom-2-390.png", "auth-2-390.png", "auth-2-320.png", "failure-state.png", "payout-source-normal-ru-320.png", "payout-source-ambiguous-ru-320.png", "payout-source-normal-en-320.png", "payout-source-ambiguous-en-320.png", "live-candles-1.png", "live-candles-2.png"]);
 let screenshotEvidenceCharacters = 0;
 let screenshotEvidenceSequence = 0;
 function logScreenshotEvidence(name, png) {
@@ -3512,6 +3698,7 @@ const runBrowser = async base => {
       await exercisePayoutDisplay({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
       await exerciseSafeUpdate({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout});
       await exerciseQuotePrecision({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
+      await exerciseLiveCandles({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot});
       await exerciseThemePersistence({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseEnglishLocale({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
       await exerciseReadConsistency({send, configureViewport, round, base, wait, click, evaluate, fieldValue, checkLayout, screenshot});
@@ -3574,6 +3761,8 @@ const runBrowser = async base => {
     await newsMonitoringContracts();
     settingsRecoveryContracts();
     await offlineQuoteContracts();
+    await assetMarketRefreshContracts();
+    await searchQuoteContracts();
     await assistantConversationContracts();
     await assistantMemoryReconciliationContracts();
     await strategyInputContracts();
@@ -4051,36 +4240,16 @@ async function serveTestMarketInstruments2({
     if (!fixture.holdMarketStream) response.write(fixture.precisionCase?.market_event || serverContracts.instrument_market_event);
     return;
   }
-  if (fixture.precisionCase) return sendJSON(response, fixture.precisionCase.market);
-  return sendJSON(response, {
-    instrument_uid: "synthetic-a",
-    period: url.searchParams.get("period"),
-    source: "Synthetic exchange",
-    observed_at: restMarketObservedAt,
-    last_price: "250.25",
-    quote_time: restMarketObservedAt,
-    quote_status: "live",
-    price_unit: "currency",
-    price_currency: "RUB",
-    cash_price: "250.25",
-    cash_price_currency: "RUB",
-    trading_status: "SECURITY_TRADING_STATUS_NORMAL_TRADING",
-    candles: [{
-      time: day(3),
-      open: "245",
-      high: "249",
-      low: "242",
-      close: "248",
-      volume_lots: 10
-    }, {
-      time: day(2),
-      open: "248",
-      high: "251",
-      low: "247",
-      close: "250.25",
-      volume_lots: 15
-    }]
-  });
+  await holdAssetEnrichment(fixture, "history");
+  if (fixture.failMarketHistory) return sendJSON(response, {detail: "synthetic_history_unavailable"}, 503);
+  if (fixture.precisionCase) return sendJSON(response, {...fixture.precisionCase.market, period: url.searchParams.get("period")});
+  const market = {...serverContracts.market, period: url.searchParams.get("period")};
+  if (fixture.updatedMarketCandles) {
+    market.candles = fixture.updatedMarketCandles;
+    market.history_observed_at = fixture.updatedHistoryAt;
+  }
+  if (fixture.marketHistoryStatus) market.history_status = fixture.marketHistoryStatus;
+  return sendJSON(response, market);
 }
 async function serveTestBrokerTbankInstrumentsSearch({
   response
@@ -6103,6 +6272,74 @@ async function exerciseSafeUpdate({send, configureViewport, round, base, wait, c
   assert.equal(await evaluate('sessionStorage.getItem("omnicio-update-drafts")'), null, "Logout removes every stored update draft");
   console.log(`PASS safe update round ${round}: build guard, same-profile restoration, different-profile isolation, TTL, field allowlist and logout cleanup`);
 }
+async function exerciseLiveCandles({send, configureViewport, round, base, wait, click, evaluate, checkLayout, screenshot}) {
+  const key = `signed-live-candles-${round}`;
+  const fixture = makeFixture("signed");
+  fixture.holdAssetParts = new Set(["history"]);
+  fixture.heldAssetParts = new Map();
+  fixtures.set(key, fixture);
+  await configureViewport(round === 1 ? 320 : 768);
+  await send("Page.navigate", {url: `${base}?case=${key}#account/search?q=SYNA`});
+  await wait('document.querySelector("#view-search [data-table-quote=synthetic-a] strong")?.textContent.includes("250,25")', "A fresh search result receives an actual batch quote without a prefilled holdings cache");
+  assert.equal(fixture.requests.some(item => item.path === "/api/portfolio/visualization"), false, "Search quotes do not rely on previously loaded account positions");
+  await checkLayout(`search-live-price-${round}`);
+  await click('#view-search [data-asset="synthetic-a"]');
+  await until(() => fixture.heldAssetParts.has("history"), "The provider history read is deliberately held");
+  await wait('document.querySelector("#view-asset [data-market-quote] .main-value")?.textContent.includes("251,75")', "A real SSE quote appears while historical candles are unavailable");
+  assert.equal(await evaluate('Boolean(document.querySelector("#view-asset .chart-candle"))'), false, "Quote streaming cannot fabricate a historical candle");
+  fixture.holdAssetParts.delete("history"); fixture.heldAssetParts.get("history")(); fixture.heldAssetParts.delete("history");
+  await wait('document.querySelectorAll("#view-asset .chart-candle").length === 2', "Wire-parsed real OHLC reaches the native candlestick renderer");
+  assert.ok((await evaluate('document.querySelector("#view-asset [data-candle-readout]").textContent')).includes("Формируется"));
+  assert.equal(await evaluate('document.querySelector("#view-asset [data-market-quote] .main-value").textContent.includes("251,75")'), true, "The delayed REST snapshot cannot roll back the newer SSE quote");
+  await evaluate('window.__liveCandleChart=document.querySelector("#view-asset .chart-svg");window.__liveCandleChart.focus()');
+  await send("Input.dispatchKeyEvent", {type: "keyDown", key: "Home", code: "Home", windowsVirtualKeyCode: 36});
+  const selected = await evaluate('document.querySelector("#view-asset .chart-readout").textContent');
+  const bars = clone(serverContracts.market.candles);
+  const backfilled = {...bars[0], time: new Date(Date.parse(bars[0].time) - 4 * 60 * 60 * 1000).toISOString()};
+  fixture.updatedMarketCandles = [backfilled, bars[0], {...bars[1], high: "253", close: "252", volume_lots: 23}];
+  fixture.updatedHistoryAt = new Date().toISOString();
+  await until(async () => await evaluate('document.querySelectorAll("#view-asset .chart-candle").length === 3'), "Periodic actual history refresh adopts a backfilled bar and an updated forming candle", Math.ceil(clientConfig.timing.candlePollMs / 100) + 100);
+  assert.equal(await evaluate('document.querySelector("#view-asset .chart-svg")===window.__liveCandleChart && document.activeElement===window.__liveCandleChart'), true, "Background OHLC refresh preserves the actual SVG and keyboard focus");
+  assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout").textContent'), selected, "A backfilled bar does not move the user's selected source timestamp");
+  fixture.holdAssetParts.add("facts");
+  fixture.enrichmentName = `Shared refresh source ${round}`;
+  await evaluate("window.dispatchEvent(new Event('focus'))");
+  await until(() => fixture.heldAssetParts.has("facts"), "The actual general focus refresh reached its auxiliary source read");
+  assert.equal(await evaluate('document.querySelector("#view-asset .chart-svg")===window.__liveCandleChart && document.activeElement===window.__liveCandleChart'), true, "The shared refresh preserves the SVG before its source reads complete");
+  fixture.holdAssetParts.delete("facts"); fixture.heldAssetParts.get("facts")(); fixture.heldAssetParts.delete("facts");
+  await wait(`document.querySelector("#view-asset h1")?.textContent===${JSON.stringify(fixture.enrichmentName)}`, "The shared refresh completes without replacing the selected chart");
+  assert.equal(await evaluate('document.querySelector("#view-asset .chart-svg")===window.__liveCandleChart && document.activeElement===window.__liveCandleChart'), true);
+  assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout").textContent'), selected);
+  await send("Input.dispatchKeyEvent", {type: "keyDown", key: "End", code: "End", windowsVirtualKeyCode: 35});
+  assert.ok((await evaluate('document.querySelector("#view-asset .chart-readout strong").textContent')).includes("252"), "The end candle reflects the reread OHLC, independently of the live quote");
+  await checkLayout(`live-candles-${round}`, {minCharts: 1});
+  await screenshot(`live-candles-${round}.png`);
+  fixture.updatedMarketCandles = [bars[0]];
+  fixture.updatedHistoryAt = new Date().toISOString();
+  await click('#view-asset [data-period="1w"]');
+  await wait('document.querySelectorAll("#view-asset .chart-candle").length === 1', "A single confirmed source candle remains visible after selecting a period");
+  assert.equal(await evaluate('Boolean(document.querySelector("#view-asset .chart-empty"))'), false);
+  await checkLayout(`single-candle-${round}`, {minCharts: 1});
+  await evaluate('window.__selectedLastCandle=document.querySelector("#view-asset .chart-svg");window.__selectedLastCandle.focus()');
+  await send("Input.dispatchKeyEvent", {type: "keyDown", key: "End", code: "End", windowsVirtualKeyCode: 35});
+  const selectedLast = await evaluate('document.querySelector("#view-asset .chart-readout").textContent');
+  fixture.updatedMarketCandles = bars;
+  fixture.updatedHistoryAt = new Date().toISOString();
+  await until(async () => await evaluate('document.querySelectorAll("#view-asset .chart-candle").length === 2'), "A new interval arrives after the user selected the previously last candle", Math.ceil(clientConfig.timing.candlePollMs / 100) + 100);
+  assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout").textContent'), selectedLast, "An explicitly selected last candle keeps its timestamp when a later interval arrives");
+  assert.equal(await evaluate('document.querySelector("#view-asset .chart-svg")===window.__selectedLastCandle && document.activeElement===window.__selectedLastCandle'), true);
+  const fallbackKey = `signed-candle-fallback-${round}`;
+  const fallback = makeFixture("signed"); fallback.failMarketHistory = true; fixtures.set(fallbackKey, fallback);
+  const noStream = await send("Page.addScriptToEvaluateOnNewDocument", {source: "window.EventSource = undefined;"});
+  await send("Page.navigate", {url: `${base}?case=${fallbackKey}#account/asset?uid=synthetic-a`});
+  await send("Page.removeScriptToEvaluateOnNewDocument", {identifier: noStream.identifier});
+  await wait('document.querySelector("#view-asset [data-market-quote] .main-value")?.textContent.includes("250,25") && document.querySelector("#view-asset [data-market-chart] .notice.error")', "Without SSE, the actual batch quote remains visible while history fails");
+  assert.equal(fallback.requests.some(item => item.path.endsWith("/stream")), false, "Fallback clients make no unavailable EventSource transport request");
+  assert.ok(fallback.requests.some(item => item.path === "/api/market/quotes"));
+  assert.equal(await evaluate('Boolean(document.querySelector("#view-asset .chart-candle"))'), false, "Failed history never turns a batch quote into a fake candle");
+  await checkLayout(`market-history-fallback-${round}`);
+  console.log(`PASS live candles round ${round}: actual wire/API search quotes, independent SSE/history, periodic OHLC update, same SVG/time/focus, one candle and no-SSE price fallback`);
+}
 function expectedQuoteText(value, unit, currency, locale) {
   const options = {maximumFractionDigits: 9};
   if (unit === "currency") Object.assign(options, {style: "currency", currency});
@@ -6142,7 +6379,8 @@ async function exerciseQuotePrecisionCase({send, round, base, wait, click, evalu
   fixture.heldAssetParts.get("facts")();
   fixture.heldAssetParts.delete("facts");
   await wait('document.querySelector("#view-asset h1")?.textContent === "Synthetic precision contract" && !document.querySelector("#view-asset .loading-panel")', "The precision asset has completed its auxiliary reads");
-  await until(() => fixture.marketStreams.size === 1 && !fixture.marketStreams.has(initialStream), "The final active stream has replaced the closed initial response");
+  assert.equal(fixture.marketStreams.size, 1, "Auxiliary reads retain the independently opened quote stream");
+  assert.ok(fixture.marketStreams.has(initialStream), "Late facts cannot reconnect a healthy price stream");
   assert.equal(await evaluate('document.querySelector("#view-asset .chart-readout strong").textContent'), text(precision.expected.last_close), "Initial chart readout shows the exact last source observation");
   if (unit !== "currency" && precision.market.cash_price !== null) assert.ok((await evaluate('document.querySelector("#view-asset [data-market-quote] .fine-print").textContent')).includes(expectedQuoteText(precision.market.cash_price, "currency", precision.market.cash_price_currency, locale)), "The REST cash price preserves its displayed source digits");
   await evaluate('document.querySelector("#view-asset .chart-svg").focus()');

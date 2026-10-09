@@ -995,7 +995,7 @@ def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> 
                     "volume": "42",
                     "time": "2026-10-02T00:00:00Z",
                     "isComplete": True,
-                    "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+                    "candleSource": "CANDLE_SOURCE_EXCHANGE",
                 }
             ]
         }
@@ -1035,11 +1035,18 @@ def test_tbank_daily_candles_are_exchange_only_complete_liquidity_evidence() -> 
 
 
 @pytest.mark.parametrize(
-    "source_name",
-    [None, "CANDLE_SOURCE_DEALER_WEEKEND"],
+    "source_fields",
+    [
+        {}, {"candleSource": None}, {"candleSource": "CANDLE_SOURCE_DEALER_WEEKEND"},
+        {"candleSource": "CANDLE_SOURCE_EXCHANGE", "candleSourceType": None},
+        {"candleSource": "CANDLE_SOURCE_EXCHANGE",
+         "candleSourceType": "CANDLE_SOURCE_DEALER_WEEKEND"},
+        {"candleSource": "CANDLE_SOURCE_DEALER_WEEKEND",
+         "candleSourceType": "CANDLE_SOURCE_EXCHANGE"},
+    ],
 )
 def test_tbank_daily_candles_require_confirmed_exchange_source(
-    source_name: str | None,
+    source_fields: dict[str, str | None],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = TBankInvestClient()
@@ -1053,8 +1060,7 @@ def test_tbank_daily_candles_require_confirmed_exchange_source(
         "time": "2026-10-02T00:00:00Z",
         "isComplete": True,
     }
-    if source_name is not None:
-        candle["candleSourceType"] = source_name
+    candle.update(source_fields)
     response = FakeResponse({"candles": [candle]})
     from_at = now - timedelta(days=30)
     monkeypatch.setattr(
@@ -1204,7 +1210,7 @@ def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> 
                     "volume": "15",
                     "time": "2026-10-03T04:00:00Z",
                     "isComplete": False,
-                    "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
+                    "candleSource": "CANDLE_SOURCE_EXCHANGE",
                 }
             ]
         }
@@ -1245,6 +1251,75 @@ def test_tbank_intraday_exchange_candles_validate_ohlc_and_exchange_source() -> 
         "interval": "CANDLE_INTERVAL_5_MIN",
         "candleSourceType": "CANDLE_SOURCE_EXCHANGE",
     }
+
+
+@pytest.mark.parametrize("source_fields", [
+    {"candleSource": "CANDLE_SOURCE_EXCHANGE"},
+    {"candleSourceType": "CANDLE_SOURCE_EXCHANGE"},
+    {"candleSource": "CANDLE_SOURCE_EXCHANGE", "candleSourceType": "CANDLE_SOURCE_EXCHANGE"},
+])
+def test_tbank_live_candle_defaults_preserve_unfinished_zero_volume(source_fields) -> None:
+    # HistoricCandle.candle_source is a response field; the request's source
+    # field differs. Proto3 omits implicit false/zero scalars from JSON.
+    row = {
+        "open": {"units": "100"}, "high": {"units": "102"},
+        "low": {"units": "99"}, "close": {"units": "101"},
+        "time": "2026-10-09T06:30:00Z", **source_fields,
+    }
+    with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse({"candles": [row]})):
+        result = TBankInvestClient().get_exchange_candles(
+            "synthetic-test-credential", "prod", "uid-1",
+            from_at=datetime(2026, 10, 8, 7, tzinfo=UTC),
+            to_at=datetime(2026, 10, 9, 7, tzinfo=UTC), interval="CANDLE_INTERVAL_5_MIN",
+        )
+    assert len(result) == 1
+    assert result[0].source == "CANDLE_SOURCE_EXCHANGE"
+    assert result[0].close == "101"
+    assert result[0].is_complete is False
+    assert result[0].volume_lots == 0
+
+
+@pytest.mark.parametrize("field", ["isComplete", "volume", "candleSource"])
+def test_tbank_candle_explicit_null_never_becomes_a_proto_default(field: str) -> None:
+    row = {
+        "open": {"units": "100"}, "high": {"units": "102"},
+        "low": {"units": "99"}, "close": {"units": "101"},
+        "time": "2026-10-09T06:30:00Z", "candleSource": "CANDLE_SOURCE_EXCHANGE",
+        field: None,
+    }
+    with (
+        patch("urllib.request.OpenerDirector.open", return_value=FakeResponse({"candles": [row]})),
+        pytest.raises(TBankUnavailable),
+    ):
+        TBankInvestClient().get_exchange_candles(
+            "synthetic-test-credential", "prod", "uid-1",
+            from_at=datetime(2026, 10, 8, 7, tzinfo=UTC),
+            to_at=datetime(2026, 10, 9, 7, tzinfo=UTC), interval="CANDLE_INTERVAL_5_MIN",
+        )
+
+
+@pytest.mark.parametrize("method, field", [("GetCandles", "candles"),
+                                           ("GetLastPrices", "lastPrices")])
+@pytest.mark.parametrize("explicit_null", [False, True])
+def test_tbank_market_empty_repeated_fields_are_distinct_from_malformed_null(
+    method: str, field: str, explicit_null: bool,
+) -> None:
+    client = TBankInvestClient()
+    read = (
+        partial(client.get_exchange_candles, "synthetic-test-credential", "prod", "uid-1",
+                from_at=datetime(2026, 10, 8, tzinfo=UTC),
+                to_at=datetime(2026, 10, 9, tzinfo=UTC), interval="CANDLE_INTERVAL_5_MIN")
+        if method == "GetCandles" else
+        partial(client.get_last_prices, "synthetic-test-credential", "prod", ("uid-1",))
+    )
+    with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(
+        {field: None} if explicit_null else {},
+    )):
+        if explicit_null:
+            with pytest.raises(TBankUnavailable):
+                read()
+        else:
+            assert read() == ()
 
 
 @patch("urllib.request.OpenerDirector.open")
@@ -1304,6 +1379,29 @@ def test_tbank_trading_status_is_bound_to_requested_instrument() -> None:
     assert request is not None
     assert request.full_url.endswith("MarketDataService/GetTradingStatus")
     assert json.loads(request.data.decode()) == {"instrumentId": "uid-1"}
+
+
+@pytest.mark.parametrize("explicit_null", [False, True])
+def test_tbank_trading_status_implicit_false_cannot_enable_missing_permissions(
+    explicit_null: bool,
+) -> None:
+    payload = {"instrumentUid": "uid-1",
+               "tradingStatus": "SECURITY_TRADING_STATUS_NORMAL_TRADING",
+               "apiTradeAvailableFlag": True}
+    if explicit_null:
+        payload["onlyBestPrice"] = None
+    with patch("urllib.request.OpenerDirector.open", return_value=FakeResponse(payload)):
+        if explicit_null:
+            with pytest.raises(TBankUnavailable):
+                TBankInvestClient().get_trading_status("synthetic-test-credential", "prod", "uid-1")
+        else:
+            result = TBankInvestClient().get_trading_status(
+                "synthetic-test-credential", "prod", "uid-1",
+            )
+            assert result.trading_status == "SECURITY_TRADING_STATUS_NORMAL_TRADING"
+            assert result.api_trade_available is True
+            assert not any((result.limit_order_available, result.market_order_available,
+                            result.best_price_order_available, result.only_best_price))
 
 
 def test_tbank_accrued_interest_preserves_value_and_timestamp() -> None:
